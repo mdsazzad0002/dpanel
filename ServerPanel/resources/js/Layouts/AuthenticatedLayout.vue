@@ -53,7 +53,6 @@ const menuItems = [
         children: [
             { label: 'Create Database', hint: 'Create a new database', icon: 'CD', routeName: 'databases.create', roles: ['super_admin', 'reseller'] },
             { label: 'List Databases', hint: 'View all databases', icon: 'LD', routeName: 'databases.list', roles: ['super_admin', 'reseller'] },
-            { label: 'phpMyAdmin', hint: 'Open phpMyAdmin panel', icon: 'PM', routeName: 'phpmyadmin.panel', roles: ['super_admin', 'reseller'] },
         ],
     },
     {
@@ -67,16 +66,7 @@ const menuItems = [
             { label: 'DNS Records', hint: 'A, CNAME, MX, TXT records', icon: 'DR', routeName: 'dns.records', roles: ['super_admin', 'reseller'] },
         ],
     },
-    {
-        id: 'php-management',
-        label: 'PHP Management',
-        hint: 'PHP versions and settings',
-        icon: 'PH',
-        children: [
-            { label: 'PHP Versions', hint: 'Switch and manage PHP versions', icon: 'PV', routeName: 'php.versions', roles: ['super_admin', 'reseller'] },
-            { label: 'PHP Settings', hint: 'php.ini and extensions', icon: 'PS', routeName: 'php.settings', roles: ['super_admin', 'reseller'] },
-        ],
-    },
+    { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', routeName: 'php.manager', roles: ['super_admin', 'reseller'] },
     {
         id: 'package-management',
         label: 'Package Management',
@@ -87,7 +77,7 @@ const menuItems = [
             { label: 'List Packages', hint: 'View package plans', icon: 'LP', routeName: 'packages.list', roles: ['super_admin', 'reseller'] },
         ],
     },
-    { label: 'Security', hint: 'Firewall and SSL', icon: 'SC' },
+    { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', routeName: 'security.manager', roles: ['super_admin', 'reseller'] },
     { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK' },
     { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN' },
 ];

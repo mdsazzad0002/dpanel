@@ -134,6 +134,28 @@ class DatabaseController extends Controller
     }
 
     /**
+     * Open phpMyAdmin with selected database credentials and preselected DB.
+     */
+    public function openPhpMyAdmin(Request $request, string $id)
+    {
+        $requestItem = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($requestItem === null, 404);
+
+        $origin = $request->getSchemeAndHttpHost();
+        $targetUrl = rtrim((string) config('app.phpmyadmin_url', env('PHPMYADMIN_URL', "{$origin}/phpmyadmin/index.php")), '/');
+        $helperUrl = (string) env('PHPMYADMIN_HELPER_URL', "{$origin}/phpmyadmin/phpmyadminsignin.php");
+
+        return response()->view('phpmyadmin.autologin', [
+            'targetUrl' => $targetUrl,
+            'helperUrl' => $helperUrl,
+            'username' => (string) ($requestItem['database_user'] ?? ''),
+            'password' => (string) ($requestItem['database_password'] ?? ''),
+            'database' => (string) ($requestItem['database_name'] ?? ''),
+            'host' => (string) ($requestItem['database_host'] ?? 'localhost'),
+        ]);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function validatePayload(Request $request): array

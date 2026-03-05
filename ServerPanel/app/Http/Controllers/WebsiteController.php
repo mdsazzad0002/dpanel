@@ -7,10 +7,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use ZipArchive;
 
 class WebsiteController extends Controller
 {
     private const STORAGE_FILE = 'website-requests.json';
+    private const FILEMANAGER_FALLBACK_ROOT = 'site-files';
 
     /**
      * Show website creation page.
@@ -172,6 +175,410 @@ class WebsiteController extends Controller
     }
 
     /**
+     * File manager for website root.
+     */
+    public function fileManager(Request $request, string $id): Response
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $currentPath = $this->sanitizeRelativePath((string) $request->query('path', ''));
+        $showHidden = $request->boolean('show_hidden', false);
+        $directory = $this->resolvePathInsideBase($basePath, $currentPath);
+
+        if (! is_dir($directory)) {
+            $directory = $basePath;
+            $currentPath = '';
+        }
+
+        $items = $this->listDirectoryItems($basePath, $directory, $showHidden);
+
+        $selectedFilePath = $this->sanitizeRelativePath((string) $request->query('file', ''));
+        $selectedFile = $this->readSelectedFile($basePath, $selectedFilePath);
+        $directoryTree = $this->buildDirectoryTree($basePath, '', 2, $showHidden);
+
+        return Inertia::render('Websites/FileManager', [
+            'website' => [
+                'id' => $website['id'],
+                'domain' => $website['domain'] ?? '',
+                'root_path' => $website['root_path'] ?? '',
+            ],
+            'basePath' => $basePath,
+            'currentPath' => $currentPath,
+            'showHidden' => $showHidden,
+            'openUploadTab' => $request->boolean('open_upload', false),
+            'openEditorModal' => $request->boolean('open_editor', false),
+            'openEditorPage' => $request->boolean('editor_page', false),
+            'directoryTree' => $directoryTree,
+            'items' => $items,
+            'selectedFile' => $selectedFile,
+        ]);
+    }
+
+    public function createFolder(Request $request, string $id): RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'path' => ['nullable', 'string', 'max:1000'],
+            'name' => ['required', 'string', 'max:255', 'regex:/^[^\\\\\\/:*?\"<>|]+$/'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $currentPath = $this->sanitizeRelativePath((string) ($validated['path'] ?? ''));
+        $folderName = trim((string) $validated['name']);
+        $targetRelative = $this->sanitizeRelativePath(trim($currentPath.'/'.$folderName, '/'));
+        $targetPath = $this->resolvePathInsideBase($basePath, $targetRelative);
+
+        if (is_dir($targetPath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Folder already exists.');
+        }
+
+        if (! @mkdir($targetPath, 0755, true) && ! is_dir($targetPath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to create folder.');
+        }
+
+        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('success', 'Folder created.');
+    }
+
+    public function createFile(Request $request, string $id): RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'path' => ['nullable', 'string', 'max:1000'],
+            'name' => ['required', 'string', 'max:255', 'regex:/^[^\\\\\\/:*?\"<>|]+$/'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $currentPath = $this->sanitizeRelativePath((string) ($validated['path'] ?? ''));
+        $fileName = trim((string) $validated['name']);
+        $targetRelative = $this->sanitizeRelativePath(trim($currentPath.'/'.$fileName, '/'));
+        $targetPath = $this->resolvePathInsideBase($basePath, $targetRelative);
+
+        if (is_file($targetPath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'File already exists.');
+        }
+
+        $dir = dirname($targetPath);
+        if (! is_dir($dir) && ! @mkdir($dir, 0755, true) && ! is_dir($dir)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to create parent folder.');
+        }
+
+        if (@file_put_contents($targetPath, '') === false) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to create file.');
+        }
+
+        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath, 'file' => $targetRelative])->with('success', 'File created.');
+    }
+
+    public function saveFile(Request $request, string $id): RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'file_path' => ['required', 'string', 'max:1500'],
+            'content' => ['nullable', 'string'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $fileRelative = $this->sanitizeRelativePath((string) $validated['file_path']);
+        $filePath = $this->resolvePathInsideBase($basePath, $fileRelative);
+
+        if (! is_file($filePath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id])->with('error', 'File not found.');
+        }
+
+        if (@file_put_contents($filePath, (string) ($validated['content'] ?? '')) === false) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'file' => $fileRelative])->with('error', 'Failed to save file.');
+        }
+
+        $parent = dirname($fileRelative);
+        $path = $parent === '.' ? '' : $parent;
+
+        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $path, 'file' => $fileRelative])->with('success', 'File saved.');
+    }
+
+    public function uploadFile(Request $request, string $id): RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'path' => ['nullable', 'string', 'max:1500'],
+            'upload' => ['required', 'file', 'max:10240'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $currentPath = $this->sanitizeRelativePath((string) ($validated['path'] ?? ''));
+        $targetDir = $this->resolvePathInsideBase($basePath, $currentPath);
+
+        if (! is_dir($targetDir) && ! @mkdir($targetDir, 0755, true) && ! is_dir($targetDir)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath, 'open_upload' => 1])->with('error', 'Failed to create target directory for upload.');
+        }
+
+        $uploaded = $request->file('upload');
+        if ($uploaded === null) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath, 'open_upload' => 1])->with('error', 'Upload file not found.');
+        }
+
+        $filename = $this->sanitizeFilename((string) $uploaded->getClientOriginalName());
+        if ($filename === '') {
+            $filename = 'uploaded-file';
+        }
+
+        $targetPath = $this->resolvePathInsideBase($basePath, $this->sanitizeRelativePath(trim($currentPath.'/'.$filename, '/')));
+        if (@move_uploaded_file($uploaded->getPathname(), $targetPath) === false) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath, 'open_upload' => 1])->with('error', 'Failed to move uploaded file.');
+        }
+
+        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath, 'open_upload' => 1])->with('success', 'File uploaded successfully.');
+    }
+
+    public function changePermissions(Request $request, string $id): RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'item_path' => ['required', 'string', 'max:1500'],
+            'current_path' => ['nullable', 'string', 'max:1500'],
+            'permissions' => ['required', 'string', 'regex:/^[0-7]{3,4}$/'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $itemRelative = $this->sanitizeRelativePath((string) $validated['item_path']);
+        $itemPath = $this->resolvePathInsideBase($basePath, $itemRelative);
+        $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
+
+        if (! file_exists($itemPath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Item not found.');
+        }
+
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Permission change not supported on Windows environment.');
+        }
+
+        $mode = octdec((string) $validated['permissions']);
+        if (! @chmod($itemPath, $mode)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to change permissions.');
+        }
+
+        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('success', 'Permissions updated.');
+    }
+
+    public function renameItem(Request $request, string $id): RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'item_path' => ['required', 'string', 'max:1500'],
+            'current_path' => ['nullable', 'string', 'max:1500'],
+            'new_name' => ['required', 'string', 'max:255', 'regex:/^[^\\\\\\/:*?\"<>|]+$/'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $itemRelative = $this->sanitizeRelativePath((string) $validated['item_path']);
+        $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
+        $itemPath = $this->resolvePathInsideBase($basePath, $itemRelative);
+
+        if (! file_exists($itemPath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Item not found.');
+        }
+
+        $newName = $this->sanitizeFilename((string) $validated['new_name']);
+        if ($newName === '') {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Invalid new name.');
+        }
+
+        $parent = dirname($itemRelative);
+        $parent = $parent === '.' ? '' : $parent;
+        $targetRelative = $this->sanitizeRelativePath(trim($parent.'/'.$newName, '/'));
+        $targetPath = $this->resolvePathInsideBase($basePath, $targetRelative);
+
+        if (file_exists($targetPath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Target name already exists.');
+        }
+
+        if (! @rename($itemPath, $targetPath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to rename item.');
+        }
+
+        $query = ['id' => $id, 'path' => $currentPath];
+        if (is_file($targetPath)) {
+            $query['file'] = $targetRelative;
+        }
+
+        return redirect()->route('websites.filemanager', $query)->with('success', 'Item renamed.');
+    }
+
+    public function downloadFile(Request $request, string $id): BinaryFileResponse|RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'file_path' => ['required', 'string', 'max:1500'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $fileRelative = $this->sanitizeRelativePath((string) $validated['file_path']);
+        $filePath = $this->resolvePathInsideBase($basePath, $fileRelative);
+
+        if (! is_file($filePath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id])->with('error', 'File not found for download.');
+        }
+
+        if ($request->boolean('inline', false)) {
+            return response()->file($filePath);
+        }
+
+        return response()->download($filePath, basename($filePath));
+    }
+
+    public function zipSelected(Request $request, string $id): RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'current_path' => ['nullable', 'string', 'max:1500'],
+            'item_paths' => ['required', 'array', 'min:1'],
+            'item_paths.*' => ['required', 'string', 'max:1500'],
+            'zip_name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
+        $itemPaths = collect((array) $validated['item_paths'])
+            ->map(fn ($path) => $this->sanitizeRelativePath((string) $path))
+            ->filter(fn (string $path) => $path !== '')
+            ->values()
+            ->all();
+
+        if (count($itemPaths) === 0) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'No valid items selected for zip.');
+        }
+
+        $zipNameInput = trim((string) ($validated['zip_name'] ?? ''));
+        $zipName = $this->sanitizeFilename($zipNameInput !== '' ? $zipNameInput : 'archive-'.now()->format('Ymd-His'));
+        if (! str_ends_with(strtolower($zipName), '.zip')) {
+            $zipName .= '.zip';
+        }
+
+        $zipRelative = $this->sanitizeRelativePath(trim($currentPath.'/'.$zipName, '/'));
+        $zipPath = $this->resolvePathInsideBase($basePath, $zipRelative);
+
+        if (file_exists($zipPath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Zip file already exists.');
+        }
+
+        $zip = new ZipArchive();
+        if ($zip->open($zipPath, ZipArchive::CREATE) !== true) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to create zip file.');
+        }
+
+        foreach ($itemPaths as $itemRelative) {
+            $sourcePath = $this->resolvePathInsideBase($basePath, $itemRelative);
+            if (! file_exists($sourcePath)) {
+                continue;
+            }
+
+            $baseName = basename($sourcePath);
+            if (is_dir($sourcePath)) {
+                $this->addDirectoryToZip($zip, $sourcePath, $baseName);
+            } else {
+                $zip->addFile($sourcePath, $baseName);
+            }
+        }
+
+        $zip->close();
+
+        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('success', 'Zip created successfully.');
+    }
+
+    public function unzipItem(Request $request, string $id): RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'zip_path' => ['required', 'string', 'max:1500'],
+            'current_path' => ['nullable', 'string', 'max:1500'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $zipRelative = $this->sanitizeRelativePath((string) $validated['zip_path']);
+        $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
+        $zipPath = $this->resolvePathInsideBase($basePath, $zipRelative);
+
+        if (! is_file($zipPath) || ! str_ends_with(strtolower($zipPath), '.zip')) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Valid zip file not found.');
+        }
+
+        $extractTo = dirname($zipPath);
+        $zip = new ZipArchive();
+        if ($zip->open($zipPath) !== true) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to open zip file.');
+        }
+
+        $ok = $zip->extractTo($extractTo);
+        $zip->close();
+
+        if (! $ok) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to extract zip file.');
+        }
+
+        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('success', 'Zip extracted successfully.');
+    }
+
+    public function deleteItem(Request $request, string $id): RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'item_path' => ['nullable', 'string', 'max:1500'],
+            'item_paths' => ['nullable', 'array', 'min:1'],
+            'item_paths.*' => ['required', 'string', 'max:1500'],
+            'current_path' => ['nullable', 'string', 'max:1500'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
+        $allItems = [];
+
+        if (! empty($validated['item_path'])) {
+            $allItems[] = $this->sanitizeRelativePath((string) $validated['item_path']);
+        }
+
+        foreach ((array) ($validated['item_paths'] ?? []) as $multiItem) {
+            $allItems[] = $this->sanitizeRelativePath((string) $multiItem);
+        }
+
+        $allItems = array_values(array_unique(array_filter($allItems)));
+        if (count($allItems) === 0) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'No item selected to delete.');
+        }
+
+        foreach ($allItems as $itemRelative) {
+            $itemPath = $this->resolvePathInsideBase($basePath, $itemRelative);
+            if (is_dir($itemPath)) {
+                $this->deleteDirectoryRecursive($itemPath);
+            } elseif (is_file($itemPath)) {
+                @unlink($itemPath);
+            }
+        }
+
+        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('success', 'Selected item(s) deleted.');
+    }
+
+    /**
      * Delete website request.
      */
     public function destroy(string $id): RedirectResponse
@@ -319,5 +726,241 @@ class WebsiteController extends Controller
     private function writeRequests(array $requests): void
     {
         Storage::put(self::STORAGE_FILE, json_encode($requests, JSON_PRETTY_PRINT));
+    }
+
+    private function resolveFileManagerBasePath(array $website): string
+    {
+        $configured = (string) ($website['root_path'] ?? '');
+        $domain = (string) ($website['domain'] ?? 'site');
+        $configured = str_replace('\\', '/', trim($configured));
+
+        if ($configured !== '' && is_dir($configured)) {
+            return rtrim($configured, '/');
+        }
+
+        $fallback = storage_path('app/'.self::FILEMANAGER_FALLBACK_ROOT.'/'.$domain);
+        if (! is_dir($fallback)) {
+            @mkdir($fallback, 0755, true);
+        }
+
+        return str_replace('\\', '/', rtrim($fallback, '/'));
+    }
+
+    private function sanitizeRelativePath(string $path): string
+    {
+        $path = str_replace('\\', '/', trim($path));
+        $path = ltrim($path, '/');
+
+        $parts = [];
+        foreach (explode('/', $path) as $part) {
+            $part = trim($part);
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+            if ($part === '..') {
+                array_pop($parts);
+                continue;
+            }
+            $parts[] = $part;
+        }
+
+        return implode('/', $parts);
+    }
+
+    private function resolvePathInsideBase(string $basePath, string $relative): string
+    {
+        $relative = $this->sanitizeRelativePath($relative);
+        $full = rtrim($basePath, '/').($relative !== '' ? '/'.$relative : '');
+
+        return str_replace('\\', '/', $full);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function listDirectoryItems(string $basePath, string $directory, bool $showHidden = false): array
+    {
+        $entries = @scandir($directory);
+        if (! is_array($entries)) {
+            return [];
+        }
+
+        $items = [];
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            if (! $showHidden && str_starts_with($entry, '.')) {
+                continue;
+            }
+
+            $fullPath = rtrim($directory, '/').'/'.$entry;
+            $isDir = is_dir($fullPath);
+            $relative = $this->sanitizeRelativePath(str_replace(rtrim($basePath, '/').'/', '', str_replace('\\', '/', $fullPath)));
+
+            $items[] = [
+                'name' => $entry,
+                'path' => $relative,
+                'type' => $isDir ? 'dir' : 'file',
+                'size' => $isDir ? null : (@filesize($fullPath) ?: 0),
+                'modified_at' => @filemtime($fullPath) ? date('c', (int) @filemtime($fullPath)) : null,
+                'permissions' => $this->formatPermissions($fullPath),
+            ];
+        }
+
+        usort($items, function (array $a, array $b): int {
+            if ($a['type'] !== $b['type']) {
+                return $a['type'] === 'dir' ? -1 : 1;
+            }
+
+            return strcasecmp((string) $a['name'], (string) $b['name']);
+        });
+
+        return $items;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildDirectoryTree(string $basePath, string $relative, int $depth, bool $showHidden): array
+    {
+        if ($depth < 0) {
+            return [];
+        }
+
+        $path = $this->resolvePathInsideBase($basePath, $relative);
+        $entries = @scandir($path);
+        if (! is_array($entries)) {
+            return [];
+        }
+
+        $tree = [];
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            if (! $showHidden && str_starts_with($entry, '.')) {
+                continue;
+            }
+
+            $childRelative = $this->sanitizeRelativePath(trim($relative.'/'.$entry, '/'));
+            $childPath = $this->resolvePathInsideBase($basePath, $childRelative);
+            if (! is_dir($childPath)) {
+                continue;
+            }
+
+            $tree[] = [
+                'name' => $entry,
+                'path' => $childRelative,
+                'children' => $depth > 0 ? $this->buildDirectoryTree($basePath, $childRelative, $depth - 1, $showHidden) : [],
+            ];
+        }
+
+        usort($tree, fn (array $a, array $b) => strcasecmp((string) $a['name'], (string) $b['name']));
+
+        return $tree;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function readSelectedFile(string $basePath, string $fileRelative): ?array
+    {
+        if ($fileRelative === '') {
+            return null;
+        }
+
+        $filePath = $this->resolvePathInsideBase($basePath, $fileRelative);
+        if (! is_file($filePath)) {
+            return null;
+        }
+
+        $size = @filesize($filePath) ?: 0;
+        if ($size > 1024 * 1024) {
+            return [
+                'path' => $fileRelative,
+                'name' => basename($filePath),
+                'content' => '',
+                'readonly' => true,
+                'message' => 'File is larger than 1MB and not loaded in editor.',
+            ];
+        }
+
+        $content = @file_get_contents($filePath);
+        if (! is_string($content)) {
+            $content = '';
+        }
+
+        return [
+            'path' => $fileRelative,
+            'name' => basename($filePath),
+            'content' => $content,
+            'readonly' => false,
+            'message' => null,
+        ];
+    }
+
+    private function deleteDirectoryRecursive(string $directory): void
+    {
+        $entries = @scandir($directory);
+        if (! is_array($entries)) {
+            return;
+        }
+
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $full = rtrim($directory, '/').'/'.$entry;
+            if (is_dir($full)) {
+                $this->deleteDirectoryRecursive($full);
+            } else {
+                @unlink($full);
+            }
+        }
+
+        @rmdir($directory);
+    }
+
+    private function sanitizeFilename(string $filename): string
+    {
+        $filename = trim(str_replace(['\\', '/'], '-', $filename));
+        $filename = preg_replace('/[^a-zA-Z0-9._-]/', '-', $filename) ?? '';
+
+        return trim($filename, '-.');
+    }
+
+    private function formatPermissions(string $path): string
+    {
+        $perms = @fileperms($path);
+        if ($perms === false) {
+            return '-';
+        }
+
+        return substr(sprintf('%o', $perms), -4);
+    }
+
+    private function addDirectoryToZip(ZipArchive $zip, string $directory, string $prefix): void
+    {
+        $entries = @scandir($directory);
+        if (! is_array($entries)) {
+            return;
+        }
+
+        $zip->addEmptyDir($prefix);
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $fullPath = rtrim($directory, '/').'/'.$entry;
+            $zipPath = trim($prefix.'/'.$entry, '/');
+            if (is_dir($fullPath)) {
+                $this->addDirectoryToZip($zip, $fullPath, $zipPath);
+            } else {
+                $zip->addFile($fullPath, $zipPath);
+            }
+        }
     }
 }

@@ -79,6 +79,9 @@ const deleteRequest = (id) => {
                                     <Link :href="route('websites.manage', item.id)" class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400">
                                         Manage
                                     </Link>
+                                    <Link :href="route('websites.filemanager', item.id)" class="rounded-md border border-emerald-300 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400">
+                                        File Manager
+                                    </Link>
                                     <Link :href="route('websites.edit', item.id)" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                         Edit
                                     </Link>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
@@ -24,6 +24,13 @@ const form = useForm({
     collation: props.databaseRequest.collation ?? 'utf8mb4_unicode_ci',
 });
 const showPassword = ref(false);
+
+const domainOptions = computed(() => {
+    const current = String(form.domain || '').trim();
+    const list = Array.isArray(props.websiteDomains) ? [...props.websiteDomains] : [];
+
+    return current && !list.includes(current) ? [current, ...list] : list;
+});
 
 const submit = () => {
     form.patch(route('databases.update', props.databaseRequest.id));
@@ -61,7 +68,7 @@ const generatePassword = () => {
                     <label class="mb-1 block text-sm">Website Domain</label>
                     <select v-model="form.domain" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option value="">Select domain</option>
-                        <option v-for="domain in websiteDomains" :key="domain" :value="domain">
+                        <option v-for="domain in domainOptions" :key="domain" :value="domain">
                             {{ domain }}
                         </option>
                     </select>
