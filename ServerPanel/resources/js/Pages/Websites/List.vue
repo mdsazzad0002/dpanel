@@ -31,7 +31,7 @@ const deleteRequest = (id) => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">List Website Requests</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Generated website creation commands (currently not executed).</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Website requests list with root path, PHP version and status.</p>
             </div>
         </template>
 
@@ -58,7 +58,6 @@ const deleteRequest = (id) => {
                             <th class="px-4 py-3">PHP</th>
                             <th class="px-4 py-3">SSL</th>
                             <th class="px-4 py-3">Status</th>
-                            <th class="px-4 py-3">Command</th>
                             <th class="px-4 py-3">Created</th>
                             <th class="px-4 py-3">Actions</th>
                         </tr>
@@ -73,9 +72,6 @@ const deleteRequest = (id) => {
                                 <span class="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">
                                     {{ item.status }}
                                 </span>
-                            </td>
-                            <td class="px-4 py-3">
-                                <pre class="max-w-xl whitespace-pre-wrap break-all rounded bg-slate-100 p-2 text-xs dark:bg-slate-800">{{ item.command || 'Command not available' }}</pre>
                             </td>
                             <td class="px-4 py-3">{{ formatDate(item.created_at) }}</td>
                             <td class="px-4 py-3">
@@ -97,7 +93,7 @@ const deleteRequest = (id) => {
                             </td>
                         </tr>
                         <tr v-if="websiteRequests.length === 0">
-                            <td colspan="8" class="px-4 py-6 text-center text-slate-500">No website commands generated yet.</td>
+                            <td colspan="7" class="px-4 py-6 text-center text-slate-500">No website requests generated yet.</td>
                         </tr>
                     </tbody>
                 </table>

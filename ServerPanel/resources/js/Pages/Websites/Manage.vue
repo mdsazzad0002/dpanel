@@ -115,7 +115,7 @@ const formatDate = (value) => {
                             {{
                                 item.label === 'Status'
                                     ? item.value
-                                    : (item.label.includes('Command') ? item.value : formatDate(item.value))
+                                    : formatDate(item.value)
                             }}
                         </p>
                     </div>

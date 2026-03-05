@@ -27,9 +27,15 @@ class WebsiteController extends Controller
     {
         $requests = collect($this->readRequests())
             ->map(function (array $item): array {
+                $domain = $this->normalizeDomain((string) ($item['domain'] ?? ''));
+                if ($domain !== '') {
+                    $item['domain'] = $domain;
+                    $item['root_path'] = $this->normalizeRootPath((string) ($item['root_path'] ?? ''), $domain);
+                }
+
                 if (empty($item['command'])) {
                     $item['command'] = $this->buildCommand([
-                        'domain' => (string) ($item['domain'] ?? ''),
+                        'domain' => $domain,
                         'root_path' => (string) ($item['root_path'] ?? ''),
                         'php_version' => (string) ($item['php_version'] ?? ''),
                         'enable_ssl' => (bool) ($item['enable_ssl'] ?? false),
@@ -54,15 +60,21 @@ class WebsiteController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $this->validatePayload($request);
+        $validated['domain'] = $this->normalizeDomain($validated['domain']);
+        $validated['root_path'] = $this->normalizeRootPath((string) ($validated['root_path'] ?? ''), $validated['domain']);
 
         $validated['enable_ssl'] = (bool) ($validated['enable_ssl'] ?? false);
 
         $command = $this->buildCommand($validated);
 
         // Intentionally disabled: command execution must be manually enabled later.
-        // $output = [];
-        // $exitCode = 0;
-        // exec($command . ' 2>&1', $output, $exitCode);
+        try {
+            $output = [];
+            $exitCode = 0;
+            exec($command . ' 2>&1', $output, $exitCode);
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
 
         $requests = $this->readRequests();
         $requests[] = [
@@ -77,7 +89,7 @@ class WebsiteController extends Controller
         ];
         $this->writeRequests($requests);
 
-        return redirect()->route('websites.list')->with('success', 'Website command generated. Execution is currently disabled in controller (commented out).');
+        return redirect()->route('websites.list')->with('success', 'Website request created successfully.');
     }
 
     /**
@@ -119,10 +131,6 @@ class WebsiteController extends Controller
                 'label' => 'Status',
                 'value' => $website['status'] ?? 'pending',
             ],
-            [
-                'label' => 'Command',
-                'value' => $website['command'] ?? null,
-            ],
         ];
 
         return Inertia::render('Websites/Manage', [
@@ -134,11 +142,13 @@ class WebsiteController extends Controller
     }
 
     /**
-     * Update website request and regenerate command.
+     * Update website request.
      */
     public function update(Request $request, string $id): RedirectResponse
     {
         $validated = $this->validatePayload($request);
+        $validated['domain'] = $this->normalizeDomain($validated['domain']);
+        $validated['root_path'] = $this->normalizeRootPath((string) ($validated['root_path'] ?? ''), $validated['domain']);
         $validated['enable_ssl'] = (bool) ($validated['enable_ssl'] ?? false);
 
         $requests = collect($this->readRequests())->map(function (array $item) use ($id, $validated) {
@@ -201,11 +211,52 @@ class WebsiteController extends Controller
     private function validatePayload(Request $request): array
     {
         return $request->validate([
-            'domain' => ['required', 'string', 'max:255'],
-            'root_path' => ['required', 'string', 'max:255'],
+            'domain' => [
+                'required',
+                'string',
+                'max:255',
+                'regex:/^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/',
+            ],
+            'root_path' => ['required', 'string', 'max:255', 'regex:/^\/home\/.+$/'],
             'php_version' => ['required', 'string', 'max:10'],
             'enable_ssl' => ['boolean'],
         ]);
+    }
+
+    /**
+     * Normalize domain input.
+     */
+    private function normalizeDomain(string $domain): string
+    {
+        return strtolower(trim($domain));
+    }
+
+    /**
+     * Normalize root path to /home/<suffix> format.
+     */
+    private function normalizeRootPath(string $rootPath, string $domain): string
+    {
+        $normalized = trim(str_replace('\\', '/', $rootPath));
+
+        if ($normalized === '') {
+            return "/home/{$domain}";
+        }
+
+        if (str_starts_with($normalized, '/home/')) {
+            $suffix = trim(substr($normalized, 6), '/');
+            if ($suffix === '') {
+                return "/home/{$domain}";
+            }
+
+            return "/home/{$suffix}";
+        }
+
+        $suffix = trim($normalized, '/');
+        if ($suffix === '') {
+            return "/home/{$domain}";
+        }
+
+        return "/home/{$suffix}";
     }
 
     /**

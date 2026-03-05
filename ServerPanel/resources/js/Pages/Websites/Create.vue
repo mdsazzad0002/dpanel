@@ -1,15 +1,40 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { computed, ref, watch } from 'vue';
 
 const form = useForm({
     domain: '',
-    root_path: '/var/www',
+    root_path: '/home/',
     php_version: '8.3',
     enable_ssl: true,
 });
 
+const normalizedDomain = computed(() => form.domain.trim().toLowerCase());
+const rootPathManuallyEdited = ref(false);
+
+const rootPathSuffix = computed({
+    get: () => form.root_path.replace(/^\/home\//, ''),
+    set: (value) => {
+        const cleaned = value.replace(/\\/g, '/').replace(/^\/+/, '').trim();
+        form.root_path = cleaned ? `/home/${cleaned}` : '/home/';
+    },
+});
+
+watch(
+    normalizedDomain,
+    (domain) => {
+        if (!rootPathManuallyEdited.value) {
+            form.root_path = domain ? `/home/${domain}` : '/home/';
+        }
+    },
+    { immediate: true },
+);
+
 const submit = () => {
+    if (rootPathSuffix.value.trim() === '') {
+        rootPathSuffix.value = normalizedDomain.value;
+    }
     form.post(route('websites.store'));
 };
 </script>
@@ -21,7 +46,7 @@ const submit = () => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Create Website</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Generate website creation command (execution is disabled/commented out).</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Use input group: fixed <strong>/home/</strong> prefix and editable suffix.</p>
             </div>
         </template>
 
@@ -40,7 +65,18 @@ const submit = () => {
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Root Path</label>
-                    <input v-model="form.root_path" type="text" placeholder="/var/www/example.com" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <div class="flex rounded-md border border-slate-300 dark:border-slate-700">
+                        <span class="inline-flex items-center border-r border-slate-300 bg-slate-100 px-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            /home/
+                        </span>
+                        <input
+                            v-model="rootPathSuffix"
+                            @input="rootPathManuallyEdited = true"
+                            type="text"
+                            placeholder="example.com"
+                            class="w-full rounded-r-md border-0 px-3 py-2 text-sm focus:ring-0 dark:bg-slate-800"
+                        />
+                    </div>
                     <p v-if="form.errors.root_path" class="mt-1 text-xs text-red-600">{{ form.errors.root_path }}</p>
                 </div>
                 <div>
@@ -61,7 +97,7 @@ const submit = () => {
                 </div>
                 <div class="md:col-span-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                        Generate Command
+                        Create Website Request
                     </button>
                 </div>
             </form>

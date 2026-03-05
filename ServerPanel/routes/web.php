@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\PackageController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ResellerController;
 use App\Http\Controllers\TerminalController;
 use App\Http\Controllers\UserPanelController;
 use App\Http\Controllers\WebsiteController;
@@ -123,13 +125,13 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:super_admin|reseller')
         ->name('packages.list');
 
-    Route::get('/admin', function () {
-        return Inertia::render('AdminPanel');
-    })->middleware('role:super_admin')->name('admin.panel');
+    Route::get('/admin', [AdminController::class, 'index'])
+        ->middleware('role:super_admin')
+        ->name('admin.panel');
 
-    Route::get('/reseller', function () {
-        return Inertia::render('ResellerPanel');
-    })->middleware('role:super_admin|reseller')->name('reseller.panel');
+    Route::get('/reseller', [ResellerController::class, 'index'])
+        ->middleware('role:super_admin|reseller')
+        ->name('reseller.panel');
 
     Route::get('/user-panel', [UserPanelController::class, 'show'])
         ->middleware('role:super_admin|reseller|general_user')

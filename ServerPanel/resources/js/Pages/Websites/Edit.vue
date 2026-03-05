@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
     websiteRequest: {
@@ -11,12 +12,36 @@ const props = defineProps({
 
 const form = useForm({
     domain: props.websiteRequest.domain ?? '',
-    root_path: props.websiteRequest.root_path ?? '/var/www',
+    root_path: props.websiteRequest.root_path ?? `/home/${props.websiteRequest.domain ?? ''}`,
     php_version: props.websiteRequest.php_version ?? '8.3',
     enable_ssl: !!props.websiteRequest.enable_ssl,
 });
 
+const normalizedDomain = computed(() => form.domain.trim().toLowerCase());
+const rootPathManuallyEdited = ref(false);
+
+const rootPathSuffix = computed({
+    get: () => form.root_path.replace(/^\/home\//, ''),
+    set: (value) => {
+        const cleaned = value.replace(/\\/g, '/').replace(/^\/+/, '').trim();
+        form.root_path = cleaned ? `/home/${cleaned}` : '/home/';
+    },
+});
+
+watch(
+    normalizedDomain,
+    (domain) => {
+        if (!rootPathManuallyEdited.value) {
+            form.root_path = domain ? `/home/${domain}` : '/home/';
+        }
+    },
+    { immediate: true },
+);
+
 const submit = () => {
+    if (rootPathSuffix.value.trim() === '') {
+        rootPathSuffix.value = normalizedDomain.value;
+    }
     form.patch(route('websites.update', props.websiteRequest.id));
 };
 </script>
@@ -28,7 +53,7 @@ const submit = () => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Edit Website Request</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Update website request and regenerate command.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Use input group: fixed <strong>/home/</strong> prefix and editable suffix.</p>
             </div>
         </template>
 
@@ -47,7 +72,18 @@ const submit = () => {
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Root Path</label>
-                    <input v-model="form.root_path" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <div class="flex rounded-md border border-slate-300 dark:border-slate-700">
+                        <span class="inline-flex items-center border-r border-slate-300 bg-slate-100 px-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            /home/
+                        </span>
+                        <input
+                            v-model="rootPathSuffix"
+                            @input="rootPathManuallyEdited = true"
+                            type="text"
+                            placeholder="example.com"
+                            class="w-full rounded-r-md border-0 px-3 py-2 text-sm focus:ring-0 dark:bg-slate-800"
+                        />
+                    </div>
                     <p v-if="form.errors.root_path" class="mt-1 text-xs text-red-600">{{ form.errors.root_path }}</p>
                 </div>
                 <div>
