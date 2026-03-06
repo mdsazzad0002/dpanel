@@ -2,17 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Mailbox;
+use App\Models\Website;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class EmailController extends Controller
 {
-    private const STORAGE_FILE = 'email-accounts.json';
-    private const WEBSITE_STORAGE_FILE = 'website-requests.json';
-
     public function create(): Response
     {
         return Inertia::render('CreateEmail', [
@@ -22,9 +20,10 @@ class EmailController extends Controller
 
     public function index(): Response
     {
-        $mailboxes = collect($this->readMailboxes())
-            ->sortByDesc('created_at')
-            ->values()
+        $mailboxes = Mailbox::query()
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn (Mailbox $mailbox): array => $mailbox->toArray())
             ->all();
 
         return Inertia::render('ListEmails', [
@@ -39,13 +38,11 @@ class EmailController extends Controller
         $mailbox = strtolower(trim((string) $validated['mailbox']));
         $email = "{$mailbox}@{$domain}";
 
-        $mailboxes = $this->readMailboxes();
-        $exists = collect($mailboxes)->contains(fn (array $item) => strtolower((string) ($item['email'] ?? '')) === $email);
-        if ($exists) {
+        if (Mailbox::query()->whereRaw('LOWER(email) = ?', [$email])->exists()) {
             return redirect()->route('emails.create')->with('error', "Mailbox {$email} already exists.");
         }
 
-        $mailboxes[] = [
+        Mailbox::query()->create([
             'id' => (string) str()->uuid(),
             'domain' => $domain,
             'mailbox' => $mailbox,
@@ -54,21 +51,18 @@ class EmailController extends Controller
             'quota_mb' => (int) $validated['quota_mb'],
             'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
             'status' => 'active',
-            'created_at' => now()->toIso8601String(),
-        ];
-
-        $this->writeMailboxes($mailboxes);
+        ]);
 
         return redirect()->route('emails.list')->with('success', "Mailbox {$email} created successfully.");
     }
 
     public function edit(string $id): Response
     {
-        $mailbox = collect($this->readMailboxes())->firstWhere('id', $id);
+        $mailbox = Mailbox::query()->find($id);
         abort_if($mailbox === null, 404);
 
         return Inertia::render('EditEmail', [
-            'mailbox' => $mailbox,
+            'mailbox' => $mailbox->toArray(),
             'websiteDomains' => $this->readWebsiteDomains(),
         ]);
     }
@@ -80,60 +74,52 @@ class EmailController extends Controller
         $mailboxName = strtolower(trim((string) $validated['mailbox']));
         $email = "{$mailboxName}@{$domain}";
 
-        $mailboxes = collect($this->readMailboxes());
-        $exists = $mailboxes->contains(function (array $item) use ($id, $email) {
-            return ($item['id'] ?? null) !== $id && strtolower((string) ($item['email'] ?? '')) === $email;
-        });
+        $mailboxRecord = Mailbox::query()->find($id);
+        if ($mailboxRecord === null) {
+            return redirect()->route('emails.list')->with('error', 'Mailbox not found.');
+        }
+
+        $exists = Mailbox::query()
+            ->where('id', '!=', $id)
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->exists();
 
         if ($exists) {
             return redirect()->route('emails.edit', $id)->with('error', "Mailbox {$email} already exists.");
         }
 
-        $updated = $mailboxes->map(function (array $item) use ($id, $validated, $domain, $mailboxName, $email) {
-            if (($item['id'] ?? null) !== $id) {
-                return $item;
-            }
-
-            $item['domain'] = $domain;
-            $item['mailbox'] = $mailboxName;
-            $item['email'] = $email;
-            $item['password'] = (string) $validated['password'];
-            $item['quota_mb'] = (int) $validated['quota_mb'];
-            $item['forwarding_to'] = trim((string) ($validated['forwarding_to'] ?? ''));
-            $item['updated_at'] = now()->toIso8601String();
-
-            return $item;
-        })->values()->all();
-
-        $this->writeMailboxes($updated);
+        $mailboxRecord->fill([
+            'domain' => $domain,
+            'mailbox' => $mailboxName,
+            'email' => $email,
+            'password' => (string) $validated['password'],
+            'quota_mb' => (int) $validated['quota_mb'],
+            'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
+        ]);
+        $mailboxRecord->save();
 
         return redirect()->route('emails.list')->with('success', "Mailbox {$email} updated successfully.");
     }
 
     public function destroy(string $id): RedirectResponse
     {
-        $mailboxes = collect($this->readMailboxes());
-        $before = $mailboxes->count();
-        $after = $mailboxes->reject(fn (array $item) => ($item['id'] ?? null) === $id)->values()->all();
-
-        if (count($after) === $before) {
+        $deleted = Mailbox::query()->where('id', $id)->delete();
+        if ($deleted === 0) {
             return redirect()->route('emails.list')->with('error', 'Mailbox not found.');
         }
-
-        $this->writeMailboxes($after);
 
         return redirect()->route('emails.list')->with('success', 'Mailbox deleted successfully.');
     }
 
     public function login(string $id)
     {
-        $mailbox = collect($this->readMailboxes())->firstWhere('id', $id);
+        $mailbox = Mailbox::query()->find($id);
         abort_if($mailbox === null, 404);
 
         return response()->view('webmail.autologin', [
-            'targetUrl' => (string) env('WEBMAIL_URL', request()->getSchemeAndHttpHost().'/webmail/'),
-            'email' => (string) ($mailbox['email'] ?? ''),
-            'password' => (string) ($mailbox['password'] ?? ''),
+            'targetUrl' => (string) env('WEBMAIL_URL', request()->getSchemeAndHttpHost().'/roundcube/'),
+            'email' => (string) ($mailbox->email ?? ''),
+            'password' => (string) ($mailbox->password ?? ''),
         ]);
     }
 
@@ -143,34 +129,17 @@ class EmailController extends Controller
     private function validatePayload(Request $request): array
     {
         return $request->validate([
-            'domain' => ['required', 'string', 'max:255'],
+            'domain' => [
+                'required',
+                'string',
+                'max:255',
+                'regex:/^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/',
+            ],
             'mailbox' => ['required', 'string', 'max:64', 'regex:/^[a-zA-Z0-9._-]+$/'],
             'password' => ['required', 'string', 'min:6', 'max:255'],
             'quota_mb' => ['required', 'integer', 'min:1', 'max:102400'],
-            'forwarding_to' => ['nullable', 'string', 'max:255'],
+            'forwarding_to' => ['nullable', 'email', 'max:255'],
         ]);
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function readMailboxes(): array
-    {
-        if (! Storage::exists(self::STORAGE_FILE)) {
-            return [];
-        }
-
-        $decoded = json_decode((string) Storage::get(self::STORAGE_FILE), true);
-
-        return is_array($decoded) ? $decoded : [];
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $mailboxes
-     */
-    private function writeMailboxes(array $mailboxes): void
-    {
-        Storage::put(self::STORAGE_FILE, json_encode($mailboxes, JSON_PRETTY_PRINT));
     }
 
     /**
@@ -178,19 +147,12 @@ class EmailController extends Controller
      */
     private function readWebsiteDomains(): array
     {
-        if (! Storage::exists(self::WEBSITE_STORAGE_FILE)) {
-            return [];
-        }
-
-        $decoded = json_decode((string) Storage::get(self::WEBSITE_STORAGE_FILE), true);
-        if (! is_array($decoded)) {
-            return [];
-        }
-
-        return collect($decoded)
+        return Website::query()
             ->pluck('domain')
-            ->filter(fn ($domain) => is_string($domain) && $domain !== '')
+            ->filter(fn ($domain) => is_string($domain) && trim($domain) !== '')
+            ->map(fn ($domain) => strtolower(trim((string) $domain)))
             ->unique()
+            ->sort()
             ->values()
             ->all();
     }
