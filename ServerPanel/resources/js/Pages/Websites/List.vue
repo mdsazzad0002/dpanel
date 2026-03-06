@@ -1,15 +1,36 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 const page = usePage();
 const deleteForm = useForm({});
+const search = ref('');
 
-defineProps({
+const props = defineProps({
     websiteRequests: {
         type: Array,
         default: () => [],
     },
+});
+
+const filteredWebsites = computed(() => {
+    const needle = search.value.trim().toLowerCase();
+    if (!needle) return props.websiteRequests;
+
+    return props.websiteRequests.filter((item) => {
+        const haystack = [
+            item.domain,
+            item.root_path,
+            item.php_version,
+            item.status,
+            item.enable_ssl ? 'yes' : 'no',
+        ]
+            .map((value) => String(value ?? '').toLowerCase())
+            .join(' ');
+
+        return haystack.includes(needle);
+    });
 });
 
 const formatDate = (value) => {
@@ -43,8 +64,16 @@ const deleteRequest = (id) => {
                 {{ page.props.flash.error }}
             </div>
 
-            <div class="flex justify-end">
-                <Link :href="route('websites.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="w-full sm:max-w-xs">
+                    <input
+                        v-model="search"
+                        type="text"
+                        placeholder="Search website..."
+                        class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                    />
+                </div>
+                <Link :href="route('websites.create')" class="inline-flex rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Website
                 </Link>
             </div>
@@ -63,7 +92,7 @@ const deleteRequest = (id) => {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="item in websiteRequests" :key="item.id" class="border-t border-slate-200 dark:border-slate-800">
+                        <tr v-for="item in filteredWebsites" :key="item.id" class="border-t border-slate-200 dark:border-slate-800">
                             <td class="px-4 py-3 font-medium">{{ item.domain }}</td>
                             <td class="px-4 py-3">{{ item.root_path }}</td>
                             <td class="px-4 py-3">{{ item.php_version }}</td>
@@ -95,7 +124,7 @@ const deleteRequest = (id) => {
                                 </div>
                             </td>
                         </tr>
-                        <tr v-if="websiteRequests.length === 0">
+                        <tr v-if="filteredWebsites.length === 0">
                             <td colspan="7" class="px-4 py-6 text-center text-slate-500">No website requests generated yet.</td>
                         </tr>
                     </tbody>

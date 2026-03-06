@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -23,6 +24,8 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'reseller_id',
+        'package_id',
     ];
 
     /**
@@ -48,11 +51,19 @@ class User extends Authenticatable
         ];
     }
 
-    /**
-     * User subscriptions.
-     */
-    public function subscriptions(): HasMany
+    public function reseller(): BelongsTo
     {
-        return $this->hasMany(Subscription::class);
+        return $this->belongsTo(User::class, 'reseller_id');
     }
+
+    public function managedUsers(): HasMany
+    {
+        return $this->hasMany(User::class, 'reseller_id');
+    }
+
+    public function package(): BelongsTo
+    {
+        return $this->belongsTo(Package::class);
+    }
+
 }

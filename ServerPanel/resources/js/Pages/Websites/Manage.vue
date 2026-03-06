@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
 
@@ -28,6 +28,7 @@ const formatDate = (value) => {
 };
 
 const serviceLinks = computed(() => [
+    { label: 'Redis Cache', href: route('websites.redis-cache.index', props.website.id), description: 'Per-website cache isolation' },
     { label: 'File Manager', href: route('websites.filemanager', props.website.id), description: 'Browse and edit files' },
     { label: 'Cron Jobs', href: route('websites.cronjobs.index', props.website.id), description: 'Setup scheduled tasks' },
     { label: 'Email Accounts', href: route('emails.list'), description: 'Manage mailbox services' },
@@ -37,6 +38,41 @@ const serviceLinks = computed(() => [
     { label: 'Security', href: route('security.manager'), description: 'Firewall and SSH settings' },
     { label: 'Terminal', href: route('terminal.index'), description: 'Run server commands' },
 ]);
+
+const browseTarget = ref(
+    props.website.domain ? `${props.website.enable_ssl ? 'https' : 'http'}://${props.website.domain}` : '',
+);
+
+const browseUrl = computed(() => {
+    const value = (browseTarget.value ?? '').trim();
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    return `http://${value}`;
+});
+
+const currentBaseUrl = computed(() => {
+    if (typeof window === 'undefined') return '';
+    const { origin, pathname } = window.location;
+    const publicIndex = pathname.toLowerCase().indexOf('/public');
+    const basePath = publicIndex >= 0 ? pathname.slice(0, publicIndex + 7) : '';
+
+    return `${origin}${basePath}`;
+});
+
+const managementPreviewUrl = computed(() => {
+    const base = currentBaseUrl.value;
+    if (!base || !props.website?.id) return '';
+
+    return `${base}/websites/${props.website.id}/preview`;
+});
+
+const liveSiteUrl = computed(() => {
+    const domain = String(props.website?.domain || '').trim();
+    if (!domain) return '';
+    const scheme = props.website?.enable_ssl ? 'https' : 'http';
+
+    return `${scheme}://${domain}`;
+});
 </script>
 
 <template>
@@ -55,10 +91,57 @@ const serviceLinks = computed(() => [
                 <Link :href="route('websites.filemanager', website.id)" class="rounded-md border border-emerald-300 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400">
                     Open File Manager
                 </Link>
+                <Link :href="route('websites.redis-cache.index', website.id)" class="rounded-md border border-amber-300 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400">
+                    Redis Cache
+                </Link>
                 <Link :href="route('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                     Back to Website List
                 </Link>
             </div>
+
+
+            <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Preview and Live URLs</h2>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Use preview URL for panel preview routing and live URL for the real site.</p>
+                    </div>
+                </div>
+                <div class="mt-3 grid gap-3">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                            :value="managementPreviewUrl"
+                            type="text"
+                            readonly
+                            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                        />
+                        <a
+                            v-if="managementPreviewUrl"
+                            :href="managementPreviewUrl"
+                            class="inline-flex shrink-0 rounded-md border border-indigo-300 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300"
+                        >
+                            Open Preview URL
+                        </a>
+                    </div>
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                            :value="liveSiteUrl"
+                            type="text"
+                            readonly
+                            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                        />
+                        <a
+                            v-if="liveSiteUrl"
+                            :href="liveSiteUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex shrink-0 rounded-md border border-emerald-300 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300"
+                        >
+                            Open Live URL
+                        </a>
+                    </div>
+                </div>
+            </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Services</h2>
@@ -145,9 +228,9 @@ const serviceLinks = computed(() => [
                         <p class="text-xs text-slate-500 dark:text-slate-400">{{ item.label }}</p>
                         <p class="text-sm break-all">
                             {{
-                                item.label === 'Status'
-                                    ? item.value
-                                    : formatDate(item.value)
+                                item.label === 'Request Created' || item.label === 'Request Updated' || item.label === 'Last File Change'
+                                    ? formatDate(item.value)
+                                    : (item.value || '-')
                             }}
                         </p>
                     </div>

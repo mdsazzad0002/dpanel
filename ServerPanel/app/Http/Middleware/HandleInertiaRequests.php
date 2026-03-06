@@ -30,14 +30,6 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $user = $request->user();
-        $activeSubscription = $user?->subscriptions()
-            ->with('package')
-            ->where('status', 'active')
-            ->where(function ($query) {
-                $query->whereNull('ends_at')->orWhere('ends_at', '>=', now());
-            })
-            ->latest('started_at')
-            ->first();
 
         return [
             ...parent::share($request),
@@ -50,8 +42,6 @@ class HandleInertiaRequests extends Middleware
                 'user' => $user,
                 'roles' => $user?->getRoleNames() ?? [],
                 'permissions' => $user?->getPermissionNames() ?? [],
-                'active_subscription' => $activeSubscription,
-                'subscription_quotas' => $activeSubscription?->quotas(),
             ],
         ];
     }

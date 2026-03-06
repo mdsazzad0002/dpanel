@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Server Base Directory
+    |--------------------------------------------------------------------------
+    |
+    | Base directory used for website root-path generation and terminal cwd
+    | fallback. If empty, it is auto-detected by OS (/home on Linux, project
+    | parent directory on Windows).
+    |
+    */
+
+    'server_base_dir' => env('SERVER_BASE_DIR', ''),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

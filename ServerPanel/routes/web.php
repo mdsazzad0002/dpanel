@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\ApacheController;
+use App\Http\Controllers\BackupController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\CronJobController;
 use App\Http\Controllers\DnsController;
@@ -8,9 +11,13 @@ use App\Http\Controllers\EmailController;
 use App\Http\Controllers\PackageController;
 use App\Http\Controllers\PhpManagementController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\ResellerController;
+use App\Http\Controllers\RoleManagementController;
+use App\Http\Controllers\MonitoringController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\TerminalController;
+use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\UserPanelController;
 use App\Http\Controllers\WebsiteController;
 use Illuminate\Foundation\Application;
@@ -20,254 +27,320 @@ use Inertia\Inertia;
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
     ]);
 });
 
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])
+    ->middleware(['auth', 'verified'])
+    ->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/websites/create', [WebsiteController::class, 'create'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.create');
     Route::post('/websites', [WebsiteController::class, 'store'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.store');
     Route::get('/websites/{id}/edit', [WebsiteController::class, 'edit'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.edit');
     Route::patch('/websites/{id}', [WebsiteController::class, 'update'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.update');
     Route::delete('/websites/{id}', [WebsiteController::class, 'destroy'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.destroy');
     Route::get('/websites/{id}/manage', [WebsiteController::class, 'manage'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.manage');
+    Route::get('/websites/{id}/preview/{path?}', [WebsiteController::class, 'preview'])
+        ->middleware('role:admin|reseller')
+        ->where('path', '.*')
+        ->name('websites.preview');
+    Route::get('/websites/{id}/redis-cache', [RedisCacheController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.redis-cache.index');
+    Route::post('/websites/{id}/redis-cache/clear', [RedisCacheController::class, 'clearWebsiteCache'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.redis-cache.clear');
     Route::get('/websites/{id}/filemanager', [WebsiteController::class, 'fileManager'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager');
     Route::get('/websites/{id}/cron-jobs', [CronJobController::class, 'index'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.cronjobs.index');
     Route::post('/websites/{id}/cron-jobs', [CronJobController::class, 'store'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.cronjobs.store');
     Route::patch('/websites/{id}/cron-jobs/{jobId}', [CronJobController::class, 'update'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.cronjobs.update');
     Route::delete('/websites/{id}/cron-jobs/{jobId}', [CronJobController::class, 'destroy'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.cronjobs.destroy');
     Route::post('/websites/{id}/filemanager/folder', [WebsiteController::class, 'createFolder'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager.folder.store');
     Route::post('/websites/{id}/filemanager/file', [WebsiteController::class, 'createFile'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager.file.store');
     Route::patch('/websites/{id}/filemanager/file', [WebsiteController::class, 'saveFile'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager.file.save');
     Route::post('/websites/{id}/filemanager/upload', [WebsiteController::class, 'uploadFile'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager.upload');
     Route::patch('/websites/{id}/filemanager/permissions', [WebsiteController::class, 'changePermissions'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager.permissions');
     Route::patch('/websites/{id}/filemanager/rename', [WebsiteController::class, 'renameItem'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager.item.rename');
     Route::get('/websites/{id}/filemanager/download', [WebsiteController::class, 'downloadFile'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager.file.download');
     Route::post('/websites/{id}/filemanager/zip', [WebsiteController::class, 'zipSelected'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager.zip');
     Route::post('/websites/{id}/filemanager/unzip', [WebsiteController::class, 'unzipItem'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager.unzip');
     Route::delete('/websites/{id}/filemanager/item', [WebsiteController::class, 'deleteItem'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.filemanager.item.delete');
     Route::get('/websites/list', [WebsiteController::class, 'index'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('websites.list');
 
     Route::get('/emails/create', [EmailController::class, 'create'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('emails.create');
     Route::post('/emails', [EmailController::class, 'store'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('emails.store');
     Route::get('/emails/{id}/edit', [EmailController::class, 'edit'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('emails.edit');
     Route::patch('/emails/{id}', [EmailController::class, 'update'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('emails.update');
     Route::delete('/emails/{id}', [EmailController::class, 'destroy'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('emails.destroy');
     Route::get('/emails/{id}/login', [EmailController::class, 'login'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('emails.login');
     Route::get('/emails/list', [EmailController::class, 'index'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('emails.list');
 
     Route::get('/terminal', [TerminalController::class, 'index'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('terminal.index');
     Route::post('/terminal/execute', [TerminalController::class, 'execute'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('terminal.execute');
+    Route::get('/apache', [ApacheController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('apache.index');
+    Route::post('/apache/action', [ApacheController::class, 'runAction'])
+        ->middleware('role:admin|reseller')
+        ->name('apache.action');
+    Route::post('/apache/sync-shared-websites', [ApacheController::class, 'syncSharedWebsites'])
+        ->middleware('role:admin|reseller')
+        ->name('apache.sync-shared-websites');
+    Route::get('/backups', [BackupController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('backups.index');
+    Route::post('/backups/run', [BackupController::class, 'runNow'])
+        ->middleware('role:admin|reseller')
+        ->name('backups.run');
+    Route::patch('/backups/settings', [BackupController::class, 'updateSettings'])
+        ->middleware('role:admin|reseller')
+        ->name('backups.settings.update');
+    Route::get('/backups/{run}/{file}', [BackupController::class, 'download'])
+        ->middleware('role:admin|reseller')
+        ->where('run', '[0-9]{8}_[0-9]{6}')
+        ->where('file', '[^/]+')
+        ->name('backups.download');
+    Route::delete('/backups/{run}', [BackupController::class, 'destroyRun'])
+        ->middleware('role:admin|reseller')
+        ->where('run', '[0-9]{8}_[0-9]{6}')
+        ->name('backups.destroy');
+    Route::get('/monitoring', [MonitoringController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('monitoring.index');
 
     Route::get('/databases/create', [DatabaseController::class, 'create'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('databases.create');
     Route::post('/databases', [DatabaseController::class, 'store'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('databases.store');
     Route::get('/databases/{id}/edit', [DatabaseController::class, 'edit'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('databases.edit');
     Route::get('/databases/{id}/phpmyadmin', [DatabaseController::class, 'openPhpMyAdmin'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('databases.phpmyadmin');
     Route::patch('/databases/{id}', [DatabaseController::class, 'update'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('databases.update');
     Route::delete('/databases/{id}', [DatabaseController::class, 'destroy'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('databases.destroy');
     Route::get('/databases/list', [DatabaseController::class, 'index'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('databases.list');
 
     Route::get('/dns/nameservers', [DnsController::class, 'nameservers'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.nameservers');
     Route::post('/dns/nameservers', [DnsController::class, 'storeNameserver'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.nameservers.store');
     Route::patch('/dns/nameservers/{id}', [DnsController::class, 'updateNameserver'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.nameservers.update');
     Route::delete('/dns/nameservers/{id}', [DnsController::class, 'destroyNameserver'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.nameservers.destroy');
 
     Route::get('/dns/zones', [DnsController::class, 'zones'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.zones');
     Route::post('/dns/zones', [DnsController::class, 'storeZone'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.zones.store');
     Route::patch('/dns/zones/{id}', [DnsController::class, 'updateZone'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.zones.update');
     Route::delete('/dns/zones/{id}', [DnsController::class, 'destroyZone'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.zones.destroy');
+    Route::post('/dns/cloudflare/sync', [DnsController::class, 'syncCloudflare'])
+        ->middleware('role:admin|reseller')
+        ->name('dns.cloudflare.sync');
 
     Route::get('/dns/records', [DnsController::class, 'records'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.records');
     Route::post('/dns/records', [DnsController::class, 'storeRecord'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.records.store');
     Route::patch('/dns/records/{id}', [DnsController::class, 'updateRecord'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.records.update');
     Route::delete('/dns/records/{id}', [DnsController::class, 'destroyRecord'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('dns.records.destroy');
 
     Route::get('/php/versions', [PhpManagementController::class, 'versions'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('php.versions');
     Route::get('/php/manager', [PhpManagementController::class, 'manager'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('php.manager');
     Route::patch('/php/versions', [PhpManagementController::class, 'updateVersions'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('php.versions.update');
     Route::get('/php/versions/check-installed', [PhpManagementController::class, 'checkInstalledVersions'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('php.versions.check-installed');
     Route::post('/php/versions/refresh', [PhpManagementController::class, 'refreshVersionsFromServer'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('php.versions.refresh');
 
     Route::get('/php/extensions', function () {
         return redirect()->route('php.manager', ['version' => request('version')]);
-    })->middleware('role:super_admin|reseller')->name('php.extensions');
+    })->middleware('role:admin|reseller')->name('php.extensions');
     Route::patch('/php/extensions', [PhpManagementController::class, 'updateExtensions'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('php.extensions.update');
     Route::post('/php/extensions/sync', [PhpManagementController::class, 'syncExtensionsFromServer'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('php.extensions.sync');
 
     Route::get('/php/config', function () {
         return redirect()->route('php.manager', ['version' => request('version')]);
-    })->middleware('role:super_admin|reseller')->name('php.config');
+    })->middleware('role:admin|reseller')->name('php.config');
     Route::patch('/php/config', [PhpManagementController::class, 'updateConfig'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('php.config.update');
 
     Route::redirect('/php/settings', '/php/config')
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('php.settings');
 
     Route::get('/security', [SecurityController::class, 'manager'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('security.manager');
     Route::post('/security/sync', [SecurityController::class, 'syncFromServer'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('security.sync');
     Route::patch('/security/firewall', [SecurityController::class, 'updateFirewall'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('security.firewall.update');
     Route::patch('/security/ssh', [SecurityController::class, 'updateSsh'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('security.ssh.update');
 
     Route::get('/packages/create', [PackageController::class, 'create'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('packages.create');
     Route::post('/packages', [PackageController::class, 'store'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('packages.store');
     Route::get('/packages/{package}/edit', [PackageController::class, 'edit'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('packages.edit');
     Route::patch('/packages/{package}', [PackageController::class, 'update'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('packages.update');
     Route::delete('/packages/{package}', [PackageController::class, 'destroy'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('packages.destroy');
     Route::get('/packages/list', [PackageController::class, 'index'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('packages.list');
 
     Route::get('/admin', [AdminController::class, 'index'])
-        ->middleware('role:super_admin')
+        ->middleware('role:admin')
         ->name('admin.panel');
 
     Route::get('/reseller', [ResellerController::class, 'index'])
-        ->middleware('role:super_admin|reseller')
+        ->middleware('role:admin|reseller')
         ->name('reseller.panel');
 
     Route::get('/user-panel', [UserPanelController::class, 'show'])
-        ->middleware('role:super_admin|reseller|general_user')
+        ->middleware('role:admin|reseller|general_user')
         ->name('user.panel');
+    Route::get('/users/manage', [UserManagementController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('users.manage');
+    Route::post('/users/manage', [UserManagementController::class, 'store'])
+        ->middleware('role:admin|reseller')
+        ->name('users.manage.store');
+    Route::get('/roles/manage', [RoleManagementController::class, 'index'])
+        ->middleware('role:admin')
+        ->name('roles.manage');
+    Route::get('/roles/create', [RoleManagementController::class, 'create'])
+        ->middleware('role:admin')
+        ->name('roles.create');
+    Route::get('/roles/manage/{role}/edit', [RoleManagementController::class, 'edit'])
+        ->middleware('role:admin')
+        ->name('roles.manage.edit');
+    Route::post('/roles/manage', [RoleManagementController::class, 'store'])
+        ->middleware('role:admin')
+        ->name('roles.manage.store');
+    Route::patch('/roles/manage/{role}', [RoleManagementController::class, 'update'])
+        ->middleware('role:admin')
+        ->name('roles.manage.update');
+    Route::delete('/roles/manage/{role}', [RoleManagementController::class, 'destroy'])
+        ->middleware('role:admin')
+        ->name('roles.manage.destroy');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -275,3 +348,5 @@ Route::middleware('auth')->group(function () {
 });
 
 require __DIR__.'/auth.php';
+
+

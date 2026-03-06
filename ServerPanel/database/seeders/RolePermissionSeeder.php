@@ -30,19 +30,20 @@ class RolePermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $permission]);
         }
 
-        $superAdmin = Role::firstOrCreate(['name' => 'super_admin']);
-        $reseller = Role::firstOrCreate(['name' => 'reseller']);
-        $generalUser = Role::firstOrCreate(['name' => 'general_user']);
+        // Keep admin as the only default role.
+        Role::query()
+            ->where('name', '!=', 'admin')
+            ->get()
+            ->each(function (Role $role): void {
+                $role->users()->detach();
+                $role->permissions()->detach();
+                $role->delete();
+            });
 
-        $superAdmin->syncPermissions($permissions);
-        $reseller->syncPermissions([
-            'view_dashboard',
-            'manage_websites',
-            'manage_email',
-            'manage_subscriptions',
-        ]);
-        $generalUser->syncPermissions([
-            'view_dashboard',
-        ]);
+        $allPermissions = Permission::query()->pluck('name')->values()->all();
+
+        $admin = Role::firstOrCreate(['name' => 'admin']);
+
+        $admin->syncPermissions($allPermissions);
     }
 }

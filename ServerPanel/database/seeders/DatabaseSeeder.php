@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\Package;
-use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -34,7 +33,7 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        $resellerPro = Package::updateOrCreate(
+        Package::updateOrCreate(
             ['slug' => 'reseller-pro'],
             [
                 'name' => 'Reseller Pro',
@@ -49,58 +48,13 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        $superAdmin = User::firstOrCreate([
+        $admin = User::firstOrCreate([
             'name' => 'Test User',
             'email' => 'test@example.com',
         ], [
             'password' => bcrypt('password'),
+            'package_id' => $starter->id,
         ]);
-        $superAdmin->syncRoles(['super_admin']);
-
-        $reseller = User::firstOrCreate([
-            'name' => 'Reseller User',
-            'email' => 'reseller@example.com',
-        ], [
-            'password' => bcrypt('password'),
-        ]);
-        $reseller->syncRoles(['reseller']);
-
-        $generalUser = User::firstOrCreate([
-            'name' => 'General User',
-            'email' => 'user@example.com',
-        ], [
-            'password' => bcrypt('password'),
-        ]);
-        $generalUser->syncRoles(['general_user']);
-
-        Subscription::updateOrCreate(
-            ['user_id' => $reseller->id, 'plan_name' => 'Reseller Pro'],
-            [
-                'package_id' => $resellerPro->id,
-                'status' => 'active',
-                'price' => $resellerPro->price,
-                'started_at' => now(),
-                'ends_at' => now()->addDays($resellerPro->duration_days),
-                'used_mail_accounts' => 32,
-                'used_disk_space_mb' => 12000,
-                'used_databases' => 18,
-                'used_files' => 72100,
-            ],
-        );
-
-        Subscription::updateOrCreate(
-            ['user_id' => $generalUser->id, 'plan_name' => 'Starter'],
-            [
-                'package_id' => $starter->id,
-                'status' => 'active',
-                'price' => $starter->price,
-                'started_at' => now(),
-                'ends_at' => now()->addDays($starter->duration_days),
-                'used_mail_accounts' => 3,
-                'used_disk_space_mb' => 1200,
-                'used_databases' => 2,
-                'used_files' => 2560,
-            ],
-        );
+        $admin->syncRoles(['admin']);
     }
 }

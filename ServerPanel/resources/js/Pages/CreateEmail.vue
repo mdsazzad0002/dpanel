@@ -22,6 +22,16 @@ const submit = () => {
     form.post(route('emails.store'));
 };
 
+const generatePassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+    const length = 16;
+    const bytes = window.crypto?.getRandomValues
+        ? window.crypto.getRandomValues(new Uint32Array(length))
+        : Array.from({ length }, () => Math.floor(Math.random() * 100000));
+
+    form.password = Array.from(bytes, (n) => chars[n % chars.length]).join('');
+};
+
 watch(
     () => form.domain,
     (domain) => {
@@ -66,7 +76,16 @@ watch(
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Password</label>
-                    <input v-model="form.password" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <div class="flex gap-2">
+                        <input v-model="form.password" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <button
+                            type="button"
+                            class="rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                            @click="generatePassword"
+                        >
+                            Auto Generate
+                        </button>
+                    </div>
                     <p v-if="form.errors.password" class="mt-1 text-xs text-red-600">{{ form.errors.password }}</p>
                 </div>
                 <div>

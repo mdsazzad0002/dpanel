@@ -30,7 +30,7 @@ const formatDate = (value) => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Reseller Panel</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Manage customer subscriptions and websites.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Manage customer websites, databases and requests.</p>
             </div>
         </template>
 
@@ -49,9 +49,9 @@ const formatDate = (value) => {
                 </article>
 
                 <article class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Active Subscriptions</p>
-                    <p class="mt-2 text-2xl font-semibold">{{ stats.active_subscriptions }}</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Active Packages: {{ stats.active_packages }}</p>
+                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Active Packages</p>
+                    <p class="mt-2 text-2xl font-semibold">{{ stats.active_packages }}</p>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">System packages available</p>
                 </article>
             </section>
 

@@ -3,16 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Package;
-use App\Models\Subscription;
 use App\Models\User;
-use Illuminate\Support\Facades\Storage;
+use App\Models\Website;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class AdminController extends Controller
 {
-    private const WEBSITE_REQUESTS_FILE = 'website-requests.json';
-
     /**
      * Show admin dashboard with core stats.
      */
@@ -20,18 +18,12 @@ class AdminController extends Controller
     {
         $stats = [
             'users_total' => User::count(),
-            'users_super_admin' => User::role('super_admin')->count(),
+            'users_super_admin' => 0,
+            'users_admin' => User::role('admin')->count(),
             'users_reseller' => User::role('reseller')->count(),
             'users_general' => User::role('general_user')->count(),
             'packages_total' => Package::count(),
             'packages_active' => Package::where('is_active', true)->count(),
-            'subscriptions_total' => Subscription::count(),
-            'subscriptions_active' => Subscription::query()
-                ->where('status', 'active')
-                ->where(function ($query) {
-                    $query->whereNull('ends_at')->orWhere('ends_at', '>=', now());
-                })
-                ->count(),
             'website_requests_pending' => $this->countPendingWebsiteRequests(),
         ];
 
@@ -58,18 +50,15 @@ class AdminController extends Controller
      */
     private function countPendingWebsiteRequests(): int
     {
-        if (! Storage::exists(self::WEBSITE_REQUESTS_FILE)) {
+        try {
+            if (! DB::getSchemaBuilder()->hasTable('websites')) {
+                return 0;
+            }
+
+            return (int) Website::query()->where('status', 'pending')->count();
+        } catch (\Throwable $e) {
             return 0;
         }
-
-        $decoded = json_decode((string) Storage::get(self::WEBSITE_REQUESTS_FILE), true);
-        if (! is_array($decoded)) {
-            return 0;
-        }
-
-        return collect($decoded)
-            ->where('status', 'pending')
-            ->count();
     }
 }
 

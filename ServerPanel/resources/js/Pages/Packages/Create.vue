@@ -27,7 +27,7 @@ const submit = () => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Create Package</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Create a new subscription package with quota limits.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Create a new package with resource limits.</p>
             </div>
         </template>
 

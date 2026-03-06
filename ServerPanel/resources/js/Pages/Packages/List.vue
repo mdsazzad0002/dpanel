@@ -13,7 +13,6 @@ defineProps({
 });
 
 const deletePackage = (pkg) => {
-    if (pkg.subscriptions_count > 0) return;
     if (!confirm(`Delete package "${pkg.name}"?`)) return;
 
     deleteForm.delete(route('packages.destroy', pkg.id));
@@ -56,7 +55,6 @@ const deletePackage = (pkg) => {
                             <th class="px-4 py-3">Disk MB</th>
                             <th class="px-4 py-3">DB</th>
                             <th class="px-4 py-3">Files</th>
-                            <th class="px-4 py-3">Assigned</th>
                             <th class="px-4 py-3">Status</th>
                             <th class="px-4 py-3">Actions</th>
                         </tr>
@@ -73,7 +71,6 @@ const deletePackage = (pkg) => {
                             <td class="px-4 py-3">{{ pkg.disk_space_mb_limit ?? 'Unlimited' }}</td>
                             <td class="px-4 py-3">{{ pkg.databases_limit ?? 'Unlimited' }}</td>
                             <td class="px-4 py-3">{{ pkg.files_limit ?? 'Unlimited' }}</td>
-                            <td class="px-4 py-3">{{ pkg.subscriptions_count }}</td>
                             <td class="px-4 py-3">
                                 <span :class="pkg.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'" class="rounded-full px-2 py-1 text-xs">
                                     {{ pkg.is_active ? 'Active' : 'Inactive' }}
@@ -85,8 +82,8 @@ const deletePackage = (pkg) => {
                                         Edit
                                     </Link>
                                     <button
-                                        :disabled="pkg.subscriptions_count > 0 || deleteForm.processing"
-                                        :title="pkg.subscriptions_count > 0 ? 'Cannot delete: package is assigned to users' : 'Delete package'"
+                                        :disabled="deleteForm.processing"
+                                        title="Delete package"
                                         class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-700 dark:text-red-400"
                                         @click="deletePackage(pkg)"
                                     >
@@ -96,7 +93,7 @@ const deletePackage = (pkg) => {
                             </td>
                         </tr>
                         <tr v-if="packages.length === 0">
-                            <td colspan="10" class="px-4 py-6 text-center text-slate-500">No packages found.</td>
+                            <td colspan="9" class="px-4 py-6 text-center text-slate-500">No packages found.</td>
                         </tr>
                     </tbody>
                 </table>

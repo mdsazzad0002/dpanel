@@ -34,7 +34,7 @@ const submit = () => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Edit Package</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Update package details and quota limits.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Update package details and resource limits.</p>
             </div>
         </template>
 

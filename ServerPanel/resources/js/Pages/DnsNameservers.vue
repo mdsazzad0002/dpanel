@@ -60,7 +60,7 @@ const deleteItem = (id) => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">DNS Nameservers</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Manage nameserver records for hosted domains.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">PowerDNS nameserver manager. Active entries sync NS, A and AAAA records to the selected zone.</p>
             </div>
         </template>
 
@@ -70,6 +70,9 @@ const deleteItem = (id) => {
             </div>
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {{ page.props.flash.error }}
+            </div>
+            <div class="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+                Zone must exist first in DNS Zones. Disabled nameservers are kept for reference and not published to PowerDNS.
             </div>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-3 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
@@ -120,6 +123,7 @@ const deleteItem = (id) => {
                             <th class="px-4 py-3">Domain</th>
                             <th class="px-4 py-3">Hostname</th>
                             <th class="px-4 py-3">IPv4</th>
+                            <th class="px-4 py-3">IPv6</th>
                             <th class="px-4 py-3">TTL</th>
                             <th class="px-4 py-3">Status</th>
                             <th class="px-4 py-3">Actions</th>
@@ -130,6 +134,7 @@ const deleteItem = (id) => {
                             <td class="px-4 py-3">{{ item.domain }}</td>
                             <td class="px-4 py-3">{{ item.hostname }}</td>
                             <td class="px-4 py-3">{{ item.ipv4 || '-' }}</td>
+                            <td class="px-4 py-3">{{ item.ipv6 || '-' }}</td>
                             <td class="px-4 py-3">{{ item.ttl }}</td>
                             <td class="px-4 py-3">{{ item.status }}</td>
                             <td class="px-4 py-3">

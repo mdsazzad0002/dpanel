@@ -2,22 +2,27 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DatabaseRequest as DatabaseRequestModel;
+use App\Models\Website;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class DatabaseController extends Controller
 {
-    private const STORAGE_FILE = 'database-requests.json';
-    private const WEBSITE_STORAGE_FILE = 'website-requests.json';
+    private const LEGACY_MIGRATION_FLAG_FILE = 'database-requests.migrated';
 
     /**
      * Show database create form.
      */
     public function create(): Response
     {
+        $this->migrateLegacyJsonRequests();
+
         return Inertia::render('Databases/Create', [
             'websiteDomains' => $this->readWebsiteDomains(),
         ]);
@@ -28,8 +33,12 @@ class DatabaseController extends Controller
      */
     public function index(): Response
     {
-        $requests = collect($this->readRequests())
-            ->sortByDesc('created_at')
+        $this->migrateLegacyJsonRequests();
+
+        $requests = DatabaseRequestModel::query()
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn (DatabaseRequestModel $request): array => $this->databaseRequestToArray($request))
             ->values()
             ->all();
 
@@ -43,6 +52,8 @@ class DatabaseController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        $this->migrateLegacyJsonRequests();
+
         $validated = $this->validatePayload($request);
         $command = $this->buildCommand($validated);
 
@@ -51,8 +62,7 @@ class DatabaseController extends Controller
         // $exitCode = 0;
         // exec($command . ' 2>&1', $output, $exitCode);
 
-        $requests = $this->readRequests();
-        $requests[] = [
+        DatabaseRequestModel::query()->create([
             'id' => (string) str()->uuid(),
             'domain' => $validated['domain'],
             'database_name' => $validated['database_name'],
@@ -63,10 +73,7 @@ class DatabaseController extends Controller
             'collation' => $validated['collation'],
             'command' => $command,
             'status' => 'pending',
-            'created_at' => now()->toIso8601String(),
-        ];
-
-        $this->writeRequests($requests);
+        ]);
 
         return redirect()->route('databases.list')->with('success', 'Database request created. Command execution is currently disabled in controller.');
     }
@@ -76,11 +83,13 @@ class DatabaseController extends Controller
      */
     public function edit(string $id): Response
     {
-        $requestItem = collect($this->readRequests())->firstWhere('id', $id);
+        $this->migrateLegacyJsonRequests();
+
+        $requestItem = DatabaseRequestModel::query()->find($id);
         abort_if($requestItem === null, 404);
 
         return Inertia::render('Databases/Edit', [
-            'databaseRequest' => $requestItem,
+            'databaseRequest' => $this->databaseRequestToArray($requestItem),
             'websiteDomains' => $this->readWebsiteDomains(),
         ]);
     }
@@ -90,27 +99,26 @@ class DatabaseController extends Controller
      */
     public function update(Request $request, string $id): RedirectResponse
     {
+        $this->migrateLegacyJsonRequests();
+
         $validated = $this->validatePayload($request);
 
-        $requests = collect($this->readRequests())->map(function (array $item) use ($id, $validated) {
-            if (($item['id'] ?? null) !== $id) {
-                return $item;
-            }
+        $requestItem = DatabaseRequestModel::query()->find($id);
+        if (! $requestItem) {
+            return redirect()->route('databases.list')->with('error', 'Database request not found.');
+        }
 
-            $item['database_name'] = $validated['database_name'];
-            $item['database_user'] = $validated['database_user'];
-            $item['database_password'] = $validated['database_password'];
-            $item['database_host'] = $validated['database_host'];
-            $item['domain'] = $validated['domain'];
-            $item['charset'] = $validated['charset'];
-            $item['collation'] = $validated['collation'];
-            $item['command'] = $this->buildCommand($validated);
-            $item['updated_at'] = now()->toIso8601String();
-
-            return $item;
-        })->values()->all();
-
-        $this->writeRequests($requests);
+        $requestItem->fill([
+            'database_name' => $validated['database_name'],
+            'database_user' => $validated['database_user'],
+            'database_password' => $validated['database_password'],
+            'database_host' => $validated['database_host'],
+            'domain' => $validated['domain'],
+            'charset' => $validated['charset'],
+            'collation' => $validated['collation'],
+            'command' => $this->buildCommand($validated),
+        ]);
+        $requestItem->save();
 
         return redirect()->route('databases.list')->with('success', 'Database request updated successfully.');
     }
@@ -120,15 +128,12 @@ class DatabaseController extends Controller
      */
     public function destroy(string $id): RedirectResponse
     {
-        $requests = collect($this->readRequests());
-        $before = $requests->count();
-        $filtered = $requests->reject(fn (array $item) => ($item['id'] ?? null) === $id)->values();
+        $this->migrateLegacyJsonRequests();
 
-        if ($filtered->count() === $before) {
+        $deleted = DatabaseRequestModel::query()->where('id', $id)->delete();
+        if ($deleted === 0) {
             return redirect()->route('databases.list')->with('error', 'Database request not found.');
         }
-
-        $this->writeRequests($filtered->all());
 
         return redirect()->route('databases.list')->with('success', 'Database request deleted successfully.');
     }
@@ -138,7 +143,9 @@ class DatabaseController extends Controller
      */
     public function openPhpMyAdmin(Request $request, string $id)
     {
-        $requestItem = collect($this->readRequests())->firstWhere('id', $id);
+        $this->migrateLegacyJsonRequests();
+
+        $requestItem = DatabaseRequestModel::query()->find($id);
         abort_if($requestItem === null, 404);
 
         $origin = $request->getSchemeAndHttpHost();
@@ -148,10 +155,10 @@ class DatabaseController extends Controller
         return response()->view('phpmyadmin.autologin', [
             'targetUrl' => $targetUrl,
             'helperUrl' => $helperUrl,
-            'username' => (string) ($requestItem['database_user'] ?? ''),
-            'password' => (string) ($requestItem['database_password'] ?? ''),
-            'database' => (string) ($requestItem['database_name'] ?? ''),
-            'host' => (string) ($requestItem['database_host'] ?? 'localhost'),
+            'username' => (string) ($requestItem->database_user ?? ''),
+            'password' => (string) ($requestItem->database_password ?? ''),
+            'database' => (string) ($requestItem->database_name ?? ''),
+            'host' => (string) ($requestItem->database_host ?? 'localhost'),
         ]);
     }
 
@@ -189,46 +196,127 @@ class DatabaseController extends Controller
     }
 
     /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function readRequests(): array
-    {
-        if (! Storage::exists(self::STORAGE_FILE)) {
-            return [];
-        }
-
-        $decoded = json_decode((string) Storage::get(self::STORAGE_FILE), true);
-
-        return is_array($decoded) ? $decoded : [];
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $requests
-     */
-    private function writeRequests(array $requests): void
-    {
-        Storage::put(self::STORAGE_FILE, json_encode($requests, JSON_PRETTY_PRINT));
-    }
-
-    /**
      * @return array<int, string>
      */
     private function readWebsiteDomains(): array
     {
-        if (! Storage::exists(self::WEBSITE_STORAGE_FILE)) {
+        try {
+            if (! DB::getSchemaBuilder()->hasTable('websites')) {
+                return [];
+            }
+
+            return Website::query()
+                ->pluck('domain')
+                ->filter(fn ($domain) => is_string($domain) && trim((string) $domain) !== '')
+                ->map(fn ($domain) => strtolower(trim((string) $domain)))
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
             return [];
         }
+    }
 
-        $decoded = json_decode((string) Storage::get(self::WEBSITE_STORAGE_FILE), true);
-        if (! is_array($decoded)) {
-            return [];
+    /**
+     * @return array<string, mixed>
+     */
+    private function databaseRequestToArray(DatabaseRequestModel $request): array
+    {
+        return [
+            'id' => (string) $request->id,
+            'domain' => (string) $request->domain,
+            'database_name' => (string) $request->database_name,
+            'database_user' => (string) $request->database_user,
+            'database_password' => (string) $request->database_password,
+            'database_host' => (string) $request->database_host,
+            'charset' => (string) $request->charset,
+            'collation' => (string) $request->collation,
+            'command' => (string) ($request->command ?? ''),
+            'status' => (string) ($request->status ?? 'pending'),
+            'created_at' => optional($request->created_at)->toIso8601String(),
+            'updated_at' => optional($request->updated_at)->toIso8601String(),
+        ];
+    }
+
+    private function migrateLegacyJsonRequests(): void
+    {
+        try {
+            if (! DB::getSchemaBuilder()->hasTable('database_requests')) {
+                return;
+            }
+        } catch (\Throwable $e) {
+            return;
         }
 
-        return collect($decoded)
-            ->pluck('domain')
-            ->filter(fn ($domain) => is_string($domain) && $domain !== '')
-            ->unique()
-            ->values()
-            ->all();
+        if (Storage::exists(self::LEGACY_MIGRATION_FLAG_FILE)) {
+            return;
+        }
+
+        $legacyFiles = ['database-requests.json', 'private/database-requests.json'];
+        $imported = 0;
+
+        foreach ($legacyFiles as $legacyFile) {
+            if (! Storage::exists($legacyFile)) {
+                continue;
+            }
+
+            $decoded = json_decode((string) Storage::get($legacyFile), true);
+            if (! is_array($decoded)) {
+                continue;
+            }
+
+            foreach ($decoded as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $id = trim((string) ($item['id'] ?? ''));
+                $domain = trim((string) ($item['domain'] ?? ''));
+                $databaseName = trim((string) ($item['database_name'] ?? ''));
+                $databaseUser = trim((string) ($item['database_user'] ?? ''));
+
+                if ($domain === '' || $databaseName === '' || $databaseUser === '') {
+                    continue;
+                }
+
+                DatabaseRequestModel::query()->updateOrCreate(
+                    ['id' => $id !== '' ? $id : (string) str()->uuid()],
+                    [
+                        'domain' => strtolower($domain),
+                        'database_name' => $databaseName,
+                        'database_user' => $databaseUser,
+                        'database_password' => (string) ($item['database_password'] ?? ''),
+                        'database_host' => (string) ($item['database_host'] ?? 'localhost'),
+                        'charset' => (string) ($item['charset'] ?? 'utf8mb4'),
+                        'collation' => (string) ($item['collation'] ?? 'utf8mb4_unicode_ci'),
+                        'command' => (string) ($item['command'] ?? ''),
+                        'status' => (string) ($item['status'] ?? 'pending'),
+                        'created_at' => $this->normalizeLegacyDatetime((string) ($item['created_at'] ?? '')),
+                        'updated_at' => $this->normalizeLegacyDatetime((string) ($item['updated_at'] ?? '')),
+                    ],
+                );
+                $imported++;
+            }
+        }
+
+        Storage::put(self::LEGACY_MIGRATION_FLAG_FILE, json_encode([
+            'migrated_at' => now()->toIso8601String(),
+            'rows_imported' => $imported,
+        ], JSON_PRETTY_PRINT));
+    }
+
+    private function normalizeLegacyDatetime(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return now()->toDateTimeString();
+        }
+
+        try {
+            return Carbon::parse($value)->toDateTimeString();
+        } catch (\Throwable $e) {
+            return now()->toDateTimeString();
+        }
     }
 }

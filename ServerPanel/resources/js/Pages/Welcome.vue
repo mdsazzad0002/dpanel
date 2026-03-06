@@ -6,9 +6,6 @@ defineProps({
     canLogin: {
         type: Boolean,
     },
-    canRegister: {
-        type: Boolean,
-    },
     laravelVersion: {
         type: String,
         required: true,
@@ -63,7 +60,7 @@ onMounted(() => {
                         ServerPanel Deployment Documentation
                     </h1>
                     <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                        Separate guides for home overview, SSH setup, server setup, and installer script usage.
+                        Separate guides for home overview, merged server+SSH setup, and installer script usage.
                     </p>
                 </div>
 
@@ -92,14 +89,6 @@ onMounted(() => {
                             >
                                 Log in
                             </Link>
-
-                            <Link
-                                v-if="canRegister"
-                                :href="route('register')"
-                                class="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
-                            >
-                                Register
-                            </Link>
                         </template>
                     </nav>
                 </div>
@@ -119,18 +108,10 @@ onMounted(() => {
                         <button
                             type="button"
                             class="rounded-md px-4 py-2 text-sm font-medium transition"
-                            :class="tabClasses('ssh')"
-                            @click="activeTab = 'ssh'"
-                        >
-                            SSH Setup
-                        </button>
-                        <button
-                            type="button"
-                            class="rounded-md px-4 py-2 text-sm font-medium transition"
                             :class="tabClasses('server')"
                             @click="activeTab = 'server'"
                         >
-                            Server Setup
+                            Server + SSH Setup
                         </button>
                         <button
                             type="button"
@@ -153,15 +134,9 @@ onMounted(() => {
                         </p>
                         <div class="mt-4 grid gap-4 md:grid-cols-3">
                             <div class="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-                                <p class="font-semibold text-slate-900 dark:text-white">SSH Setup</p>
+                                <p class="font-semibold text-slate-900 dark:text-white">Server + SSH Setup</p>
                                 <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                                    Install OpenSSH, open firewall, and connect safely.
-                                </p>
-                            </div>
-                            <div class="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-                                <p class="font-semibold text-slate-900 dark:text-white">Server Setup</p>
-                                <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                                    Manual package installation and Laravel deployment steps.
+                                    OpenSSH install, firewall, server packages, and Laravel deployment steps.
                                 </p>
                             </div>
                             <div class="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
@@ -174,7 +149,13 @@ onMounted(() => {
                     </section>
                 </div>
 
-                <div v-if="activeTab === 'ssh'" class="space-y-6">
+                <div v-if="activeTab === 'server'" class="space-y-6">
+                    <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">SSH Setup Guide</h2>
+                        <p class="mt-2 text-sm text-slate-700 dark:text-slate-300">
+                            Start from SSH setup first, then continue with server setup steps below.
+                        </p>
+                    </section>
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">1. Introduction</h2>
                         <p class="mt-2 text-sm text-slate-700 dark:text-slate-300">
@@ -251,9 +232,13 @@ Port 2222
 sudo ufw allow 2222/tcp
 sudo systemctl restart ssh</code></pre>
                     </section>
-                </div>
 
-                <div v-if="activeTab === 'server'" class="space-y-6">
+                    <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Server Setup Guide</h2>
+                        <p class="mt-2 text-sm text-slate-700 dark:text-slate-300">
+                            After SSH is ready, continue with package install and panel deployment.
+                        </p>
+                    </section>
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">1. Connect to Ubuntu Server</h2>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>ssh-keygen -t ed25519 -C "your_email@example.com"
@@ -313,46 +298,76 @@ sudo systemctl restart php8.3-fpm</code></pre>
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Installer Setup Guide</h2>
                         <p class="mt-2 text-sm text-slate-700 dark:text-slate-300">
-                            This guide uses the CyberPanel-style script at `/a_final_storing/ServerInstaller/installer.sh`.
+                            Use installer files from the root directory of this repository.
                         </p>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">1. Download Script</h2>
-                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>curl -fsSL "http://192.168.0.50/a_final_storing/ServerInstaller/installer.sh" -o installer.sh
-chmod +x installer.sh
-sudo bash installer.sh --base-url "http://192.168.0.50/a_final_storing/ServerInstaller/" --remote-project-dir "/root/ServerPanel" --web-server both --php-versions "7.4,8.0,8.2,8.3,8.4,8.5" --php-default 8.2 --panel-port 8090
-</code></pre>
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">1. Root Directory Check</h2>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>cd /path/to/ServerInstaller
+ls -la
+
+# Required files in root:
+# installer.sh
+# install-macos.sh
+# install.ps1</code></pre>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">2. Make Executable and Run</h2>
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">2. Linux Installer</h2>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>chmod +x installer.sh
+sudo bash installer.sh --project-dir "/root/ServerPanel" --web-server both --php-versions "7.4,8.0,8.2,8.3,8.4,8.5" --php-default 8.2 --panel-port 8090</code></pre>
+                    </section>
+
+                    <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">3. macOS Installer</h2>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>chmod +x install-macos.sh
+./install-macos.sh</code></pre>
+                    </section>
+
+                    <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">4. Windows Installer</h2>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>powershell -ExecutionPolicy Bypass -File .\install.ps1</code></pre>
+                    </section>
+
+                    <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">5. Single-File SSH Tool (Linux/Windows Bash)</h2>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>curl -fsSL "http://YOUR_SERVER/ServerInstaller/scripts/ssh-tool.sh" -o ssh-tool.sh
+chmod +x ssh-tool.sh
+sh ssh-tool.sh</code></pre>
+                        <p class="mt-3 text-sm text-slate-700 dark:text-slate-300">
+                            Single-file interactive utility: SSH test, SCP upload/download with overwrite confirm, remote commands, and service controls.
+                        </p>
+                    </section>
+
+                    <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">6. Optional Linux Installer Examples</h2>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>chmod +x installer.sh
 
-# Recommended (auto-detect archive from base URL)
-sudo bash installer.sh --base-url "http://192.168.0.50/a_final_storing/ServerInstaller/" --remote-project-dir "/root/ServerPanel" --panel-port 8090
+# Recommended baseline
+sudo bash installer.sh --project-dir "/root/ServerPanel" --panel-port 8090
 
 # Apache + multi PHP versions + MySQL + phpMyAdmin
-sudo bash installer.sh --base-url "http://192.168.0.50/a_final_storing/ServerInstaller/" --remote-project-dir "/root/ServerPanel" --web-server apache --php-versions "7.4,8.0,8.2,8.3,8.4,8.5"
+sudo bash installer.sh --project-dir "/root/ServerPanel" --web-server apache --php-versions "7.4,8.0,8.2,8.3,8.4,8.5"
 
 # OpenLiteSpeed + multi LSPHP versions + MySQL + phpMyAdmin
-sudo bash installer.sh --base-url "http://192.168.0.50/a_final_storing/ServerInstaller/" --remote-project-dir "/root/ServerPanel" --web-server openlitespeed --php-versions "7.4,8.0,8.2,8.3,8.4,8.5"
+sudo bash installer.sh --project-dir "/root/ServerPanel" --web-server openlitespeed --php-versions "7.4,8.0,8.2,8.3,8.4,8.5"
 
-# Install BOTH Apache + OpenLiteSpeed with JSON/PDO runtime checks
-sudo bash installer.sh --base-url "http://192.168.0.50/a_final_storing/ServerInstaller/" --remote-project-dir "/root/ServerPanel" --web-server both --php-versions "7.4,8.0,8.2,8.3,8.4,8.5" --php-default 8.2 --panel-port 8090
+# Install BOTH Apache + OpenLiteSpeed
+sudo bash installer.sh --project-dir "/root/ServerPanel" --web-server both --php-versions "7.4,8.0,8.2,8.3,8.4,8.5" --php-default 8.2 --panel-port 8090
 
-# Optional custom database credentials (default is auto-generated random password)
-sudo bash installer.sh --base-url "http://192.168.0.50/a_final_storing/ServerInstaller/" --remote-project-dir "/root/ServerPanel" --db-name "serverinstaller" --db-user "serverpanel" --db-password "StrongPassword123"
+# Optional custom database credentials
+sudo bash installer.sh --project-dir "/root/ServerPanel" --db-name "serverinstaller" --db-user "serverpanel" --db-password "StrongPassword123"
 
 # Direct archive URL
-sudo bash installer.sh --project-url "http://192.168.0.50/a_final_storing/ServerInstaller/ServerInstaller.zip" --project-target "/root/ServerPanel"
+sudo bash installer.sh --project-url "http://YOUR_SERVER/ServerInstaller/ServerInstaller.zip" --project-target "/root/ServerPanel"
 
 # Existing local project path
 sudo bash installer.sh --project-dir "/root/ServerPanel"</code></pre>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">3. What Script Does</h2>
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">7. What Script Does</h2>
                         <div class="mt-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                             <p>Checks root access and Ubuntu OS.</p>
                             <p>Finds project path automatically (`ServerPanel` or `../ServerPanel`).</p>
@@ -372,7 +387,7 @@ sudo bash installer.sh --project-dir "/root/ServerPanel"</code></pre>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">4. Troubleshooting</h2>
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">8. Troubleshooting</h2>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code># If blocked by permissions
 sudo bash installer.sh --project-dir "/absolute/path/to/ServerPanel"
 
@@ -382,9 +397,8 @@ pwd
 find / -type f -path "*/ServerPanel/artisan" 2>/dev/null
 
 # If download fails
-ping 192.168.0.50
-curl -I http://192.168.0.50/a_final_storing/ServerInstaller/installer.sh
-curl -I http://192.168.0.50/a_final_storing/ServerInstaller/ServerInstaller.zip</code></pre>
+curl -I http://YOUR_SERVER/ServerInstaller/installer.sh
+curl -I http://YOUR_SERVER/ServerInstaller/ServerInstaller.zip</code></pre>
                     </section>
                 </div>
             </main>

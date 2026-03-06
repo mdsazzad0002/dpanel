@@ -63,7 +63,7 @@ const deleteItem = (id) => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">DNS Records</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Manage A, CNAME, MX, TXT and other DNS records.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">PowerDNS record editor (records table).</p>
             </div>
         </template>
 
@@ -74,6 +74,9 @@ const deleteItem = (id) => {
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {{ page.props.flash.error }}
             </div>
+            <div class="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+                Name supports <strong>@</strong> for zone root. Relative names (like <strong>www</strong>) are expanded to FQDN automatically.
+            </div>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-3 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div>
@@ -82,6 +85,7 @@ const deleteItem = (id) => {
                         <option value="">Select zone</option>
                         <option v-for="domain in zoneDomains" :key="domain" :value="domain">{{ domain }}</option>
                     </select>
+                    <p class="mt-1 text-xs text-slate-500">Create zone first if it does not appear here.</p>
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Type</label>
@@ -137,6 +141,8 @@ const deleteItem = (id) => {
                             <th class="px-4 py-3">Name</th>
                             <th class="px-4 py-3">Content</th>
                             <th class="px-4 py-3">TTL</th>
+                            <th class="px-4 py-3">Priority</th>
+                            <th class="px-4 py-3">Status</th>
                             <th class="px-4 py-3">Actions</th>
                         </tr>
                     </thead>
@@ -147,6 +153,8 @@ const deleteItem = (id) => {
                             <td class="px-4 py-3">{{ item.name }}</td>
                             <td class="px-4 py-3">{{ item.content }}</td>
                             <td class="px-4 py-3">{{ item.ttl }}</td>
+                            <td class="px-4 py-3">{{ item.priority ?? '-' }}</td>
+                            <td class="px-4 py-3">{{ item.status }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
                                     <button type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editItem(item)">Edit</button>

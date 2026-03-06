@@ -1,26 +1,33 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
-import { Link, usePage } from '@inertiajs/vue3';
+import { Link, usePage, useRemember } from '@inertiajs/vue3';
 
-const sidebarOpen = ref(false);
-const sidebarSearch = ref('');
-const theme = ref('light');
-const expandedGroups = ref([]);
+const sidebarOpen = useRemember(false, 'layout.sidebar.open');
+const sidebarSearch = useRemember('', 'layout.sidebar.search');
+const theme = useRemember('light', 'layout.theme');
+const expandedGroups = useRemember([], 'layout.sidebar.expanded');
+const sidebarScrollTop = useRemember(0, 'layout.sidebar.scrollTop');
+const sidebarNavRef = ref(null);
 const page = usePage();
+const SIDEBAR_SCROLL_KEY = 'layout.sidebar.scrollTop.v1';
 
 const menuItems = [
-    { label: 'Dashboard', hint: 'Overview and stats', icon: 'DB', routeName: 'dashboard' },
+    { label: 'Dashboard', hint: 'Overview and stats', icon: 'DB', iconClass: 'bi bi-speedometer2', routeName: 'dashboard' },
     {
         id: 'user-management',
         label: 'User Management',
         hint: 'Admin, reseller and user panels',
         icon: 'UM',
+        iconClass: 'bi bi-people',
         children: [
-            { label: 'Admin', hint: 'Super admin panel', icon: 'SA', routeName: 'admin.panel', roles: ['super_admin'] },
-            { label: 'Reseller', hint: 'Reseller panel', icon: 'RS', routeName: 'reseller.panel', roles: ['super_admin', 'reseller'] },
-            { label: 'Individual User', hint: 'General user panel', icon: 'US', routeName: 'user.panel', roles: ['super_admin', 'reseller', 'general_user'] },
+            { label: 'Admin', hint: 'Super admin panel', icon: 'SA', iconClass: 'bi bi-person-gear', routeName: 'admin.panel', roles: ['admin'] },
+            { label: 'Create Role', hint: 'Add a new role', icon: 'CR', iconClass: 'bi bi-plus-square', routeName: 'roles.create', roles: ['admin'] },
+            { label: 'Manage Roles', hint: 'Edit and delete roles', icon: 'MR', iconClass: 'bi bi-shield-check', routeName: 'roles.manage', roles: ['admin'] },
+            { label: 'Reseller', hint: 'Reseller panel', icon: 'RS', iconClass: 'bi bi-person-workspace', routeName: 'reseller.panel', roles: ['reseller'] },
+            { label: 'Individual User', hint: 'General user panel', icon: 'US', iconClass: 'bi bi-person', routeName: 'user.panel', roles: ['general_user'] },
+            { label: 'All Users', hint: 'Create users and assign roles', icon: 'MU', iconClass: 'bi bi-person-plus', routeName: 'users.manage', roles: ['admin', 'reseller'] },
         ],
     },
     {
@@ -28,9 +35,10 @@ const menuItems = [
         label: 'Web Management',
         hint: 'Website operations',
         icon: 'WM',
+        iconClass: 'bi bi-globe2',
         children: [
-            { label: 'Create Website', hint: 'Add a new website', icon: 'CW', routeName: 'websites.create', roles: ['super_admin', 'reseller'] },
-            { label: 'List Websites', hint: 'View all websites', icon: 'LW', routeName: 'websites.list', roles: ['super_admin', 'reseller'] },
+            { label: 'Create Website', hint: 'Add a new website', icon: 'CW', iconClass: 'bi bi-plus-square', routeName: 'websites.create', roles: ['admin', 'reseller'] },
+            { label: 'List Websites', hint: 'View all websites', icon: 'LW', iconClass: 'bi bi-list-ul', routeName: 'websites.list', roles: ['admin', 'reseller'] },
         ],
     },
     {
@@ -38,21 +46,23 @@ const menuItems = [
         label: 'Email Management',
         hint: 'Mailbox operations',
         icon: 'EM',
+        iconClass: 'bi bi-envelope',
         children: [
-            { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', routeName: 'emails.create', roles: ['super_admin', 'reseller'] },
-            { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', routeName: 'emails.list', roles: ['super_admin', 'reseller'] },
+            { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'] },
+            { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'] },
         ],
     },
-    { label: 'Apache', hint: 'Service and vHost controls', icon: 'AP' },
-    { label: 'Terminal', hint: 'Run server commands', icon: 'TM', routeName: 'terminal.index', roles: ['super_admin', 'reseller'] },
+    { label: 'Apache', hint: 'Service and vHost controls', icon: 'AP', iconClass: 'bi bi-hdd-network', routeName: 'apache.index', roles: ['admin', 'reseller'] },
+    { label: 'Terminal', hint: 'Run server commands', icon: 'TM', iconClass: 'bi bi-terminal', routeName: 'terminal.index', roles: ['admin', 'reseller'] },
     {
         id: 'database-management',
         label: 'Database Management',
         hint: 'Database operations and phpMyAdmin',
         icon: 'DM',
+        iconClass: 'bi bi-database',
         children: [
-            { label: 'Create Database', hint: 'Create a new database', icon: 'CD', routeName: 'databases.create', roles: ['super_admin', 'reseller'] },
-            { label: 'List Databases', hint: 'View all databases', icon: 'LD', routeName: 'databases.list', roles: ['super_admin', 'reseller'] },
+            { label: 'Create Database', hint: 'Create a new database', icon: 'CD', iconClass: 'bi bi-database-add', routeName: 'databases.create', roles: ['admin', 'reseller'] },
+            { label: 'List Databases', hint: 'View all databases', icon: 'LD', iconClass: 'bi bi-table', routeName: 'databases.list', roles: ['admin', 'reseller'] },
         ],
     },
     {
@@ -60,31 +70,39 @@ const menuItems = [
         label: 'DNS Management',
         hint: 'DNS zones and nameservers',
         icon: 'DN',
+        iconClass: 'bi bi-diagram-3',
         children: [
-            { label: 'Nameservers', hint: 'Manage NS records', icon: 'NS', routeName: 'dns.nameservers', roles: ['super_admin', 'reseller'] },
-            { label: 'DNS Zones', hint: 'Manage DNS zones', icon: 'DZ', routeName: 'dns.zones', roles: ['super_admin', 'reseller'] },
-            { label: 'DNS Records', hint: 'A, CNAME, MX, TXT records', icon: 'DR', routeName: 'dns.records', roles: ['super_admin', 'reseller'] },
+            { label: 'Nameservers', hint: 'Manage NS records', icon: 'NS', iconClass: 'bi bi-signpost-split', routeName: 'dns.nameservers', roles: ['admin', 'reseller'] },
+            { label: 'DNS Zones', hint: 'Manage DNS zones', icon: 'DZ', iconClass: 'bi bi-bounding-box-circles', routeName: 'dns.zones', roles: ['admin', 'reseller'] },
+            { label: 'DNS Records', hint: 'A, CNAME, MX, TXT records', icon: 'DR', iconClass: 'bi bi-journal-code', routeName: 'dns.records', roles: ['admin', 'reseller'] },
         ],
     },
-    { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', routeName: 'php.manager', roles: ['super_admin', 'reseller'] },
+    { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'] },
     {
         id: 'package-management',
         label: 'Package Management',
-        hint: 'Subscription package operations',
+        hint: 'Package operations',
         icon: 'PK',
+        iconClass: 'bi bi-box-seam',
         children: [
-            { label: 'Create Package', hint: 'Create package plan', icon: 'CP', routeName: 'packages.create', roles: ['super_admin', 'reseller'] },
-            { label: 'List Packages', hint: 'View package plans', icon: 'LP', routeName: 'packages.list', roles: ['super_admin', 'reseller'] },
+            { label: 'Create Package', hint: 'Create package plan', icon: 'CP', iconClass: 'bi bi-box2-heart', routeName: 'packages.create', roles: ['admin', 'reseller'] },
+            { label: 'List Packages', hint: 'View package plans', icon: 'LP', iconClass: 'bi bi-collection', routeName: 'packages.list', roles: ['admin', 'reseller'] },
         ],
     },
-    { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', routeName: 'security.manager', roles: ['super_admin', 'reseller'] },
-    { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK' },
-    { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN' },
+    { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'] },
+    { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'] },
+    { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN', iconClass: 'bi bi-activity', routeName: 'monitoring.index', roles: ['admin', 'reseller'] },
 ];
 
 const userRoles = computed(() => page.props.auth?.roles ?? []);
+const userRoleLabel = computed(() => userRoles.value.join(', ') || 'No role');
+const userPermissions = computed(() => page.props.auth?.permissions ?? []);
 
-const hasRole = (item) => {
+const hasAccess = (item) => {
+    if (item.permissions?.length) {
+        return item.permissions.some((permission) => userPermissions.value.includes(permission));
+    }
+
     if (!item.roles) return true;
     return item.roles.some((role) => userRoles.value.includes(role));
 };
@@ -95,10 +113,10 @@ const filteredMenu = computed(() => {
     return menuItems
         .map((item) => {
             if (!item.children) {
-                return hasRole(item) ? item : null;
+                return hasAccess(item) ? item : null;
             }
 
-            const allowedChildren = item.children.filter((child) => hasRole(child));
+            const allowedChildren = item.children.filter((child) => hasAccess(child));
             if (!allowedChildren.length) return null;
 
             if (!needle) {
@@ -148,6 +166,37 @@ const toggleGroup = (groupId) => {
 
 const isGroupExpanded = (groupId) => expandedGroups.value.includes(groupId);
 
+const resolveItemRouteName = (item) => {
+    if (item?.routeName && route().has(item.routeName)) {
+        return item.routeName;
+    }
+
+    if (Array.isArray(item?.dynamicRouteNames)) {
+        return item.dynamicRouteNames.find((name) => route().has(name)) || null;
+    }
+
+    return null;
+};
+
+const updateSidebarScrollTop = () => {
+    const nav = sidebarNavRef.value;
+    if (!nav) return;
+    const currentTop = nav.scrollTop;
+    sidebarScrollTop.value = currentTop;
+    sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(currentTop));
+};
+
+const restoreSidebarScrollTop = async () => {
+    await nextTick();
+    const nav = sidebarNavRef.value;
+    if (!nav) return;
+    const storedTop = Number(sessionStorage.getItem(SIDEBAR_SCROLL_KEY));
+    const targetTop = Number.isFinite(storedTop) ? storedTop : Number(sidebarScrollTop.value || 0);
+    requestAnimationFrame(() => {
+        nav.scrollTop = targetTop;
+    });
+};
+
 onMounted(() => {
     const savedTheme = localStorage.getItem('serverpanel-theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -161,8 +210,25 @@ onMounted(() => {
             item.children.some((child) => child.routeName && route().current(child.routeName)),
     );
 
-    expandedGroups.value = activeGroup?.id ? [activeGroup.id] : [];
+    if (expandedGroups.value.length === 0) {
+        expandedGroups.value = activeGroup?.id ? [activeGroup.id] : [];
+    }
+
+    restoreSidebarScrollTop();
 });
+
+watch(sidebarOpen, (isOpen) => {
+    if (isOpen) {
+        restoreSidebarScrollTop();
+    }
+});
+
+watch(
+    () => page.url,
+    () => {
+        restoreSidebarScrollTop();
+    },
+);
 </script>
 
 <template>
@@ -209,7 +275,7 @@ onMounted(() => {
                 />
             </div>
 
-            <nav class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+            <nav ref="sidebarNavRef" class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1" @scroll="updateSidebarScrollTop">
                 <template v-for="item in filteredMenu" :key="item.id || item.label">
                     <div v-if="item.children" class="rounded-lg border border-transparent bg-slate-50 p-2 dark:bg-slate-800/40">
                         <button
@@ -218,7 +284,9 @@ onMounted(() => {
                             @click="toggleGroup(item.id)"
                         >
                             <span class="flex items-center gap-3">
-                                <span class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-200 text-xs font-semibold dark:bg-slate-700">{{ item.icon }}</span>
+                                <span class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-200 text-xs font-semibold dark:bg-slate-700">
+                                    <i :class="['itc text-base', item.iconClass || 'bi bi-grid']"></i>
+                                </span>
                                 <span class="min-w-0">
                                     <span class="block text-sm font-medium">{{ item.label }}</span>
                                     <span class="block text-xs text-slate-500 dark:text-slate-400">{{ item.hint }}</span>
@@ -234,10 +302,15 @@ onMounted(() => {
                                 v-for="child in item.children"
                                 :key="child.label"
                                 :href="route(child.routeName)"
+                                preserve-state
+                                preserve-scroll
                                 :class="route().current(child.routeName) ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'"
+                                :data-sidebar-active="route().current(child.routeName) ? 'true' : null"
                                 class="flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors"
                             >
-                                <span class="inline-flex h-7 w-7 items-center justify-center rounded-md bg-slate-200 text-[10px] font-semibold dark:bg-slate-700">{{ child.icon }}</span>
+                                <span class="inline-flex h-7 w-7 items-center justify-center rounded-md bg-slate-200 text-[10px] font-semibold dark:bg-slate-700">
+                                    <i :class="['itc text-sm', child.iconClass || 'bi bi-dot']"></i>
+                                </span>
                                 <span class="min-w-0">
                                     <span class="block text-sm font-medium">{{ child.label }}</span>
                                     <span class="block text-xs text-slate-500 dark:text-slate-400">{{ child.hint }}</span>
@@ -247,12 +320,17 @@ onMounted(() => {
                     </div>
 
                     <Link
-                        v-else-if="item.routeName"
-                        :href="route(item.routeName)"
-                        :class="route().current(item.routeName) ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'"
+                        v-else-if="resolveItemRouteName(item)"
+                        :href="route(resolveItemRouteName(item))"
+                        preserve-state
+                        preserve-scroll
+                        :class="route().current(resolveItemRouteName(item)) ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'"
+                        :data-sidebar-active="route().current(resolveItemRouteName(item)) ? 'true' : null"
                         class="flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors"
                     >
-                        <span class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-200 text-xs font-semibold dark:bg-slate-700">{{ item.icon }}</span>
+                        <span class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-200 text-xs font-semibold dark:bg-slate-700">
+                            <i :class="['itc text-base', item.iconClass || 'bi bi-grid']"></i>
+                        </span>
                         <span class="min-w-0">
                             <span class="block text-sm font-medium">{{ item.label }}</span>
                             <span class="block text-xs text-slate-500 dark:text-slate-400">{{ item.hint }}</span>
@@ -264,7 +342,9 @@ onMounted(() => {
                         type="button"
                         class="flex w-full items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
                     >
-                        <span class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-200 text-xs font-semibold dark:bg-slate-700">{{ item.icon }}</span>
+                        <span class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-200 text-xs font-semibold dark:bg-slate-700">
+                            <i :class="['itc text-base', item.iconClass || 'bi bi-grid']"></i>
+                        </span>
                         <span class="min-w-0">
                             <span class="block text-sm font-medium">{{ item.label }}</span>
                             <span class="block text-xs text-slate-500 dark:text-slate-400">{{ item.hint }}</span>
@@ -272,6 +352,20 @@ onMounted(() => {
                     </button>
                 </template>
             </nav>
+
+            <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-800/40">
+                <p class="mb-2 font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Your Roles</p>
+                <div class="flex flex-wrap gap-2">
+                    <span
+                        v-for="role in userRoles"
+                        :key="role"
+                        class="rounded bg-slate-200 px-2 py-1 font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-100"
+                    >
+                        {{ role }}
+                    </span>
+                    <span v-if="userRoles.length === 0" class="text-slate-500 dark:text-slate-400">No role</span>
+                </div>
+            </div>
         </aside>
 
         <div class="md:pl-72">
@@ -310,7 +404,7 @@ onMounted(() => {
                                     type="button"
                                     class="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium dark:border-slate-700 dark:bg-slate-900"
                                 >
-                                    {{ $page.props.auth.user.name }}
+                                    {{ $page.props.auth.user.name }} ({{ userRoleLabel }})
                                     <svg class="ms-2 h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                         <path
                                             fill-rule="evenodd"
@@ -344,3 +438,5 @@ onMounted(() => {
         </div>
     </div>
 </template>
+
+

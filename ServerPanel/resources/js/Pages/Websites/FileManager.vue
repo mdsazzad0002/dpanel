@@ -480,43 +480,43 @@ const formatBytes = (bytes) => {
             <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-center gap-2">
                     <button type="button" title="Edit/Open" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="editSelected">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M12.146.854a.5.5 0 0 1 .708 0l2.292 2.292a.5.5 0 0 1 0 .708l-8.5 8.5L4 13l.646-2.646z"/><path d="M1 15h14v1H1z"/></svg>
+                        <i aria-hidden="true" class="itc bi bi-pencil-square text-sm"></i>
                         <span class="sr-only">Edit/Open</span>
                     </button>
                     <button type="button" title="Rename" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!singleSelectedItem || isBusy" @click="openModal('rename')">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 3a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 0 1H9v9h3a.5.5 0 0 1 0 1H4a.5.5 0 0 1 0-1h3v-9H4a.5.5 0 0 1-.5-.5"/></svg>
+                        <i aria-hidden="true" class="itc bi bi-input-cursor-text text-sm"></i>
                         <span class="sr-only">Rename</span>
                     </button>
                     <button type="button" title="New File" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="openModal('create-file')">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5z"/><path d="M10 0v4a1 1 0 0 0 1 1h4"/><path d="M8 7v2H6v1h2v2h1v-2h2V9H9V7z"/></svg>
+                        <i aria-hidden="true" class="itc bi bi-file-earmark-plus text-sm"></i>
                         <span class="sr-only">New File</span>
                     </button>
                     <button type="button" title="New Folder" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="openModal('create-folder')">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M9.828 4a.5.5 0 0 1 .354.146L11 5h3a1 1 0 0 1 1 1v1H1V3a1 1 0 0 1 1-1h4z"/><path d="M1 8h14v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2z"/><path d="M8 9v2H6v1h2v2h1v-2h2v-1H9V9z"/></svg>
+                        <i aria-hidden="true" class="itc bi bi-folder-plus text-sm"></i>
                         <span class="sr-only">New Folder</span>
                     </button>
                     <button type="button" title="Upload" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="openModal('upload')">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1v7.793l1.646-1.647.708.708L8 11.207 5.146 8.354l.708-.708L7.5 9.293z"/><path d="M1 12.5A2.5 2.5 0 0 1 3.5 10h9A2.5 2.5 0 0 1 15 12.5V14H1z"/></svg>
+                        <i aria-hidden="true" class="itc bi bi-cloud-arrow-up text-sm"></i>
                         <span class="sr-only">Upload</span>
                     </button>
                     <button type="button" title="Delete" class="rounded-md border border-red-300 px-3 py-2 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400" :disabled="(!singleSelectedItem && !selectedCount) || isBusy" @click="deleteSelected">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5h1v6h-1zm4 0h1v6h-1z"/><path d="M14 3h-3.5l-1-1h-3l-1 1H2v1h12z"/><path d="M4 4h8l-.5 9a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2z"/></svg>
+                        <i aria-hidden="true" class="itc bi bi-trash text-sm"></i>
                         <span class="sr-only">Delete</span>
                     </button>
                     <button type="button" title="Zip" class="rounded-md border border-amber-300 px-3 py-2 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300" :disabled="(!singleSelectedItem && !selectedCount) || isBusy" @click="openModal('zip')">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5z"/><path d="M10 0v4a1 1 0 0 0 1 1h4"/><path d="M7 6h2v1H7zm0 2h2v1H7zm0 2h2v1H7z"/></svg>
+                        <i aria-hidden="true" class="itc bi bi-file-earmark-zip text-sm"></i>
                         <span class="sr-only">Zip</span>
                     </button>
                     <button type="button" title="Unzip" class="rounded-md border border-emerald-300 px-3 py-2 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400" :disabled="!isZipSelected || isBusy" @click="openModal('unzip')">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1 1 5l7 4 7-4z"/><path d="M1 7l7 4 7-4v5l-7 4-7-4z"/></svg>
+                        <i aria-hidden="true" class="itc bi bi-file-earmark-arrow-up text-sm"></i>
                         <span class="sr-only">Unzip</span>
                     </button>
                     <button type="button" title="Permissions" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!singleSelectedItem || isBusy" @click="openModal('permissions')">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0 2 2v5c0 4.5 2.9 7.2 6 9 3.1-1.8 6-4.5 6-9V2z"/><path d="M6.5 7V6a1.5 1.5 0 1 1 3 0v1h.5a1 1 0 0 1 1 1v2.5A1.5 1.5 0 0 1 9.5 12h-3A1.5 1.5 0 0 1 5 10.5V8a1 1 0 0 1 1-1z"/></svg>
+                        <i aria-hidden="true" class="itc bi bi-shield-lock text-sm"></i>
                         <span class="sr-only">Permissions</span>
                     </button>
                     <button type="button" title="Download" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!singleSelectedItem || singleSelectedItem.type !== 'file'" @click="downloadSelected">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1v7.793l1.646-1.647.708.708L8 11.207 5.146 8.354l.708-.708L7.5 9.293z"/><path d="M1 14h14v1H1z"/></svg>
+                        <i aria-hidden="true" class="itc bi bi-download text-sm"></i>
                         <span class="sr-only">Download</span>
                     </button>
                     <button type="button" title="Up One Level" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="goParent">

@@ -2,32 +2,42 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CronJob;
+use App\Models\Website;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CronJobController extends Controller
 {
-    private const STORAGE_FILE = 'cron-jobs.json';
-    private const WEBSITE_STORAGE_FILE = 'website-requests.json';
-
     public function index(string $id): Response
     {
         $website = $this->findWebsite($id);
         abort_if($website === null, 404);
 
-        $jobs = collect($this->readJobs())
-            ->filter(fn (array $job) => (string) ($job['website_id'] ?? '') === $id)
-            ->sortByDesc('created_at')
-            ->values()
+        $jobs = CronJob::query()
+            ->where('website_id', $id)
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn (CronJob $job): array => [
+                'id' => (string) $job->id,
+                'website_id' => (string) $job->website_id,
+                'domain' => (string) ($job->domain ?? ''),
+                'name' => (string) $job->name,
+                'expression' => (string) $job->expression,
+                'command' => (string) $job->command,
+                'status' => (string) $job->status,
+                'description' => (string) ($job->description ?? ''),
+                'created_at' => $job->created_at?->toIso8601String(),
+                'updated_at' => $job->updated_at?->toIso8601String(),
+            ])
             ->all();
 
         return Inertia::render('Websites/CronJobs', [
             'website' => [
-                'id' => $website['id'],
-                'domain' => $website['domain'] ?? '',
+                'id' => $website->id,
+                'domain' => $website->domain ?? '',
             ],
             'cronJobs' => $jobs,
         ]);
@@ -39,20 +49,17 @@ class CronJobController extends Controller
         abort_if($website === null, 404);
 
         $validated = $this->validatePayload($request);
-        $jobs = $this->readJobs();
-        $jobs[] = [
+
+        CronJob::query()->create([
             'id' => (string) str()->uuid(),
             'website_id' => $id,
-            'domain' => (string) ($website['domain'] ?? ''),
+            'domain' => (string) ($website->domain ?? ''),
             'name' => trim((string) $validated['name']),
             'expression' => trim((string) $validated['expression']),
             'command' => trim((string) $validated['command']),
             'status' => (string) $validated['status'],
             'description' => trim((string) ($validated['description'] ?? '')),
-            'created_at' => now()->toIso8601String(),
-        ];
-
-        $this->writeJobs($jobs);
+        ]);
 
         return redirect()->route('websites.cronjobs.index', $id)->with('success', 'Cron job created.');
     }
@@ -64,22 +71,22 @@ class CronJobController extends Controller
 
         $validated = $this->validatePayload($request);
 
-        $jobs = collect($this->readJobs())->map(function (array $job) use ($id, $jobId, $validated) {
-            if (($job['id'] ?? null) !== $jobId || (string) ($job['website_id'] ?? '') !== $id) {
-                return $job;
-            }
+        $job = CronJob::query()
+            ->where('id', $jobId)
+            ->where('website_id', $id)
+            ->first();
 
-            $job['name'] = trim((string) $validated['name']);
-            $job['expression'] = trim((string) $validated['expression']);
-            $job['command'] = trim((string) $validated['command']);
-            $job['status'] = (string) $validated['status'];
-            $job['description'] = trim((string) ($validated['description'] ?? ''));
-            $job['updated_at'] = now()->toIso8601String();
+        if ($job === null) {
+            return redirect()->route('websites.cronjobs.index', $id)->with('error', 'Cron job not found.');
+        }
 
-            return $job;
-        })->values()->all();
-
-        $this->writeJobs($jobs);
+        $job->update([
+            'name' => trim((string) $validated['name']),
+            'expression' => trim((string) $validated['expression']),
+            'command' => trim((string) $validated['command']),
+            'status' => (string) $validated['status'],
+            'description' => trim((string) ($validated['description'] ?? '')),
+        ]);
 
         return redirect()->route('websites.cronjobs.index', $id)->with('success', 'Cron job updated.');
     }
@@ -89,28 +96,16 @@ class CronJobController extends Controller
         $website = $this->findWebsite($id);
         abort_if($website === null, 404);
 
-        $jobs = collect($this->readJobs());
-        $before = $jobs->count();
-        $after = $jobs
-            ->reject(fn (array $job) => ($job['id'] ?? null) === $jobId && (string) ($job['website_id'] ?? '') === $id)
-            ->values()
-            ->all();
+        $deleted = CronJob::query()
+            ->where('id', $jobId)
+            ->where('website_id', $id)
+            ->delete();
 
-        if (count($after) === $before) {
+        if (! $deleted) {
             return redirect()->route('websites.cronjobs.index', $id)->with('error', 'Cron job not found.');
         }
 
-        $this->writeJobs($after);
-
         return redirect()->route('websites.cronjobs.index', $id)->with('success', 'Cron job deleted.');
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function findWebsite(string $id): ?array
-    {
-        return collect($this->readWebsites())->firstWhere('id', $id);
     }
 
     /**
@@ -127,40 +122,9 @@ class CronJobController extends Controller
         ]);
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function readJobs(): array
+    private function findWebsite(string $id): ?Website
     {
-        if (! Storage::exists(self::STORAGE_FILE)) {
-            return [];
-        }
-
-        $decoded = json_decode((string) Storage::get(self::STORAGE_FILE), true);
-
-        return is_array($decoded) ? $decoded : [];
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $jobs
-     */
-    private function writeJobs(array $jobs): void
-    {
-        Storage::put(self::STORAGE_FILE, json_encode($jobs, JSON_PRETTY_PRINT));
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function readWebsites(): array
-    {
-        if (! Storage::exists(self::WEBSITE_STORAGE_FILE)) {
-            return [];
-        }
-
-        $decoded = json_decode((string) Storage::get(self::WEBSITE_STORAGE_FILE), true);
-
-        return is_array($decoded) ? $decoded : [];
+        return Website::query()->find($id);
     }
 }
 

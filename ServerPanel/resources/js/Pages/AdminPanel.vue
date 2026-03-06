@@ -21,7 +21,7 @@ defineProps({
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Super Admin Panel</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Manage users, server services and global subscriptions.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Manage users, server services and platform operations.</p>
             </div>
         </template>
 
@@ -32,6 +32,7 @@ defineProps({
                     <p class="mt-2 text-2xl font-semibold">{{ stats.users_total }}</p>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                         Super Admin: {{ stats.users_super_admin }},
+                        Admin: {{ stats.users_admin }},
                         Reseller: {{ stats.users_reseller }},
                         General: {{ stats.users_general }}
                     </p>
@@ -42,14 +43,6 @@ defineProps({
                     <p class="mt-2 text-2xl font-semibold">{{ stats.packages_total }}</p>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                         Active: {{ stats.packages_active }}
-                    </p>
-                </article>
-
-                <article class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Subscriptions</p>
-                    <p class="mt-2 text-2xl font-semibold">{{ stats.subscriptions_total }}</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Active: {{ stats.subscriptions_active }}
                     </p>
                 </article>
 
@@ -71,6 +64,9 @@ defineProps({
                     </Link>
                     <Link :href="route('packages.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
                         Packages
+                    </Link>
+                    <Link :href="route('users.manage')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                        Manage Users
                     </Link>
                     <Link :href="route('reseller.panel')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
                         Reseller Panel

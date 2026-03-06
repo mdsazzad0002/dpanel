@@ -11,6 +11,8 @@ const props = defineProps({
 const page = usePage();
 const editingId = ref(null);
 const deleteForm = useForm({});
+const syncAllForm = useForm({ domain: '' });
+const syncZoneForm = useForm({ domain: '' });
 
 const form = useForm({
     domain: '',
@@ -58,6 +60,16 @@ const deleteItem = (id) => {
     if (!confirm('Delete this zone? Related records will be removed.')) return;
     deleteForm.delete(route('dns.zones.destroy', id));
 };
+
+const syncAll = () => {
+    syncAllForm.domain = '';
+    syncAllForm.post(route('dns.cloudflare.sync'));
+};
+
+const syncZone = (domain) => {
+    syncZoneForm.domain = domain;
+    syncZoneForm.post(route('dns.cloudflare.sync'));
+};
 </script>
 
 <template>
@@ -67,7 +79,7 @@ const deleteItem = (id) => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">DNS Zones</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Create and manage DNS zone entries.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">PowerDNS authoritative zones (stored in domains and SOA records).</p>
             </div>
         </template>
 
@@ -78,6 +90,14 @@ const deleteItem = (id) => {
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {{ page.props.flash.error }}
             </div>
+            <div class="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+                Type mapping: <strong>master</strong> -> PowerDNS NATIVE, <strong>slave</strong> -> PowerDNS SLAVE.
+            </div>
+            <div class="flex items-center justify-end">
+                <button type="button" :disabled="syncAllForm.processing" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60" @click="syncAll">
+                    Sync All To Cloudflare
+                </button>
+            </div>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-3 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div>
@@ -86,6 +106,11 @@ const deleteItem = (id) => {
                         <option value="">Select domain</option>
                         <option v-for="domain in websiteDomains" :key="domain" :value="domain">{{ domain }}</option>
                     </select>
+                    <p class="mt-1 text-xs text-slate-500">If domain is not listed, type it manually below.</p>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Domain (Manual Input)</label>
+                    <input v-model="form.domain" type="text" placeholder="example.com" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Type</label>
@@ -153,6 +178,7 @@ const deleteItem = (id) => {
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
                                     <button type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editItem(item)">Edit</button>
+                                    <button type="button" :disabled="syncZoneForm.processing" class="rounded-md border border-indigo-300 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-700 dark:text-indigo-300" @click="syncZone(item.domain)">Cloudflare Sync</button>
                                     <button type="button" class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400" @click="deleteItem(item.id)">Delete</button>
                                 </div>
                             </td>

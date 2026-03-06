@@ -25,7 +25,6 @@ class PackageController extends Controller
     {
         return Inertia::render('Packages/List', [
             'packages' => Package::query()
-                ->withCount('subscriptions')
                 ->latest()
                 ->get([
                     'id',
@@ -85,10 +84,6 @@ class PackageController extends Controller
      */
     public function destroy(Package $package): RedirectResponse
     {
-        if ($package->subscriptions()->exists()) {
-            return redirect()->route('packages.list')->with('error', "Package '{$package->name}' is assigned to user subscriptions and cannot be deleted.");
-        }
-
         $package->delete();
 
         return redirect()->route('packages.list')->with('success', 'Package deleted successfully.');

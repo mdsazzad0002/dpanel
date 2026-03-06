@@ -79,7 +79,7 @@ const deleteMailbox = (id) => {
                                         rel="noopener noreferrer"
                                         class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
                                     >
-                                        Login
+                                        Roundcube Login
                                     </a>
                                     <Link :href="route('emails.edit', item.id)" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                         Edit
