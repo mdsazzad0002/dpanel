@@ -55,6 +55,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/websites/{id}/manage', [WebsiteController::class, 'manage'])
         ->middleware('role:admin|reseller')
         ->name('websites.manage');
+    Route::post('/websites/{id}/vhost/sync', [WebsiteController::class, 'syncVhost'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.vhost.sync');
     Route::get('/websites/{id}/preview/{path?}', [WebsiteController::class, 'preview'])
         ->middleware('role:admin|reseller')
         ->where('path', '.*')
@@ -172,6 +175,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/monitoring', [MonitoringController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('monitoring.index');
+    Route::get('/monitoring/snapshot', [MonitoringController::class, 'snapshot'])
+        ->middleware('role:admin|reseller')
+        ->name('monitoring.snapshot');
 
     Route::get('/databases/create', [DatabaseController::class, 'create'])
         ->middleware('role:admin|reseller')
@@ -348,5 +354,3 @@ Route::middleware('auth')->group(function () {
 });
 
 require __DIR__.'/auth.php';
-
-

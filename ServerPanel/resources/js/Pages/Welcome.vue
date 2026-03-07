@@ -142,7 +142,7 @@ onMounted(() => {
                             <div class="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
                                 <p class="font-semibold text-slate-900 dark:text-white">Installer Setup</p>
                                 <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                                    One-command installation using `installer.sh`.
+                                    One-command installation using `int-tool.sh`.
                                 </p>
                             </div>
                         </div>
@@ -296,9 +296,9 @@ sudo systemctl restart php8.3-fpm</code></pre>
 
                 <div v-if="activeTab === 'installer'" class="space-y-6">
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Installer Setup Guide</h2>
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Int Tool Setup Guide (Ubuntu Only)</h2>
                         <p class="mt-2 text-sm text-slate-700 dark:text-slate-300">
-                            Use installer files from the root directory of this repository.
+                            Use one file: `int-tool.sh` (installer + operations menu).
                         </p>
                     </section>
 
@@ -307,89 +307,48 @@ sudo systemctl restart php8.3-fpm</code></pre>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>cd /path/to/ServerInstaller
 ls -la
 
-# Required files in root:
-# installer.sh
-# install-macos.sh
-# install.ps1</code></pre>
+# Required file in root:
+# int-tool.sh</code></pre>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">2. Linux Installer</h2>
-                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>chmod +x installer.sh
-sudo bash installer.sh --project-dir "/root/ServerPanel" --web-server both --php-versions "7.4,8.0,8.2,8.3,8.4,8.5" --php-default 8.2 --panel-port 8090</code></pre>
-                    </section>
-
-                    <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">3. macOS Installer</h2>
-                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>chmod +x install-macos.sh
-./install-macos.sh</code></pre>
-                    </section>
-
-                    <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">4. Windows Installer</h2>
-                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>powershell -ExecutionPolicy Bypass -File .\install.ps1</code></pre>
-                    </section>
-
-                    <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">5. Single-File SSH Tool (Linux/Windows Bash)</h2>
-                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>curl -fsSL "http://YOUR_SERVER/ServerInstaller/scripts/ssh-tool.sh" -o ssh-tool.sh
-chmod +x ssh-tool.sh
-sh ssh-tool.sh</code></pre>
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">2. Run Interactive Menu</h2>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>chmod +x int-tool.sh
+sudo bash int-tool.sh</code></pre>
                         <p class="mt-3 text-sm text-slate-700 dark:text-slate-300">
-                            Single-file interactive utility: SSH test, SCP upload/download with overwrite confirm, remote commands, and service controls.
+                            Menu includes quick install, custom install, service dashboard, web proxy repair (apache/nginx), port diagnostics, update panel files (sync + build + restart), root file copy (serverroot.php -> index.php), and credentials view.
                         </p>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">6. Optional Linux Installer Examples</h2>
-                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>chmod +x installer.sh
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">3. Direct CLI Examples (No Menu)</h2>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code># Recommended baseline
+sudo bash int-tool.sh --project-dir "/root/ServerPanel" --panel-port 8090
 
-# Recommended baseline
-sudo bash installer.sh --project-dir "/root/ServerPanel" --panel-port 8090
+# Apache + multi PHP versions
+sudo bash int-tool.sh --project-dir "/root/ServerPanel" --web-server apache --php-versions "7.4,8.0,8.2,8.3,8.4,8.5"
 
-# Apache + multi PHP versions + MySQL + phpMyAdmin
-sudo bash installer.sh --project-dir "/root/ServerPanel" --web-server apache --php-versions "7.4,8.0,8.2,8.3,8.4,8.5"
+# Nginx
+sudo bash int-tool.sh --project-dir "/root/ServerPanel" --web-server nginx --php-versions "7.4,8.0,8.2,8.3,8.4,8.5"
 
-# OpenLiteSpeed + multi LSPHP versions + MySQL + phpMyAdmin
-sudo bash installer.sh --project-dir "/root/ServerPanel" --web-server openlitespeed --php-versions "7.4,8.0,8.2,8.3,8.4,8.5"
+# Apache + Nginx
+sudo bash int-tool.sh --project-dir "/root/ServerPanel" --web-server both --php-default 8.3 --panel-port 8090
 
-# Install BOTH Apache + OpenLiteSpeed
-sudo bash installer.sh --project-dir "/root/ServerPanel" --web-server both --php-versions "7.4,8.0,8.2,8.3,8.4,8.5" --php-default 8.2 --panel-port 8090
-
-# Optional custom database credentials
-sudo bash installer.sh --project-dir "/root/ServerPanel" --db-name "serverinstaller" --db-user "serverpanel" --db-password "StrongPassword123"
-
-# Direct archive URL
-sudo bash installer.sh --project-url "http://YOUR_SERVER/ServerInstaller/ServerInstaller.zip" --project-target "/root/ServerPanel"
-
-# Existing local project path
-sudo bash installer.sh --project-dir "/root/ServerPanel"</code></pre>
+# Custom DB credentials
+sudo bash int-tool.sh --project-dir "/root/ServerPanel" --db-name "serverinstaller" --db-user "serverpanel" --db-password "StrongPassword123"</code></pre>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">7. What Script Does</h2>
-                        <div class="mt-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
-                            <p>Checks root access and Ubuntu OS.</p>
-                            <p>Finds project path automatically (`ServerPanel` or `../ServerPanel`).</p>
-                            <p>Can download `.tar.gz`, `.tgz`, or `.zip` project archives from URL.</p>
-                            <p>Can auto-detect archive from a base URL using `--base-url`.</p>
-                            <p>Moves extracted project to your target path (`--project-target` or `--remote-project-dir`).</p>
-                            <p>Supports `--web-server apache|openlitespeed` and configurable PHP versions.</p>
-                            <p>Sets CLI runtime to `--php-default` (default `8.2`) for Composer and Artisan.</p>
-                            <p>Creates MySQL database/user automatically and updates `.env` connection values.</p>
-                            <p>Generates a random DB password when `--db-password` is not provided.</p>
-                            <p>Checks installed items first and installs only missing packages.</p>
-                            <p>Installs Apache/OpenLiteSpeed, PHP, MySQL, phpMyAdmin, Composer, Node.js, SSH, and dependencies.</p>
-                            <p>Maps default Apache `:80` to panel service port (default `:8090`) to avoid Forbidden on server IP.</p>
-                            <p>Runs Laravel setup commands and migrations.</p>
-                            <p>Applies permissions and restarts required services.</p>
-                        </div>
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">4. Remote Download + Run</h2>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>curl -fsSL "http://192.168.0.50/a_final_storing/ServerInstaller/int-tool.sh" -o int-tool.sh
+chmod +x int-tool.sh
+sudo bash int-tool.sh</code></pre>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">8. Troubleshooting</h2>
+                        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">5. Troubleshooting</h2>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code># If blocked by permissions
-sudo bash installer.sh --project-dir "/absolute/path/to/ServerPanel"
+sudo bash int-tool.sh --project-dir "/absolute/path/to/ServerPanel"
 
 # If file not found
 ls -la
@@ -397,8 +356,8 @@ pwd
 find / -type f -path "*/ServerPanel/artisan" 2>/dev/null
 
 # If download fails
-curl -I http://YOUR_SERVER/ServerInstaller/installer.sh
-curl -I http://YOUR_SERVER/ServerInstaller/ServerInstaller.zip</code></pre>
+curl -I http://192.168.0.50/a_final_storing/ServerInstaller/int-tool.sh
+curl -I http://192.168.0.50/a_final_storing/ServerInstaller/ServerInstaller.zip</code></pre>
                     </section>
                 </div>
             </main>

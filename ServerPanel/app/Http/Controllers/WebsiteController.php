@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -148,9 +149,13 @@ class WebsiteController extends Controller
             $exitCode = 0;
             exec($command . ' 2>&1', $output, $exitCode);
             $this->applyWebsiteFilesystemIsolation($validated['site_owner'], $validated['root_path']);
-            $this->initializeWebsiteStarterFiles($validated['root_path'], $validated['domain']);
+            $this->initializeWebsiteStarterFiles(
+                $validated['root_path'],
+                $validated['domain'],
+                (string) $validated['php_version'],
+            );
             $this->relocateApacheDefaultPage();
-            $this->syncLiveApacheVhost(
+            $this->syncLiveWebVhost(
                 $validated['domain'],
                 $validated['root_path'],
                 (string) $validated['php_version'],
@@ -162,6 +167,11 @@ class WebsiteController extends Controller
         $requests = $this->readRequests();
         $actor = $request->user();
         $defaultResellerId = $actor && $actor->hasRole('reseller') ? (int) $actor->id : null;
+        $runtimeStatus = $this->detectRuntimeStatus([
+            'domain' => $validated['domain'],
+            'root_path' => $validated['root_path'],
+            'status' => 'pending',
+        ]);
         $requests[] = [
             'id' => (string) str()->uuid(),
             'domain' => $validated['domain'],
@@ -172,7 +182,7 @@ class WebsiteController extends Controller
             'assigned_user_id' => null,
             'assigned_reseller_id' => $defaultResellerId,
             'command' => $command,
-            'status' => 'pending',
+            'status' => $runtimeStatus,
             'created_at' => now()->toIso8601String(),
         ];
         $this->writeRequests($requests);
@@ -223,6 +233,9 @@ class WebsiteController extends Controller
         $metrics = $this->buildDynamicMetrics($website);
         $histories = $this->buildDynamicHistories((string) ($website['id'] ?? $id), $metrics);
         $runtimeStatus = $this->detectRuntimeStatus($website);
+        $websiteDomain = (string) ($website['domain'] ?? '');
+        $hasApacheVhost = $this->apacheVhostExists($websiteDomain);
+        $hasNginxVhost = $this->nginxVhostExists($websiteDomain);
 
         $activities = [
             [
@@ -243,7 +256,11 @@ class WebsiteController extends Controller
             ],
             [
                 'label' => 'Apache VHost',
-                'value' => $this->apacheVhostExists((string) ($website['domain'] ?? '')) ? 'configured' : 'not configured',
+                'value' => $hasApacheVhost ? 'configured' : ($hasNginxVhost ? 'not configured (nginx configured)' : 'not configured'),
+            ],
+            [
+                'label' => 'Nginx VHost',
+                'value' => $hasNginxVhost ? 'configured' : ($hasApacheVhost ? 'not configured (apache configured)' : 'not configured'),
             ],
             [
                 'label' => 'Last File Change',
@@ -256,7 +273,56 @@ class WebsiteController extends Controller
             'metrics' => $metrics,
             'histories' => $histories,
             'activities' => $activities,
+            'vhostPreview' => $this->buildVhostPreview($website),
         ]);
+    }
+
+    public function syncVhost(string $id): RedirectResponse
+    {
+        $requests = collect($this->readRequests());
+        $website = $requests->firstWhere('id', $id);
+        if (! is_array($website)) {
+            return redirect()->route('websites.list')->with('error', 'Website request not found.');
+        }
+
+        $website = $this->normalizeWebsiteRecord($website);
+        $domain = (string) ($website['domain'] ?? '');
+        $rootPath = (string) ($website['root_path'] ?? '');
+        $phpVersion = (string) ($website['php_version'] ?? '8.3');
+        if ($domain === '' || $rootPath === '') {
+            return redirect()->route('websites.manage', $id)->with('error', 'Domain or root path is missing for vhost sync.');
+        }
+        if (! is_dir($rootPath)) {
+            return redirect()->route('websites.manage', $id)->with('error', "Root path does not exist: {$rootPath}");
+        }
+
+        $syncReport = $this->syncLiveWebVhostWithReport($domain, $rootPath, $phpVersion);
+
+        $runtimeStatus = $this->detectRuntimeStatus([
+            'domain' => $domain,
+            'root_path' => $rootPath,
+            'status' => (string) ($website['status'] ?? 'pending'),
+        ]);
+
+        $updated = $requests->map(function (array $item) use ($id, $runtimeStatus): array {
+            if ((string) ($item['id'] ?? '') !== $id) {
+                return $item;
+            }
+
+            $item['status'] = $runtimeStatus;
+            $item['updated_at'] = now()->toIso8601String();
+
+            return $item;
+        })->values()->all();
+
+        $this->writeRequests($updated);
+
+        $message = implode(' | ', $syncReport['messages']);
+        if (! $syncReport['generated']) {
+            return redirect()->route('websites.manage', $id)->with('error', $message !== '' ? $message : 'Vhost sync failed.');
+        }
+
+        return redirect()->route('websites.manage', $id)->with('success', $message !== '' ? $message : 'Vhost sync completed.');
     }
 
     /**
@@ -374,9 +440,13 @@ class WebsiteController extends Controller
         $validated['enable_ssl'] = (bool) ($validated['enable_ssl'] ?? false);
 
         $this->applyWebsiteFilesystemIsolation($validated['site_owner'], $validated['root_path']);
-        $this->initializeWebsiteStarterFiles($validated['root_path'], $validated['domain']);
+        $this->initializeWebsiteStarterFiles(
+            $validated['root_path'],
+            $validated['domain'],
+            (string) $validated['php_version'],
+        );
         $this->relocateApacheDefaultPage();
-        $this->syncLiveApacheVhost(
+        $this->syncLiveWebVhost(
             $validated['domain'],
             $validated['root_path'],
             (string) $validated['php_version'],
@@ -394,6 +464,11 @@ class WebsiteController extends Controller
             $item['php_version'] = $validated['php_version'];
             $item['enable_ssl'] = $validated['enable_ssl'];
             $item['command'] = $this->buildCommand($validated);
+            $item['status'] = $this->detectRuntimeStatus([
+                'domain' => $validated['domain'],
+                'root_path' => $validated['root_path'],
+                'status' => (string) ($item['status'] ?? 'pending'),
+            ]);
             $item['updated_at'] = now()->toIso8601String();
 
             return $item;
@@ -823,7 +898,7 @@ class WebsiteController extends Controller
         }
 
         if (is_array($existingRequest)) {
-            $this->removeLiveApacheVhost((string) ($existingRequest['domain'] ?? ''));
+            $this->removeLiveWebVhost((string) ($existingRequest['domain'] ?? ''));
         }
 
         $this->writeRequests($filtered->all());
@@ -1099,6 +1174,72 @@ class WebsiteController extends Controller
         }
     }
 
+    /**
+     * @return array{ran: bool, success: bool, output: string}
+     */
+    private function runSyncVhostScript(string $action, string $domain, ?string $rootPath = null, ?string $phpVersion = null, ?string $oldDomain = null): array
+    {
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return ['ran' => false, 'success' => false, 'output' => 'Windows environment'];
+        }
+
+        $scriptCandidates = [
+            base_path('scripts/sync-vhost.sh'),
+            '/usr/local/bin/serverpanel-sync-vhost.sh',
+        ];
+
+        $scriptPath = '';
+        foreach ($scriptCandidates as $candidate) {
+            if (is_file($candidate)) {
+                $scriptPath = $candidate;
+                break;
+            }
+        }
+        if ($scriptPath === '') {
+            return ['ran' => false, 'success' => false, 'output' => 'sync-vhost script not found'];
+        }
+
+        $parts = [
+            'bash',
+            escapeshellarg($scriptPath),
+            escapeshellarg($action),
+            escapeshellarg($this->normalizeDomain($domain)),
+        ];
+        if ($rootPath !== null) {
+            $parts[] = escapeshellarg($rootPath);
+        }
+        if ($phpVersion !== null) {
+            $parts[] = escapeshellarg($phpVersion);
+        }
+        if ($oldDomain !== null) {
+            $parts[] = escapeshellarg($this->normalizeDomain($oldDomain));
+        }
+
+        $output = [];
+        $exitCode = 1;
+        @exec(implode(' ', $parts).' 2>&1', $output, $exitCode);
+        $message = trim(implode("\n", $output));
+
+        if ($exitCode !== 0) {
+            Log::warning('Vhost sync script failed', [
+                'action' => $action,
+                'domain' => $domain,
+                'root_path' => $rootPath,
+                'php_version' => $phpVersion,
+                'old_domain' => $oldDomain,
+                'script' => $scriptPath,
+                'exit_code' => $exitCode,
+                'output' => $message,
+            ]);
+        }
+
+        return [
+            'ran' => true,
+            'success' => $exitCode === 0,
+            'output' => $message,
+        ];
+    }
+
     private function websiteBaseDirectory(): string
     {
         $configured = trim((string) config('app.server_base_dir', ''));
@@ -1179,7 +1320,7 @@ class WebsiteController extends Controller
     /**
      * Create first-time starter files for newly created empty site root.
      */
-    private function initializeWebsiteStarterFiles(string $rootPath, string $domain): void
+    private function initializeWebsiteStarterFiles(string $rootPath, string $domain, ?string $phpVersion = null): void
     {
         $rootPath = trim(str_replace('\\', '/', $rootPath));
         if ($rootPath === '') {
@@ -1201,18 +1342,184 @@ class WebsiteController extends Controller
         }
 
         $normalizedDomain = $this->normalizeDomain($domain);
+        $selectedPhpVersion = trim((string) $phpVersion);
+        if ($selectedPhpVersion === '' || preg_match('/^\d+\.\d+$/', $selectedPhpVersion) !== 1) {
+            $selectedPhpVersion = 'auto';
+        }
+
         $indexPhp = <<<PHP
 <?php
-echo "<h1>Welcome to {$normalizedDomain}</h1>";
-echo "<p>Site created by ServerPanel.</p>";
+\$domain = '{$normalizedDomain}';
+\$configuredPhpVersion = '{$selectedPhpVersion}';
+\$runtimePhpVersion = PHP_VERSION;
+\$generatedAt = date('Y-m-d H:i:s');
+?>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title><?php echo htmlspecialchars(\$domain, ENT_QUOTES, 'UTF-8'); ?> | Ready</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg-1: #0f172a;
+            --bg-2: #1e293b;
+            --card: #ffffff;
+            --accent: #0ea5e9;
+            --text: #0f172a;
+            --muted: #64748b;
+            --ring: rgba(14, 165, 233, 0.22);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--text);
+            background: radial-gradient(circle at top right, #1d4ed8 0%, #0f172a 38%, #020617 100%);
+            display: grid;
+            place-items: center;
+            padding: 28px;
+        }
+        .card {
+            width: min(780px, 100%);
+            background: var(--card);
+            border-radius: 18px;
+            box-shadow: 0 18px 45px rgba(2, 6, 23, 0.35);
+            overflow: hidden;
+        }
+        .hero {
+            padding: 28px 30px;
+            background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 65%, #1d4ed8 100%);
+            color: #fff;
+        }
+        .hero h1 {
+            margin: 0;
+            font-size: 28px;
+            line-height: 1.2;
+            letter-spacing: 0.2px;
+        }
+        .hero p {
+            margin: 10px 0 0;
+            opacity: 0.95;
+            font-size: 14px;
+        }
+        .body {
+            padding: 24px 30px 30px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+        .meta {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px;
+            background: #f8fafc;
+            box-shadow: inset 0 0 0 1px var(--ring);
+        }
+        .label {
+            display: block;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.09em;
+            color: var(--muted);
+        }
+        .value {
+            display: block;
+            margin-top: 6px;
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--text);
+            word-break: break-word;
+        }
+        .footer {
+            margin-top: 18px;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 12px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            background: #e2e8f0;
+            border-radius: 6px;
+            padding: 2px 6px;
+            color: #0f172a;
+        }
+    </style>
+</head>
+<body>
+    <article class="card">
+        <header class="hero">
+            <h1><?php echo htmlspecialchars(\$domain, ENT_QUOTES, 'UTF-8'); ?></h1>
+            <p>Your new website is live and ready for deployment.</p>
+        </header>
+        <section class="body">
+            <div class="grid">
+                <div class="meta">
+                    <span class="label">Configured PHP</span>
+                    <span class="value"><?php echo htmlspecialchars(\$configuredPhpVersion, ENT_QUOTES, 'UTF-8'); ?></span>
+                </div>
+                <div class="meta">
+                    <span class="label">Runtime PHP</span>
+                    <span class="value"><?php echo htmlspecialchars(\$runtimePhpVersion, ENT_QUOTES, 'UTF-8'); ?></span>
+                </div>
+                <div class="meta">
+                    <span class="label">Generated At</span>
+                    <span class="value"><?php echo htmlspecialchars(\$generatedAt, ENT_QUOTES, 'UTF-8'); ?></span>
+                </div>
+            </div>
+            <p class="footer">
+                Managed by <strong>ServerPanel</strong>. Start building from
+                <code><?php echo htmlspecialchars(rtrim((string) dirname(__FILE__), '/'), ENT_QUOTES, 'UTF-8'); ?></code>.
+            </p>
+        </section>
+    </article>
+</body>
+</html>
 
 PHP;
 
+        $indexHtml = <<<HTML
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>{$normalizedDomain} | Ready</title>
+    <style>
+        body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif;background:#0f172a;color:#0f172a;padding:24px}
+        .card{width:min(720px,100%);background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 18px 40px rgba(2,6,23,.32)}
+        .head{padding:24px;background:linear-gradient(135deg,#0ea5e9,#2563eb);color:#fff}
+        .head h1{margin:0;font-size:26px}
+        .body{padding:22px}
+        .meta{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        .item{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px}
+        .label{font-size:11px;text-transform:uppercase;color:#64748b;font-weight:700;letter-spacing:.08em}
+        .value{margin-top:6px;font-size:16px;font-weight:700}
+    </style>
+</head>
+<body>
+    <article class="card">
+        <header class="head"><h1>{$normalizedDomain}</h1><p>Starter page generated by ServerPanel</p></header>
+        <section class="body">
+            <div class="meta">
+                <div class="item"><div class="label">Configured PHP</div><div class="value">{$selectedPhpVersion}</div></div>
+                <div class="item"><div class="label">Status</div><div class="value">Ready</div></div>
+            </div>
+        </section>
+    </article>
+</body>
+</html>
+
+HTML;
+
         @file_put_contents(rtrim($rootPath, '/').'/index.php', $indexPhp);
-        @file_put_contents(
-            rtrim($rootPath, '/').'/index.html',
-            "<!doctype html><html><head><meta charset=\"utf-8\"><title>{$normalizedDomain}</title></head><body><h1>{$normalizedDomain}</h1><p>Site is ready.</p></body></html>"
-        );
+        @file_put_contents(rtrim($rootPath, '/').'/index.html', $indexHtml);
 
         $extraDir = rtrim($rootPath, '/').'/extra';
         if (! is_dir($extraDir)) {
@@ -1221,7 +1528,7 @@ PHP;
 
         @file_put_contents(
             $extraDir.'/first-site-note.txt',
-            "This folder was created on first website creation.\nDomain: {$normalizedDomain}\nCreated at: ".now()->toDateTimeString()."\n"
+            "This folder was created on first website creation.\nDomain: {$normalizedDomain}\nConfigured PHP: {$selectedPhpVersion}\nCreated at: ".now()->toDateTimeString()."\n"
         );
     }
 
@@ -1230,7 +1537,7 @@ PHP;
      */
     private function relocateApacheDefaultPage(): void
     {
-        if ($this->cannotManageLiveWebServer()) {
+        if (! $this->canManageApacheVhosts()) {
             return;
         }
 
@@ -1261,9 +1568,113 @@ PHP;
         @file_put_contents($marker, now()->toDateTimeString());
     }
 
+    private function syncLiveWebVhost(string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null): void
+    {
+        $scriptResult = $this->runSyncVhostScript('sync', $domain, $rootPath, $phpVersion, $oldDomain);
+        if ($scriptResult['ran'] && $scriptResult['success']) {
+            return;
+        }
+
+        $this->syncLiveApacheVhost($domain, $rootPath, $phpVersion, $oldDomain);
+        $this->syncLiveNginxVhost($domain, $rootPath, $phpVersion, $oldDomain);
+    }
+
+    /**
+     * @return array{generated: bool, messages: array<int, string>}
+     */
+    private function syncLiveWebVhostWithReport(string $domain, string $rootPath, string $phpVersion): array
+    {
+        $messages = [];
+        $generated = false;
+        $normalizedDomain = $this->normalizeDomain($domain);
+        $isWindows = str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS');
+        $isRoot = function_exists('posix_geteuid') && posix_geteuid() === 0;
+        $scriptResult = $this->runSyncVhostScript('sync', $normalizedDomain, $rootPath, $phpVersion);
+        if ($scriptResult['ran'] && $scriptResult['success']) {
+            $apacheConf = $this->apacheVhostPath($normalizedDomain);
+            $nginxConf = $this->nginxVhostPath($normalizedDomain);
+            $nginxEnabled = $this->nginxEnabledVhostPath($normalizedDomain);
+
+            if (is_file($apacheConf)) {
+                $generated = true;
+                $messages[] = "Apache vhost synced: {$apacheConf}";
+            }
+            if (is_file($nginxConf) && (is_link($nginxEnabled) || is_file($nginxEnabled))) {
+                $generated = true;
+                $messages[] = "Nginx vhost synced: {$nginxConf}";
+            }
+            if ($scriptResult['output'] !== '') {
+                $messages[] = $scriptResult['output'];
+            }
+
+            return [
+                'generated' => $generated,
+                'messages' => $messages,
+            ];
+        }
+        if ($scriptResult['ran'] && ! $scriptResult['success'] && $scriptResult['output'] !== '') {
+            $messages[] = 'Vhost script failed: '.$scriptResult['output'];
+        }
+
+        if ($this->canManageApacheVhosts()) {
+            $this->syncLiveApacheVhost($normalizedDomain, $rootPath, $phpVersion);
+            $apacheConf = $this->apacheVhostPath($normalizedDomain);
+            if (is_file($apacheConf)) {
+                $generated = true;
+                $messages[] = "Apache vhost synced: {$apacheConf}";
+            } else {
+                $messages[] = "Apache sync attempted but file not found: {$apacheConf}";
+            }
+        } elseif ($isWindows) {
+            $messages[] = 'Apache vhost skipped: Windows environment.';
+        } elseif (! is_dir('/etc/apache2/sites-available')) {
+            $messages[] = 'Apache vhost skipped: /etc/apache2/sites-available not found.';
+        } elseif (! $isRoot) {
+            $messages[] = 'Apache vhost skipped: process is not running as root.';
+        } else {
+            $messages[] = 'Apache vhost skipped: insufficient permissions.';
+        }
+
+        if ($this->canManageNginxVhosts()) {
+            $this->syncLiveNginxVhost($normalizedDomain, $rootPath, $phpVersion);
+            $nginxConf = $this->nginxVhostPath($normalizedDomain);
+            $nginxEnabled = $this->nginxEnabledVhostPath($normalizedDomain);
+            if (is_file($nginxConf) && (is_link($nginxEnabled) || is_file($nginxEnabled))) {
+                $generated = true;
+                $messages[] = "Nginx vhost synced: {$nginxConf}";
+            } else {
+                $messages[] = "Nginx sync attempted but config/link missing: {$nginxConf}";
+            }
+        } elseif ($isWindows) {
+            $messages[] = 'Nginx vhost skipped: Windows environment.';
+        } elseif (! is_dir('/etc/nginx/sites-available') || ! is_dir('/etc/nginx/sites-enabled')) {
+            $messages[] = 'Nginx vhost skipped: /etc/nginx/sites-available or sites-enabled not found.';
+        } elseif (! $isRoot) {
+            $messages[] = 'Nginx vhost skipped: process is not running as root.';
+        } else {
+            $messages[] = 'Nginx vhost skipped: insufficient permissions.';
+        }
+
+        return [
+            'generated' => $generated,
+            'messages' => $messages,
+        ];
+    }
+
+    private function removeLiveWebVhost(string $domain): void
+    {
+        $scriptResult = $this->runSyncVhostScript('remove', $domain);
+        if ($scriptResult['ran'] && $scriptResult['success']) {
+            return;
+        }
+
+        $this->removeLiveApacheVhost($domain);
+        $this->removeLiveNginxVhost($domain);
+    }
+
     private function syncLiveApacheVhost(string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null): void
     {
-        if ($this->cannotManageLiveWebServer()) {
+        if (! $this->canManageApacheVhosts()) {
             return;
         }
 
@@ -1289,7 +1700,7 @@ PHP;
 
     private function removeLiveApacheVhost(string $domain): void
     {
-        if ($this->cannotManageLiveWebServer()) {
+        if (! $this->canManageApacheVhosts()) {
             return;
         }
 
@@ -1311,6 +1722,69 @@ PHP;
     private function apacheVhostPath(string $domain): string
     {
         return '/etc/apache2/sites-available/'.$domain.'.conf';
+    }
+
+    private function syncLiveNginxVhost(string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null): void
+    {
+        if (! $this->canManageNginxVhosts()) {
+            return;
+        }
+
+        $domain = $this->normalizeDomain($domain);
+        if ($domain === '') {
+            return;
+        }
+
+        $confPath = $this->nginxVhostPath($domain);
+        @file_put_contents($confPath, $this->buildNginxVhostConfig($domain, $rootPath, $phpVersion));
+        @chmod($confPath, 0644);
+
+        if ($oldDomain !== null) {
+            $normalizedOldDomain = $this->normalizeDomain($oldDomain);
+            if ($normalizedOldDomain !== '' && $normalizedOldDomain !== $domain) {
+                $this->removeLiveNginxVhost($normalizedOldDomain);
+            }
+        }
+
+        $enabledPath = $this->nginxEnabledVhostPath($domain);
+        if (! is_link($enabledPath)) {
+            @unlink($enabledPath);
+            @symlink($confPath, $enabledPath);
+        }
+        $this->runSystemCommand('nginx -t && systemctl reload nginx');
+    }
+
+    private function removeLiveNginxVhost(string $domain): void
+    {
+        if (! $this->canManageNginxVhosts()) {
+            return;
+        }
+
+        $domain = $this->normalizeDomain($domain);
+        if ($domain === '') {
+            return;
+        }
+
+        $confPath = $this->nginxVhostPath($domain);
+        $enabledPath = $this->nginxEnabledVhostPath($domain);
+        if (is_link($enabledPath) || is_file($enabledPath)) {
+            @unlink($enabledPath);
+        }
+        if (is_file($confPath)) {
+            @unlink($confPath);
+        }
+
+        $this->runSystemCommand('nginx -t && systemctl reload nginx');
+    }
+
+    private function nginxVhostPath(string $domain): string
+    {
+        return '/etc/nginx/sites-available/'.$domain.'.conf';
+    }
+
+    private function nginxEnabledVhostPath(string $domain): string
+    {
+        return '/etc/nginx/sites-enabled/'.$domain.'.conf';
     }
 
     private function buildApacheVhostConfig(string $domain, string $rootPath, string $phpVersion): string
@@ -1344,6 +1818,101 @@ PHP;
 CONF;
     }
 
+    private function buildNginxVhostConfig(string $domain, string $rootPath, string $phpVersion): string
+    {
+        $domain = $this->normalizeDomain($domain);
+        $rootPath = trim(str_replace('\\', '/', $rootPath));
+        $phpVersion = $this->normalizePhpVersionForSocket($phpVersion);
+        $serverAlias = $this->shouldAddWwwAlias($domain) ? " www.{$domain}" : '';
+        $socketPath = "/run/php/php{$phpVersion}-fpm.sock";
+
+        return <<<CONF
+server {
+    listen 80;
+    server_name {$domain}{$serverAlias};
+    root {$rootPath};
+    index index.php index.html index.htm;
+
+    access_log /var/log/nginx/{$domain}_access.log;
+    error_log /var/log/nginx/{$domain}_error.log;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param PATH_INFO \$fastcgi_path_info;
+        fastcgi_index index.php;
+        fastcgi_pass unix:{$socketPath};
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+
+CONF;
+    }
+
+    /**
+     * @param array<string, mixed> $website
+     * @return array<string, mixed>
+     */
+    private function buildVhostPreview(array $website): array
+    {
+        $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
+        $rootPath = (string) ($website['root_path'] ?? '');
+        $phpVersion = (string) ($website['php_version'] ?? '8.3');
+
+        if ($domain === '' || $rootPath === '') {
+            return [
+                'apache' => [
+                    'path' => '',
+                    'exists' => false,
+                    'source' => 'missing website data',
+                    'content' => '',
+                ],
+                'nginx' => [
+                    'path' => '',
+                    'exists' => false,
+                    'source' => 'missing website data',
+                    'content' => '',
+                ],
+            ];
+        }
+
+        $apachePath = $this->apacheVhostPath($domain);
+        $nginxPath = $this->nginxVhostPath($domain);
+
+        $apacheExists = is_file($apachePath);
+        $nginxExists = is_file($nginxPath);
+
+        $apacheContent = $apacheExists
+            ? (string) @file_get_contents($apachePath)
+            : $this->buildApacheVhostConfig($domain, $rootPath, $phpVersion);
+        $nginxContent = $nginxExists
+            ? (string) @file_get_contents($nginxPath)
+            : $this->buildNginxVhostConfig($domain, $rootPath, $phpVersion);
+
+        return [
+            'apache' => [
+                'path' => $apachePath,
+                'exists' => $apacheExists,
+                'source' => $apacheExists ? 'loaded from file' : 'rendered template preview',
+                'content' => $apacheContent,
+            ],
+            'nginx' => [
+                'path' => $nginxPath,
+                'exists' => $nginxExists,
+                'source' => $nginxExists ? 'loaded from file' : 'rendered template preview',
+                'content' => $nginxContent,
+            ],
+        ];
+    }
+
     private function normalizePhpVersionForSocket(string $phpVersion): string
     {
         $normalized = trim($phpVersion);
@@ -1369,17 +1938,29 @@ CONF;
         return count($subLabels) === 1 && $subLabels[0] === 'www';
     }
 
-    private function cannotManageLiveWebServer(): bool
+    private function canManageLinuxWebServerFiles(): bool
     {
         if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return true;
+            return false;
         }
 
         if (! function_exists('posix_geteuid') || posix_geteuid() !== 0) {
-            return true;
+            return false;
         }
 
-        return ! is_dir('/etc/apache2/sites-available');
+        return true;
+    }
+
+    private function canManageApacheVhosts(): bool
+    {
+        return $this->canManageLinuxWebServerFiles() && is_dir('/etc/apache2/sites-available');
+    }
+
+    private function canManageNginxVhosts(): bool
+    {
+        return $this->canManageLinuxWebServerFiles()
+            && is_dir('/etc/nginx/sites-available')
+            && is_dir('/etc/nginx/sites-enabled');
     }
 
     /**
@@ -1501,14 +2082,21 @@ CONF;
                     $id = (string) str()->uuid();
                 }
 
+                $domain = $this->normalizeDomain((string) ($row['domain'] ?? ''));
+                $rootPath = $domain !== ''
+                    ? $this->normalizeRootPath((string) ($row['root_path'] ?? ''), $domain)
+                    : '';
+                $siteOwner = $rootPath !== ''
+                    ? $this->extractSiteOwnerFromRootPath($rootPath)
+                    : (isset($row['site_owner']) ? (string) $row['site_owner'] : null);
                 $createdAt = $this->normalizeDatabaseDatetime((string) ($row['created_at'] ?? ''));
                 $updatedAt = $this->normalizeDatabaseDatetime((string) ($row['updated_at'] ?? ''), $createdAt);
 
                 return [
                     'id' => $id,
-                    'domain' => (string) ($row['domain'] ?? ''),
-                    'root_path' => '',
-                    'site_owner' => isset($row['site_owner']) ? (string) $row['site_owner'] : null,
+                    'domain' => $domain,
+                    'root_path' => $rootPath,
+                    'site_owner' => $siteOwner,
                     'php_version' => (string) ($row['php_version'] ?? ''),
                     'enable_ssl' => (bool) ($row['enable_ssl'] ?? false),
                     'assigned_user_id' => isset($row['assigned_user_id']) && $row['assigned_user_id'] !== '' ? (int) $row['assigned_user_id'] : null,
@@ -1560,19 +2148,37 @@ CONF;
     private function websiteModelToArray(Website $website): array
     {
         $domain = $this->normalizeDomain((string) ($website->domain ?? ''));
-        $rootPath = $domain !== '' ? $this->normalizeRootPath('', $domain) : '';
+        $rootPath = $domain !== ''
+            ? $this->normalizeRootPath((string) ($website->root_path ?? ''), $domain)
+            : '';
+        $siteOwner = $rootPath !== ''
+            ? $this->extractSiteOwnerFromRootPath($rootPath)
+            : ($website->site_owner !== null ? (string) $website->site_owner : null);
+        $storedStatus = (string) ($website->status ?? 'pending');
+        $status = $this->detectRuntimeStatus([
+            'domain' => $domain,
+            'root_path' => $rootPath,
+            'status' => $storedStatus,
+        ]);
+        if ($website->exists && $status !== $storedStatus) {
+            try {
+                $website->forceFill(['status' => $status])->saveQuietly();
+            } catch (\Throwable $e) {
+                // Keep response non-blocking if status sync fails.
+            }
+        }
 
         return [
             'id' => (string) $website->id,
             'domain' => $domain,
             'root_path' => $rootPath,
-            'site_owner' => $website->site_owner,
+            'site_owner' => $siteOwner,
             'php_version' => (string) ($website->php_version ?? ''),
             'enable_ssl' => (bool) ($website->enable_ssl ?? false),
             'assigned_user_id' => $website->assigned_user_id,
             'assigned_reseller_id' => $website->assigned_reseller_id,
             'command' => $website->command,
-            'status' => (string) ($website->status ?? 'pending'),
+            'status' => $status,
             'created_at' => $website->created_at?->toIso8601String(),
             'updated_at' => $website->updated_at?->toIso8601String(),
         ];
@@ -1645,12 +2251,20 @@ CONF;
         $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
 
         $hasRoot = $rootPath !== '' && is_dir($rootPath);
-        $hasVhost = $this->apacheVhostExists($domain);
+        $hasApacheVhost = $this->apacheVhostExists($domain);
+        $hasNginxVhost = $this->nginxVhostExists($domain);
+        $hasEntryFile = $hasRoot && (
+            is_file(rtrim($rootPath, '/').'/index.php')
+            || is_file(rtrim($rootPath, '/').'/index.html')
+        );
 
-        if ($hasRoot && $hasVhost) {
+        if ($hasApacheVhost || $hasNginxVhost) {
             return 'live';
         }
-        if ($hasRoot || $hasVhost) {
+        if ($hasRoot && $hasEntryFile) {
+            return 'live';
+        }
+        if ($hasRoot) {
             return 'partial';
         }
 
@@ -1665,6 +2279,19 @@ CONF;
         }
 
         return is_file($this->apacheVhostPath($domain));
+    }
+
+    private function nginxVhostExists(string $domain): bool
+    {
+        $domain = $this->normalizeDomain($domain);
+        if ($domain === '') {
+            return false;
+        }
+
+        return is_file('/etc/nginx/sites-available/'.$domain)
+            || is_file('/etc/nginx/sites-available/'.$domain.'.conf')
+            || is_file('/etc/nginx/sites-enabled/'.$domain)
+            || is_file('/etc/nginx/sites-enabled/'.$domain.'.conf');
     }
 
     private function countWebsiteCronJobs(string $websiteId): int

@@ -1,8 +1,9 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
-defineProps({
+const props = defineProps({
     stats: {
         type: Object,
         required: true,
@@ -11,6 +12,17 @@ defineProps({
         type: Array,
         default: () => [],
     },
+});
+
+const roleSummary = computed(() => {
+    const roles = props.stats?.users_roles ?? [];
+    if (!roles.length) {
+        return 'No roles';
+    }
+
+    return roles
+        .map((item) => `${item.name}: ${item.count}`)
+        .join(', ');
 });
 </script>
 
@@ -31,10 +43,7 @@ defineProps({
                     <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Total Users</p>
                     <p class="mt-2 text-2xl font-semibold">{{ stats.users_total }}</p>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Super Admin: {{ stats.users_super_admin }},
-                        Admin: {{ stats.users_admin }},
-                        Reseller: {{ stats.users_reseller }},
-                        General: {{ stats.users_general }}
+                        {{ roleSummary }}
                     </p>
                 </article>
 

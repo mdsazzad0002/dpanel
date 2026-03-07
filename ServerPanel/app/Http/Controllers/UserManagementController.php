@@ -56,10 +56,12 @@ class UserManagementController extends Controller
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->get(['id', 'name', 'slug']),
-            'resellers' => User::query()
-                ->role('reseller')
-                ->orderBy('name')
-                ->get(['id', 'name', 'email']),
+            'resellers' => Role::query()->where('name', 'reseller')->exists()
+                ? User::query()
+                    ->role('reseller')
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'email'])
+                : collect(),
         ]);
     }
 

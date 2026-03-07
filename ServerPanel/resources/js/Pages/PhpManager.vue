@@ -125,7 +125,6 @@ const setDefaultVersion = () => {
 const saveExtensions = async () => {
     extensionSyncing.value = true;
     extensionSyncError.value = '';
-    extensionForm.version = versionsForm.current_version;
 
     try {
         await window.axios.patch(
@@ -150,16 +149,17 @@ const syncExtensionsFromServer = async () => {
     try {
         const response = await window.axios.post(
             route('php.extensions.sync'),
-            { version: versionsForm.current_version },
+            { version: extensionForm.version },
             { headers: { Accept: 'application/json' } },
         );
 
         const payload = response?.data?.data ?? {};
         const availableExtensions = Array.isArray(payload.availableExtensions) ? payload.availableExtensions : [];
         const extensionStates = payload.extensionStates ?? {};
+        const version = String(payload.version ?? extensionForm.version ?? versionsForm.current_version);
 
         extensionOptions.value = availableExtensions;
-        extensionForm.version = versionsForm.current_version;
+        extensionForm.version = version;
         extensionForm.extensions = availableExtensions.filter((extension) => Boolean(extensionStates?.[extension]));
     } catch (error) {
         extensionSyncError.value = error?.response?.data?.message ?? 'Failed to sync extensions from server.';
@@ -169,7 +169,6 @@ const syncExtensionsFromServer = async () => {
 };
 
 const saveConfig = () => {
-    configForm.version = versionsForm.current_version;
     configForm.patch(route('php.config.update'));
 };
 
@@ -190,6 +189,13 @@ onMounted(() => {
         </template>
 
         <div class="space-y-5">
+            <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 whitespace-pre-line">
+                {{ page.props.flash.success }}
+            </div>
+            <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 whitespace-pre-line">
+                {{ page.props.flash.error }}
+            </div>
+
             <div class="grid gap-6 lg:grid-cols-12">
                 <section class="space-y-4 rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 lg:col-span-6">
                     <div class="flex items-center justify-between gap-3">
@@ -237,22 +243,27 @@ onMounted(() => {
                         <div>
                             <label class="mb-1 block text-sm">memory_limit</label>
                             <input v-model="configForm.memory_limit" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                            <p v-if="configForm.errors.memory_limit" class="mt-1 text-xs text-red-600">{{ configForm.errors.memory_limit }}</p>
                         </div>
                         <div>
                             <label class="mb-1 block text-sm">upload_max_filesize</label>
                             <input v-model="configForm.upload_max_filesize" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                            <p v-if="configForm.errors.upload_max_filesize" class="mt-1 text-xs text-red-600">{{ configForm.errors.upload_max_filesize }}</p>
                         </div>
                         <div>
                             <label class="mb-1 block text-sm">post_max_size</label>
                             <input v-model="configForm.post_max_size" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                            <p v-if="configForm.errors.post_max_size" class="mt-1 text-xs text-red-600">{{ configForm.errors.post_max_size }}</p>
                         </div>
                         <div>
                             <label class="mb-1 block text-sm">max_execution_time</label>
                             <input v-model.number="configForm.max_execution_time" type="number" min="1" max="3600" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                            <p v-if="configForm.errors.max_execution_time" class="mt-1 text-xs text-red-600">{{ configForm.errors.max_execution_time }}</p>
                         </div>
                         <div>
                             <label class="mb-1 block text-sm">max_input_vars</label>
                             <input v-model.number="configForm.max_input_vars" type="number" min="100" max="50000" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                            <p v-if="configForm.errors.max_input_vars" class="mt-1 text-xs text-red-600">{{ configForm.errors.max_input_vars }}</p>
                         </div>
                         <div>
                             <label class="mb-1 block text-sm">display_errors</label>
@@ -260,8 +271,28 @@ onMounted(() => {
                                 <option value="On">On</option>
                                 <option value="Off">Off</option>
                             </select>
+                            <p v-if="configForm.errors.display_errors" class="mt-1 text-xs text-red-600">{{ configForm.errors.display_errors }}</p>
                         </div>
                     </div>
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-sm">log_errors</label>
+                            <select v-model="configForm.log_errors" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                                <option value="On">On</option>
+                                <option value="Off">Off</option>
+                            </select>
+                            <p v-if="configForm.errors.log_errors" class="mt-1 text-xs text-red-600">{{ configForm.errors.log_errors }}</p>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-sm">allow_url_fopen</label>
+                            <select v-model="configForm.allow_url_fopen" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                                <option value="On">On</option>
+                                <option value="Off">Off</option>
+                            </select>
+                            <p v-if="configForm.errors.allow_url_fopen" class="mt-1 text-xs text-red-600">{{ configForm.errors.allow_url_fopen }}</p>
+                        </div>
+                    </div>
+                    <p v-if="configForm.errors.version" class="text-xs text-red-600">{{ configForm.errors.version }}</p>
                     <button type="button" :disabled="configForm.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" @click="saveConfig">
                         Save Config
                     </button>

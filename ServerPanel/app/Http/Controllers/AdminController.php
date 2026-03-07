@@ -8,6 +8,7 @@ use App\Models\Website;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Spatie\Permission\Models\Role;
 
 class AdminController extends Controller
 {
@@ -16,12 +17,11 @@ class AdminController extends Controller
      */
     public function index(): Response
     {
+        $roleStats = $this->collectRoleStats();
+
         $stats = [
             'users_total' => User::count(),
-            'users_super_admin' => 0,
-            'users_admin' => User::role('admin')->count(),
-            'users_reseller' => User::role('reseller')->count(),
-            'users_general' => User::role('general_user')->count(),
+            'users_roles' => $roleStats,
             'packages_total' => Package::count(),
             'packages_active' => Package::where('is_active', true)->count(),
             'website_requests_pending' => $this->countPendingWebsiteRequests(),
@@ -60,5 +60,21 @@ class AdminController extends Controller
             return 0;
         }
     }
-}
 
+    /**
+     * @return array<int, array{name: string, count: int}>
+     */
+    private function collectRoleStats(): array
+    {
+        return Role::query()
+            ->withCount('users')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Role $role): array => [
+                'name' => (string) $role->name,
+                'count' => (int) $role->users_count,
+            ])
+            ->values()
+            ->all();
+    }
+}

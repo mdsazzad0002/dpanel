@@ -20,6 +20,13 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    vhostPreview: {
+        type: Object,
+        default: () => ({
+            apache: { path: '', exists: false, source: '', content: '' },
+            nginx: { path: '', exists: false, source: '', content: '' },
+        }),
+    },
 });
 
 const formatDate = (value) => {
@@ -88,6 +95,17 @@ const liveSiteUrl = computed(() => {
 
         <div class="space-y-6">
             <div class="flex justify-end gap-2">
+                <Link
+                    :href="route('websites.vhost.sync', website.id)"
+                    method="post"
+                    as="button"
+                    class="rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300"
+                >
+                    Sync VHost
+                </Link>
+                <Link :href="route('apache.index')" class="rounded-md border border-cyan-300 px-3 py-2 text-sm text-cyan-700 hover:bg-cyan-50 dark:border-cyan-700 dark:text-cyan-300">
+                    Apache Manager
+                </Link>
                 <Link :href="route('websites.filemanager', website.id)" class="rounded-md border border-emerald-300 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400">
                     Open File Manager
                 </Link>
@@ -233,6 +251,28 @@ const liveSiteUrl = computed(() => {
                                     : (item.value || '-')
                             }}
                         </p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">VHost Config Render</h2>
+                <div class="mt-4 grid gap-4 lg:grid-cols-2">
+                    <div class="rounded-lg border border-slate-200 dark:border-slate-700">
+                        <div class="border-b border-slate-200 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                            <p class="font-semibold">Apache</p>
+                            <p class="break-all">{{ vhostPreview.apache.path || '-' }}</p>
+                            <p>{{ vhostPreview.apache.source || '-' }}</p>
+                        </div>
+                        <pre class="max-h-80 overflow-auto bg-slate-950 p-3 text-xs text-slate-100"><code>{{ vhostPreview.apache.content || '# Apache config is not available yet.' }}</code></pre>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 dark:border-slate-700">
+                        <div class="border-b border-slate-200 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                            <p class="font-semibold">Nginx</p>
+                            <p class="break-all">{{ vhostPreview.nginx.path || '-' }}</p>
+                            <p>{{ vhostPreview.nginx.source || '-' }}</p>
+                        </div>
+                        <pre class="max-h-80 overflow-auto bg-slate-950 p-3 text-xs text-slate-100"><code>{{ vhostPreview.nginx.content || '# Nginx config is not available yet.' }}</code></pre>
                     </div>
                 </div>
             </section>

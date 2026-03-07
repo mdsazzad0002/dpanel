@@ -6,6 +6,7 @@ use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\Mailbox;
 use App\Models\Website;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -14,28 +15,41 @@ class MonitoringController extends Controller
 {
     public function index(): Response
     {
-        $snapshot = $this->systemSnapshot();
-
         return Inertia::render('Monitoring', [
-            'snapshot' => [
-                ...$snapshot,
-                'websites_total' => $this->safeCountWebsites(),
-                'mailboxes_total' => $this->mailboxesCount(),
-                'database_requests_total' => $this->safeCountDatabaseRequests(),
-                'cron_jobs_total' => $this->safeCountCronJobs(),
-                'services' => [
-                    'apache' => $this->serviceStatus('apache2'),
-                    'nginx' => $this->serviceStatus('nginx'),
-                    'mariadb' => $this->serviceStatus('mariadb'),
-                    'mysql' => $this->serviceStatus('mysql'),
-                    'redis' => $this->serviceStatus('redis-server'),
-                    'postfix' => $this->serviceStatus('postfix'),
-                    'dovecot' => $this->serviceStatus('dovecot'),
-                ],
-                'topProcesses' => $this->topProcesses(),
-                'updated_at' => now()->toDateTimeString(),
-            ],
+            'snapshot' => $this->buildSnapshot(),
         ]);
+    }
+
+    public function snapshot(): JsonResponse
+    {
+        return response()->json([
+            'snapshot' => $this->buildSnapshot(),
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildSnapshot(): array
+    {
+        return [
+            ...$this->systemSnapshot(),
+            'websites_total' => $this->safeCountWebsites(),
+            'mailboxes_total' => $this->mailboxesCount(),
+            'database_requests_total' => $this->safeCountDatabaseRequests(),
+            'cron_jobs_total' => $this->safeCountCronJobs(),
+            'services' => [
+                'apache' => $this->serviceStatus('apache2'),
+                'nginx' => $this->serviceStatus('nginx'),
+                'mariadb' => $this->serviceStatus('mariadb'),
+                'mysql' => $this->serviceStatus('mysql'),
+                'redis' => $this->serviceStatus('redis-server'),
+                'postfix' => $this->serviceStatus('postfix'),
+                'dovecot' => $this->serviceStatus('dovecot'),
+            ],
+            'topProcesses' => $this->topProcesses(),
+            'updated_at' => now()->toDateTimeString(),
+        ];
     }
 
     private function mailboxesCount(): int

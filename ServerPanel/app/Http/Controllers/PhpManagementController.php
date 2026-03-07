@@ -51,11 +51,11 @@ class PhpManagementController extends Controller
      * @var array<string, string>
      */
     private const DEFAULT_CONFIG = [
-        'memory_limit' => '256M',
-        'upload_max_filesize' => '128M',
-        'post_max_size' => '128M',
+        'memory_limit' => '512M',
+        'upload_max_filesize' => '256M',
+        'post_max_size' => '256M',
         'max_execution_time' => '300',
-        'max_input_vars' => '3000',
+        'max_input_vars' => '5000',
         'display_errors' => 'Off',
         'log_errors' => 'On',
         'allow_url_fopen' => 'On',
@@ -329,7 +329,7 @@ class PhpManagementController extends Controller
             return redirect()->route('php.manager')->with('error', 'Selected PHP version is invalid.');
         }
 
-        $state['config'][$version] = [
+        $configValues = [
             'memory_limit' => (string) $validated['memory_limit'],
             'upload_max_filesize' => (string) $validated['upload_max_filesize'],
             'post_max_size' => (string) $validated['post_max_size'],
@@ -340,9 +340,15 @@ class PhpManagementController extends Controller
             'allow_url_fopen' => (string) $validated['allow_url_fopen'],
         ];
 
+        $serverApply = $this->applyConfigToServer($version, $configValues);
+        if (! $serverApply['applied']) {
+            return redirect()->route('php.manager', ['version' => $version])->with('error', $serverApply['message']);
+        }
+
+        $state['config'][$version] = $configValues;
         $this->writeState($state);
 
-        return redirect()->route('php.manager', ['version' => $version])->with('success', "PHP config updated for {$version}.");
+        return redirect()->route('php.manager', ['version' => $version])->with('success', "PHP config updated for {$version}. ".$serverApply['message']);
     }
 
     /**
@@ -438,6 +444,18 @@ class PhpManagementController extends Controller
      */
     private function writeRawState(array $state): void
     {
+        $encoded = json_encode($state, JSON_PRETTY_PRINT);
+        if (! is_string($encoded) || $encoded === '') {
+            return;
+        }
+
+        // Always keep legacy storage copy as fallback.
+        try {
+            Storage::put(self::LEGACY_STORAGE_FILE, $encoded);
+        } catch (\Throwable $e) {
+            // Continue with DB write attempt.
+        }
+
         if (! DB::getSchemaBuilder()->hasTable(self::SETTINGS_TABLE)) {
             return;
         }
@@ -445,7 +463,7 @@ class PhpManagementController extends Controller
         DB::table(self::SETTINGS_TABLE)->updateOrInsert(
             ['setting_key' => self::STATE_SETTING_KEY],
             [
-                'setting_value' => json_encode($state, JSON_PRETTY_PRINT),
+                'setting_value' => $encoded,
                 'updated_at' => now(),
                 'created_at' => now(),
             ],
@@ -754,6 +772,81 @@ class PhpManagementController extends Controller
         } catch (\Throwable $e) {
             return '';
         }
+    }
+
+    /**
+     * @return array{applied: bool, message: string}
+     */
+    private function applyConfigToServer(string $version, array $configValues): array
+    {
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return [
+                'applied' => false,
+                'message' => 'Server apply is not supported on Windows environment.',
+            ];
+        }
+
+        $scriptCandidates = [
+            base_path('scripts/php-config-apply.sh'),
+            '/usr/local/bin/serverpanel-php-config-apply.sh',
+        ];
+
+        $scriptPath = '';
+        foreach ($scriptCandidates as $candidate) {
+            if (is_file($candidate)) {
+                $scriptPath = $candidate;
+                break;
+            }
+        }
+
+        if ($scriptPath === '') {
+            return [
+                'applied' => false,
+                'message' => 'PHP config apply script not found. Expected: scripts/php-config-apply.sh',
+            ];
+        }
+
+        @chmod($scriptPath, 0755);
+
+        $command = implode(' ', [
+            'bash',
+            escapeshellarg($scriptPath),
+            '--version',
+            escapeshellarg($version),
+            '--memory-limit',
+            escapeshellarg((string) ($configValues['memory_limit'] ?? self::DEFAULT_CONFIG['memory_limit'])),
+            '--upload-max-filesize',
+            escapeshellarg((string) ($configValues['upload_max_filesize'] ?? self::DEFAULT_CONFIG['upload_max_filesize'])),
+            '--post-max-size',
+            escapeshellarg((string) ($configValues['post_max_size'] ?? self::DEFAULT_CONFIG['post_max_size'])),
+            '--max-execution-time',
+            escapeshellarg((string) ($configValues['max_execution_time'] ?? self::DEFAULT_CONFIG['max_execution_time'])),
+            '--max-input-vars',
+            escapeshellarg((string) ($configValues['max_input_vars'] ?? self::DEFAULT_CONFIG['max_input_vars'])),
+            '--display-errors',
+            escapeshellarg((string) ($configValues['display_errors'] ?? self::DEFAULT_CONFIG['display_errors'])),
+            '--log-errors',
+            escapeshellarg((string) ($configValues['log_errors'] ?? self::DEFAULT_CONFIG['log_errors'])),
+            '--allow-url-fopen',
+            escapeshellarg((string) ($configValues['allow_url_fopen'] ?? self::DEFAULT_CONFIG['allow_url_fopen'])),
+        ]);
+
+        $output = [];
+        $exitCode = 1;
+        exec($command.' 2>&1', $output, $exitCode);
+        $message = trim(implode("\n", $output));
+
+        if ($exitCode !== 0) {
+            return [
+                'applied' => false,
+                'message' => $message !== '' ? $message : 'PHP config apply script failed.',
+            ];
+        }
+
+        return [
+            'applied' => true,
+            'message' => $message !== '' ? $message : 'Applied to server and restarted related services.',
+        ];
     }
 
     private function extractVersionFromText(string $text): string

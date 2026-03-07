@@ -14,7 +14,8 @@ return new class extends Migration
         Schema::create('websites', function (Blueprint $table) {
             $table->string('id', 64)->primary();
             $table->string('domain')->unique();
-             $table->string('site_owner')->nullable();
+            $table->string('root_path')->nullable();
+            $table->string('site_owner')->nullable();
             $table->string('php_version', 16);
             $table->boolean('enable_ssl')->default(false);
             $table->unsignedBigInteger('assigned_user_id')->nullable();
@@ -33,4 +34,3 @@ return new class extends Migration
         Schema::dropIfExists('websites');
     }
 };
-
