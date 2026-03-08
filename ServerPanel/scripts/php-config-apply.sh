@@ -16,8 +16,8 @@ usage() {
 Usage:
   php-config-apply.sh --version 8.3 \\
     --memory-limit 512M \\
-    --upload-max-filesize 256M \\
-    --post-max-size 256M \\
+    --upload-max-filesize 2G \\
+    --post-max-size 2G \\
     --max-execution-time 300 \\
     --max-input-vars 5000 \\
     --display-errors Off \\

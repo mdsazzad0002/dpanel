@@ -52,8 +52,8 @@ class PhpManagementController extends Controller
      */
     private const DEFAULT_CONFIG = [
         'memory_limit' => '512M',
-        'upload_max_filesize' => '256M',
-        'post_max_size' => '256M',
+        'upload_max_filesize' => '2G',
+        'post_max_size' => '2G',
         'max_execution_time' => '300',
         'max_input_vars' => '5000',
         'display_errors' => 'Off',

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 
@@ -23,8 +23,31 @@ const activeItemPath = ref(props.selectedFile?.path || props.items?.[0]?.path ||
 const selectedPaths = ref([]);
 const hiddenEnabled = ref(Boolean(props.showHidden));
 const uploadDragActive = ref(false);
+const tableDragActive = ref(false);
+const tableDragDepth = ref(0);
+const droppedUploadHint = ref('');
 const sidebarSearch = ref('');
 const originalEditorContent = ref(props.selectedFile?.content ?? '');
+const contextMenu = ref({
+    visible: false,
+    x: 0,
+    y: 0,
+    itemPath: '',
+    itemType: '',
+    itemName: '',
+});
+
+function closeContextMenu() {
+    if (!contextMenu.value.visible) return;
+    contextMenu.value = {
+        visible: false,
+        x: 0,
+        y: 0,
+        itemPath: '',
+        itemType: '',
+        itemName: '',
+    };
+}
 
 const createFolderForm = useForm({ path: props.currentPath, name: '' });
 const createFileForm = useForm({ path: props.currentPath, name: '' });
@@ -41,6 +64,7 @@ watch(
     (value) => {
         pathInput.value = value || '';
         selectedPaths.value = [];
+        closeContextMenu();
     },
 );
 
@@ -69,12 +93,20 @@ watch(
     (list) => {
         if (!Array.isArray(list) || list.length === 0) {
             activeItemPath.value = '';
+            closeContextMenu();
             return;
         }
 
         const exists = list.some((item) => item.path === activeItemPath.value);
         if (!exists) {
             activeItemPath.value = props.selectedFile?.path || list[0].path;
+        }
+
+        if (contextMenu.value.visible) {
+            const contextExists = list.some((item) => item.path === contextMenu.value.itemPath);
+            if (!contextExists) {
+                closeContextMenu();
+            }
         }
     },
     { immediate: true },
@@ -88,6 +120,16 @@ onMounted(() => {
     if (props.openEditorModal && props.selectedFile && !props.openEditorPage) {
         modalType.value = 'editor';
     }
+
+    window.addEventListener('click', closeContextMenu);
+    window.addEventListener('scroll', closeContextMenu, true);
+    window.addEventListener('keydown', handleGlobalKeydown);
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('click', closeContextMenu);
+    window.removeEventListener('scroll', closeContextMenu, true);
+    window.removeEventListener('keydown', handleGlobalKeydown);
 });
 
 const activeItem = computed(() => props.items.find((item) => item.path === activeItemPath.value) || null);
@@ -109,6 +151,11 @@ const singleSelectedItem = computed(() => {
     }
 
     return activeItem.value;
+});
+const contextItem = computed(() => props.items.find((item) => item.path === contextMenu.value.itemPath) || null);
+const contextZip = computed(() => {
+    const item = contextItem.value;
+    return Boolean(item && item.type === 'file' && String(item.name).toLowerCase().endsWith('.zip'));
 });
 
 const isZipSelected = computed(() => {
@@ -223,9 +270,16 @@ const openEditorInNewTab = () => {
     openFileInEditor(item.path, { openInNewTab: true, useModal: false });
 };
 
+const ensureSingleSelection = (item) => {
+    if (!item) return;
+    activeItemPath.value = item.path;
+    selectedPaths.value = [item.path];
+};
+
 const handleItemClick = (item, event) => {
     if (!item) return;
 
+    closeContextMenu();
     const multiSelect = Boolean(event?.ctrlKey || event?.metaKey);
     activeItemPath.value = item.path;
 
@@ -239,6 +293,122 @@ const handleItemClick = (item, event) => {
     }
 
     selectedPaths.value = [item.path];
+};
+
+const openContextMenu = (item, event) => {
+    if (!item) return;
+    event.preventDefault();
+    event.stopPropagation();
+    ensureSingleSelection(item);
+
+    const menuWidth = 220;
+    const menuHeight = 280;
+    const viewportWidth = window.innerWidth || 1200;
+    const viewportHeight = window.innerHeight || 800;
+    const x = Math.max(8, Math.min(event.clientX, viewportWidth - menuWidth - 8));
+    const y = Math.max(8, Math.min(event.clientY, viewportHeight - menuHeight - 8));
+
+    contextMenu.value = {
+        visible: true,
+        x,
+        y,
+        itemPath: item.path,
+        itemType: item.type,
+        itemName: item.name,
+    };
+};
+
+const triggerContextAction = (action) => {
+    const item = contextItem.value;
+    closeContextMenu();
+    if (!item) return;
+
+    ensureSingleSelection(item);
+    if (action === 'open') {
+        if (item.type === 'dir') {
+            openPath(item.path);
+            return;
+        }
+
+        openFileInEditor(item.path, { useModal: !props.openEditorPage });
+        return;
+    }
+
+    if (action === 'open-tab') {
+        if (item.type !== 'file') return;
+        openFileInEditor(item.path, { openInNewTab: true, useModal: false });
+        return;
+    }
+
+    if (action === 'download') {
+        if (item.type !== 'file') return;
+        const url = route('websites.filemanager.file.download', { id: props.website.id, file_path: item.path });
+        window.location.href = url;
+        return;
+    }
+
+    if (action === 'rename') {
+        openModal('rename');
+        return;
+    }
+
+    if (action === 'permissions') {
+        openModal('permissions');
+        return;
+    }
+
+    if (action === 'zip') {
+        openModal('zip');
+        return;
+    }
+
+    if (action === 'unzip') {
+        if (!String(item.name || '').toLowerCase().endsWith('.zip')) return;
+        openModal('unzip');
+        return;
+    }
+
+    if (action === 'delete') {
+        deleteSelected();
+    }
+};
+
+const handleGlobalKeydown = (event) => {
+    if (event.key === 'Escape') {
+        closeContextMenu();
+    }
+};
+
+const dragHasFiles = (event) => {
+    const transferTypes = Array.from(event?.dataTransfer?.types || []);
+    return transferTypes.includes('Files');
+};
+
+const handleTableDragEnter = (event) => {
+    if (!dragHasFiles(event)) return;
+    event.preventDefault();
+    tableDragDepth.value += 1;
+    tableDragActive.value = true;
+};
+
+const handleTableDragOver = (event) => {
+    if (!dragHasFiles(event)) return;
+    event.preventDefault();
+    tableDragActive.value = true;
+};
+
+const handleTableDragLeave = (event) => {
+    if (!dragHasFiles(event)) return;
+    event.preventDefault();
+    tableDragDepth.value = Math.max(0, tableDragDepth.value - 1);
+    if (tableDragDepth.value === 0) {
+        tableDragActive.value = false;
+    }
+};
+
+const resetTableDragState = () => {
+    tableDragDepth.value = 0;
+    tableDragActive.value = false;
 };
 
 const toggleSelectPath = (path, checked) => {
@@ -415,17 +585,51 @@ const handleUploadDrop = (event) => {
     uploadForm.upload = event.dataTransfer?.files?.[0] ?? null;
 };
 
-const submitUpload = () => {
+const submitUpload = ({ fromDrop = false } = {}) => {
     uploadForm.path = props.currentPath;
     uploadForm.post(route('websites.filemanager.upload', props.website.id), {
         forceFormData: true,
         onStart: () => {
             uploadForm.clearErrors();
+            if (fromDrop) {
+                droppedUploadHint.value = `Uploading: ${uploadForm.upload?.name || 'file'}`;
+            }
         },
         onSuccess: () => {
             uploadDragActive.value = false;
+            if (fromDrop) {
+                droppedUploadHint.value = 'Upload complete.';
+            }
+        },
+        onError: () => {
+            if (fromDrop) {
+                droppedUploadHint.value = 'Upload failed.';
+            }
+        },
+        onFinish: () => {
+            if (fromDrop) {
+                window.setTimeout(() => {
+                    droppedUploadHint.value = '';
+                }, 3500);
+            }
         },
     });
+};
+
+const handleTableDrop = (event) => {
+    if (!dragHasFiles(event)) return;
+    event.preventDefault();
+    resetTableDragState();
+
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length === 0) return;
+
+    if (files.length > 1) {
+        droppedUploadHint.value = `Dropped ${files.length} files. Uploading first file: ${files[0].name}`;
+    }
+
+    uploadForm.upload = files[0];
+    submitUpload({ fromDrop: true });
 };
 
 const saveFile = () => {
@@ -595,10 +799,12 @@ const formatBytes = (bytes) => {
                                     <tr
                                         v-for="item in filteredItems"
                                         :key="`side-${item.path}`"
+                                        data-fm-row
                                         class="cursor-pointer border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60"
                                         :class="selectedPaths.includes(item.path) || activeItemPath === item.path ? 'bg-blue-50 dark:bg-blue-900/20' : ''"
                                         @click="handleItemClick(item, $event)"
                                         @dblclick="item.type === 'dir' ? openPath(item.path) : openFileInEditor(item.path, { useModal: !openEditorPage })"
+                                        @contextmenu.prevent="openContextMenu(item, $event)"
                                     >
                                         <td class="px-2 py-1.5" @click.stop>
                                             <input type="checkbox" :checked="selectedPaths.includes(item.path)" @change="toggleSelectPath(item.path, $event.target.checked)" />
@@ -620,7 +826,22 @@ const formatBytes = (bytes) => {
                     </div>
                 </aside>
 
-                <section class="xl:col-span-8 space-y-4">
+                <section
+                    class="relative xl:col-span-8 space-y-4"
+                    @dragenter.prevent="handleTableDragEnter"
+                    @dragover.prevent="handleTableDragOver"
+                    @dragleave.prevent="handleTableDragLeave"
+                    @drop.prevent="handleTableDrop"
+                >
+                    <div v-if="tableDragActive" class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-sky-500 bg-sky-500/10">
+                        <div class="rounded-lg bg-white/90 px-5 py-3 text-center text-sm font-semibold text-sky-700 shadow-sm dark:bg-slate-900/90 dark:text-sky-300">
+                            Drop file here to upload into
+                            <span class="font-mono">{{ currentPath || '/' }}</span>
+                        </div>
+                    </div>
+                    <div v-if="droppedUploadHint" class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200">
+                        {{ droppedUploadHint }}
+                    </div>
                     <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                         <table class="min-w-full text-left text-sm">
                         <thead class="bg-slate-50 dark:bg-slate-800">
@@ -636,10 +857,12 @@ const formatBytes = (bytes) => {
                             <tr
                                 v-for="item in items"
                                 :key="item.path"
+                                data-fm-row
                                 class="cursor-pointer border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60"
                                 :class="selectedPaths.includes(item.path) || activeItemPath === item.path ? 'bg-blue-50 dark:bg-blue-900/20' : ''"
                                 @click="handleItemClick(item, $event)"
                                 @dblclick="item.type === 'dir' ? openPath(item.path) : openFileInEditor(item.path, { useModal: !openEditorPage })"
+                                @contextmenu.prevent="openContextMenu(item, $event)"
                             >
                                 <td class="px-3 py-2 font-medium">
                                     {{ item.name }}
@@ -667,6 +890,58 @@ const formatBytes = (bytes) => {
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {{ page.props.flash.error }}
             </div>
+        </div>
+
+        <div
+            v-if="contextMenu.visible"
+            data-fm-context-menu
+            class="fixed z-[60] w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
+            :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+            @click.stop
+        >
+            <div class="border-b border-slate-200 px-3 py-2 dark:border-slate-700">
+                <p class="truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{{ contextMenu.itemName }}</p>
+                <p class="text-[11px] uppercase tracking-wide text-slate-500">{{ contextMenu.itemType }}</p>
+            </div>
+
+            <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="triggerContextAction('open')">
+                <i aria-hidden="true" class="itc bi bi-box-arrow-in-right text-xs"></i>
+                {{ contextItem?.type === 'dir' ? 'Open Folder' : 'Open File' }}
+            </button>
+            <button v-if="contextItem?.type === 'file'" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="triggerContextAction('open-tab')">
+                <i aria-hidden="true" class="itc bi bi-window-stack text-xs"></i>
+                Open in New Tab
+            </button>
+            <button v-if="contextItem?.type === 'file'" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="triggerContextAction('download')">
+                <i aria-hidden="true" class="itc bi bi-download text-xs"></i>
+                Download
+            </button>
+
+            <div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>
+
+            <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="triggerContextAction('rename')">
+                <i aria-hidden="true" class="itc bi bi-input-cursor-text text-xs"></i>
+                Rename
+            </button>
+            <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="triggerContextAction('permissions')">
+                <i aria-hidden="true" class="itc bi bi-shield-lock text-xs"></i>
+                Permissions
+            </button>
+            <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="triggerContextAction('zip')">
+                <i aria-hidden="true" class="itc bi bi-file-earmark-zip text-xs"></i>
+                Create Zip
+            </button>
+            <button v-if="contextZip" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="triggerContextAction('unzip')">
+                <i aria-hidden="true" class="itc bi bi-file-earmark-arrow-up text-xs"></i>
+                Extract Zip
+            </button>
+
+            <div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>
+
+            <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20" @click="triggerContextAction('delete')">
+                <i aria-hidden="true" class="itc bi bi-trash text-xs"></i>
+                Delete
+            </button>
         </div>
 
         <div v-if="modalType" class="fixed inset-0 z-50 flex bg-black/40 p-4" :class="modalType === 'editor' ? 'items-stretch justify-stretch' : 'items-center justify-center'">
@@ -787,5 +1062,3 @@ const formatBytes = (bytes) => {
         </div>
     </AuthenticatedLayout>
 </template>
-
-

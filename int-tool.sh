@@ -14,6 +14,7 @@ PROJECT_HINT=""
 PROJECT_URL=""
 PROJECT_TARGET=""
 PROJECT_BASE_URL=""
+REMOTE_PANEL_ARCHIVE_URL="http://192.168.0.50/a_final_storing/ServerInstaller/ServerPanel.zip"
 WEB_SERVER="apache"
 PHP_VERSIONS_RAW="7.4,8.0,8.2,8.3,8.4,8.5"
 PHP_DEFAULT_VERSION="8.3"
@@ -23,9 +24,25 @@ DB_NAME="serverinstaller"
 DB_USER="serverpanel"
 DB_PASSWORD=""
 PANEL_PORT="8090"
+WEBTOOLS_SEPARATE_PORTS="false"
+PHPMYADMIN_PORT="8091"
+ROUNDCUBE_PORT="8092"
 APACHE_BACKEND_PORT="8080"
 NGINX_PRIMARY_PORT="80"
 DB_SERVICE=""
+REDIS_SERVICE=""
+PHPMYADMIN_SERVICE="serverpanel-phpmyadmin"
+ROUNDCUBE_SERVICE="serverpanel-roundcube"
+PHPMYADMIN_ROOT="/root/phpmyadmin"
+ROUNDCUBE_ROOT="/root/roundcube"
+PHPMYADMIN_CONTROL_DB="phpmyadmin"
+PHPMYADMIN_CONTROL_USER="pma"
+PHPMYADMIN_CONTROL_PASSWORD=""
+PHPMYADMIN_ADMIN_USER="dbadmin"
+PHPMYADMIN_ADMIN_PASSWORD=""
+ROUNDCUBE_DB_NAME="roundcube"
+ROUNDCUBE_DB_USER="roundcube"
+ROUNDCUBE_DB_PASSWORD=""
 CURRENT_PID=""
 RESET_DB_STACK="false"
 LOGIN_CREDENTIALS_READY="false"
@@ -37,6 +54,7 @@ reset_runtime_defaults() {
     PROJECT_URL=""
     PROJECT_TARGET=""
     PROJECT_BASE_URL=""
+    REMOTE_PANEL_ARCHIVE_URL="http://192.168.0.50/a_final_storing/ServerInstaller/ServerPanel.zip"
     WEB_SERVER="apache"
     PHP_VERSIONS_RAW="7.4,8.0,8.2,8.3,8.4,8.5"
     PHP_DEFAULT_VERSION="8.3"
@@ -46,9 +64,25 @@ reset_runtime_defaults() {
     DB_USER="serverpanel"
     DB_PASSWORD=""
     PANEL_PORT="8090"
+    WEBTOOLS_SEPARATE_PORTS="false"
+    PHPMYADMIN_PORT="8091"
+    ROUNDCUBE_PORT="8092"
     APACHE_BACKEND_PORT="8080"
     NGINX_PRIMARY_PORT="80"
     DB_SERVICE=""
+    REDIS_SERVICE=""
+    PHPMYADMIN_SERVICE="serverpanel-phpmyadmin"
+    ROUNDCUBE_SERVICE="serverpanel-roundcube"
+    PHPMYADMIN_ROOT="/root/phpmyadmin"
+    ROUNDCUBE_ROOT="/root/roundcube"
+    PHPMYADMIN_CONTROL_DB="phpmyadmin"
+    PHPMYADMIN_CONTROL_USER="pma"
+    PHPMYADMIN_CONTROL_PASSWORD=""
+    PHPMYADMIN_ADMIN_USER="dbadmin"
+    PHPMYADMIN_ADMIN_PASSWORD=""
+    ROUNDCUBE_DB_NAME="roundcube"
+    ROUNDCUBE_DB_USER="roundcube"
+    ROUNDCUBE_DB_PASSWORD=""
     CURRENT_PID=""
     RESET_DB_STACK="false"
     LOGIN_CREDENTIALS_READY="false"
@@ -102,6 +136,7 @@ Options:
   --project-dir PATH   Laravel project path containing artisan/composer.json
   --project-url URL    Download project archive (.tar.gz/.tgz/.zip) and auto-detect ServerPanel
   --base-url URL       Base URL to auto-discover archive (ServerInstaller/ServerPanel .tar.gz/.tgz/.zip)
+  --remote-panel-url URL Fallback remote ServerPanel archive URL when local project is not found
   --project-target PATH Where downloaded project should be moved (default: SCRIPT_DIR/ServerPanel)
   --remote-project-dir PATH Alias for --project-target
   --web-server NAME    apache (default), nginx, or both
@@ -111,6 +146,10 @@ Options:
   --db-user NAME       Database user to create (default: serverpanel)
   --db-password PASS   Database password (default: random generated)
   --panel-port PORT    Panel HTTP port for system startup service (default: 8090)
+  --separate-webtools  Run phpMyAdmin/Roundcube on dedicated ports/services
+  --no-separate-webtools Keep phpMyAdmin/Roundcube behind panel port paths
+  --phpmyadmin-port PORT Dedicated phpMyAdmin port (default: 8091)
+  --roundcube-port PORT  Dedicated Roundcube port (default: 8092)
   --apache-backend-port PORT Apache backend port when --web-server both (default: 8080)
   --nginx-primary-port PORT  Nginx frontend port when --web-server both/nginx (default: 80)
   --reset-db           Purge existing DB packages and data before install
@@ -246,6 +285,11 @@ parse_args() {
                 PROJECT_BASE_URL="$2"
                 shift 2
                 ;;
+            --remote-panel-url)
+                [[ $# -lt 2 ]] && fail "--remote-panel-url requires a URL value."
+                REMOTE_PANEL_ARCHIVE_URL="$2"
+                shift 2
+                ;;
             --project-target)
                 [[ $# -lt 2 ]] && fail "--project-target requires a path value."
                 PROJECT_TARGET="$2"
@@ -289,6 +333,24 @@ parse_args() {
             --panel-port)
                 [[ $# -lt 2 ]] && fail "--panel-port requires a value."
                 PANEL_PORT="$2"
+                shift 2
+                ;;
+            --separate-webtools)
+                WEBTOOLS_SEPARATE_PORTS="true"
+                shift 1
+                ;;
+            --no-separate-webtools)
+                WEBTOOLS_SEPARATE_PORTS="false"
+                shift 1
+                ;;
+            --phpmyadmin-port)
+                [[ $# -lt 2 ]] && fail "--phpmyadmin-port requires a value."
+                PHPMYADMIN_PORT="$2"
+                shift 2
+                ;;
+            --roundcube-port)
+                [[ $# -lt 2 ]] && fail "--roundcube-port requires a value."
+                ROUNDCUBE_PORT="$2"
                 shift 2
                 ;;
             --apache-backend-port)
@@ -362,6 +424,18 @@ parse_args() {
     if (( PANEL_PORT < 1 || PANEL_PORT > 65535 )); then
         fail "Invalid --panel-port: ${PANEL_PORT}. Must be between 1 and 65535."
     fi
+    if [[ ! "${PHPMYADMIN_PORT}" =~ ^[0-9]+$ ]]; then
+        fail "Invalid --phpmyadmin-port: ${PHPMYADMIN_PORT}. Must be a number."
+    fi
+    if (( PHPMYADMIN_PORT < 1 || PHPMYADMIN_PORT > 65535 )); then
+        fail "Invalid --phpmyadmin-port: ${PHPMYADMIN_PORT}. Must be between 1 and 65535."
+    fi
+    if [[ ! "${ROUNDCUBE_PORT}" =~ ^[0-9]+$ ]]; then
+        fail "Invalid --roundcube-port: ${ROUNDCUBE_PORT}. Must be a number."
+    fi
+    if (( ROUNDCUBE_PORT < 1 || ROUNDCUBE_PORT > 65535 )); then
+        fail "Invalid --roundcube-port: ${ROUNDCUBE_PORT}. Must be between 1 and 65535."
+    fi
     if [[ ! "${APACHE_BACKEND_PORT}" =~ ^[0-9]+$ ]]; then
         fail "Invalid --apache-backend-port: ${APACHE_BACKEND_PORT}. Must be a number."
     fi
@@ -376,6 +450,26 @@ parse_args() {
     fi
     if [[ "${WEB_SERVER}" == "both" && "${APACHE_BACKEND_PORT}" == "${NGINX_PRIMARY_PORT}" ]]; then
         fail "--apache-backend-port and --nginx-primary-port cannot be the same when --web-server both."
+    fi
+    if [[ "${WEBTOOLS_SEPARATE_PORTS}" != "true" && "${WEBTOOLS_SEPARATE_PORTS}" != "false" ]]; then
+        fail "Invalid webtools mode flag: ${WEBTOOLS_SEPARATE_PORTS}. Use --separate-webtools or --no-separate-webtools."
+    fi
+    if [[ "${WEBTOOLS_SEPARATE_PORTS}" == "true" ]]; then
+        if [[ "${PHPMYADMIN_PORT}" == "${PANEL_PORT}" ]]; then
+            fail "--phpmyadmin-port cannot match --panel-port when --separate-webtools is enabled."
+        fi
+        if [[ "${ROUNDCUBE_PORT}" == "${PANEL_PORT}" ]]; then
+            fail "--roundcube-port cannot match --panel-port when --separate-webtools is enabled."
+        fi
+        if [[ "${PHPMYADMIN_PORT}" == "${ROUNDCUBE_PORT}" ]]; then
+            fail "--phpmyadmin-port and --roundcube-port must be different."
+        fi
+        if [[ "${PHPMYADMIN_PORT}" == "${NGINX_PRIMARY_PORT}" || "${PHPMYADMIN_PORT}" == "${APACHE_BACKEND_PORT}" ]]; then
+            fail "--phpmyadmin-port conflicts with web server listener port."
+        fi
+        if [[ "${ROUNDCUBE_PORT}" == "${NGINX_PRIMARY_PORT}" || "${ROUNDCUBE_PORT}" == "${APACHE_BACKEND_PORT}" ]]; then
+            fail "--roundcube-port conflicts with web server listener port."
+        fi
     fi
     if [[ ! "${NODEJS_REQUIRED_MAJOR}" =~ ^[0-9]+$ ]]; then
         fail "Invalid --node-major: ${NODEJS_REQUIRED_MAJOR}. Must be numeric (20 or 22)."
@@ -460,6 +554,21 @@ detect_db_cli() {
     echo ""
 }
 
+detect_redis_service() {
+    local svc
+    for svc in redis-server redis; do
+        if systemctl cat "${svc}.service" >/dev/null 2>&1; then
+            echo "${svc}"
+            return
+        fi
+        if systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -qx "${svc}.service"; then
+            echo "${svc}"
+            return
+        fi
+    done
+    echo ""
+}
+
 ensure_database_service_installed() {
     if [[ -n "$(detect_db_service)" ]]; then
         return
@@ -471,6 +580,20 @@ ensure_database_service_installed() {
         return
     fi
     fail "Package mariadb-server is not available on this host."
+}
+
+ensure_redis_service_installed() {
+    if [[ -n "$(detect_redis_service)" ]]; then
+        return
+    fi
+
+    warn "No Redis service unit detected. Attempting to install redis-server."
+    if is_package_available redis-server; then
+        ensure_package redis-server true
+        return
+    fi
+
+    warn "Package redis-server is not available on this host. Skipping Redis setup."
 }
 
 ensure_database_running() {
@@ -536,6 +659,76 @@ ensure_database_running() {
         fi
 
         fail "Database service failed to start (${svc}). Review logs above."
+    done
+}
+
+ensure_redis_running() {
+    local svc action was_active
+    ensure_redis_service_installed
+    svc="$(detect_redis_service)"
+
+    if [[ -z "${svc}" ]]; then
+        REDIS_SERVICE=""
+        warn "No Redis service unit found (redis-server/redis). Continuing without Redis."
+        return 0
+    fi
+
+    REDIS_SERVICE="${svc}"
+
+    while true; do
+        if systemctl is-active --quiet "${svc}"; then
+            was_active="true"
+            info "Redis service is already running, attempting restart: ${svc}"
+        else
+            was_active="false"
+            warn "Redis service is not active, attempting start: ${svc}"
+        fi
+
+        run systemctl enable "${svc}" || true
+        run systemctl reset-failed "${svc}" || true
+        run systemctl restart "${svc}" || true
+
+        if systemctl is-active --quiet "${svc}"; then
+            if [[ "${was_active}" == "true" ]]; then
+                ok "Redis service restarted and running: ${svc}"
+            else
+                ok "Redis service started: ${svc}"
+            fi
+            return 0
+        fi
+
+        systemctl status "${svc}.service" --no-pager || true
+        journalctl -u "${svc}.service" -n 80 --no-pager || true
+
+        if [[ -t 0 ]]; then
+            warn "Redis restart failed."
+            echo -e "${YELLOW}[WARN]${NC} Choose action:"
+            echo "  1. Retry Redis restart"
+            echo "  2. Skip Redis startup and continue"
+            echo "  3. Abort installer"
+            read -r action
+            case "${action,,}" in
+                1|"")
+                    ;;
+                2|skip|s)
+                    warn "Skipping Redis startup as requested."
+                    REDIS_SERVICE=""
+                    return 0
+                    ;;
+                3|abort|a)
+                    fail "Aborted by user after Redis restart failure."
+                    ;;
+                *)
+                    warn "Invalid choice. Please enter 1, 2, or 3."
+                    continue
+                    ;;
+            esac
+            continue
+        fi
+
+        warn "Redis service failed to start (${svc}) in non-interactive mode. Continuing without Redis."
+        REDIS_SERVICE=""
+        return 0
     done
 }
 
@@ -717,6 +910,43 @@ ensure_ondrej_repo() {
     run add-apt-repository -y ppa:ondrej/php
 }
 
+configure_apache_php_fpm_mode() {
+    local php_version="$1"
+    local php_module=""
+    local fpm_service=""
+    local fpm_conf=""
+
+    if [[ -z "${php_version}" ]]; then
+        php_version="8.3"
+    fi
+
+    info "Configuring Apache PHP runtime: PHP-FPM (${php_version}) with mpm_event"
+
+    for module_load in /etc/apache2/mods-enabled/php*.load; do
+        [[ -f "${module_load}" ]] || continue
+        php_module="$(basename "${module_load}" .load)"
+        run a2dismod "${php_module}" || true
+    done
+
+    run a2dismod mpm_prefork || true
+    run a2enmod mpm_event proxy proxy_fcgi setenvif rewrite headers || true
+
+    fpm_service="php${php_version}-fpm"
+    fpm_conf="php${php_version}-fpm"
+    if systemctl cat "${fpm_service}.service" >/dev/null 2>&1; then
+        run systemctl enable "${fpm_service}" || true
+        run systemctl restart "${fpm_service}" || true
+    else
+        warn "${fpm_service}.service not found. PHP-FPM may not be active for Apache."
+    fi
+
+    if [[ -f "/etc/apache2/conf-available/${fpm_conf}.conf" ]]; then
+        run a2enconf "${fpm_conf}" || true
+    else
+        warn "Apache FPM config not found: /etc/apache2/conf-available/${fpm_conf}.conf"
+    fi
+}
+
 install_web_server() {
     if wants_apache; then
         ensure_package apache2
@@ -728,27 +958,15 @@ install_web_server() {
             ensure_package "libapache2-mod-php${PHP_DEFAULT_VERSION}" true
         fi
 
-        local php_module=""
-        if [[ -n "${PHP_DEFAULT_VERSION}" && -f "/etc/apache2/mods-available/php${PHP_DEFAULT_VERSION}.load" ]]; then
-            php_module="php${PHP_DEFAULT_VERSION}"
-        else
-            php_module="$(ls -1 /etc/apache2/mods-available/php*.load 2>/dev/null | sed 's#.*/##' | sed 's#\.load$##' | sort -V | tail -n1 || true)"
-        fi
-        if [[ -n "${php_module}" ]]; then
-            info "Enabling Apache PHP module: ${php_module}"
-            run a2enmod "${php_module}" || true
-        else
-            warn "No Apache PHP module file found under /etc/apache2/mods-available/php*.load"
-        fi
-        run a2enmod rewrite || true
+        configure_apache_php_fpm_mode "${PHP_DEFAULT_VERSION}"
 
         run systemctl enable apache2 || true
-        run systemctl restart apache2 || true
+        restart_apache_safely
 
-        if apache2ctl -M 2>/dev/null | grep -E -q 'php(_module|[0-9.]*_module)'; then
-            ok "Apache PHP module is loaded."
+        if apache2ctl -M 2>/dev/null | grep -q 'proxy_fcgi_module'; then
+            ok "Apache PHP-FPM mode is active (proxy_fcgi_module loaded)."
         else
-            warn "Apache PHP module not detected. Check: apache2ctl -M | grep php"
+            warn "Apache PHP-FPM module not detected. Check: apache2ctl -M | grep proxy_fcgi"
         fi
 
         if [[ -d /var/www/html ]]; then
@@ -817,8 +1035,8 @@ apply_php_runtime_defaults() {
             [[ -f "${ini_file}" ]] || continue
 
             set_php_ini_kv "${ini_file}" "memory_limit" "512M"
-            set_php_ini_kv "${ini_file}" "upload_max_filesize" "256M"
-            set_php_ini_kv "${ini_file}" "post_max_size" "256M"
+            set_php_ini_kv "${ini_file}" "upload_max_filesize" "2G"
+            set_php_ini_kv "${ini_file}" "post_max_size" "2G"
             set_php_ini_kv "${ini_file}" "max_execution_time" "300"
             set_php_ini_kv "${ini_file}" "max_input_vars" "5000"
             set_php_ini_kv "${ini_file}" "display_errors" "Off"
@@ -832,10 +1050,10 @@ apply_php_runtime_defaults() {
     done
 
     if wants_apache && systemctl cat apache2.service >/dev/null 2>&1; then
-        run systemctl restart apache2 || true
+        restart_apache_safely
     fi
     if wants_nginx && systemctl cat nginx.service >/dev/null 2>&1; then
-        run systemctl restart nginx || true
+        restart_nginx_safely
     fi
 
     ok "Recommended PHP runtime defaults applied."
@@ -888,6 +1106,14 @@ escape_for_sed() {
     printf '%s' "$1" | sed -e 's/[\/&|]/\\&/g'
 }
 
+escape_for_sed_replacement() {
+    printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'
+}
+
+normalize_compact_line() {
+    printf '%s' "$1" | tr -d '[:space:]'
+}
+
 escape_sql_string() {
     printf '%s' "$1" | sed "s/'/''/g"
 }
@@ -904,6 +1130,157 @@ upsert_env_value() {
     else
         printf '\n%s=%s\n' "${key}" "${value}" >> "${file}"
     fi
+}
+
+read_env_value() {
+    local file="$1"
+    local key="$2"
+    local line=""
+
+    if [[ ! -f "${file}" ]]; then
+        echo ""
+        return 0
+    fi
+
+    line="$(grep -E "^${key}=" "${file}" | tail -n1 || true)"
+    if [[ -z "${line}" ]]; then
+        echo ""
+        return 0
+    fi
+
+    echo "${line#*=}"
+}
+
+is_loopback_url() {
+    local value="$1"
+    [[ "${value}" =~ ^https?://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|$) ]]
+}
+
+upsert_php_array_setting() {
+    local file="$1"
+    local var_name="$2"
+    local key="$3"
+    local value_expr="$4"
+    local escaped_expr=""
+    local current_line=""
+    local desired_line=""
+
+    if [[ ! -f "${file}" ]]; then
+        return 0
+    fi
+
+    escaped_expr="$(escape_for_sed_replacement "${value_expr}")"
+    desired_line="\$${var_name}['${key}'] = ${value_expr};"
+    current_line="$(grep -E "^[[:space:]]*\\\$${var_name}\\['${key}'\\][[:space:]]*=" "${file}" | tail -n1 || true)"
+
+    if [[ -n "${current_line}" ]]; then
+        if [[ "$(normalize_compact_line "${current_line}")" == "$(normalize_compact_line "${desired_line}")" ]]; then
+            return 0
+        fi
+    fi
+
+    if grep -Eq "^[[:space:]]*\\\$${var_name}\\['${key}'\\][[:space:]]*=" "${file}"; then
+        run sed -i -E "s|^[[:space:]]*\\\$${var_name}\\['${key}'\\][[:space:]]*=.*|\\\$${var_name}['${key}'] = ${escaped_expr};|g" "${file}"
+    else
+        printf "\n\$%s['%s'] = %s;\n" "${var_name}" "${key}" "${value_expr}" >> "${file}"
+    fi
+}
+
+upsert_php_cfg_server_setting() {
+    local file="$1"
+    local key="$2"
+    local value_expr="$3"
+    local escaped_expr=""
+    local current_line=""
+    local desired_line=""
+
+    if [[ ! -f "${file}" ]]; then
+        return 0
+    fi
+
+    escaped_expr="$(escape_for_sed_replacement "${value_expr}")"
+    desired_line="\$cfg['Servers'][\$i]['${key}'] = ${value_expr};"
+    current_line="$(grep -E "^[[:space:]]*\\\$cfg\\['Servers'\\]\\[\\\$i\\]\\['${key}'\\][[:space:]]*=" "${file}" | tail -n1 || true)"
+
+    if [[ -n "${current_line}" ]]; then
+        if [[ "$(normalize_compact_line "${current_line}")" == "$(normalize_compact_line "${desired_line}")" ]]; then
+            return 0
+        fi
+    fi
+
+    if grep -Eq "^[[:space:]]*\\\$cfg\\['Servers'\\]\\[\\\$i\\]\\['${key}'\\][[:space:]]*=" "${file}"; then
+        run sed -i -E "s|^[[:space:]]*\\\$cfg\\['Servers'\\]\\[\\\$i\\]\\['${key}'\\][[:space:]]*=.*|\\\$cfg['Servers'][\\\$i]['${key}'] = ${escaped_expr};|g" "${file}"
+    else
+        printf "\n\$cfg['Servers'][\$i]['%s'] = %s;\n" "${key}" "${value_expr}" >> "${file}"
+    fi
+}
+
+upsert_php_cfg_server_index_setting() {
+    local file="$1"
+    local index="$2"
+    local key="$3"
+    local value_expr="$4"
+    local escaped_expr=""
+    local current_line=""
+    local desired_line=""
+
+    if [[ ! -f "${file}" ]]; then
+        return 0
+    fi
+
+    escaped_expr="$(escape_for_sed_replacement "${value_expr}")"
+    desired_line="\$cfg['Servers'][${index}]['${key}'] = ${value_expr};"
+    current_line="$(grep -E "^[[:space:]]*\\\$cfg\\['Servers'\\]\\[${index}\\]\\['${key}'\\][[:space:]]*=" "${file}" | tail -n1 || true)"
+
+    if [[ -n "${current_line}" ]]; then
+        if [[ "$(normalize_compact_line "${current_line}")" == "$(normalize_compact_line "${desired_line}")" ]]; then
+            return 0
+        fi
+    fi
+
+    if grep -Eq "^[[:space:]]*\\\$cfg\\['Servers'\\]\\[${index}\\]\\['${key}'\\][[:space:]]*=" "${file}"; then
+        run sed -i -E "s|^[[:space:]]*\\\$cfg\\['Servers'\\]\\[${index}\\]\\['${key}'\\][[:space:]]*=.*|\\\$cfg['Servers'][${index}]['${key}'] = ${escaped_expr};|g" "${file}"
+    else
+        printf "\n\$cfg['Servers'][%s]['%s'] = %s;\n" "${index}" "${key}" "${value_expr}" >> "${file}"
+    fi
+}
+
+ensure_default_php_extension() {
+    local extension="$1"
+    local allow_generic="${2:-true}"
+    local versioned_pkg="php${PHP_DEFAULT_VERSION}-${extension}"
+    local generic_pkg="php-${extension}"
+
+    if is_package_available "${versioned_pkg}"; then
+        ensure_package "${versioned_pkg}" true
+        return 0
+    fi
+
+    if [[ "${allow_generic}" == "true" ]]; then
+        ensure_package "${generic_pkg}" true
+    else
+        warn "Package not available, skipping to avoid conflicts: ${versioned_pkg}"
+    fi
+}
+
+enable_default_php_module() {
+    local module="$1"
+    local version="${2:-${PHP_DEFAULT_VERSION}}"
+    local sapi
+
+    if ! command -v phpenmod >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if [[ ! -f "/etc/php/${version}/mods-available/${module}.ini" ]]; then
+        return 0
+    fi
+
+    for sapi in cli fpm apache2; do
+        if [[ -d "/etc/php/${version}/${sapi}" ]]; then
+            run phpenmod -v "${version}" -s "${sapi}" "${module}" || true
+        fi
+    done
 }
 
 setup_mariadb_database() {
@@ -944,7 +1321,6 @@ setup_mariadb_database() {
     upsert_env_value ".env" "PDNS_DB_DATABASE" "${DB_NAME}"
     upsert_env_value ".env" "PDNS_DB_USERNAME" "${DB_USER}"
     upsert_env_value ".env" "PDNS_DB_PASSWORD" "${DB_PASSWORD}"
-    upsert_env_value ".env" "WEBMAIL_URL" "http://127.0.0.1:8080/"
     ok "MariaDB database/user created and .env updated."
 }
 
@@ -1013,6 +1389,23 @@ install_composer_dependencies() {
     local decision=""
     local log_file=""
     local required_php=""
+    local vendor_rebuild_attempted="false"
+
+    is_composer_vendor_scan_error() {
+        local log_path="$1"
+        [[ -f "${log_path}" ]] || return 1
+        grep -q "Could not scan for classes inside" "${log_path}" 2>/dev/null \
+            && grep -q "does not appear to be a file nor a folder" "${log_path}" 2>/dev/null
+    }
+
+    rebuild_composer_vendor_tree() {
+        warn "Detected broken Composer vendor tree. Rebuilding vendor directory and retrying."
+        if [[ -d vendor ]]; then
+            rm -rf vendor
+        fi
+        mkdir -p vendor || true
+        env COMPOSER_ALLOW_SUPERUSER=1 composer clear-cache >/dev/null 2>&1 || true
+    }
 
     while true; do
         log_file="$(mktemp /tmp/serverpanel-composer-install.XXXXXX.log)"
@@ -1026,6 +1419,12 @@ install_composer_dependencies() {
             return 0
         fi
 
+        if [[ "${vendor_rebuild_attempted}" != "true" ]] && is_composer_vendor_scan_error "${log_file}"; then
+            rebuild_composer_vendor_tree
+            vendor_rebuild_attempted="true"
+            continue
+        fi
+
         warn "Command failed with exit code ${status}: composer install"
         required_php="$(extract_required_php_version_from_composer_error "${log_file}")"
 
@@ -1037,8 +1436,9 @@ install_composer_dependencies() {
             else
                 echo "  2. Auto-switch/install required PHP and retry (auto-detect)"
             fi
-            echo "  3. Skip composer install"
-            echo "  4. Abort installer"
+            echo "  3. Auto-clean vendor cache and retry"
+            echo "  4. Skip composer install"
+            echo "  5. Abort installer"
             read -r decision
 
             case "${decision,,}" in
@@ -1052,17 +1452,27 @@ install_composer_dependencies() {
                         warn "Auto PHP fix failed."
                     fi
                     ;;
-                3|s|skip)
+                3|clean|vendor)
+                    rebuild_composer_vendor_tree
+                    vendor_rebuild_attempted="true"
+                    ;;
+                4|s|skip)
                     warn "Skipping composer install by user choice."
                     return 0
                     ;;
-                4|a|abort)
+                5|a|abort)
                     fail "Aborted after composer install failure."
                     ;;
                 *)
-                    warn "Invalid choice. Please enter 1, 2, 3, or 4."
+                    warn "Invalid choice. Please enter 1, 2, 3, 4, or 5."
                     ;;
             esac
+            continue
+        fi
+
+        if [[ "${vendor_rebuild_attempted}" != "true" ]] && is_composer_vendor_scan_error "${log_file}"; then
+            rebuild_composer_vendor_tree
+            vendor_rebuild_attempted="true"
             continue
         fi
 
@@ -1161,10 +1571,113 @@ cleanup_vite_hot_file() {
     fi
 }
 
+service_http_port_from_unit() {
+    local unit_file="$1"
+    local line
+    if [[ ! -f "${unit_file}" ]]; then
+        echo ""
+        return 0
+    fi
+    line="$(grep -E '^ExecStart=' "${unit_file}" | head -n1 || true)"
+    if [[ "${line}" =~ -S[[:space:]]+0\.0\.0\.0:([0-9]+) ]]; then
+        echo "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    echo ""
+}
+
+phpmyadmin_port_from_service_file() {
+    service_http_port_from_unit "/etc/systemd/system/${PHPMYADMIN_SERVICE}.service"
+}
+
+roundcube_port_from_service_file() {
+    service_http_port_from_unit "/etc/systemd/system/${ROUNDCUBE_SERVICE}.service"
+}
+
+is_webtools_separate_mode_active() {
+    [[ "${WEBTOOLS_SEPARATE_PORTS}" == "true" ]]
+}
+
+sync_webtools_mode_from_installed_services() {
+    local pma_unit="/etc/systemd/system/${PHPMYADMIN_SERVICE}.service"
+    local rc_unit="/etc/systemd/system/${ROUNDCUBE_SERVICE}.service"
+    local detected_pma_port=""
+    local detected_rc_port=""
+
+    if [[ -f "${pma_unit}" || -f "${rc_unit}" ]]; then
+        WEBTOOLS_SEPARATE_PORTS="true"
+        detected_pma_port="$(phpmyadmin_port_from_service_file)"
+        detected_rc_port="$(roundcube_port_from_service_file)"
+        if [[ -n "${detected_pma_port}" ]]; then
+            PHPMYADMIN_PORT="${detected_pma_port}"
+        fi
+        if [[ -n "${detected_rc_port}" ]]; then
+            ROUNDCUBE_PORT="${detected_rc_port}"
+        fi
+    else
+        WEBTOOLS_SEPARATE_PORTS="false"
+    fi
+}
+
+phpmyadmin_access_url() {
+    local host="${1:-127.0.0.1}"
+    local detected_port=""
+    if is_webtools_separate_mode_active; then
+        detected_port="$(phpmyadmin_port_from_service_file)"
+        echo "http://${host}:${detected_port:-${PHPMYADMIN_PORT}}/"
+        return 0
+    fi
+    echo "http://${host}:${PANEL_PORT}/phpmyadmin/"
+}
+
+roundcube_access_url() {
+    local host="${1:-127.0.0.1}"
+    local detected_port=""
+    if is_webtools_separate_mode_active; then
+        detected_port="$(roundcube_port_from_service_file)"
+        echo "http://${host}:${detected_port:-${ROUNDCUBE_PORT}}/"
+        return 0
+    fi
+    echo "http://${host}:${PANEL_PORT}/roundcube/"
+}
+
+sync_panel_webtools_env() {
+    local env_file="${1:-.env}"
+    local existing_webmail existing_pma_url existing_pma_helper
+
+    if [[ ! -f "${env_file}" ]]; then
+        warn "Cannot sync panel webtool env (missing file): ${env_file}"
+        return 0
+    fi
+
+    upsert_env_value "${env_file}" "WEBTOOLS_SEPARATE_PORTS" "${WEBTOOLS_SEPARATE_PORTS}"
+    upsert_env_value "${env_file}" "PHPMYADMIN_PORT" "${PHPMYADMIN_PORT}"
+    upsert_env_value "${env_file}" "ROUNDCUBE_PORT" "${ROUNDCUBE_PORT}"
+
+    existing_webmail="$(read_env_value "${env_file}" "WEBMAIL_URL")"
+    if [[ -z "${existing_webmail}" || "${existing_webmail,,}" == "auto" ]] || is_loopback_url "${existing_webmail}"; then
+        upsert_env_value "${env_file}" "WEBMAIL_URL" "auto"
+    fi
+
+    existing_pma_url="$(read_env_value "${env_file}" "PHPMYADMIN_URL")"
+    if [[ -z "${existing_pma_url}" ]] || is_loopback_url "${existing_pma_url}"; then
+        upsert_env_value "${env_file}" "PHPMYADMIN_URL" ""
+    fi
+
+    existing_pma_helper="$(read_env_value "${env_file}" "PHPMYADMIN_HELPER_URL")"
+    if [[ -z "${existing_pma_helper}" ]] || is_loopback_url "${existing_pma_helper}"; then
+        upsert_env_value "${env_file}" "PHPMYADMIN_HELPER_URL" ""
+    fi
+
+    ok "Panel .env webtool settings synchronized."
+}
+
 write_install_credentials_log() {
-    local server_ip login_url root_log project_log owner
+    local server_ip login_url phpmyadmin_url roundcube_url root_log project_log owner
     server_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
     login_url="http://${server_ip:-127.0.0.1}:${PANEL_PORT}/login"
+    phpmyadmin_url="$(phpmyadmin_access_url "${server_ip:-127.0.0.1}")"
+    roundcube_url="$(roundcube_access_url "${server_ip:-127.0.0.1}")"
     root_log="/root/serverpanel_credentials.txt"
     project_log="${PROJECT_DIR}/storage/logs/serverpanel_credentials.txt"
     owner="$(web_owner_group)"
@@ -1178,11 +1691,30 @@ Generated: $(date '+%Y-%m-%d %H:%M:%S %Z')
 Panel URL
 - ${login_url}
 
+Web Tools
+- phpMyAdmin : ${phpmyadmin_url}
+- Roundcube  : ${roundcube_url}
+
 Database
 - Service  : ${DB_SERVICE:-unknown}
 - Name     : ${DB_NAME}
 - User     : ${DB_USER}
 - Password : ${DB_PASSWORD}
+
+Roundcube Database
+- Name     : ${ROUNDCUBE_DB_NAME:-roundcube}
+- User     : ${ROUNDCUBE_DB_USER:-roundcube}
+- Password : ${ROUNDCUBE_DB_PASSWORD:-not-generated}
+
+phpMyAdmin Control User
+- DB Name  : ${PHPMYADMIN_CONTROL_DB:-phpmyadmin}
+- User     : ${PHPMYADMIN_CONTROL_USER:-pma}
+- Password : ${PHPMYADMIN_CONTROL_PASSWORD:-not-generated}
+
+phpMyAdmin Admin User (Full Access)
+- Host     : 127.0.0.1
+- User     : ${PHPMYADMIN_ADMIN_USER:-dbadmin}
+- Password : ${PHPMYADMIN_ADMIN_PASSWORD:-not-generated}
 
 Seeded Panel Users
 - Super Admin : test@example.com / password
@@ -1201,6 +1733,890 @@ EOF
     run chmod 640 "${project_log}" || true
     LOGIN_CREDENTIALS_READY="true"
     ok "Credential log created: ${root_log}"
+}
+
+detect_roundcube_web_root() {
+    local candidate
+    local candidates=(
+        "/var/lib/roundcube/public_html"
+        "/usr/share/roundcube"
+        "/usr/share/roundcube/public_html"
+        "/var/lib/roundcube"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "${candidate}/index.php" ]]; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+
+    echo ""
+}
+
+publish_panel_public_symlink() {
+    local panel_dir="$1"
+    local source_dir="$2"
+    local slug="$3"
+    local target_dir resolved_source resolved_target owner_group
+
+    if [[ -z "${panel_dir}" || ! -d "${panel_dir}/public" ]]; then
+        warn "Panel public directory not found. Skipping publish for /${slug}."
+        return 0
+    fi
+
+    if [[ -z "${source_dir}" || ! -d "${source_dir}" ]]; then
+        warn "Source directory not found for /${slug}: ${source_dir}"
+        return 0
+    fi
+
+    target_dir="${panel_dir}/public/${slug}"
+    resolved_source="$(readlink -f "${source_dir}" 2>/dev/null || echo "${source_dir}")"
+
+    if [[ -L "${target_dir}" ]]; then
+        resolved_target="$(readlink -f "${target_dir}" 2>/dev/null || true)"
+        if [[ "${resolved_target}" == "${resolved_source}" ]]; then
+            ok "Already published on panel port: /${slug}"
+            return 0
+        fi
+    fi
+
+    if [[ -e "${target_dir}" || -L "${target_dir}" ]]; then
+        warn "Replacing existing path for /${slug}: ${target_dir}"
+        run rm -rf "${target_dir}"
+    fi
+
+    run ln -s "${source_dir}" "${target_dir}"
+    owner_group="$(web_owner_group)"
+    run chown -h "${owner_group}" "${target_dir}" || true
+    ok "Published on panel port: /${slug}"
+}
+
+expose_panel_tools_on_port() {
+    local panel_dir="${1:-${PROJECT_DIR}}"
+    local roundcube_root=""
+
+    if [[ -d "/usr/share/phpmyadmin" ]]; then
+        publish_panel_public_symlink "${panel_dir}" "/usr/share/phpmyadmin" "phpmyadmin"
+    else
+        warn "phpMyAdmin web root not found at /usr/share/phpmyadmin"
+    fi
+
+    roundcube_root="$(detect_roundcube_web_root)"
+    if [[ -n "${roundcube_root}" ]]; then
+        publish_panel_public_symlink "${panel_dir}" "${roundcube_root}" "roundcube"
+    else
+        warn "Roundcube web root not found after package install."
+    fi
+}
+
+cleanup_panel_embedded_webtools_links() {
+    local panel_dir="${1:-${PROJECT_DIR}}"
+    local slug
+    for slug in phpmyadmin roundcube; do
+        if [[ -L "${panel_dir}/public/${slug}" ]]; then
+            run rm -f "${panel_dir}/public/${slug}" || true
+        fi
+    done
+}
+
+ensure_webtool_root_target() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local label="$3"
+    local resolved_source resolved_target backup_dir
+
+    if [[ ! -d "${source_dir}" ]]; then
+        warn "${label} source path not found: ${source_dir}"
+        return 1
+    fi
+
+    run mkdir -p "$(dirname "${target_dir}")"
+    resolved_source="$(readlink -f "${source_dir}" 2>/dev/null || echo "${source_dir}")"
+
+    if [[ -L "${target_dir}" ]]; then
+        resolved_target="$(readlink -f "${target_dir}" 2>/dev/null || true)"
+        if [[ "${resolved_target}" == "${resolved_source}" ]]; then
+            ok "${label} root already linked: ${target_dir}"
+            return 0
+        fi
+        run rm -f "${target_dir}" || true
+    elif [[ -d "${target_dir}" ]]; then
+        if [[ -f "${target_dir}/index.php" ]]; then
+            info "Keeping existing ${label} root directory: ${target_dir}"
+            return 0
+        fi
+        backup_dir="${target_dir}.backup.$(date +%s)"
+        run mv "${target_dir}" "${backup_dir}" || true
+        warn "Moved unexpected ${label} path to backup: ${backup_dir}"
+    elif [[ -e "${target_dir}" ]]; then
+        backup_dir="${target_dir}.backup.$(date +%s)"
+        run mv "${target_dir}" "${backup_dir}" || true
+        warn "Moved unexpected ${label} file to backup: ${backup_dir}"
+    fi
+
+    run ln -s "${source_dir}" "${target_dir}"
+    ok "${label} root prepared: ${target_dir} -> ${source_dir}"
+    return 0
+}
+
+write_php_builtin_webtool_service() {
+    local service_name="$1"
+    local description="$2"
+    local working_dir="$3"
+    local listen_port="$4"
+
+    cat > "/etc/systemd/system/${service_name}.service" <<EOF
+[Unit]
+Description=${description}
+After=network.target mariadb.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=${working_dir}
+ExecStart=/usr/bin/php -S 0.0.0.0:${listen_port} -t ${working_dir}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+disable_separate_webtools_services() {
+    local svc
+    local changed="false"
+    for svc in "${PHPMYADMIN_SERVICE}" "${ROUNDCUBE_SERVICE}"; do
+        if systemctl cat "${svc}.service" >/dev/null 2>&1 || [[ -f "/etc/systemd/system/${svc}.service" ]]; then
+            run systemctl disable --now "${svc}" || true
+            run rm -f "/etc/systemd/system/${svc}.service" || true
+            changed="true"
+        fi
+    done
+    if [[ "${changed}" == "true" ]]; then
+        run systemctl daemon-reload || true
+        info "Removed dedicated webtool services."
+    fi
+}
+
+setup_separate_webtools_services() {
+    local roundcube_source=""
+    local pma_ready="false"
+    local rc_ready="false"
+
+    info "Configuring dedicated webtool services (phpMyAdmin:${PHPMYADMIN_PORT}, Roundcube:${ROUNDCUBE_PORT})"
+
+    if [[ -d "/usr/share/phpmyadmin" ]]; then
+        if ensure_webtool_root_target "/usr/share/phpmyadmin" "${PHPMYADMIN_ROOT}" "phpMyAdmin"; then
+            write_php_builtin_webtool_service "${PHPMYADMIN_SERVICE}" "ServerPanel phpMyAdmin HTTP Service" "${PHPMYADMIN_ROOT}" "${PHPMYADMIN_PORT}"
+            pma_ready="true"
+        fi
+    else
+        warn "phpMyAdmin source path missing: /usr/share/phpmyadmin"
+    fi
+
+    roundcube_source="$(detect_roundcube_web_root)"
+    if [[ -n "${roundcube_source}" ]]; then
+        if ensure_webtool_root_target "${roundcube_source}" "${ROUNDCUBE_ROOT}" "Roundcube"; then
+            write_php_builtin_webtool_service "${ROUNDCUBE_SERVICE}" "ServerPanel Roundcube HTTP Service" "${ROUNDCUBE_ROOT}" "${ROUNDCUBE_PORT}"
+            rc_ready="true"
+        fi
+    else
+        warn "Roundcube web root could not be detected."
+    fi
+
+    run systemctl daemon-reload || true
+    if [[ "${pma_ready}" == "true" ]]; then
+        run systemctl enable --now "${PHPMYADMIN_SERVICE}" || true
+        run ufw allow "${PHPMYADMIN_PORT}/tcp" || true
+    fi
+    if [[ "${rc_ready}" == "true" ]]; then
+        run systemctl enable --now "${ROUNDCUBE_SERVICE}" || true
+        run ufw allow "${ROUNDCUBE_PORT}/tcp" || true
+    fi
+}
+
+detect_roundcube_mysql_schema() {
+    local candidate
+    local candidates=(
+        "/usr/share/dbconfig-common/data/roundcube/install/mysql"
+        "/usr/share/roundcube/SQL/mysql.initial.sql"
+        "/usr/share/roundcube/SQL/mysql5.initial.sql"
+        "/usr/share/roundcube/SQL/mysql.initial.sql.gz"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "${candidate}" ]]; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+
+    echo ""
+}
+
+detect_phpmyadmin_schema() {
+    local candidate
+    local candidates=(
+        "/usr/share/phpmyadmin/sql/create_tables.sql"
+        "/usr/share/doc/phpmyadmin/examples/create_tables.sql"
+        "/usr/share/doc/phpmyadmin/examples/create_tables.sql.gz"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "${candidate}" ]]; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+
+    echo ""
+}
+
+detect_phpmyadmin_config_file() {
+    local root_candidate=""
+    local fallback_candidate="/root/phpmyadmin/config.inc.php"
+
+    if [[ -n "${PHPMYADMIN_ROOT:-}" ]]; then
+        root_candidate="${PHPMYADMIN_ROOT%/}/config.inc.php"
+        if [[ -f "${root_candidate}" ]]; then
+            echo "${root_candidate}"
+            return 0
+        fi
+    fi
+
+    if [[ -f "${fallback_candidate}" ]]; then
+        echo "${fallback_candidate}"
+        return 0
+    fi
+
+    echo ""
+}
+
+write_phpmyadmin_helper_file() {
+    local target="$1"
+
+    cat > "${target}" <<'PHP'
+<?php
+declare(strict_types=1);
+
+session_name('SignonSession');
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'secure' => (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off'),
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
+session_start();
+
+header('X-Frame-Options: SAMEORIGIN');
+
+/**
+ * Allow panel origins from same host (any port), plus optional explicit list.
+ * Set PMA_ALLOWED_ORIGINS as comma-separated full origins if needed.
+ */
+$allowedOrigins = [];
+$configuredOrigins = trim((string) getenv('PMA_ALLOWED_ORIGINS'));
+if ($configuredOrigins !== '') {
+    $allowedOrigins = array_values(array_filter(array_map('trim', explode(',', $configuredOrigins)), static fn ($item) => $item !== ''));
+}
+$allowedOrigins = array_values(array_unique(array_merge($allowedOrigins, [
+    'http://127.0.0.1:8000',
+    'http://localhost:8000',
+])));
+
+$origin = trim((string) ($_SERVER['HTTP_ORIGIN'] ?? ''));
+$isAllowedOrigin = in_array($origin, $allowedOrigins, true);
+if (!$isAllowedOrigin && $origin !== '') {
+    $originHost = (string) parse_url($origin, PHP_URL_HOST);
+    $serverHostRaw = (string) ($_SERVER['HTTP_HOST'] ?? '');
+    $serverHost = strtolower(trim((string) preg_replace('/:\d+$/', '', $serverHostRaw)));
+    $normalizedOriginHost = strtolower(trim($originHost));
+    if ($normalizedOriginHost !== '' && $serverHost !== '' && $normalizedOriginHost === $serverHost) {
+        $isAllowedOrigin = true;
+    }
+}
+
+if ($isAllowedOrigin) {
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Access-Control-Allow-Credentials: true');
+    header('Vary: Origin');
+}
+
+header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, Accept');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
+function jsonResponse(array $payload, int $status = 200): void
+{
+    http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload);
+    exit;
+}
+
+function clearSignonSession(): void
+{
+    unset(
+        $_SESSION['PMA_single_signon_user'],
+        $_SESSION['PMA_single_signon_password'],
+        $_SESSION['PMA_single_signon_host'],
+        $_SESSION['PMA_single_signon_db']
+    );
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_regenerate_id(true);
+    }
+}
+
+$action = (string) ($_GET['action'] ?? '');
+$selfUrl = strtok((string) ($_SERVER['REQUEST_URI'] ?? ''), '?');
+$target = rtrim(dirname($selfUrl), '/') . '/index.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action !== 'redirect') {
+    clearSignonSession();
+
+    if (isset($_COOKIE[session_name()])) {
+        setcookie(session_name(), '', [
+            'expires' => time() - 3600,
+            'path' => '/',
+            'secure' => (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off'),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+    }
+
+    $accept = strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? ''));
+    if (str_contains($accept, 'application/json')) {
+        jsonResponse([
+            'success' => true,
+            'message' => 'Logged out from phpMyAdmin.',
+        ]);
+    }
+
+    http_response_code(200);
+    ?>
+    <!doctype html>
+    <html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>phpMyAdmin Logged Out</title>
+    </head>
+    <body>
+        <p>Logged out from phpMyAdmin.</p>
+        <p>Start login again from ServerPanel.</p>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $contentType = strtolower((string) ($_SERVER['CONTENT_TYPE'] ?? ''));
+    $accept = strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? ''));
+    $isJson = str_contains($contentType, 'application/json');
+    $wantsJson = $isJson || str_contains($accept, 'application/json');
+
+    $input = [];
+
+    if ($isJson) {
+        $raw = file_get_contents('php://input');
+        $decoded = json_decode((string) $raw, true);
+        if (is_array($decoded)) {
+            $input = $decoded;
+        }
+    }
+
+    if (!is_array($input) || $input === []) {
+        $input = $_POST;
+    }
+
+    $username = trim((string) ($input['pma_username'] ?? ''));
+    $password = (string) ($input['pma_password'] ?? '');
+    $host = trim((string) ($input['pma_host'] ?? '127.0.0.1'));
+    $database = trim((string) ($input['db'] ?? ''));
+
+    if (strcasecmp($host, 'localhost') === 0) {
+        $host = '127.0.0.1';
+    }
+
+    if ($username === '' || $password === '') {
+        if ($wantsJson) {
+            jsonResponse([
+                'success' => false,
+                'message' => 'Missing phpMyAdmin username or password.',
+            ], 422);
+        }
+
+        echo 'Missing phpMyAdmin credentials.';
+        exit;
+    }
+
+    if (strcasecmp($username, 'root') === 0) {
+        if ($wantsJson) {
+            jsonResponse([
+                'success' => false,
+                'message' => 'Root login is disabled for phpMyAdmin auto-login.',
+            ], 403);
+        }
+
+        echo 'Root login is disabled for phpMyAdmin auto-login.';
+        exit;
+    }
+
+    $_SESSION['PMA_single_signon_user'] = $username;
+    $_SESSION['PMA_single_signon_password'] = $password;
+    $_SESSION['PMA_single_signon_host'] = $host !== '' ? $host : '127.0.0.1';
+    if ($database !== '') {
+        $_SESSION['PMA_single_signon_db'] = $database;
+    } else {
+        unset($_SESSION['PMA_single_signon_db']);
+    }
+
+    $redirect = $target;
+    if ($database !== '') {
+        $redirect .= '?db=' . rawurlencode($database);
+    }
+    session_write_close();
+
+    if ($wantsJson) {
+        jsonResponse([
+            'success' => true,
+            'message' => 'Session created successfully.',
+            'redirect' => $redirect,
+        ]);
+    }
+
+    header('Location: ' . $redirect);
+    exit;
+}
+
+if ($action === 'redirect') {
+    $username = (string) ($_SESSION['PMA_single_signon_user'] ?? '');
+    if ($username === '') {
+        echo 'Auto login session not found. Please start from panel again.';
+        exit;
+    }
+
+    $redirect = $target;
+    $database = (string) ($_SESSION['PMA_single_signon_db'] ?? '');
+    if ($database !== '') {
+        $redirect .= '?db=' . rawurlencode($database);
+    }
+    header('Location: ' . $redirect);
+    exit;
+}
+
+http_response_code(400);
+echo 'Start phpMyAdmin from ServerPanel to continue.';
+PHP
+
+    run chmod 644 "${target}" || true
+}
+
+deploy_phpmyadmin_helper() {
+    local target_dirs=()
+    local dir target installed="false"
+    local detected_config config_dir
+
+    if [[ -d "${PHPMYADMIN_ROOT}" ]]; then
+        target_dirs+=("${PHPMYADMIN_ROOT}")
+    fi
+    if [[ -d "/root/phpmyadmin" ]]; then
+        target_dirs+=("/root/phpmyadmin")
+    fi
+
+    detected_config="$(detect_phpmyadmin_config_file)"
+    if [[ -n "${detected_config}" ]]; then
+        config_dir="$(dirname "${detected_config}")"
+        if [[ -d "${config_dir}" ]]; then
+            target_dirs+=("${config_dir}")
+        fi
+    fi
+
+    for dir in "${target_dirs[@]}"; do
+        target="${dir}/phpmyadminsignin.php"
+        write_phpmyadmin_helper_file "${target}"
+        installed="true"
+    done
+
+    if [[ "${installed}" == "true" ]]; then
+        ok "phpMyAdmin helper deployed by installer."
+    else
+        warn "No phpMyAdmin web root found for helper deployment."
+    fi
+}
+
+configure_phpmyadmin_runtime() {
+    local config_file=""
+    local template_config="${PROJECT_DIR}/extra/config.inc.php"
+    local temp_dir="/var/lib/phpmyadmin/tmp"
+    local creds_file="/etc/phpmyadmin/serverpanel-control-user.conf"
+    local admin_creds_file="/etc/phpmyadmin/serverpanel-admin-user.conf"
+    local control_db="${PHPMYADMIN_CONTROL_DB:-phpmyadmin}"
+    local control_user="${PHPMYADMIN_CONTROL_USER:-pma}"
+    local control_password="${PHPMYADMIN_CONTROL_PASSWORD:-}"
+    local admin_user="${PHPMYADMIN_ADMIN_USER:-dbadmin}"
+    local admin_password="${PHPMYADMIN_ADMIN_PASSWORD:-}"
+    local owner_group secret="" db_cli sql_db sql_user sql_password sql_admin_user sql_admin_password
+    local schema_file pma_table_exists db_cli_q db_name_q schema_q
+    local signon_url="/phpmyadmin/phpmyadminsignin.php"
+    local config_dir=""
+    local has_dynamic_server_index="false"
+    local template_applied="false"
+
+    if ! is_package_installed phpmyadmin; then
+        warn "phpMyAdmin package is not installed. Trying custom phpMyAdmin config paths."
+    fi
+
+    ensure_default_php_binary
+    ensure_package "php${PHP_DEFAULT_VERSION}-common" true
+    enable_default_php_module "ctype" "${PHP_DEFAULT_VERSION}"
+    ensure_default_php_extension "mbstring" true
+    ensure_default_php_extension "mysql" true
+    ensure_default_php_extension "xml" true
+    ensure_default_php_extension "zip" true
+
+    run mkdir -p "${temp_dir}"
+    owner_group="$(web_owner_group)"
+    run chown -R "${owner_group}" "${temp_dir}" || true
+    run chmod 1770 "${temp_dir}" || true
+    run mkdir -p /etc/phpmyadmin
+
+    config_file="$(detect_phpmyadmin_config_file)"
+    if [[ -z "${config_file}" ]]; then
+        if [[ -s "${template_config}" && -d "${PHPMYADMIN_ROOT}" ]]; then
+            config_file="${PHPMYADMIN_ROOT%/}/config.inc.php"
+            info "phpMyAdmin config target selected: ${config_file}"
+        else
+            warn "phpMyAdmin config file not found in known paths."
+            deploy_phpmyadmin_helper
+            return 0
+        fi
+    fi
+    config_dir="$(dirname "${config_file}")"
+    info "phpMyAdmin config detected: ${config_file}"
+    if [[ -s "${template_config}" ]]; then
+        run mkdir -p "$(dirname "${config_file}")"
+        run cp "${template_config}" "${config_file}"
+        run chmod 640 "${config_file}" || true
+        template_applied="true"
+        info "phpMyAdmin template applied: ${template_config}"
+    fi
+
+    if is_webtools_separate_mode_active \
+        || [[ "${config_dir}" == "${PHPMYADMIN_ROOT%/}" ]] \
+        || [[ "${config_dir}" == "/root/phpmyadmin" ]]; then
+        signon_url="/phpmyadminsignin.php"
+    fi
+
+    if grep -Eq "\\\$cfg\\['Servers'\\]\\[\\\$i\\]" "${config_file}"; then
+        has_dynamic_server_index="true"
+    fi
+
+    if [[ -f "${creds_file}" ]]; then
+        control_db="$(grep -E '^DB_NAME=' "${creds_file}" | head -n1 | cut -d= -f2- || true)"
+        control_user="$(grep -E '^DB_USER=' "${creds_file}" | head -n1 | cut -d= -f2- || true)"
+        control_password="$(grep -E '^DB_PASSWORD=' "${creds_file}" | head -n1 | cut -d= -f2- || true)"
+    fi
+
+    if [[ -z "${control_db}" ]]; then
+        control_db="phpmyadmin"
+    fi
+    if [[ -z "${control_user}" || ! "${control_user}" =~ ^[A-Za-z0-9_]+$ ]]; then
+        control_user="pma"
+    fi
+    if [[ -z "${control_password}" ]]; then
+        control_password="$(generate_random_password)"
+    fi
+    if [[ -f "${admin_creds_file}" ]]; then
+        admin_user="$(grep -E '^DB_USER=' "${admin_creds_file}" | head -n1 | cut -d= -f2- || true)"
+        admin_password="$(grep -E '^DB_PASSWORD=' "${admin_creds_file}" | head -n1 | cut -d= -f2- || true)"
+    fi
+    if [[ -z "${admin_user}" || ! "${admin_user}" =~ ^[A-Za-z0-9_]+$ ]]; then
+        admin_user="dbadmin"
+    fi
+    if [[ -z "${admin_password}" ]]; then
+        admin_password="$(generate_random_password)"
+    fi
+
+    PHPMYADMIN_CONTROL_DB="${control_db}"
+    PHPMYADMIN_CONTROL_USER="${control_user}"
+    PHPMYADMIN_CONTROL_PASSWORD="${control_password}"
+    PHPMYADMIN_ADMIN_USER="${admin_user}"
+    PHPMYADMIN_ADMIN_PASSWORD="${admin_password}"
+
+    cat > "${creds_file}" <<EOF
+DB_NAME=${control_db}
+DB_USER=${control_user}
+DB_PASSWORD=${control_password}
+EOF
+    run chmod 600 "${creds_file}"
+    cat > "${admin_creds_file}" <<EOF
+DB_USER=${admin_user}
+DB_PASSWORD=${admin_password}
+EOF
+    run chmod 600 "${admin_creds_file}"
+
+    ensure_database_running
+    db_cli="$(detect_db_cli)"
+    if [[ -z "${db_cli}" ]]; then
+        warn "No database CLI found. Skipping phpMyAdmin control-user DB setup."
+    else
+        sql_db="$(escape_sql_string "${control_db}")"
+        sql_user="$(escape_sql_string "${control_user}")"
+        sql_password="$(escape_sql_string "${control_password}")"
+        sql_admin_user="$(escape_sql_string "${admin_user}")"
+        sql_admin_password="$(escape_sql_string "${admin_password}")"
+
+        run "${db_cli}" -e "CREATE DATABASE IF NOT EXISTS \`${sql_db}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+        run "${db_cli}" -e "CREATE USER IF NOT EXISTS '${sql_user}'@'127.0.0.1' IDENTIFIED BY '${sql_password}';"
+        run "${db_cli}" -e "CREATE USER IF NOT EXISTS '${sql_user}'@'localhost' IDENTIFIED BY '${sql_password}';"
+        run "${db_cli}" -e "ALTER USER '${sql_user}'@'127.0.0.1' IDENTIFIED BY '${sql_password}';"
+        run "${db_cli}" -e "ALTER USER '${sql_user}'@'localhost' IDENTIFIED BY '${sql_password}';"
+        run "${db_cli}" -e "GRANT ALL PRIVILEGES ON \`${sql_db}\`.* TO '${sql_user}'@'127.0.0.1';"
+        run "${db_cli}" -e "GRANT ALL PRIVILEGES ON \`${sql_db}\`.* TO '${sql_user}'@'localhost';"
+        run "${db_cli}" -e "CREATE USER IF NOT EXISTS '${sql_admin_user}'@'127.0.0.1' IDENTIFIED BY '${sql_admin_password}';"
+        run "${db_cli}" -e "CREATE USER IF NOT EXISTS '${sql_admin_user}'@'localhost' IDENTIFIED BY '${sql_admin_password}';"
+        run "${db_cli}" -e "ALTER USER '${sql_admin_user}'@'127.0.0.1' IDENTIFIED BY '${sql_admin_password}';"
+        run "${db_cli}" -e "ALTER USER '${sql_admin_user}'@'localhost' IDENTIFIED BY '${sql_admin_password}';"
+        run "${db_cli}" -e "GRANT ALL PRIVILEGES ON *.* TO '${sql_admin_user}'@'127.0.0.1' WITH GRANT OPTION;"
+        run "${db_cli}" -e "GRANT ALL PRIVILEGES ON *.* TO '${sql_admin_user}'@'localhost' WITH GRANT OPTION;"
+        run "${db_cli}" -e "FLUSH PRIVILEGES;"
+
+        pma_table_exists="$("${db_cli}" -N -s -e "SELECT 1 FROM information_schema.tables WHERE table_schema='${sql_db}' AND table_name='pma__bookmark' LIMIT 1;" 2>/dev/null || true)"
+        if [[ "${pma_table_exists}" != "1" ]]; then
+            schema_file="$(detect_phpmyadmin_schema)"
+            if [[ -n "${schema_file}" ]]; then
+                printf -v db_cli_q "%q" "${db_cli}"
+                printf -v db_name_q "%q" "${control_db}"
+                printf -v schema_q "%q" "${schema_file}"
+                if [[ "${schema_file}" == *.gz ]]; then
+                    run bash -lc "gzip -dc ${schema_q} | ${db_cli_q} ${db_name_q}"
+                else
+                    run bash -lc "${db_cli_q} ${db_name_q} < ${schema_q}"
+                fi
+            else
+                warn "phpMyAdmin create_tables SQL not found. Advanced relation features may stay disabled."
+            fi
+        fi
+    fi
+
+    if [[ "${template_applied}" == "true" ]] \
+        || ! grep -Eq "^[[:space:]]*\\\$cfg\\['blowfish_secret'\\][[:space:]]*=" "${config_file}" \
+        || grep -Eq "^[[:space:]]*\\\$cfg\\['blowfish_secret'\\][[:space:]]*=[[:space:]]*'';" "${config_file}"; then
+        secret="$(generate_random_password)$(generate_random_password)"
+        upsert_php_array_setting "${config_file}" "cfg" "blowfish_secret" "'${secret}'"
+    fi
+
+    upsert_php_array_setting "${config_file}" "cfg" "TempDir" "'${temp_dir}'"
+    upsert_php_array_setting "${config_file}" "cfg" "ShowCreateDb" "true"
+    upsert_php_array_setting "${config_file}" "cfg" "AllowUserDropDatabase" "true"
+    upsert_php_array_setting "${config_file}" "cfg" "MainPageIconic" "false"
+    upsert_php_cfg_server_setting "${config_file}" "host" "'127.0.0.1'"
+    upsert_php_cfg_server_setting "${config_file}" "hide_db" "''"
+    upsert_php_cfg_server_setting "${config_file}" "auth_type" "'signon'"
+    upsert_php_cfg_server_setting "${config_file}" "SignonSession" "'SignonSession'"
+    upsert_php_cfg_server_setting "${config_file}" "SignonURL" "'${signon_url}'"
+    upsert_php_cfg_server_setting "${config_file}" "AllowNoPassword" "false"
+    upsert_php_cfg_server_setting "${config_file}" "AllowRoot" "false"
+    upsert_php_cfg_server_setting "${config_file}" "user" "''"
+    upsert_php_cfg_server_setting "${config_file}" "password" "''"
+    upsert_php_cfg_server_setting "${config_file}" "pmadb" "'${control_db}'"
+    upsert_php_cfg_server_setting "${config_file}" "controluser" "'${control_user}'"
+    upsert_php_cfg_server_setting "${config_file}" "controlpass" "'${control_password}'"
+
+    # Fallback only for configs that do not use $i.
+    if [[ "${has_dynamic_server_index}" != "true" ]]; then
+        upsert_php_cfg_server_index_setting "${config_file}" "1" "host" "'127.0.0.1'"
+        upsert_php_cfg_server_index_setting "${config_file}" "1" "hide_db" "''"
+        upsert_php_cfg_server_index_setting "${config_file}" "1" "auth_type" "'signon'"
+        upsert_php_cfg_server_index_setting "${config_file}" "1" "SignonSession" "'SignonSession'"
+        upsert_php_cfg_server_index_setting "${config_file}" "1" "SignonURL" "'${signon_url}'"
+        upsert_php_cfg_server_index_setting "${config_file}" "1" "AllowNoPassword" "false"
+        upsert_php_cfg_server_index_setting "${config_file}" "1" "AllowRoot" "false"
+    fi
+    deploy_phpmyadmin_helper
+
+    if ! php -m 2>/dev/null | grep -qi "^ctype$"; then
+        warn "PHP ctype extension is still not active in CLI. phpMyAdmin may fail until ctype is enabled."
+    fi
+
+    ok "phpMyAdmin runtime configured."
+}
+
+configure_roundcube_runtime() {
+    local config_file="/etc/roundcube/config.inc.php"
+    local creds_file="/etc/roundcube/serverpanel-db.conf"
+    local debian_db_file="/etc/roundcube/debian-db.php"
+    local roundcube_db="${ROUNDCUBE_DB_NAME:-roundcube}"
+    local roundcube_user="${ROUNDCUBE_DB_USER:-roundcube}"
+    local roundcube_password="${ROUNDCUBE_DB_PASSWORD:-}"
+    local sql_db sql_user sql_password db_cli users_table_exists schema_file
+    local db_cli_q db_name_q schema_q
+    local owner_group des_key=""
+
+    if ! is_package_installed roundcube && ! is_package_installed roundcube-core; then
+        warn "Roundcube package is not installed. Skipping Roundcube runtime configuration."
+        return 0
+    fi
+
+    ensure_default_php_binary
+    ensure_package "php${PHP_DEFAULT_VERSION}-common" true
+    enable_default_php_module "ctype" "${PHP_DEFAULT_VERSION}"
+    ensure_default_php_extension "mbstring" true
+    ensure_default_php_extension "xml" true
+    ensure_default_php_extension "mysql" true
+    ensure_default_php_extension "intl" true
+    ensure_default_php_extension "gd" true
+    ensure_default_php_extension "imap" false
+
+    run mkdir -p /etc/roundcube
+    if [[ -f "${creds_file}" ]]; then
+        roundcube_user="$(grep -E '^DB_USER=' "${creds_file}" | head -n1 | cut -d= -f2- || true)"
+        roundcube_password="$(grep -E '^DB_PASSWORD=' "${creds_file}" | head -n1 | cut -d= -f2- || true)"
+    fi
+
+    if [[ -z "${roundcube_user}" ]]; then
+        roundcube_user="roundcube"
+    fi
+    if [[ -z "${roundcube_password}" ]]; then
+        roundcube_password="$(generate_random_password)"
+        cat > "${creds_file}" <<EOF
+DB_NAME=${roundcube_db}
+DB_USER=${roundcube_user}
+DB_PASSWORD=${roundcube_password}
+EOF
+        run chmod 600 "${creds_file}"
+    fi
+
+    ROUNDCUBE_DB_NAME="${roundcube_db}"
+    ROUNDCUBE_DB_USER="${roundcube_user}"
+    ROUNDCUBE_DB_PASSWORD="${roundcube_password}"
+
+    ensure_database_running
+    db_cli="$(detect_db_cli)"
+    if [[ -z "${db_cli}" ]]; then
+        warn "No database CLI found. Skipping Roundcube DB setup."
+        return 0
+    fi
+
+    sql_db="$(escape_sql_string "${roundcube_db}")"
+    sql_user="$(escape_sql_string "${roundcube_user}")"
+    sql_password="$(escape_sql_string "${roundcube_password}")"
+
+    run "${db_cli}" -e "CREATE DATABASE IF NOT EXISTS \`${sql_db}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    run "${db_cli}" -e "CREATE USER IF NOT EXISTS '${sql_user}'@'127.0.0.1' IDENTIFIED BY '${sql_password}';"
+    run "${db_cli}" -e "CREATE USER IF NOT EXISTS '${sql_user}'@'localhost' IDENTIFIED BY '${sql_password}';"
+    run "${db_cli}" -e "ALTER USER '${sql_user}'@'127.0.0.1' IDENTIFIED BY '${sql_password}';"
+    run "${db_cli}" -e "ALTER USER '${sql_user}'@'localhost' IDENTIFIED BY '${sql_password}';"
+    run "${db_cli}" -e "GRANT ALL PRIVILEGES ON \`${sql_db}\`.* TO '${sql_user}'@'127.0.0.1';"
+    run "${db_cli}" -e "GRANT ALL PRIVILEGES ON \`${sql_db}\`.* TO '${sql_user}'@'localhost';"
+    run "${db_cli}" -e "FLUSH PRIVILEGES;"
+
+    users_table_exists="$("${db_cli}" -N -s -e "SELECT 1 FROM information_schema.tables WHERE table_schema='${sql_db}' AND table_name='users' LIMIT 1;" 2>/dev/null || true)"
+    if [[ "${users_table_exists}" != "1" ]]; then
+        schema_file="$(detect_roundcube_mysql_schema)"
+        if [[ -n "${schema_file}" ]]; then
+            printf -v db_cli_q "%q" "${db_cli}"
+            printf -v db_name_q "%q" "${roundcube_db}"
+            printf -v schema_q "%q" "${schema_file}"
+            if [[ "${schema_file}" == *.gz ]]; then
+                run bash -lc "gzip -dc ${schema_q} | ${db_cli_q} ${db_name_q}"
+            else
+                run bash -lc "${db_cli_q} ${db_name_q} < ${schema_q}"
+            fi
+        else
+            warn "Roundcube SQL schema file not found. Roundcube may fail until schema is imported."
+        fi
+    fi
+
+    if [[ ! -f "${config_file}" ]]; then
+        cat > "${config_file}" <<'EOF'
+<?php
+$config = [];
+EOF
+    fi
+
+    cat > "${debian_db_file}" <<EOF
+<?php
+\$dbuser='${roundcube_user}';
+\$dbpass='${roundcube_password}';
+\$basepath='';
+\$dbname='${roundcube_db}';
+\$dbserver='127.0.0.1';
+\$dbport='';
+\$dbtype='mysql';
+\$dbsocket='';
+EOF
+    run chown root:www-data "${debian_db_file}" || true
+    run chmod 640 "${debian_db_file}" || true
+
+    run mkdir -p /var/lib/roundcube/temp /var/log/roundcube
+    owner_group="$(web_owner_group)"
+    run chown -R "${owner_group}" /var/lib/roundcube/temp /var/log/roundcube || true
+    run chmod 770 /var/lib/roundcube/temp /var/log/roundcube || true
+
+    upsert_php_array_setting "${config_file}" "config" "db_dsnw" "'mysql://${roundcube_user}:${roundcube_password}@127.0.0.1/${roundcube_db}'"
+    upsert_php_array_setting "${config_file}" "config" "temp_dir" "'/var/lib/roundcube/temp'"
+    upsert_php_array_setting "${config_file}" "config" "log_dir" "'/var/log/roundcube'"
+    upsert_php_array_setting "${config_file}" "config" "default_host" "'127.0.0.1'"
+    upsert_php_array_setting "${config_file}" "config" "default_port" "143"
+    upsert_php_array_setting "${config_file}" "config" "smtp_server" "'127.0.0.1'"
+    upsert_php_array_setting "${config_file}" "config" "smtp_port" "587"
+    upsert_php_array_setting "${config_file}" "config" "smtp_user" "'%u'"
+    upsert_php_array_setting "${config_file}" "config" "smtp_pass" "'%p'"
+
+    if ! grep -Eq "^[[:space:]]*\\\$config\\['des_key'\\][[:space:]]*=" "${config_file}" \
+        || grep -Eq "^[[:space:]]*\\\$config\\['des_key'\\][[:space:]]*=[[:space:]]*'';" "${config_file}"; then
+        des_key="$(generate_random_password)$(generate_random_password)"
+        upsert_php_array_setting "${config_file}" "config" "des_key" "'${des_key}'"
+    fi
+
+    ok "Roundcube runtime configured."
+}
+
+install_roundcube_webmail() {
+    ensure_default_php_extension "intl" true
+    ensure_default_php_extension "gd" true
+    ensure_default_php_extension "imap" false
+
+    if is_package_installed roundcube || is_package_installed roundcube-core; then
+        ok "Already installed: roundcube"
+        return 0
+    fi
+
+    if is_package_available roundcube; then
+        echo "roundcube-core roundcube-core/dbconfig-install boolean false" | debconf-set-selections || true
+        echo "roundcube-core roundcube-core/reconfigure-webserver multiselect none" | debconf-set-selections || true
+        ensure_package roundcube true
+    elif is_package_available roundcube-core; then
+        echo "roundcube-core roundcube-core/dbconfig-install boolean false" | debconf-set-selections || true
+        echo "roundcube-core roundcube-core/reconfigure-webserver multiselect none" | debconf-set-selections || true
+        ensure_package roundcube-core true
+    else
+        warn "Package not available, skipping: roundcube"
+        return 0
+    fi
+
+    if is_package_available roundcube-mysql; then
+        ensure_package roundcube-mysql true
+    fi
+
+    if is_package_installed roundcube || is_package_installed roundcube-core; then
+        ok "Roundcube package install completed."
+    else
+        warn "Roundcube install did not complete."
+    fi
 }
 
 install_mariadb_phpmyadmin() {
@@ -1225,22 +2641,23 @@ install_mariadb_phpmyadmin() {
 
     if is_package_installed phpmyadmin; then
         ok "Already installed: phpmyadmin"
-        return
+    else
+        if ! is_package_available phpmyadmin; then
+            warn "Package not available, skipping: phpmyadmin"
+        else
+            phpmyadmin_webserver="none"
+            if wants_apache; then
+                phpmyadmin_webserver="apache2"
+            fi
+
+            echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect ${phpmyadmin_webserver}" | debconf-set-selections
+            echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections
+            run env DEBIAN_FRONTEND=noninteractive apt install -y phpmyadmin
+        fi
     fi
 
-    if ! is_package_available phpmyadmin; then
-        warn "Package not available, skipping: phpmyadmin"
-        return
-    fi
-
-    phpmyadmin_webserver="none"
-    if wants_apache; then
-        phpmyadmin_webserver="apache2"
-    fi
-
-    echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect ${phpmyadmin_webserver}" | debconf-set-selections
-    echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections
-    run env DEBIAN_FRONTEND=noninteractive apt install -y phpmyadmin
+    install_roundcube_webmail
+    configure_phpmyadmin_runtime
 }
 
 web_owner_group() {
@@ -1433,6 +2850,13 @@ detect_project_dir() {
         done <<< "${discovered}"
     fi
 
+    if [[ -n "${REMOTE_PANEL_ARCHIVE_URL}" ]]; then
+        info "Project not found locally. Trying remote archive URL: ${REMOTE_PANEL_ARCHIVE_URL}"
+        PROJECT_URL="${REMOTE_PANEL_ARCHIVE_URL}"
+        download_project_from_url
+        return
+    fi
+
     fail "Project files not found.
 Checked:
 - ${SCRIPT_DIR}
@@ -1464,6 +2888,7 @@ install_packages() {
     ensure_package sqlite3
     ensure_package ufw
     ensure_package openssh-server
+    ensure_package redis-server true
     ensure_package composer
     ensure_package nodejs
     info "Skipping distro npm package install (NodeSource nodejs provides npm and avoids apt dependency conflicts)."
@@ -1500,17 +2925,25 @@ setup_ssh() {
     run ufw allow OpenSSH || true
     run ufw allow 22/tcp || true
     run ufw allow "${PANEL_PORT}/tcp" || true
+    if [[ "${WEBTOOLS_SEPARATE_PORTS}" == "true" ]]; then
+        run ufw allow "${PHPMYADMIN_PORT}/tcp" || true
+        run ufw allow "${ROUNDCUBE_PORT}/tcp" || true
+    fi
     ok "SSH enabled and firewall rules added."
 }
 
 setup_panel_startup_service() {
-    local db_after
+    local db_after redis_after
     info "Configuring ServerPanel startup service on port ${PANEL_PORT}"
     db_after="${DB_SERVICE:-mariadb}.service"
+    redis_after=""
+    if [[ -n "${REDIS_SERVICE}" ]]; then
+        redis_after="${REDIS_SERVICE}.service"
+    fi
     cat > /etc/systemd/system/serverpanel.service <<EOF
 [Unit]
 Description=ServerPanel Laravel HTTP Service
-After=network.target ${db_after}
+After=network.target ${db_after} ${redis_after}
 
 [Service]
 Type=simple
@@ -1651,10 +3084,12 @@ setup_application() {
     upsert_env_value ".env" "APP_DEBUG" "false"
     upsert_env_value ".env" "APACHE_BACKEND_PORT" "${APACHE_BACKEND_PORT}"
     upsert_env_value ".env" "NGINX_PRIMARY_PORT" "${NGINX_PRIMARY_PORT}"
+    sync_panel_webtools_env ".env"
 
     setup_mariadb_database
 
     install_composer_dependencies
+    run env COMPOSER_ALLOW_SUPERUSER=1 composer dump-autoload -o
     ensure_nodejs_for_vite
     run npm install
     ensure_node_build_permissions
@@ -1676,7 +3111,6 @@ setup_application() {
     run php artisan migrate --force
     run php artisan db:seed --force
     run php artisan optimize
-    write_install_credentials_log
     ok "Application setup completed."
 }
 
@@ -1690,6 +3124,11 @@ setup_permissions() {
 }
 
 configure_apache_backend_for_dual_stack() {
+    local ports_conf="/etc/apache2/ports.conf"
+    local ports_backup="/etc/apache2/ports.conf.bak"
+    local default_conf="/etc/apache2/sites-available/000-default.conf"
+    local default_backup="/etc/apache2/sites-available/000-default.conf.bak"
+
     if [[ "${WEB_SERVER}" != "both" ]]; then
         return
     fi
@@ -1700,16 +3139,40 @@ configure_apache_backend_for_dual_stack() {
 
     info "Configuring Apache backend listener on :${APACHE_BACKEND_PORT} (Nginx frontend :${NGINX_PRIMARY_PORT})"
     run a2enmod proxy_fcgi setenvif rewrite headers || true
-    cat > /etc/apache2/ports.conf <<EOF
-# Nginx is the frontend in dual-stack mode; Apache only serves backend traffic.
-Listen ${APACHE_BACKEND_PORT}
-EOF
+
+    if [[ -f "${ports_conf}" ]]; then
+        run cp "${ports_conf}" "${ports_backup}" || true
+    fi
+    if [[ -f "${default_conf}" ]]; then
+        run cp "${default_conf}" "${default_backup}" || true
+    fi
+
+    # Safe migration from :80 to backend Apache port.
+    run sed -i "s/^Listen 80\$/Listen ${APACHE_BACKEND_PORT}/" "${ports_conf}" || true
+
+    # If a broken value appears (example: 808080), reset to clean backend listen.
+    if grep -q "${APACHE_BACKEND_PORT}${APACHE_BACKEND_PORT}" "${ports_conf}" 2>/dev/null; then
+        echo "Listen ${APACHE_BACKEND_PORT}" > "${ports_conf}"
+    fi
+
+    if [[ -f "${default_conf}" ]]; then
+        run sed -i "s/<VirtualHost \\*:80>/<VirtualHost *:${APACHE_BACKEND_PORT}>/" "${default_conf}" || true
+    fi
+
     run a2dissite serverpanel-proxy || true
-    run a2dissite 000-default || true
+    run a2ensite 000-default.conf || true
 
     if command -v apache2ctl >/dev/null 2>&1; then
         if ! apache2ctl configtest; then
             warn "Apache config test failed after backend-listener setup."
+            warn "Restoring Apache backup configs."
+            if [[ -f "${ports_backup}" ]]; then
+                cp "${ports_backup}" "${ports_conf}" || true
+            fi
+            if [[ -f "${default_backup}" ]]; then
+                cp "${default_backup}" "${default_conf}" || true
+            fi
+            restart_apache_safely
             return
         fi
     fi
@@ -1719,6 +3182,7 @@ EOF
 
 start_services() {
     info "Step 5/5: Starting web/database services"
+    check_and_prepare_web_ports_before_service_ops
     if wants_apache; then
         if systemctl cat apache2.service >/dev/null 2>&1; then
             run systemctl unmask apache2 || true
@@ -1744,24 +3208,106 @@ start_services() {
         fi
     fi
     ensure_database_running
+    ensure_redis_running
+    configure_phpmyadmin_runtime
+    configure_roundcube_runtime
     run systemctl restart ssh
     setup_panel_startup_service
+    if [[ "${WEBTOOLS_SEPARATE_PORTS}" == "true" ]]; then
+        cleanup_panel_embedded_webtools_links "${PROJECT_DIR}"
+        setup_separate_webtools_services
+    else
+        disable_separate_webtools_services
+        expose_panel_tools_on_port "${PROJECT_DIR}"
+    fi
+    sync_panel_webtools_env "${PROJECT_DIR}/.env"
     run systemctl restart serverpanel
+
+    if is_dual_stack_mode && [[ "${WEB_SERVER}" != "both" ]]; then
+        info "Detected existing dual-stack routing (Nginx frontend -> Apache backend). Preserving mode."
+        WEB_SERVER="both"
+    fi
+
     if [[ "${WEB_SERVER}" == "both" ]]; then
         configure_apache_backend_for_dual_stack
-        setup_nginx_proxy_default_site
-        ok "Both selected: Nginx frontend :${NGINX_PRIMARY_PORT}, Apache backend :${APACHE_BACKEND_PORT}."
+        disable_panel_direct_ip_proxy "false" "true"
+        ok "Both selected: Nginx frontend :${NGINX_PRIMARY_PORT}, Apache backend :${APACHE_BACKEND_PORT}. Panel kept on :${PANEL_PORT}."
     elif [[ "${WEB_SERVER}" == "apache" ]]; then
-        setup_apache_proxy_default_site
+        disable_panel_direct_ip_proxy "true" "false"
     elif [[ "${WEB_SERVER}" == "nginx" ]]; then
-        setup_nginx_proxy_default_site
+        disable_panel_direct_ip_proxy "false" "true"
     fi
+    write_install_credentials_log
     ok "Services are running."
+}
+
+is_dual_stack_mode() {
+    if [[ "${WEB_SERVER}" == "both" ]]; then
+        return 0
+    fi
+
+    if [[ -f /etc/apache2/ports.conf ]] && grep -qE "^[[:space:]]*Listen[[:space:]]+${APACHE_BACKEND_PORT}([[:space:]]*)$" /etc/apache2/ports.conf; then
+        if systemctl cat nginx.service >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+check_and_prepare_web_ports_before_service_ops() {
+    local ports_conf="/etc/apache2/ports.conf"
+    local ports_backup="/etc/apache2/ports.conf.precheck.bak"
+    local default_conf="/etc/apache2/sites-available/000-default.conf"
+    local default_backup="/etc/apache2/sites-available/000-default.conf.precheck.bak"
+
+    if ! is_dual_stack_mode; then
+        return 0
+    fi
+
+    info "Checking Apache/Nginx port mapping before service operations"
+
+    if [[ -f "${ports_conf}" ]]; then
+        cp "${ports_conf}" "${ports_backup}" 2>/dev/null || true
+
+        if ! grep -qE "^[[:space:]]*Listen[[:space:]]+${APACHE_BACKEND_PORT}([[:space:]]*)$" "${ports_conf}"; then
+            echo "Listen ${APACHE_BACKEND_PORT}" >> "${ports_conf}"
+        fi
+
+        sed -i -E 's/^[[:space:]]*Listen[[:space:]]+80([[:space:]]*)$/# Listen 80/g' "${ports_conf}" || true
+        sed -i -E 's/^[[:space:]]*Listen[[:space:]]+443([[:space:]]*)$/# Listen 443/g' "${ports_conf}" || true
+
+        if grep -q "${APACHE_BACKEND_PORT}${APACHE_BACKEND_PORT}" "${ports_conf}" 2>/dev/null; then
+            echo "Listen ${APACHE_BACKEND_PORT}" > "${ports_conf}"
+        fi
+    fi
+
+    if [[ -f "${default_conf}" ]]; then
+        cp "${default_conf}" "${default_backup}" 2>/dev/null || true
+        sed -i "s/<VirtualHost \\*:80>/<VirtualHost *:${APACHE_BACKEND_PORT}>/" "${default_conf}" || true
+    fi
+
+    if command -v apache2ctl >/dev/null 2>&1; then
+        if ! apache2ctl configtest >/tmp/serverpanel-apache-precheck.log 2>&1; then
+            warn "Apache precheck configtest failed. Restoring Apache backups."
+            [[ -f "${ports_backup}" ]] && cp "${ports_backup}" "${ports_conf}" || true
+            [[ -f "${default_backup}" ]] && cp "${default_backup}" "${default_conf}" || true
+        fi
+    fi
+
+    if command -v nginx >/dev/null 2>&1; then
+        if ! nginx -t >/tmp/serverpanel-nginx-precheck.log 2>&1; then
+            warn "Nginx precheck failed. Check: tail -n 80 /tmp/serverpanel-nginx-precheck.log"
+        fi
+    fi
 }
 
 show_summary() {
     local server_ip
+    local phpmyadmin_url roundcube_url
     server_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    phpmyadmin_url="$(phpmyadmin_access_url "${server_ip:-server_ip}")"
+    roundcube_url="$(roundcube_access_url "${server_ip:-server_ip}")"
     echo
     echo -e "${GREEN}============================================================${NC}"
     echo -e "${GREEN} Installation Completed ${NC}"
@@ -1774,10 +3320,22 @@ show_summary() {
     echo -e "DB User      : ${DB_USER}"
     echo -e "DB Password  : ${DB_PASSWORD}"
     echo -e "DB Service   : ${DB_SERVICE:-unknown}"
+    echo -e "Redis Service: ${REDIS_SERVICE:-not-running-or-not-installed}"
     echo -e "Panel Port   : ${PANEL_PORT}"
+    if is_webtools_separate_mode_active; then
+        echo -e "Tools Mode   : separate ports/services"
+        echo -e "PMA Root     : ${PHPMYADMIN_ROOT}"
+        echo -e "RC Root      : ${ROUNDCUBE_ROOT}"
+        echo -e "PMA Port     : ${PHPMYADMIN_PORT}"
+        echo -e "RC Port      : ${ROUNDCUBE_PORT}"
+    else
+        echo -e "Tools Mode   : via panel port paths"
+    fi
     echo -e "Nginx Port   : ${NGINX_PRIMARY_PORT}"
     echo -e "Apache Port  : ${APACHE_BACKEND_PORT}"
     echo -e "Panel URL    : http://${server_ip:-server_ip}:${PANEL_PORT}"
+    echo -e "phpMyAdmin   : ${phpmyadmin_url}"
+    echo -e "Roundcube    : ${roundcube_url}"
     if [[ "${LOGIN_CREDENTIALS_READY}" == "true" ]]; then
         echo -e "Creds Log    : /root/serverpanel_credentials.txt"
     fi
@@ -1798,6 +3356,14 @@ ask_input() {
         read -r -p "${prompt}: " value
         echo "${value}"
     fi
+}
+
+ask_secret_input() {
+    local prompt="$1"
+    local value=""
+    read -r -s -p "${prompt}: " value
+    echo
+    echo "${value}"
 }
 
 ask_yes_no() {
@@ -1827,7 +3393,7 @@ panel_port_from_service_file() {
 }
 
 show_service_dashboard() {
-    local svc state ip port
+    local svc state ip port redis_svc
     echo
     echo -e "${CYAN}================ Service Dashboard ================${NC}"
     for svc in serverpanel apache2 nginx mariadb ssh; do
@@ -1836,14 +3402,27 @@ show_service_dashboard() {
             printf "%-12s : %s\n" "${svc}" "${state:-unknown}"
         fi
     done
+    redis_svc="${REDIS_SERVICE:-$(detect_redis_service)}"
+    if [[ -n "${redis_svc}" ]] && systemctl cat "${redis_svc}.service" >/dev/null 2>&1; then
+        state="$(systemctl is-active "${redis_svc}" 2>/dev/null || true)"
+        printf "%-12s : %s\n" "${redis_svc}" "${state:-unknown}"
+    fi
+    for svc in "${PHPMYADMIN_SERVICE}" "${ROUNDCUBE_SERVICE}"; do
+        if systemctl cat "${svc}.service" >/dev/null 2>&1; then
+            state="$(systemctl is-active "${svc}" 2>/dev/null || true)"
+            printf "%-20s : %s\n" "${svc}" "${state:-unknown}"
+        fi
+    done
     ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
     port="$(panel_port_from_service_file)"
     echo "Panel URL    : http://${ip:-127.0.0.1}:${port}"
+    echo "phpMyAdmin   : $(phpmyadmin_access_url "${ip:-127.0.0.1}")"
+    echo "Roundcube    : $(roundcube_access_url "${ip:-127.0.0.1}")"
 }
 
 manage_single_service() {
     local svc action
-    svc="$(ask_input "Service name (serverpanel/apache2/nginx/mariadb/ssh)" "serverpanel")"
+    svc="$(ask_input "Service name (serverpanel/apache2/nginx/mariadb/redis-server/ssh/${PHPMYADMIN_SERVICE}/${ROUNDCUBE_SERVICE})" "serverpanel")"
     action="$(ask_input "Action (status/start/stop/restart/enable/disable/logs)" "status")"
 
     case "${action}" in
@@ -1851,6 +3430,9 @@ manage_single_service() {
             run journalctl -u "${svc}" -n 80 --no-pager
             ;;
         status|start|stop|restart|enable|disable)
+            if [[ "${svc}" == "apache2" || "${svc}" == "nginx" ]]; then
+                check_and_prepare_web_ports_before_service_ops
+            fi
             run systemctl "${action}" "${svc}"
             ;;
         *)
@@ -1860,15 +3442,32 @@ manage_single_service() {
 }
 
 repair_apache_proxy_menu() {
-    local port proxy_server nginx_port
+    local port proxy_server nginx_port apache_port
     port="$(ask_input "Panel port for web proxy" "$(panel_port_from_service_file)")"
     if [[ ! "${port}" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
         warn "Invalid port: ${port}"
         return
     fi
-    proxy_server="$(ask_input "Proxy server (apache/nginx)" "apache")"
+    if is_dual_stack_mode; then
+        proxy_server="$(ask_input "Proxy server (apache/nginx/both)" "both")"
+    else
+        proxy_server="$(ask_input "Proxy server (apache/nginx/both)" "apache")"
+    fi
     PANEL_PORT="${port}"
     case "${proxy_server}" in
+        both)
+            nginx_port="$(ask_input "Nginx frontend port" "${NGINX_PRIMARY_PORT}")"
+            if [[ "${nginx_port}" =~ ^[0-9]+$ ]] && (( nginx_port >= 1 && nginx_port <= 65535 )); then
+                NGINX_PRIMARY_PORT="${nginx_port}"
+            fi
+            apache_port="$(ask_input "Apache backend port" "${APACHE_BACKEND_PORT}")"
+            if [[ "${apache_port}" =~ ^[0-9]+$ ]] && (( apache_port >= 1 && apache_port <= 65535 )); then
+                APACHE_BACKEND_PORT="${apache_port}"
+            fi
+            WEB_SERVER="both"
+            configure_apache_backend_for_dual_stack
+            setup_nginx_proxy_default_site
+            ;;
         nginx)
             nginx_port="$(ask_input "Nginx frontend port" "${NGINX_PRIMARY_PORT}")"
             if [[ "${nginx_port}" =~ ^[0-9]+$ ]] && (( nginx_port >= 1 && nginx_port <= 65535 )); then
@@ -1884,17 +3483,102 @@ repair_apache_proxy_menu() {
     esac
 }
 
+ensure_nginx_default_site() {
+    if [[ -f /etc/nginx/sites-available/default ]]; then
+        return 0
+    fi
+
+    cat > /etc/nginx/sites-available/default <<EOF
+server {
+    listen ${NGINX_PRIMARY_PORT} default_server;
+    listen [::]:${NGINX_PRIMARY_PORT} default_server;
+    server_name _;
+
+    root /var/www/html;
+    index index.php index.html;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+}
+EOF
+}
+
+disable_panel_direct_ip_proxy() {
+    local apply_apache="${1:-true}"
+    local apply_nginx="${2:-true}"
+
+    if [[ "${apply_apache}" == "true" ]] && systemctl cat apache2.service >/dev/null 2>&1; then
+        info "Disabling Apache panel proxy mapping on :80"
+        run a2dissite serverpanel-proxy || true
+        if [[ -f /etc/apache2/sites-available/000-default.conf ]]; then
+            run a2ensite 000-default || true
+        fi
+        restart_apache_safely
+    fi
+
+    if [[ "${apply_nginx}" == "true" ]] && systemctl cat nginx.service >/dev/null 2>&1; then
+        info "Disabling Nginx panel proxy mapping on :${NGINX_PRIMARY_PORT}"
+        run rm -f /etc/nginx/sites-enabled/serverpanel-proxy || true
+        ensure_nginx_default_site
+        run ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+        restart_nginx_safely
+    fi
+
+    ok "Direct IP route no longer points to panel proxy. Use http://<server-ip>:${PANEL_PORT} for panel."
+}
+
+disable_panel_direct_ip_proxy_menu() {
+    local target
+    target="$(ask_input "Disable panel proxy for (apache/nginx/both/auto)" "auto")"
+
+    case "${target,,}" in
+        apache)
+            disable_panel_direct_ip_proxy "true" "false"
+            ;;
+        nginx)
+            disable_panel_direct_ip_proxy "false" "true"
+            ;;
+        both)
+            disable_panel_direct_ip_proxy "true" "true"
+            ;;
+        auto|*)
+            disable_panel_direct_ip_proxy "true" "true"
+            ;;
+    esac
+}
+
 show_port_diagnostics() {
-    run bash -lc "ss -ltnp | egrep ':22 |:${NGINX_PRIMARY_PORT} |:${APACHE_BACKEND_PORT} |:${PANEL_PORT} |:443 |:3306 ' || true"
+    local extra_ports=""
+    if is_webtools_separate_mode_active; then
+        extra_ports="|:${PHPMYADMIN_PORT} |:${ROUNDCUBE_PORT} "
+    fi
+    run bash -lc "ss -ltnp | egrep ':22 |:${NGINX_PRIMARY_PORT} |:${APACHE_BACKEND_PORT} |:${PANEL_PORT} ${extra_ports}|:443 |:3306 ' || true"
 }
 
 restart_apache_safely() {
     local apache_check_port="80"
+    local apache_test_status=0
     if ! systemctl cat apache2.service >/dev/null 2>&1; then
         return 0
     fi
     if [[ "${WEB_SERVER}" == "both" ]]; then
         apache_check_port="${APACHE_BACKEND_PORT}"
+    fi
+
+    if command -v apache2ctl >/dev/null 2>&1; then
+        set +e
+        apache2ctl configtest >/tmp/serverpanel-apache-configtest.log 2>&1
+        apache_test_status=$?
+        set -e
+        if [[ "${apache_test_status}" -ne 0 ]]; then
+            warn "Apache config test failed. Skipping Apache restart."
+            warn "Quick checks:"
+            echo "  apache2ctl configtest"
+            echo "  tail -n 80 /tmp/serverpanel-apache-configtest.log"
+            echo "  journalctl -u apache2 -n 80 --no-pager"
+            return 0
+        fi
     fi
 
     local apache_restart_status=0
@@ -1915,8 +3599,24 @@ restart_apache_safely() {
 }
 
 restart_nginx_safely() {
+    local nginx_test_status=0
     if ! systemctl cat nginx.service >/dev/null 2>&1; then
         return 0
+    fi
+
+    if command -v nginx >/dev/null 2>&1; then
+        set +e
+        nginx -t >/tmp/serverpanel-nginx-configtest.log 2>&1
+        nginx_test_status=$?
+        set -e
+        if [[ "${nginx_test_status}" -ne 0 ]]; then
+            warn "Nginx config test failed. Skipping Nginx restart."
+            warn "Quick checks:"
+            echo "  nginx -t"
+            echo "  tail -n 80 /tmp/serverpanel-nginx-configtest.log"
+            echo "  journalctl -u nginx -n 80 --no-pager"
+            return 0
+        fi
     fi
 
     local nginx_restart_status=0
@@ -1943,6 +3643,289 @@ show_credentials_file() {
     fi
     warn "/root/serverpanel_credentials.txt not found."
     run bash -lc "find /var/www -maxdepth 6 -type f -name serverpanel_credentials.txt 2>/dev/null | head -n 5"
+}
+
+is_valid_db_identifier() {
+    local value="$1"
+    [[ "${value}" =~ ^[A-Za-z0-9_]{1,64}$ ]]
+}
+
+reset_panel_login_password_menu() {
+    local panel_dir env_file email new_password hash
+    local db_cli db_name db_name_sql users_table_exists sql_email sql_hash user_count
+
+    panel_dir="$(ask_input "Panel project path" "$(default_panel_project_dir)")"
+    env_file="${panel_dir}/.env"
+    if [[ ! -f "${panel_dir}/artisan" || ! -f "${panel_dir}/composer.json" || ! -f "${env_file}" ]]; then
+        warn "Invalid panel path or missing .env: ${panel_dir}"
+        return
+    fi
+
+    db_name="$(read_env_value "${env_file}" "DB_DATABASE")"
+    if ! is_valid_db_identifier "${db_name}"; then
+        warn "Invalid DB_DATABASE in ${env_file}: ${db_name}"
+        return
+    fi
+
+    email="$(ask_input "Panel login email to reset" "test@example.com")"
+    if [[ -z "${email}" ]]; then
+        warn "Email is required."
+        return
+    fi
+
+    new_password="$(ask_secret_input "New panel password (leave blank = auto-generate)")"
+    if [[ -z "${new_password}" ]]; then
+        new_password="$(generate_random_password)"
+        info "Generated random panel password."
+    fi
+
+    hash="$(NEW_PANEL_PASSWORD="${new_password}" php -r 'echo password_hash((string) getenv("NEW_PANEL_PASSWORD"), PASSWORD_BCRYPT);' 2>/dev/null || true)"
+    if [[ -z "${hash}" ]]; then
+        fail "Failed to generate password hash with PHP."
+    fi
+
+    ensure_database_running
+    db_cli="$(detect_db_cli)"
+    if [[ -z "${db_cli}" ]]; then
+        fail "No database CLI found (mysql/mariadb)."
+    fi
+
+    db_name_sql="$(escape_sql_string "${db_name}")"
+    users_table_exists="$("${db_cli}" -N -s -e "SELECT 1 FROM information_schema.tables WHERE table_schema='${db_name_sql}' AND table_name='users' LIMIT 1;" 2>/dev/null || true)"
+    if [[ "${users_table_exists}" != "1" ]]; then
+        warn "users table not found in database: ${db_name}"
+        return
+    fi
+
+    sql_email="$(escape_sql_string "${email}")"
+    sql_hash="$(escape_sql_string "${hash}")"
+    user_count="$("${db_cli}" -N -s "${db_name}" -e "SELECT COUNT(*) FROM users WHERE email='${sql_email}' LIMIT 1;" 2>/dev/null || true)"
+    if [[ "${user_count}" != "1" ]]; then
+        warn "No user found with email: ${email}"
+        return
+    fi
+
+    run "${db_cli}" "${db_name}" -e "UPDATE users SET password='${sql_hash}', updated_at=NOW() WHERE email='${sql_email}';"
+
+    if [[ -f "${panel_dir}/artisan" ]]; then
+        (
+            cd "${panel_dir}"
+            run php artisan optimize:clear || true
+            run php artisan config:clear || true
+        )
+    fi
+    run systemctl restart serverpanel || true
+
+    ok "Panel login password updated."
+    echo "Email    : ${email}"
+    echo "Password : ${new_password}"
+}
+
+reset_panel_db_password_menu() {
+    local panel_dir env_file db_name db_user old_db_password
+    local pdns_db_user pdns_db_password new_password db_cli
+    local sql_db sql_user sql_password
+
+    panel_dir="$(ask_input "Panel project path" "$(default_panel_project_dir)")"
+    env_file="${panel_dir}/.env"
+    if [[ ! -f "${panel_dir}/artisan" || ! -f "${panel_dir}/composer.json" || ! -f "${env_file}" ]]; then
+        warn "Invalid panel path or missing .env: ${panel_dir}"
+        return
+    fi
+
+    db_name="$(read_env_value "${env_file}" "DB_DATABASE")"
+    db_user="$(read_env_value "${env_file}" "DB_USERNAME")"
+    old_db_password="$(read_env_value "${env_file}" "DB_PASSWORD")"
+    pdns_db_user="$(read_env_value "${env_file}" "PDNS_DB_USERNAME")"
+    pdns_db_password="$(read_env_value "${env_file}" "PDNS_DB_PASSWORD")"
+
+    if ! is_valid_db_identifier "${db_name}"; then
+        warn "Invalid DB_DATABASE in ${env_file}: ${db_name}"
+        return
+    fi
+    if ! is_valid_db_identifier "${db_user}"; then
+        warn "Invalid DB_USERNAME in ${env_file}: ${db_user}"
+        return
+    fi
+
+    new_password="$(ask_secret_input "New DB password for ${db_user} (leave blank = auto-generate)")"
+    if [[ -z "${new_password}" ]]; then
+        new_password="$(generate_random_password)"
+        info "Generated random DB password."
+    fi
+
+    ensure_database_running
+    db_cli="$(detect_db_cli)"
+    if [[ -z "${db_cli}" ]]; then
+        fail "No database CLI found (mysql/mariadb)."
+    fi
+
+    sql_db="$(escape_sql_string "${db_name}")"
+    sql_user="$(escape_sql_string "${db_user}")"
+    sql_password="$(escape_sql_string "${new_password}")"
+
+    run "${db_cli}" -e "CREATE USER IF NOT EXISTS '${sql_user}'@'127.0.0.1' IDENTIFIED BY '${sql_password}';"
+    run "${db_cli}" -e "CREATE USER IF NOT EXISTS '${sql_user}'@'localhost' IDENTIFIED BY '${sql_password}';"
+    run "${db_cli}" -e "ALTER USER '${sql_user}'@'127.0.0.1' IDENTIFIED BY '${sql_password}';"
+    run "${db_cli}" -e "ALTER USER '${sql_user}'@'localhost' IDENTIFIED BY '${sql_password}';"
+    run "${db_cli}" -e "GRANT ALL PRIVILEGES ON \`${sql_db}\`.* TO '${sql_user}'@'127.0.0.1';"
+    run "${db_cli}" -e "GRANT ALL PRIVILEGES ON \`${sql_db}\`.* TO '${sql_user}'@'localhost';"
+    run "${db_cli}" -e "FLUSH PRIVILEGES;"
+
+    upsert_env_value "${env_file}" "DB_PASSWORD" "${new_password}"
+    if [[ "${pdns_db_user}" == "${db_user}" || "${pdns_db_password}" == "${old_db_password}" ]]; then
+        upsert_env_value "${env_file}" "PDNS_DB_PASSWORD" "${new_password}"
+    fi
+
+    DB_NAME="${db_name}"
+    DB_USER="${db_user}"
+    DB_PASSWORD="${new_password}"
+
+    (
+        cd "${panel_dir}"
+        run php artisan optimize:clear || true
+        run php artisan config:clear || true
+    )
+    run systemctl restart serverpanel || true
+
+    ok "Panel database password updated."
+    echo "DB Name   : ${db_name}"
+    echo "DB User   : ${db_user}"
+    echo "Password  : ${new_password}"
+}
+
+reset_phpmyadmin_admin_password_menu() {
+    local admin_creds_file="/etc/phpmyadmin/serverpanel-admin-user.conf"
+    local admin_user admin_password db_cli sql_admin_user sql_admin_password
+
+    admin_user="${PHPMYADMIN_ADMIN_USER:-dbadmin}"
+    if [[ -f "${admin_creds_file}" ]]; then
+        admin_user="$(grep -E '^DB_USER=' "${admin_creds_file}" | head -n1 | cut -d= -f2- || true)"
+    fi
+    if ! is_valid_db_identifier "${admin_user}"; then
+        admin_user="dbadmin"
+    fi
+
+    admin_user="$(ask_input "phpMyAdmin admin DB user" "${admin_user}")"
+    if ! is_valid_db_identifier "${admin_user}"; then
+        warn "Invalid DB user. Use letters, numbers, underscore only (max 64)."
+        return
+    fi
+
+    admin_password="$(ask_secret_input "New password for ${admin_user} (leave blank = auto-generate)")"
+    if [[ -z "${admin_password}" ]]; then
+        admin_password="$(generate_random_password)"
+        info "Generated random phpMyAdmin admin password."
+    fi
+
+    ensure_database_running
+    db_cli="$(detect_db_cli)"
+    if [[ -z "${db_cli}" ]]; then
+        fail "No database CLI found (mysql/mariadb)."
+    fi
+
+    sql_admin_user="$(escape_sql_string "${admin_user}")"
+    sql_admin_password="$(escape_sql_string "${admin_password}")"
+
+    run "${db_cli}" -e "CREATE USER IF NOT EXISTS '${sql_admin_user}'@'127.0.0.1' IDENTIFIED BY '${sql_admin_password}';"
+    run "${db_cli}" -e "CREATE USER IF NOT EXISTS '${sql_admin_user}'@'localhost' IDENTIFIED BY '${sql_admin_password}';"
+    run "${db_cli}" -e "ALTER USER '${sql_admin_user}'@'127.0.0.1' IDENTIFIED BY '${sql_admin_password}';"
+    run "${db_cli}" -e "ALTER USER '${sql_admin_user}'@'localhost' IDENTIFIED BY '${sql_admin_password}';"
+    run "${db_cli}" -e "GRANT ALL PRIVILEGES ON *.* TO '${sql_admin_user}'@'127.0.0.1' WITH GRANT OPTION;"
+    run "${db_cli}" -e "GRANT ALL PRIVILEGES ON *.* TO '${sql_admin_user}'@'localhost' WITH GRANT OPTION;"
+    run "${db_cli}" -e "FLUSH PRIVILEGES;"
+
+    run mkdir -p /etc/phpmyadmin
+    cat > "${admin_creds_file}" <<EOF
+DB_USER=${admin_user}
+DB_PASSWORD=${admin_password}
+EOF
+    run chmod 600 "${admin_creds_file}"
+
+    PHPMYADMIN_ADMIN_USER="${admin_user}"
+    PHPMYADMIN_ADMIN_PASSWORD="${admin_password}"
+
+    ok "phpMyAdmin admin DB user password updated."
+    echo "DB User   : ${admin_user}"
+    echo "Password  : ${admin_password}"
+}
+
+reset_roundcube_db_password_menu() {
+    local creds_file="/etc/roundcube/serverpanel-db.conf"
+    local roundcube_db roundcube_user roundcube_password
+
+    roundcube_db="${ROUNDCUBE_DB_NAME:-roundcube}"
+    roundcube_user="${ROUNDCUBE_DB_USER:-roundcube}"
+    if [[ -f "${creds_file}" ]]; then
+        roundcube_db="$(grep -E '^DB_NAME=' "${creds_file}" | head -n1 | cut -d= -f2- || true)"
+        roundcube_user="$(grep -E '^DB_USER=' "${creds_file}" | head -n1 | cut -d= -f2- || true)"
+    fi
+    if ! is_valid_db_identifier "${roundcube_db}"; then
+        roundcube_db="roundcube"
+    fi
+    if ! is_valid_db_identifier "${roundcube_user}"; then
+        roundcube_user="roundcube"
+    fi
+
+    roundcube_db="$(ask_input "Roundcube DB name" "${roundcube_db}")"
+    roundcube_user="$(ask_input "Roundcube DB user" "${roundcube_user}")"
+    if ! is_valid_db_identifier "${roundcube_db}" || ! is_valid_db_identifier "${roundcube_user}"; then
+        warn "Invalid Roundcube DB name/user."
+        return
+    fi
+
+    roundcube_password="$(ask_secret_input "New Roundcube DB password for ${roundcube_user} (leave blank = auto-generate)")"
+    if [[ -z "${roundcube_password}" ]]; then
+        roundcube_password="$(generate_random_password)"
+        info "Generated random Roundcube DB password."
+    fi
+
+    ROUNDCUBE_DB_NAME="${roundcube_db}"
+    ROUNDCUBE_DB_USER="${roundcube_user}"
+    ROUNDCUBE_DB_PASSWORD="${roundcube_password}"
+
+    configure_roundcube_runtime
+
+    ok "Roundcube DB password updated."
+    echo "DB Name   : ${roundcube_db}"
+    echo "DB User   : ${roundcube_user}"
+    echo "Password  : ${roundcube_password}"
+}
+
+password_manager_menu() {
+    local choice
+
+    while true; do
+        echo
+        echo -e "${CYAN}================ Password Manager ==================${NC}"
+        echo "1) Reset panel login password (by email)"
+        echo "2) Reset panel DB user password (.env DB_PASSWORD)"
+        echo "3) Reset phpMyAdmin admin DB user password (dbadmin)"
+        echo "4) Reset Roundcube DB user password"
+        echo "0) Back"
+        choice="$(ask_input "Select option" "1")"
+
+        case "${choice}" in
+            1)
+                reset_panel_login_password_menu
+                ;;
+            2)
+                reset_panel_db_password_menu
+                ;;
+            3)
+                reset_phpmyadmin_admin_password_menu
+                ;;
+            4)
+                reset_roundcube_db_password_menu
+                ;;
+            0)
+                return 0
+                ;;
+            *)
+                warn "Invalid option. Choose 0-4."
+                ;;
+        esac
+    done
 }
 
 panel_workdir_from_service_file() {
@@ -2174,10 +4157,29 @@ update_panel_files_menu() {
     esac
 
     run php artisan optimize || true
+    configure_phpmyadmin_runtime
+    configure_roundcube_runtime
+    if is_webtools_separate_mode_active; then
+        WEBTOOLS_SEPARATE_PORTS="true"
+        cleanup_panel_embedded_webtools_links "${target_dir}"
+        setup_separate_webtools_services
+    else
+        disable_separate_webtools_services
+        expose_panel_tools_on_port "${target_dir}"
+    fi
+    sync_panel_webtools_env "${target_dir}/.env"
     run systemctl restart serverpanel || true
-    if systemctl cat nginx.service >/dev/null 2>&1 && (systemctl is-active --quiet nginx || ! systemctl is-active --quiet apache2); then
+
+    check_and_prepare_web_ports_before_service_ops
+    if is_dual_stack_mode; then
+        WEB_SERVER="both"
+        restart_apache_safely
+        restart_nginx_safely
+    elif systemctl cat nginx.service >/dev/null 2>&1 && (systemctl is-active --quiet nginx || ! systemctl is-active --quiet apache2); then
+        WEB_SERVER="nginx"
         restart_nginx_safely
     else
+        WEB_SERVER="apache"
         restart_apache_safely
     fi
 
@@ -2237,10 +4239,75 @@ copy_server_root_file_menu() {
     fi
 }
 
+repair_panel_web_tools_menu() {
+    local panel_dir host_ip mode_default pma_port rc_port
+    panel_dir="$(ask_input "Panel project path" "$(default_panel_project_dir)")"
+
+    if [[ ! -d "${panel_dir}/public" ]]; then
+        warn "Invalid panel path: ${panel_dir} (public directory not found)"
+        return
+    fi
+
+    if [[ -f "${panel_dir}/artisan" && -f "${panel_dir}/composer.json" ]]; then
+        PROJECT_DIR="${panel_dir}"
+    fi
+
+    mode_default="N"
+    if is_webtools_separate_mode_active; then
+        mode_default="Y"
+    fi
+    if ask_yes_no "Use separate ports/services for phpMyAdmin + Roundcube?" "${mode_default}"; then
+        WEBTOOLS_SEPARATE_PORTS="true"
+        pma_port="$(ask_input "phpMyAdmin port" "${PHPMYADMIN_PORT}")"
+        rc_port="$(ask_input "Roundcube port" "${ROUNDCUBE_PORT}")"
+        [[ -n "${pma_port}" ]] && PHPMYADMIN_PORT="${pma_port}"
+        [[ -n "${rc_port}" ]] && ROUNDCUBE_PORT="${rc_port}"
+        if [[ ! "${PHPMYADMIN_PORT}" =~ ^[0-9]+$ || ! "${ROUNDCUBE_PORT}" =~ ^[0-9]+$ ]]; then
+            warn "Invalid webtool port values."
+            return
+        fi
+        if (( PHPMYADMIN_PORT < 1 || PHPMYADMIN_PORT > 65535 || ROUNDCUBE_PORT < 1 || ROUNDCUBE_PORT > 65535 )); then
+            warn "Webtool ports must be between 1 and 65535."
+            return
+        fi
+        if [[ "${PHPMYADMIN_PORT}" == "${ROUNDCUBE_PORT}" || "${PHPMYADMIN_PORT}" == "${PANEL_PORT}" || "${ROUNDCUBE_PORT}" == "${PANEL_PORT}" ]]; then
+            warn "Webtool ports must be unique and different from panel port ${PANEL_PORT}."
+            return
+        fi
+    else
+        WEBTOOLS_SEPARATE_PORTS="false"
+    fi
+
+    info "Repairing phpMyAdmin + Roundcube install and runtime config"
+    install_mariadb_phpmyadmin
+    configure_phpmyadmin_runtime
+    configure_roundcube_runtime
+    if is_webtools_separate_mode_active; then
+        WEBTOOLS_SEPARATE_PORTS="true"
+        cleanup_panel_embedded_webtools_links "${panel_dir}"
+        setup_separate_webtools_services
+    else
+        disable_separate_webtools_services
+        expose_panel_tools_on_port "${panel_dir}"
+    fi
+    sync_panel_webtools_env "${panel_dir}/.env"
+    run systemctl restart serverpanel || true
+    if systemctl cat apache2.service >/dev/null 2>&1; then
+        restart_apache_safely
+    fi
+    if systemctl cat nginx.service >/dev/null 2>&1; then
+        restart_nginx_safely
+    fi
+    host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    ok "Repair completed. Test URLs:"
+    echo "  $(phpmyadmin_access_url "${host_ip:-127.0.0.1}")"
+    echo "  $(roundcube_access_url "${host_ip:-127.0.0.1}")"
+}
+
 run_custom_install_prompt() {
     local source_mode project_dir project_url base_url project_target
     local web_choice web_server panel_port nginx_primary_port apache_backend_port db_name db_user db_password
-    local php_versions php_default node_major
+    local php_versions php_default node_major pma_port rc_port
     local -a args=()
 
     echo
@@ -2257,7 +4324,7 @@ run_custom_install_prompt() {
             [[ -n "${project_dir}" ]] && args+=(--project-dir "${project_dir}")
             ;;
         3)
-            project_url="$(ask_input "Project archive URL (.tar.gz/.tgz/.zip)")"
+            project_url="$(ask_input "Project archive URL (.tar.gz/.tgz/.zip)" "${REMOTE_PANEL_ARCHIVE_URL}")"
             [[ -n "${project_url}" ]] && args+=(--project-url "${project_url}")
             project_target="$(ask_input "Optional target path (--project-target)" "")"
             [[ -n "${project_target}" ]] && args+=(--project-target "${project_target}")
@@ -2287,6 +4354,15 @@ run_custom_install_prompt() {
 
     panel_port="$(ask_input "Panel port" "8090")"
     [[ -n "${panel_port}" ]] && args+=(--panel-port "${panel_port}")
+    if ask_yes_no "Run phpMyAdmin/Roundcube on separate ports?" "N"; then
+        args+=(--separate-webtools)
+        pma_port="$(ask_input "phpMyAdmin port" "8091")"
+        rc_port="$(ask_input "Roundcube port" "8092")"
+        [[ -n "${pma_port}" ]] && args+=(--phpmyadmin-port "${pma_port}")
+        [[ -n "${rc_port}" ]] && args+=(--roundcube-port "${rc_port}")
+    else
+        args+=(--no-separate-webtools)
+    fi
     if [[ "${web_server}" == "nginx" || "${web_server}" == "both" ]]; then
         nginx_primary_port="$(ask_input "Nginx primary port" "80")"
         [[ -n "${nginx_primary_port}" ]] && args+=(--nginx-primary-port "${nginx_primary_port}")
@@ -2334,65 +4410,53 @@ show_control_menu() {
     echo -e "${CYAN}============================================================${NC}"
     echo -e "${CYAN}               Int Tool (Ubuntu Server)                    ${NC}"
     echo -e "${CYAN}============================================================${NC}"
-    echo "1) Install ServerPanel (quick default)"
-    echo "2) Install ServerPanel (custom options)"
-    echo "3) Service status dashboard"
-    echo "4) Manage service (start/stop/restart/logs)"
-    echo "5) Repair web proxy (:80 -> panel port)"
-    echo "6) Port diagnostics (22/web/backend/panel/443/3306)"
-    echo "7) Update panel files (sync + build + restart)"
-    echo "8) Copy root file (extra/serverroot.php -> index.php)"
-    echo "9) Show credentials file"
-    echo "10) Fresh install (reset DB stack + full install)"
+    echo "1) Install ServerPanel (default auto)"
+    if is_webtools_separate_mode_active; then
+        echo "2) Repair phpMyAdmin + Roundcube (separate: ${PHPMYADMIN_PORT}/${ROUNDCUBE_PORT})"
+    else
+        echo "2) Repair phpMyAdmin + Roundcube (via panel ${PANEL_PORT})"
+    fi
+    echo "3) Show credentials file"
+    echo "4) Password manager (SSH reset: panel/dbadmin/db users)"
+    echo "5) Disable direct-IP panel proxy (keep panel on :${PANEL_PORT})"
     echo "0) Exit"
 }
 
 run_control_center() {
     local choice
+    sync_webtools_mode_from_installed_services
     while true; do
+        sync_webtools_mode_from_installed_services
         show_control_menu
         choice="$(ask_input "Select option" "1")"
         case "${choice}" in
             1)
-                if ask_yes_no "Start full install with defaults now?" "Y"; then
-                    installer_main
+                if ask_yes_no "Start default install from remote archive now?" "Y"; then
+                    if [[ -n "${REMOTE_PANEL_ARCHIVE_URL}" ]]; then
+                        installer_main --project-url "${REMOTE_PANEL_ARCHIVE_URL}"
+                    else
+                        installer_main
+                    fi
                 fi
                 ;;
             2)
-                run_custom_install_prompt
+                repair_panel_web_tools_menu
                 ;;
             3)
-                show_service_dashboard
-                ;;
-            4)
-                manage_single_service
-                ;;
-            5)
-                repair_apache_proxy_menu
-                ;;
-            6)
-                show_port_diagnostics
-                ;;
-            7)
-                update_panel_files_menu
-                ;;
-            8)
-                copy_server_root_file_menu
-                ;;
-            9)
                 show_credentials_file
                 ;;
-            10)
-                if ask_yes_no "Start fresh install now? (equivalent: bash int-tool.sh --fresh-install)" "Y"; then
-                    installer_main --fresh-install
-                fi
+            4)
+                password_manager_menu
+                ;;
+            5)
+                disable_panel_direct_ip_proxy_menu
                 ;;
             0)
                 info "Bye."
                 return 0
                 ;;
             *)
-                warn "Invalid option. Choose 0-10."
+                warn "Invalid option. Choose 0-5."
                 ;;
         esac
     done
@@ -2432,7 +4496,11 @@ entrypoint() {
     if [[ -t 0 ]]; then
         run_control_center
     else
-        installer_main
+        if [[ -n "${REMOTE_PANEL_ARCHIVE_URL}" ]]; then
+            installer_main --project-url "${REMOTE_PANEL_ARCHIVE_URL}"
+        else
+            installer_main
+        fi
     fi
 }
 

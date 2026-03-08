@@ -61,6 +61,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/websites/{id}/vhost/sync', [WebsiteController::class, 'syncVhost'])
         ->middleware('role:admin|reseller')
         ->name('websites.vhost.sync');
+    Route::post('/websites/{id}/project-cache/clear', [WebsiteController::class, 'clearProjectCache'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.project-cache.clear');
     Route::post('/websites/{id}/wordpress/install', [WebsiteController::class, 'installWordPress'])
         ->middleware('role:admin|reseller')
         ->name('websites.wordpress.install');

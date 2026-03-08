@@ -22,8 +22,8 @@ const page = usePage();
 const form = useForm({
     version: props.selectedVersion,
     memory_limit: props.configValues.memory_limit ?? '256M',
-    upload_max_filesize: props.configValues.upload_max_filesize ?? '128M',
-    post_max_size: props.configValues.post_max_size ?? '128M',
+    upload_max_filesize: props.configValues.upload_max_filesize ?? '2G',
+    post_max_size: props.configValues.post_max_size ?? '2G',
     max_execution_time: Number(props.configValues.max_execution_time ?? 300),
     max_input_vars: Number(props.configValues.max_input_vars ?? 3000),
     display_errors: props.configValues.display_errors ?? 'Off',

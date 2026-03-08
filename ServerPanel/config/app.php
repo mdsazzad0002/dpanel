@@ -79,6 +79,12 @@ return [
 
     'apache_backend_port' => env('APACHE_BACKEND_PORT', 8080),
     'nginx_primary_port' => env('NGINX_PRIMARY_PORT', 80),
+    'redis_service' => env('REDIS_SERVICE', 'auto'),
+    'webtools_separate_ports' => env('WEBTOOLS_SEPARATE_PORTS', false),
+    'phpmyadmin_port' => env('PHPMYADMIN_PORT', 8090),
+    'phpmyadmin_url' => env('PHPMYADMIN_URL', ''),
+    'phpmyadmin_helper_url' => env('PHPMYADMIN_HELPER_URL', ''),
+    'roundcube_port' => env('ROUNDCUBE_PORT', 8092),
 
     /*
     |--------------------------------------------------------------------------

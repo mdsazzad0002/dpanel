@@ -16,6 +16,10 @@ const props = defineProps({
         type: Array,
         default: () => ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
     },
+    wordpressVersions: {
+        type: Array,
+        default: () => ['latest'],
+    },
 });
 
 const form = useForm({
@@ -23,6 +27,7 @@ const form = useForm({
     root_path: props.websiteRequest.root_path ?? '',
     php_version: props.websiteRequest.php_version ?? '8.3',
     app_installer: props.websiteRequest.app_installer ?? 'none',
+    wordpress_version: props.websiteRequest.wordpress_version ?? 'latest',
     enable_ssl: !!props.websiteRequest.enable_ssl,
 });
 
@@ -103,11 +108,31 @@ const availablePhpVersions = computed(() => {
         ? normalized
         : [form.php_version, ...normalized];
 });
+const availableWordPressVersions = computed(() => {
+    const list = Array.isArray(props.wordpressVersions) ? props.wordpressVersions : [];
+    const normalized = list
+        .map((version) => String(version || '').trim().toLowerCase())
+        .filter((version) => version === 'latest' || /^\d+\.\d+(\.\d+)?$/.test(version));
+    const deduped = Array.from(new Set(['latest', ...normalized]));
+
+    return deduped.includes(form.wordpress_version)
+        ? deduped
+        : [form.wordpress_version, ...deduped];
+});
 
 watch(
     normalizedDomain,
     (domain) => {
         form.root_path = deriveRootPath(domain);
+    },
+    { immediate: true },
+);
+watch(
+    availableWordPressVersions,
+    (versions) => {
+        if (!form.wordpress_version || !versions.includes(form.wordpress_version)) {
+            form.wordpress_version = 'latest';
+        }
     },
     { immediate: true },
 );
@@ -162,6 +187,15 @@ const submit = () => {
                         <option value="wordpress">WordPress</option>
                     </select>
                     <p v-if="form.errors.app_installer" class="mt-1 text-xs text-red-600">{{ form.errors.app_installer }}</p>
+                </div>
+                <div v-if="form.app_installer === 'wordpress'">
+                    <label class="mb-1 block text-sm">WordPress Version</label>
+                    <select v-model="form.wordpress_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                        <option v-for="version in availableWordPressVersions" :key="version" :value="version">
+                            {{ version === 'latest' ? 'Latest Stable' : version }}
+                        </option>
+                    </select>
+                    <p v-if="form.errors.wordpress_version" class="mt-1 text-xs text-red-600">{{ form.errors.wordpress_version }}</p>
                 </div>
                 <div class="flex items-center gap-2 pt-7">
                     <input id="enable_ssl" v-model="form.enable_ssl" type="checkbox" class="rounded border-slate-300" />

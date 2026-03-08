@@ -30,8 +30,8 @@ const versionSwitchError = ref('');
 const applyingPayload = ref(false);
 const defaultConfig = Object.freeze({
     memory_limit: '256M',
-    upload_max_filesize: '128M',
-    post_max_size: '128M',
+    upload_max_filesize: '2G',
+    post_max_size: '2G',
     max_execution_time: 300,
     max_input_vars: 3000,
     display_errors: 'Off',

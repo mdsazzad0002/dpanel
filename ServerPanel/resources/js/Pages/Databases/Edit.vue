@@ -19,7 +19,7 @@ const form = useForm({
     database_name: props.databaseRequest.database_name ?? '',
     database_user: props.databaseRequest.database_user ?? '',
     database_password: props.databaseRequest.database_password ?? '',
-    database_host: props.databaseRequest.database_host ?? 'localhost',
+    database_host: props.databaseRequest.database_host ?? '127.0.0.1',
     charset: props.databaseRequest.charset ?? 'utf8mb4',
     collation: props.databaseRequest.collation ?? 'utf8mb4_unicode_ci',
 });
@@ -46,13 +46,13 @@ const generatePassword = () => {
 </script>
 
 <template>
-    <Head title="Edit Database Request" />
+    <Head title="Edit Database" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Edit Database Request</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Update database request and regenerate command.</p>
+                <h1 class="text-lg font-semibold">Edit Database</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Update and sync MySQL/MariaDB database settings.</p>
             </div>
         </template>
 
@@ -139,7 +139,7 @@ const generatePassword = () => {
                 </div>
                 <div class="md:col-span-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                        Update Database Request
+                        Update Database
                     </button>
                 </div>
             </form>

@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -64,6 +65,7 @@ class WebsiteController extends Controller
         return Inertia::render('Websites/Create', [
             'serverBaseDir' => $this->websiteBaseDirectory(),
             'phpVersions' => $this->getPhpVersionsForWebsites(),
+            'wordpressVersions' => $this->getWordPressVersionOptions(),
         ]);
     }
 
@@ -172,6 +174,7 @@ class WebsiteController extends Controller
     {
         $validated = $this->validatePayload($request);
         $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? 'none')));
+        $validated['wordpress_version'] = $this->normalizeWordPressVersion((string) ($validated['wordpress_version'] ?? 'latest'));
         $validated['domain'] = $this->normalizeDomain($validated['domain']);
         $domainExists = collect($this->readRequests())
             ->contains(fn (array $item): bool => $this->normalizeDomain((string) ($item['domain'] ?? '')) === $validated['domain']);
@@ -196,6 +199,7 @@ class WebsiteController extends Controller
                 $validated['root_path'],
                 $validated['domain'],
                 (string) $validated['php_version'],
+                (string) $validated['wordpress_version'],
             );
             if ($appInstallerResult['attempted'] && ! $appInstallerResult['installed']) {
                 return back()->withErrors(['app_installer' => $appInstallerResult['message']]);
@@ -232,6 +236,7 @@ class WebsiteController extends Controller
             'site_owner' => $validated['site_owner'],
             'php_version' => $validated['php_version'],
             'app_installer' => $validated['app_installer'],
+            'wordpress_version' => $validated['wordpress_version'],
             'enable_ssl' => $validated['enable_ssl'],
             'assigned_user_id' => null,
             'assigned_reseller_id' => $defaultResellerId,
@@ -273,6 +278,7 @@ class WebsiteController extends Controller
                     ->values()
                     ->all(),
             ),
+            'wordpressVersions' => $this->getWordPressVersionOptions(),
         ]);
     }
 
@@ -333,6 +339,7 @@ class WebsiteController extends Controller
             'histories' => $histories,
             'activities' => $activities,
             'vhostPreview' => $this->buildVhostPreview($website),
+            'wordpressVersions' => $this->getWordPressVersionOptions(),
         ]);
     }
 
@@ -384,8 +391,61 @@ class WebsiteController extends Controller
         return redirect()->route('websites.manage', $id)->with('success', $message !== '' ? $message : 'Vhost sync completed.');
     }
 
-    public function installWordPress(string $id): RedirectResponse
+    public function clearProjectCache(string $id): RedirectResponse
     {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        if (! is_array($website)) {
+            return redirect()->route('websites.list')->with('error', 'Website request not found.');
+        }
+
+        $website = $this->normalizeWebsiteRecord($website);
+        $rootPath = (string) ($website['root_path'] ?? '');
+        if ($rootPath === '' || ! is_dir($rootPath)) {
+            return redirect()->route('websites.manage', $id)->with('error', 'Website root path is missing or inaccessible.');
+        }
+
+        $artisanPath = $this->resolveProjectArtisanPath($rootPath);
+        if ($artisanPath === null) {
+            return redirect()->route('websites.manage', $id)->with('error', 'Laravel artisan file not found for this website.');
+        }
+
+        $projectPath = dirname($artisanPath);
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($rootPath));
+        $primary = $this->runProjectArtisanCommand($projectPath, 'optimize:clear', $siteOwner);
+
+        if ($primary['success']) {
+            return redirect()->route('websites.manage', $id)->with('success', 'Project cache cleared successfully (optimize:clear).');
+        }
+
+        $fallbackCommands = ['cache:clear', 'config:clear', 'route:clear', 'view:clear'];
+        $fallbackResults = collect($fallbackCommands)
+            ->map(fn (string $command): array => $this->runProjectArtisanCommand($projectPath, $command, $siteOwner))
+            ->all();
+        $successCount = collect($fallbackResults)->filter(fn (array $result): bool => (bool) ($result['success'] ?? false))->count();
+
+        if ($successCount === count($fallbackCommands)) {
+            return redirect()->route('websites.manage', $id)->with('success', 'Project cache cleared successfully (fallback commands).');
+        }
+
+        if ($successCount > 0) {
+            return redirect()->route('websites.manage', $id)->with('error', 'Project cache clear partially completed. Check file permissions and Laravel CLI access.');
+        }
+
+        $errorDetails = trim((string) ($primary['output'] ?? ''));
+        if ($errorDetails !== '') {
+            $errorDetails = substr(preg_replace('/\s+/', ' ', $errorDetails) ?? '', 0, 180);
+        }
+        $suffix = $errorDetails !== '' ? " Error: {$errorDetails}" : '';
+
+        return redirect()->route('websites.manage', $id)->with('error', 'Project cache clear failed.'.$suffix);
+    }
+
+    public function installWordPress(Request $request, string $id): RedirectResponse
+    {
+        $validated = $request->validate([
+            'wordpress_version' => ['nullable', 'string', 'max:20', 'regex:/^(latest|\\d+\\.\\d+(?:\\.\\d+)?)$/i'],
+        ]);
+
         $requests = collect($this->readRequests());
         $website = $requests->firstWhere('id', $id);
         if (! is_array($website)) {
@@ -396,6 +456,7 @@ class WebsiteController extends Controller
         $domain = (string) ($website['domain'] ?? '');
         $rootPath = (string) ($website['root_path'] ?? '');
         $phpVersion = (string) ($website['php_version'] ?? '8.3');
+        $wordpressVersion = $this->normalizeWordPressVersion((string) ($validated['wordpress_version'] ?? ($website['wordpress_version'] ?? 'latest')));
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($rootPath));
 
         if ($domain === '' || $rootPath === '') {
@@ -403,12 +464,13 @@ class WebsiteController extends Controller
         }
 
         if ($this->hasWordPressFiles($rootPath)) {
-            $updatedRequests = $requests->map(function (array $item) use ($id): array {
+            $updatedRequests = $requests->map(function (array $item) use ($id, $wordpressVersion): array {
                 if ((string) ($item['id'] ?? '') !== $id) {
                     return $item;
                 }
 
                 $item['app_installer'] = 'wordpress';
+                $item['wordpress_version'] = $wordpressVersion;
                 $item['updated_at'] = now()->toIso8601String();
 
                 return $item;
@@ -423,7 +485,7 @@ class WebsiteController extends Controller
                 $this->applyWebsiteFilesystemIsolation($siteOwner, $rootPath);
             }
 
-            $installerResult = $this->installSelectedApplication('wordpress', $rootPath, $domain, $phpVersion);
+            $installerResult = $this->installSelectedApplication('wordpress', $rootPath, $domain, $phpVersion, $wordpressVersion);
             if (! $installerResult['installed']) {
                 $message = trim((string) ($installerResult['message'] ?? ''));
                 return redirect()->route('websites.manage', $id)->with('error', $message !== '' ? $message : 'WordPress installation failed.');
@@ -443,12 +505,13 @@ class WebsiteController extends Controller
                 'status' => (string) ($website['status'] ?? 'pending'),
             ]);
 
-        $updated = $requests->map(function (array $item) use ($id, $runtimeStatus): array {
+        $updated = $requests->map(function (array $item) use ($id, $runtimeStatus, $wordpressVersion): array {
             if ((string) ($item['id'] ?? '') !== $id) {
                 return $item;
             }
 
             $item['app_installer'] = 'wordpress';
+            $item['wordpress_version'] = $wordpressVersion;
             $item['status'] = $runtimeStatus;
             $item['updated_at'] = now()->toIso8601String();
 
@@ -559,6 +622,7 @@ class WebsiteController extends Controller
 
         $validated = $this->validatePayload($request);
         $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? ($existingRequest['app_installer'] ?? 'none'))));
+        $validated['wordpress_version'] = $this->normalizeWordPressVersion((string) ($validated['wordpress_version'] ?? ($existingRequest['wordpress_version'] ?? 'latest')));
         $validated['domain'] = $this->normalizeDomain($validated['domain']);
         $domainExists = collect($this->readRequests())
             ->contains(function (array $item) use ($id, $validated): bool {
@@ -599,6 +663,7 @@ class WebsiteController extends Controller
             $item['site_owner'] = $validated['site_owner'];
             $item['php_version'] = $validated['php_version'];
             $item['app_installer'] = $validated['app_installer'];
+            $item['wordpress_version'] = $validated['wordpress_version'];
             $item['enable_ssl'] = $validated['enable_ssl'];
             $item['command'] = $this->buildCommand($validated);
             $item['status'] = $this->detectRuntimeStatus([
@@ -752,7 +817,7 @@ class WebsiteController extends Controller
 
         $validated = $request->validate([
             'path' => ['nullable', 'string', 'max:1500'],
-            'upload' => ['required', 'file', 'max:10240'],
+            'upload' => ['required', 'file', 'max:2097152'],
         ]);
 
         $basePath = $this->resolveFileManagerBasePath($website);
@@ -920,6 +985,10 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Zip file already exists.');
         }
 
+        if (! class_exists(ZipArchive::class)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', $this->zipExtensionMissingMessage());
+        }
+
         $zip = new ZipArchive();
         if ($zip->open($zipPath, ZipArchive::CREATE) !== true) {
             return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to create zip file.');
@@ -963,17 +1032,39 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Valid zip file not found.');
         }
 
-        $extractTo = dirname($zipPath);
-        $zip = new ZipArchive();
-        if ($zip->open($zipPath) !== true) {
-            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to open zip file.');
+        if (! class_exists(ZipArchive::class)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', $this->zipExtensionMissingMessage());
         }
 
-        $ok = $zip->extractTo($extractTo);
-        $zip->close();
+        $extractTo = dirname($zipPath);
+        if (! is_dir($extractTo) || ! is_writable($extractTo)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Extract target directory is not writable.');
+        }
 
-        if (! $ok) {
-            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to extract zip file.');
+        $zip = new ZipArchive();
+        try {
+            $openResult = $zip->open($zipPath);
+            if ($openResult !== true) {
+                return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', $this->zipOpenErrorMessage($openResult));
+            }
+
+            for ($index = 0; $index < $zip->numFiles; $index++) {
+                $entryName = $zip->getNameIndex($index);
+                if (! is_string($entryName) || ! $this->isSafeZipEntryPath($entryName)) {
+                    return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Zip contains unsafe file paths and cannot be extracted.');
+                }
+            }
+
+            $ok = $zip->extractTo($extractTo);
+            if (! $ok) {
+                return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to extract zip file. Check file permissions and archive integrity.');
+            }
+        } catch (\Throwable $e) {
+            report($e);
+
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Zip extract failed due to server error.');
+        } finally {
+            $zip->close();
         }
 
         return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('success', 'Zip extracted successfully.');
@@ -1119,6 +1210,7 @@ class WebsiteController extends Controller
             ],
             'php_version' => ['required', 'string', 'max:10'],
             'app_installer' => ['nullable', 'string', 'in:none,wordpress'],
+            'wordpress_version' => ['nullable', 'string', 'max:20', 'regex:/^(latest|\\d+\\.\\d+(?:\\.\\d+)?)$/i'],
             'enable_ssl' => ['boolean'],
         ]);
     }
@@ -1340,6 +1432,98 @@ class WebsiteController extends Controller
         }
     }
 
+    private function resolveProjectArtisanPath(string $rootPath): ?string
+    {
+        $normalized = rtrim($this->normalizeAbsolutePath($rootPath), '/');
+        if ($normalized === '') {
+            return null;
+        }
+
+        $parent = rtrim($this->normalizeAbsolutePath(dirname($normalized)), '/');
+        $candidates = [
+            $normalized.'/artisan',
+            $parent !== '' && $parent !== '.' ? $parent.'/artisan' : '',
+        ];
+
+        foreach ($candidates as $candidate) {
+            if ($candidate !== '' && is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{success: bool, output: string, exit_code: int}
+     */
+    private function runProjectArtisanCommand(string $projectPath, string $artisanCommand, string $siteOwner = ''): array
+    {
+        $projectPath = rtrim($this->normalizeAbsolutePath($projectPath), '/');
+        if ($projectPath === '' || ! is_dir($projectPath)) {
+            return [
+                'success' => false,
+                'output' => 'Invalid project path.',
+                'exit_code' => 1,
+            ];
+        }
+
+        $phpBinary = trim((string) PHP_BINARY);
+        if ($phpBinary === '') {
+            $phpBinary = 'php';
+        }
+
+        $snippet = sprintf(
+            'cd %s && %s artisan %s',
+            escapeshellarg($projectPath),
+            escapeshellarg($phpBinary),
+            escapeshellarg($artisanCommand),
+        );
+
+        $output = [];
+        $exitCode = 1;
+        $owner = trim($siteOwner);
+        $isLinux = ! str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS');
+        $canRunAsOwner = $isLinux
+            && $owner !== ''
+            && preg_match('/^[a-z_][a-z0-9_-]*[$]?$/i', $owner) === 1
+            && function_exists('posix_geteuid')
+            && posix_geteuid() === 0;
+
+        if ($canRunAsOwner) {
+            $ownerOutput = [];
+            $ownerExitCode = 1;
+            @exec(
+                'runuser -u '.escapeshellarg($owner).' -- sh -lc '.escapeshellarg($snippet).' 2>&1',
+                $ownerOutput,
+                $ownerExitCode,
+            );
+            if ($ownerExitCode === 0) {
+                return [
+                    'success' => true,
+                    'output' => trim(implode("\n", $ownerOutput)),
+                    'exit_code' => 0,
+                ];
+            }
+            $output = $ownerOutput;
+            $exitCode = $ownerExitCode;
+        }
+
+        $directOutput = [];
+        $directExitCode = 1;
+        @exec('sh -lc '.escapeshellarg($snippet).' 2>&1', $directOutput, $directExitCode);
+
+        if ($canRunAsOwner && count($output) > 0) {
+            $directOutput = array_merge($output, ['---- fallback as current user ----'], $directOutput);
+        }
+
+        return [
+            'success' => $directExitCode === 0,
+            'output' => trim(implode("\n", $directOutput)),
+            'exit_code' => $directExitCode,
+        ];
+    }
+
     /**
      * @return array{ran: bool, success: bool, output: string}
      */
@@ -1382,16 +1566,30 @@ class WebsiteController extends Controller
         }
 
         $envPrefix = sprintf(
-            'APACHE_BACKEND_PORT=%d NGINX_PRIMARY_PORT=%d ',
+            'APACHE_BACKEND_PORT=%d NGINX_PRIMARY_PORT=%d PHPMYADMIN_PORT=%d REDIS_SERVICE=%s ',
             $this->apacheBackendPort(),
             $this->nginxPrimaryPort(),
+            $this->phpMyAdminPort(),
+            escapeshellarg($this->redisServiceUnit()),
         );
         $output = [];
         $exitCode = 1;
         @exec($envPrefix.implode(' ', $parts).' 2>&1', $output, $exitCode);
         $message = trim(implode("\n", $output));
+        $success = in_array($exitCode, [0, 3], true);
 
-        if ($exitCode !== 0) {
+        if ($exitCode === 3) {
+            Log::warning('Vhost sync script completed with recoverable errors', [
+                'action' => $action,
+                'domain' => $domain,
+                'root_path' => $rootPath,
+                'php_version' => $phpVersion,
+                'old_domain' => $oldDomain,
+                'script' => $scriptPath,
+                'exit_code' => $exitCode,
+                'output' => $message,
+            ]);
+        } elseif ($exitCode !== 0) {
             Log::warning('Vhost sync script failed', [
                 'action' => $action,
                 'domain' => $domain,
@@ -1406,7 +1604,7 @@ class WebsiteController extends Controller
 
         return [
             'ran' => true,
-            'success' => $exitCode === 0,
+            'success' => $success,
             'output' => $message,
         ];
     }
@@ -1439,6 +1637,7 @@ class WebsiteController extends Controller
         $website['domain'] = $domain;
         $website['root_path'] = $this->normalizeRootPath((string) ($website['root_path'] ?? ''), $domain);
         $website['site_owner'] = $this->extractSiteOwnerFromRootPath((string) $website['root_path']);
+        $website['wordpress_version'] = $this->normalizeWordPressVersion((string) ($website['wordpress_version'] ?? 'latest'));
 
         return $website;
     }
@@ -1706,7 +1905,7 @@ HTML;
     /**
      * @return array{attempted: bool, installed: bool, message: string}
      */
-    private function installSelectedApplication(string $installer, string $rootPath, string $domain, string $phpVersion): array
+    private function installSelectedApplication(string $installer, string $rootPath, string $domain, string $phpVersion, string $wordpressVersion = 'latest'): array
     {
         $normalized = strtolower(trim($installer));
         if ($normalized === '' || $normalized === 'none') {
@@ -1718,7 +1917,7 @@ HTML;
         }
 
         if ($normalized === 'wordpress') {
-            return $this->installWordPressApplication($rootPath);
+            return $this->installWordPressApplication($rootPath, $wordpressVersion);
         }
 
         return [
@@ -1743,9 +1942,11 @@ HTML;
     /**
      * @return array{attempted: bool, installed: bool, message: string}
      */
-    private function installWordPressApplication(string $rootPath): array
+    private function installWordPressApplication(string $rootPath, string $wordpressVersion = 'latest'): array
     {
         $rootPath = trim(str_replace('\\', '/', $rootPath));
+        $wordpressVersion = $this->normalizeWordPressVersion($wordpressVersion);
+        $versionLabel = $wordpressVersion === 'latest' ? 'latest' : $wordpressVersion;
         if ($rootPath === '') {
             return [
                 'attempted' => true,
@@ -1762,30 +1963,50 @@ HTML;
             ];
         }
 
-        if (! class_exists(ZipArchive::class)) {
+        $hasZipArchive = class_exists(ZipArchive::class);
+        $hasPharData = class_exists(\PharData::class);
+        if (! $hasZipArchive && ! $hasPharData) {
             return [
                 'attempted' => true,
                 'installed' => false,
-                'message' => 'WordPress install failed: PHP zip extension is not available.',
+                'message' => 'WordPress install failed: neither PHP zip nor phar extensions are available for package extraction.',
             ];
         }
 
-        $tmpZip = @tempnam(sys_get_temp_dir(), 'wpzip_');
-        if (! is_string($tmpZip) || $tmpZip === '') {
-            return [
-                'attempted' => true,
-                'installed' => false,
-                'message' => 'WordPress install failed: cannot create temporary zip file.',
-            ];
+        $tmpArchive = '';
+        $packageUrl = '';
+        $extractMethod = '';
+        $tmpTar = '';
+
+        if ($hasZipArchive) {
+            $tmpArchive = (string) @tempnam(sys_get_temp_dir(), 'wpzip_');
+            if ($tmpArchive === '') {
+                return [
+                    'attempted' => true,
+                    'installed' => false,
+                    'message' => 'WordPress install failed: cannot create temporary zip file.',
+                ];
+            }
+            $packageUrl = $wordpressVersion === 'latest'
+                ? 'https://wordpress.org/latest.zip'
+                : 'https://wordpress.org/wordpress-'.$wordpressVersion.'.zip';
+            $extractMethod = 'zip';
+        } else {
+            $tmpArchive = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/').'/wp_targz_'.bin2hex(random_bytes(6)).'.tar.gz';
+            $tmpTar = substr($tmpArchive, 0, -3);
+            $packageUrl = $wordpressVersion === 'latest'
+                ? 'https://wordpress.org/latest.tar.gz'
+                : 'https://wordpress.org/wordpress-'.$wordpressVersion.'.tar.gz';
+            $extractMethod = 'targz';
         }
 
         $tmpExtract = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/').'/wp_extract_'.bin2hex(random_bytes(6));
         $downloaded = false;
 
         try {
-            $downloaded = @copy('https://wordpress.org/latest.zip', $tmpZip);
+            $downloaded = @copy($packageUrl, $tmpArchive);
             if (! $downloaded && function_exists('curl_init')) {
-                $ch = @curl_init('https://wordpress.org/latest.zip');
+                $ch = @curl_init($packageUrl);
                 if ($ch !== false) {
                     @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                     @curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
@@ -1804,21 +2025,11 @@ HTML;
                 return [
                     'attempted' => true,
                     'installed' => false,
-                    'message' => 'WordPress install failed: unable to download latest package from wordpress.org.',
-                ];
-            }
-
-            $zip = new ZipArchive();
-            if ($zip->open($tmpZip) !== true) {
-                return [
-                    'attempted' => true,
-                    'installed' => false,
-                    'message' => 'WordPress install failed: invalid downloaded zip package.',
+                    'message' => 'WordPress install failed: unable to download WordPress '.$versionLabel.' package from wordpress.org.',
                 ];
             }
 
             if (! @mkdir($tmpExtract, 0755, true) && ! is_dir($tmpExtract)) {
-                $zip->close();
                 return [
                     'attempted' => true,
                     'installed' => false,
@@ -1826,14 +2037,34 @@ HTML;
                 ];
             }
 
-            $extractOk = $zip->extractTo($tmpExtract);
-            $zip->close();
-            if (! $extractOk) {
-                return [
-                    'attempted' => true,
-                    'installed' => false,
-                    'message' => 'WordPress install failed: cannot extract package.',
-                ];
+            if ($extractMethod === 'zip') {
+                $zip = new ZipArchive();
+                if ($zip->open($tmpArchive) !== true) {
+                    return [
+                        'attempted' => true,
+                        'installed' => false,
+                        'message' => 'WordPress install failed: invalid downloaded WordPress '.$versionLabel.' zip package.',
+                    ];
+                }
+
+                $extractOk = $zip->extractTo($tmpExtract);
+                $zip->close();
+                if (! $extractOk) {
+                    return [
+                        'attempted' => true,
+                        'installed' => false,
+                        'message' => 'WordPress install failed: cannot extract package.',
+                    ];
+                }
+            } else {
+                if ($tmpTar !== '' && is_file($tmpTar)) {
+                    @unlink($tmpTar);
+                }
+
+                $archive = new \PharData($tmpArchive);
+                $archive->decompress();
+                $tarArchive = new \PharData($tmpTar);
+                $tarArchive->extractTo($tmpExtract, null, true);
             }
 
             $sourceDir = $tmpExtract.'/wordpress';
@@ -1857,7 +2088,7 @@ HTML;
             return [
                 'attempted' => true,
                 'installed' => true,
-                'message' => 'WordPress package installed successfully.',
+                'message' => 'WordPress '.$versionLabel.' installed successfully.',
             ];
         } catch (\Throwable $e) {
             return [
@@ -1866,12 +2097,98 @@ HTML;
                 'message' => 'WordPress install failed: '.$e->getMessage(),
             ];
         } finally {
-            if (is_file($tmpZip)) {
-                @unlink($tmpZip);
+            if ($tmpTar !== '' && is_file($tmpTar)) {
+                @unlink($tmpTar);
+            }
+            if ($tmpArchive !== '' && is_file($tmpArchive)) {
+                @unlink($tmpArchive);
             }
             if (is_dir($tmpExtract)) {
                 $this->deleteDirectoryRecursive($tmpExtract);
             }
+        }
+    }
+
+    private function normalizeWordPressVersion(string $version): string
+    {
+        $normalized = strtolower(trim($version));
+        if ($normalized === '' || $normalized === 'latest') {
+            return 'latest';
+        }
+
+        if (preg_match('/^\d+\.\d+(?:\.\d+)?$/', $normalized) === 1) {
+            return $normalized;
+        }
+
+        return 'latest';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function getWordPressVersionOptions(): array
+    {
+        try {
+            return Cache::remember('wordpress.version.options', now()->addHours(6), function (): array {
+                $url = 'https://api.wordpress.org/core/version-check/1.7/';
+                $body = @file_get_contents(
+                    $url,
+                    false,
+                    stream_context_create([
+                        'http' => [
+                            'timeout' => 6,
+                        ],
+                    ]),
+                );
+
+                if (! is_string($body) || trim($body) === '') {
+                    $body = '';
+                    if (function_exists('curl_init')) {
+                        $ch = @curl_init($url);
+                        if ($ch !== false) {
+                            @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                            @curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                            @curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+                            @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 4);
+                            $responseBody = @curl_exec($ch);
+                            $statusCode = (int) @curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                            @curl_close($ch);
+                            if (is_string($responseBody) && $responseBody !== '' && $statusCode >= 200 && $statusCode < 400) {
+                                $body = $responseBody;
+                            }
+                        }
+                    }
+                }
+
+                $decoded = is_string($body) && $body !== '' ? json_decode($body, true) : null;
+                if (! is_array($decoded)) {
+                    return ['latest'];
+                }
+
+                $offers = $decoded['offers'] ?? null;
+                if (! is_array($offers)) {
+                    return ['latest'];
+                }
+
+                $versions = collect($offers)
+                    ->map(function ($offer): string {
+                        if (! is_array($offer)) {
+                            return '';
+                        }
+
+                        return $this->normalizeWordPressVersion((string) ($offer['current'] ?? $offer['version'] ?? ''));
+                    })
+                    ->filter(fn (string $version): bool => $version !== '' && $version !== 'latest')
+                    ->unique()
+                    ->sort(fn (string $a, string $b): int => version_compare($b, $a))
+                    ->take(15)
+                    ->values()
+                    ->all();
+
+                return array_values(array_merge(['latest'], $versions));
+            });
+        } catch (\Throwable $e) {
+            return ['latest'];
         }
     }
 
@@ -2106,7 +2423,8 @@ HTML;
 
         $confName = basename($confPath);
         $this->runSystemCommand('a2ensite '.escapeshellarg($confName));
-        $this->runSystemCommand('apache2ctl -t && systemctl reload apache2');
+        $this->runSystemCommand('systemctl enable apache2 >/dev/null 2>&1 || true');
+        $this->runSystemCommand('apache2ctl -t && (systemctl reload apache2 || systemctl restart apache2 || systemctl start apache2)');
     }
 
     private function removeLiveApacheVhost(string $domain): void
@@ -2128,7 +2446,8 @@ HTML;
             }
         }
 
-        $this->runSystemCommand('apache2ctl -t && systemctl reload apache2');
+        $this->runSystemCommand('systemctl enable apache2 >/dev/null 2>&1 || true');
+        $this->runSystemCommand('apache2ctl -t && (systemctl reload apache2 || systemctl restart apache2 || systemctl start apache2)');
     }
 
     private function apacheVhostPath(string $domain): string
@@ -2208,7 +2527,8 @@ HTML;
             @unlink($enabledPath);
             @symlink($confPath, $enabledPath);
         }
-        $this->runSystemCommand('nginx -t && systemctl reload nginx');
+        $this->runSystemCommand('systemctl enable nginx >/dev/null 2>&1 || true');
+        $this->runSystemCommand('nginx -t && (systemctl reload nginx || systemctl restart nginx || systemctl start nginx)');
     }
 
     private function removeLiveNginxVhost(string $domain): void
@@ -2234,7 +2554,8 @@ HTML;
             }
         }
 
-        $this->runSystemCommand('nginx -t && systemctl reload nginx');
+        $this->runSystemCommand('systemctl enable nginx >/dev/null 2>&1 || true');
+        $this->runSystemCommand('nginx -t && (systemctl reload nginx || systemctl restart nginx || systemctl start nginx)');
     }
 
     private function nginxVhostPath(string $domain): string
@@ -2353,6 +2674,10 @@ CONF;
     private function buildNginxVhostConfig(string $domain, string $rootPath, string $phpVersion): string
     {
         $domain = $this->normalizeDomain($domain);
+        $rootPath = trim(str_replace('\\', '/', $rootPath));
+        if ($rootPath === '') {
+            $rootPath = '/var/www/html';
+        }
         $listenPort = $this->nginxPrimaryPort();
         $backendPort = $this->apacheBackendPort();
         $logName = $this->vhostLogBaseName($domain);
@@ -2363,11 +2688,42 @@ server {
     listen {$listenPort};
     listen [::]:{$listenPort};
     server_name {$domain}{$serverAlias};
+    root {$rootPath};
+    index index.php index.html;
 
     access_log /var/log/nginx/{$logName}_access.log;
     error_log /var/log/nginx/{$logName}_error.log;
 
+    location ^~ /.well-known/acme-challenge/ {
+        allow all;
+        try_files \$uri @apache;
+    }
+
+    location ~ /\\. {
+        deny all;
+    }
+
+    location ~* \\.(?:css|js|mjs|map|jpg|jpeg|gif|png|webp|svg|ico|ttf|otf|woff|woff2|eot|mp4|webm|ogg|mp3|wav|pdf|txt|xml|json|webmanifest)\$ {
+        expires 30d;
+        access_log off;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        try_files \$uri @apache;
+    }
+
     location / {
+        proxy_pass http://127.0.0.1:{$backendPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+    }
+
+    location @apache {
         proxy_pass http://127.0.0.1:{$backendPort};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -2458,6 +2814,21 @@ CONF;
     private function nginxPrimaryPort(): int
     {
         return $this->normalizePort(config('app.nginx_primary_port'), self::DEFAULT_NGINX_PRIMARY_PORT);
+    }
+
+    private function phpMyAdminPort(): int
+    {
+        return $this->normalizePort(config('app.phpmyadmin_port'), 8090);
+    }
+
+    private function redisServiceUnit(): string
+    {
+        $configured = strtolower(trim((string) config('app.redis_service', 'auto')));
+        if ($configured === '' || $configured === 'auto') {
+            return 'auto';
+        }
+
+        return preg_match('/^[a-z0-9_.@-]+$/', $configured) === 1 ? $configured : 'auto';
     }
 
     private function normalizePort(mixed $value, int $fallback): int
@@ -3252,6 +3623,67 @@ CONF;
         }
 
         return substr(sprintf('%o', $perms), -4);
+    }
+
+    private function isSafeZipEntryPath(string $entryPath): bool
+    {
+        $entryPath = str_replace('\\', '/', trim($entryPath));
+        if ($entryPath === '') {
+            return false;
+        }
+
+        if (str_starts_with($entryPath, '/')) {
+            return false;
+        }
+
+        if (preg_match('/^[a-zA-Z]:\//', $entryPath) === 1) {
+            return false;
+        }
+
+        foreach (explode('/', $entryPath) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+
+            if ($segment === '..' || str_contains($segment, "\0")) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param int|bool $openResult
+     */
+    private function zipOpenErrorMessage($openResult): string
+    {
+        if ($openResult === true) {
+            return 'Failed to open zip file.';
+        }
+
+        $map = [
+            ZipArchive::ER_EXISTS => 'Zip open failed: file already exists.',
+            ZipArchive::ER_INCONS => 'Zip open failed: archive is inconsistent.',
+            ZipArchive::ER_INVAL => 'Zip open failed: invalid argument.',
+            ZipArchive::ER_MEMORY => 'Zip open failed: memory allocation error.',
+            ZipArchive::ER_NOENT => 'Zip open failed: file not found.',
+            ZipArchive::ER_NOZIP => 'Zip open failed: invalid zip archive.',
+            ZipArchive::ER_OPEN => 'Zip open failed: cannot open file.',
+            ZipArchive::ER_READ => 'Zip open failed: read error.',
+            ZipArchive::ER_SEEK => 'Zip open failed: seek error.',
+        ];
+
+        $status = (int) $openResult;
+
+        return $map[$status] ?? ('Zip open failed with code '.$status.'.');
+    }
+
+    private function zipExtensionMissingMessage(): string
+    {
+        $version = PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;
+
+        return 'PHP zip extension is not installed on server. Run: sudo apt update && sudo apt install -y php'.$version.'-zip php-zip && sudo systemctl restart apache2 php'.$version.'-fpm serverpanel';
     }
 
     private function addDirectoryToZip(ZipArchive $zip, string $directory, string $prefix): void

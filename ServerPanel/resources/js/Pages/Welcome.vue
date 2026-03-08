@@ -357,7 +357,7 @@ find / -type f -path "*/ServerPanel/artisan" 2>/dev/null
 
 # If download fails
 curl -I http://192.168.0.50/a_final_storing/ServerInstaller/int-tool.sh
-curl -I http://192.168.0.50/a_final_storing/ServerInstaller/ServerInstaller.zip</code></pre>
+curl -I http://192.168.0.50/a_final_storing/ServerInstaller/ServerPanel.zip</code></pre>
                     </section>
                 </div>
             </main>

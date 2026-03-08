@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -48,19 +49,16 @@ class DatabaseController extends Controller
     }
 
     /**
-     * Store database request. Command execution is intentionally disabled.
+     * Store database request and sync database/user on server.
      */
     public function store(Request $request): RedirectResponse
     {
         $this->migrateLegacyJsonRequests();
 
-        $validated = $this->validatePayload($request);
+        $validated = $this->normalizePayload($this->validatePayload($request));
         $command = $this->buildCommand($validated);
-
-        // Intentionally disabled: command execution must be manually enabled later.
-        // $output = [];
-        // $exitCode = 0;
-        // exec($command . ' 2>&1', $output, $exitCode);
+        $syncResult = $this->syncDatabaseToServer($validated);
+        $status = $syncResult['success'] ? 'active' : ($syncResult['ran'] ? 'failed' : 'pending');
 
         DatabaseRequestModel::query()->create([
             'id' => (string) str()->uuid(),
@@ -72,10 +70,18 @@ class DatabaseController extends Controller
             'charset' => $validated['charset'],
             'collation' => $validated['collation'],
             'command' => $command,
-            'status' => 'pending',
+            'status' => $status,
         ]);
 
-        return redirect()->route('databases.list')->with('success', 'Database request created. Command execution is currently disabled in controller.');
+        if ($syncResult['success']) {
+            return redirect()->route('databases.list')->with('success', 'Database created and synced to MySQL/MariaDB successfully.');
+        }
+
+        if ($syncResult['ran']) {
+            return redirect()->route('databases.list')->with('error', 'Database request saved, but server sync failed: '.$syncResult['output']);
+        }
+
+        return redirect()->route('databases.list')->with('error', 'Database request saved as pending. Server sync did not run on this environment.');
     }
 
     /**
@@ -101,12 +107,15 @@ class DatabaseController extends Controller
     {
         $this->migrateLegacyJsonRequests();
 
-        $validated = $this->validatePayload($request);
+        $validated = $this->normalizePayload($this->validatePayload($request));
 
         $requestItem = DatabaseRequestModel::query()->find($id);
         if (! $requestItem) {
             return redirect()->route('databases.list')->with('error', 'Database request not found.');
         }
+
+        $syncResult = $this->syncDatabaseToServer($validated);
+        $status = $syncResult['success'] ? 'active' : ($syncResult['ran'] ? 'failed' : 'pending');
 
         $requestItem->fill([
             'database_name' => $validated['database_name'],
@@ -117,10 +126,19 @@ class DatabaseController extends Controller
             'charset' => $validated['charset'],
             'collation' => $validated['collation'],
             'command' => $this->buildCommand($validated),
+            'status' => $status,
         ]);
         $requestItem->save();
 
-        return redirect()->route('databases.list')->with('success', 'Database request updated successfully.');
+        if ($syncResult['success']) {
+            return redirect()->route('databases.list')->with('success', 'Database request updated and synced successfully.');
+        }
+
+        if ($syncResult['ran']) {
+            return redirect()->route('databases.list')->with('error', 'Request updated, but server sync failed: '.$syncResult['output']);
+        }
+
+        return redirect()->route('databases.list')->with('error', 'Request updated as pending. Server sync did not run on this environment.');
     }
 
     /**
@@ -148,9 +166,44 @@ class DatabaseController extends Controller
         $requestItem = DatabaseRequestModel::query()->find($id);
         abort_if($requestItem === null, 404);
 
-        $origin = $request->getSchemeAndHttpHost();
-        $targetUrl = rtrim((string) config('app.phpmyadmin_url', env('PHPMYADMIN_URL', "{$origin}/phpmyadmin/index.php")), '/');
-        $helperUrl = (string) env('PHPMYADMIN_HELPER_URL', "{$origin}/phpmyadmin/phpmyadminsignin.php");
+        $configuredTargetUrl = trim((string) config('app.phpmyadmin_url', ''));
+        $configuredHelperUrl = trim((string) config('app.phpmyadmin_helper_url', ''));
+        $isSeparateMode = $this->isWebtoolsSeparateMode();
+
+        if ($configuredTargetUrl !== '') {
+            $targetUrl = rtrim($configuredTargetUrl, '/');
+        } else {
+            $origin = rtrim($request->getSchemeAndHttpHost(), '/');
+            if ($isSeparateMode) {
+                $port = $this->normalizePort((int) config('app.phpmyadmin_port', 8090), 8090);
+                $origin = $request->getScheme().'://'.$request->getHost().':'.$port;
+                $targetUrl = $origin.'/index.php';
+            } else {
+                $targetUrl = $origin.'/phpmyadmin/index.php';
+            }
+        }
+
+        if ($configuredHelperUrl !== '') {
+            $helperUrl = $configuredHelperUrl;
+        } else {
+            $parsedTarget = parse_url($targetUrl);
+            if (is_array($parsedTarget) && isset($parsedTarget['scheme'], $parsedTarget['host'])) {
+                $helperBase = $parsedTarget['scheme'].'://'.$parsedTarget['host'];
+                if (isset($parsedTarget['port'])) {
+                    $helperBase .= ':'.$parsedTarget['port'];
+                }
+            } else {
+                $helperBase = preg_replace('#/phpmyadmin/index\.php/?$#i', '', $targetUrl);
+                $helperBase = is_string($helperBase) ? rtrim($helperBase, '/') : rtrim($targetUrl, '/');
+            }
+            $helperPath = $isSeparateMode ? '/phpmyadminsignin.php' : '/phpmyadmin/phpmyadminsignin.php';
+            $helperUrl = $helperBase.$helperPath;
+        }
+
+        $databaseHost = trim((string) ($requestItem->database_host ?? '127.0.0.1'));
+        if ($databaseHost === '' || strcasecmp($databaseHost, 'localhost') === 0) {
+            $databaseHost = '127.0.0.1';
+        }
 
         return response()->view('phpmyadmin.autologin', [
             'targetUrl' => $targetUrl,
@@ -158,8 +211,34 @@ class DatabaseController extends Controller
             'username' => (string) ($requestItem->database_user ?? ''),
             'password' => (string) ($requestItem->database_password ?? ''),
             'database' => (string) ($requestItem->database_name ?? ''),
-            'host' => (string) ($requestItem->database_host ?? 'localhost'),
+            'host' => $databaseHost,
         ]);
+    }
+
+    private function isWebtoolsSeparateMode(): bool
+    {
+        return filter_var((string) config('app.webtools_separate_ports', false), FILTER_VALIDATE_BOOL);
+    }
+
+    private function normalizePort(int $value, int $fallback): int
+    {
+        return $value >= 1 && $value <= 65535 ? $value : $fallback;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function normalizePayload(array $payload): array
+    {
+        $host = trim((string) ($payload['database_host'] ?? '127.0.0.1'));
+        if ($host === '' || strcasecmp($host, 'localhost') === 0) {
+            $host = '127.0.0.1';
+        }
+        $payload['database_host'] = $host;
+        $payload['domain'] = strtolower(trim((string) ($payload['domain'] ?? '')));
+
+        return $payload;
     }
 
     /**
@@ -169,10 +248,10 @@ class DatabaseController extends Controller
     {
         return $request->validate([
             'domain' => ['required', 'string', 'max:255'],
-            'database_name' => ['required', 'string', 'max:64'],
-            'database_user' => ['required', 'string', 'max:64'],
+            'database_name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_]+$/'],
+            'database_user' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_]+$/'],
             'database_password' => ['required', 'string', 'max:255'],
-            'database_host' => ['required', 'string', 'max:255'],
+            'database_host' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9._%-]+$/'],
             'charset' => ['required', 'string', 'max:32'],
             'collation' => ['required', 'string', 'max:64'],
         ]);
@@ -183,9 +262,11 @@ class DatabaseController extends Controller
      */
     private function buildCommand(array $payload): string
     {
+        $scriptPath = base_path('scripts/database-request.sh');
+
         return sprintf(
-            '/usr/local/bin/serverinstaller-db create --domain=%s --name=%s --user=%s --password=%s --host=%s --charset=%s --collation=%s',
-            escapeshellarg((string) $payload['domain']),
+            'bash %s create %s %s %s %s %s %s',
+            escapeshellarg($scriptPath),
             escapeshellarg((string) $payload['database_name']),
             escapeshellarg((string) $payload['database_user']),
             escapeshellarg((string) $payload['database_password']),
@@ -193,6 +274,62 @@ class DatabaseController extends Controller
             escapeshellarg((string) $payload['charset']),
             escapeshellarg((string) $payload['collation']),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array{ran: bool, success: bool, output: string}
+     */
+    private function syncDatabaseToServer(array $payload): array
+    {
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return ['ran' => false, 'success' => false, 'output' => 'Database sync skipped on Windows environment.'];
+        }
+
+        $scriptPath = base_path('scripts/database-request.sh');
+        if (! is_file($scriptPath)) {
+            return ['ran' => false, 'success' => false, 'output' => 'Database sync script not found: '.$scriptPath];
+        }
+
+        $parts = [
+            'bash',
+            escapeshellarg($scriptPath),
+            'create',
+            escapeshellarg((string) $payload['database_name']),
+            escapeshellarg((string) $payload['database_user']),
+            escapeshellarg((string) $payload['database_password']),
+            escapeshellarg((string) $payload['database_host']),
+            escapeshellarg((string) $payload['charset']),
+            escapeshellarg((string) $payload['collation']),
+        ];
+
+        $output = [];
+        $exitCode = 1;
+        @exec(implode(' ', $parts).' 2>&1', $output, $exitCode);
+        $message = trim(implode("\n", $output));
+        $success = $exitCode === 0;
+
+        if (! $success) {
+            Log::warning('Database sync script failed', [
+                'script' => $scriptPath,
+                'exit_code' => $exitCode,
+                'output' => $message,
+                'payload' => [
+                    'database_name' => (string) $payload['database_name'],
+                    'database_user' => (string) $payload['database_user'],
+                    'database_host' => (string) $payload['database_host'],
+                    'charset' => (string) $payload['charset'],
+                    'collation' => (string) $payload['collation'],
+                    'domain' => (string) $payload['domain'],
+                ],
+            ]);
+        }
+
+        return [
+            'ran' => true,
+            'success' => $success,
+            'output' => $message !== '' ? $message : ($success ? 'Database sync completed.' : 'Database sync failed.'),
+        ];
     }
 
     /**

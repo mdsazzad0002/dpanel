@@ -27,6 +27,10 @@ const props = defineProps({
             nginx: { path: '', exists: false, source: '', content: '' },
         }),
     },
+    wordpressVersions: {
+        type: Array,
+        default: () => ['latest'],
+    },
 });
 const page = usePage();
 
@@ -64,13 +68,34 @@ const statusClass = computed(() => {
 const sslEnabled = computed(() => Boolean(props.website?.enable_ssl));
 const scheme = computed(() => (sslEnabled.value ? 'https' : 'http'));
 const installerValue = computed(() => String(props.website?.app_installer ?? 'none').toLowerCase());
-const installerLabel = computed(() => (installerValue.value === 'wordpress' ? 'WordPress Installer' : 'Starter Files'));
+const websiteWordPressVersion = computed(() => {
+    const normalized = String(props.website?.wordpress_version ?? 'latest').trim().toLowerCase();
+    return normalized === '' ? 'latest' : normalized;
+});
+const installerLabel = computed(() => {
+    if (installerValue.value !== 'wordpress') {
+        return 'Starter Files';
+    }
+
+    return websiteWordPressVersion.value === 'latest'
+        ? 'WordPress (Latest)'
+        : `WordPress (${websiteWordPressVersion.value})`;
+});
 const isWordPressInstalled = computed(() => installerValue.value === 'wordpress');
 const installerClass = computed(() => (
     installerValue.value === 'wordpress'
         ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300'
         : 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
 ));
+const availableWordPressVersions = computed(() => {
+    const list = Array.isArray(props.wordpressVersions) ? props.wordpressVersions : [];
+    const normalized = list
+        .map((version) => String(version || '').trim().toLowerCase())
+        .filter((version) => version === 'latest' || /^\d+\.\d+(\.\d+)?$/.test(version));
+
+    return Array.from(new Set(['latest', websiteWordPressVersion.value, ...normalized]));
+});
+const selectedWordPressVersion = ref(websiteWordPressVersion.value);
 
 const serviceLinks = computed(() => [
     { label: 'Redis Cache', short: 'RC', href: route('websites.redis-cache.index', props.website.id), description: 'Per-website cache isolation' },
@@ -230,18 +255,32 @@ const historyPoints = computed(() => {
                         <div class="rounded-xl border border-slate-200 bg-white/80 p-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/60">
                             <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Quick Actions</p>
                             <div class="mt-3 grid gap-2">
-                                <Link
-                                    :href="route('websites.wordpress.install', website.id)"
-                                    method="post"
-                                    as="button"
-                                    :disabled="isWordPressInstalled"
-                                    class="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                                    :class="isWordPressInstalled
-                                        ? 'border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400'
-                                        : 'border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20'"
-                                >
-                                    {{ isWordPressInstalled ? 'WordPress Installed' : 'One-Click WordPress Install' }}
-                                </Link>
+                                <div class="rounded-md border border-blue-200/80 p-2 dark:border-blue-800/80">
+                                    <div class="flex flex-col gap-2">
+                                        <select
+                                            v-model="selectedWordPressVersion"
+                                            :disabled="isWordPressInstalled"
+                                            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800"
+                                        >
+                                            <option v-for="version in availableWordPressVersions" :key="version" :value="version">
+                                                {{ version === 'latest' ? 'Latest Stable' : version }}
+                                            </option>
+                                        </select>
+                                        <Link
+                                            :href="route('websites.wordpress.install', website.id)"
+                                            method="post"
+                                            as="button"
+                                            :data="{ wordpress_version: selectedWordPressVersion }"
+                                            :disabled="isWordPressInstalled"
+                                            class="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                                            :class="isWordPressInstalled
+                                                ? 'border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400'
+                                                : 'border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20'"
+                                        >
+                                            {{ isWordPressInstalled ? 'WordPress Installed' : 'One-Click WordPress Install' }}
+                                        </Link>
+                                    </div>
+                                </div>
                                 <Link
                                     :href="route('websites.vhost.sync', website.id)"
                                     method="post"
@@ -249,6 +288,14 @@ const historyPoints = computed(() => {
                                     class="rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
                                 >
                                     Sync VHost
+                                </Link>
+                                <Link
+                                    :href="route('websites.project-cache.clear', website.id)"
+                                    method="post"
+                                    as="button"
+                                    class="rounded-md border border-rose-300 px-3 py-2 text-sm text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-900/20"
+                                >
+                                    Project Cache Clear
                                 </Link>
                                 <Link :href="route('apache.index')" class="rounded-md border border-cyan-300 px-3 py-2 text-sm text-cyan-700 hover:bg-cyan-50 dark:border-cyan-700 dark:text-cyan-300 dark:hover:bg-cyan-900/20">
                                     Apache + Nginx Setup

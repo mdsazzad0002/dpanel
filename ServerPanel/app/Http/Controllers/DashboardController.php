@@ -52,7 +52,7 @@ class DashboardController extends Controller
                 'mail' => $this->serviceStatus('postfix'),
                 'dovecot' => $this->serviceStatus('dovecot'),
                 'database' => $this->databaseServiceStatus(),
-                'redis' => $this->serviceStatus('redis-server'),
+                'redis' => $this->redisServiceStatus(),
             ],
         ];
     }
@@ -152,6 +152,24 @@ class DashboardController extends Controller
         }
 
         return trim($out) === 'active' ? 'running' : 'down';
+    }
+
+    private function redisServiceStatus(): string
+    {
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return 'unknown';
+        }
+
+        if ($this->serviceStatus('redis-server') === 'running' || $this->serviceStatus('redis') === 'running') {
+            return 'running';
+        }
+
+        $ping = @shell_exec('redis-cli ping 2>/dev/null');
+        if (is_string($ping) && strtoupper(trim($ping)) === 'PONG') {
+            return 'running';
+        }
+
+        return 'down';
     }
 
     private function mailQueueCount(): int

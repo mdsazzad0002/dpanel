@@ -12,6 +12,10 @@ const props = defineProps({
         type: Array,
         default: () => ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
     },
+    wordpressVersions: {
+        type: Array,
+        default: () => ['latest'],
+    },
 });
 
 const form = useForm({
@@ -22,6 +26,7 @@ const form = useForm({
     root_path: '',
     php_version: '',
     app_installer: 'none',
+    wordpress_version: 'latest',
     enable_ssl: true,
 });
 const parentDomainSearch = ref('');
@@ -150,6 +155,15 @@ const availablePhpVersions = computed(() => {
 
     return normalized.length > 0 ? normalized : ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
 });
+const availableWordPressVersions = computed(() => {
+    const list = Array.isArray(props.wordpressVersions) ? props.wordpressVersions : [];
+    const normalized = list
+        .map((version) => String(version || '').trim().toLowerCase())
+        .filter((version) => version === 'latest' || /^\d+\.\d+(\.\d+)?$/.test(version));
+    const deduped = Array.from(new Set(['latest', ...normalized]));
+
+    return deduped;
+});
 
 watch([finalDomain, () => form.domain_type, normalizedParentDomain], () => {
     form.root_path = deriveRootPath();
@@ -190,6 +204,15 @@ watch(
     (versions) => {
         if (!form.php_version || !versions.includes(form.php_version)) {
             form.php_version = versions[0];
+        }
+    },
+    { immediate: true },
+);
+watch(
+    availableWordPressVersions,
+    (versions) => {
+        if (!form.wordpress_version || !versions.includes(form.wordpress_version)) {
+            form.wordpress_version = 'latest';
         }
     },
     { immediate: true },
@@ -351,6 +374,16 @@ onBeforeUnmount(() => {
                     </select>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Install WordPress automatically after site creation.</p>
                     <p v-if="form.errors.app_installer" class="mt-1 text-xs text-red-600">{{ form.errors.app_installer }}</p>
+                </div>
+                <div v-if="form.app_installer === 'wordpress'">
+                    <label class="mb-1 block text-sm">WordPress Version</label>
+                    <select v-model="form.wordpress_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                        <option v-for="version in availableWordPressVersions" :key="version" :value="version">
+                            {{ version === 'latest' ? 'Latest Stable' : version }}
+                        </option>
+                    </select>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Choose which WordPress version will be installed with one click.</p>
+                    <p v-if="form.errors.wordpress_version" class="mt-1 text-xs text-red-600">{{ form.errors.wordpress_version }}</p>
                 </div>
                 <div class="flex items-center gap-2 pt-7">
                     <input id="enable_ssl" v-model="form.enable_ssl" type="checkbox" class="rounded border-slate-300" />

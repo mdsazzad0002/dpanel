@@ -15,7 +15,7 @@ const form = useForm({
     database_name: '',
     database_user: '',
     database_password: '',
-    database_host: 'localhost',
+    database_host: '127.0.0.1',
     charset: 'utf8mb4',
     collation: 'utf8mb4_unicode_ci',
 });
@@ -61,7 +61,7 @@ watch(
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Create Database</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Create a new MySQL/MariaDB database request.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Create a new MySQL/MariaDB database and user.</p>
             </div>
         </template>
 
@@ -151,7 +151,7 @@ watch(
                 </div>
                 <div class="md:col-span-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                        Save Database Request
+                        Create Database
                     </button>
                 </div>
             </form>
