@@ -25,6 +25,7 @@ Route::get('/', function () {
         'canLogin' => Route::has('login'),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
+        'installerBaseUrl' => (string) config('app.installer_base_url'),
     ]);
 });
 Route::get('/roundcube', [EmailController::class, 'webmailEntry'])->name('webmail.roundcube');

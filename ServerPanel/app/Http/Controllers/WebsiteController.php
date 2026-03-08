@@ -1566,7 +1566,8 @@ class WebsiteController extends Controller
         }
 
         $envPrefix = sprintf(
-            'APACHE_BACKEND_PORT=%d NGINX_PRIMARY_PORT=%d PHPMYADMIN_PORT=%d REDIS_SERVICE=%s ',
+            'PANEL_PORT=%d APACHE_BACKEND_PORT=%d NGINX_PRIMARY_PORT=%d PHPMYADMIN_PORT=%d REDIS_SERVICE=%s ',
+            $this->panelPort(),
             $this->apacheBackendPort(),
             $this->nginxPrimaryPort(),
             $this->phpMyAdminPort(),
@@ -2809,6 +2810,11 @@ CONF;
     private function apacheBackendPort(): int
     {
         return $this->normalizePort(config('app.apache_backend_port'), self::DEFAULT_APACHE_BACKEND_PORT);
+    }
+
+    private function panelPort(): int
+    {
+        return $this->normalizePort(config('app.panel_port'), 8090);
     }
 
     private function nginxPrimaryPort(): int

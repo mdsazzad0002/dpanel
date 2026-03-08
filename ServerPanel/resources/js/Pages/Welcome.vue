@@ -1,8 +1,8 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
-defineProps({
+const props = defineProps({
     canLogin: {
         type: Boolean,
     },
@@ -14,10 +14,32 @@ defineProps({
         type: String,
         required: true,
     },
+    installerBaseUrl: {
+        type: String,
+        required: true,
+    },
 });
 
 const theme = ref('light');
 const activeTab = ref('home');
+const normalizedInstallerBaseUrl = computed(() => props.installerBaseUrl.replace(/\/+$/, ''));
+const remoteDownloadSnippet = computed(() => `BASE_URL="${normalizedInstallerBaseUrl.value}"
+
+curl -fsSL "${BASE_URL}/int-tool.sh" -o int-tool.sh
+chmod +x int-tool.sh
+sudo bash int-tool.sh --base-url "${BASE_URL}"`);
+const troubleshootingSnippet = computed(() => `# If blocked by permissions
+sudo bash int-tool.sh --project-dir "/absolute/path/to/ServerPanel"
+
+# If file not found
+ls -la
+pwd
+find / -type f -path "*/ServerPanel/artisan" 2>/dev/null
+
+# If download fails
+BASE_URL="${normalizedInstallerBaseUrl.value}"
+curl -I "${BASE_URL}/int-tool.sh"
+curl -I "${BASE_URL}/ServerPanel.zip"`);
 
 function applyTheme(nextTheme) {
     theme.value = nextTheme;
@@ -340,24 +362,12 @@ sudo bash int-tool.sh --project-dir "/root/ServerPanel" --db-name "serverinstall
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">4. Remote Download + Run</h2>
-                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>curl -fsSL "http://192.168.0.50/a_final_storing/ServerInstaller/int-tool.sh" -o int-tool.sh
-chmod +x int-tool.sh
-sudo bash int-tool.sh</code></pre>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>{{ remoteDownloadSnippet }}</code></pre>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">5. Troubleshooting</h2>
-                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code># If blocked by permissions
-sudo bash int-tool.sh --project-dir "/absolute/path/to/ServerPanel"
-
-# If file not found
-ls -la
-pwd
-find / -type f -path "*/ServerPanel/artisan" 2>/dev/null
-
-# If download fails
-curl -I http://192.168.0.50/a_final_storing/ServerInstaller/int-tool.sh
-curl -I http://192.168.0.50/a_final_storing/ServerInstaller/ServerPanel.zip</code></pre>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>{{ troubleshootingSnippet }}</code></pre>
                     </section>
                 </div>
             </main>

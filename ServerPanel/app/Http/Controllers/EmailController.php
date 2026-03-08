@@ -270,7 +270,7 @@ class EmailController extends Controller
         }
 
         if ($this->isWebtoolsSeparateMode()) {
-            $roundcubePort = $this->normalizePort((int) config('app.roundcube_port', 8092), 8092);
+            $roundcubePort = $this->normalizePort((int) config('app.roundcube_port', 8090), 8090);
 
             return $request->getScheme().'://'.$request->getHost().':'.$roundcubePort.'/';
         }

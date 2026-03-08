@@ -6,6 +6,7 @@ DOMAIN_RAW="${2:-}"
 ROOT_PATH="${3:-}"
 PHP_VERSION_RAW="${4:-8.3}"
 OLD_DOMAIN_RAW="${5:-}"
+PANEL_PORT_RAW="${PANEL_PORT:-8090}"
 APACHE_BACKEND_PORT_RAW="${APACHE_BACKEND_PORT:-8080}"
 NGINX_PRIMARY_PORT_RAW="${NGINX_PRIMARY_PORT:-80}"
 PHPMYADMIN_PORT_RAW="${PHPMYADMIN_PORT:-8090}"
@@ -181,13 +182,30 @@ ensure_apache_backend_ports() {
         echo "Listen ${APACHE_BACKEND_PORT}" >> "${ports_conf}"
     fi
 
-    if ! grep -qE "^[[:space:]]*Listen[[:space:]]+${PHPMYADMIN_PORT}[[:space:]]*$" "${ports_conf}"; then
+    if [[ "${PHPMYADMIN_PORT}" == "${PANEL_PORT}" ]]; then
+        sed -i -E "/^[[:space:]]*Listen[[:space:]]+${PHPMYADMIN_PORT}([[:space:]]*)$/d" "${ports_conf}" || true
+    elif ! grep -qE "^[[:space:]]*Listen[[:space:]]+${PHPMYADMIN_PORT}[[:space:]]*$" "${ports_conf}"; then
         echo "Listen ${PHPMYADMIN_PORT}" >> "${ports_conf}"
     fi
 
     # In reverse-proxy mode, keep 80/443 for Nginx front-end.
     sed -i -E 's/^[[:space:]]*Listen[[:space:]]+80([[:space:]]*)$/# Listen 80/g' "${ports_conf}" || true
     sed -i -E 's/^[[:space:]]*Listen[[:space:]]+443([[:space:]]*)$/# Listen 443/g' "${ports_conf}" || true
+}
+
+cleanup_phpmyadmin_apache_sites() {
+    local conf_path
+    local site_name
+
+    [[ -d /etc/apache2/sites-available ]] || return 0
+
+    for conf_path in /etc/apache2/sites-available/serverpanel-phpmyadmin-*.conf; do
+        [[ -e "${conf_path}" ]] || continue
+        site_name="$(basename "${conf_path}")"
+        a2dissite "${site_name}" >/dev/null 2>&1 || true
+        rm -f "/etc/apache2/sites-enabled/${site_name}" || true
+        rm -f "${conf_path}" || true
+    done
 }
 
 ensure_apache_php_fpm_mode() {
@@ -449,6 +467,12 @@ sync_phpmyadmin_apache_site() {
     local pma_root conf_path helper_target
 
     [[ -d /etc/apache2/sites-available ]] || return 0
+
+    if [[ "${PHPMYADMIN_PORT}" == "${PANEL_PORT}" ]]; then
+        cleanup_phpmyadmin_apache_sites
+        log "phpMyAdmin uses the panel port :${PANEL_PORT}; skipping dedicated Apache site sync."
+        return 0
+    fi
 
     pma_root=""
     for candidate in /usr/share/phpmyadmin /var/www/phpmyadmin /var/www/html/phpmyadmin; do
@@ -715,6 +739,7 @@ remove_nginx_vhost() {
 DOMAIN="$(normalize_domain "${DOMAIN_RAW}")"
 OLD_DOMAIN="$(normalize_domain "${OLD_DOMAIN_RAW}")"
 PHP_VERSION="$(normalize_php_version "${PHP_VERSION_RAW}")"
+PANEL_PORT="$(normalize_port "${PANEL_PORT_RAW}" "8090")"
 APACHE_BACKEND_PORT="$(normalize_port "${APACHE_BACKEND_PORT_RAW}" "8080")"
 NGINX_PRIMARY_PORT="$(normalize_port "${NGINX_PRIMARY_PORT_RAW}" "80")"
 PHPMYADMIN_PORT="$(normalize_port "${PHPMYADMIN_PORT_RAW}" "8090")"
