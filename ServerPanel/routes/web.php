@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\AdminController;
 use App\Http\Controllers\ApacheController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\DashboardController;
@@ -8,17 +7,14 @@ use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\CronJobController;
 use App\Http\Controllers\DnsController;
 use App\Http\Controllers\EmailController;
-use App\Http\Controllers\PackageController;
 use App\Http\Controllers\PhpManagementController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RedisCacheController;
-use App\Http\Controllers\ResellerController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\MonitoringController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\TerminalController;
 use App\Http\Controllers\UserManagementController;
-use App\Http\Controllers\UserPanelController;
 use App\Http\Controllers\WebsiteController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -31,6 +27,7 @@ Route::get('/', function () {
         'phpVersion' => PHP_VERSION,
     ]);
 });
+Route::get('/roundcube', [EmailController::class, 'webmailEntry'])->name('webmail.roundcube');
 
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])
@@ -43,6 +40,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/websites', [WebsiteController::class, 'store'])
         ->middleware('role:admin|reseller')
         ->name('websites.store');
+    Route::get('/websites/parent-domains/search', [WebsiteController::class, 'searchParentDomains'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.parent-domains.search');
     Route::get('/websites/{id}/edit', [WebsiteController::class, 'edit'])
         ->middleware('role:admin|reseller')
         ->name('websites.edit');
@@ -52,12 +52,18 @@ Route::middleware('auth')->group(function () {
     Route::delete('/websites/{id}', [WebsiteController::class, 'destroy'])
         ->middleware('role:admin|reseller')
         ->name('websites.destroy');
+    Route::patch('/websites/{id}/status', [WebsiteController::class, 'updateStatus'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.status.update');
     Route::get('/websites/{id}/manage', [WebsiteController::class, 'manage'])
         ->middleware('role:admin|reseller')
         ->name('websites.manage');
     Route::post('/websites/{id}/vhost/sync', [WebsiteController::class, 'syncVhost'])
         ->middleware('role:admin|reseller')
         ->name('websites.vhost.sync');
+    Route::post('/websites/{id}/wordpress/install', [WebsiteController::class, 'installWordPress'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.wordpress.install');
     Route::get('/websites/{id}/preview/{path?}', [WebsiteController::class, 'preview'])
         ->middleware('role:admin|reseller')
         ->where('path', '.*')
@@ -293,42 +299,38 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin|reseller')
         ->name('security.ssh.update');
 
-    Route::get('/packages/create', [PackageController::class, 'create'])
-        ->middleware('role:admin|reseller')
-        ->name('packages.create');
-    Route::post('/packages', [PackageController::class, 'store'])
-        ->middleware('role:admin|reseller')
-        ->name('packages.store');
-    Route::get('/packages/{package}/edit', [PackageController::class, 'edit'])
-        ->middleware('role:admin|reseller')
-        ->name('packages.edit');
-    Route::patch('/packages/{package}', [PackageController::class, 'update'])
-        ->middleware('role:admin|reseller')
-        ->name('packages.update');
-    Route::delete('/packages/{package}', [PackageController::class, 'destroy'])
-        ->middleware('role:admin|reseller')
-        ->name('packages.destroy');
-    Route::get('/packages/list', [PackageController::class, 'index'])
-        ->middleware('role:admin|reseller')
-        ->name('packages.list');
-
-    Route::get('/admin', [AdminController::class, 'index'])
+    Route::get('/admin', [UserManagementController::class, 'index'])
         ->middleware('role:admin')
         ->name('admin.panel');
 
-    Route::get('/reseller', [ResellerController::class, 'index'])
+    Route::get('/reseller', [UserManagementController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('reseller.panel');
 
-    Route::get('/user-panel', [UserPanelController::class, 'show'])
-        ->middleware('role:admin|reseller|general_user')
+    Route::get('/user-panel', [UserManagementController::class, 'index'])
+        ->middleware('role:admin|reseller|general|general_user')
         ->name('user.panel');
     Route::get('/users/manage', [UserManagementController::class, 'index'])
-        ->middleware('role:admin|reseller')
+        ->middleware('role:admin|reseller|general|general_user')
         ->name('users.manage');
+    Route::get('/users/manage/create', [UserManagementController::class, 'create'])
+        ->middleware('role:admin|reseller')
+        ->name('users.manage.create');
     Route::post('/users/manage', [UserManagementController::class, 'store'])
         ->middleware('role:admin|reseller')
         ->name('users.manage.store');
+    Route::get('/users/manage/{user}/edit', [UserManagementController::class, 'edit'])
+        ->middleware('role:admin|reseller')
+        ->name('users.manage.edit');
+    Route::patch('/users/manage/{user}', [UserManagementController::class, 'update'])
+        ->middleware('role:admin|reseller')
+        ->name('users.manage.update');
+    Route::patch('/users/manage/{user}/suspension', [UserManagementController::class, 'updateSuspension'])
+        ->middleware('role:admin|reseller')
+        ->name('users.manage.suspension');
+    Route::delete('/users/manage/{user}', [UserManagementController::class, 'destroy'])
+        ->middleware('role:admin|reseller')
+        ->name('users.manage.destroy');
     Route::get('/roles/manage', [RoleManagementController::class, 'index'])
         ->middleware('role:admin')
         ->name('roles.manage');

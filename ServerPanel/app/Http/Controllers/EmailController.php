@@ -5,12 +5,32 @@ namespace App\Http\Controllers;
 use App\Models\Mailbox;
 use App\Models\Website;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class EmailController extends Controller
 {
+    public function webmailEntry(Request $request): RedirectResponse|HttpResponse
+    {
+        $configured = trim((string) env('WEBMAIL_URL', ''));
+        if ($configured !== '') {
+            $configuredTarget = rtrim($configured, '/');
+            $currentRoundcubePath = rtrim($request->getSchemeAndHttpHost().'/roundcube', '/');
+
+            if ($configuredTarget !== '' && strcasecmp($configuredTarget, $currentRoundcubePath) !== 0) {
+                return redirect()->away($configuredTarget);
+            }
+        }
+
+        return response()->view('webmail.missing', [
+            'configuredUrl' => $configured,
+            'defaultUrl' => $request->getSchemeAndHttpHost().'/roundcube/',
+            'panelUrl' => $request->getSchemeAndHttpHost().'/emails/list',
+        ]);
+    }
+
     public function create(): Response
     {
         return Inertia::render('CreateEmail', [
@@ -20,14 +40,16 @@ class EmailController extends Controller
 
     public function index(): Response
     {
+        $setupCheck = $this->buildMailSetupCheck();
         $mailboxes = Mailbox::query()
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn (Mailbox $mailbox): array => $mailbox->toArray())
+            ->map(fn (Mailbox $mailbox): array => $this->toMailboxListRow($mailbox, $setupCheck))
             ->all();
 
         return Inertia::render('ListEmails', [
             'mailboxes' => $mailboxes,
+            'setupCheck' => $setupCheck,
         ]);
     }
 
@@ -115,12 +137,169 @@ class EmailController extends Controller
     {
         $mailbox = Mailbox::query()->find($id);
         abort_if($mailbox === null, 404);
+        $setupCheck = $this->buildMailSetupCheck();
+        $mailboxCheck = $this->evaluateMailboxAutoLogin($mailbox->toArray(), $setupCheck);
+        if (! $mailboxCheck['ready']) {
+            $email = (string) ($mailbox->email ?? 'mailbox');
+
+            return redirect()
+                ->route('emails.list')
+                ->with('error', "Auto login blocked for {$email}: ".$mailboxCheck['message']);
+        }
+
+        $targetUrl = (string) ($setupCheck['webmail_url'] ?? $this->resolveWebmailUrl());
 
         return response()->view('webmail.autologin', [
-            'targetUrl' => (string) env('WEBMAIL_URL', request()->getSchemeAndHttpHost().'/roundcube/'),
+            'targetUrl' => $targetUrl,
             'email' => (string) ($mailbox->email ?? ''),
             'password' => (string) ($mailbox->password ?? ''),
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $setupCheck
+     * @return array<string, mixed>
+     */
+    private function toMailboxListRow(Mailbox $mailbox, array $setupCheck): array
+    {
+        $row = $mailbox->toArray();
+        $autoLoginCheck = $this->evaluateMailboxAutoLogin($row, $setupCheck);
+        unset($row['password']);
+        $row['autologin_ready'] = $autoLoginCheck['ready'];
+        $row['autologin_message'] = $autoLoginCheck['message'];
+
+        return $row;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildMailSetupCheck(): array
+    {
+        $isWindows = str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS');
+        $configuredWebmailEnv = trim((string) env('WEBMAIL_URL', ''));
+        $webmailConfigured = $configuredWebmailEnv !== '';
+        $webmailUrl = $this->resolveWebmailUrl();
+        $webmailUrlValid = filter_var($webmailUrl, FILTER_VALIDATE_URL) !== false;
+        $postfix = $this->serviceStatus('postfix');
+        $dovecot = $this->serviceStatus('dovecot');
+        $servicesReady = $isWindows || ($postfix === 'running' && $dovecot === 'running');
+        $webmailReachable = $webmailUrlValid ? $this->isUrlReachable($webmailUrl) : false;
+        $messages = [];
+
+        if (! $webmailUrlValid) {
+            $messages[] = 'WEBMAIL_URL is invalid. Configure a full URL (for example: http://server/roundcube/).';
+        }
+        if (! $webmailConfigured) {
+            $messages[] = 'WEBMAIL_URL is not configured. Add it in .env to your real Roundcube URL.';
+        }
+        if (! $servicesReady) {
+            $messages[] = 'Required services are down. Ensure Postfix and Dovecot are running.';
+        }
+        if ($webmailReachable === false) {
+            $messages[] = 'Webmail endpoint is unreachable from panel server.';
+        } elseif ($webmailReachable === null) {
+            $messages[] = 'Webmail reachability check unavailable (curl extension missing).';
+        }
+
+        $autologinReady = $webmailConfigured && $webmailUrlValid && $servicesReady && $webmailReachable !== false;
+
+        return [
+            'is_windows' => $isWindows,
+            'webmail_configured' => $webmailConfigured,
+            'webmail_url' => $webmailUrl,
+            'webmail_url_valid' => $webmailUrlValid,
+            'webmail_reachable' => $webmailReachable,
+            'services' => [
+                'postfix' => $postfix,
+                'dovecot' => $dovecot,
+            ],
+            'services_ready' => $servicesReady,
+            'autologin_ready' => $autologinReady,
+            'messages' => $messages,
+        ];
+    }
+
+    private function resolveWebmailUrl(): string
+    {
+        return (string) env('WEBMAIL_URL', request()->getSchemeAndHttpHost().'/roundcube/');
+    }
+
+    private function serviceStatus(string $service): string
+    {
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return 'unknown';
+        }
+
+        $out = @shell_exec('systemctl is-active '.escapeshellarg($service).' 2>/dev/null');
+        if (! is_string($out)) {
+            return 'unknown';
+        }
+
+        return trim($out) === 'active' ? 'running' : 'down';
+    }
+
+    /**
+     * Returns true when endpoint is reachable, false when explicitly unreachable,
+     * and null when reachability check cannot run.
+     */
+    private function isUrlReachable(string $url): ?bool
+    {
+        if (! function_exists('curl_init')) {
+            return null;
+        }
+
+        $ch = @curl_init($url);
+        if ($ch === false) {
+            return null;
+        }
+
+        @curl_setopt($ch, CURLOPT_NOBODY, true);
+        @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        @curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        @curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+        @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+        @curl_exec($ch);
+        $errno = (int) @curl_errno($ch);
+        $code = (int) @curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        @curl_close($ch);
+
+        if ($errno !== 0) {
+            return false;
+        }
+
+        if ($code === 0) {
+            return false;
+        }
+
+        return $code >= 200 && $code < 500;
+    }
+
+    /**
+     * @param array<string, mixed> $mailbox
+     * @param array<string, mixed> $setupCheck
+     * @return array{ready: bool, message: string}
+     */
+    private function evaluateMailboxAutoLogin(array $mailbox, array $setupCheck): array
+    {
+        $email = trim((string) ($mailbox['email'] ?? ''));
+        $password = trim((string) ($mailbox['password'] ?? ''));
+        $status = strtolower(trim((string) ($mailbox['status'] ?? 'active')));
+        if ($status !== '' && $status !== 'active') {
+            return ['ready' => false, 'message' => 'Mailbox status is not active.'];
+        }
+
+        if ($email === '' || $password === '') {
+            return ['ready' => false, 'message' => 'Mailbox credentials are incomplete.'];
+        }
+
+        if (! (bool) ($setupCheck['autologin_ready'] ?? false)) {
+            $firstSetupMessage = (string) (($setupCheck['messages'][0] ?? '') ?: 'Mail setup check failed.');
+
+            return ['ready' => false, 'message' => $firstSetupMessage];
+        }
+
+        return ['ready' => true, 'message' => 'Auto login is ready.'];
     }
 
     /**

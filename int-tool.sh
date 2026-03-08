@@ -23,6 +23,8 @@ DB_NAME="serverinstaller"
 DB_USER="serverpanel"
 DB_PASSWORD=""
 PANEL_PORT="8090"
+APACHE_BACKEND_PORT="8080"
+NGINX_PRIMARY_PORT="80"
 DB_SERVICE=""
 CURRENT_PID=""
 RESET_DB_STACK="false"
@@ -44,6 +46,8 @@ reset_runtime_defaults() {
     DB_USER="serverpanel"
     DB_PASSWORD=""
     PANEL_PORT="8090"
+    APACHE_BACKEND_PORT="8080"
+    NGINX_PRIMARY_PORT="80"
     DB_SERVICE=""
     CURRENT_PID=""
     RESET_DB_STACK="false"
@@ -107,6 +111,8 @@ Options:
   --db-user NAME       Database user to create (default: serverpanel)
   --db-password PASS   Database password (default: random generated)
   --panel-port PORT    Panel HTTP port for system startup service (default: 8090)
+  --apache-backend-port PORT Apache backend port when --web-server both (default: 8080)
+  --nginx-primary-port PORT  Nginx frontend port when --web-server both/nginx (default: 80)
   --reset-db           Purge existing DB packages and data before install
   --fresh-install      Alias for --reset-db (fresh DB stack + full install flow)
   --node-major VER     Required Node.js major for Vite build (default: 22)
@@ -285,6 +291,16 @@ parse_args() {
                 PANEL_PORT="$2"
                 shift 2
                 ;;
+            --apache-backend-port)
+                [[ $# -lt 2 ]] && fail "--apache-backend-port requires a value."
+                APACHE_BACKEND_PORT="$2"
+                shift 2
+                ;;
+            --nginx-primary-port)
+                [[ $# -lt 2 ]] && fail "--nginx-primary-port requires a value."
+                NGINX_PRIMARY_PORT="$2"
+                shift 2
+                ;;
             --reset-db)
                 RESET_DB_STACK="true"
                 shift 1
@@ -345,6 +361,21 @@ parse_args() {
     fi
     if (( PANEL_PORT < 1 || PANEL_PORT > 65535 )); then
         fail "Invalid --panel-port: ${PANEL_PORT}. Must be between 1 and 65535."
+    fi
+    if [[ ! "${APACHE_BACKEND_PORT}" =~ ^[0-9]+$ ]]; then
+        fail "Invalid --apache-backend-port: ${APACHE_BACKEND_PORT}. Must be a number."
+    fi
+    if (( APACHE_BACKEND_PORT < 1 || APACHE_BACKEND_PORT > 65535 )); then
+        fail "Invalid --apache-backend-port: ${APACHE_BACKEND_PORT}. Must be between 1 and 65535."
+    fi
+    if [[ ! "${NGINX_PRIMARY_PORT}" =~ ^[0-9]+$ ]]; then
+        fail "Invalid --nginx-primary-port: ${NGINX_PRIMARY_PORT}. Must be a number."
+    fi
+    if (( NGINX_PRIMARY_PORT < 1 || NGINX_PRIMARY_PORT > 65535 )); then
+        fail "Invalid --nginx-primary-port: ${NGINX_PRIMARY_PORT}. Must be between 1 and 65535."
+    fi
+    if [[ "${WEB_SERVER}" == "both" && "${APACHE_BACKEND_PORT}" == "${NGINX_PRIMARY_PORT}" ]]; then
+        fail "--apache-backend-port and --nginx-primary-port cannot be the same when --web-server both."
     fi
     if [[ ! "${NODEJS_REQUIRED_MAJOR}" =~ ^[0-9]+$ ]]; then
         fail "Invalid --node-major: ${NODEJS_REQUIRED_MAJOR}. Must be numeric (20 or 22)."
@@ -1505,6 +1536,17 @@ setup_apache_proxy_default_site() {
     fi
 
     info "Configuring Apache default site to proxy :80 -> :${PANEL_PORT}"
+    cat > /etc/apache2/ports.conf <<EOF
+Listen 80
+
+<IfModule ssl_module>
+    Listen 443
+</IfModule>
+
+<IfModule mod_gnutls.c>
+    Listen 443
+</IfModule>
+EOF
     run a2enmod proxy proxy_http headers rewrite
     cat > /etc/apache2/sites-available/serverpanel-proxy.conf <<EOF
 <VirtualHost *:80>
@@ -1551,11 +1593,11 @@ setup_nginx_proxy_default_site() {
         return
     fi
 
-    info "Configuring Nginx default site to proxy :80 -> :${PANEL_PORT}"
+    info "Configuring Nginx default site to proxy :${NGINX_PRIMARY_PORT} -> :${PANEL_PORT}"
     cat > /etc/nginx/sites-available/serverpanel-proxy <<EOF
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
+    listen ${NGINX_PRIMARY_PORT} default_server;
+    listen [::]:${NGINX_PRIMARY_PORT} default_server;
     server_name _;
 
     location / {
@@ -1590,7 +1632,7 @@ EOF
         warn "Quick checks:"
         echo "  systemctl status nginx --no-pager -l"
         echo "  journalctl -u nginx -n 80 --no-pager"
-        echo "  ss -ltnp | grep ':80'"
+        echo "  ss -ltnp | grep ':${NGINX_PRIMARY_PORT}'"
     fi
 }
 
@@ -1607,6 +1649,8 @@ setup_application() {
 
     upsert_env_value ".env" "APP_ENV" "production"
     upsert_env_value ".env" "APP_DEBUG" "false"
+    upsert_env_value ".env" "APACHE_BACKEND_PORT" "${APACHE_BACKEND_PORT}"
+    upsert_env_value ".env" "NGINX_PRIMARY_PORT" "${NGINX_PRIMARY_PORT}"
 
     setup_mariadb_database
 
@@ -1645,6 +1689,34 @@ setup_permissions() {
     ok "Permissions updated."
 }
 
+configure_apache_backend_for_dual_stack() {
+    if [[ "${WEB_SERVER}" != "both" ]]; then
+        return
+    fi
+    if ! systemctl cat apache2.service >/dev/null 2>&1; then
+        warn "apache2.service not found. Cannot configure Apache backend listener."
+        return
+    fi
+
+    info "Configuring Apache backend listener on :${APACHE_BACKEND_PORT} (Nginx frontend :${NGINX_PRIMARY_PORT})"
+    run a2enmod proxy_fcgi setenvif rewrite headers || true
+    cat > /etc/apache2/ports.conf <<EOF
+# Nginx is the frontend in dual-stack mode; Apache only serves backend traffic.
+Listen ${APACHE_BACKEND_PORT}
+EOF
+    run a2dissite serverpanel-proxy || true
+    run a2dissite 000-default || true
+
+    if command -v apache2ctl >/dev/null 2>&1; then
+        if ! apache2ctl configtest; then
+            warn "Apache config test failed after backend-listener setup."
+            return
+        fi
+    fi
+
+    restart_apache_safely
+}
+
 start_services() {
     info "Step 5/5: Starting web/database services"
     if wants_apache; then
@@ -1675,11 +1747,10 @@ start_services() {
     run systemctl restart ssh
     setup_panel_startup_service
     run systemctl restart serverpanel
-    # apache + nginx cannot both listen on :80. If both selected, prefer nginx as frontend.
     if [[ "${WEB_SERVER}" == "both" ]]; then
-        run systemctl stop apache2 || true
+        configure_apache_backend_for_dual_stack
         setup_nginx_proxy_default_site
-        warn "Both selected: nginx is active on :80, apache is installed but stopped to avoid conflict."
+        ok "Both selected: Nginx frontend :${NGINX_PRIMARY_PORT}, Apache backend :${APACHE_BACKEND_PORT}."
     elif [[ "${WEB_SERVER}" == "apache" ]]; then
         setup_apache_proxy_default_site
     elif [[ "${WEB_SERVER}" == "nginx" ]]; then
@@ -1704,6 +1775,8 @@ show_summary() {
     echo -e "DB Password  : ${DB_PASSWORD}"
     echo -e "DB Service   : ${DB_SERVICE:-unknown}"
     echo -e "Panel Port   : ${PANEL_PORT}"
+    echo -e "Nginx Port   : ${NGINX_PRIMARY_PORT}"
+    echo -e "Apache Port  : ${APACHE_BACKEND_PORT}"
     echo -e "Panel URL    : http://${server_ip:-server_ip}:${PANEL_PORT}"
     if [[ "${LOGIN_CREDENTIALS_READY}" == "true" ]]; then
         echo -e "Creds Log    : /root/serverpanel_credentials.txt"
@@ -1787,7 +1860,7 @@ manage_single_service() {
 }
 
 repair_apache_proxy_menu() {
-    local port proxy_server
+    local port proxy_server nginx_port
     port="$(ask_input "Panel port for web proxy" "$(panel_port_from_service_file)")"
     if [[ ! "${port}" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
         warn "Invalid port: ${port}"
@@ -1797,6 +1870,10 @@ repair_apache_proxy_menu() {
     PANEL_PORT="${port}"
     case "${proxy_server}" in
         nginx)
+            nginx_port="$(ask_input "Nginx frontend port" "${NGINX_PRIMARY_PORT}")"
+            if [[ "${nginx_port}" =~ ^[0-9]+$ ]] && (( nginx_port >= 1 && nginx_port <= 65535 )); then
+                NGINX_PRIMARY_PORT="${nginx_port}"
+            fi
             WEB_SERVER="nginx"
             setup_nginx_proxy_default_site
             ;;
@@ -1808,12 +1885,16 @@ repair_apache_proxy_menu() {
 }
 
 show_port_diagnostics() {
-    run bash -lc "ss -ltnp | egrep ':22 |:80 |:443 |:8090 |:3306 ' || true"
+    run bash -lc "ss -ltnp | egrep ':22 |:${NGINX_PRIMARY_PORT} |:${APACHE_BACKEND_PORT} |:${PANEL_PORT} |:443 |:3306 ' || true"
 }
 
 restart_apache_safely() {
+    local apache_check_port="80"
     if ! systemctl cat apache2.service >/dev/null 2>&1; then
         return 0
+    fi
+    if [[ "${WEB_SERVER}" == "both" ]]; then
+        apache_check_port="${APACHE_BACKEND_PORT}"
     fi
 
     local apache_restart_status=0
@@ -1829,7 +1910,7 @@ restart_apache_safely() {
         warn "Quick checks:"
         echo "  systemctl status apache2 --no-pager -l"
         echo "  journalctl -u apache2 -n 80 --no-pager"
-        echo "  ss -ltnp | grep ':80'"
+        echo "  ss -ltnp | grep ':${apache_check_port}'"
     fi
 }
 
@@ -2151,14 +2232,14 @@ copy_server_root_file_menu() {
     fi
 
     if [[ "${apache_proxy_enabled}" == "true" || "${nginx_proxy_enabled}" == "true" ]]; then
-        warn "Web proxy mode is enabled (:80 -> panel port), so /var/www/html index file may not be visible at root URL."
+        warn "Web proxy mode is enabled (:${NGINX_PRIMARY_PORT} -> panel port), so /var/www/html index file may not be visible at root URL."
         warn "Use menu option 5 (Repair web proxy) to switch behavior, or disable proxy site manually if you want static root index."
     fi
 }
 
 run_custom_install_prompt() {
     local source_mode project_dir project_url base_url project_target
-    local web_choice web_server panel_port db_name db_user db_password
+    local web_choice web_server panel_port nginx_primary_port apache_backend_port db_name db_user db_password
     local php_versions php_default node_major
     local -a args=()
 
@@ -2206,6 +2287,14 @@ run_custom_install_prompt() {
 
     panel_port="$(ask_input "Panel port" "8090")"
     [[ -n "${panel_port}" ]] && args+=(--panel-port "${panel_port}")
+    if [[ "${web_server}" == "nginx" || "${web_server}" == "both" ]]; then
+        nginx_primary_port="$(ask_input "Nginx primary port" "80")"
+        [[ -n "${nginx_primary_port}" ]] && args+=(--nginx-primary-port "${nginx_primary_port}")
+    fi
+    if [[ "${web_server}" == "both" ]]; then
+        apache_backend_port="$(ask_input "Apache backend port" "8080")"
+        [[ -n "${apache_backend_port}" ]] && args+=(--apache-backend-port "${apache_backend_port}")
+    fi
 
     db_name="$(ask_input "DB name" "serverinstaller")"
     db_user="$(ask_input "DB user" "serverpanel")"
@@ -2250,7 +2339,7 @@ show_control_menu() {
     echo "3) Service status dashboard"
     echo "4) Manage service (start/stop/restart/logs)"
     echo "5) Repair web proxy (:80 -> panel port)"
-    echo "6) Port diagnostics (22/80/443/8090/3306)"
+    echo "6) Port diagnostics (22/web/backend/panel/443/3306)"
     echo "7) Update panel files (sync + build + restart)"
     echo "8) Copy root file (extra/serverroot.php -> index.php)"
     echo "9) Show credentials file"

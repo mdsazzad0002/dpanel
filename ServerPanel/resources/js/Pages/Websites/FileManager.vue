@@ -543,8 +543,8 @@ const formatBytes = (bytes) => {
                             <button type="button" class="rounded border border-slate-300 px-2 py-0.5 text-[11px] hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="openPath('')">Root</button>
                         </div>
                         <div class="mb-2 flex flex-wrap items-center gap-1 text-[11px]">
-                            <button v-for="crumb in breadcrumbParts" :key="crumb.path || 'home'" type="button" class="rounded-md border border-slate-300 px-2 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="openPath(crumb.path)">
-                                {{ crumb.label }}
+                            <button v-for="crumb in breadcrumbParts" :key="crumb.path || 'home'" type="button" class="max-w-[9rem] rounded-md border border-slate-300 px-2 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :title="crumb.label" @click="openPath(crumb.path)">
+                                <span class="block truncate">{{ crumb.label }}</span>
                             </button>
                         </div>
                         <div class="flex items-center gap-1">
@@ -562,12 +562,12 @@ const formatBytes = (bytes) => {
                         </button>
                         <div class="max-h-44 space-y-1 overflow-y-auto text-xs">
                             <div v-for="dir in directoryTree" :key="dir.path" class="space-y-1">
-                                <button type="button" class="w-full rounded-md px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800" :class="currentPath === dir.path ? 'bg-blue-50 dark:bg-blue-900/20' : ''" @click="openPath(dir.path)">
-                                    {{ dir.name }}
+                                <button type="button" class="w-full rounded-md px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800" :class="currentPath === dir.path ? 'bg-blue-50 dark:bg-blue-900/20' : ''" :title="dir.name" @click="openPath(dir.path)">
+                                    <span class="block truncate">{{ dir.name }}</span>
                                 </button>
                                 <div v-if="dir.children?.length" class="space-y-1 pl-4">
-                                    <button v-for="child in dir.children" :key="child.path" type="button" class="w-full rounded-md px-2 py-1 text-left text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800" :class="currentPath === child.path ? 'bg-blue-50 dark:bg-blue-900/20' : ''" @click="openPath(child.path)">
-                                        {{ child.name }}
+                                    <button v-for="child in dir.children" :key="child.path" type="button" class="w-full rounded-md px-2 py-1 text-left text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800" :class="currentPath === child.path ? 'bg-blue-50 dark:bg-blue-900/20' : ''" :title="child.name" @click="openPath(child.path)">
+                                        <span class="block truncate">{{ child.name }}</span>
                                     </button>
                                 </div>
                             </div>
@@ -581,14 +581,14 @@ const formatBytes = (bytes) => {
                         </div>
                         <input v-model="sidebarSearch" type="text" class="mb-2 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800" placeholder="Filter files..." />
                         <div class="max-h-[26rem] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                            <table class="min-w-full text-left text-[11px]">
+                            <table class="min-w-full table-fixed text-left text-[11px]">
                                 <thead class="bg-slate-50 dark:bg-slate-800">
                                     <tr>
-                                        <th class="px-2 py-1.5">
+                                        <th class="w-8 px-2 py-1.5">
                                             <input type="checkbox" :checked="filteredItems.length > 0 && filteredItems.every((item) => selectedPaths.includes(item.path))" @change="toggleSelectAll($event.target.checked)" />
                                         </th>
                                         <th class="px-2 py-1.5">Name</th>
-                                        <th class="px-2 py-1.5">Type</th>
+                                        <th class="w-16 px-2 py-1.5">Type</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -603,9 +603,11 @@ const formatBytes = (bytes) => {
                                         <td class="px-2 py-1.5" @click.stop>
                                             <input type="checkbox" :checked="selectedPaths.includes(item.path)" @change="toggleSelectPath(item.path, $event.target.checked)" />
                                         </td>
-                                        <td class="px-2 py-1.5 font-medium">
-                                            {{ item.name }}
-                                            <span v-if="unsavedFilePath === item.path" class="ml-1 text-[10px] font-semibold text-amber-600">*</span>
+                                        <td class="px-2 py-1.5 font-medium" :title="item.name">
+                                            <span class="block truncate">
+                                                {{ item.name }}
+                                                <span v-if="unsavedFilePath === item.path" class="ml-1 text-[10px] font-semibold text-amber-600">*</span>
+                                            </span>
                                         </td>
                                         <td class="px-2 py-1.5 uppercase">{{ item.type }}</td>
                                     </tr>

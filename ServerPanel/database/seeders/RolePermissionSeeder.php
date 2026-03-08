@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -30,9 +31,21 @@ class RolePermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $permission]);
         }
 
-        // Keep admin as the only default role.
+        // Keep only system user types.
+        $systemRoles = ['admin', 'reseller', 'general'];
+
+        // Migrate legacy role name to the current one.
+        $legacyGeneralRole = Role::query()->where('name', 'general_user')->first();
+        $generalRole = Role::firstOrCreate(['name' => 'general']);
+        if ($legacyGeneralRole && $legacyGeneralRole->id !== $generalRole->id) {
+            DB::table('model_has_roles')
+                ->where('role_id', $legacyGeneralRole->id)
+                ->update(['role_id' => $generalRole->id]);
+            $legacyGeneralRole->delete();
+        }
+
         Role::query()
-            ->where('name', '!=', 'admin')
+            ->whereNotIn('name', $systemRoles)
             ->get()
             ->each(function (Role $role): void {
                 $role->users()->detach();
@@ -43,6 +56,8 @@ class RolePermissionSeeder extends Seeder
         $allPermissions = Permission::query()->pluck('name')->values()->all();
 
         $admin = Role::firstOrCreate(['name' => 'admin']);
+        Role::firstOrCreate(['name' => 'reseller']);
+        Role::firstOrCreate(['name' => 'general']);
 
         $admin->syncPermissions($allPermissions);
     }

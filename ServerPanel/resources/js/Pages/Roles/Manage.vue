@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     roles: {
@@ -16,16 +16,6 @@ const props = defineProps({
 const page = usePage();
 
 const isSystemRole = (name) => props.systemRoles.includes(name);
-
-const deleteRole = (role) => {
-    if (!confirm(`Delete role "${role.name}"?`)) {
-        return;
-    }
-
-    router.delete(route('roles.manage.destroy', role.id), {
-        preserveScroll: true,
-    });
-};
 </script>
 
 <template>
@@ -33,14 +23,11 @@ const deleteRole = (role) => {
 
     <AuthenticatedLayout>
         <template #header>
-            <div class="flex items-center justify-between gap-3">
+            <div>
                 <div>
                     <h1 class="text-lg font-semibold">Manage Roles</h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">Role list only.</p>
                 </div>
-                <Link :href="route('roles.create')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    Create Role
-                </Link>
             </div>
         </template>
 
@@ -71,19 +58,9 @@ const deleteRole = (role) => {
                             <td class="px-4 py-3">{{ role.permissions.length }}</td>
                             <td class="px-4 py-3">{{ role.users_count }}</td>
                             <td class="px-4 py-3">
-                                <div class="flex gap-2">
-                                    <Link :href="route('roles.manage.edit', role.id)" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                                        Edit
-                                    </Link>
-                                    <button
-                                        type="button"
-                                        class="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
-                                        :disabled="isSystemRole(role.name)"
-                                        @click="deleteRole(role)"
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
+                                <Link :href="route('roles.manage.edit', role.id)" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                                    Edit
+                                </Link>
                             </td>
                         </tr>
                         <tr v-if="roles.length === 0">

@@ -24,8 +24,14 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'is_suspended',
+        'suspended_at',
         'reseller_id',
-        'package_id',
+        'disk_space_mb_limit',
+        'mail_accounts_limit',
+        'databases_limit',
+        'bandwidth_gb_limit',
+        'websites_limit',
     ];
 
     /**
@@ -48,6 +54,13 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_suspended' => 'boolean',
+            'suspended_at' => 'datetime',
+            'disk_space_mb_limit' => 'integer',
+            'mail_accounts_limit' => 'integer',
+            'databases_limit' => 'integer',
+            'bandwidth_gb_limit' => 'integer',
+            'websites_limit' => 'integer',
         ];
     }
 
@@ -60,10 +73,4 @@ class User extends Authenticatable
     {
         return $this->hasMany(User::class, 'reseller_id');
     }
-
-    public function package(): BelongsTo
-    {
-        return $this->belongsTo(Package::class);
-    }
-
 }

@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Package;
 use App\Models\User;
 use App\Models\Website;
 use Illuminate\Support\Facades\DB;
@@ -22,8 +21,6 @@ class AdminController extends Controller
         $stats = [
             'users_total' => User::count(),
             'users_roles' => $roleStats,
-            'packages_total' => Package::count(),
-            'packages_active' => Package::where('is_active', true)->count(),
             'website_requests_pending' => $this->countPendingWebsiteRequests(),
         ];
 

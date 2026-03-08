@@ -48,14 +48,6 @@ const roleSummary = computed(() => {
                 </article>
 
                 <article class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Packages</p>
-                    <p class="mt-2 text-2xl font-semibold">{{ stats.packages_total }}</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Active: {{ stats.packages_active }}
-                    </p>
-                </article>
-
-                <article class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                     <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Pending Website Requests</p>
                     <p class="mt-2 text-2xl font-semibold">{{ stats.website_requests_pending }}</p>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Generated from website create flow</p>
@@ -70,9 +62,6 @@ const roleSummary = computed(() => {
                     </Link>
                     <Link :href="route('databases.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
                         Databases
-                    </Link>
-                    <Link :href="route('packages.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                        Packages
                     </Link>
                     <Link :href="route('users.manage')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
                         Manage Users

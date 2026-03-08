@@ -22,6 +22,7 @@ const form = useForm({
     domain: props.websiteRequest.domain ?? '',
     root_path: props.websiteRequest.root_path ?? '',
     php_version: props.websiteRequest.php_version ?? '8.3',
+    app_installer: props.websiteRequest.app_installer ?? 'none',
     enable_ssl: !!props.websiteRequest.enable_ssl,
 });
 
@@ -153,6 +154,14 @@ const submit = () => {
                     <select v-model="form.php_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option v-for="version in availablePhpVersions" :key="version" :value="version">{{ version }}</option>
                     </select>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">App Installer</label>
+                    <select v-model="form.app_installer" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                        <option value="none">Starter Files (Default)</option>
+                        <option value="wordpress">WordPress</option>
+                    </select>
+                    <p v-if="form.errors.app_installer" class="mt-1 text-xs text-red-600">{{ form.errors.app_installer }}</p>
                 </div>
                 <div class="flex items-center gap-2 pt-7">
                     <input id="enable_ssl" v-model="form.enable_ssl" type="checkbox" class="rounded border-slate-300" />

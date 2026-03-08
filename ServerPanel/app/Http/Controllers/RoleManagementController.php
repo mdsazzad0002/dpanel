@@ -127,6 +127,6 @@ class RoleManagementController extends Controller
      */
     private function systemRoles(): array
     {
-        return ['admin'];
+        return ['admin', 'reseller', 'general'];
     }
 }

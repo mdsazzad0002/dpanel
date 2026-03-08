@@ -13,7 +13,37 @@ const sidebarNavRef = ref(null);
 const page = usePage();
 const SIDEBAR_SCROLL_KEY = 'layout.sidebar.scrollTop.v1';
 
-const menuItems = [
+const rolePanelConfig = {
+    admin: { label: 'Admin', hint: 'Super admin panel', icon: 'SA', iconClass: 'bi bi-person-gear', routeName: 'admin.panel', routeParams: { role: 'admin' }, roles: ['admin'] },
+    reseller: { label: 'Reseller', hint: 'Reseller panel', icon: 'RS', iconClass: 'bi bi-person-workspace', routeName: 'reseller.panel', routeParams: { role: 'reseller' }, roles: ['admin', 'reseller'] },
+    general: { label: 'General User', hint: 'General user panel', icon: 'US', iconClass: 'bi bi-person', routeName: 'user.panel', routeParams: { role: 'general' }, roles: ['admin', 'reseller', 'general', 'general_user'] },
+    general_user: { label: 'General User', hint: 'General user panel', icon: 'US', iconClass: 'bi bi-person', routeName: 'user.panel', routeParams: { role: 'general' }, roles: ['admin', 'reseller', 'general', 'general_user'] },
+};
+
+const userRoles = computed(() => page.props.auth?.roles ?? []);
+const userRoleLabel = computed(() => userRoles.value.join(', ') || 'No role');
+const userPermissions = computed(() => page.props.auth?.permissions ?? []);
+
+const dynamicUserManagementChildren = computed(() => {
+    const roleChildren = ['admin', 'reseller', 'general']
+        .map((role) => rolePanelConfig[role])
+        .filter(Boolean)
+        .filter((item) => item.routeName && route().has(item.routeName));
+
+    const adminRuleChildren = userRoles.value.includes('admin')
+        ? [
+            { label: 'Manage Roles', hint: 'Edit existing roles', icon: 'MR', iconClass: 'bi bi-shield-check', routeName: 'roles.manage', roles: ['admin'] },
+        ]
+        : [];
+
+    return [
+        ...roleChildren,
+        { label: 'All Users', hint: 'Shared users panel', icon: 'MU', iconClass: 'bi bi-person-plus', routeName: 'users.manage', roles: ['admin', 'reseller', 'general', 'general_user'] },
+        ...adminRuleChildren,
+    ];
+});
+
+const menuItems = computed(() => [
     { label: 'Dashboard', hint: 'Overview and stats', icon: 'DB', iconClass: 'bi bi-speedometer2', routeName: 'dashboard' },
     {
         id: 'user-management',
@@ -21,14 +51,7 @@ const menuItems = [
         hint: 'Admin, reseller and user panels',
         icon: 'UM',
         iconClass: 'bi bi-people',
-        children: [
-            { label: 'Admin', hint: 'Super admin panel', icon: 'SA', iconClass: 'bi bi-person-gear', routeName: 'admin.panel', roles: ['admin'] },
-            { label: 'Create Role', hint: 'Add a new role', icon: 'CR', iconClass: 'bi bi-plus-square', routeName: 'roles.create', roles: ['admin'] },
-            { label: 'Manage Roles', hint: 'Edit and delete roles', icon: 'MR', iconClass: 'bi bi-shield-check', routeName: 'roles.manage', roles: ['admin'] },
-            { label: 'Reseller', hint: 'Reseller panel', icon: 'RS', iconClass: 'bi bi-person-workspace', routeName: 'reseller.panel', roles: ['reseller'] },
-            { label: 'Individual User', hint: 'General user panel', icon: 'US', iconClass: 'bi bi-person', routeName: 'user.panel', roles: ['general_user'] },
-            { label: 'All Users', hint: 'Create users and assign roles', icon: 'MU', iconClass: 'bi bi-person-plus', routeName: 'users.manage', roles: ['admin', 'reseller'] },
-        ],
+        children: dynamicUserManagementChildren.value,
     },
     {
         id: 'web-management',
@@ -52,7 +75,7 @@ const menuItems = [
             { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'] },
         ],
     },
-    { label: 'Apache', hint: 'Service and vHost controls', icon: 'AP', iconClass: 'bi bi-hdd-network', routeName: 'apache.index', roles: ['admin', 'reseller'] },
+    { label: 'Apache + Nginx Setup', hint: 'Web server stack and vHost controls', icon: 'AP', iconClass: 'bi bi-hdd-network', routeName: 'apache.index', roles: ['admin', 'reseller'] },
     { label: 'Terminal', hint: 'Run server commands', icon: 'TM', iconClass: 'bi bi-terminal', routeName: 'terminal.index', roles: ['admin', 'reseller'] },
     {
         id: 'database-management',
@@ -78,25 +101,10 @@ const menuItems = [
         ],
     },
     { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'] },
-    {
-        id: 'package-management',
-        label: 'Package Management',
-        hint: 'Package operations',
-        icon: 'PK',
-        iconClass: 'bi bi-box-seam',
-        children: [
-            { label: 'Create Package', hint: 'Create package plan', icon: 'CP', iconClass: 'bi bi-box2-heart', routeName: 'packages.create', roles: ['admin', 'reseller'] },
-            { label: 'List Packages', hint: 'View package plans', icon: 'LP', iconClass: 'bi bi-collection', routeName: 'packages.list', roles: ['admin', 'reseller'] },
-        ],
-    },
     { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'] },
     { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'] },
     { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN', iconClass: 'bi bi-activity', routeName: 'monitoring.index', roles: ['admin', 'reseller'] },
-];
-
-const userRoles = computed(() => page.props.auth?.roles ?? []);
-const userRoleLabel = computed(() => userRoles.value.join(', ') || 'No role');
-const userPermissions = computed(() => page.props.auth?.permissions ?? []);
+]);
 
 const hasAccess = (item) => {
     if (item.permissions?.length) {
@@ -110,7 +118,7 @@ const hasAccess = (item) => {
 const filteredMenu = computed(() => {
     const needle = sidebarSearch.value.trim().toLowerCase();
 
-    return menuItems
+    return menuItems.value
         .map((item) => {
             if (!item.children) {
                 return hasAccess(item) ? item : null;
@@ -203,7 +211,7 @@ onMounted(() => {
     theme.value = savedTheme ?? (prefersDark ? 'dark' : 'light');
     applyTheme(theme.value);
 
-    const activeGroup = menuItems.find(
+    const activeGroup = menuItems.value.find(
         (item) =>
             item.children &&
             item.id &&
@@ -301,7 +309,7 @@ watch(
                             <Link
                                 v-for="child in item.children"
                                 :key="child.label"
-                                :href="route(child.routeName)"
+                                :href="route(child.routeName, child.routeParams ?? {})"
                                 preserve-state
                                 preserve-scroll
                                 :class="route().current(child.routeName) ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'"
@@ -353,19 +361,7 @@ watch(
                 </template>
             </nav>
 
-            <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-800/40">
-                <p class="mb-2 font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Your Roles</p>
-                <div class="flex flex-wrap gap-2">
-                    <span
-                        v-for="role in userRoles"
-                        :key="role"
-                        class="rounded bg-slate-200 px-2 py-1 font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-100"
-                    >
-                        {{ role }}
-                    </span>
-                    <span v-if="userRoles.length === 0" class="text-slate-500 dark:text-slate-400">No role</span>
-                </div>
-            </div>
+          
         </aside>
 
         <div class="md:pl-72">
@@ -433,10 +429,8 @@ watch(
             </main>
 
             <footer class="border-t border-slate-200 px-4 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:px-6">
-                Server Panel v1.0 - Websites, Mail, Apache, Terminal and more
+                Server Panel v1.0 - Websites, Mail, Apache + Nginx, Terminal and more
             </footer>
         </div>
     </div>
 </template>
-
-

@@ -15,6 +15,7 @@ class ApacheController extends Controller
     public function index(): Response
     {
         $apache = $this->apacheRuntimeInfo();
+        $nginx = $this->nginxRuntimeInfo();
         $websites = Website::query()
             ->orderBy('domain')
             ->get()
@@ -45,6 +46,10 @@ class ApacheController extends Controller
                 'service_status' => $this->detectServiceStatus($apache),
                 'shared_vhost_exists' => $sharedExists,
                 'shared_vhost_last_modified' => $sharedExists ? date('Y-m-d H:i:s', (int) @filemtime($sharedPath)) : null,
+            ],
+            'nginx' => [
+                ...$nginx,
+                'service_status' => $this->detectNginxServiceStatus($nginx),
             ],
             'websites' => $websites,
         ]);
@@ -195,6 +200,31 @@ class ApacheController extends Controller
     }
 
     /**
+     * @param array<string, mixed> $nginx
+     */
+    private function detectNginxServiceStatus(array $nginx): string
+    {
+        if ((string) ($nginx['os_family'] ?? '') === 'Windows') {
+            $serviceName = (string) ($nginx['service_name'] ?? 'wampnginx64');
+            $result = Process::timeout(20)->run("sc query \"{$serviceName}\"");
+            $output = strtoupper($result->output().' '.$result->errorOutput());
+            if (str_contains($output, 'RUNNING')) {
+                return 'running';
+            }
+            if (str_contains($output, 'STOPPED')) {
+                return 'stopped';
+            }
+
+            return 'unknown';
+        }
+
+        $result = Process::timeout(20)->run('systemctl is-active nginx');
+        $status = trim($result->output());
+
+        return $status !== '' ? $status : 'unknown';
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function apacheRuntimeInfo(): array
@@ -235,6 +265,47 @@ class ApacheController extends Controller
             'main_conf' => '/etc/apache2/apache2.conf',
             'shared_vhost_file' => trim((string) env('APACHE_SHARED_VHOST_FILE', '/etc/apache2/sites-available/serverpanel-shared.conf')),
             'include_hint' => 'Enable site: ln -s sites-available/serverpanel-shared.conf sites-enabled/serverpanel-shared.conf and reload apache.',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function nginxRuntimeInfo(): array
+    {
+        $os = strtoupper(PHP_OS_FAMILY);
+
+        if ($os === 'WINDOWS') {
+            $binaryPath = trim((string) env('NGINX_BINARY_PATH', ''));
+            if ($binaryPath === '') {
+                $matches = glob('D:/wamp64/bin/nginx/nginx*/nginx.exe');
+                $binaryPath = is_array($matches) && count($matches) > 0 ? (string) end($matches) : '';
+            }
+
+            $mainConf = trim((string) env('NGINX_MAIN_CONF_PATH', ''));
+            if ($mainConf === '' && $binaryPath !== '') {
+                $mainConf = dirname($binaryPath).DIRECTORY_SEPARATOR.'conf'.DIRECTORY_SEPARATOR.'nginx.conf';
+            }
+
+            return [
+                'os_family' => 'Windows',
+                'binary_path' => $binaryPath,
+                'service_name' => trim((string) env('NGINX_SERVICE_NAME', 'wampnginx64')),
+                'main_conf' => $mainConf,
+                'sites_available_path' => '',
+                'sites_enabled_path' => '',
+                'include_hint' => 'Use include directives in nginx.conf/server blocks for generated site files.',
+            ];
+        }
+
+        return [
+            'os_family' => 'Linux',
+            'binary_path' => '/usr/sbin/nginx',
+            'service_name' => 'nginx',
+            'main_conf' => '/etc/nginx/nginx.conf',
+            'sites_available_path' => '/etc/nginx/sites-available',
+            'sites_enabled_path' => '/etc/nginx/sites-enabled',
+            'include_hint' => 'Enable Nginx sites by linking sites-available to sites-enabled, then run nginx -t and reload.',
         ];
     }
 

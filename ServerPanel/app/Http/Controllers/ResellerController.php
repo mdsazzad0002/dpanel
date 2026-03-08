@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\DatabaseRequest;
-use App\Models\Package;
 use App\Models\Website;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -24,7 +23,6 @@ class ResellerController extends Controller
             'website_requests_pending' => $websiteRequests->where('status', 'pending')->count(),
             'database_requests_total' => $databaseRequests->count(),
             'database_requests_pending' => $databaseRequests->where('status', 'pending')->count(),
-            'active_packages' => Package::where('is_active', true)->count(),
         ];
 
         $recentWebsiteRequests = $websiteRequests

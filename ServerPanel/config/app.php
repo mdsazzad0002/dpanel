@@ -69,6 +69,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Web Server Ports
+    |--------------------------------------------------------------------------
+    |
+    | Nginx is used as the public frontend and Apache can run as the backend
+    | application server. These values keep vhost generation and scripts aligned.
+    |
+    */
+
+    'apache_backend_port' => env('APACHE_BACKEND_PORT', 8080),
+    'nginx_primary_port' => env('NGINX_PRIMARY_PORT', 80),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

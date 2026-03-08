@@ -48,11 +48,6 @@ const formatDate = (value) => {
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Pending: {{ stats.database_requests_pending }}</p>
                 </article>
 
-                <article class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Active Packages</p>
-                    <p class="mt-2 text-2xl font-semibold">{{ stats.active_packages }}</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">System packages available</p>
-                </article>
             </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
@@ -69,9 +64,6 @@ const formatDate = (value) => {
                     </Link>
                     <Link :href="route('databases.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
                         Database List
-                    </Link>
-                    <Link :href="route('packages.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                        Packages
                     </Link>
                     <Link :href="route('user.panel')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
                         User Panel

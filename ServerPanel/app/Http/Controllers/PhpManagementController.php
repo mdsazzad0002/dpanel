@@ -61,12 +61,20 @@ class PhpManagementController extends Controller
         'allow_url_fopen' => 'On',
     ];
 
-    public function manager(Request $request): Response
+    public function manager(Request $request): Response|JsonResponse
     {
         $state = $this->readState();
         $selectedVersion = (string) $request->query('version', $state['default_version']);
+        $payload = $this->buildManagerPayload($state, $selectedVersion);
 
-        return Inertia::render('PhpManager', $this->buildManagerPayload($state, $selectedVersion));
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'data' => $payload,
+            ]);
+        }
+
+        return Inertia::render('PhpManager', $payload);
     }
 
     public function versions(): Response
@@ -961,6 +969,8 @@ class PhpManagementController extends Controller
             'availableExtensions' => $availableExtensions,
             'extensionStates' => $extensionStates,
             'configValues' => $state['config'][$selectedVersion] ?? self::DEFAULT_CONFIG,
+            'configByVersion' => $state['config'],
+            'extensionStatesByVersion' => $state['extensions'],
         ];
     }
 }

@@ -7,6 +7,7 @@ use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,8 @@ class WebsiteController extends Controller
     private const DEFAULT_SITE_DIR = 'public_html';
     private const PHP_SETTINGS_TABLE = 'php_management_settings';
     private const PHP_STATE_KEY = 'state';
+    private const DEFAULT_APACHE_BACKEND_PORT = 8080;
+    private const DEFAULT_NGINX_PRIMARY_PORT = 80;
     /**
      * @var array<int, string>
      */
@@ -61,6 +64,44 @@ class WebsiteController extends Controller
         return Inertia::render('Websites/Create', [
             'serverBaseDir' => $this->websiteBaseDirectory(),
             'phpVersions' => $this->getPhpVersionsForWebsites(),
+        ]);
+    }
+
+    public function searchParentDomains(Request $request): JsonResponse
+    {
+        $query = strtolower(trim((string) $request->query('q', '')));
+        $limit = (int) $request->query('limit', 10);
+        $limit = max(1, min($limit, 10));
+
+        $domains = collect($this->readRequests())
+            ->map(function (array $item): array {
+                $domain = $this->normalizeDomain((string) ($item['domain'] ?? ''));
+                $rootPath = (string) ($item['root_path'] ?? '');
+
+                return [
+                    'domain' => $domain,
+                    'root_path' => $rootPath,
+                ];
+            })
+            ->filter(function (array $item) use ($query): bool {
+                $domain = (string) ($item['domain'] ?? '');
+                if ($domain === '') {
+                    return false;
+                }
+
+                if ($query === '') {
+                    return true;
+                }
+
+                return str_contains($domain, $query);
+            })
+            ->unique('domain')
+            ->take($limit)
+            ->values()
+            ->all();
+
+        return response()->json([
+            'data' => $domains,
         ]);
     }
 
@@ -130,6 +171,7 @@ class WebsiteController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $this->validatePayload($request);
+        $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? 'none')));
         $validated['domain'] = $this->normalizeDomain($validated['domain']);
         $domainExists = collect($this->readRequests())
             ->contains(fn (array $item): bool => $this->normalizeDomain((string) ($item['domain'] ?? '')) === $validated['domain']);
@@ -149,11 +191,22 @@ class WebsiteController extends Controller
             $exitCode = 0;
             exec($command . ' 2>&1', $output, $exitCode);
             $this->applyWebsiteFilesystemIsolation($validated['site_owner'], $validated['root_path']);
-            $this->initializeWebsiteStarterFiles(
+            $appInstallerResult = $this->installSelectedApplication(
+                $validated['app_installer'],
                 $validated['root_path'],
                 $validated['domain'],
                 (string) $validated['php_version'],
             );
+            if ($appInstallerResult['attempted'] && ! $appInstallerResult['installed']) {
+                return back()->withErrors(['app_installer' => $appInstallerResult['message']]);
+            }
+            if (! $appInstallerResult['installed']) {
+                $this->initializeWebsiteStarterFiles(
+                    $validated['root_path'],
+                    $validated['domain'],
+                    (string) $validated['php_version'],
+                );
+            }
             $this->relocateApacheDefaultPage();
             $this->syncLiveWebVhost(
                 $validated['domain'],
@@ -178,6 +231,7 @@ class WebsiteController extends Controller
             'root_path' => $validated['root_path'],
             'site_owner' => $validated['site_owner'],
             'php_version' => $validated['php_version'],
+            'app_installer' => $validated['app_installer'],
             'enable_ssl' => $validated['enable_ssl'],
             'assigned_user_id' => null,
             'assigned_reseller_id' => $defaultResellerId,
@@ -187,7 +241,8 @@ class WebsiteController extends Controller
         ];
         $this->writeRequests($requests);
 
-        return redirect()->route('websites.list')->with('success', 'Website request created successfully.');
+        $installerLabel = $validated['app_installer'] === 'wordpress' ? 'WordPress' : 'Starter';
+        return redirect()->route('websites.list')->with('success', "Website request created successfully. Installer: {$installerLabel}.");
     }
 
     /**
@@ -249,6 +304,10 @@ class WebsiteController extends Controller
             [
                 'label' => 'Status',
                 'value' => $runtimeStatus,
+            ],
+            [
+                'label' => 'Installer',
+                'value' => strtolower((string) ($website['app_installer'] ?? 'none')) === 'wordpress' ? 'wordpress' : 'starter',
             ],
             [
                 'label' => 'Root Path',
@@ -323,6 +382,82 @@ class WebsiteController extends Controller
         }
 
         return redirect()->route('websites.manage', $id)->with('success', $message !== '' ? $message : 'Vhost sync completed.');
+    }
+
+    public function installWordPress(string $id): RedirectResponse
+    {
+        $requests = collect($this->readRequests());
+        $website = $requests->firstWhere('id', $id);
+        if (! is_array($website)) {
+            return redirect()->route('websites.list')->with('error', 'Website request not found.');
+        }
+
+        $website = $this->normalizeWebsiteRecord($website);
+        $domain = (string) ($website['domain'] ?? '');
+        $rootPath = (string) ($website['root_path'] ?? '');
+        $phpVersion = (string) ($website['php_version'] ?? '8.3');
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($rootPath));
+
+        if ($domain === '' || $rootPath === '') {
+            return redirect()->route('websites.manage', $id)->with('error', 'Domain or root path is missing for WordPress installation.');
+        }
+
+        if ($this->hasWordPressFiles($rootPath)) {
+            $updatedRequests = $requests->map(function (array $item) use ($id): array {
+                if ((string) ($item['id'] ?? '') !== $id) {
+                    return $item;
+                }
+
+                $item['app_installer'] = 'wordpress';
+                $item['updated_at'] = now()->toIso8601String();
+
+                return $item;
+            })->values()->all();
+
+            $this->writeRequests($updatedRequests);
+            return redirect()->route('websites.manage', $id)->with('success', 'WordPress is already installed for this website.');
+        }
+
+        try {
+            if ($siteOwner !== '') {
+                $this->applyWebsiteFilesystemIsolation($siteOwner, $rootPath);
+            }
+
+            $installerResult = $this->installSelectedApplication('wordpress', $rootPath, $domain, $phpVersion);
+            if (! $installerResult['installed']) {
+                $message = trim((string) ($installerResult['message'] ?? ''));
+                return redirect()->route('websites.manage', $id)->with('error', $message !== '' ? $message : 'WordPress installation failed.');
+            }
+
+            $this->relocateApacheDefaultPage();
+            $this->syncLiveWebVhost($domain, $rootPath, $phpVersion);
+        } catch (\Throwable $e) {
+            return redirect()->route('websites.manage', $id)->with('error', $e->getMessage());
+        }
+
+        $runtimeStatus = strtolower((string) ($website['status'] ?? '')) === 'disabled'
+            ? 'disabled'
+            : $this->detectRuntimeStatus([
+                'domain' => $domain,
+                'root_path' => $rootPath,
+                'status' => (string) ($website['status'] ?? 'pending'),
+            ]);
+
+        $updated = $requests->map(function (array $item) use ($id, $runtimeStatus): array {
+            if ((string) ($item['id'] ?? '') !== $id) {
+                return $item;
+            }
+
+            $item['app_installer'] = 'wordpress';
+            $item['status'] = $runtimeStatus;
+            $item['updated_at'] = now()->toIso8601String();
+
+            return $item;
+        })->values()->all();
+
+        $this->writeRequests($updated);
+
+        return redirect()->route('websites.manage', $id)->with('success', 'WordPress installed successfully with one click.');
     }
 
     /**
@@ -423,6 +558,7 @@ class WebsiteController extends Controller
         abort_if($existingRequest === null, 404);
 
         $validated = $this->validatePayload($request);
+        $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? ($existingRequest['app_installer'] ?? 'none'))));
         $validated['domain'] = $this->normalizeDomain($validated['domain']);
         $domainExists = collect($this->readRequests())
             ->contains(function (array $item) use ($id, $validated): bool {
@@ -462,6 +598,7 @@ class WebsiteController extends Controller
             $item['root_path'] = $validated['root_path'];
             $item['site_owner'] = $validated['site_owner'];
             $item['php_version'] = $validated['php_version'];
+            $item['app_installer'] = $validated['app_installer'];
             $item['enable_ssl'] = $validated['enable_ssl'];
             $item['command'] = $this->buildCommand($validated);
             $item['status'] = $this->detectRuntimeStatus([
@@ -906,6 +1043,38 @@ class WebsiteController extends Controller
         return redirect()->route('websites.list')->with('success', 'Website request deleted successfully.');
     }
 
+    public function updateStatus(Request $request, string $id): RedirectResponse
+    {
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:enabled,disabled'],
+        ]);
+
+        $requests = collect($this->readRequests());
+        $existingRequest = $requests->firstWhere('id', $id);
+        if (! is_array($existingRequest)) {
+            return redirect()->route('websites.list')->with('error', 'Website request not found.');
+        }
+
+        $targetStatus = $validated['status'] === 'disabled' ? 'disabled' : 'pending';
+
+        $updated = $requests->map(function (array $item) use ($id, $targetStatus): array {
+            if ((string) ($item['id'] ?? '') !== $id) {
+                return $item;
+            }
+
+            $item['status'] = $targetStatus;
+            $item['updated_at'] = now()->toIso8601String();
+
+            return $item;
+        })->values()->all();
+
+        $this->writeRequests($updated);
+
+        return redirect()->route('websites.list')->with('success', $validated['status'] === 'disabled'
+            ? 'Website disabled successfully.'
+            : 'Website enabled successfully.');
+    }
+
     /**
      * Build execution command from payload.
      *
@@ -949,6 +1118,7 @@ class WebsiteController extends Controller
                 },
             ],
             'php_version' => ['required', 'string', 'max:10'],
+            'app_installer' => ['nullable', 'string', 'in:none,wordpress'],
             'enable_ssl' => ['boolean'],
         ]);
     }
@@ -986,14 +1156,10 @@ class WebsiteController extends Controller
 
         $parts = array_values(array_filter(explode('/', $suffix), fn (string $part) => $part !== '' && $part !== '.' && $part !== '..'));
         $owner = $this->normalizeSiteOwner((string) ($parts[0] ?? $layout['site_owner']), $layout['site_owner']);
-        if ($owner !== $layout['site_owner']) {
-            return $layout['root_path'];
-        }
-
         $requestedSiteDir = (string) ($parts[1] ?? '');
         $siteDir = $this->normalizeSiteDirectory($requestedSiteDir, $layout['site_dir']);
 
-        return $homeBase."/{$layout['site_owner']}/{$siteDir}";
+        return $homeBase."/{$owner}/{$siteDir}";
     }
 
     /**
@@ -1215,9 +1381,14 @@ class WebsiteController extends Controller
             $parts[] = escapeshellarg($this->normalizeDomain($oldDomain));
         }
 
+        $envPrefix = sprintf(
+            'APACHE_BACKEND_PORT=%d NGINX_PRIMARY_PORT=%d ',
+            $this->apacheBackendPort(),
+            $this->nginxPrimaryPort(),
+        );
         $output = [];
         $exitCode = 1;
-        @exec(implode(' ', $parts).' 2>&1', $output, $exitCode);
+        @exec($envPrefix.implode(' ', $parts).' 2>&1', $output, $exitCode);
         $message = trim(implode("\n", $output));
 
         if ($exitCode !== 0) {
@@ -1533,6 +1704,237 @@ HTML;
     }
 
     /**
+     * @return array{attempted: bool, installed: bool, message: string}
+     */
+    private function installSelectedApplication(string $installer, string $rootPath, string $domain, string $phpVersion): array
+    {
+        $normalized = strtolower(trim($installer));
+        if ($normalized === '' || $normalized === 'none') {
+            return [
+                'attempted' => false,
+                'installed' => false,
+                'message' => '',
+            ];
+        }
+
+        if ($normalized === 'wordpress') {
+            return $this->installWordPressApplication($rootPath);
+        }
+
+        return [
+            'attempted' => true,
+            'installed' => false,
+            'message' => "Unsupported installer selected: {$normalized}.",
+        ];
+    }
+
+    private function hasWordPressFiles(string $rootPath): bool
+    {
+        $normalizedRootPath = rtrim(str_replace('\\', '/', trim($rootPath)), '/');
+        if ($normalizedRootPath === '') {
+            return false;
+        }
+
+        return is_file($normalizedRootPath.'/wp-includes/version.php')
+            || is_file($normalizedRootPath.'/wp-config.php')
+            || is_dir($normalizedRootPath.'/wp-admin');
+    }
+
+    /**
+     * @return array{attempted: bool, installed: bool, message: string}
+     */
+    private function installWordPressApplication(string $rootPath): array
+    {
+        $rootPath = trim(str_replace('\\', '/', $rootPath));
+        if ($rootPath === '') {
+            return [
+                'attempted' => true,
+                'installed' => false,
+                'message' => 'WordPress install failed: empty website root path.',
+            ];
+        }
+
+        if (! is_dir($rootPath) && ! @mkdir($rootPath, 0755, true) && ! is_dir($rootPath)) {
+            return [
+                'attempted' => true,
+                'installed' => false,
+                'message' => 'WordPress install failed: cannot create website root directory.',
+            ];
+        }
+
+        if (! class_exists(ZipArchive::class)) {
+            return [
+                'attempted' => true,
+                'installed' => false,
+                'message' => 'WordPress install failed: PHP zip extension is not available.',
+            ];
+        }
+
+        $tmpZip = @tempnam(sys_get_temp_dir(), 'wpzip_');
+        if (! is_string($tmpZip) || $tmpZip === '') {
+            return [
+                'attempted' => true,
+                'installed' => false,
+                'message' => 'WordPress install failed: cannot create temporary zip file.',
+            ];
+        }
+
+        $tmpExtract = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/').'/wp_extract_'.bin2hex(random_bytes(6));
+        $downloaded = false;
+
+        try {
+            $downloaded = @copy('https://wordpress.org/latest.zip', $tmpZip);
+            if (! $downloaded && function_exists('curl_init')) {
+                $ch = @curl_init('https://wordpress.org/latest.zip');
+                if ($ch !== false) {
+                    @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    @curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                    @curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+                    @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+                    $body = @curl_exec($ch);
+                    $statusCode = (int) @curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    @curl_close($ch);
+                    if (is_string($body) && $body !== '' && $statusCode >= 200 && $statusCode < 400) {
+                        $downloaded = @file_put_contents($tmpZip, $body) !== false;
+                    }
+                }
+            }
+
+            if (! $downloaded) {
+                return [
+                    'attempted' => true,
+                    'installed' => false,
+                    'message' => 'WordPress install failed: unable to download latest package from wordpress.org.',
+                ];
+            }
+
+            $zip = new ZipArchive();
+            if ($zip->open($tmpZip) !== true) {
+                return [
+                    'attempted' => true,
+                    'installed' => false,
+                    'message' => 'WordPress install failed: invalid downloaded zip package.',
+                ];
+            }
+
+            if (! @mkdir($tmpExtract, 0755, true) && ! is_dir($tmpExtract)) {
+                $zip->close();
+                return [
+                    'attempted' => true,
+                    'installed' => false,
+                    'message' => 'WordPress install failed: cannot create extraction directory.',
+                ];
+            }
+
+            $extractOk = $zip->extractTo($tmpExtract);
+            $zip->close();
+            if (! $extractOk) {
+                return [
+                    'attempted' => true,
+                    'installed' => false,
+                    'message' => 'WordPress install failed: cannot extract package.',
+                ];
+            }
+
+            $sourceDir = $tmpExtract.'/wordpress';
+            if (! is_dir($sourceDir)) {
+                return [
+                    'attempted' => true,
+                    'installed' => false,
+                    'message' => 'WordPress install failed: extracted wordpress directory not found.',
+                ];
+            }
+
+            $copyResult = $this->copyDirectoryContentsRecursive($sourceDir, $rootPath);
+            if (! $copyResult['success']) {
+                return [
+                    'attempted' => true,
+                    'installed' => false,
+                    'message' => 'WordPress install failed: '.$copyResult['message'],
+                ];
+            }
+
+            return [
+                'attempted' => true,
+                'installed' => true,
+                'message' => 'WordPress package installed successfully.',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'attempted' => true,
+                'installed' => false,
+                'message' => 'WordPress install failed: '.$e->getMessage(),
+            ];
+        } finally {
+            if (is_file($tmpZip)) {
+                @unlink($tmpZip);
+            }
+            if (is_dir($tmpExtract)) {
+                $this->deleteDirectoryRecursive($tmpExtract);
+            }
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function copyDirectoryContentsRecursive(string $sourceDirectory, string $targetDirectory): array
+    {
+        if (! is_dir($sourceDirectory)) {
+            return [
+                'success' => false,
+                'message' => 'Source directory does not exist.',
+            ];
+        }
+
+        if (! is_dir($targetDirectory) && ! @mkdir($targetDirectory, 0755, true) && ! is_dir($targetDirectory)) {
+            return [
+                'success' => false,
+                'message' => 'Cannot create target directory.',
+            ];
+        }
+
+        $items = @scandir($sourceDirectory);
+        if (! is_array($items)) {
+            return [
+                'success' => false,
+                'message' => 'Cannot read source directory entries.',
+            ];
+        }
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            $sourcePath = $sourceDirectory.'/'.$item;
+            $targetPath = $targetDirectory.'/'.$item;
+
+            if (is_dir($sourcePath)) {
+                $result = $this->copyDirectoryContentsRecursive($sourcePath, $targetPath);
+                if (! $result['success']) {
+                    return $result;
+                }
+                continue;
+            }
+
+            if (! @copy($sourcePath, $targetPath)) {
+                return [
+                    'success' => false,
+                    'message' => "Cannot copy file: {$item}",
+                ];
+            }
+
+            @chmod($targetPath, 0644);
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Copied.',
+        ];
+    }
+
+    /**
      * Move default Apache page to extra directory once.
      */
     private function relocateApacheDefaultPage(): void
@@ -1591,9 +1993,9 @@ HTML;
         $isRoot = function_exists('posix_geteuid') && posix_geteuid() === 0;
         $scriptResult = $this->runSyncVhostScript('sync', $normalizedDomain, $rootPath, $phpVersion);
         if ($scriptResult['ran'] && $scriptResult['success']) {
-            $apacheConf = $this->apacheVhostPath($normalizedDomain);
-            $nginxConf = $this->nginxVhostPath($normalizedDomain);
-            $nginxEnabled = $this->nginxEnabledVhostPath($normalizedDomain);
+            $apacheConf = $this->existingApacheVhostPath($normalizedDomain);
+            $nginxConf = $this->existingNginxVhostPath($normalizedDomain);
+            $nginxEnabled = $this->existingNginxEnabledVhostPath($normalizedDomain);
 
             if (is_file($apacheConf)) {
                 $generated = true;
@@ -1618,7 +2020,7 @@ HTML;
 
         if ($this->canManageApacheVhosts()) {
             $this->syncLiveApacheVhost($normalizedDomain, $rootPath, $phpVersion);
-            $apacheConf = $this->apacheVhostPath($normalizedDomain);
+            $apacheConf = $this->existingApacheVhostPath($normalizedDomain);
             if (is_file($apacheConf)) {
                 $generated = true;
                 $messages[] = "Apache vhost synced: {$apacheConf}";
@@ -1637,8 +2039,8 @@ HTML;
 
         if ($this->canManageNginxVhosts()) {
             $this->syncLiveNginxVhost($normalizedDomain, $rootPath, $phpVersion);
-            $nginxConf = $this->nginxVhostPath($normalizedDomain);
-            $nginxEnabled = $this->nginxEnabledVhostPath($normalizedDomain);
+            $nginxConf = $this->existingNginxVhostPath($normalizedDomain);
+            $nginxEnabled = $this->existingNginxEnabledVhostPath($normalizedDomain);
             if (is_file($nginxConf) && (is_link($nginxEnabled) || is_file($nginxEnabled))) {
                 $generated = true;
                 $messages[] = "Nginx vhost synced: {$nginxConf}";
@@ -1684,7 +2086,16 @@ HTML;
         }
 
         $confPath = $this->apacheVhostPath($domain);
+        $legacyConfPath = $this->apacheLegacyVhostPath($domain);
         @file_put_contents($confPath, $this->buildApacheVhostConfig($domain, $rootPath, $phpVersion));
+        @chmod($confPath, 0644);
+
+        if ($legacyConfPath !== $confPath) {
+            $this->runSystemCommand('a2dissite '.escapeshellarg(basename($legacyConfPath)));
+            if (is_file($legacyConfPath)) {
+                @unlink($legacyConfPath);
+            }
+        }
 
         if ($oldDomain !== null) {
             $normalizedOldDomain = $this->normalizeDomain($oldDomain);
@@ -1709,19 +2120,55 @@ HTML;
             return;
         }
 
-        $confPath = $this->apacheVhostPath($domain);
-        $confName = basename($confPath);
-
-        if (is_file($confPath)) {
+        foreach ($this->apacheVhostPaths($domain) as $confPath) {
+            $confName = basename($confPath);
             $this->runSystemCommand('a2dissite '.escapeshellarg($confName));
-            @unlink($confPath);
-            $this->runSystemCommand('apache2ctl -t && systemctl reload apache2');
+            if (is_file($confPath)) {
+                @unlink($confPath);
+            }
         }
+
+        $this->runSystemCommand('apache2ctl -t && systemctl reload apache2');
     }
 
     private function apacheVhostPath(string $domain): string
     {
+        $domain = $this->normalizeDomain($domain);
+
+        return '/etc/apache2/sites-available/'.$this->vhostFileBaseName($domain).'.conf';
+    }
+
+    private function apacheLegacyVhostPath(string $domain): string
+    {
+        $domain = $this->normalizeDomain($domain);
+
         return '/etc/apache2/sites-available/'.$domain.'.conf';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function apacheVhostPaths(string $domain): array
+    {
+        $primaryPath = $this->apacheVhostPath($domain);
+        $legacyPath = $this->apacheLegacyVhostPath($domain);
+
+        if ($legacyPath === $primaryPath) {
+            return [$primaryPath];
+        }
+
+        return [$primaryPath, $legacyPath];
+    }
+
+    private function existingApacheVhostPath(string $domain): string
+    {
+        foreach ($this->apacheVhostPaths($domain) as $path) {
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+
+        return $this->apacheVhostPath($domain);
     }
 
     private function syncLiveNginxVhost(string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null): void
@@ -1736,8 +2183,18 @@ HTML;
         }
 
         $confPath = $this->nginxVhostPath($domain);
+        $enabledPath = $this->nginxEnabledVhostPath($domain);
+        $legacyConfPath = $this->nginxLegacyVhostPath($domain);
+        $legacyEnabledPath = $this->nginxLegacyEnabledVhostPath($domain);
         @file_put_contents($confPath, $this->buildNginxVhostConfig($domain, $rootPath, $phpVersion));
         @chmod($confPath, 0644);
+
+        if ($legacyEnabledPath !== $enabledPath && (is_link($legacyEnabledPath) || is_file($legacyEnabledPath))) {
+            @unlink($legacyEnabledPath);
+        }
+        if ($legacyConfPath !== $confPath && is_file($legacyConfPath)) {
+            @unlink($legacyConfPath);
+        }
 
         if ($oldDomain !== null) {
             $normalizedOldDomain = $this->normalizeDomain($oldDomain);
@@ -1746,8 +2203,8 @@ HTML;
             }
         }
 
-        $enabledPath = $this->nginxEnabledVhostPath($domain);
-        if (! is_link($enabledPath)) {
+        $currentLinkTarget = is_link($enabledPath) ? (string) @readlink($enabledPath) : '';
+        if (! is_link($enabledPath) || $currentLinkTarget !== $confPath) {
             @unlink($enabledPath);
             @symlink($confPath, $enabledPath);
         }
@@ -1765,13 +2222,16 @@ HTML;
             return;
         }
 
-        $confPath = $this->nginxVhostPath($domain);
-        $enabledPath = $this->nginxEnabledVhostPath($domain);
-        if (is_link($enabledPath) || is_file($enabledPath)) {
-            @unlink($enabledPath);
+        foreach ($this->nginxEnabledVhostPaths($domain) as $enabledPath) {
+            if (is_link($enabledPath) || is_file($enabledPath)) {
+                @unlink($enabledPath);
+            }
         }
-        if (is_file($confPath)) {
-            @unlink($confPath);
+
+        foreach ($this->nginxVhostPaths($domain) as $confPath) {
+            if (is_file($confPath)) {
+                @unlink($confPath);
+            }
         }
 
         $this->runSystemCommand('nginx -t && systemctl reload nginx');
@@ -1779,12 +2239,82 @@ HTML;
 
     private function nginxVhostPath(string $domain): string
     {
-        return '/etc/nginx/sites-available/'.$domain.'.conf';
+        $domain = $this->normalizeDomain($domain);
+
+        return '/etc/nginx/sites-available/'.$this->vhostFileBaseName($domain).'.conf';
     }
 
     private function nginxEnabledVhostPath(string $domain): string
     {
+        $domain = $this->normalizeDomain($domain);
+
+        return '/etc/nginx/sites-enabled/'.$this->vhostFileBaseName($domain).'.conf';
+    }
+
+    private function nginxLegacyVhostPath(string $domain): string
+    {
+        $domain = $this->normalizeDomain($domain);
+
+        return '/etc/nginx/sites-available/'.$domain.'.conf';
+    }
+
+    private function nginxLegacyEnabledVhostPath(string $domain): string
+    {
+        $domain = $this->normalizeDomain($domain);
+
         return '/etc/nginx/sites-enabled/'.$domain.'.conf';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function nginxVhostPaths(string $domain): array
+    {
+        $primaryPath = $this->nginxVhostPath($domain);
+        $legacyPath = $this->nginxLegacyVhostPath($domain);
+
+        if ($legacyPath === $primaryPath) {
+            return [$primaryPath];
+        }
+
+        return [$primaryPath, $legacyPath];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function nginxEnabledVhostPaths(string $domain): array
+    {
+        $primaryPath = $this->nginxEnabledVhostPath($domain);
+        $legacyPath = $this->nginxLegacyEnabledVhostPath($domain);
+
+        if ($legacyPath === $primaryPath) {
+            return [$primaryPath];
+        }
+
+        return [$primaryPath, $legacyPath];
+    }
+
+    private function existingNginxVhostPath(string $domain): string
+    {
+        foreach ($this->nginxVhostPaths($domain) as $path) {
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+
+        return $this->nginxVhostPath($domain);
+    }
+
+    private function existingNginxEnabledVhostPath(string $domain): string
+    {
+        foreach ($this->nginxEnabledVhostPaths($domain) as $path) {
+            if (is_link($path) || is_file($path)) {
+                return $path;
+            }
+        }
+
+        return $this->nginxEnabledVhostPath($domain);
     }
 
     private function buildApacheVhostConfig(string $domain, string $rootPath, string $phpVersion): string
@@ -1793,10 +2323,12 @@ HTML;
         $rootPath = trim(str_replace('\\', '/', $rootPath));
         $phpVersion = $this->normalizePhpVersionForSocket($phpVersion);
         $serverAlias = $this->shouldAddWwwAlias($domain) ? "\n    ServerAlias www.{$domain}" : '';
+        $backendPort = $this->apacheBackendPort();
         $socketPath = "/run/php/php{$phpVersion}-fpm.sock";
+        $logName = $this->vhostLogBaseName($domain);
 
         return <<<CONF
-<VirtualHost *:80>
+<VirtualHost *:{$backendPort}>
     ServerName {$domain}{$serverAlias}
     DocumentRoot {$rootPath}
 
@@ -1811,8 +2343,8 @@ HTML;
         SetHandler "proxy:unix:{$socketPath}|fcgi://localhost/"
     </FilesMatch>
 
-    ErrorLog \${APACHE_LOG_DIR}/{$domain}_error.log
-    CustomLog \${APACHE_LOG_DIR}/{$domain}_access.log combined
+    ErrorLog \${APACHE_LOG_DIR}/{$logName}_error.log
+    CustomLog \${APACHE_LOG_DIR}/{$logName}_access.log combined
 </VirtualHost>
 
 CONF;
@@ -1821,36 +2353,31 @@ CONF;
     private function buildNginxVhostConfig(string $domain, string $rootPath, string $phpVersion): string
     {
         $domain = $this->normalizeDomain($domain);
-        $rootPath = trim(str_replace('\\', '/', $rootPath));
-        $phpVersion = $this->normalizePhpVersionForSocket($phpVersion);
+        $listenPort = $this->nginxPrimaryPort();
+        $backendPort = $this->apacheBackendPort();
+        $logName = $this->vhostLogBaseName($domain);
         $serverAlias = $this->shouldAddWwwAlias($domain) ? " www.{$domain}" : '';
-        $socketPath = "/run/php/php{$phpVersion}-fpm.sock";
 
         return <<<CONF
 server {
-    listen 80;
+    listen {$listenPort};
+    listen [::]:{$listenPort};
     server_name {$domain}{$serverAlias};
-    root {$rootPath};
-    index index.php index.html index.htm;
 
-    access_log /var/log/nginx/{$domain}_access.log;
-    error_log /var/log/nginx/{$domain}_error.log;
+    access_log /var/log/nginx/{$logName}_access.log;
+    error_log /var/log/nginx/{$logName}_error.log;
 
     location / {
-        try_files \$uri \$uri/ /index.php?\$query_string;
-    }
-
-    location ~ \.php$ {
-        include fastcgi_params;
-        fastcgi_split_path_info ^(.+\.php)(/.+)$;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        fastcgi_param PATH_INFO \$fastcgi_path_info;
-        fastcgi_index index.php;
-        fastcgi_pass unix:{$socketPath};
-    }
-
-    location ~ /\.ht {
-        deny all;
+        proxy_pass http://127.0.0.1:{$backendPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
     }
 }
 
@@ -1884,8 +2411,8 @@ CONF;
             ];
         }
 
-        $apachePath = $this->apacheVhostPath($domain);
-        $nginxPath = $this->nginxVhostPath($domain);
+        $apachePath = $this->existingApacheVhostPath($domain);
+        $nginxPath = $this->existingNginxVhostPath($domain);
 
         $apacheExists = is_file($apachePath);
         $nginxExists = is_file($nginxPath);
@@ -1921,6 +2448,65 @@ CONF;
         }
 
         return $normalized;
+    }
+
+    private function apacheBackendPort(): int
+    {
+        return $this->normalizePort(config('app.apache_backend_port'), self::DEFAULT_APACHE_BACKEND_PORT);
+    }
+
+    private function nginxPrimaryPort(): int
+    {
+        return $this->normalizePort(config('app.nginx_primary_port'), self::DEFAULT_NGINX_PRIMARY_PORT);
+    }
+
+    private function normalizePort(mixed $value, int $fallback): int
+    {
+        if (is_string($value)) {
+            $value = trim($value);
+        }
+
+        if ((is_string($value) || is_int($value)) && preg_match('/^\d+$/', (string) $value) === 1) {
+            $port = (int) $value;
+            if ($port >= 1 && $port <= 65535) {
+                return $port;
+            }
+        }
+
+        return $fallback;
+    }
+
+    private function vhostTokenFromDomain(string $domain): string
+    {
+        $normalizedDomain = $this->normalizeDomain($domain);
+        $token = strtolower((string) preg_replace('/[^a-z0-9.-]+/', '-', $normalizedDomain));
+        $token = trim($token, '-');
+
+        return $token !== '' ? $token : 'site';
+    }
+
+    private function vhostFileBaseName(string $domain): string
+    {
+        $normalizedDomain = $this->normalizeDomain($domain);
+        $token = $this->vhostTokenFromDomain($normalizedDomain);
+        $hash = substr(sha1($normalizedDomain), 0, 12);
+        if (strlen($token) > 110) {
+            $token = substr($token, 0, 110);
+        }
+
+        return $token.'-'.$hash;
+    }
+
+    private function vhostLogBaseName(string $domain): string
+    {
+        $normalizedDomain = $this->normalizeDomain($domain);
+        $token = $this->vhostTokenFromDomain($normalizedDomain);
+        $hash = substr(sha1($normalizedDomain), 0, 12);
+        if (strlen($token) > 52) {
+            $token = substr($token, 0, 52);
+        }
+
+        return $token.'-'.$hash;
     }
 
     private function shouldAddWwwAlias(string $domain): bool
@@ -2247,6 +2833,11 @@ CONF;
 
     private function detectRuntimeStatus(array $website): string
     {
+        $storedStatus = strtolower(trim((string) ($website['status'] ?? 'pending')));
+        if ($storedStatus === 'disabled') {
+            return 'disabled';
+        }
+
         $rootPath = (string) ($website['root_path'] ?? '');
         $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
 
@@ -2278,7 +2869,13 @@ CONF;
             return false;
         }
 
-        return is_file($this->apacheVhostPath($domain));
+        foreach ($this->apacheVhostPaths($domain) as $path) {
+            if (is_file($path)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function nginxVhostExists(string $domain): bool
@@ -2288,10 +2885,18 @@ CONF;
             return false;
         }
 
-        return is_file('/etc/nginx/sites-available/'.$domain)
-            || is_file('/etc/nginx/sites-available/'.$domain.'.conf')
-            || is_file('/etc/nginx/sites-enabled/'.$domain)
-            || is_file('/etc/nginx/sites-enabled/'.$domain.'.conf');
+        foreach ($this->nginxVhostPaths($domain) as $path) {
+            if (is_file($path)) {
+                return true;
+            }
+        }
+        foreach ($this->nginxEnabledVhostPaths($domain) as $path) {
+            if (is_link($path) || is_file($path)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function countWebsiteCronJobs(string $websiteId): int
