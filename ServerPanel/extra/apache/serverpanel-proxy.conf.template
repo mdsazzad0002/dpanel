@@ -1,0 +1,10 @@
+<VirtualHost *:80>
+    ServerName _
+
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:__PANEL_PORT__/
+    ProxyPassReverse / http://127.0.0.1:__PANEL_PORT__/
+
+    ErrorLog ${APACHE_LOG_DIR}/serverpanel_error.log
+    CustomLog ${APACHE_LOG_DIR}/serverpanel_access.log combined
+</VirtualHost>

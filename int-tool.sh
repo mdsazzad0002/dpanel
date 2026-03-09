@@ -9,6 +9,8 @@ CYAN="\033[1;36m"
 NC="\033[0m"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXTRA_DIR=""
+APACHE_PROXY_TEMPLATE_FILE=""
 PROJECT_DIR=""
 PROJECT_HINT=""
 PROJECT_URL=""
@@ -33,7 +35,7 @@ DB_SERVICE=""
 REDIS_SERVICE=""
 PHPMYADMIN_SERVICE="serverpanel-phpmyadmin"
 ROUNDCUBE_SERVICE="serverpanel-roundcube"
-PHPMYADMIN_ROOT="/root/phpmyadmin"
+PHPMYADMIN_ROOT="/usr/share/phpmyadmin"
 ROUNDCUBE_ROOT="/root/roundcube"
 PHPMYADMIN_CONTROL_DB="phpmyadmin"
 PHPMYADMIN_CONTROL_USER="pma"
@@ -47,6 +49,11 @@ CURRENT_PID=""
 RESET_DB_STACK="false"
 LOGIN_CREDENTIALS_READY="false"
 NODEJS_REQUIRED_MAJOR="22"
+OS_ID=""
+OS_PRETTY_NAME=""
+FIREWALL_BACKEND=""
+PHP_CLI_SERVER_WORKERS="8"
+PKG_MANAGER=""
 
 reset_runtime_defaults() {
     PROJECT_DIR=""
@@ -73,7 +80,7 @@ reset_runtime_defaults() {
     REDIS_SERVICE=""
     PHPMYADMIN_SERVICE="serverpanel-phpmyadmin"
     ROUNDCUBE_SERVICE="serverpanel-roundcube"
-    PHPMYADMIN_ROOT="/root/phpmyadmin"
+    PHPMYADMIN_ROOT="/usr/share/phpmyadmin"
     ROUNDCUBE_ROOT="/root/roundcube"
     PHPMYADMIN_CONTROL_DB="phpmyadmin"
     PHPMYADMIN_CONTROL_USER="pma"
@@ -87,6 +94,11 @@ reset_runtime_defaults() {
     RESET_DB_STACK="false"
     LOGIN_CREDENTIALS_READY="false"
     NODEJS_REQUIRED_MAJOR="22"
+    OS_ID=""
+    OS_PRETTY_NAME=""
+    FIREWALL_BACKEND=""
+    PHP_CLI_SERVER_WORKERS="8"
+    PKG_MANAGER=""
 }
 
 banner() {
@@ -247,23 +259,439 @@ run() {
     done
 }
 
+disable_apache_site_if_enabled() {
+    local site="${1:-}"
+    local resolved_site=""
+
+    if [[ -z "${site}" ]]; then
+        return 0
+    fi
+
+    if [[ -e "/etc/apache2/sites-enabled/${site}" ]]; then
+        resolved_site="${site}"
+    elif [[ -e "/etc/apache2/sites-enabled/${site}.conf" ]]; then
+        resolved_site="${site}.conf"
+    elif [[ -e "/etc/apache2/sites-available/${site}" || -e "/etc/apache2/sites-available/${site}.conf" ]]; then
+        info "Apache site ${site} is already disabled."
+        return 0
+    else
+        info "Apache site ${site} does not exist; skipping."
+        return 0
+    fi
+
+    run a2dissite "${resolved_site}"
+}
+
+sanitize_apache_legacy_panel_port_bindings() {
+    local legacy_site_conf="/etc/apache2/sites-available/serverpanel-panel-port.conf"
+    local legacy_enabled_conf="/etc/apache2/sites-enabled/serverpanel-panel-port.conf"
+    local ports_conf="/etc/apache2/ports.conf"
+    local backup_path=""
+
+    if [[ -e "${legacy_enabled_conf}" ]]; then
+        warn "Removing legacy Apache panel-port site link: ${legacy_enabled_conf}"
+        run rm -f "${legacy_enabled_conf}"
+    fi
+
+    if [[ -f "${legacy_site_conf}" ]]; then
+        backup_path="${legacy_site_conf}.disabled.$(date +%Y%m%d%H%M%S)"
+        warn "Disabling legacy Apache panel-port site file: ${legacy_site_conf}"
+        run mv "${legacy_site_conf}" "${backup_path}"
+    fi
+
+    if [[ -f "${ports_conf}" && "${PANEL_PORT}" != "80" && "${PANEL_PORT}" != "443" ]]; then
+        if grep -qE "^[[:space:]]*Listen[[:space:]]+${PANEL_PORT}([[:space:]]*)$" "${ports_conf}" 2>/dev/null; then
+            warn "Removing Apache Listen ${PANEL_PORT} to keep panel port reserved for serverpanel.service"
+            run sed -i -E "s/^[[:space:]]*Listen[[:space:]]+${PANEL_PORT}([[:space:]]*)$/# Listen ${PANEL_PORT} # disabled-by-serverpanel-installer/" "${ports_conf}"
+        fi
+    fi
+}
+
+write_serverpanel_apache_proxy_site_conf() {
+    local output_conf="/etc/apache2/sites-available/serverpanel-proxy.conf"
+    local template_conf=""
+
+    template_conf="$(resolve_apache_proxy_template_file)"
+    if [[ -n "${template_conf}" && -f "${template_conf}" ]]; then
+        sed "s/__PANEL_PORT__/${PANEL_PORT}/g" "${template_conf}" > "${output_conf}"
+        ok "Apache proxy config generated from template: ${template_conf}"
+        return 0
+    fi
+
+    cat > "${output_conf}" <<EOF
+<VirtualHost *:80>
+    ServerName _
+
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:${PANEL_PORT}/
+    ProxyPassReverse / http://127.0.0.1:${PANEL_PORT}/
+
+    ErrorLog \${APACHE_LOG_DIR}/serverpanel_error.log
+    CustomLog \${APACHE_LOG_DIR}/serverpanel_access.log combined
+</VirtualHost>
+EOF
+}
+
+apache_configtest_with_self_heal() {
+    local max_attempts="${1:-2}"
+    local attempt=0
+    local bad_conf=""
+    local bad_site=""
+
+    if ! command -v apache2ctl >/dev/null 2>&1; then
+        return 0
+    fi
+
+    while (( attempt <= max_attempts )); do
+        if apache2ctl configtest >/tmp/serverpanel-apache-configtest.log 2>&1; then
+            return 0
+        fi
+
+        bad_conf="$(sed -n -E 's/.*Syntax error on line [0-9]+ of ([^:]+):.*/\1/p' /tmp/serverpanel-apache-configtest.log | head -n1 || true)"
+        if [[ -z "${bad_conf}" ]]; then
+            return 1
+        fi
+
+        if [[ "${bad_conf}" == /etc/apache2/sites-enabled/* ]]; then
+            bad_site="$(basename "${bad_conf}")"
+            warn "Apache syntax error in ${bad_conf}; disabling ${bad_site} and retrying."
+            run rm -f "${bad_conf}" || true
+            if [[ -e "/etc/apache2/sites-available/${bad_site}" ]]; then
+                run a2dissite "${bad_site}" || true
+            elif [[ "${bad_site}" == *.conf && -e "/etc/apache2/sites-available/${bad_site%.conf}" ]]; then
+                run a2dissite "${bad_site%.conf}" || true
+            fi
+            attempt=$((attempt + 1))
+            continue
+        fi
+
+        return 1
+    done
+
+    return 1
+}
+
 require_root() {
     if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         fail "Run as root (example: sudo bash int-tool.sh)."
     fi
 }
 
+resolve_extra_dir() {
+    local candidate
+    local candidates=()
+
+    if [[ -n "${PROJECT_DIR:-}" ]]; then
+        candidates+=("${PROJECT_DIR%/}/extra")
+    fi
+    candidates+=(
+        "${SCRIPT_DIR}/ServerPanel/extra"
+        "${SCRIPT_DIR}/extra"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        [[ -z "${candidate}" ]] && continue
+        if [[ -d "${candidate}" ]]; then
+            EXTRA_DIR="${candidate}"
+            echo "${candidate}"
+            return 0
+        fi
+    done
+
+    echo ""
+}
+
+resolve_extra_file() {
+    local relative_path="$1"
+    local candidate
+    local extra_dir
+    local candidates=()
+
+    extra_dir="$(resolve_extra_dir)"
+    if [[ -n "${extra_dir}" ]]; then
+        candidates+=("${extra_dir%/}/${relative_path}")
+    fi
+
+    candidates+=(
+        "${SCRIPT_DIR}/ServerPanel/extra/${relative_path}"
+        "${SCRIPT_DIR}/extra/${relative_path}"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "${candidate}" ]]; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+
+    echo ""
+}
+
+resolve_apache_proxy_template_file() {
+    local template_path
+
+    template_path="$(resolve_extra_file "apache/serverpanel-proxy.conf.template")"
+    if [[ -n "${template_path}" ]]; then
+        APACHE_PROXY_TEMPLATE_FILE="${template_path}"
+        echo "${template_path}"
+        return 0
+    fi
+
+    if [[ -n "${APACHE_PROXY_TEMPLATE_FILE:-}" && -f "${APACHE_PROXY_TEMPLATE_FILE}" ]]; then
+        echo "${APACHE_PROXY_TEMPLATE_FILE}"
+        return 0
+    fi
+
+    echo ""
+}
+
+ensure_parent_dir_writable() {
+    local target_path="$1"
+    local parent_dir
+    local ancestor_dir
+
+    parent_dir="$(dirname "${target_path}")"
+    if [[ -d "${parent_dir}" ]]; then
+        if [[ ! -w "${parent_dir}" ]]; then
+            warn "Directory not writable: ${parent_dir}. Attempting permission fix."
+            run chmod u+rwx "${parent_dir}" || true
+        fi
+        return 0
+    fi
+
+    run mkdir -p "${parent_dir}" || true
+    if [[ -d "${parent_dir}" ]]; then
+        return 0
+    fi
+
+    warn "Unable to create directory: ${parent_dir}. Trying parent permission fix."
+    ancestor_dir="$(dirname "${parent_dir}")"
+    run mkdir -p "${ancestor_dir}" || true
+    run chmod u+rwx "${ancestor_dir}" || true
+    run mkdir -p "${parent_dir}"
+}
+
+detect_firewall_backend() {
+    if command -v ufw >/dev/null 2>&1; then
+        echo "ufw"
+        return 0
+    fi
+
+    if command -v firewall-cmd >/dev/null 2>&1; then
+        echo "firewalld"
+        return 0
+    fi
+
+    echo "none"
+}
+
+prepare_firewall_backend() {
+    FIREWALL_BACKEND="$(detect_firewall_backend)"
+
+    case "${FIREWALL_BACKEND}" in
+        ufw)
+            if systemctl cat ufw.service >/dev/null 2>&1; then
+                run systemctl enable --now ufw || true
+            fi
+            ;;
+        firewalld)
+            if systemctl cat firewalld.service >/dev/null 2>&1; then
+                run systemctl enable --now firewalld || true
+            fi
+            ;;
+        *)
+            warn "No supported firewall backend detected (ufw/firewalld). Skipping automatic firewall rule updates."
+            ;;
+    esac
+}
+
+allow_firewall_service() {
+    local service_name="$1"
+    local backend="${FIREWALL_BACKEND:-$(detect_firewall_backend)}"
+
+    case "${backend}" in
+        ufw)
+            if [[ "${service_name}" == "ssh" ]]; then
+                run ufw allow OpenSSH || true
+            else
+                run ufw allow "${service_name}" || true
+            fi
+            ;;
+        firewalld)
+            run firewall-cmd --permanent --add-service="${service_name}" || true
+            run firewall-cmd --reload || true
+            ;;
+        *)
+            warn "Firewall service rule skipped (${service_name}). No supported firewall backend found."
+            ;;
+    esac
+}
+
+allow_firewall_port() {
+    local port="$1"
+    local proto="${2:-tcp}"
+    local backend="${FIREWALL_BACKEND:-$(detect_firewall_backend)}"
+
+    case "${backend}" in
+        ufw)
+            run ufw allow "${port}/${proto}" || true
+            ;;
+        firewalld)
+            run firewall-cmd --permanent --add-port="${port}/${proto}" || true
+            run firewall-cmd --reload || true
+            ;;
+        *)
+            warn "Firewall port rule skipped (${port}/${proto}). No supported firewall backend found."
+            ;;
+    esac
+}
+
+detect_package_manager() {
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "apt"
+        return 0
+    fi
+    if command -v dnf >/dev/null 2>&1; then
+        echo "dnf"
+        return 0
+    fi
+    if command -v yum >/dev/null 2>&1; then
+        echo "dnf"
+        return 0
+    fi
+    echo ""
+}
+
+map_package_name() {
+    local pkg="$1"
+    local mapped="${pkg}"
+    local versioned_ext=""
+
+    if [[ "${PKG_MANAGER}" != "dnf" ]]; then
+        echo "${mapped}"
+        return 0
+    fi
+
+    case "${pkg}" in
+        apache2) mapped="nginx" ;; # AlmaLinux path uses nginx-only mode in this installer
+        libapache2-mod-php|libapache2-mod-php*) mapped="php" ;;
+        lsb-release) mapped="redhat-lsb-core" ;;
+        gnupg) mapped="gnupg2" ;;
+        software-properties-common) mapped="dnf-plugins-core" ;;
+        redis-server) mapped="redis" ;;
+        mariadb-client) mapped="mariadb" ;;
+        phpmyadmin) mapped="phpMyAdmin" ;;
+        roundcube|roundcube-core) mapped="roundcubemail" ;;
+        roundcube-mysql) mapped="roundcubemail-mysql" ;;
+        dovecot-core|dovecot-imapd|dovecot-pop3d) mapped="dovecot" ;;
+        php-mysql) mapped="php-mysqlnd" ;;
+    esac
+
+    if [[ "${pkg}" =~ ^php[0-9]+\.[0-9]+$ ]]; then
+        mapped="php"
+    elif [[ "${pkg}" =~ ^php[0-9]+\.[0-9]+-(.+)$ ]]; then
+        versioned_ext="${BASH_REMATCH[1]}"
+        case "${versioned_ext}" in
+            mysql) mapped="php-mysqlnd" ;;
+            *) mapped="php-${versioned_ext}" ;;
+        esac
+    fi
+
+    echo "${mapped}"
+}
+
+pkg_update_cache() {
+    case "${PKG_MANAGER}" in
+        apt)
+            run apt update
+            ;;
+        dnf)
+            run dnf -y makecache
+            ;;
+        *)
+            fail "Unsupported package manager: ${PKG_MANAGER}"
+            ;;
+    esac
+}
+
+pkg_install() {
+    local pkg="$1"
+
+    case "${PKG_MANAGER}" in
+        apt)
+            run env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confnew install "${pkg}" || true
+            ;;
+        dnf)
+            run dnf -y install "${pkg}" || true
+            ;;
+        *)
+            fail "Unsupported package manager: ${PKG_MANAGER}"
+            ;;
+    esac
+}
+
+pkg_remove() {
+    local pkg="$1"
+    case "${PKG_MANAGER}" in
+        apt)
+            run env DEBIAN_FRONTEND=noninteractive apt-get -y purge "${pkg}" || true
+            ;;
+        dnf)
+            run dnf -y remove "${pkg}" || true
+            ;;
+        *)
+            warn "Unsupported package manager for remove: ${PKG_MANAGER}"
+            ;;
+    esac
+}
+
+pkg_autoremove() {
+    case "${PKG_MANAGER}" in
+        apt)
+            run env DEBIAN_FRONTEND=noninteractive apt-get -y autoremove || true
+            ;;
+        dnf)
+            run dnf -y autoremove || true
+            ;;
+        *)
+            warn "Unsupported package manager for autoremove: ${PKG_MANAGER}"
+            ;;
+    esac
+}
+
 check_ubuntu() {
     if [[ ! -f /etc/os-release ]]; then
-        fail "/etc/os-release not found. Ubuntu check failed."
+        fail "/etc/os-release not found. OS check failed."
     fi
 
     # shellcheck disable=SC1091
     source /etc/os-release
-    if [[ "${ID:-}" != "ubuntu" ]]; then
-        warn "Detected ID=${ID:-unknown}. Script is designed for Ubuntu."
-    else
-        ok "Ubuntu detected (${PRETTY_NAME:-Ubuntu})."
+    OS_ID="${ID:-unknown}"
+    OS_PRETTY_NAME="${PRETTY_NAME:-${ID:-unknown}}"
+    PKG_MANAGER="$(detect_package_manager)"
+
+    if [[ -z "${PKG_MANAGER}" ]]; then
+        fail "No supported package manager found (apt-get/dnf)."
+    fi
+
+    case "${OS_ID}" in
+        ubuntu|debian)
+            ok "${OS_PRETTY_NAME} detected (package manager: ${PKG_MANAGER})."
+            ;;
+        almalinux|almalinux*)
+            ok "AlmaLinux detected (${OS_PRETTY_NAME}) (package manager: ${PKG_MANAGER})."
+            ;;
+        amzn|amazon)
+            warn "Amazon Linux detected (${OS_PRETTY_NAME}). Compatibility mode enabled (package manager: ${PKG_MANAGER})."
+            ;;
+        *)
+            warn "Detected ID=${OS_ID} (${OS_PRETTY_NAME}). Compatibility mode enabled with package manager: ${PKG_MANAGER}."
+            ;;
+    esac
+
+    if [[ "${PKG_MANAGER}" == "dnf" && ( "${WEB_SERVER}" == "apache" || "${WEB_SERVER}" == "both" ) ]]; then
+        warn "Apache mode in this installer is Debian/Ubuntu specific. Switching web-server mode to nginx for ${OS_PRETTY_NAME}."
+        WEB_SERVER="nginx"
     fi
 }
 
@@ -451,6 +879,15 @@ parse_args() {
     if [[ "${WEB_SERVER}" == "both" && "${APACHE_BACKEND_PORT}" == "${NGINX_PRIMARY_PORT}" ]]; then
         fail "--apache-backend-port and --nginx-primary-port cannot be the same when --web-server both."
     fi
+    if [[ "${WEB_SERVER}" == "both" && "${APACHE_BACKEND_PORT}" == "${PANEL_PORT}" ]]; then
+        fail "--apache-backend-port cannot match --panel-port when --web-server both."
+    fi
+    if [[ "${WEB_SERVER}" == "both" && "${NGINX_PRIMARY_PORT}" == "${PANEL_PORT}" ]]; then
+        fail "--nginx-primary-port cannot match --panel-port when --web-server both."
+    fi
+    if [[ "${WEB_SERVER}" == "nginx" && "${NGINX_PRIMARY_PORT}" == "${PANEL_PORT}" ]]; then
+        fail "--nginx-primary-port cannot match --panel-port when --web-server nginx."
+    fi
     if [[ "${WEBTOOLS_SEPARATE_PORTS}" != "true" && "${WEBTOOLS_SEPARATE_PORTS}" != "false" ]]; then
         fail "Invalid webtools mode flag: ${WEBTOOLS_SEPARATE_PORTS}. Use --separate-webtools or --no-separate-webtools."
     fi
@@ -569,6 +1006,36 @@ detect_redis_service() {
     echo ""
 }
 
+detect_dovecot_service() {
+    local svc
+    for svc in dovecot; do
+        if systemctl cat "${svc}.service" >/dev/null 2>&1; then
+            echo "${svc}"
+            return
+        fi
+        if systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -qx "${svc}.service"; then
+            echo "${svc}"
+            return
+        fi
+    done
+    echo ""
+}
+
+detect_ssh_service() {
+    local svc
+    for svc in ssh sshd; do
+        if systemctl cat "${svc}.service" >/dev/null 2>&1; then
+            echo "${svc}"
+            return
+        fi
+        if systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -qx "${svc}.service"; then
+            echo "${svc}"
+            return
+        fi
+    done
+    echo ""
+}
+
 ensure_database_service_installed() {
     if [[ -n "$(detect_db_service)" ]]; then
         return
@@ -594,6 +1061,18 @@ ensure_redis_service_installed() {
     fi
 
     warn "Package redis-server is not available on this host. Skipping Redis setup."
+}
+
+ensure_dovecot_service_installed() {
+    if [[ -n "$(detect_dovecot_service)" ]]; then
+        return
+    fi
+
+    warn "No Dovecot service unit detected. Attempting to install Dovecot packages."
+    ensure_package dovecot-core true
+    ensure_package dovecot-imapd true
+    ensure_package dovecot-pop3d true
+    ensure_package dovecot-mysql true
 }
 
 ensure_database_running() {
@@ -660,6 +1139,30 @@ ensure_database_running() {
 
         fail "Database service failed to start (${svc}). Review logs above."
     done
+}
+
+ensure_dovecot_running() {
+    local svc
+
+    ensure_dovecot_service_installed
+    svc="$(detect_dovecot_service)"
+
+    if [[ -z "${svc}" ]]; then
+        warn "No Dovecot service unit found. Mail storage server may not work."
+        return 0
+    fi
+
+    run systemctl enable "${svc}" || true
+    run systemctl reset-failed "${svc}" || true
+    run systemctl restart "${svc}" || true
+
+    if systemctl is-active --quiet "${svc}"; then
+        ok "Dovecot service running: ${svc}"
+        return 0
+    fi
+
+    warn "Dovecot service is not active after restart. Check: systemctl status ${svc}"
+    return 0
 }
 
 ensure_redis_running() {
@@ -734,61 +1237,102 @@ ensure_redis_running() {
 
 is_package_installed() {
     local pkg="$1"
-    dpkg-query -W -f='${Status}' "${pkg}" 2>/dev/null | grep -q "install ok installed"
+    local mapped_pkg
+    mapped_pkg="$(map_package_name "${pkg}")"
+
+    case "${PKG_MANAGER}" in
+        apt)
+            dpkg-query -W -f='${Status}' "${mapped_pkg}" 2>/dev/null | grep -q "install ok installed"
+            ;;
+        dnf)
+            rpm -q "${mapped_pkg}" >/dev/null 2>&1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 is_package_available() {
     local pkg="$1"
-    apt-cache show "${pkg}" >/dev/null 2>&1
+    local mapped_pkg
+    mapped_pkg="$(map_package_name "${pkg}")"
+
+    case "${PKG_MANAGER}" in
+        apt)
+            apt-cache show "${mapped_pkg}" >/dev/null 2>&1
+            ;;
+        dnf)
+            dnf -q list "${mapped_pkg}" >/dev/null 2>&1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 ensure_package() {
     local pkg="$1"
     local optional="${2:-false}"
+    local mapped_pkg=""
+
+    mapped_pkg="$(map_package_name "${pkg}")"
 
     if is_package_installed "${pkg}"; then
-        ok "Already installed: ${pkg}"
+        ok "Already installed: ${mapped_pkg}"
         return 0
     fi
 
     if ! is_package_available "${pkg}"; then
         if [[ "${optional}" == "true" ]]; then
-            warn "Package not available, skipping: ${pkg}"
+            warn "Package not available, skipping: ${mapped_pkg}"
             return 0
         fi
-        fail "Required package not available: ${pkg}"
+        fail "Required package not available: ${mapped_pkg}"
     fi
 
-    run env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confnew install "${pkg}" || true
+    pkg_install "${mapped_pkg}"
     if is_package_installed "${pkg}"; then
-        ok "Installed: ${pkg}"
+        ok "Installed: ${mapped_pkg}"
         return 0
     fi
 
-    warn "Initial install did not complete for ${pkg}. Attempting apt/dpkg recovery..."
+    warn "Initial install did not complete for ${mapped_pkg}. Attempting package-manager recovery..."
     repair_apt_dpkg_state
-    run env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confnew install "${pkg}" || true
+    pkg_install "${mapped_pkg}"
 
     if is_package_installed "${pkg}"; then
-        ok "Installed after recovery: ${pkg}"
+        ok "Installed after recovery: ${mapped_pkg}"
         return 0
     fi
 
     if [[ "${optional}" == "true" ]]; then
-        warn "Package installation still failed, skipping optional package: ${pkg}"
+        warn "Package installation still failed, skipping optional package: ${mapped_pkg}"
         return 0
     fi
 
-    fail "Failed to install required package: ${pkg}"
+    fail "Failed to install required package: ${mapped_pkg}"
 }
 
 repair_apt_dpkg_state() {
-    warn "Repairing package manager state (dpkg/apt)..."
-    run dpkg --configure -a || true
-    run env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confnew --fix-broken install || true
+    if [[ "${PKG_MANAGER}" == "apt" ]]; then
+        warn "Repairing package manager state (dpkg/apt)..."
+        run dpkg --configure -a || true
+        run env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confnew --fix-broken install || true
+        return 0
+    fi
+
+    if [[ "${PKG_MANAGER}" == "dnf" ]]; then
+        warn "Repairing package manager state (dnf makecache)..."
+        run dnf -y makecache || true
+    fi
 }
 
 disable_mysql_apt_repos() {
+    if [[ "${PKG_MANAGER}" != "apt" ]]; then
+        return 0
+    fi
+
     local file
     local changed="false"
 
@@ -838,30 +1382,42 @@ purge_db_packages_safely() {
         mariadb-common
     )
 
-    for pkg in "${candidates[@]}"; do
-        if dpkg-query -W -f='${Status}' "${pkg}" >/dev/null 2>&1; then
-            purge_list+=("${pkg}")
-        fi
-    done
+    if [[ "${PKG_MANAGER}" == "apt" ]]; then
+        for pkg in "${candidates[@]}"; do
+            if dpkg-query -W -f='${Status}' "${pkg}" >/dev/null 2>&1; then
+                purge_list+=("${pkg}")
+            fi
+        done
+    else
+        for pkg in "${candidates[@]}"; do
+            if rpm -q "$(map_package_name "${pkg}")" >/dev/null 2>&1; then
+                purge_list+=("$(map_package_name "${pkg}")")
+            fi
+        done
+    fi
 
     if [[ "${#purge_list[@]}" -eq 0 ]]; then
         info "No installed MySQL/MariaDB packages found to purge."
         return
     fi
 
-    run env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confnew purge "${purge_list[@]}" || true
+    if [[ "${PKG_MANAGER}" == "apt" ]]; then
+        run env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confnew purge "${purge_list[@]}" || true
+    else
+        run dnf -y remove "${purge_list[@]}" || true
+    fi
 }
 
 reinstall_mariadb_stack_fresh() {
     warn "Fresh reinstall MariaDB requested by user."
     stop_db_services_safely
     purge_db_packages_safely
-    run env DEBIAN_FRONTEND=noninteractive apt-get -y autoremove || true
+    pkg_autoremove
     run rm -rf /etc/mysql /var/lib/mysql /var/lib/mysql-files /var/lib/mysql-keyring || true
     repair_apt_dpkg_state
     disable_mysql_apt_repos
-    run apt update
-    run env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confnew install mariadb-server
+    pkg_update_cache
+    pkg_install "$(map_package_name "mariadb-server")"
     ensure_package mariadb-client true
     DB_SERVICE="mariadb"
     ok "Fresh MariaDB reinstall completed."
@@ -882,11 +1438,13 @@ reset_database_stack() {
     warn "--reset-db enabled: purging existing DB packages and data."
     stop_db_services_safely
     purge_db_packages_safely
-    run env DEBIAN_FRONTEND=noninteractive apt-get -y autoremove || true
+    pkg_autoremove
     run rm -rf /etc/mysql /var/lib/mysql /var/log/mysql || true
-    run rm -f /etc/apt/sources.list.d/mariadb.list.old_1 /etc/apt/sources.list.d/mariadb.list.old_2 || true
+    if [[ "${PKG_MANAGER}" == "apt" ]]; then
+        run rm -f /etc/apt/sources.list.d/mariadb.list.old_1 /etc/apt/sources.list.d/mariadb.list.old_2 || true
+    fi
     disable_mysql_apt_repos
-    run apt update
+    pkg_update_cache
     ok "Database stack reset completed."
 }
 
@@ -900,6 +1458,11 @@ reinstall_database_stack_fresh() {
 }
 
 ensure_ondrej_repo() {
+    if [[ "${PKG_MANAGER}" != "apt" ]]; then
+        info "Skipping ondrej/php repository setup (not applicable for ${PKG_MANAGER})."
+        return 0
+    fi
+
     if grep -Rqs "ondrej/php" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
         ok "Repository already present: ondrej/php"
         return
@@ -1066,12 +1629,22 @@ apply_php_runtime_defaults() {
 
 ensure_default_php_binary() {
     local candidate current_php
-    candidate="/usr/bin/php${PHP_DEFAULT_VERSION}"
+    if [[ "${PKG_MANAGER}" == "dnf" ]]; then
+        candidate="/usr/bin/php"
+    else
+        candidate="/usr/bin/php${PHP_DEFAULT_VERSION}"
+    fi
 
     if [[ ! -x "${candidate}" ]]; then
-        warn "Requested default PHP ${PHP_DEFAULT_VERSION} is not installed. Installing now..."
-        ensure_package "php${PHP_DEFAULT_VERSION}"
-        ensure_package "php${PHP_DEFAULT_VERSION}-cli"
+        if [[ "${PKG_MANAGER}" == "dnf" ]]; then
+            warn "PHP CLI binary not found. Installing php/php-cli..."
+            ensure_package php
+            ensure_package php-cli
+        else
+            warn "Requested default PHP ${PHP_DEFAULT_VERSION} is not installed. Installing now..."
+            ensure_package "php${PHP_DEFAULT_VERSION}"
+            ensure_package "php${PHP_DEFAULT_VERSION}-cli"
+        fi
     fi
 
     if [[ ! -x "${candidate}" ]]; then
@@ -1379,6 +1952,14 @@ ensure_php_version_for_composer() {
         return 1
     fi
 
+    if [[ "${PKG_MANAGER}" == "dnf" ]]; then
+        warn "Exact PHP version switch is limited on ${PKG_MANAGER}. Ensuring system php/php-cli and retrying Composer."
+        ensure_package php true
+        ensure_package php-cli true
+        ensure_default_php_binary
+        return 0
+    fi
+
     warn "Composer requires PHP ${version}. Attempting to prepare and switch CLI PHP."
     ensure_package "php${version}" true
     ensure_package "php${version}-cli" true
@@ -1545,8 +2126,13 @@ ensure_nodejs_for_vite() {
 
     warn "Node.js/npm upgrade required for Vite build. Node: ${current_major:-missing}, npm: ${has_npm}, required node: ${NODEJS_REQUIRED_MAJOR}+"
     info "Installing Node.js ${NODEJS_REQUIRED_MAJOR}.x from NodeSource"
-    run bash -lc "curl -fsSL https://deb.nodesource.com/setup_${NODEJS_REQUIRED_MAJOR}.x | bash -"
-    run env DEBIAN_FRONTEND=noninteractive apt-get -y install nodejs
+    if [[ "${PKG_MANAGER}" == "dnf" ]]; then
+        run bash -lc "curl -fsSL https://rpm.nodesource.com/setup_${NODEJS_REQUIRED_MAJOR}.x | bash -"
+        run dnf -y install nodejs
+    else
+        run bash -lc "curl -fsSL https://deb.nodesource.com/setup_${NODEJS_REQUIRED_MAJOR}.x | bash -"
+        run env DEBIAN_FRONTEND=noninteractive apt-get -y install nodejs
+    fi
     if ! command -v npm >/dev/null 2>&1; then
         warn "npm not found after nodejs install. Trying corepack enable."
         run corepack enable || true
@@ -1564,7 +2150,7 @@ ensure_nodejs_for_vite() {
         fail "Node.js upgrade failed. Detected: ${current_major:-missing}, required: ${NODEJS_REQUIRED_MAJOR}+."
     fi
     if [[ "${has_npm}" != "true" ]]; then
-        fail "npm is still missing after Node.js setup. Check apt and NodeSource repository status."
+        fail "npm is still missing after Node.js setup. Check package manager and NodeSource repository status."
     fi
 
     ok "Node.js/npm are ready for Vite build (node v${current_major})."
@@ -1759,10 +2345,33 @@ detect_roundcube_web_root() {
         "/var/lib/roundcube/public_html"
         "/usr/share/roundcube"
         "/usr/share/roundcube/public_html"
+        "/usr/share/roundcubemail"
+        "/usr/share/roundcubemail/public_html"
         "/var/lib/roundcube"
     )
 
     for candidate in "${candidates[@]}"; do
+        if [[ -f "${candidate}/index.php" ]]; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+
+    echo ""
+}
+
+detect_phpmyadmin_web_root() {
+    local candidate
+    local candidates=(
+        "${PHPMYADMIN_ROOT:-}"
+        "/usr/share/phpmyadmin"
+        "/usr/share/phpMyAdmin"
+        "/var/www/phpmyadmin"
+        "/root/phpmyadmin"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        [[ -z "${candidate}" ]] && continue
         if [[ -f "${candidate}/index.php" ]]; then
             echo "${candidate}"
             return 0
@@ -1812,12 +2421,15 @@ publish_panel_public_symlink() {
 
 expose_panel_tools_on_port() {
     local panel_dir="${1:-${PROJECT_DIR}}"
+    local phpmyadmin_root=""
     local roundcube_root=""
 
-    if [[ -d "/usr/share/phpmyadmin" ]]; then
-        publish_panel_public_symlink "${panel_dir}" "/usr/share/phpmyadmin" "phpmyadmin"
+    phpmyadmin_root="$(detect_phpmyadmin_web_root)"
+    if [[ -n "${phpmyadmin_root}" ]]; then
+        PHPMYADMIN_ROOT="${phpmyadmin_root}"
+        publish_panel_public_symlink "${panel_dir}" "${phpmyadmin_root}" "phpmyadmin"
     else
-        warn "phpMyAdmin web root not found at /usr/share/phpmyadmin"
+        warn "phpMyAdmin web root not found."
     fi
 
     roundcube_root="$(detect_roundcube_web_root)"
@@ -1921,19 +2533,22 @@ disable_separate_webtools_services() {
 }
 
 setup_separate_webtools_services() {
+    local phpmyadmin_source=""
     local roundcube_source=""
     local pma_ready="false"
     local rc_ready="false"
 
     info "Configuring dedicated webtool services (phpMyAdmin:${PHPMYADMIN_PORT}, Roundcube:${ROUNDCUBE_PORT})"
+    prepare_firewall_backend
 
-    if [[ -d "/usr/share/phpmyadmin" ]]; then
-        if ensure_webtool_root_target "/usr/share/phpmyadmin" "${PHPMYADMIN_ROOT}" "phpMyAdmin"; then
+    phpmyadmin_source="$(detect_phpmyadmin_web_root)"
+    if [[ -n "${phpmyadmin_source}" ]]; then
+        if ensure_webtool_root_target "${phpmyadmin_source}" "${PHPMYADMIN_ROOT}" "phpMyAdmin"; then
             write_php_builtin_webtool_service "${PHPMYADMIN_SERVICE}" "ServerPanel phpMyAdmin HTTP Service" "${PHPMYADMIN_ROOT}" "${PHPMYADMIN_PORT}"
             pma_ready="true"
         fi
     else
-        warn "phpMyAdmin source path missing: /usr/share/phpmyadmin"
+        warn "phpMyAdmin source path could not be detected."
     fi
 
     roundcube_source="$(detect_roundcube_web_root)"
@@ -1949,11 +2564,11 @@ setup_separate_webtools_services() {
     run systemctl daemon-reload || true
     if [[ "${pma_ready}" == "true" ]]; then
         run systemctl enable --now "${PHPMYADMIN_SERVICE}" || true
-        run ufw allow "${PHPMYADMIN_PORT}/tcp" || true
+        allow_firewall_port "${PHPMYADMIN_PORT}" "tcp"
     fi
     if [[ "${rc_ready}" == "true" ]]; then
         run systemctl enable --now "${ROUNDCUBE_SERVICE}" || true
-        run ufw allow "${ROUNDCUBE_PORT}/tcp" || true
+        allow_firewall_port "${ROUNDCUBE_PORT}" "tcp"
     fi
 }
 
@@ -1964,6 +2579,8 @@ detect_roundcube_mysql_schema() {
         "/usr/share/roundcube/SQL/mysql.initial.sql"
         "/usr/share/roundcube/SQL/mysql5.initial.sql"
         "/usr/share/roundcube/SQL/mysql.initial.sql.gz"
+        "/usr/share/roundcubemail/SQL/mysql.initial.sql"
+        "/usr/share/roundcubemail/SQL/mysql.initial.sql.gz"
     )
 
     for candidate in "${candidates[@]}"; do
@@ -1976,10 +2593,34 @@ detect_roundcube_mysql_schema() {
     echo ""
 }
 
+detect_roundcube_config_file() {
+    local candidate
+    local candidates=(
+        "/etc/roundcube/config.inc.php"
+        "/etc/roundcubemail/config.inc.php"
+        "/usr/share/roundcube/config/config.inc.php"
+        "/usr/share/roundcubemail/config/config.inc.php"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "${candidate}" ]]; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+
+    if [[ "${PKG_MANAGER}" == "dnf" ]]; then
+        echo "/etc/roundcubemail/config.inc.php"
+    else
+        echo "/etc/roundcube/config.inc.php"
+    fi
+}
+
 detect_phpmyadmin_schema() {
     local candidate
     local candidates=(
         "/usr/share/phpmyadmin/sql/create_tables.sql"
+        "/usr/share/phpMyAdmin/sql/create_tables.sql"
         "/usr/share/doc/phpmyadmin/examples/create_tables.sql"
         "/usr/share/doc/phpmyadmin/examples/create_tables.sql.gz"
     )
@@ -1995,28 +2636,43 @@ detect_phpmyadmin_schema() {
 }
 
 detect_phpmyadmin_config_file() {
-    local root_candidate=""
-    local fallback_candidate="/root/phpmyadmin/config.inc.php"
+    local candidate
+    local candidates=()
 
     if [[ -n "${PHPMYADMIN_ROOT:-}" ]]; then
-        root_candidate="${PHPMYADMIN_ROOT%/}/config.inc.php"
-        if [[ -f "${root_candidate}" ]]; then
-            echo "${root_candidate}"
+        candidates+=("${PHPMYADMIN_ROOT%/}/config.inc.php")
+    fi
+    candidates+=(
+        "/etc/phpmyadmin/config.inc.php"
+        "/etc/phpMyAdmin/config.inc.php"
+        "/usr/share/phpmyadmin/config.inc.php"
+        "/usr/share/phpMyAdmin/config.inc.php"
+        "/root/phpmyadmin/config.inc.php"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "${candidate}" ]]; then
+            echo "${candidate}"
             return 0
         fi
-    fi
-
-    if [[ -f "${fallback_candidate}" ]]; then
-        echo "${fallback_candidate}"
-        return 0
-    fi
+    done
 
     echo ""
 }
 
 write_phpmyadmin_helper_file() {
     local target="$1"
+    local template_file=""
 
+    template_file="$(resolve_extra_file "phpmyadminsignin.php")"
+    if [[ -n "${template_file}" && -s "${template_file}" ]]; then
+        ensure_parent_dir_writable "${target}"
+        run cp "${template_file}" "${target}"
+        run chmod 644 "${target}" || true
+        return 0
+    fi
+
+    ensure_parent_dir_writable "${target}"
     cat > "${target}" <<'PHP'
 <?php
 declare(strict_types=1);
@@ -2243,11 +2899,19 @@ PHP
 
 deploy_phpmyadmin_helper() {
     local target_dirs=()
+    local detected_root=""
     local dir target installed="false"
     local detected_config config_dir
 
     if [[ -d "${PHPMYADMIN_ROOT}" ]]; then
         target_dirs+=("${PHPMYADMIN_ROOT}")
+    fi
+    detected_root="$(detect_phpmyadmin_web_root)"
+    if [[ -n "${detected_root}" && -d "${detected_root}" ]]; then
+        target_dirs+=("${detected_root}")
+    fi
+    if [[ -d "/usr/share/phpmyadmin" ]]; then
+        target_dirs+=("/usr/share/phpmyadmin")
     fi
     if [[ -d "/root/phpmyadmin" ]]; then
         target_dirs+=("/root/phpmyadmin")
@@ -2274,12 +2938,53 @@ deploy_phpmyadmin_helper() {
     fi
 }
 
+copy_phpmyadmin_template_config() {
+    local template_config="$1"
+    local preferred_target="/usr/share/phpmyadmin/config.inc.php"
+    local preferred_target_alt="/usr/share/phpMyAdmin/config.inc.php"
+    local fallback_target=""
+    local target=""
+
+    if [[ -z "${template_config}" || ! -s "${template_config}" ]]; then
+        echo ""
+        return 0
+    fi
+
+    if [[ -d "/usr/share/phpmyadmin" || "${PHPMYADMIN_ROOT%/}" == "/usr/share/phpmyadmin" ]]; then
+        target="${preferred_target}"
+    elif [[ -d "/usr/share/phpMyAdmin" || "${PHPMYADMIN_ROOT%/}" == "/usr/share/phpMyAdmin" ]]; then
+        target="${preferred_target_alt}"
+    else
+        fallback_target="$(detect_phpmyadmin_config_file)"
+        if [[ -n "${fallback_target}" ]]; then
+            target="${fallback_target}"
+        fi
+    fi
+
+    if [[ -z "${target}" ]]; then
+        echo ""
+        return 0
+    fi
+
+    if [[ -f "${target}" ]]; then
+        info "Keeping existing phpMyAdmin config file: ${target} (only associated values will be updated)"
+        echo "${target}"
+        return 0
+    fi
+
+    ensure_parent_dir_writable "${target}"
+    run cp "${template_config}" "${target}"
+    run chmod 640 "${target}" || true
+    info "phpMyAdmin config created from template: ${template_config} -> ${target}"
+    echo "${target}"
+}
+
 configure_phpmyadmin_runtime() {
     local config_file=""
-    local template_config="${PROJECT_DIR}/extra/config.inc.php"
     local temp_dir="/var/lib/phpmyadmin/tmp"
     local creds_file="/etc/phpmyadmin/serverpanel-control-user.conf"
     local admin_creds_file="/etc/phpmyadmin/serverpanel-admin-user.conf"
+    local blowfish_secret_file="/etc/phpmyadmin/serverpanel-blowfish-secret"
     local control_db="${PHPMYADMIN_CONTROL_DB:-phpmyadmin}"
     local control_user="${PHPMYADMIN_CONTROL_USER:-pma}"
     local control_password="${PHPMYADMIN_CONTROL_PASSWORD:-}"
@@ -2288,12 +2993,16 @@ configure_phpmyadmin_runtime() {
     local owner_group secret="" db_cli sql_db sql_user sql_password sql_admin_user sql_admin_password
     local schema_file pma_table_exists db_cli_q db_name_q schema_q
     local signon_url="/phpmyadmin/phpmyadminsignin.php"
-    local config_dir=""
-    local has_dynamic_server_index="false"
-    local template_applied="false"
+    local config_candidate=""
+    local -a config_files=()
+    local -A config_seen=()
 
     if ! is_package_installed phpmyadmin; then
         warn "phpMyAdmin package is not installed. Trying custom phpMyAdmin config paths."
+    fi
+
+    if is_webtools_separate_mode_active; then
+        signon_url="/phpmyadminsignin.php"
     fi
 
     ensure_default_php_binary
@@ -2310,35 +3019,52 @@ configure_phpmyadmin_runtime() {
     run chmod 1770 "${temp_dir}" || true
     run mkdir -p /etc/phpmyadmin
 
-    config_file="$(detect_phpmyadmin_config_file)"
-    if [[ -z "${config_file}" ]]; then
-        if [[ -s "${template_config}" && -d "${PHPMYADMIN_ROOT}" ]]; then
-            config_file="${PHPMYADMIN_ROOT%/}/config.inc.php"
-            info "phpMyAdmin config target selected: ${config_file}"
-        else
-            warn "phpMyAdmin config file not found in known paths."
-            deploy_phpmyadmin_helper
-            return 0
+    config_candidate="$(detect_phpmyadmin_config_file)"
+    for config_file in "${config_candidate}" \
+        "/etc/phpmyadmin/config.inc.php" \
+        "/etc/phpMyAdmin/config.inc.php" \
+        "/usr/share/phpmyadmin/config.inc.php" \
+        "/usr/share/phpMyAdmin/config.inc.php" \
+        "${PHPMYADMIN_ROOT%/}/config.inc.php"; do
+        [[ -n "${config_file}" ]] || continue
+        [[ -f "${config_file}" ]] || continue
+        if [[ -z "${config_seen[${config_file}]:-}" ]]; then
+            config_files+=("${config_file}")
+            config_seen["${config_file}"]="1"
         fi
-    fi
-    config_dir="$(dirname "${config_file}")"
-    info "phpMyAdmin config detected: ${config_file}"
-    if [[ -s "${template_config}" ]]; then
-        run mkdir -p "$(dirname "${config_file}")"
-        run cp "${template_config}" "${config_file}"
+    done
+
+    if [[ "${#config_files[@]}" -eq 0 ]]; then
+        if [[ -d "/etc/phpmyadmin" ]]; then
+            config_file="/etc/phpmyadmin/config.inc.php"
+        elif [[ -d "/usr/share/phpmyadmin" ]]; then
+            config_file="/usr/share/phpmyadmin/config.inc.php"
+        elif [[ -d "/usr/share/phpMyAdmin" ]]; then
+            config_file="/usr/share/phpMyAdmin/config.inc.php"
+        elif [[ -n "${PHPMYADMIN_ROOT:-}" ]]; then
+            config_file="${PHPMYADMIN_ROOT%/}/config.inc.php"
+        else
+            config_file="/etc/phpmyadmin/config.inc.php"
+        fi
+
+        ensure_parent_dir_writable "${config_file}"
+        cat > "${config_file}" <<EOF
+<?php
+declare(strict_types=1);
+
+\$i = 0;
+\$i++;
+\$cfg['Servers'][\$i]['auth_type'] = 'signon';
+\$cfg['Servers'][\$i]['SignonSession'] = 'SignonSession';
+\$cfg['Servers'][\$i]['SignonURL'] = '${signon_url}';
+\$cfg['Servers'][\$i]['host'] = '127.0.0.1';
+EOF
         run chmod 640 "${config_file}" || true
-        template_applied="true"
-        info "phpMyAdmin template applied: ${template_config}"
-    fi
-
-    if is_webtools_separate_mode_active \
-        || [[ "${config_dir}" == "${PHPMYADMIN_ROOT%/}" ]] \
-        || [[ "${config_dir}" == "/root/phpmyadmin" ]]; then
-        signon_url="/phpmyadminsignin.php"
-    fi
-
-    if grep -Eq "\\\$cfg\\['Servers'\\]\\[\\\$i\\]" "${config_file}"; then
-        has_dynamic_server_index="true"
+        config_files=("${config_file}")
+        info "phpMyAdmin config created by int-tool.sh: ${config_file}"
+    else
+        config_file="${config_files[0]}"
+        info "phpMyAdmin config detected: ${config_file}"
     fi
 
     if [[ -f "${creds_file}" ]]; then
@@ -2429,40 +3155,38 @@ EOF
         fi
     fi
 
-    if [[ "${template_applied}" == "true" ]] \
-        || ! grep -Eq "^[[:space:]]*\\\$cfg\\['blowfish_secret'\\][[:space:]]*=" "${config_file}" \
-        || grep -Eq "^[[:space:]]*\\\$cfg\\['blowfish_secret'\\][[:space:]]*=[[:space:]]*'';" "${config_file}"; then
+    if [[ -s "${blowfish_secret_file}" ]]; then
+        secret="$(head -n1 "${blowfish_secret_file}" 2>/dev/null | tr -d '\r\n' || true)"
+    fi
+    if [[ -z "${secret}" || "${#secret}" -lt 32 ]]; then
         secret="$(generate_random_password)$(generate_random_password)"
+        run mkdir -p "$(dirname "${blowfish_secret_file}")"
+        cat > "${blowfish_secret_file}" <<EOF
+${secret}
+EOF
+        run chmod 600 "${blowfish_secret_file}" || true
+    fi
+    for config_file in "${config_files[@]}"; do
+        local has_dynamic_server_index="false"
+        [[ -f "${config_file}" ]] || continue
+
+        if grep -Eq "\\\$cfg\\['Servers'\\]\\[\\\$i\\]" "${config_file}"; then
+            has_dynamic_server_index="true"
+        fi
+
         upsert_php_array_setting "${config_file}" "cfg" "blowfish_secret" "'${secret}'"
-    fi
+        upsert_php_cfg_server_setting "${config_file}" "pmadb" "'${control_db}'"
+        upsert_php_cfg_server_setting "${config_file}" "controluser" "'${control_user}'"
+        upsert_php_cfg_server_setting "${config_file}" "controlpass" "'${control_password}'"
 
-    upsert_php_array_setting "${config_file}" "cfg" "TempDir" "'${temp_dir}'"
-    upsert_php_array_setting "${config_file}" "cfg" "ShowCreateDb" "true"
-    upsert_php_array_setting "${config_file}" "cfg" "AllowUserDropDatabase" "true"
-    upsert_php_array_setting "${config_file}" "cfg" "MainPageIconic" "false"
-    upsert_php_cfg_server_setting "${config_file}" "host" "'127.0.0.1'"
-    upsert_php_cfg_server_setting "${config_file}" "hide_db" "''"
-    upsert_php_cfg_server_setting "${config_file}" "auth_type" "'signon'"
-    upsert_php_cfg_server_setting "${config_file}" "SignonSession" "'SignonSession'"
-    upsert_php_cfg_server_setting "${config_file}" "SignonURL" "'${signon_url}'"
-    upsert_php_cfg_server_setting "${config_file}" "AllowNoPassword" "false"
-    upsert_php_cfg_server_setting "${config_file}" "AllowRoot" "false"
-    upsert_php_cfg_server_setting "${config_file}" "user" "''"
-    upsert_php_cfg_server_setting "${config_file}" "password" "''"
-    upsert_php_cfg_server_setting "${config_file}" "pmadb" "'${control_db}'"
-    upsert_php_cfg_server_setting "${config_file}" "controluser" "'${control_user}'"
-    upsert_php_cfg_server_setting "${config_file}" "controlpass" "'${control_password}'"
-
-    # Fallback only for configs that do not use $i.
-    if [[ "${has_dynamic_server_index}" != "true" ]]; then
-        upsert_php_cfg_server_index_setting "${config_file}" "1" "host" "'127.0.0.1'"
-        upsert_php_cfg_server_index_setting "${config_file}" "1" "hide_db" "''"
-        upsert_php_cfg_server_index_setting "${config_file}" "1" "auth_type" "'signon'"
-        upsert_php_cfg_server_index_setting "${config_file}" "1" "SignonSession" "'SignonSession'"
-        upsert_php_cfg_server_index_setting "${config_file}" "1" "SignonURL" "'${signon_url}'"
-        upsert_php_cfg_server_index_setting "${config_file}" "1" "AllowNoPassword" "false"
-        upsert_php_cfg_server_index_setting "${config_file}" "1" "AllowRoot" "false"
-    fi
+        # Fallback only for configs that do not use $i.
+        if [[ "${has_dynamic_server_index}" != "true" ]]; then
+            upsert_php_cfg_server_index_setting "${config_file}" "1" "pmadb" "'${control_db}'"
+            upsert_php_cfg_server_index_setting "${config_file}" "1" "controluser" "'${control_user}'"
+            upsert_php_cfg_server_index_setting "${config_file}" "1" "controlpass" "'${control_password}'"
+        fi
+    done
+    info "phpMyAdmin credentials updated in config file(s) by int-tool.sh"
     deploy_phpmyadmin_helper
 
     if ! php -m 2>/dev/null | grep -qi "^ctype$"; then
@@ -2473,7 +3197,8 @@ EOF
 }
 
 configure_roundcube_runtime() {
-    local config_file="/etc/roundcube/config.inc.php"
+    local config_file=""
+    local template_config=""
     local creds_file="/etc/roundcube/serverpanel-db.conf"
     local debian_db_file="/etc/roundcube/debian-db.php"
     local roundcube_db="${ROUNDCUBE_DB_NAME:-roundcube}"
@@ -2481,7 +3206,7 @@ configure_roundcube_runtime() {
     local roundcube_password="${ROUNDCUBE_DB_PASSWORD:-}"
     local sql_db sql_user sql_password db_cli users_table_exists schema_file
     local db_cli_q db_name_q schema_q
-    local owner_group des_key=""
+    local owner_group web_group des_key=""
 
     if ! is_package_installed roundcube && ! is_package_installed roundcube-core; then
         warn "Roundcube package is not installed. Skipping Roundcube runtime configuration."
@@ -2498,7 +3223,13 @@ configure_roundcube_runtime() {
     ensure_default_php_extension "gd" true
     ensure_default_php_extension "imap" false
 
+    config_file="$(detect_roundcube_config_file)"
     run mkdir -p /etc/roundcube
+    run mkdir -p "$(dirname "${config_file}")" || true
+    if [[ "${PKG_MANAGER}" == "dnf" ]]; then
+        debian_db_file="/etc/roundcubemail/debian-db.php"
+        run mkdir -p /etc/roundcubemail || true
+    fi
     if [[ -f "${creds_file}" ]]; then
         roundcube_user="$(grep -E '^DB_USER=' "${creds_file}" | head -n1 | cut -d= -f2- || true)"
         roundcube_password="$(grep -E '^DB_PASSWORD=' "${creds_file}" | head -n1 | cut -d= -f2- || true)"
@@ -2558,14 +3289,21 @@ EOF
         fi
     fi
 
-    if [[ ! -f "${config_file}" ]]; then
+    template_config="$(resolve_extra_file "roundcube.config.inc.php")"
+    if [[ -n "${template_config}" && -s "${template_config}" ]]; then
+        ensure_parent_dir_writable "${config_file}"
+        run cp "${template_config}" "${config_file}"
+        run chmod 640 "${config_file}" || true
+        info "Roundcube template applied: ${template_config}"
+    elif [[ ! -f "${config_file}" ]]; then
         cat > "${config_file}" <<'EOF'
 <?php
 $config = [];
 EOF
     fi
 
-    cat > "${debian_db_file}" <<EOF
+    if [[ "${PKG_MANAGER}" == "apt" || "$(dirname "${debian_db_file}")" == "/etc/roundcube" ]]; then
+        cat > "${debian_db_file}" <<EOF
 <?php
 \$dbuser='${roundcube_user}';
 \$dbpass='${roundcube_password}';
@@ -2576,8 +3314,11 @@ EOF
 \$dbtype='mysql';
 \$dbsocket='';
 EOF
-    run chown root:www-data "${debian_db_file}" || true
-    run chmod 640 "${debian_db_file}" || true
+        web_group="$(web_owner_group)"
+        web_group="${web_group#*:}"
+        run chown "root:${web_group}" "${debian_db_file}" || true
+        run chmod 640 "${debian_db_file}" || true
+    fi
 
     run mkdir -p /var/lib/roundcube/temp /var/log/roundcube
     owner_group="$(web_owner_group)"
@@ -2593,6 +3334,9 @@ EOF
     upsert_php_array_setting "${config_file}" "config" "smtp_port" "587"
     upsert_php_array_setting "${config_file}" "config" "smtp_user" "'%u'"
     upsert_php_array_setting "${config_file}" "config" "smtp_pass" "'%p'"
+    upsert_php_array_setting "${config_file}" "config" "auto_create_user" "true"
+    upsert_php_array_setting "${config_file}" "config" "login_autocomplete" "2"
+    upsert_php_array_setting "${config_file}" "config" "session_lifetime" "3600"
 
     if ! grep -Eq "^[[:space:]]*\\\$config\\['des_key'\\][[:space:]]*=" "${config_file}" \
         || grep -Eq "^[[:space:]]*\\\$config\\['des_key'\\][[:space:]]*=[[:space:]]*'';" "${config_file}"; then
@@ -2607,6 +3351,22 @@ install_roundcube_webmail() {
     ensure_default_php_extension "intl" true
     ensure_default_php_extension "gd" true
     ensure_default_php_extension "imap" false
+
+    if [[ "${PKG_MANAGER}" == "dnf" ]]; then
+        if is_package_installed roundcube || is_package_installed roundcube-core; then
+            ok "Already installed: roundcubemail"
+            return 0
+        fi
+
+        ensure_package roundcube true
+        ensure_package roundcube-mysql true
+        if is_package_installed roundcube || is_package_installed roundcube-core; then
+            ok "Roundcube package install completed."
+        else
+            warn "Roundcube install did not complete."
+        fi
+        return 0
+    fi
 
     if is_package_installed roundcube || is_package_installed roundcube-core; then
         ok "Already installed: roundcube"
@@ -2637,6 +3397,44 @@ install_roundcube_webmail() {
     fi
 }
 
+install_dovecot_storage_stack() {
+    local installer_script=""
+
+    ensure_package dovecot-core true
+    ensure_package dovecot-imapd true
+    ensure_package dovecot-pop3d true
+
+    if [[ "${PKG_MANAGER}" == "apt" ]]; then
+        installer_script="${PROJECT_DIR%/}/scripts/install-roundcube-dovecot-mysql.sh"
+        if [[ ! -f "${installer_script}" ]]; then
+            installer_script="${SCRIPT_DIR}/ServerPanel/scripts/install-roundcube-dovecot-mysql.sh"
+        fi
+        if [[ ! -f "${installer_script}" ]]; then
+            installer_script="${SCRIPT_DIR}/scripts/install-roundcube-dovecot-mysql.sh"
+        fi
+
+        if [[ -f "${installer_script}" ]]; then
+            run bash "${installer_script}" --skip-update || true
+        else
+            ensure_package dovecot-mysql true
+        fi
+    else
+        ensure_package dovecot-mysql true
+    fi
+
+    if systemctl cat dovecot.service >/dev/null 2>&1; then
+        run systemctl enable dovecot || true
+        run systemctl restart dovecot || true
+        if systemctl is-active --quiet dovecot; then
+            ok "Dovecot service is running."
+        else
+            warn "Dovecot service is not active after restart. Check: systemctl status dovecot"
+        fi
+    else
+        warn "dovecot.service not found after package install."
+    fi
+}
+
 install_mariadb_phpmyadmin() {
     local phpmyadmin_webserver
     if ! is_package_available mariadb-server; then
@@ -2663,27 +3461,40 @@ install_mariadb_phpmyadmin() {
         if ! is_package_available phpmyadmin; then
             warn "Package not available, skipping: phpmyadmin"
         else
-            phpmyadmin_webserver="none"
-            if wants_apache; then
-                phpmyadmin_webserver="apache2"
-            fi
+            if [[ "${PKG_MANAGER}" == "apt" ]]; then
+                phpmyadmin_webserver="none"
+                if wants_apache; then
+                    phpmyadmin_webserver="apache2"
+                fi
 
-            echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect ${phpmyadmin_webserver}" | debconf-set-selections
-            echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections
-            run env DEBIAN_FRONTEND=noninteractive apt install -y phpmyadmin
+                echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect ${phpmyadmin_webserver}" | debconf-set-selections
+                echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections
+                run env DEBIAN_FRONTEND=noninteractive apt install -y phpmyadmin
+            else
+                ensure_package phpmyadmin true
+            fi
         fi
     fi
 
     install_roundcube_webmail
+    install_dovecot_storage_stack
     configure_phpmyadmin_runtime
 }
 
 web_owner_group() {
-    if wants_apache || wants_nginx; then
+    if id -u www-data >/dev/null 2>&1; then
         echo "www-data:www-data"
-    else
-        echo "www-data:www-data"
+        return 0
     fi
+    if id -u apache >/dev/null 2>&1; then
+        echo "apache:apache"
+        return 0
+    fi
+    if id -u nginx >/dev/null 2>&1; then
+        echo "nginx:nginx"
+        return 0
+    fi
+    echo "root:root"
 }
 
 download_file() {
@@ -2892,25 +3703,31 @@ Or:      bash int-tool.sh --base-url http://host/path/ServerInstaller/"
 install_packages() {
     info "Step 1/5: Installing required packages and validating existing stack"
     disable_mysql_apt_repos
-    run apt update
+    pkg_update_cache
+    if [[ "${PKG_MANAGER}" == "dnf" ]]; then
+        ensure_package epel-release true
+        pkg_update_cache
+    fi
     reset_database_stack
 
     ensure_package ca-certificates
     ensure_package gnupg
-    ensure_package lsb-release
-    ensure_package software-properties-common
+    ensure_package lsb-release true
+    ensure_package software-properties-common true
     ensure_package curl
     ensure_package wget
     ensure_package git
     ensure_package unzip
     ensure_package sqlite3
-    ensure_package ufw
+    ensure_package ufw true
     ensure_package openssh-server
     ensure_package redis-server true
     ensure_package composer
     ensure_package nodejs
     info "Skipping distro npm package install (NodeSource nodejs provides npm and avoids apt dependency conflicts)."
-    ensure_package debconf-utils
+    if [[ "${PKG_MANAGER}" == "apt" ]]; then
+        ensure_package debconf-utils
+    fi
     ensure_package php-cli
     ensure_package php-fpm
     ensure_package php-mbstring
@@ -2920,9 +3737,11 @@ install_packages() {
     ensure_package php-sqlite3
     ensure_package php-mysql
 
-    ensure_ondrej_repo
-    disable_mysql_apt_repos
-    run apt update
+    if [[ "${PKG_MANAGER}" == "apt" ]]; then
+        ensure_ondrej_repo
+        disable_mysql_apt_repos
+        pkg_update_cache
+    fi
 
     install_web_server
     install_php_versions
@@ -2941,14 +3760,22 @@ install_packages() {
 }
 
 setup_ssh() {
+    local ssh_service=""
     info "Step 2/5: Enabling SSH service"
-    run systemctl enable --now ssh
-    run ufw allow OpenSSH || true
-    run ufw allow 22/tcp || true
-    run ufw allow "${PANEL_PORT}/tcp" || true
+    ssh_service="$(detect_ssh_service)"
+    if [[ -n "${ssh_service}" ]]; then
+        run systemctl enable --now "${ssh_service}"
+    else
+        warn "SSH service unit not found (ssh/sshd)."
+    fi
+
+    prepare_firewall_backend
+    allow_firewall_service "ssh"
+    allow_firewall_port "22" "tcp"
+    allow_firewall_port "${PANEL_PORT}" "tcp"
     if [[ "${WEBTOOLS_SEPARATE_PORTS}" == "true" ]]; then
-        run ufw allow "${PHPMYADMIN_PORT}/tcp" || true
-        run ufw allow "${ROUNDCUBE_PORT}/tcp" || true
+        allow_firewall_port "${PHPMYADMIN_PORT}" "tcp"
+        allow_firewall_port "${ROUNDCUBE_PORT}" "tcp"
     fi
     ok "SSH enabled and firewall rules added."
 }
@@ -2975,6 +3802,7 @@ ExecStart=/usr/bin/php artisan serve --host=0.0.0.0 --port=${PANEL_PORT}
 Restart=always
 RestartSec=5
 Environment=APP_ENV=production
+Environment=PHP_CLI_SERVER_WORKERS=${PHP_CLI_SERVER_WORKERS}
 
 [Install]
 WantedBy=multi-user.target
@@ -2989,6 +3817,7 @@ setup_apache_proxy_default_site() {
         return
     fi
 
+    sanitize_apache_legacy_panel_port_bindings
     info "Configuring Apache default site to proxy :80 -> :${PANEL_PORT}"
     cat > /etc/apache2/ports.conf <<EOF
 Listen 80
@@ -3002,25 +3831,15 @@ Listen 80
 </IfModule>
 EOF
     run a2enmod proxy proxy_http headers rewrite
-    cat > /etc/apache2/sites-available/serverpanel-proxy.conf <<EOF
-<VirtualHost *:80>
-    ServerName _
-
-    ProxyPreserveHost On
-    ProxyPass / http://127.0.0.1:${PANEL_PORT}/
-    ProxyPassReverse / http://127.0.0.1:${PANEL_PORT}/
-
-    ErrorLog \${APACHE_LOG_DIR}/serverpanel_error.log
-    CustomLog \${APACHE_LOG_DIR}/serverpanel_access.log combined
-</VirtualHost>
-EOF
-    run a2dissite 000-default || true
+    write_serverpanel_apache_proxy_site_conf
+    disable_apache_site_if_enabled "000-default"
     run a2ensite serverpanel-proxy
-    if command -v apache2ctl >/dev/null 2>&1; then
-        if ! apache2ctl configtest; then
-            warn "Apache config test failed. Skipping Apache restart; panel stays available on port ${PANEL_PORT}."
-            return
-        fi
+    if ! apache_configtest_with_self_heal 2; then
+        warn "Apache config test failed. Skipping Apache restart; panel stays available on port ${PANEL_PORT}."
+        warn "Quick checks:"
+        echo "  apache2ctl configtest"
+        echo "  tail -n 80 /tmp/serverpanel-apache-configtest.log"
+        return
     fi
 
     # Apache reverse proxy is optional for panel access (panel still works on PANEL_PORT),
@@ -3158,6 +3977,7 @@ configure_apache_backend_for_dual_stack() {
         return
     fi
 
+    sanitize_apache_legacy_panel_port_bindings
     info "Configuring Apache backend listener on :${APACHE_BACKEND_PORT} (Nginx frontend :${NGINX_PRIMARY_PORT})"
     run a2enmod proxy_fcgi setenvif rewrite headers || true
 
@@ -3180,28 +4000,27 @@ configure_apache_backend_for_dual_stack() {
         run sed -i "s/<VirtualHost \\*:80>/<VirtualHost *:${APACHE_BACKEND_PORT}>/" "${default_conf}" || true
     fi
 
-    run a2dissite serverpanel-proxy || true
+    disable_apache_site_if_enabled "serverpanel-proxy"
     run a2ensite 000-default.conf || true
 
-    if command -v apache2ctl >/dev/null 2>&1; then
-        if ! apache2ctl configtest; then
-            warn "Apache config test failed after backend-listener setup."
-            warn "Restoring Apache backup configs."
-            if [[ -f "${ports_backup}" ]]; then
-                cp "${ports_backup}" "${ports_conf}" || true
-            fi
-            if [[ -f "${default_backup}" ]]; then
-                cp "${default_backup}" "${default_conf}" || true
-            fi
-            restart_apache_safely
-            return
+    if ! apache_configtest_with_self_heal 2; then
+        warn "Apache config test failed after backend-listener setup."
+        warn "Restoring Apache backup configs."
+        if [[ -f "${ports_backup}" ]]; then
+            cp "${ports_backup}" "${ports_conf}" || true
         fi
+        if [[ -f "${default_backup}" ]]; then
+            cp "${default_backup}" "${default_conf}" || true
+        fi
+        restart_apache_safely
+        return
     fi
 
     restart_apache_safely
 }
 
 start_services() {
+    local ssh_service=""
     info "Step 5/5: Starting web/database services"
     check_and_prepare_web_ports_before_service_ops
     if wants_apache; then
@@ -3230,9 +4049,15 @@ start_services() {
     fi
     ensure_database_running
     ensure_redis_running
+    ensure_dovecot_running
     configure_phpmyadmin_runtime
     configure_roundcube_runtime
-    run systemctl restart ssh
+    ssh_service="$(detect_ssh_service)"
+    if [[ -n "${ssh_service}" ]]; then
+        run systemctl restart "${ssh_service}" || true
+    else
+        warn "SSH service unit not found (ssh/sshd); skipping restart."
+    fi
     setup_panel_startup_service
     if [[ "${WEBTOOLS_SEPARATE_PORTS}" == "true" ]]; then
         cleanup_panel_embedded_webtools_links "${PROJECT_DIR}"
@@ -3485,6 +4310,18 @@ repair_apache_proxy_menu() {
             if [[ "${apache_port}" =~ ^[0-9]+$ ]] && (( apache_port >= 1 && apache_port <= 65535 )); then
                 APACHE_BACKEND_PORT="${apache_port}"
             fi
+            if [[ "${NGINX_PRIMARY_PORT}" == "${PANEL_PORT}" ]]; then
+                warn "Nginx frontend port cannot match panel port ${PANEL_PORT}."
+                return
+            fi
+            if [[ "${APACHE_BACKEND_PORT}" == "${PANEL_PORT}" ]]; then
+                warn "Apache backend port cannot match panel port ${PANEL_PORT}."
+                return
+            fi
+            if [[ "${APACHE_BACKEND_PORT}" == "${NGINX_PRIMARY_PORT}" ]]; then
+                warn "Apache backend and Nginx frontend ports must be different."
+                return
+            fi
             WEB_SERVER="both"
             configure_apache_backend_for_dual_stack
             setup_nginx_proxy_default_site
@@ -3493,6 +4330,10 @@ repair_apache_proxy_menu() {
             nginx_port="$(ask_input "Nginx frontend port" "${NGINX_PRIMARY_PORT}")"
             if [[ "${nginx_port}" =~ ^[0-9]+$ ]] && (( nginx_port >= 1 && nginx_port <= 65535 )); then
                 NGINX_PRIMARY_PORT="${nginx_port}"
+            fi
+            if [[ "${NGINX_PRIMARY_PORT}" == "${PANEL_PORT}" ]]; then
+                warn "Nginx frontend port cannot match panel port ${PANEL_PORT}."
+                return
             fi
             WEB_SERVER="nginx"
             setup_nginx_proxy_default_site
@@ -3531,7 +4372,7 @@ disable_panel_direct_ip_proxy() {
 
     if [[ "${apply_apache}" == "true" ]] && systemctl cat apache2.service >/dev/null 2>&1; then
         info "Disabling Apache panel proxy mapping on :80"
-        run a2dissite serverpanel-proxy || true
+        disable_apache_site_if_enabled "serverpanel-proxy"
         if [[ -f /etc/apache2/sites-available/000-default.conf ]]; then
             run a2ensite 000-default || true
         fi
@@ -3583,23 +4424,22 @@ restart_apache_safely() {
     if ! systemctl cat apache2.service >/dev/null 2>&1; then
         return 0
     fi
+    sanitize_apache_legacy_panel_port_bindings
     if [[ "${WEB_SERVER}" == "both" ]]; then
         apache_check_port="${APACHE_BACKEND_PORT}"
     fi
 
-    if command -v apache2ctl >/dev/null 2>&1; then
-        set +e
-        apache2ctl configtest >/tmp/serverpanel-apache-configtest.log 2>&1
-        apache_test_status=$?
-        set -e
-        if [[ "${apache_test_status}" -ne 0 ]]; then
-            warn "Apache config test failed. Skipping Apache restart."
-            warn "Quick checks:"
-            echo "  apache2ctl configtest"
-            echo "  tail -n 80 /tmp/serverpanel-apache-configtest.log"
-            echo "  journalctl -u apache2 -n 80 --no-pager"
-            return 0
-        fi
+    set +e
+    apache_configtest_with_self_heal 2
+    apache_test_status=$?
+    set -e
+    if [[ "${apache_test_status}" -ne 0 ]]; then
+        warn "Apache config test failed. Skipping Apache restart."
+        warn "Quick checks:"
+        echo "  apache2ctl configtest"
+        echo "  tail -n 80 /tmp/serverpanel-apache-configtest.log"
+        echo "  journalctl -u apache2 -n 80 --no-pager"
+        return 0
     fi
 
     local apache_restart_status=0
@@ -4434,7 +5274,7 @@ run_custom_install_prompt() {
 show_control_menu() {
     echo
     echo -e "${CYAN}============================================================${NC}"
-    echo -e "${CYAN}               Int Tool (Ubuntu Server)                    ${NC}"
+    echo -e "${CYAN}               Int Tool (Linux Server)                     ${NC}"
     echo -e "${CYAN}============================================================${NC}"
     echo "1) Install ServerPanel (default auto)"
     if is_webtools_separate_mode_active; then

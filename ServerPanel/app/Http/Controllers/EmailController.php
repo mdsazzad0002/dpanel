@@ -183,7 +183,9 @@ class EmailController extends Controller
                 ->with('error', "Auto login blocked for {$email}: ".$mailboxCheck['message']);
         }
 
-        $targetUrl = (string) ($setupCheck['webmail_url'] ?? $this->resolveWebmailUrl());
+        $targetUrl = $this->buildRoundcubeLoginUrl(
+            (string) ($setupCheck['webmail_url'] ?? $this->resolveWebmailUrl())
+        );
 
         return response()->view('webmail.autologin', [
             'targetUrl' => $targetUrl,
@@ -218,9 +220,12 @@ class EmailController extends Controller
             || strcasecmp($configuredWebmailEnv, 'auto') === 0
             || filter_var($configuredWebmailEnv, FILTER_VALIDATE_URL) !== false;
         $webmailUrl = $this->resolveWebmailUrl();
+        $webmailLoginUrl = $this->buildRoundcubeLoginUrl($webmailUrl);
         $webmailUrlValid = filter_var($webmailUrl, FILTER_VALIDATE_URL) !== false;
         $postfix = $this->serviceStatus('postfix');
         $dovecot = $this->serviceStatus('dovecot');
+        $storageBackendReady = $isWindows || $this->isDovecotStorageBackendReady();
+        $dovecotMysqlReady = $isWindows || $this->isDovecotMysqlDriverAvailable();
         $servicesReady = $isWindows || $dovecot === 'running';
         $webmailReachable = $webmailUrlValid ? $this->isUrlReachable($webmailUrl) : false;
         $messages = [];
@@ -234,6 +239,12 @@ class EmailController extends Controller
         if (! $servicesReady) {
             $messages[] = 'Dovecot is down. Start Dovecot to enable Roundcube IMAP login.';
         }
+        if (! $storageBackendReady) {
+            $messages[] = 'Dovecot mailbox backend is not ready. Sync mailbox storage first.';
+        }
+        if (! $isWindows && ! $dovecotMysqlReady) {
+            $messages[] = 'dovecot-mysql driver is not detected. Install package: dovecot-mysql.';
+        }
         if (! $isWindows && $postfix !== 'running') {
             $messages[] = 'Postfix is down. Sending mail may fail even if login works.';
         }
@@ -243,12 +254,17 @@ class EmailController extends Controller
             $messages[] = 'Webmail reachability check unavailable (curl extension missing).';
         }
 
-        $autologinReady = $webmailConfigured && $webmailUrlValid && $servicesReady && $webmailReachable !== false;
+        $autologinReady = $webmailConfigured
+            && $webmailUrlValid
+            && $servicesReady
+            && $storageBackendReady
+            && $webmailReachable !== false;
 
         return [
             'is_windows' => $isWindows,
             'webmail_configured' => $webmailConfigured,
             'webmail_url' => $webmailUrl,
+            'webmail_login_url' => $webmailLoginUrl,
             'webmail_url_valid' => $webmailUrlValid,
             'webmail_reachable' => $webmailReachable,
             'services' => [
@@ -256,6 +272,8 @@ class EmailController extends Controller
                 'dovecot' => $dovecot,
             ],
             'services_ready' => $servicesReady,
+            'storage_backend_ready' => $storageBackendReady,
+            'dovecot_mysql_ready' => $dovecotMysqlReady,
             'autologin_ready' => $autologinReady,
             'messages' => $messages,
         ];
@@ -281,6 +299,52 @@ class EmailController extends Controller
     private function buildPanelRoundcubeUrl(Request $request): string
     {
         return rtrim($request->getSchemeAndHttpHost(), '/').'/roundcube/';
+    }
+
+    private function buildRoundcubeLoginUrl(string $baseUrl): string
+    {
+        $baseUrl = trim($baseUrl);
+        if ($baseUrl === '') {
+            return $baseUrl;
+        }
+
+        $parts = parse_url($baseUrl);
+        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
+            return $baseUrl;
+        }
+
+        $query = [];
+        if (isset($parts['query']) && is_string($parts['query']) && $parts['query'] !== '') {
+            parse_str($parts['query'], $query);
+        }
+        $query['_task'] = 'login';
+
+        $authority = '';
+        if (isset($parts['user'])) {
+            $authority .= $parts['user'];
+            if (isset($parts['pass'])) {
+                $authority .= ':'.$parts['pass'];
+            }
+            $authority .= '@';
+        }
+        $authority .= $parts['host'];
+        if (isset($parts['port'])) {
+            $authority .= ':'.$parts['port'];
+        }
+
+        $path = (string) ($parts['path'] ?? '/');
+        if ($path === '') {
+            $path = '/';
+        }
+
+        $url = $parts['scheme'].'://'.$authority.$path;
+        $url .= '?'.http_build_query($query);
+
+        if (isset($parts['fragment']) && $parts['fragment'] !== '') {
+            $url .= '#'.$parts['fragment'];
+        }
+
+        return $url;
     }
 
     private function isWebtoolsSeparateMode(): bool
@@ -367,7 +431,76 @@ class EmailController extends Controller
             return ['ready' => false, 'message' => $firstSetupMessage];
         }
 
-        return ['ready' => true, 'message' => 'Auto login is ready.'];
+        $storageCheck = $this->checkMailboxStorageSync($email);
+        if (! $storageCheck['ok']) {
+            return ['ready' => false, 'message' => $storageCheck['message']];
+        }
+
+        return ['ready' => true, 'message' => 'Auto login is ready. Roundcube users row is created after first successful login.'];
+    }
+
+    private function isDovecotStorageBackendReady(): bool
+    {
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return true;
+        }
+
+        return is_file(self::DOVECOT_USERS_FILE)
+            && is_file(self::DOVECOT_AUTH_FILE)
+            && is_file(self::DOVECOT_AUTH_INCLUDE_FILE);
+    }
+
+    private function isDovecotMysqlDriverAvailable(): bool
+    {
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return true;
+        }
+
+        $paths = [
+            '/usr/lib/dovecot/modules/auth/libdriver_mysql.so',
+            '/usr/lib/dovecot/modules/auth/libauthdb_mysql.so',
+        ];
+        foreach ($paths as $path) {
+            if (is_file($path)) {
+                return true;
+            }
+        }
+
+        $dpkgOutput = trim((string) @shell_exec("dpkg -l 2>/dev/null | grep -E '^ii\\s+dovecot-mysql\\s'"));
+        if ($dpkgOutput !== '') {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array{ok: bool, message: string}
+     */
+    private function checkMailboxStorageSync(string $email): array
+    {
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return ['ok' => true, 'message' => ''];
+        }
+
+        if (! is_file(self::DOVECOT_USERS_FILE)) {
+            return ['ok' => false, 'message' => 'Dovecot users file is missing. Recreate mailbox or run mailbox sync.'];
+        }
+
+        $target = strtolower(trim($email));
+        if ($target === '') {
+            return ['ok' => false, 'message' => 'Mailbox email is empty.'];
+        }
+
+        $lines = $this->readDovecotUserLines();
+        foreach ($lines as $line) {
+            $lineEmail = strtolower(trim((string) strtok($line, ':')));
+            if ($lineEmail === $target) {
+                return ['ok' => true, 'message' => ''];
+            }
+        }
+
+        return ['ok' => false, 'message' => 'Mailbox is not synced to Dovecot auth users file.'];
     }
 
     /**
@@ -480,7 +613,10 @@ class EmailController extends Controller
     private function ensureDovecotStorageBackendReady(): array
     {
         if (! is_dir('/etc/dovecot/conf.d')) {
-            return ['ok' => false, 'message' => 'Dovecot is not installed. Install/start Dovecot first.'];
+            return [
+                'ok' => false,
+                'message' => 'Dovecot is not installed. Install/start Dovecot first (dovecot-core dovecot-imapd dovecot-pop3d dovecot-mysql).',
+            ];
         }
 
         @shell_exec('getent group '.escapeshellarg(self::VMAIL_GROUP).' >/dev/null 2>&1 || groupadd --system '.escapeshellarg(self::VMAIL_GROUP));

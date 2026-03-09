@@ -5,29 +5,34 @@ namespace App\Http\Controllers;
 use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\Mailbox;
+use App\Models\User;
 use App\Models\Website;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $stats = $this->buildStats();
+        $actor = $request->user();
+        $stats = $this->buildStats($actor);
 
         return Inertia::render('Dashboard', [
             'dashboardStats' => $stats,
+            'websiteRecords' => $this->buildWebsiteRecords($actor),
+            'websiteScopeLabel' => $this->websiteScopeLabel($actor),
         ]);
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function buildStats(): array
+    private function buildStats(?User $actor): array
     {
-        $websites = $this->safeCountWebsites();
-        $websitePending = $this->safeCountWebsitesPending();
+        $websites = $this->safeCountWebsites($actor);
+        $websitePending = $this->safeCountWebsitesPending($actor);
         $databaseRequests = $this->safeCountDatabaseRequests();
         $cronJobs = $this->safeCountActiveCronJobs();
 
@@ -70,30 +75,94 @@ class DashboardController extends Controller
         }
     }
 
-    private function safeCountWebsites(): int
+    private function safeCountWebsites(?User $actor): int
     {
         try {
             if (! DB::getSchemaBuilder()->hasTable('websites')) {
                 return 0;
             }
 
-            return Website::query()->count();
+            return Website::query()
+                ->visibleTo($actor)
+                ->count();
         } catch (\Throwable $e) {
             return 0;
         }
     }
 
-    private function safeCountWebsitesPending(): int
+    private function safeCountWebsitesPending(?User $actor): int
     {
         try {
             if (! DB::getSchemaBuilder()->hasTable('websites')) {
                 return 0;
             }
 
-            return Website::query()->where('status', 'pending')->count();
+            return Website::query()
+                ->visibleTo($actor)
+                ->where('status', 'pending')
+                ->count();
         } catch (\Throwable $e) {
             return 0;
         }
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildWebsiteRecords(?User $actor): array
+    {
+        try {
+            if (! DB::getSchemaBuilder()->hasTable('websites')) {
+                return [];
+            }
+
+            return Website::query()
+                ->with([
+                    'assignedReseller:id,name,email',
+                    'assignedUser:id,name,email',
+                ])
+                ->visibleTo($actor)
+                ->latest('created_at')
+                ->get()
+                ->map(function (Website $website): array {
+                    $assignedResellerName = $website->assignedReseller?->name;
+                    $assignedUserName = $website->assignedUser?->name;
+
+                    return [
+                        'id' => (string) $website->id,
+                        'domain' => strtolower(trim((string) ($website->domain ?? ''))),
+                        'root_path' => str_replace('\\', '/', trim((string) ($website->root_path ?? ''))),
+                        'php_version' => (string) ($website->php_version ?? ''),
+                        'enable_ssl' => (bool) ($website->enable_ssl ?? false),
+                        'status' => strtolower(trim((string) ($website->status ?? 'pending'))) ?: 'pending',
+                        'assigned_reseller_name' => $assignedResellerName,
+                        'assigned_user_name' => $assignedUserName,
+                        'created_by_label' => $assignedResellerName ?? $assignedUserName ?? 'Admin',
+                        'created_at' => $website->created_at?->toIso8601String(),
+                    ];
+                })
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    private function websiteScopeLabel(?User $actor): string
+    {
+        if ($actor?->hasRole('admin')) {
+            return 'All websites';
+        }
+
+        if ($actor?->hasRole('reseller')) {
+            return 'Your reseller websites';
+        }
+
+        if ($actor && ($actor->hasRole('general') || $actor->hasRole('general_user'))) {
+            return 'Your assigned websites';
+        }
+
+        return 'Websites';
     }
 
     private function safeCountDatabaseRequests(): int

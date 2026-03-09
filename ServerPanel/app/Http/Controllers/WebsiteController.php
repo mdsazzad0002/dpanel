@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -81,7 +82,7 @@ class WebsiteController extends Controller
         $limit = (int) $request->query('limit', 10);
         $limit = max(1, min($limit, 10));
 
-        $domains = collect($this->readRequests())
+        $domains = $this->visibleRequestsForActor($request->user())
             ->map(function (array $item): array {
                 $domain = $this->normalizeDomain((string) ($item['domain'] ?? ''));
                 $rootPath = (string) ($item['root_path'] ?? '');
@@ -116,56 +117,11 @@ class WebsiteController extends Controller
     /**
      * List created website requests/commands.
      */
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $rawRequests = collect($this->readRequests());
-        $assignmentUserIds = $rawRequests
-            ->flatMap(fn (array $item): array => [
-                (int) ($item['assigned_user_id'] ?? 0),
-                (int) ($item['assigned_reseller_id'] ?? 0),
-            ])
-            ->filter(fn (int $id): bool => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
-
-        $usersById = count($assignmentUserIds) > 0
-            ? User::query()->whereIn('id', $assignmentUserIds)->get(['id', 'name', 'email'])->keyBy('id')
-            : collect();
-
-        $requests = $rawRequests
-            ->map(function (array $item): array {
-                $domain = $this->normalizeDomain((string) ($item['domain'] ?? ''));
-                if ($domain !== '') {
-                    $item['domain'] = $domain;
-                    $item['root_path'] = $this->normalizeRootPath((string) ($item['root_path'] ?? ''), $domain);
-                    $item['site_owner'] = $this->extractSiteOwnerFromRootPath((string) $item['root_path']);
-                }
-
-                if (empty($item['command'])) {
-                    $item['command'] = $this->buildCommand([
-                        'domain' => $domain,
-                        'root_path' => (string) ($item['root_path'] ?? ''),
-                        'php_version' => (string) ($item['php_version'] ?? ''),
-                        'enable_ssl' => (bool) ($item['enable_ssl'] ?? false),
-                    ]);
-                }
-
-                return $item;
-            })
-            ->map(function (array $item) use ($usersById): array {
-                $assignedUserId = (int) ($item['assigned_user_id'] ?? 0);
-                $assignedResellerId = (int) ($item['assigned_reseller_id'] ?? 0);
-                $item['assigned_user_id'] = $assignedUserId > 0 ? $assignedUserId : null;
-                $item['assigned_reseller_id'] = $assignedResellerId > 0 ? $assignedResellerId : null;
-                $item['assigned_user_name'] = $assignedUserId > 0 ? ($usersById->get($assignedUserId)?->name ?? null) : null;
-                $item['assigned_reseller_name'] = $assignedResellerId > 0 ? ($usersById->get($assignedResellerId)?->name ?? null) : null;
-
-                return $item;
-            })
-            ->sortByDesc('created_at')
-            ->values()
-            ->all();
+        $requests = $this->decorateWebsiteRecords(
+            $this->visibleRequestsForActor($request->user())
+        );
 
         return Inertia::render('Websites/List', [
             'websiteRequests' => $requests,
@@ -261,10 +217,7 @@ class WebsiteController extends Controller
      */
     public function edit(string $id): Response
     {
-        $requestItem = collect($this->readRequests())->firstWhere('id', $id);
-
-        abort_if($requestItem === null, 404);
-        $requestItem = $this->normalizeWebsiteRecord($requestItem);
+        $requestItem = $this->findAuthorizedWebsiteOrFail($id);
 
         $phpVersions = $this->getPhpVersionsForWebsites();
         $currentVersion = (string) ($requestItem['php_version'] ?? '');
@@ -293,9 +246,7 @@ class WebsiteController extends Controller
      */
     public function manage(string $id): Response
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
-        $website = $this->normalizeWebsiteRecord($website);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
         $metrics = $this->safeBuildDynamicMetrics($website);
 
         $runtimeStatus = $this->detectRuntimeStatus($website);
@@ -343,9 +294,7 @@ class WebsiteController extends Controller
 
     public function webServerManager(string $id): Response
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
-        $website = $this->normalizeWebsiteRecord($website);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $domain = (string) ($website['domain'] ?? '');
 
@@ -361,9 +310,7 @@ class WebsiteController extends Controller
 
     public function sslManager(string $id): Response
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
-        $website = $this->normalizeWebsiteRecord($website);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         return Inertia::render('Websites/SslManager', [
             'website' => $website,
@@ -374,12 +321,7 @@ class WebsiteController extends Controller
     public function issueSsl(string $id): RedirectResponse
     {
         $requests = collect($this->readRequests());
-        $website = $requests->firstWhere('id', $id);
-        if (! is_array($website)) {
-            return redirect()->route('websites.list')->with('error', 'Website request not found.');
-        }
-
-        $website = $this->normalizeWebsiteRecord($website);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
         $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
         $rootPath = (string) ($website['root_path'] ?? '');
         $phpVersion = (string) ($website['php_version'] ?? '8.3');
@@ -392,39 +334,20 @@ class WebsiteController extends Controller
         if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
             return redirect()->route('websites.ssl', $id)->with('error', 'SSL issue is only supported on Linux servers.');
         }
-        if (! function_exists('posix_geteuid') || posix_geteuid() !== 0) {
-            return redirect()->route('websites.ssl', $id)->with('error', 'SSL issue requires root privileges. Run ServerPanel as root.');
+        $issueResult = $this->runIssueSslScript($domain, $rootPath, $this->shouldAddWwwAlias($domain));
+        if (! $issueResult['ran']) {
+            return redirect()->route('websites.ssl', $id)->with('error', 'SSL issue script is not available on this server.');
         }
-
-        $certbotPath = trim((string) @shell_exec('command -v certbot 2>/dev/null'));
-        if ($certbotPath === '') {
-            return redirect()->route('websites.ssl', $id)->with('error', 'certbot not found. Install certbot first.');
-        }
-
-        $domains = [$domain];
-        if ($this->shouldAddWwwAlias($domain)) {
-            $domains[] = 'www.'.$domain;
-        }
-
-        $domainArgs = implode(' ', array_map(fn (string $item): string => '-d '.escapeshellarg($item), $domains));
-        $command = sprintf(
-            '%s certonly --non-interactive --agree-tos --register-unsafely-without-email --webroot -w %s %s',
-            escapeshellarg($certbotPath),
-            escapeshellarg($rootPath),
-            $domainArgs,
-        );
-
-        $output = [];
-        $exitCode = 1;
-        @exec($command.' 2>&1', $output, $exitCode);
-        $outputText = trim(implode("\n", $output));
-        if ($exitCode !== 0) {
-            $summary = trim((string) preg_replace('/\s+/', ' ', $outputText));
+        if (! $issueResult['success']) {
+            $summary = trim((string) preg_replace('/\s+/', ' ', (string) ($issueResult['output'] ?? '')));
             if ($summary !== '') {
                 $summary = substr($summary, 0, 280);
             }
 
             $message = 'SSL issue failed.';
+            if ((int) ($issueResult['exit_code'] ?? 1) === 77) {
+                $message = 'SSL issue requires root privileges. Run ServerPanel as root or allow passwordless sudo for this action.';
+            }
             if ($summary !== '') {
                 $message .= ' '.$summary;
             }
@@ -473,9 +396,7 @@ class WebsiteController extends Controller
 
     public function Usage(string $id): Response
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
-        $website = $this->normalizeWebsiteRecord($website);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $metrics = $this->safeBuildDynamicMetrics($website);
         $histories = $this->buildDynamicHistories((string) ($website['id'] ?? $id), $metrics);
@@ -501,12 +422,7 @@ class WebsiteController extends Controller
         };
 
         $requests = collect($this->readRequests());
-        $website = $requests->firstWhere('id', $id);
-        if (! is_array($website)) {
-            return redirect()->route('websites.list')->with('error', 'Website request not found.');
-        }
-
-        $website = $this->normalizeWebsiteRecord($website);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
         $domain = (string) ($website['domain'] ?? '');
         $rootPath = (string) ($website['root_path'] ?? '');
         $phpVersion = (string) ($website['php_version'] ?? '8.3');
@@ -548,12 +464,7 @@ class WebsiteController extends Controller
 
     public function clearProjectCache(string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        if (! is_array($website)) {
-            return redirect()->route('websites.list')->with('error', 'Website request not found.');
-        }
-
-        $website = $this->normalizeWebsiteRecord($website);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
         $rootPath = (string) ($website['root_path'] ?? '');
         if ($rootPath === '' || ! is_dir($rootPath)) {
             return redirect()->route('websites.manage', $id)->with('error', 'Website root path is missing or inaccessible.');
@@ -597,9 +508,7 @@ class WebsiteController extends Controller
 
     public function wordpressManager(string $id): Response
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
-        $website = $this->normalizeWebsiteRecord($website);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         return Inertia::render('Websites/WordPressInstaller', [
             'website' => $website,
@@ -623,12 +532,7 @@ class WebsiteController extends Controller
         };
 
         $requests = collect($this->readRequests());
-        $website = $requests->firstWhere('id', $id);
-        if (! is_array($website)) {
-            return redirect()->route('websites.list')->with('error', 'Website request not found.');
-        }
-
-        $website = $this->normalizeWebsiteRecord($website);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
         $domain = (string) ($website['domain'] ?? '');
         $rootPath = (string) ($website['root_path'] ?? '');
         $phpVersion = (string) ($website['php_version'] ?? '8.3');
@@ -704,7 +608,9 @@ class WebsiteController extends Controller
      */
     public function preview(string $id, ?string $path = null): BinaryFileResponse|\Illuminate\Http\Response
     {
-        $website = Website::query()->firstWhere('id', $id);
+        $website = Website::query()
+            ->visibleTo(request()->user())
+            ->firstWhere('id', $id);
         if (! $website) {
             return response(
                 "Preview not found\n".
@@ -793,8 +699,7 @@ class WebsiteController extends Controller
      */
     public function update(Request $request, string $id): RedirectResponse
     {
-        $existingRequest = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($existingRequest === null, 404);
+        $existingRequest = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $this->validatePayload($request);
         $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? ($existingRequest['app_installer'] ?? 'none'))));
@@ -862,8 +767,7 @@ class WebsiteController extends Controller
      */
     public function fileManager(Request $request, string $id): Response
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $basePath = $this->resolveFileManagerBasePath($website);
         $currentPath = $this->sanitizeRelativePath((string) $request->query('path', ''));
@@ -901,8 +805,7 @@ class WebsiteController extends Controller
 
     public function createFolder(Request $request, string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'path' => ['nullable', 'string', 'max:1000'],
@@ -928,8 +831,7 @@ class WebsiteController extends Controller
 
     public function createFile(Request $request, string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'path' => ['nullable', 'string', 'max:1000'],
@@ -960,8 +862,7 @@ class WebsiteController extends Controller
 
     public function saveFile(Request $request, string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'file_path' => ['required', 'string', 'max:1500'],
@@ -988,8 +889,7 @@ class WebsiteController extends Controller
 
     public function uploadFile(Request $request, string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'path' => ['nullable', 'string', 'max:1500'],
@@ -1024,8 +924,7 @@ class WebsiteController extends Controller
 
     public function changePermissions(Request $request, string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'item_path' => ['required', 'string', 'max:1500'],
@@ -1066,8 +965,7 @@ class WebsiteController extends Controller
 
     public function renameItem(Request $request, string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'item_path' => ['required', 'string', 'max:1500'],
@@ -1112,8 +1010,7 @@ class WebsiteController extends Controller
 
     public function moveItems(Request $request, string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'item_path' => ['nullable', 'string', 'max:1500'],
@@ -1209,8 +1106,7 @@ class WebsiteController extends Controller
 
     public function downloadFile(Request $request, string $id): BinaryFileResponse|RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'file_path' => ['required', 'string', 'max:1500'],
@@ -1233,8 +1129,7 @@ class WebsiteController extends Controller
 
     public function zipSelected(Request $request, string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'current_path' => ['nullable', 'string', 'max:1500'],
@@ -1298,8 +1193,7 @@ class WebsiteController extends Controller
 
     public function unzipItem(Request $request, string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'zip_path' => ['required', 'string', 'max:1500'],
@@ -1355,8 +1249,7 @@ class WebsiteController extends Controller
 
     public function deleteItem(Request $request, string $id): RedirectResponse
     {
-        $website = collect($this->readRequests())->firstWhere('id', $id);
-        abort_if($website === null, 404);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
         $validated = $request->validate([
             'item_path' => ['nullable', 'string', 'max:1500'],
@@ -1400,7 +1293,7 @@ class WebsiteController extends Controller
     public function destroy(string $id): RedirectResponse
     {
         $requests = collect($this->readRequests());
-        $existingRequest = $requests->firstWhere('id', $id);
+        $existingRequest = $this->findAuthorizedWebsiteOrFail($id);
         $before = $requests->count();
         $filtered = $requests->reject(fn (array $item) => ($item['id'] ?? null) === $id)->values();
 
@@ -1424,10 +1317,7 @@ class WebsiteController extends Controller
         ]);
 
         $requests = collect($this->readRequests());
-        $existingRequest = $requests->firstWhere('id', $id);
-        if (! is_array($existingRequest)) {
-            return redirect()->route('websites.list')->with('error', 'Website request not found.');
-        }
+        $existingRequest = $this->findAuthorizedWebsiteOrFail($id);
 
         $targetStatus = $validated['status'] === 'disabled' ? 'disabled' : 'pending';
 
@@ -1808,6 +1698,75 @@ class WebsiteController extends Controller
     }
 
     /**
+     * @return array{ran: bool, success: bool, output: string, exit_code: int}
+     */
+    private function runIssueSslScript(string $domain, string $rootPath, bool $includeWwwAlias): array
+    {
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return ['ran' => false, 'success' => false, 'output' => 'Windows environment', 'exit_code' => 1];
+        }
+
+        $scriptCandidates = [
+            base_path('scripts/issue-ssl.sh'),
+            '/usr/local/bin/serverpanel-issue-ssl.sh',
+        ];
+
+        $scriptPath = '';
+        foreach ($scriptCandidates as $candidate) {
+            if (is_file($candidate)) {
+                $scriptPath = $candidate;
+                break;
+            }
+        }
+        if ($scriptPath === '') {
+            return ['ran' => false, 'success' => false, 'output' => 'issue-ssl script not found', 'exit_code' => 1];
+        }
+
+        $parts = [
+            'bash',
+            escapeshellarg($scriptPath),
+            escapeshellarg($this->normalizeDomain($domain)),
+            escapeshellarg($rootPath),
+            $includeWwwAlias ? '1' : '0',
+        ];
+        $command = implode(' ', $parts);
+        $output = [];
+        $exitCode = 1;
+
+        $isRoot = function_exists('posix_geteuid') && posix_geteuid() === 0;
+        if ($isRoot) {
+            @exec($command.' 2>&1', $output, $exitCode);
+        } else {
+            $sudoPath = trim((string) @shell_exec('command -v sudo 2>/dev/null'));
+            if ($sudoPath === '') {
+                $output = ['sudo command not found and process is not root.'];
+                $exitCode = 77;
+            } else {
+                @exec(escapeshellarg($sudoPath).' -n '.$command.' 2>&1', $output, $exitCode);
+            }
+        }
+
+        $message = trim(implode("\n", $output));
+        if ($exitCode !== 0) {
+            Log::warning('SSL issue script failed', [
+                'domain' => $domain,
+                'root_path' => $rootPath,
+                'include_www_alias' => $includeWwwAlias,
+                'script' => $scriptPath,
+                'exit_code' => $exitCode,
+                'output' => $message,
+            ]);
+        }
+
+        return [
+            'ran' => true,
+            'success' => $exitCode === 0,
+            'output' => $message,
+            'exit_code' => $exitCode,
+        ];
+    }
+
+    /**
      * @return array{ran: bool, success: bool, output: string}
      */
     private function runSyncVhostScript(string $action, string $domain, ?string $rootPath = null, ?string $phpVersion = null, ?string $oldDomain = null): array
@@ -1924,6 +1883,105 @@ class WebsiteController extends Controller
         $website['wordpress_version'] = $this->normalizeWordPressVersion((string) ($website['wordpress_version'] ?? 'latest'));
 
         return $website;
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function visibleRequestsForActor(?User $actor = null): Collection
+    {
+        $actor ??= request()->user();
+
+        return collect($this->readRequests())
+            ->filter(fn (array $website): bool => $this->actorCanAccessWebsite($website, $actor))
+            ->values();
+    }
+
+    /**
+     * @param Collection<int, array<string, mixed>> $requests
+     * @return array<int, array<string, mixed>>
+     */
+    private function decorateWebsiteRecords(Collection $requests): array
+    {
+        $assignmentUserIds = $requests
+            ->flatMap(fn (array $item): array => [
+                (int) ($item['assigned_user_id'] ?? 0),
+                (int) ($item['assigned_reseller_id'] ?? 0),
+            ])
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $usersById = count($assignmentUserIds) > 0
+            ? User::query()->whereIn('id', $assignmentUserIds)->get(['id', 'name', 'email'])->keyBy('id')
+            : collect();
+
+        return $requests
+            ->map(function (array $item) use ($usersById): array {
+                $item = $this->normalizeWebsiteRecord($item);
+                $domain = (string) ($item['domain'] ?? '');
+
+                if (empty($item['command'])) {
+                    $item['command'] = $this->buildCommand([
+                        'domain' => $domain,
+                        'root_path' => (string) ($item['root_path'] ?? ''),
+                        'php_version' => (string) ($item['php_version'] ?? ''),
+                        'enable_ssl' => (bool) ($item['enable_ssl'] ?? false),
+                    ]);
+                }
+
+                $assignedUserId = (int) ($item['assigned_user_id'] ?? 0);
+                $assignedResellerId = (int) ($item['assigned_reseller_id'] ?? 0);
+                $assignedUser = $assignedUserId > 0 ? $usersById->get($assignedUserId) : null;
+                $assignedReseller = $assignedResellerId > 0 ? $usersById->get($assignedResellerId) : null;
+
+                $item['assigned_user_id'] = $assignedUserId > 0 ? $assignedUserId : null;
+                $item['assigned_reseller_id'] = $assignedResellerId > 0 ? $assignedResellerId : null;
+                $item['assigned_user_name'] = $assignedUser?->name ?? null;
+                $item['assigned_reseller_name'] = $assignedReseller?->name ?? null;
+                $item['created_by_label'] = $assignedReseller?->name ?? $assignedUser?->name ?? 'Admin';
+
+                return $item;
+            })
+            ->sortByDesc('created_at')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function findAuthorizedWebsiteOrFail(string $id, ?User $actor = null): array
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $actor ??= request()->user();
+        abort_unless($this->actorCanAccessWebsite($website, $actor), 403);
+
+        return $this->normalizeWebsiteRecord($website);
+    }
+
+    private function actorCanAccessWebsite(array $website, ?User $actor = null): bool
+    {
+        if ($actor === null) {
+            return false;
+        }
+
+        if ($actor->hasRole('admin')) {
+            return true;
+        }
+
+        if ($actor->hasRole('reseller')) {
+            return (int) ($website['assigned_reseller_id'] ?? 0) === (int) $actor->id;
+        }
+
+        if ($actor->hasRole('general') || $actor->hasRole('general_user')) {
+            return (int) ($website['assigned_user_id'] ?? 0) === (int) $actor->id;
+        }
+
+        return false;
     }
 
     private function normalizeAbsolutePath(string $path): string
@@ -3716,6 +3774,8 @@ CONF;
                     'root_path' => $rootPath,
                     'site_owner' => $siteOwner,
                     'php_version' => (string) ($row['php_version'] ?? ''),
+                    'app_installer' => strtolower(trim((string) ($row['app_installer'] ?? 'none'))) ?: 'none',
+                    'wordpress_version' => $this->normalizeWordPressVersion((string) ($row['wordpress_version'] ?? 'latest')),
                     'enable_ssl' => (bool) ($row['enable_ssl'] ?? false),
                     'assigned_user_id' => isset($row['assigned_user_id']) && $row['assigned_user_id'] !== '' ? (int) $row['assigned_user_id'] : null,
                     'assigned_reseller_id' => isset($row['assigned_reseller_id']) && $row['assigned_reseller_id'] !== '' ? (int) $row['assigned_reseller_id'] : null,
@@ -3745,6 +3805,8 @@ CONF;
                     'root_path',
                     'site_owner',
                     'php_version',
+                    'app_installer',
+                    'wordpress_version',
                     'enable_ssl',
                     'assigned_user_id',
                     'assigned_reseller_id',
@@ -3792,6 +3854,8 @@ CONF;
             'root_path' => $rootPath,
             'site_owner' => $siteOwner,
             'php_version' => (string) ($website->php_version ?? ''),
+            'app_installer' => strtolower(trim((string) ($website->app_installer ?? 'none'))) ?: 'none',
+            'wordpress_version' => $this->normalizeWordPressVersion((string) ($website->wordpress_version ?? 'latest')),
             'enable_ssl' => (bool) ($website->enable_ssl ?? false),
             'assigned_user_id' => $website->assigned_user_id,
             'assigned_reseller_id' => $website->assigned_reseller_id,

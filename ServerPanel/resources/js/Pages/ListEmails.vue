@@ -16,8 +16,10 @@ defineProps({
             services: {},
             messages: [],
             webmail_url: '',
+            webmail_login_url: '',
             autologin_ready: false,
             webmail_reachable: null,
+            storage_backend_ready: false,
         }),
     },
 });
@@ -70,6 +72,7 @@ const serviceBadgeClass = (status) => {
                     <div>
                         <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Mail Setup Check</h2>
                         <p class="mt-1 break-all text-sm text-slate-600 dark:text-slate-300">{{ setupCheck.webmail_url || '-' }}</p>
+                        <p class="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">Login endpoint: {{ setupCheck.webmail_login_url || '-' }}</p>
                     </div>
                     <span
                         class="rounded-full border px-3 py-1 text-xs font-medium"
@@ -84,6 +87,14 @@ const serviceBadgeClass = (status) => {
                 <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
                     <span class="rounded-full border px-2 py-1" :class="serviceBadgeClass(setupCheck.services?.postfix)">Postfix: {{ setupCheck.services?.postfix || 'unknown' }}</span>
                     <span class="rounded-full border px-2 py-1" :class="serviceBadgeClass(setupCheck.services?.dovecot)">Dovecot: {{ setupCheck.services?.dovecot || 'unknown' }}</span>
+                    <span
+                        class="rounded-full border px-2 py-1"
+                        :class="setupCheck.storage_backend_ready
+                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                            : 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300'"
+                    >
+                        Storage Sync: {{ setupCheck.storage_backend_ready ? 'ready' : 'not ready' }}
+                    </span>
                     <span
                         class="rounded-full border px-2 py-1"
                         :class="setupCheck.webmail_reachable === true

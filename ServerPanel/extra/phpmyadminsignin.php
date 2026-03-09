@@ -248,12 +248,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $input = $_POST;
     }
 
-    $username = trim((string) ($input['pma_username'] ?? ''));
-    $password = (string) ($input['pma_password'] ?? '');
-    $host = trim((string) ($input['pma_host'] ?? '127.0.0.1'));
-    $database = trim((string) ($input['db'] ?? ''));
+    $username = trim((string) ($input['pma_username'] ?? $input['username'] ?? $input['user'] ?? ''));
+    $password = (string) ($input['pma_password'] ?? $input['password'] ?? $input['pass'] ?? '');
+    $host = trim((string) ($input['pma_host'] ?? $input['host'] ?? '127.0.0.1'));
+    $database = trim((string) ($input['db'] ?? $input['database'] ?? $input['dbname'] ?? ''));
+    $portRaw = trim((string) ($input['pma_port'] ?? $input['port'] ?? ''));
+
+    if ($host !== '' && preg_match('/^(.+):([0-9]{1,5})$/', $host, $hostParts) === 1) {
+        $host = trim((string) ($hostParts[1] ?? ''));
+        if ($portRaw === '') {
+            $portRaw = trim((string) ($hostParts[2] ?? ''));
+        }
+    }
 
     if (strcasecmp($host, 'localhost') === 0) {
+        $host = '127.0.0.1';
+    }
+    if ($host === '') {
         $host = '127.0.0.1';
     }
 
@@ -294,6 +305,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $_SESSION['PMA_single_signon_user'] = $username;
     $_SESSION['PMA_single_signon_password'] = $password;
     $_SESSION['PMA_single_signon_host'] = $host !== '' ? $host : '127.0.0.1';
+    if ($portRaw !== '' && ctype_digit($portRaw)) {
+        $port = (int) $portRaw;
+        if ($port >= 1 && $port <= 65535) {
+            $_SESSION['PMA_single_signon_port'] = $port;
+        } else {
+            unset($_SESSION['PMA_single_signon_port']);
+        }
+    } else {
+        unset($_SESSION['PMA_single_signon_port']);
+    }
     if ($database !== '') {
         $_SESSION['PMA_single_signon_db'] = $database;
     } else {

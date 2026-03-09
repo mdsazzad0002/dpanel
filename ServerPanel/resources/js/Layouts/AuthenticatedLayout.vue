@@ -46,14 +46,6 @@ const dynamicUserManagementChildren = computed(() => {
 const menuItems = computed(() => [
     { label: 'Dashboard', hint: 'Overview and stats', icon: 'DB', iconClass: 'bi bi-speedometer2', routeName: 'dashboard' },
     {
-        id: 'user-management',
-        label: 'User Management',
-        hint: 'Admin, reseller and user panels',
-        icon: 'UM',
-        iconClass: 'bi bi-people',
-        children: dynamicUserManagementChildren.value,
-    },
-    {
         id: 'web-management',
         label: 'Web Management',
         hint: 'Website operations',
@@ -75,8 +67,6 @@ const menuItems = computed(() => [
             { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'] },
         ],
     },
-    { label: 'Apache + Nginx Setup', hint: 'Web server stack and vHost controls', icon: 'AP', iconClass: 'bi bi-hdd-network', routeName: 'apache.index', roles: ['admin', 'reseller'] },
-    { label: 'Terminal', hint: 'Run server commands', icon: 'TM', iconClass: 'bi bi-terminal', routeName: 'terminal.index', roles: ['admin', 'reseller'] },
     {
         id: 'database-management',
         label: 'Database Management',
@@ -101,9 +91,19 @@ const menuItems = computed(() => [
         ],
     },
     { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'] },
+    { label: 'Apache + Nginx Setup', hint: 'Web server stack and vHost controls', icon: 'AP', iconClass: 'bi bi-hdd-network', routeName: 'apache.index', roles: ['admin', 'reseller'] },
     { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'] },
     { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'] },
     { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN', iconClass: 'bi bi-activity', routeName: 'monitoring.index', roles: ['admin', 'reseller'] },
+    { label: 'Terminal', hint: 'Run server commands', icon: 'TM', iconClass: 'bi bi-terminal', routeName: 'terminal.index', roles: ['admin', 'reseller'] },
+    {
+        id: 'user-management',
+        label: 'User Management',
+        hint: 'Admin, reseller and user panels',
+        icon: 'UM',
+        iconClass: 'bi bi-people',
+        children: dynamicUserManagementChildren.value,
+    },
 ]);
 
 const hasAccess = (item) => {

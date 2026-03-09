@@ -41,6 +41,9 @@ const filteredWebsites = computed(() => {
             item.php_version,
             item.status,
             item.app_installer,
+            item.created_by_label,
+            item.assigned_reseller_name,
+            item.assigned_user_name,
             item.enable_ssl ? 'yes' : 'no',
         ]
             .map((value) => String(value ?? '').toLowerCase())
@@ -110,6 +113,10 @@ const installerClass = (installer) => {
     if (value === 'wordpress') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300';
     return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200';
 };
+
+const createdByLabel = (item) => String(
+    item?.created_by_label || item?.assigned_reseller_name || item?.assigned_user_name || 'Admin',
+);
 </script>
 
 <template>
@@ -167,6 +174,7 @@ const installerClass = (installer) => {
                             <th class="px-4 py-3">Installer</th>
                             <th class="px-4 py-3">SSL</th>
                             <th class="px-4 py-3">Status</th>
+                            <th class="px-4 py-3">Created By</th>
                             <th class="px-4 py-3">Created</th>
                             <th class="px-4 py-3">Actions</th>
                         </tr>
@@ -195,9 +203,21 @@ const installerClass = (installer) => {
                                     {{ item.status }}
                                 </span>
                             </td>
+                            <td class="px-4 py-3">
+                                <div class="font-medium">{{ createdByLabel(item) }}</div>
+                                <div v-if="item.assigned_user_name && item.assigned_reseller_name" class="text-xs text-slate-500 dark:text-slate-400">
+                                    User: {{ item.assigned_user_name }}
+                                </div>
+                            </td>
                             <td class="px-4 py-3">{{ formatDate(item.created_at) }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
+                                    <Link :href="route('websites.manage', item.id)" class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
+                                        Manage
+                                    </Link>
+                                    <Link :href="route('websites.filemanager', item.id)" class="rounded-md border border-emerald-300 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/20">
+                                        Files
+                                    </Link>
                                     <Link :href="route('websites.edit', item.id)" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                         Edit
                                     </Link>
@@ -223,7 +243,7 @@ const installerClass = (installer) => {
                             </td>
                         </tr>
                         <tr v-if="paginatedWebsites.length === 0">
-                            <td colspan="8" class="px-4 py-6 text-center text-slate-500">No website requests generated yet.</td>
+                            <td colspan="9" class="px-4 py-6 text-center text-slate-500">No website requests generated yet.</td>
                         </tr>
                     </tbody>
                 </table>

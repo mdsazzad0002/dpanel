@@ -16,6 +16,8 @@
         <p class="muted">Mailbox: <strong>{{ $email }}</strong></p>
         <p class="muted">If auto-login does not start, click Continue.</p>
         <form id="webmail-login-form" method="post" action="{{ $targetUrl }}">
+            <input type="hidden" name="_task" value="login">
+            <input type="hidden" name="_action" value="login">
             <input type="hidden" name="_user" value="{{ $email }}">
             <input type="hidden" name="_pass" value="{{ $password }}">
             <button type="submit">Continue</button>
