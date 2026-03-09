@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 /* Runtime installer should set a secure random value; fallback avoids empty secret. */
-$cfg['blowfish_secret'] = '';
+$cfg['blowfish_secret'] = '___blowfish_secret___';
 $envBlowfishSecret = trim((string) getenv('PMA_BLOWFISH_SECRET'));
 if ($envBlowfishSecret !== '') {
     $cfg['blowfish_secret'] = $envBlowfishSecret;
@@ -67,7 +67,7 @@ $cfg['Servers'][$i]['hide_db'] = '';
 /* Storage for phpMyAdmin features (Optional) */
 $cfg['Servers'][$i]['pmadb'] = 'phpmyadmin';
 $cfg['Servers'][$i]['controluser'] = 'pma';
-$cfg['Servers'][$i]['controlpass'] = '';
+$cfg['Servers'][$i]['controlpass'] = '___pma_password___';
 
 /**
  * UI Tweaks to force hide the "New" button

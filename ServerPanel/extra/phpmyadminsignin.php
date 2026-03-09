@@ -2,10 +2,12 @@
 declare(strict_types=1);
 
 session_name('SignonSession');
+$isSecureRequest = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+    || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
-    'secure' => (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off'),
+    'secure' => $isSecureRequest,
     'httponly' => true,
     'samesite' => 'Lax',
 ]);
@@ -201,10 +203,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action !== 'redirect') {
     clearSignonSession();
 
     if (isset($_COOKIE[session_name()])) {
+        $isSecure = (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
         setcookie(session_name(), '', [
             'expires' => time() - 3600,
             'path' => '/',
-            'secure' => (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off'),
+            'secure' => $isSecure,
             'httponly' => true,
             'samesite' => 'Lax',
         ]);

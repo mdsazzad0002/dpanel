@@ -127,6 +127,43 @@ fail() {
     exit 1
 }
 
+# --- Configuration Patches ---
+export SP_SCRIPTS="/root/ServerPanel/scripts"
+export INSTALL_DIR="${SP_SCRIPTS}/install"
+
+# --- Reusable File Loader ---
+fileload() {
+    local target="$1"
+    if [[ -f "${target}" ]]; then
+        # shellcheck source=/dev/null
+        source "${target}"
+        return 0
+    else
+        echo -e "\e[31m[ERROR]\e[0m File not found: ${target}"
+        return 1
+    fi
+}
+
+# --- Decision Runner ---
+# This runs a function and returns 0 (Success) or 1 (Failure)
+execute_task() {
+    local task_name="$1"
+    
+    echo -e "\e[34m[TASK]\e[0m Running ${task_name}..."
+    
+    # Execute the function
+    if "${task_name}"; then
+        echo -e "\e[32m[SUCCESS]\e[0m ${task_name} completed."
+        return 0
+    else
+        echo -e "\e[31m[FAILED]\e[0m ${task_name} encountered an error."
+        return 1
+    fi
+}
+
+
+
+
 handle_interrupt() {
     if [[ -n "${CURRENT_PID}" ]] && kill -0 "${CURRENT_PID}" 2>/dev/null; then
         kill "${CURRENT_PID}" 2>/dev/null || true
@@ -1563,7 +1600,6 @@ install_php_versions() {
             ensure_package "php${version}-xml" true
             ensure_package "php${version}-curl" true
             ensure_package "php${version}-zip" true
-            ensure_package "php${version}-sqlite3" true
             ensure_package "php${version}-mysql" true
             ensure_package "libapache2-mod-php${version}" true
         fi
@@ -1968,7 +2004,6 @@ ensure_php_version_for_composer() {
     ensure_package "php${version}-xml" true
     ensure_package "php${version}-curl" true
     ensure_package "php${version}-zip" true
-    ensure_package "php${version}-sqlite3" true
     ensure_package "php${version}-mysql" true
 
     if [[ ! -x "/usr/bin/php${version}" ]]; then
@@ -2086,19 +2121,19 @@ verify_php_extensions() {
     ensure_default_php_binary
 
     # json is built-in on modern PHP; verify common runtime/composer extensions too.
-    for ext in curl dom json PDO pdo_mysql pdo_sqlite SimpleXML xmlwriter; do
+    for ext in curl dom json PDO pdo_mysql SimpleXML xmlwriter; do
         if ! php -m | grep -q -i "^${ext}$"; then
             missing+=("${ext}")
         fi
     done
 
     if [[ "${#missing[@]}" -eq 0 ]]; then
-        ok "PHP runtime extensions available: curl, dom, json, PDO, pdo_mysql, pdo_sqlite, SimpleXML, xmlwriter"
+        ok "PHP runtime extensions available: curl, dom, json, PDO, pdo_mysql, SimpleXML, xmlwriter"
         return
     fi
 
     warn "Missing PHP extensions in current CLI runtime: ${missing[*]}"
-    warn "Ensure phpX.Y-curl/phpX.Y-xml/phpX.Y-mysql/phpX.Y-sqlite3 are installed and modules are enabled for active /usr/bin/php."
+    warn "Ensure phpX.Y-curl/phpX.Y-xml/phpX.Y-mysql are installed and modules are enabled for active /usr/bin/php."
 }
 
 get_node_major_version() {
@@ -2360,26 +2395,16 @@ detect_roundcube_web_root() {
     echo ""
 }
 
+# Backward-compatible alias kept because multiple flows still call detect_phpmyadmin_web_root().
+# Canonical resolver is inttool_resolve_phpmyadmin_web_root() in the phpMyAdmin section.
 detect_phpmyadmin_web_root() {
-    local candidate
-    local candidates=(
-        "${PHPMYADMIN_ROOT:-}"
-        "/usr/share/phpmyadmin"
-        "/usr/share/phpMyAdmin"
-        "/var/www/phpmyadmin"
-        "/root/phpmyadmin"
-    )
-
-    for candidate in "${candidates[@]}"; do
-        [[ -z "${candidate}" ]] && continue
-        if [[ -f "${candidate}/index.php" ]]; then
-            echo "${candidate}"
-            return 0
-        fi
-    done
-
-    echo ""
+    inttool_resolve_phpmyadmin_web_root
 }
+
+
+
+
+
 
 publish_panel_public_symlink() {
     local panel_dir="$1"
@@ -2660,324 +2685,129 @@ detect_phpmyadmin_config_file() {
     echo ""
 }
 
-write_phpmyadmin_helper_file() {
-    local target="$1"
-    local template_file=""
 
-    template_file="$(resolve_extra_file "phpmyadminsignin.php")"
-    if [[ -n "${template_file}" && -s "${template_file}" ]]; then
-        ensure_parent_dir_writable "${target}"
-        run cp "${template_file}" "${target}"
-        run chmod 644 "${target}" || true
-        return 0
-    fi
 
-    ensure_parent_dir_writable "${target}"
-    cat > "${target}" <<'PHP'
-<?php
-declare(strict_types=1);
+#  ===================================== PhpMyAdmin + Maria DB ====================================
+inttool_resolve_phpmyadmin_web_root() {
+    local candidate
+    local candidates=(
+        "${PHPMYADMIN_ROOT:-}"
+        "/usr/share/phpmyadmin"
+        "/usr/share/phpMyAdmin"
+        "/var/www/phpmyadmin"
+        "/var/www/html/phpmyadmin"
+    )
 
-session_name('SignonSession');
-session_set_cookie_params([
-    'lifetime' => 0,
-    'path' => '/',
-    'secure' => (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off'),
-    'httponly' => true,
-    'samesite' => 'Lax',
-]);
-session_start();
-
-header('X-Frame-Options: SAMEORIGIN');
-
-/**
- * Allow panel origins from same host (any port), plus optional explicit list.
- * Set PMA_ALLOWED_ORIGINS as comma-separated full origins if needed.
- */
-$allowedOrigins = [];
-$configuredOrigins = trim((string) getenv('PMA_ALLOWED_ORIGINS'));
-if ($configuredOrigins !== '') {
-    $allowedOrigins = array_values(array_filter(array_map('trim', explode(',', $configuredOrigins)), static fn ($item) => $item !== ''));
-}
-$allowedOrigins = array_values(array_unique(array_merge($allowedOrigins, [
-    'http://127.0.0.1:8000',
-    'http://localhost:8000',
-])));
-
-$origin = trim((string) ($_SERVER['HTTP_ORIGIN'] ?? ''));
-$isAllowedOrigin = in_array($origin, $allowedOrigins, true);
-if (!$isAllowedOrigin && $origin !== '') {
-    $originHost = (string) parse_url($origin, PHP_URL_HOST);
-    $serverHostRaw = (string) ($_SERVER['HTTP_HOST'] ?? '');
-    $serverHost = strtolower(trim((string) preg_replace('/:\d+$/', '', $serverHostRaw)));
-    $normalizedOriginHost = strtolower(trim($originHost));
-    if ($normalizedOriginHost !== '' && $serverHost !== '' && $normalizedOriginHost === $serverHost) {
-        $isAllowedOrigin = true;
-    }
-}
-
-if ($isAllowedOrigin) {
-    header('Access-Control-Allow-Origin: ' . $origin);
-    header('Access-Control-Allow-Credentials: true');
-    header('Vary: Origin');
-}
-
-header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, Accept');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
-    exit;
-}
-
-function jsonResponse(array $payload, int $status = 200): void
-{
-    http_response_code($status);
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode($payload);
-    exit;
-}
-
-function clearSignonSession(): void
-{
-    unset(
-        $_SESSION['PMA_single_signon_user'],
-        $_SESSION['PMA_single_signon_password'],
-        $_SESSION['PMA_single_signon_host'],
-        $_SESSION['PMA_single_signon_db']
-    );
-
-    if (session_status() === PHP_SESSION_ACTIVE) {
-        session_regenerate_id(true);
-    }
-}
-
-$action = (string) ($_GET['action'] ?? '');
-$selfUrl = strtok((string) ($_SERVER['REQUEST_URI'] ?? ''), '?');
-$target = rtrim(dirname($selfUrl), '/') . '/index.php';
-
-if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action !== 'redirect') {
-    clearSignonSession();
-
-    if (isset($_COOKIE[session_name()])) {
-        setcookie(session_name(), '', [
-            'expires' => time() - 3600,
-            'path' => '/',
-            'secure' => (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off'),
-            'httponly' => true,
-            'samesite' => 'Lax',
-        ]);
-    }
-
-    $accept = strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? ''));
-    if (str_contains($accept, 'application/json')) {
-        jsonResponse([
-            'success' => true,
-            'message' => 'Logged out from phpMyAdmin.',
-        ]);
-    }
-
-    http_response_code(200);
-    ?>
-    <!doctype html>
-    <html lang="en">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>phpMyAdmin Logged Out</title>
-    </head>
-    <body>
-        <p>Logged out from phpMyAdmin.</p>
-        <p>Start login again from ServerPanel.</p>
-    </body>
-    </html>
-    <?php
-    exit;
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $contentType = strtolower((string) ($_SERVER['CONTENT_TYPE'] ?? ''));
-    $accept = strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? ''));
-    $isJson = str_contains($contentType, 'application/json');
-    $wantsJson = $isJson || str_contains($accept, 'application/json');
-
-    $input = [];
-
-    if ($isJson) {
-        $raw = file_get_contents('php://input');
-        $decoded = json_decode((string) $raw, true);
-        if (is_array($decoded)) {
-            $input = $decoded;
-        }
-    }
-
-    if (!is_array($input) || $input === []) {
-        $input = $_POST;
-    }
-
-    $username = trim((string) ($input['pma_username'] ?? ''));
-    $password = (string) ($input['pma_password'] ?? '');
-    $host = trim((string) ($input['pma_host'] ?? '127.0.0.1'));
-    $database = trim((string) ($input['db'] ?? ''));
-
-    if (strcasecmp($host, 'localhost') === 0) {
-        $host = '127.0.0.1';
-    }
-
-    if ($username === '' || $password === '') {
-        if ($wantsJson) {
-            jsonResponse([
-                'success' => false,
-                'message' => 'Missing phpMyAdmin username or password.',
-            ], 422);
-        }
-
-        echo 'Missing phpMyAdmin credentials.';
-        exit;
-    }
-
-    if (strcasecmp($username, 'root') === 0) {
-        if ($wantsJson) {
-            jsonResponse([
-                'success' => false,
-                'message' => 'Root login is disabled for phpMyAdmin auto-login.',
-            ], 403);
-        }
-
-        echo 'Root login is disabled for phpMyAdmin auto-login.';
-        exit;
-    }
-
-    $_SESSION['PMA_single_signon_user'] = $username;
-    $_SESSION['PMA_single_signon_password'] = $password;
-    $_SESSION['PMA_single_signon_host'] = $host !== '' ? $host : '127.0.0.1';
-    if ($database !== '') {
-        $_SESSION['PMA_single_signon_db'] = $database;
-    } else {
-        unset($_SESSION['PMA_single_signon_db']);
-    }
-
-    $redirect = $target;
-    if ($database !== '') {
-        $redirect .= '?db=' . rawurlencode($database);
-    }
-    session_write_close();
-
-    if ($wantsJson) {
-        jsonResponse([
-            'success' => true,
-            'message' => 'Session created successfully.',
-            'redirect' => $redirect,
-        ]);
-    }
-
-    header('Location: ' . $redirect);
-    exit;
-}
-
-if ($action === 'redirect') {
-    $username = (string) ($_SESSION['PMA_single_signon_user'] ?? '');
-    if ($username === '') {
-        echo 'Auto login session not found. Please start from panel again.';
-        exit;
-    }
-
-    $redirect = $target;
-    $database = (string) ($_SESSION['PMA_single_signon_db'] ?? '');
-    if ($database !== '') {
-        $redirect .= '?db=' . rawurlencode($database);
-    }
-    header('Location: ' . $redirect);
-    exit;
-}
-
-http_response_code(400);
-echo 'Start phpMyAdmin from ServerPanel to continue.';
-PHP
-
-    run chmod 644 "${target}" || true
-}
-
-deploy_phpmyadmin_helper() {
-    local target_dirs=()
-    local detected_root=""
-    local dir target installed="false"
-    local detected_config config_dir
-
-    if [[ -d "${PHPMYADMIN_ROOT}" ]]; then
-        target_dirs+=("${PHPMYADMIN_ROOT}")
-    fi
-    detected_root="$(detect_phpmyadmin_web_root)"
-    if [[ -n "${detected_root}" && -d "${detected_root}" ]]; then
-        target_dirs+=("${detected_root}")
-    fi
-    if [[ -d "/usr/share/phpmyadmin" ]]; then
-        target_dirs+=("/usr/share/phpmyadmin")
-    fi
-    if [[ -d "/root/phpmyadmin" ]]; then
-        target_dirs+=("/root/phpmyadmin")
-    fi
-
-    detected_config="$(detect_phpmyadmin_config_file)"
-    if [[ -n "${detected_config}" ]]; then
-        config_dir="$(dirname "${detected_config}")"
-        if [[ -d "${config_dir}" ]]; then
-            target_dirs+=("${config_dir}")
+    for candidate in "${candidates[@]}"; do
+        [[ -z "${candidate}" ]] && continue
+        if [[ -f "${candidate%/}/index.php" ]]; then
+            echo "${candidate%/}"
+            return 0
         fi
-    fi
-
-    for dir in "${target_dirs[@]}"; do
-        target="${dir}/phpmyadminsignin.php"
-        write_phpmyadmin_helper_file "${target}"
-        installed="true"
     done
 
-    if [[ "${installed}" == "true" ]]; then
-        ok "phpMyAdmin helper deployed by installer."
-    else
-        warn "No phpMyAdmin web root found for helper deployment."
-    fi
+    echo ""
 }
 
-copy_phpmyadmin_template_config() {
-    local template_config="$1"
-    local preferred_target="/usr/share/phpmyadmin/config.inc.php"
-    local preferred_target_alt="/usr/share/phpMyAdmin/config.inc.php"
-    local fallback_target=""
-    local target=""
+inttool_copy_with_retry_continue() {
+    local source_file="$1"
+    local target_file="$2"
+    local label="$3"
+    local max_attempts="${4:-2}"
+    local attempt=1
 
-    if [[ -z "${template_config}" || ! -s "${template_config}" ]]; then
-        echo ""
-        return 0
+    if [[ ! -f "${source_file}" ]]; then
+        fail "${label} source file not found: ${source_file}"
     fi
 
-    if [[ -d "/usr/share/phpmyadmin" || "${PHPMYADMIN_ROOT%/}" == "/usr/share/phpmyadmin" ]]; then
-        target="${preferred_target}"
-    elif [[ -d "/usr/share/phpMyAdmin" || "${PHPMYADMIN_ROOT%/}" == "/usr/share/phpMyAdmin" ]]; then
-        target="${preferred_target_alt}"
-    else
-        fallback_target="$(detect_phpmyadmin_config_file)"
-        if [[ -n "${fallback_target}" ]]; then
-            target="${fallback_target}"
+    while (( attempt <= max_attempts )); do
+        if run cp "${source_file}" "${target_file}"; then
+            if (( attempt > 1 )); then
+                ok "${label} copy succeeded on retry (${attempt}/${max_attempts})."
+            fi
+            return 0
         fi
-    fi
+        warn "${label} copy failed (${attempt}/${max_attempts})."
+        attempt=$((attempt + 1))
+    done
 
-    if [[ -z "${target}" ]]; then
-        echo ""
-        return 0
-    fi
-
-    if [[ -f "${target}" ]]; then
-        info "Keeping existing phpMyAdmin config file: ${target} (only associated values will be updated)"
-        echo "${target}"
-        return 0
-    fi
-
-    ensure_parent_dir_writable "${target}"
-    run cp "${template_config}" "${target}"
-    run chmod 640 "${target}" || true
-    info "phpMyAdmin config created from template: ${template_config} -> ${target}"
-    echo "${target}"
+    fail "${label} copy failed after ${max_attempts} attempts."
 }
+
+inttool_deploy_phpmyadmin_helper() {
+    local pma_root helper_template target_bridge owner_group
+
+    pma_root="$(inttool_resolve_phpmyadmin_web_root)"
+    if [[ -z "${pma_root}" ]]; then
+        fail "phpMyAdmin root not found. Cannot deploy helper in copy-only mode."
+    fi
+
+    helper_template="$(resolve_extra_file "phpmyadminsignin.php")"
+    if [[ -z "${helper_template}" || ! -f "${helper_template}" ]]; then
+        fail "phpMyAdmin helper template not found: ServerPanel/extra/phpmyadminsignin.php"
+    fi
+
+    target_bridge="${pma_root}/phpmyadminsignin.php"
+    inttool_copy_with_retry_continue "${helper_template}" "${target_bridge}" "phpMyAdmin helper" 2
+
+    owner_group="$(web_owner_group)"
+    run chmod 644 "${target_bridge}"
+    run chown "${owner_group}" "${target_bridge}"
+    ok "phpMyAdmin helper deployed: ${target_bridge}"
+    return 0
+}
+
+inttool_deploy_phpmyadmin_suite() {
+    local pma_root template_config target_config owner_group
+    local blowfish_secret pma_pass escaped_blowfish escaped_pma_pass
+
+    pma_root="$(inttool_resolve_phpmyadmin_web_root)"
+    if [[ -z "${pma_root}" ]]; then
+        fail "phpMyAdmin root not found. Cannot deploy suite in copy-only mode."
+    fi
+
+    template_config="$(resolve_extra_file "phpmyadmin.config.inc.php")"
+    if [[ -z "${template_config}" || ! -f "${template_config}" ]]; then
+        fail "phpMyAdmin config template not found: ServerPanel/extra/phpmyadmin.config.inc.php"
+    fi
+
+    target_config="${pma_root}/config.inc.php"
+    inttool_copy_with_retry_continue "${template_config}" "${target_config}" "phpMyAdmin config" 2
+
+    if command -v openssl >/dev/null 2>&1; then
+        blowfish_secret="$(openssl rand -hex 32)"
+    else
+        blowfish_secret="$(generate_random_password)$(generate_random_password)"
+    fi
+
+    pma_pass="${PHPMYADMIN_CONTROL_PASSWORD:-${DB_PMA_PASSWORD:-}}"
+    if [[ -z "${pma_pass}" ]]; then
+        pma_pass="$(generate_random_password)"
+    fi
+    PHPMYADMIN_CONTROL_PASSWORD="${pma_pass}"
+
+    escaped_blowfish="$(escape_for_sed_replacement "${blowfish_secret}")"
+    escaped_pma_pass="$(escape_for_sed_replacement "${pma_pass}")"
+    if ! sed -i "s|___blowfish_secret___|${escaped_blowfish}|g" "${target_config}"; then
+        fail "Failed to patch blowfish secret in ${target_config}"
+    fi
+    if ! sed -i "s|___pma_password___|${escaped_pma_pass}|g" "${target_config}"; then
+        fail "Failed to patch pma password in ${target_config}"
+    fi
+
+    if [[ -f "/etc/ssl/certs/serverpanel.crt" || "${FORCE_SSL:-false}" == "true" ]]; then
+        sed -i "s/'secure' => false/'secure' => true/g" "${target_config}" || true
+    fi
+
+    owner_group="$(web_owner_group)"
+    run chmod 640 "${target_config}"
+    run chown "${owner_group}" "${target_config}"
+    ok "phpMyAdmin suite config deployed: ${target_config}"
+
+    inttool_deploy_phpmyadmin_helper
+    return 0
+}
+
 
 configure_phpmyadmin_runtime() {
     local config_file=""
@@ -2992,17 +2822,13 @@ configure_phpmyadmin_runtime() {
     local admin_password="${PHPMYADMIN_ADMIN_PASSWORD:-}"
     local owner_group secret="" db_cli sql_db sql_user sql_password sql_admin_user sql_admin_password
     local schema_file pma_table_exists db_cli_q db_name_q schema_q
-    local signon_url="/phpmyadmin/phpmyadminsignin.php"
     local config_candidate=""
+    local signon_url="/phpmyadmin/phpmyadminsignin.php"
     local -a config_files=()
     local -A config_seen=()
 
     if ! is_package_installed phpmyadmin; then
         warn "phpMyAdmin package is not installed. Trying custom phpMyAdmin config paths."
-    fi
-
-    if is_webtools_separate_mode_active; then
-        signon_url="/phpmyadminsignin.php"
     fi
 
     ensure_default_php_binary
@@ -3035,36 +2861,15 @@ configure_phpmyadmin_runtime() {
     done
 
     if [[ "${#config_files[@]}" -eq 0 ]]; then
-        if [[ -d "/etc/phpmyadmin" ]]; then
-            config_file="/etc/phpmyadmin/config.inc.php"
-        elif [[ -d "/usr/share/phpmyadmin" ]]; then
-            config_file="/usr/share/phpmyadmin/config.inc.php"
-        elif [[ -d "/usr/share/phpMyAdmin" ]]; then
-            config_file="/usr/share/phpMyAdmin/config.inc.php"
-        elif [[ -n "${PHPMYADMIN_ROOT:-}" ]]; then
-            config_file="${PHPMYADMIN_ROOT%/}/config.inc.php"
-        else
-            config_file="/etc/phpmyadmin/config.inc.php"
-        fi
+        fail "phpMyAdmin config.inc.php not found. Copy-only mode requires template copy from ServerPanel/extra/phpmyadmin.config.inc.php."
+    fi
+    config_file="${config_files[0]}"
+    info "phpMyAdmin config detected: ${config_file}"
 
-        ensure_parent_dir_writable "${config_file}"
-        cat > "${config_file}" <<EOF
-<?php
-declare(strict_types=1);
-
-\$i = 0;
-\$i++;
-\$cfg['Servers'][\$i]['auth_type'] = 'signon';
-\$cfg['Servers'][\$i]['SignonSession'] = 'SignonSession';
-\$cfg['Servers'][\$i]['SignonURL'] = '${signon_url}';
-\$cfg['Servers'][\$i]['host'] = '127.0.0.1';
-EOF
-        run chmod 640 "${config_file}" || true
-        config_files=("${config_file}")
-        info "phpMyAdmin config created by int-tool.sh: ${config_file}"
-    else
-        config_file="${config_files[0]}"
-        info "phpMyAdmin config detected: ${config_file}"
+    # Keep SignonURL aligned with selected mode so panel auto-login always lands on
+    # the correct helper endpoint.
+    if is_webtools_separate_mode_active; then
+        signon_url="/phpmyadminsignin.php"
     fi
 
     if [[ -f "${creds_file}" ]]; then
@@ -3175,19 +2980,25 @@ EOF
         fi
 
         upsert_php_array_setting "${config_file}" "cfg" "blowfish_secret" "'${secret}'"
+        upsert_php_cfg_server_setting "${config_file}" "auth_type" "'signon'"
+        upsert_php_cfg_server_setting "${config_file}" "SignonSession" "'SignonSession'"
+        upsert_php_cfg_server_setting "${config_file}" "SignonURL" "'${signon_url}'"
         upsert_php_cfg_server_setting "${config_file}" "pmadb" "'${control_db}'"
         upsert_php_cfg_server_setting "${config_file}" "controluser" "'${control_user}'"
         upsert_php_cfg_server_setting "${config_file}" "controlpass" "'${control_password}'"
 
         # Fallback only for configs that do not use $i.
         if [[ "${has_dynamic_server_index}" != "true" ]]; then
+            upsert_php_cfg_server_index_setting "${config_file}" "1" "auth_type" "'signon'"
+            upsert_php_cfg_server_index_setting "${config_file}" "1" "SignonSession" "'SignonSession'"
+            upsert_php_cfg_server_index_setting "${config_file}" "1" "SignonURL" "'${signon_url}'"
             upsert_php_cfg_server_index_setting "${config_file}" "1" "pmadb" "'${control_db}'"
             upsert_php_cfg_server_index_setting "${config_file}" "1" "controluser" "'${control_user}'"
             upsert_php_cfg_server_index_setting "${config_file}" "1" "controlpass" "'${control_password}'"
         fi
     done
     info "phpMyAdmin credentials updated in config file(s) by int-tool.sh"
-    deploy_phpmyadmin_helper
+    inttool_deploy_phpmyadmin_helper
 
     if ! php -m 2>/dev/null | grep -qi "^ctype$"; then
         warn "PHP ctype extension is still not active in CLI. phpMyAdmin may fail until ctype is enabled."
@@ -3289,18 +3100,14 @@ EOF
         fi
     fi
 
-    template_config="$(resolve_extra_file "roundcube.config.inc.php")"
-    if [[ -n "${template_config}" && -s "${template_config}" ]]; then
-        ensure_parent_dir_writable "${config_file}"
-        run cp "${template_config}" "${config_file}"
-        run chmod 640 "${config_file}" || true
-        info "Roundcube template applied: ${template_config}"
-    elif [[ ! -f "${config_file}" ]]; then
-        cat > "${config_file}" <<'EOF'
-<?php
-$config = [];
-EOF
+    template_config="${SCRIPT_DIR}/ServerPanel/extra/roundcube.config.inc.php"
+    if [[ ! -s "${template_config}" ]]; then
+        fail "Required Roundcube template not found: ${template_config}"
     fi
+    ensure_parent_dir_writable "${config_file}"
+    run cp "${template_config}" "${config_file}"
+    run chmod 640 "${config_file}" || true
+    info "Roundcube template applied: ${template_config}"
 
     if [[ "${PKG_MANAGER}" == "apt" || "$(dirname "${debian_db_file}")" == "/etc/roundcube" ]]; then
         cat > "${debian_db_file}" <<EOF
@@ -3435,8 +3242,13 @@ install_dovecot_storage_stack() {
     fi
 }
 
-install_mariadb_phpmyadmin() {
+
+# ======================== Complete phpMyAdmin installation and configuration ===================
+complete_phpmyadmin_install_and_configuration() {
     local phpmyadmin_webserver
+
+    info "Installing and configuring phpMyAdmin (single function)"
+
     if ! is_package_available mariadb-server; then
         fail "Package not available: mariadb-server"
     fi
@@ -3459,7 +3271,7 @@ install_mariadb_phpmyadmin() {
         ok "Already installed: phpmyadmin"
     else
         if ! is_package_available phpmyadmin; then
-            warn "Package not available, skipping: phpmyadmin"
+            fail "Package not available: phpmyadmin"
         else
             if [[ "${PKG_MANAGER}" == "apt" ]]; then
                 phpmyadmin_webserver="none"
@@ -3476,9 +3288,16 @@ install_mariadb_phpmyadmin() {
         fi
     fi
 
+    inttool_deploy_phpmyadmin_suite
+    configure_phpmyadmin_runtime
+    ok "phpMyAdmin install and configuration completed."
+}
+# ======================== Complete phpMyAdmin installation and configuration ===================
+
+install_mariadb_phpmyadmin() {
+    complete_phpmyadmin_install_and_configuration
     install_roundcube_webmail
     install_dovecot_storage_stack
-    configure_phpmyadmin_runtime
 }
 
 web_owner_group() {
@@ -3718,13 +3537,10 @@ install_packages() {
     ensure_package wget
     ensure_package git
     ensure_package unzip
-    ensure_package sqlite3
     ensure_package ufw true
     ensure_package openssh-server
     ensure_package redis-server true
-    ensure_package composer
-    ensure_package nodejs
-    info "Skipping distro npm package install (NodeSource nodejs provides npm and avoids apt dependency conflicts)."
+    info "Skipping mandatory Composer/Node.js package install (not required)."
     if [[ "${PKG_MANAGER}" == "apt" ]]; then
         ensure_package debconf-utils
     fi
@@ -3734,7 +3550,6 @@ install_packages() {
     ensure_package php-xml
     ensure_package php-curl
     ensure_package php-zip
-    ensure_package php-sqlite3
     ensure_package php-mysql
 
     if [[ "${PKG_MANAGER}" == "apt" ]]; then
@@ -3751,9 +3566,7 @@ install_packages() {
     ensure_default_php_extension "curl" true
     ensure_default_php_extension "xml" true
     enable_php_modules_for_version "${PHP_DEFAULT_VERSION}"
-    info "Default PHP is ready. Starting Composer usability check..."
-    ensure_composer_usable
-    info "Composer check completed. Starting PHP extension verification..."
+    info "Default PHP is ready. Starting PHP extension verification..."
     verify_php_extensions
 
     ok "Package verification/installation completed."
@@ -3928,24 +3741,9 @@ setup_application() {
 
     setup_mariadb_database
 
-    install_composer_dependencies
-    run env COMPOSER_ALLOW_SUPERUSER=1 composer dump-autoload -o
-    ensure_nodejs_for_vite
-    run npm install
-    ensure_node_build_permissions
-    run npm run build
+    info "Skipping Composer install and frontend build (not required)."
     cleanup_vite_hot_file "${PROJECT_DIR}"
     run php artisan key:generate --force
-
-    if grep -q "^DB_CONNECTION=sqlite$" ".env"; then
-        if [[ ! -f "database/database.sqlite" ]]; then
-            run mkdir -p database
-            run touch database/database.sqlite
-            ok "Created database/database.sqlite"
-        else
-            info "database/database.sqlite already exists."
-        fi
-    fi
 
     run php artisan config:clear
     run php artisan migrate --force
@@ -4050,8 +3848,6 @@ start_services() {
     ensure_database_running
     ensure_redis_running
     ensure_dovecot_running
-    configure_phpmyadmin_runtime
-    configure_roundcube_runtime
     ssh_service="$(detect_ssh_service)"
     if [[ -n "${ssh_service}" ]]; then
         run systemctl restart "${ssh_service}" || true
@@ -4066,6 +3862,10 @@ start_services() {
         disable_separate_webtools_services
         expose_panel_tools_on_port "${PROJECT_DIR}"
     fi
+    # Apply runtime config after mode/link setup so helper paths and URLs match the
+    # final selected exposure mode (panel path vs separate ports).
+    configure_phpmyadmin_runtime
+    configure_roundcube_runtime
     sync_panel_webtools_env "${PROJECT_DIR}/.env"
     run systemctl restart serverpanel
 
@@ -4975,7 +4775,7 @@ update_panel_files_menu() {
         sync_panel_source_to_target "${source_dir}" "${target_dir}"
     fi
 
-    if ask_yes_no "Copy ${target_dir}/extra/serverroot.php to /var/www/html/index.php?" "Y"; then
+    if ask_yes_no "Copy ${target_dir}/extra/serverroot.html to /var/www/html/index.html?" "Y"; then
         copy_server_root_file_menu "${target_dir}"
     fi
 
@@ -5168,107 +4968,6 @@ repair_panel_web_tools_menu() {
     ok "Repair completed. Test URLs:"
     echo "  $(phpmyadmin_access_url "${host_ip:-127.0.0.1}")"
     echo "  $(roundcube_access_url "${host_ip:-127.0.0.1}")"
-}
-
-run_custom_install_prompt() {
-    local source_mode project_dir project_url base_url project_target
-    local web_choice web_server panel_port nginx_primary_port apache_backend_port db_name db_user db_password
-    local php_versions php_default node_major pma_port rc_port
-    local -a args=()
-
-    echo
-    echo -e "${CYAN}================ Custom Install ====================${NC}"
-    echo "Project source:"
-    echo "  1) Auto detect"
-    echo "  2) --project-dir"
-    echo "  3) --project-url"
-    echo "  4) --base-url"
-    source_mode="$(ask_input "Select source mode" "1")"
-    case "${source_mode}" in
-        2)
-            project_dir="$(ask_input "Absolute project path")"
-            [[ -n "${project_dir}" ]] && args+=(--project-dir "${project_dir}")
-            ;;
-        3)
-            project_url="$(ask_input "Project archive URL (.tar.gz/.tgz/.zip)" "${REMOTE_PANEL_ARCHIVE_URL}")"
-            [[ -n "${project_url}" ]] && args+=(--project-url "${project_url}")
-            project_target="$(ask_input "Optional target path (--project-target)" "")"
-            [[ -n "${project_target}" ]] && args+=(--project-target "${project_target}")
-            ;;
-        4)
-            base_url="$(ask_input "Base URL containing ServerInstaller/ServerPanel archive")"
-            [[ -n "${base_url}" ]] && args+=(--base-url "${base_url}")
-            project_target="$(ask_input "Optional target path (--project-target)" "")"
-            [[ -n "${project_target}" ]] && args+=(--project-target "${project_target}")
-            ;;
-        *)
-            ;;
-    esac
-
-    echo
-    echo "Web server:"
-    echo "  1) apache"
-    echo "  2) nginx"
-    echo "  3) both"
-    web_choice="$(ask_input "Select web server" "1")"
-    case "${web_choice}" in
-        2) web_server="nginx" ;;
-        3) web_server="both" ;;
-        *) web_server="apache" ;;
-    esac
-    args+=(--web-server "${web_server}")
-
-    panel_port="$(ask_input "Panel port" "8090")"
-    [[ -n "${panel_port}" ]] && args+=(--panel-port "${panel_port}")
-    if ask_yes_no "Run phpMyAdmin/Roundcube on separate ports?" "N"; then
-        args+=(--separate-webtools)
-        pma_port="$(ask_input "phpMyAdmin port" "8091")"
-        rc_port="$(ask_input "Roundcube port" "8092")"
-        [[ -n "${pma_port}" ]] && args+=(--phpmyadmin-port "${pma_port}")
-        [[ -n "${rc_port}" ]] && args+=(--roundcube-port "${rc_port}")
-    else
-        args+=(--no-separate-webtools)
-    fi
-    if [[ "${web_server}" == "nginx" || "${web_server}" == "both" ]]; then
-        nginx_primary_port="$(ask_input "Nginx primary port" "80")"
-        [[ -n "${nginx_primary_port}" ]] && args+=(--nginx-primary-port "${nginx_primary_port}")
-    fi
-    if [[ "${web_server}" == "both" ]]; then
-        apache_backend_port="$(ask_input "Apache backend port" "8080")"
-        [[ -n "${apache_backend_port}" ]] && args+=(--apache-backend-port "${apache_backend_port}")
-    fi
-
-    db_name="$(ask_input "DB name" "serverinstaller")"
-    db_user="$(ask_input "DB user" "serverpanel")"
-    db_password="$(ask_input "DB password (blank = auto-generate)" "")"
-    [[ -n "${db_name}" ]] && args+=(--db-name "${db_name}")
-    [[ -n "${db_user}" ]] && args+=(--db-user "${db_user}")
-    [[ -n "${db_password}" ]] && args+=(--db-password "${db_password}")
-
-    php_versions="$(ask_input "PHP versions CSV" "7.4,8.0,8.2,8.3,8.4,8.5")"
-    php_default="$(ask_input "Default PHP version" "8.3")"
-    node_major="$(ask_input "Required Node major" "22")"
-    [[ -n "${php_versions}" ]] && args+=(--php-versions "${php_versions}")
-    [[ -n "${php_default}" ]] && args+=(--php-default "${php_default}")
-    [[ -n "${node_major}" ]] && args+=(--node-major "${node_major}")
-
-    if ask_yes_no "Reset DB stack first? (--reset-db)" "N"; then
-        args+=(--reset-db)
-    fi
-
-    echo
-    info "Installer command preview:"
-    printf "bash int-tool.sh"
-    for arg in "${args[@]}"; do
-        printf " %q" "${arg}"
-    done
-    printf "\n"
-
-    if ask_yes_no "Run custom install now?" "Y"; then
-        installer_main "${args[@]}"
-    else
-        warn "Custom install canceled."
-    fi
 }
 
 show_control_menu() {
