@@ -315,7 +315,7 @@ class PhpManagementController extends Controller
         ]);
     }
 
-    public function updateConfig(Request $request): RedirectResponse
+    public function updateConfig(Request $request): RedirectResponse|JsonResponse
     {
         $state = $this->readState();
         $versions = $state['versions'];
@@ -334,6 +334,13 @@ class PhpManagementController extends Controller
 
         $version = (string) $validated['version'];
         if (! in_array($version, $versions, true)) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Selected PHP version is invalid.',
+                ], 422);
+            }
+
             return redirect()->route('php.manager')->with('error', 'Selected PHP version is invalid.');
         }
 
@@ -348,15 +355,60 @@ class PhpManagementController extends Controller
             'allow_url_fopen' => (string) $validated['allow_url_fopen'],
         ];
 
+        $existingConfigValues = collect(self::DEFAULT_CONFIG)
+            ->mapWithKeys(function ($defaultValue, $key) use ($state, $version) {
+                $value = $state['config'][$version][$key] ?? $defaultValue;
+
+                return [(string) $key => trim((string) $value) !== '' ? (string) $value : (string) $defaultValue];
+            })
+            ->all();
+
+        if ($existingConfigValues === $configValues) {
+            $message = "No PHP config changes detected for {$version}.";
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'data' => [
+                        'version' => $version,
+                        'configValues' => $existingConfigValues,
+                    ],
+                ]);
+            }
+
+            return redirect()->route('php.manager', ['version' => $version])->with('success', $message);
+        }
+
         $serverApply = $this->applyConfigToServer($version, $configValues);
         if (! $serverApply['applied']) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => (string) $serverApply['message'],
+                ], 422);
+            }
+
             return redirect()->route('php.manager', ['version' => $version])->with('error', $serverApply['message']);
         }
 
         $state['config'][$version] = $configValues;
         $this->writeState($state);
 
-        return redirect()->route('php.manager', ['version' => $version])->with('success', "PHP config updated for {$version}. ".$serverApply['message']);
+        $message = "PHP config updated for {$version}. ".$serverApply['message'];
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'version' => $version,
+                    'configValues' => $configValues,
+                ],
+            ]);
+        }
+
+        return redirect()->route('php.manager', ['version' => $version])->with('success', $message);
     }
 
     /**
@@ -530,6 +582,11 @@ class PhpManagementController extends Controller
      */
     private function detectServerPhpVersions(): array
     {
+        $scriptVersions = $this->detectServerPhpVersionsViaScript();
+        if (count($scriptVersions) > 0) {
+            return $scriptVersions;
+        }
+
         $versions = [];
 
         $currentVersion = $this->detectCurrentPhpVersion();
@@ -628,6 +685,11 @@ class PhpManagementController extends Controller
      */
     private function detectExtensionsForVersion(string $version): array
     {
+        $scriptExtensions = $this->detectExtensionsForVersionViaScript($version);
+        if (count($scriptExtensions) > 0) {
+            return $scriptExtensions;
+        }
+
         $binary = $this->resolvePhpBinaryForVersion($version);
         if ($binary === '') {
             return [];
@@ -697,6 +759,11 @@ class PhpManagementController extends Controller
      */
     private function detectConfigForVersion(string $version): array
     {
+        $scriptConfig = $this->detectConfigForVersionViaScript($version);
+        if (count($scriptConfig) > 0) {
+            return $scriptConfig;
+        }
+
         $binary = $this->resolvePhpBinaryForVersion($version);
         if ($binary === '') {
             return [];
@@ -780,6 +847,150 @@ class PhpManagementController extends Controller
         } catch (\Throwable $e) {
             return '';
         }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function detectServerPhpVersionsViaScript(): array
+    {
+        $result = $this->runScript(
+            [
+                base_path('scripts/php-detect-versions.sh'),
+                '/usr/local/bin/serverpanel-php-detect-versions.sh',
+            ],
+        );
+
+        if ($result['exitCode'] !== 0 || trim($result['output']) === '') {
+            return [];
+        }
+
+        return collect(preg_split('/\r\n|\r|\n/', $result['output']) ?: [])
+            ->map(fn ($line) => trim((string) $line))
+            ->filter(fn ($line) => preg_match('/^\d+\.\d+$/', $line) === 1)
+            ->unique()
+            ->sort(fn ($a, $b) => version_compare((string) $b, (string) $a))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function detectExtensionsForVersionViaScript(string $version): array
+    {
+        $result = $this->runScript(
+            [
+                base_path('scripts/php-detect-extensions.sh'),
+                '/usr/local/bin/serverpanel-php-detect-extensions.sh',
+            ],
+            ['--version', $version],
+        );
+
+        if ($result['exitCode'] !== 0 || trim($result['output']) === '') {
+            return [];
+        }
+
+        return collect(preg_split('/\r\n|\r|\n/', $result['output']) ?: [])
+            ->map(fn ($line) => strtolower(trim((string) $line)))
+            ->filter(fn ($line) => $line !== '' && preg_match('/^[a-z0-9_]+$/', $line) === 1)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function detectConfigForVersionViaScript(string $version): array
+    {
+        $result = $this->runScript(
+            [
+                base_path('scripts/php-detect-config.sh'),
+                '/usr/local/bin/serverpanel-php-detect-config.sh',
+            ],
+            ['--version', $version],
+        );
+
+        if ($result['exitCode'] !== 0 || trim($result['output']) === '') {
+            return [];
+        }
+
+        $decoded = json_decode((string) $result['output'], true);
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        return [
+            'memory_limit' => (string) ($decoded['memory_limit'] ?? self::DEFAULT_CONFIG['memory_limit']),
+            'upload_max_filesize' => (string) ($decoded['upload_max_filesize'] ?? self::DEFAULT_CONFIG['upload_max_filesize']),
+            'post_max_size' => (string) ($decoded['post_max_size'] ?? self::DEFAULT_CONFIG['post_max_size']),
+            'max_execution_time' => (string) ($decoded['max_execution_time'] ?? self::DEFAULT_CONFIG['max_execution_time']),
+            'max_input_vars' => (string) ($decoded['max_input_vars'] ?? self::DEFAULT_CONFIG['max_input_vars']),
+            'display_errors' => $this->normalizeOnOff((string) ($decoded['display_errors'] ?? self::DEFAULT_CONFIG['display_errors'])),
+            'log_errors' => $this->normalizeOnOff((string) ($decoded['log_errors'] ?? self::DEFAULT_CONFIG['log_errors'])),
+            'allow_url_fopen' => $this->normalizeOnOff((string) ($decoded['allow_url_fopen'] ?? self::DEFAULT_CONFIG['allow_url_fopen'])),
+        ];
+    }
+
+    /**
+     * @param array<int, string> $scriptCandidates
+     * @param array<int, string> $arguments
+     * @return array{output: string, exitCode: int}
+     */
+    private function runScript(array $scriptCandidates, array $arguments = []): array
+    {
+        if ($this->isWindowsEnvironment()) {
+            return [
+                'output' => '',
+                'exitCode' => 1,
+            ];
+        }
+
+        $scriptPath = $this->resolveScriptPath($scriptCandidates);
+        if ($scriptPath === '') {
+            return [
+                'output' => '',
+                'exitCode' => 1,
+            ];
+        }
+
+        @chmod($scriptPath, 0755);
+
+        $commandParts = array_merge(
+            ['bash', $scriptPath],
+            array_map(fn ($argument) => (string) $argument, $arguments),
+        );
+        $command = implode(' ', array_map(fn ($part) => escapeshellarg($part), $commandParts));
+
+        $output = [];
+        $exitCode = 1;
+        exec($command.' 2>&1', $output, $exitCode);
+
+        return [
+            'output' => trim(implode("\n", $output)),
+            'exitCode' => $exitCode,
+        ];
+    }
+
+    /**
+     * @param array<int, string> $scriptCandidates
+     */
+    private function resolveScriptPath(array $scriptCandidates): string
+    {
+        foreach ($scriptCandidates as $candidate) {
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    private function isWindowsEnvironment(): bool
+    {
+        return str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS');
     }
 
     /**

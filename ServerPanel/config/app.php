@@ -53,7 +53,6 @@ return [
     */
 
     'url' => env('APP_URL', 'http://localhost'),
-    'installer_base_url' => rtrim((string) env('INSTALLER_BASE_URL', 'http://192.168.0.50/a_final_storing/ServerInstaller'), '/'),
 
 
     /*

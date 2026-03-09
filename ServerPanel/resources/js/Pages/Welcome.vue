@@ -22,12 +22,12 @@ const props = defineProps({
 
 const theme = ref('light');
 const activeTab = ref('home');
-const normalizedInstallerBaseUrl = computed(() => props.installerBaseUrl.replace(/\/+$/, ''));
-const remoteDownloadSnippet = computed(() => `BASE_URL="${normalizedInstallerBaseUrl.value}"
+const normalizedInstallerBaseUrl = 'http://192.168.0.50/a_final_storing/ServerInstaller/';
+const remoteDownloadSnippet = computed(() => `
 
-curl -fsSL "${BASE_URL}/int-tool.sh" -o int-tool.sh
+curl -fsSL "${normalizedInstallerBaseUrl}int-tool.sh" -o int-tool.sh
 chmod +x int-tool.sh
-sudo bash int-tool.sh --base-url "${BASE_URL}"`);
+sudo bash int-tool.sh --base-url "${normalizedInstallerBaseUrl}"`);
 const troubleshootingSnippet = computed(() => `# If blocked by permissions
 sudo bash int-tool.sh --project-dir "/absolute/path/to/ServerPanel"
 
@@ -37,9 +37,8 @@ pwd
 find / -type f -path "*/ServerPanel/artisan" 2>/dev/null
 
 # If download fails
-BASE_URL="${normalizedInstallerBaseUrl.value}"
-curl -I "${BASE_URL}/int-tool.sh"
-curl -I "${BASE_URL}/ServerPanel.zip"`);
+curl -I "${normalizedInstallerBaseUrl}/int-tool.sh"
+curl -I "${normalizedInstallerBaseUrl}/ServerPanel.zip"`);
 
 function applyTheme(nextTheme) {
     theme.value = nextTheme;

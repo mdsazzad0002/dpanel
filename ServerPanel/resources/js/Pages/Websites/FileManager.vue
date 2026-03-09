@@ -21,13 +21,17 @@ const modalType = ref('');
 const pathInput = ref(props.currentPath || '');
 const activeItemPath = ref(props.selectedFile?.path || props.items?.[0]?.path || '');
 const selectedPaths = ref([]);
+const selectionAnchorPath = ref('');
 const hiddenEnabled = ref(Boolean(props.showHidden));
 const uploadDragActive = ref(false);
 const tableDragActive = ref(false);
 const tableDragDepth = ref(0);
 const droppedUploadHint = ref('');
-const sidebarSearch = ref('');
+const moveDragTargetPath = ref(null);
+const draggingItemPaths = ref([]);
 const originalEditorContent = ref(props.selectedFile?.content ?? '');
+const treeOpenState = ref({});
+const INTERNAL_MOVE_MIME = 'application/x-serverpanel-item-paths';
 const contextMenu = ref({
     visible: false,
     x: 0,
@@ -54,16 +58,18 @@ const createFileForm = useForm({ path: props.currentPath, name: '' });
 const saveForm = useForm({ file_path: props.selectedFile?.path ?? '', content: props.selectedFile?.content ?? '' });
 const deleteForm = useForm({ item_paths: [], current_path: props.currentPath });
 const uploadForm = useForm({ path: props.currentPath, upload: null });
-const permissionForm = useForm({ item_path: '', current_path: props.currentPath, permissions: '644' });
+const permissionForm = useForm({ item_path: '', current_path: props.currentPath, permissions: '644', recursive: false });
 const renameForm = useForm({ item_path: '', current_path: props.currentPath, new_name: '' });
 const zipForm = useForm({ current_path: props.currentPath, item_paths: [], zip_name: '' });
 const unzipForm = useForm({ zip_path: '', current_path: props.currentPath });
+const moveForm = useForm({ item_path: '', item_paths: [], current_path: props.currentPath, destination_path: props.currentPath });
 
 watch(
     () => props.currentPath,
     (value) => {
         pathInput.value = value || '';
         selectedPaths.value = [];
+        selectionAnchorPath.value = '';
         closeContextMenu();
     },
 );
@@ -93,8 +99,16 @@ watch(
     (list) => {
         if (!Array.isArray(list) || list.length === 0) {
             activeItemPath.value = '';
+            selectedPaths.value = [];
+            selectionAnchorPath.value = '';
             closeContextMenu();
             return;
+        }
+
+        const existingPaths = new Set(list.map((item) => item.path));
+        selectedPaths.value = selectedPaths.value.filter((path) => existingPaths.has(path));
+        if (selectionAnchorPath.value && !existingPaths.has(selectionAnchorPath.value)) {
+            selectionAnchorPath.value = '';
         }
 
         const exists = list.some((item) => item.path === activeItemPath.value);
@@ -132,17 +146,165 @@ onBeforeUnmount(() => {
     window.removeEventListener('keydown', handleGlobalKeydown);
 });
 
-const activeItem = computed(() => props.items.find((item) => item.path === activeItemPath.value) || null);
-const filteredItems = computed(() => {
-    const keyword = sidebarSearch.value.trim().toLowerCase();
-    if (!keyword) return props.items;
+const normalizePathValue = (value) => String(value || '').trim();
 
-    return props.items.filter((item) => {
-        const name = String(item.name || '').toLowerCase();
-        const type = String(item.type || '').toLowerCase();
-        return name.includes(keyword) || type.includes(keyword);
+const openTreeAncestors = (path) => {
+    const normalized = normalizePathValue(path);
+    if (normalized === '') return;
+
+    const next = { ...treeOpenState.value };
+    const segments = normalized.split('/').filter(Boolean);
+    let current = '';
+    segments.forEach((segment) => {
+        current = current ? `${current}/${segment}` : segment;
+        next[current] = true;
     });
+    treeOpenState.value = next;
+};
+
+const ensureTreeState = () => {
+    treeOpenState.value = {};
+    openTreeAncestors(props.currentPath);
+};
+
+watch(
+    () => props.directoryTree,
+    () => {
+        ensureTreeState();
+    },
+    { immediate: true, deep: true },
+);
+
+watch(
+    () => props.currentPath,
+    (value) => {
+        openTreeAncestors(value);
+    },
+    { immediate: true },
+);
+
+const treeRows = computed(() => {
+    const rows = [];
+    const walk = (nodes, level = 0) => {
+        if (!Array.isArray(nodes)) return;
+
+        nodes.forEach((node) => {
+            const nodePath = normalizePathValue(node?.path);
+            if (nodePath === '') return;
+
+            const children = Array.isArray(node?.children) ? node.children : [];
+            const hasChildren = Boolean(node?.has_children) || children.length > 0;
+            const expanded = Boolean(treeOpenState.value[nodePath]);
+
+            rows.push({
+                name: String(node?.name || nodePath.split('/').pop() || '/'),
+                path: nodePath,
+                level,
+                hasChildren,
+                expanded,
+            });
+
+            if (hasChildren && expanded) {
+                walk(children, level + 1);
+            }
+        });
+    };
+
+    walk(props.directoryTree, 0);
+    return rows;
 });
+
+const isTreeNodeActive = (nodePath) => {
+    const current = normalizePathValue(props.currentPath);
+    const candidate = normalizePathValue(nodePath);
+    if (candidate === '') return current === '';
+    return current === candidate || current.startsWith(`${candidate}/`);
+};
+
+const toggleTreeNode = (nodePath) => {
+    const normalized = normalizePathValue(nodePath);
+    if (!normalized) return;
+
+    treeOpenState.value = {
+        ...treeOpenState.value,
+        [normalized]: !Boolean(treeOpenState.value[normalized]),
+    };
+};
+
+const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
+const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
+const mediaExtensions = new Set(['mp4', 'm4v', 'mkv', 'webm', 'mov', 'avi', 'mp3', 'wav', 'ogg', 'flac']);
+const codeExtensions = new Set(['php', 'js', 'ts', 'jsx', 'tsx', 'vue', 'html', 'htm', 'css', 'scss', 'less', 'json', 'xml', 'yml', 'yaml', 'md', 'sql', 'sh', 'py', 'rb', 'go', 'java', 'c', 'cpp', 'h', 'hpp', 'rs']);
+const docExtensions = new Set(['txt', 'log', 'ini', 'env', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv']);
+
+const itemExtension = (item) => {
+    const name = String(item?.name || '').toLowerCase();
+    const lastDot = name.lastIndexOf('.');
+    if (lastDot <= 0 || lastDot === name.length - 1) return '';
+    return name.slice(lastDot + 1);
+};
+
+const itemCategory = (item) => {
+    if (item?.type === 'dir') return 'dir';
+
+    const extension = itemExtension(item);
+    if (imageExtensions.has(extension)) return 'image';
+    if (archiveExtensions.has(extension)) return 'archive';
+    if (mediaExtensions.has(extension)) return 'media';
+    if (codeExtensions.has(extension)) return 'code';
+    if (docExtensions.has(extension)) return 'doc';
+    return 'file';
+};
+
+const iconClassForItem = (item) => {
+    const category = itemCategory(item);
+
+    switch (category) {
+        case 'dir':
+            return 'bi-folder-fill text-amber-500';
+        case 'image':
+            return 'bi-file-earmark-image text-emerald-500';
+        case 'archive':
+            return 'bi-file-earmark-zip text-orange-500';
+        case 'media':
+            return 'bi-file-earmark-play text-pink-500';
+        case 'code':
+            return 'bi-file-earmark-code text-indigo-500';
+        case 'doc':
+            return 'bi-file-earmark-text text-sky-500';
+        default:
+            return 'bi-file-earmark text-slate-500 dark:text-slate-300';
+    }
+};
+
+const nameClassForItem = (item) => {
+    const category = itemCategory(item);
+
+    switch (category) {
+        case 'dir':
+            return 'text-amber-700 dark:text-amber-300';
+        case 'image':
+            return 'text-emerald-700 dark:text-emerald-300';
+        case 'archive':
+            return 'text-orange-700 dark:text-orange-300';
+        case 'media':
+            return 'text-pink-700 dark:text-pink-300';
+        case 'code':
+            return 'text-indigo-700 dark:text-indigo-300';
+        case 'doc':
+            return 'text-sky-700 dark:text-sky-300';
+        default:
+            return 'text-slate-700 dark:text-slate-200';
+    }
+};
+
+const typeLabelForItem = (item) => {
+    if (item?.type === 'dir') return 'Folder';
+    const extension = itemExtension(item);
+    return extension ? extension.toUpperCase() : 'File';
+};
+
+const activeItem = computed(() => props.items.find((item) => item.path === activeItemPath.value) || null);
 const selectedItems = computed(() => props.items.filter((item) => selectedPaths.value.includes(item.path)));
 const selectedCount = computed(() => selectedPaths.value.length);
 const singleSelectedItem = computed(() => {
@@ -164,7 +326,7 @@ const isZipSelected = computed(() => {
 });
 
 const isBusy = computed(
-    () => createFolderForm.processing || createFileForm.processing || saveForm.processing || deleteForm.processing || uploadForm.processing || permissionForm.processing || renameForm.processing || zipForm.processing || unzipForm.processing,
+    () => createFolderForm.processing || createFileForm.processing || saveForm.processing || deleteForm.processing || uploadForm.processing || permissionForm.processing || renameForm.processing || zipForm.processing || unzipForm.processing || moveForm.processing,
 );
 const uploadProgressPercent = computed(() => Number(uploadForm.progress?.percentage || 0));
 const uploadTaskComplete = computed(() => String(page.props.flash?.success || '').toLowerCase().includes('uploaded'));
@@ -270,18 +432,58 @@ const openEditorInNewTab = () => {
     openFileInEditor(item.path, { openInNewTab: true, useModal: false });
 };
 
+const orderedItems = () => props.items;
+const orderedPaths = () => orderedItems().map((item) => item.path);
+
+const uniquePaths = (paths) => Array.from(new Set(paths));
+
+const rangePathsForSelection = (targetPath) => {
+    const ordered = orderedPaths();
+    const anchor = selectionAnchorPath.value || activeItemPath.value;
+    if (!anchor || ordered.length === 0) return [];
+
+    const anchorIndex = ordered.indexOf(anchor);
+    const targetIndex = ordered.indexOf(targetPath);
+    if (anchorIndex < 0 || targetIndex < 0) return [];
+
+    const start = Math.min(anchorIndex, targetIndex);
+    const end = Math.max(anchorIndex, targetIndex);
+    return ordered.slice(start, end + 1);
+};
+
+const applyRangeSelection = (targetPath, mergeWithSelection = false) => {
+    const range = rangePathsForSelection(targetPath);
+    if (range.length === 0) return false;
+
+    selectedPaths.value = mergeWithSelection
+        ? uniquePaths([...selectedPaths.value, ...range])
+        : range;
+    activeItemPath.value = targetPath;
+    if (!selectionAnchorPath.value) {
+        selectionAnchorPath.value = targetPath;
+    }
+
+    return true;
+};
+
 const ensureSingleSelection = (item) => {
     if (!item) return;
     activeItemPath.value = item.path;
     selectedPaths.value = [item.path];
+    selectionAnchorPath.value = item.path;
 };
 
 const handleItemClick = (item, event) => {
     if (!item) return;
 
     closeContextMenu();
+    const shiftSelect = Boolean(event?.shiftKey);
     const multiSelect = Boolean(event?.ctrlKey || event?.metaKey);
     activeItemPath.value = item.path;
+
+    if (shiftSelect && applyRangeSelection(item.path, multiSelect)) {
+        return;
+    }
 
     if (multiSelect) {
         if (selectedPaths.value.includes(item.path)) {
@@ -289,10 +491,16 @@ const handleItemClick = (item, event) => {
         } else {
             selectedPaths.value = [...selectedPaths.value, item.path];
         }
+        if (selectedPaths.value.length === 0) {
+            selectionAnchorPath.value = '';
+        } else if (!selectionAnchorPath.value) {
+            selectionAnchorPath.value = item.path;
+        }
         return;
     }
 
     selectedPaths.value = [item.path];
+    selectionAnchorPath.value = item.path;
 };
 
 const openContextMenu = (item, event) => {
@@ -357,6 +565,11 @@ const triggerContextAction = (action) => {
         return;
     }
 
+    if (action === 'move') {
+        openModal('move');
+        return;
+    }
+
     if (action === 'zip') {
         openModal('zip');
         return;
@@ -376,7 +589,31 @@ const triggerContextAction = (action) => {
 const handleGlobalKeydown = (event) => {
     if (event.key === 'Escape') {
         closeContextMenu();
+        return;
     }
+
+    const key = String(event.key || '').toLowerCase();
+    const isMultiSelectShortcut = Boolean(event.ctrlKey || event.metaKey) && key === 'a';
+    if (!isMultiSelectShortcut) return;
+
+    const target = event.target;
+    if (
+        target instanceof HTMLElement
+        && (
+            target.tagName === 'INPUT'
+            || target.tagName === 'TEXTAREA'
+            || target.tagName === 'SELECT'
+            || target.isContentEditable
+        )
+    ) {
+        return;
+    }
+
+    event.preventDefault();
+    const allPaths = props.items.map((item) => item.path);
+    selectedPaths.value = allPaths;
+    activeItemPath.value = allPaths[0] || '';
+    selectionAnchorPath.value = allPaths[0] || '';
 };
 
 const dragHasFiles = (event) => {
@@ -411,26 +648,164 @@ const resetTableDragState = () => {
     tableDragActive.value = false;
 };
 
-const toggleSelectPath = (path, checked) => {
+const toggleSelectPath = (path, checked, event = null) => {
+    const shiftSelect = Boolean(event?.shiftKey);
+    const multiSelect = Boolean(event?.ctrlKey || event?.metaKey);
+
+    if (shiftSelect && applyRangeSelection(path, multiSelect || checked)) {
+        return;
+    }
+
     if (checked) {
         if (!selectedPaths.value.includes(path)) {
             selectedPaths.value = [...selectedPaths.value, path];
+        }
+        activeItemPath.value = path;
+        if (!selectionAnchorPath.value) {
+            selectionAnchorPath.value = path;
         }
         return;
     }
 
     selectedPaths.value = selectedPaths.value.filter((entry) => entry !== path);
+    if (selectedPaths.value.length === 0) {
+        selectionAnchorPath.value = '';
+    }
 };
 
 const toggleSelectAll = (checked) => {
+    const visibleItems = orderedItems();
+    const visible = visibleItems.map((item) => item.path);
+
     if (checked) {
-        const visible = filteredItems.value.map((item) => item.path);
         selectedPaths.value = Array.from(new Set([...selectedPaths.value, ...visible]));
+        if (!selectionAnchorPath.value && visible.length > 0) {
+            selectionAnchorPath.value = visible[0];
+        }
         return;
     }
 
-    const visible = new Set(filteredItems.value.map((item) => item.path));
-    selectedPaths.value = selectedPaths.value.filter((path) => !visible.has(path));
+    const visibleSet = new Set(visible);
+    selectedPaths.value = selectedPaths.value.filter((path) => !visibleSet.has(path));
+    if (selectedPaths.value.length === 0) {
+        selectionAnchorPath.value = '';
+    }
+};
+
+const currentMoveTargets = (fallbackPath = '') => {
+    if (selectedPaths.value.length > 0) {
+        return Array.from(new Set(selectedPaths.value));
+    }
+
+    if (singleSelectedItem.value?.path) {
+        return [singleSelectedItem.value.path];
+    }
+
+    if (fallbackPath) {
+        return [fallbackPath];
+    }
+
+    return [];
+};
+
+const submitMoveToPath = (destinationPath, itemPaths = null, { closeMoveModal = false } = {}) => {
+    const normalizedDestination = normalizePathValue(destinationPath);
+    const targets = Array.from(new Set((Array.isArray(itemPaths) ? itemPaths : currentMoveTargets()).filter((path) => normalizePathValue(path) !== '')));
+    if (targets.length === 0) return;
+
+    moveForm.current_path = props.currentPath;
+    moveForm.destination_path = normalizedDestination;
+    moveForm.item_path = '';
+    moveForm.item_paths = targets;
+
+    moveForm.patch(route('websites.filemanager.item.move', props.website.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            if (closeMoveModal) {
+                closeModal();
+            }
+        },
+        onFinish: () => {
+            draggingItemPaths.value = [];
+            moveDragTargetPath.value = null;
+        },
+    });
+};
+
+const submitMove = () => {
+    submitMoveToPath(moveForm.destination_path, null, { closeMoveModal: true });
+};
+
+const parseDraggedItemPaths = (event) => {
+    const payload = String(event?.dataTransfer?.getData(INTERNAL_MOVE_MIME) || '').trim();
+    if (payload !== '') {
+        try {
+            const parsed = JSON.parse(payload);
+            if (Array.isArray(parsed)) {
+                return parsed.map((path) => normalizePathValue(path)).filter((path) => path !== '');
+            }
+        } catch (error) {
+            // Ignore malformed payload and fallback to local state.
+        }
+    }
+
+    return draggingItemPaths.value.map((path) => normalizePathValue(path)).filter((path) => path !== '');
+};
+
+const hasInternalMoveDrag = (event) => {
+    const transferTypes = Array.from(event?.dataTransfer?.types || []);
+    return transferTypes.includes(INTERNAL_MOVE_MIME) || draggingItemPaths.value.length > 0;
+};
+
+const handleItemDragStart = (item, event) => {
+    if (!item?.path) return;
+
+    let targets = [];
+    if (selectedPaths.value.includes(item.path)) {
+        targets = currentMoveTargets(item.path);
+    } else {
+        targets = [item.path];
+        selectedPaths.value = [item.path];
+        selectionAnchorPath.value = item.path;
+        activeItemPath.value = item.path;
+    }
+
+    draggingItemPaths.value = targets;
+
+    if (event?.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(INTERNAL_MOVE_MIME, JSON.stringify(targets));
+        event.dataTransfer.setData('text/plain', targets.join('\n'));
+    }
+};
+
+const handleItemDragEnd = () => {
+    draggingItemPaths.value = [];
+    moveDragTargetPath.value = null;
+};
+
+const handleFolderTargetDragOver = (targetPath, event) => {
+    if (!hasInternalMoveDrag(event)) return;
+    event.preventDefault();
+    if (event?.dataTransfer) {
+        event.dataTransfer.dropEffect = 'move';
+    }
+    moveDragTargetPath.value = normalizePathValue(targetPath);
+};
+
+const handleFolderTargetDragLeave = (targetPath) => {
+    if (moveDragTargetPath.value === normalizePathValue(targetPath)) {
+        moveDragTargetPath.value = null;
+    }
+};
+
+const handleFolderTargetDrop = (targetPath, event) => {
+    if (!hasInternalMoveDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const targets = parseDraggedItemPaths(event);
+    submitMoveToPath(targetPath, targets);
 };
 
 const openModal = (type) => {
@@ -459,6 +834,7 @@ const openModal = (type) => {
         permissionForm.item_path = singleSelectedItem.value.path;
         permissionForm.current_path = props.currentPath;
         permissionForm.permissions = singleSelectedItem.value.permissions || '644';
+        permissionForm.recursive = false;
     }
 
     if (type === 'zip') {
@@ -470,6 +846,13 @@ const openModal = (type) => {
     if (type === 'unzip' && singleSelectedItem.value) {
         unzipForm.zip_path = singleSelectedItem.value.path;
         unzipForm.current_path = props.currentPath;
+    }
+
+    if (type === 'move') {
+        moveForm.current_path = props.currentPath;
+        moveForm.destination_path = props.currentPath || '';
+        moveForm.item_path = '';
+        moveForm.item_paths = currentMoveTargets();
     }
 
     if (type === 'create-folder') {
@@ -691,6 +1074,10 @@ const formatBytes = (bytes) => {
                         <i aria-hidden="true" class="itc bi bi-input-cursor-text text-sm"></i>
                         <span class="sr-only">Rename</span>
                     </button>
+                    <button type="button" title="Move" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="(!singleSelectedItem && !selectedCount) || isBusy" @click="openModal('move')">
+                        <i aria-hidden="true" class="itc bi bi-arrows-move text-sm"></i>
+                        <span class="sr-only">Move</span>
+                    </button>
                     <button type="button" title="New File" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="openModal('create-file')">
                         <i aria-hidden="true" class="itc bi bi-file-earmark-plus text-sm"></i>
                         <span class="sr-only">New File</span>
@@ -740,7 +1127,7 @@ const formatBytes = (bytes) => {
             </div>
 
             <div class="grid gap-4 xl:grid-cols-12">
-                <aside class="xl:col-span-4 space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+                <aside class="xl:col-span-4 flex h-[70vh] flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
                     <div>
                         <div class="mb-2 flex items-center justify-between">
                             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick Path</p>
@@ -759,71 +1146,46 @@ const formatBytes = (bytes) => {
                         </div>
                     </div>
 
-                    <div>
+                    <div class="flex min-h-0 flex-1 flex-col">
                         <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Directories</p>
-                        <button type="button" class="mb-1 w-full rounded-md border border-slate-300 px-2 py-1 text-left text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="openPath('')">
+                        <button
+                            type="button"
+                            class="mb-1 w-full rounded-md border border-slate-300 px-2 py-1 text-left text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                            :class="moveDragTargetPath === '' ? 'bg-emerald-50 ring-1 ring-emerald-400 dark:bg-emerald-900/20' : ''"
+                            @click="openPath('')"
+                            @dragover.prevent.stop="handleFolderTargetDragOver('', $event)"
+                            @dragleave="handleFolderTargetDragLeave('')"
+                            @drop.prevent.stop="handleFolderTargetDrop('', $event)"
+                        >
                             / (root)
                         </button>
-                        <div class="max-h-44 space-y-1 overflow-y-auto text-xs">
-                            <div v-for="dir in directoryTree" :key="dir.path" class="space-y-1">
-                                <button type="button" class="w-full rounded-md px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800" :class="currentPath === dir.path ? 'bg-blue-50 dark:bg-blue-900/20' : ''" :title="dir.name" @click="openPath(dir.path)">
-                                    <span class="block truncate">{{ dir.name }}</span>
+                        <div class="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-1 text-xs dark:border-slate-800">
+                            <div v-for="node in treeRows" :key="`tree-${node.path}`">
+                                <button
+                                    type="button"
+                                    class="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    :class="[
+                                        isTreeNodeActive(node.path) ? 'bg-blue-50 dark:bg-blue-900/20' : '',
+                                        moveDragTargetPath === node.path ? 'bg-emerald-50 ring-1 ring-emerald-400 dark:bg-emerald-900/20' : '',
+                                    ]"
+                                    :title="node.path"
+                                    :style="{ paddingLeft: `${8 + (node.level * 14)}px` }"
+                                    @click="openPath(node.path)"
+                                    @dragover.prevent.stop="handleFolderTargetDragOver(node.path, $event)"
+                                    @dragleave="handleFolderTargetDragLeave(node.path)"
+                                    @drop.prevent.stop="handleFolderTargetDrop(node.path, $event)"
+                                >
+                                    <span class="inline-flex h-4 w-4 items-center justify-center" @click.stop="node.hasChildren ? toggleTreeNode(node.path) : null">
+                                        <i v-if="node.hasChildren" class="bi text-[10px] text-slate-500" :class="node.expanded ? 'bi-caret-down-fill' : 'bi-caret-right-fill'"></i>
+                                    </span>
+                                    <i class="bi bi-folder-fill text-[12px] text-amber-500"></i>
+                                    <span class="block truncate">{{ node.name }}</span>
                                 </button>
-                                <div v-if="dir.children?.length" class="space-y-1 pl-4">
-                                    <button v-for="child in dir.children" :key="child.path" type="button" class="w-full rounded-md px-2 py-1 text-left text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800" :class="currentPath === child.path ? 'bg-blue-50 dark:bg-blue-900/20' : ''" :title="child.name" @click="openPath(child.path)">
-                                        <span class="block truncate">{{ child.name }}</span>
-                                    </button>
-                                </div>
                             </div>
                         </div>
+                        <p class="mt-2 text-[11px] text-slate-500">Drag selected file/folder rows and drop on a folder to move.</p>
                     </div>
 
-                    <div>
-                        <div class="mb-2 flex items-center justify-between">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Files</p>
-                            <span class="text-[11px] text-slate-500">Sel: {{ selectedCount }}</span>
-                        </div>
-                        <input v-model="sidebarSearch" type="text" class="mb-2 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800" placeholder="Filter files..." />
-                        <div class="max-h-[26rem] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                            <table class="min-w-full table-fixed text-left text-[11px]">
-                                <thead class="bg-slate-50 dark:bg-slate-800">
-                                    <tr>
-                                        <th class="w-8 px-2 py-1.5">
-                                            <input type="checkbox" :checked="filteredItems.length > 0 && filteredItems.every((item) => selectedPaths.includes(item.path))" @change="toggleSelectAll($event.target.checked)" />
-                                        </th>
-                                        <th class="px-2 py-1.5">Name</th>
-                                        <th class="w-16 px-2 py-1.5">Type</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr
-                                        v-for="item in filteredItems"
-                                        :key="`side-${item.path}`"
-                                        data-fm-row
-                                        class="cursor-pointer border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60"
-                                        :class="selectedPaths.includes(item.path) || activeItemPath === item.path ? 'bg-blue-50 dark:bg-blue-900/20' : ''"
-                                        @click="handleItemClick(item, $event)"
-                                        @dblclick="item.type === 'dir' ? openPath(item.path) : openFileInEditor(item.path, { useModal: !openEditorPage })"
-                                        @contextmenu.prevent="openContextMenu(item, $event)"
-                                    >
-                                        <td class="px-2 py-1.5" @click.stop>
-                                            <input type="checkbox" :checked="selectedPaths.includes(item.path)" @change="toggleSelectPath(item.path, $event.target.checked)" />
-                                        </td>
-                                        <td class="px-2 py-1.5 font-medium" :title="item.name">
-                                            <span class="block truncate">
-                                                {{ item.name }}
-                                                <span v-if="unsavedFilePath === item.path" class="ml-1 text-[10px] font-semibold text-amber-600">*</span>
-                                            </span>
-                                        </td>
-                                        <td class="px-2 py-1.5 uppercase">{{ item.type }}</td>
-                                    </tr>
-                                    <tr v-if="filteredItems.length === 0">
-                                        <td colspan="3" class="px-3 py-4 text-center text-slate-500">No files.</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
                 </aside>
 
                 <section
@@ -846,6 +1208,9 @@ const formatBytes = (bytes) => {
                         <table class="min-w-full text-left text-sm">
                         <thead class="bg-slate-50 dark:bg-slate-800">
                             <tr>
+                                <th class="w-10 px-3 py-3">
+                                    <input type="checkbox" :checked="items.length > 0 && items.every((item) => selectedPaths.includes(item.path))" @change="toggleSelectAll($event.target.checked)" />
+                                </th>
                                 <th class="px-3 py-3">Name</th>
                                 <th class="px-3 py-3">Type</th>
                                 <th class="px-3 py-3">Size</th>
@@ -859,22 +1224,39 @@ const formatBytes = (bytes) => {
                                 :key="item.path"
                                 data-fm-row
                                 class="cursor-pointer border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60"
-                                :class="selectedPaths.includes(item.path) || activeItemPath === item.path ? 'bg-blue-50 dark:bg-blue-900/20' : ''"
+                                :class="[
+                                    selectedPaths.includes(item.path) || activeItemPath === item.path ? 'bg-blue-50 dark:bg-blue-900/20' : '',
+                                    moveDragTargetPath === item.path ? 'bg-emerald-50 dark:bg-emerald-900/20' : '',
+                                ]"
+                                draggable="true"
                                 @click="handleItemClick(item, $event)"
                                 @dblclick="item.type === 'dir' ? openPath(item.path) : openFileInEditor(item.path, { useModal: !openEditorPage })"
                                 @contextmenu.prevent="openContextMenu(item, $event)"
+                                @dragstart="handleItemDragStart(item, $event)"
+                                @dragend="handleItemDragEnd"
+                                @dragover="item.type === 'dir' ? handleFolderTargetDragOver(item.path, $event) : null"
+                                @dragleave="item.type === 'dir' ? handleFolderTargetDragLeave(item.path) : null"
+                                @drop="item.type === 'dir' ? handleFolderTargetDrop(item.path, $event) : null"
                             >
+                                <td class="px-3 py-2" @click.stop>
+                                    <input type="checkbox" :checked="selectedPaths.includes(item.path)" @change="toggleSelectPath(item.path, $event.target.checked, $event)" />
+                                </td>
                                 <td class="px-3 py-2 font-medium">
-                                    {{ item.name }}
+                                    <span class="flex items-center gap-2">
+                                        <i class="bi text-sm" :class="iconClassForItem(item)"></i>
+                                        <span class="truncate" :class="nameClassForItem(item)">
+                                            {{ item.name }}
+                                        </span>
+                                    </span>
                                     <span v-if="unsavedFilePath === item.path" class="ml-1 text-[10px] font-semibold text-amber-600">*</span>
                                 </td>
-                                <td class="px-3 py-2 uppercase text-xs">{{ item.type }}</td>
+                                <td class="px-3 py-2 uppercase text-xs">{{ typeLabelForItem(item) }}</td>
                                 <td class="px-3 py-2">{{ formatBytes(item.size) }}</td>
                                 <td class="px-3 py-2 font-mono text-xs">{{ item.permissions }}</td>
                                 <td class="px-3 py-2 text-xs text-slate-500">{{ item.modified_at ? new Date(item.modified_at).toLocaleString() : '-' }}</td>
                             </tr>
                             <tr v-if="items.length === 0">
-                                <td colspan="5" class="px-4 py-8 text-center text-slate-500">No files in this directory.</td>
+                                <td colspan="6" class="px-4 py-8 text-center text-slate-500">No files in this directory.</td>
                             </tr>
                         </tbody>
                         </table>
@@ -927,6 +1309,10 @@ const formatBytes = (bytes) => {
                 <i aria-hidden="true" class="itc bi bi-shield-lock text-xs"></i>
                 Permissions
             </button>
+            <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="triggerContextAction('move')">
+                <i aria-hidden="true" class="itc bi bi-arrows-move text-xs"></i>
+                Move
+            </button>
             <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="triggerContextAction('zip')">
                 <i aria-hidden="true" class="itc bi bi-file-earmark-zip text-xs"></i>
                 Create Zip
@@ -953,6 +1339,7 @@ const formatBytes = (bytes) => {
                                 : modalType === 'create-file' ? 'Create File'
                                 : modalType === 'rename' ? 'Rename Item'
                                 : modalType === 'permissions' ? 'Change Permissions'
+                                : modalType === 'move' ? 'Move Item'
                                 : modalType === 'zip' ? 'Create Zip'
                                 : modalType === 'unzip' ? 'Extract Zip'
                                 : modalType === 'editor' ? 'File Editor'
@@ -985,8 +1372,21 @@ const formatBytes = (bytes) => {
 
                 <div v-else-if="modalType === 'permissions'" class="space-y-3">
                     <input v-model="permissionForm.permissions" type="text" placeholder="644" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                        <input v-model="permissionForm.recursive" type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800" />
+                        Apply recursively to subdirectories and files
+                    </label>
                     <button type="button" :disabled="permissionForm.processing || !permissionForm.permissions" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60" @click="submitPermissions">
-                        {{ permissionForm.processing ? 'Saving...' : 'Save Permission' }}
+                        {{ permissionForm.processing ? 'Saving...' : (permissionForm.recursive ? 'Save Recursively' : 'Save Permission') }}
+                    </button>
+                </div>
+
+                <div v-else-if="modalType === 'move'" class="space-y-3">
+                    <p class="text-xs text-slate-500">Selected items: {{ selectedCount || (singleSelectedItem ? 1 : 0) }}</p>
+                    <input v-model="moveForm.destination_path" type="text" placeholder="destination folder path (empty = root)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p class="text-xs text-slate-500">You can also drag selected rows and drop onto sidebar folders.</p>
+                    <button type="button" :disabled="moveForm.processing || (!selectedCount && !singleSelectedItem)" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60" @click="submitMove">
+                        {{ moveForm.processing ? 'Moving...' : 'Move' }}
                     </button>
                 </div>
 

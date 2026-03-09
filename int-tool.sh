@@ -1004,6 +1004,9 @@ install_php_versions() {
             ensure_package "php${version}-mysql" true
             ensure_package "libapache2-mod-php${version}" true
         fi
+
+        # Composer dependencies commonly require these modules across SAPIs.
+        enable_php_modules_for_version "${version}"
     done
 
     ok "Requested PHP versions checked for ${WEB_SERVER}: ${PHP_VERSIONS_RAW}"
@@ -1039,10 +1042,12 @@ apply_php_runtime_defaults() {
             set_php_ini_kv "${ini_file}" "post_max_size" "2G"
             set_php_ini_kv "${ini_file}" "max_execution_time" "300"
             set_php_ini_kv "${ini_file}" "max_input_vars" "5000"
-            set_php_ini_kv "${ini_file}" "display_errors" "Off"
+            set_php_ini_kv "${ini_file}" "display_errors" "On"
             set_php_ini_kv "${ini_file}" "log_errors" "On"
             set_php_ini_kv "${ini_file}" "allow_url_fopen" "On"
         done
+
+        enable_php_modules_for_version "${version}"
 
         if systemctl cat "php${version}-fpm.service" >/dev/null 2>&1; then
             run systemctl restart "php${version}-fpm" || true
@@ -1283,6 +1288,18 @@ enable_default_php_module() {
     done
 }
 
+enable_php_modules_for_version() {
+    local version="$1"
+    local module
+
+    [[ -n "${version}" ]] || return 0
+
+    # Keep core Composer/runtime modules enabled for CLI + web SAPIs.
+    for module in ctype curl dom simplexml xml xmlwriter; do
+        enable_default_php_module "${module}" "${version}"
+    done
+}
+
 setup_mariadb_database() {
     local sql_db sql_user sql_password db_cli
     info "Configuring MariaDB database and Laravel .env"
@@ -1380,6 +1397,7 @@ ensure_php_version_for_composer() {
 
     PHP_DEFAULT_VERSION="${version}"
     ensure_default_php_binary
+    enable_php_modules_for_version "${version}"
     ok "Composer PHP compatibility fix applied (default CLI PHP ${version})."
     return 0
 }
@@ -1486,20 +1504,20 @@ verify_php_extensions() {
 
     ensure_default_php_binary
 
-    # json is built-in on modern PHP; verify + ensure PDO drivers are active.
-    for ext in json PDO pdo_mysql pdo_sqlite; do
+    # json is built-in on modern PHP; verify common runtime/composer extensions too.
+    for ext in curl dom json PDO pdo_mysql pdo_sqlite SimpleXML xmlwriter; do
         if ! php -m | grep -q -i "^${ext}$"; then
             missing+=("${ext}")
         fi
     done
 
     if [[ "${#missing[@]}" -eq 0 ]]; then
-        ok "PHP runtime extensions available: json, PDO, pdo_mysql, pdo_sqlite"
+        ok "PHP runtime extensions available: curl, dom, json, PDO, pdo_mysql, pdo_sqlite, SimpleXML, xmlwriter"
         return
     fi
 
     warn "Missing PHP extensions in current CLI runtime: ${missing[*]}"
-    warn "Ensure corresponding phpX.Y-mysql/phpX.Y-sqlite3 packages are installed for the active /usr/bin/php."
+    warn "Ensure phpX.Y-curl/phpX.Y-xml/phpX.Y-mysql/phpX.Y-sqlite3 are installed and modules are enabled for active /usr/bin/php."
 }
 
 get_node_major_version() {
@@ -2280,7 +2298,7 @@ configure_phpmyadmin_runtime() {
 
     ensure_default_php_binary
     ensure_package "php${PHP_DEFAULT_VERSION}-common" true
-    enable_default_php_module "ctype" "${PHP_DEFAULT_VERSION}"
+    enable_php_modules_for_version "${PHP_DEFAULT_VERSION}"
     ensure_default_php_extension "mbstring" true
     ensure_default_php_extension "mysql" true
     ensure_default_php_extension "xml" true
@@ -2472,7 +2490,7 @@ configure_roundcube_runtime() {
 
     ensure_default_php_binary
     ensure_package "php${PHP_DEFAULT_VERSION}-common" true
-    enable_default_php_module "ctype" "${PHP_DEFAULT_VERSION}"
+    enable_php_modules_for_version "${PHP_DEFAULT_VERSION}"
     ensure_default_php_extension "mbstring" true
     ensure_default_php_extension "xml" true
     ensure_default_php_extension "mysql" true
@@ -2911,6 +2929,9 @@ install_packages() {
     apply_php_runtime_defaults
     install_mariadb_phpmyadmin
     ensure_default_php_binary
+    ensure_default_php_extension "curl" true
+    ensure_default_php_extension "xml" true
+    enable_php_modules_for_version "${PHP_DEFAULT_VERSION}"
     info "Default PHP is ready. Starting Composer usability check..."
     ensure_composer_usable
     info "Composer check completed. Starting PHP extension verification..."
@@ -4125,7 +4146,12 @@ update_panel_files_menu() {
     cleanup_vite_hot_file "${target_dir}"
 
     if ask_yes_no "Run composer install (production flags)?" "Y"; then
-        run env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-interaction --no-dev --optimize-autoloader
+        ensure_default_php_binary
+        ensure_default_php_extension "curl" true
+        ensure_default_php_extension "xml" true
+        enable_php_modules_for_version "${PHP_DEFAULT_VERSION}"
+        verify_php_extensions
+        install_composer_dependencies
     fi
 
     if ask_yes_no "Run npm install + npm run build?" "Y"; then

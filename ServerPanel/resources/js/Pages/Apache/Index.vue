@@ -1,12 +1,21 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
     apache: { type: Object, default: () => ({}) },
     nginx: { type: Object, default: () => ({}) },
     websites: { type: Array, default: () => [] },
+    selectedWebsiteId: { type: [String, Number], default: null },
+    selectedWebsite: { type: Object, default: () => null },
+    vhostPreview: {
+        type: Object,
+        default: () => ({
+            apache: { path: '', exists: false, source: '', content: '' },
+            nginx: { path: '', exists: false, source: '', content: '' },
+        }),
+    },
 });
 
 const page = usePage();
@@ -24,6 +33,33 @@ const runAction = (action) => {
 
 const syncSharedWebsites = () => {
     syncForm.post(route('apache.sync-shared-websites'));
+};
+
+const selectedWebsiteIdInput = ref(String(props.selectedWebsiteId ?? props.selectedWebsite?.id ?? ''));
+watch(
+    () => props.selectedWebsiteId,
+    (value) => {
+        selectedWebsiteIdInput.value = String(value ?? props.selectedWebsite?.id ?? '');
+    },
+);
+
+const loadWebsitePreview = (websiteId) => {
+    const normalizedId = String(websiteId ?? '').trim();
+    selectedWebsiteIdInput.value = normalizedId;
+
+    router.get(
+        route('apache.index'),
+        normalizedId ? { website_id: normalizedId } : {},
+        {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+        },
+    );
+};
+
+const viewSelectedWebsitePreview = () => {
+    loadWebsitePreview(selectedWebsiteIdInput.value);
 };
 
 const websitesCount = computed(() => props.websites.length);
@@ -169,25 +205,121 @@ const boolTone = (flag) => (flag
                 </div>
             </section>
 
+            <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">VHost Config Render</h2>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <select
+                            v-model="selectedWebsiteIdInput"
+                            class="min-w-[16rem] rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                        >
+                            <option value="" disabled>Select website for preview</option>
+                            <option v-for="site in websites" :key="site.id" :value="String(site.id)">
+                                {{ site.domain }} (PHP {{ site.php_version || '-' }})
+                            </option>
+                        </select>
+                        <button
+                            type="button"
+                            class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="!selectedWebsiteIdInput"
+                            @click="viewSelectedWebsitePreview"
+                        >
+                            Load Config
+                        </button>
+                        <Link
+                            v-if="selectedWebsite?.id"
+                            :href="route('websites.manage', selectedWebsite.id)"
+                            class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                        >
+                            Open Website Manage
+                        </Link>
+                        <Link
+                            v-if="selectedWebsite?.id"
+                            :href="route('websites.vhost.sync', selectedWebsite.id)"
+                            method="post"
+                            :data="{ return_to: 'apache' }"
+                            as="button"
+                            class="rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
+                        >
+                            Sync Selected VHost
+                        </Link>
+                    </div>
+                </div>
+                <p class="mt-2 text-xs text-slate-500">
+                    Selected website: <span class="font-medium">{{ selectedWebsite?.domain || '-' }}</span>
+                </p>
+
+                <div class="mt-4 grid gap-4 lg:grid-cols-2">
+                    <div class="rounded-lg border border-slate-200 dark:border-slate-700">
+                        <div class="border-b border-slate-200 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                            <div class="flex items-center justify-between gap-2">
+                                <p class="font-semibold">Apache</p>
+                                <span
+                                    class="rounded-full border px-2 py-0.5"
+                                    :class="vhostPreview.apache.exists
+                                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                                        : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300'"
+                                >
+                                    {{ vhostPreview.apache.exists ? 'Config Found' : 'Preview Generated' }}
+                                </span>
+                            </div>
+                            <p class="mt-1 break-all">{{ vhostPreview.apache.path || '-' }}</p>
+                            <p>{{ vhostPreview.apache.source || '-' }}</p>
+                        </div>
+                        <pre class="max-h-80 overflow-auto bg-slate-950 p-3 text-xs text-slate-100"><code>{{ vhostPreview.apache.content || '# Apache config is not available yet.' }}</code></pre>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 dark:border-slate-700">
+                        <div class="border-b border-slate-200 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                            <div class="flex items-center justify-between gap-2">
+                                <p class="font-semibold">Nginx</p>
+                                <span
+                                    class="rounded-full border px-2 py-0.5"
+                                    :class="vhostPreview.nginx.exists
+                                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                                        : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300'"
+                                >
+                                    {{ vhostPreview.nginx.exists ? 'Config Found' : 'Preview Generated' }}
+                                </span>
+                            </div>
+                            <p class="mt-1 break-all">{{ vhostPreview.nginx.path || '-' }}</p>
+                            <p>{{ vhostPreview.nginx.source || '-' }}</p>
+                        </div>
+                        <pre class="max-h-80 overflow-auto bg-slate-950 p-3 text-xs text-slate-100"><code>{{ vhostPreview.nginx.content || '# Nginx config is not available yet.' }}</code></pre>
+                    </div>
+                </div>
+            </section>
+
             <section class="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800">
                         <tr>
                             <th class="px-4 py-3">Domain</th>
                             <th class="px-4 py-3">Root Path</th>
+                            <th class="px-4 py-3">PHP</th>
                             <th class="px-4 py-3">SSL</th>
                             <th class="px-4 py-3">Status</th>
+                            <th class="px-4 py-3">Config</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="site in websites" :key="site.id" class="border-t border-slate-200 dark:border-slate-800">
                             <td class="px-4 py-3">{{ site.domain }}</td>
                             <td class="px-4 py-3 break-all font-mono text-xs">{{ site.root_path }}</td>
+                            <td class="px-4 py-3">{{ site.php_version || '-' }}</td>
                             <td class="px-4 py-3">{{ site.enable_ssl ? 'Yes' : 'No' }}</td>
                             <td class="px-4 py-3">{{ site.status }}</td>
+                            <td class="px-4 py-3">
+                                <button
+                                    type="button"
+                                    class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
+                                    @click="loadWebsitePreview(site.id)"
+                                >
+                                    View Config
+                                </button>
+                            </td>
                         </tr>
                         <tr v-if="websites.length === 0">
-                            <td colspan="4" class="px-4 py-8 text-center text-slate-500">No websites found for shared vhost generation.</td>
+                            <td colspan="6" class="px-4 py-8 text-center text-slate-500">No websites found for shared vhost generation.</td>
                         </tr>
                     </tbody>
                 </table>

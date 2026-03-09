@@ -12,7 +12,34 @@ use Inertia\Response;
 
 class ApacheController extends Controller
 {
-    public function index(): Response
+    private const DEFAULT_APACHE_BACKEND_PORT = 8080;
+    private const DEFAULT_NGINX_PRIMARY_PORT = 80;
+    /**
+     * Common compound public suffixes for registrable-domain detection.
+     *
+     * @var array<int, string>
+     */
+    private const COMPOUND_PUBLIC_SUFFIXES = [
+        'com.bd',
+        'net.bd',
+        'org.bd',
+        'edu.bd',
+        'gov.bd',
+        'ac.bd',
+        'com.au',
+        'net.au',
+        'org.au',
+        'co.uk',
+        'org.uk',
+        'gov.uk',
+        'ac.uk',
+        'co.jp',
+        'com.sg',
+        'com.my',
+        'co.nz',
+    ];
+
+    public function index(Request $request): Response
     {
         $apache = $this->apacheRuntimeInfo();
         $nginx = $this->nginxRuntimeInfo();
@@ -30,12 +57,24 @@ class ApacheController extends Controller
                     'id' => (string) $website->id,
                     'domain' => $domain,
                     'root_path' => $root,
+                    'php_version' => trim((string) ($website->php_version ?? '8.3')),
                     'status' => (string) ($website->status ?? 'unknown'),
                     'enable_ssl' => (bool) ($website->enable_ssl ?? false),
                 ];
             })
             ->values()
             ->all();
+        $selectedWebsiteId = trim((string) $request->query('website_id', ''));
+        $selectedWebsite = collect($websites)
+            ->first(fn (array $item): bool => (string) ($item['id'] ?? '') === $selectedWebsiteId);
+
+        if (! is_array($selectedWebsite)) {
+            $selectedWebsite = $websites[0] ?? null;
+        }
+
+        $selectedWebsiteId = is_array($selectedWebsite)
+            ? trim((string) ($selectedWebsite['id'] ?? ''))
+            : '';
 
         $sharedPath = $apache['shared_vhost_file'];
         $sharedExists = is_string($sharedPath) && $sharedPath !== '' && is_file($sharedPath);
@@ -52,6 +91,9 @@ class ApacheController extends Controller
                 'service_status' => $this->detectNginxServiceStatus($nginx),
             ],
             'websites' => $websites,
+            'selectedWebsiteId' => $selectedWebsiteId !== '' ? $selectedWebsiteId : null,
+            'selectedWebsite' => $selectedWebsite,
+            'vhostPreview' => $this->buildWebsiteVhostPreview($selectedWebsite, $apache, $nginx),
         ]);
     }
 
@@ -338,12 +380,409 @@ class ApacheController extends Controller
 
     <Directory "{$safeRoot}">
         AllowOverride All
+        Options FollowSymLinks
         Require all granted
+
+        <IfModule mod_dir.c>
+            FallbackResource /index.php
+        </IfModule>
     </Directory>
+
+    DirectoryIndex index.php index.html index.htm
 
     ErrorLog "\${APACHE_LOG_DIR}/{$logDomain}-error.log"
     CustomLog "\${APACHE_LOG_DIR}/{$logDomain}-access.log" combined
 </VirtualHost>
 CONF;
+    }
+
+    /**
+     * @param array<string, mixed>|null $website
+     * @param array<string, mixed> $apache
+     * @param array<string, mixed> $nginx
+     * @return array<string, mixed>
+     */
+    private function buildWebsiteVhostPreview(?array $website, array $apache, array $nginx): array
+    {
+        if (! is_array($website)) {
+            return $this->emptyVhostPreview('no website selected');
+        }
+
+        $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
+        $rootPath = trim(str_replace('\\', '/', (string) ($website['root_path'] ?? '')));
+        $phpVersion = $this->normalizePhpVersionForSocket((string) ($website['php_version'] ?? '8.3'));
+
+        if ($domain === '' || $rootPath === '') {
+            return $this->emptyVhostPreview('missing website data');
+        }
+
+        $apachePath = $this->existingApacheVhostPath($domain, $apache);
+        $nginxPath = $this->existingNginxVhostPath($domain, $nginx);
+        $apacheExists = $apachePath !== '' && is_file($apachePath);
+        $nginxExists = $nginxPath !== '' && is_file($nginxPath);
+
+        $apacheContent = $apacheExists
+            ? (string) @file_get_contents($apachePath)
+            : $this->renderApacheVhostPreviewTemplate($domain, $rootPath, $phpVersion);
+        $nginxContent = $nginxExists
+            ? (string) @file_get_contents($nginxPath)
+            : $this->renderNginxVhostPreviewTemplate($domain, $rootPath);
+
+        return [
+            'apache' => [
+                'path' => $apachePath,
+                'exists' => $apacheExists,
+                'source' => $apacheExists ? 'loaded from file' : 'rendered template preview',
+                'content' => $apacheContent,
+            ],
+            'nginx' => [
+                'path' => $nginxPath,
+                'exists' => $nginxExists,
+                'source' => $nginxExists ? 'loaded from file' : 'rendered template preview',
+                'content' => $nginxContent,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptyVhostPreview(string $reason): array
+    {
+        return [
+            'apache' => [
+                'path' => '',
+                'exists' => false,
+                'source' => $reason,
+                'content' => '',
+            ],
+            'nginx' => [
+                'path' => '',
+                'exists' => false,
+                'source' => $reason,
+                'content' => '',
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $apache
+     * @return array<int, string>
+     */
+    private function apacheVhostPaths(string $domain, array $apache): array
+    {
+        if (strtolower((string) ($apache['os_family'] ?? '')) === 'windows') {
+            $sharedPath = trim((string) ($apache['shared_vhost_file'] ?? ''));
+
+            return $sharedPath !== '' ? [$sharedPath] : [];
+        }
+
+        $domain = $this->normalizeDomain($domain);
+        if ($domain === '') {
+            return [];
+        }
+
+        $primaryPath = '/etc/apache2/sites-available/'.$this->vhostFileBaseName($domain).'.conf';
+        $legacyPath = '/etc/apache2/sites-available/'.$domain.'.conf';
+
+        if ($legacyPath === $primaryPath) {
+            return [$primaryPath];
+        }
+
+        return [$primaryPath, $legacyPath];
+    }
+
+    /**
+     * @param array<string, mixed> $nginx
+     * @return array<int, string>
+     */
+    private function nginxVhostPaths(string $domain, array $nginx): array
+    {
+        if (strtolower((string) ($nginx['os_family'] ?? '')) === 'windows') {
+            $mainConf = trim((string) ($nginx['main_conf'] ?? ''));
+
+            return $mainConf !== '' ? [$mainConf] : [];
+        }
+
+        $domain = $this->normalizeDomain($domain);
+        if ($domain === '') {
+            return [];
+        }
+
+        $primaryPath = '/etc/nginx/sites-available/'.$this->vhostFileBaseName($domain).'.conf';
+        $legacyPath = '/etc/nginx/sites-available/'.$domain.'.conf';
+
+        if ($legacyPath === $primaryPath) {
+            return [$primaryPath];
+        }
+
+        return [$primaryPath, $legacyPath];
+    }
+
+    /**
+     * @param array<string, mixed> $apache
+     */
+    private function existingApacheVhostPath(string $domain, array $apache): string
+    {
+        $paths = $this->apacheVhostPaths($domain, $apache);
+        foreach ($paths as $path) {
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+
+        return $paths[0] ?? '';
+    }
+
+    /**
+     * @param array<string, mixed> $nginx
+     */
+    private function existingNginxVhostPath(string $domain, array $nginx): string
+    {
+        $paths = $this->nginxVhostPaths($domain, $nginx);
+        foreach ($paths as $path) {
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+
+        return $paths[0] ?? '';
+    }
+
+    private function renderApacheVhostPreviewTemplate(string $domain, string $rootPath, string $phpVersion): string
+    {
+        $domain = $this->normalizeDomain($domain);
+        $rootPath = trim(str_replace('\\', '/', $rootPath));
+        $phpVersion = $this->normalizePhpVersionForSocket($phpVersion);
+        $backendPort = $this->apacheBackendPort();
+        $serverAlias = $this->shouldAddWwwAlias($domain) ? "\n    ServerAlias www.{$domain}" : '';
+        $socketPath = "/run/php/php{$phpVersion}-fpm.sock";
+        $logName = $this->vhostLogBaseName($domain);
+
+        return <<<CONF
+<VirtualHost *:{$backendPort}>
+    ServerName {$domain}{$serverAlias}
+    DocumentRoot {$rootPath}
+
+    <Directory {$rootPath}>
+        AllowOverride All
+        Options FollowSymLinks
+        Require all granted
+
+        <IfModule mod_dir.c>
+            FallbackResource /index.php
+        </IfModule>
+    </Directory>
+
+    DirectoryIndex index.php index.html index.htm
+
+    <FilesMatch \\.php$>
+        SetHandler "proxy:unix:{$socketPath}|fcgi://localhost/"
+    </FilesMatch>
+
+    ErrorLog \${APACHE_LOG_DIR}/{$logName}_error.log
+    CustomLog \${APACHE_LOG_DIR}/{$logName}_access.log combined
+</VirtualHost>
+CONF;
+    }
+
+    private function renderNginxVhostPreviewTemplate(string $domain, string $rootPath): string
+    {
+        $domain = $this->normalizeDomain($domain);
+        $rootPath = trim(str_replace('\\', '/', $rootPath));
+        if ($rootPath === '') {
+            $rootPath = '/var/www/html';
+        }
+
+        $listenPort = $this->nginxPrimaryPort();
+        $backendPort = $this->apacheBackendPort();
+        $logName = $this->vhostLogBaseName($domain);
+        $serverAlias = $this->shouldAddWwwAlias($domain) ? " www.{$domain}" : '';
+
+        return <<<CONF
+server {
+    listen {$listenPort};
+    listen [::]:{$listenPort};
+    server_name {$domain}{$serverAlias};
+    root {$rootPath};
+    index index.php index.html index.htm;
+
+    access_log /var/log/nginx/{$logName}_access.log;
+    error_log /var/log/nginx/{$logName}_error.log;
+
+    location ^~ /.well-known/acme-challenge/ {
+        allow all;
+        try_files \$uri @apache;
+    }
+
+    location ~ /\\. {
+        deny all;
+    }
+
+    location ~* \\.(?:css|js|jpg|jpeg|gif|png|svg|ico|webp|avif|woff2?)$ {
+        expires 30d;
+        access_log off;
+        try_files \$uri @apache;
+    }
+
+    location ~ \\.php(?:\$|/) {
+        proxy_pass http://127.0.0.1:{$backendPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:{$backendPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+    }
+
+    location @apache {
+        proxy_pass http://127.0.0.1:{$backendPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+    }
+}
+CONF;
+    }
+
+    private function apacheBackendPort(): int
+    {
+        return $this->normalizePort(config('app.apache_backend_port'), self::DEFAULT_APACHE_BACKEND_PORT);
+    }
+
+    private function nginxPrimaryPort(): int
+    {
+        return $this->normalizePort(config('app.nginx_primary_port'), self::DEFAULT_NGINX_PRIMARY_PORT);
+    }
+
+    private function normalizePort(mixed $value, int $fallback): int
+    {
+        if (is_string($value)) {
+            $value = trim($value);
+        }
+
+        if ((is_string($value) || is_int($value)) && preg_match('/^\d+$/', (string) $value) === 1) {
+            $port = (int) $value;
+            if ($port >= 1 && $port <= 65535) {
+                return $port;
+            }
+        }
+
+        return $fallback;
+    }
+
+    private function normalizeDomain(string $domain): string
+    {
+        return strtolower(trim($domain));
+    }
+
+    private function normalizePhpVersionForSocket(string $phpVersion): string
+    {
+        $normalized = trim($phpVersion);
+        if (preg_match('/^\d+\.\d+$/', $normalized) !== 1) {
+            return '8.3';
+        }
+
+        return $normalized;
+    }
+
+    private function vhostTokenFromDomain(string $domain): string
+    {
+        $normalizedDomain = $this->normalizeDomain($domain);
+        $token = strtolower((string) preg_replace('/[^a-z0-9.-]+/', '-', $normalizedDomain));
+        $token = trim($token, '-');
+
+        return $token !== '' ? $token : 'site';
+    }
+
+    private function vhostFileBaseName(string $domain): string
+    {
+        $normalizedDomain = $this->normalizeDomain($domain);
+        $token = $this->vhostTokenFromDomain($normalizedDomain);
+        $hash = substr(sha1($normalizedDomain), 0, 12);
+        if (strlen($token) > 110) {
+            $token = substr($token, 0, 110);
+        }
+
+        return $token.'-'.$hash;
+    }
+
+    private function vhostLogBaseName(string $domain): string
+    {
+        $normalizedDomain = $this->normalizeDomain($domain);
+        $token = $this->vhostTokenFromDomain($normalizedDomain);
+        $hash = substr(sha1($normalizedDomain), 0, 12);
+        if (strlen($token) > 52) {
+            $token = substr($token, 0, 52);
+        }
+
+        return $token.'-'.$hash;
+    }
+
+    private function shouldAddWwwAlias(string $domain): bool
+    {
+        $labels = array_values(array_filter(explode('.', $this->normalizeDomain($domain))));
+        if (count($labels) < 2) {
+            return false;
+        }
+
+        [, $subLabels] = $this->splitDomainParts($labels);
+        if (count($subLabels) === 0) {
+            return true;
+        }
+
+        return count($subLabels) === 1 && $subLabels[0] === 'www';
+    }
+
+    /**
+     * @param array<int, string> $labels
+     * @return array{0: array<int, string>, 1: array<int, string>}
+     */
+    private function splitDomainParts(array $labels): array
+    {
+        $count = count($labels);
+        if ($count < 2) {
+            return [$labels, []];
+        }
+
+        $suffixParts = 1;
+        if ($count >= 3) {
+            $lastTwo = strtolower($labels[$count - 2].'.'.$labels[$count - 1]);
+            if (in_array($lastTwo, self::COMPOUND_PUBLIC_SUFFIXES, true)) {
+                $suffixParts = 2;
+            }
+        }
+
+        $registrableLength = $suffixParts + 1;
+        if ($count < $registrableLength) {
+            $registrableLength = 2;
+        }
+
+        $registrableLabels = array_slice($labels, -$registrableLength);
+        $subLabels = array_slice($labels, 0, -$registrableLength);
+
+        return [$registrableLabels, $subLabels];
     }
 }

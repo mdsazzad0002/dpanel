@@ -597,10 +597,15 @@ sync_apache_vhost() {
 
     <Directory ${root_path}>
         AllowOverride All
+        Options FollowSymLinks
         Require all granted
+
+        <IfModule mod_dir.c>
+            FallbackResource /index.php
+        </IfModule>
     </Directory>
 
-    DirectoryIndex index.php index.html
+    DirectoryIndex index.php index.html index.htm
 
     <FilesMatch \\.php$>
         SetHandler "proxy:unix:${socket_path}|fcgi://localhost/"
@@ -662,7 +667,7 @@ server {
     listen [::]:${NGINX_PRIMARY_PORT};
     server_name ${server_names};
     root ${root_path};
-    index index.php index.html;
+    index index.php index.html index.htm;
 
     access_log /var/log/nginx/${log_basename}_access.log;
     error_log /var/log/nginx/${log_basename}_error.log;
@@ -681,6 +686,19 @@ server {
         access_log off;
         add_header Cache-Control "public, max-age=2592000, immutable";
         try_files \$uri @apache;
+    }
+
+    location ~ \\.php(?:\$|/) {
+        proxy_pass http://127.0.0.1:${APACHE_BACKEND_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
     }
 
     location / {

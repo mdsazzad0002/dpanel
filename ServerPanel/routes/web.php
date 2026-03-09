@@ -25,7 +25,7 @@ Route::get('/', function () {
         'canLogin' => Route::has('login'),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
-        'installerBaseUrl' => (string) config('app.installer_base_url'),
+
     ]);
 });
 Route::get('/roundcube', [EmailController::class, 'webmailEntry'])->name('webmail.roundcube');
@@ -59,12 +59,27 @@ Route::middleware('auth')->group(function () {
     Route::get('/websites/{id}/manage', [WebsiteController::class, 'manage'])
         ->middleware('role:admin|reseller')
         ->name('websites.manage');
+    Route::get('/websites/{id}/web-server', [WebsiteController::class, 'webServerManager'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.web-server');
+    Route::get('/websites/{id}/ssl', [WebsiteController::class, 'sslManager'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.ssl');
+    Route::post('/websites/{id}/ssl/issue', [WebsiteController::class, 'issueSsl'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.ssl.issue');
+    Route::get('/websites/{id}/usage', [WebsiteController::class, 'Usage'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.usage');
     Route::post('/websites/{id}/vhost/sync', [WebsiteController::class, 'syncVhost'])
         ->middleware('role:admin|reseller')
         ->name('websites.vhost.sync');
     Route::post('/websites/{id}/project-cache/clear', [WebsiteController::class, 'clearProjectCache'])
         ->middleware('role:admin|reseller')
         ->name('websites.project-cache.clear');
+    Route::get('/websites/{id}/wordpress', [WebsiteController::class, 'wordpressManager'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.wordpress.manager');
     Route::post('/websites/{id}/wordpress/install', [WebsiteController::class, 'installWordPress'])
         ->middleware('role:admin|reseller')
         ->name('websites.wordpress.install');
@@ -111,6 +126,9 @@ Route::middleware('auth')->group(function () {
     Route::patch('/websites/{id}/filemanager/rename', [WebsiteController::class, 'renameItem'])
         ->middleware('role:admin|reseller')
         ->name('websites.filemanager.item.rename');
+    Route::patch('/websites/{id}/filemanager/move', [WebsiteController::class, 'moveItems'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.filemanager.item.move');
     Route::get('/websites/{id}/filemanager/download', [WebsiteController::class, 'downloadFile'])
         ->middleware('role:admin|reseller')
         ->name('websites.filemanager.file.download');

@@ -28,6 +28,12 @@ class WebsiteController extends Controller
     private const PHP_STATE_KEY = 'state';
     private const DEFAULT_APACHE_BACKEND_PORT = 8080;
     private const DEFAULT_NGINX_PRIMARY_PORT = 80;
+    private const WEBSITE_USAGE_HISTORY_DIR = 'app/website-usage-history';
+    private const WEBSITE_USAGE_RETENTION_HOURS = 12;
+    private const WEBSITE_USAGE_MAX_POINTS = 720;
+    private const WEBSITE_USAGE_STALE_FILE_DAYS = 3;
+    private const WEBSITE_USAGE_CLEANUP_CACHE_KEY = 'websites:usage-history:last-cleanup';
+    private const WEBSITE_USAGE_CLEANUP_INTERVAL_MINUTES = 30;
     /**
      * @var array<int, string>
      */
@@ -283,16 +289,15 @@ class WebsiteController extends Controller
     }
 
     /**
-     * Show website management and usage history.
+     * Show website management overview.
      */
     public function manage(string $id): Response
     {
         $website = collect($this->readRequests())->firstWhere('id', $id);
         abort_if($website === null, 404);
         $website = $this->normalizeWebsiteRecord($website);
+        $metrics = $this->safeBuildDynamicMetrics($website);
 
-        $metrics = $this->buildDynamicMetrics($website);
-        $histories = $this->buildDynamicHistories((string) ($website['id'] ?? $id), $metrics);
         $runtimeStatus = $this->detectRuntimeStatus($website);
         $websiteDomain = (string) ($website['domain'] ?? '');
         $hasApacheVhost = $this->apacheVhostExists($websiteDomain);
@@ -327,24 +332,174 @@ class WebsiteController extends Controller
                 'label' => 'Nginx VHost',
                 'value' => $hasNginxVhost ? 'configured' : ($hasApacheVhost ? 'not configured (apache configured)' : 'not configured'),
             ],
-            [
-                'label' => 'Last File Change',
-                'value' => $metrics['last_modified_at'] ?? null,
-            ],
         ];
 
         return Inertia::render('Websites/Manage', [
             'website' => $website,
             'metrics' => $metrics,
-            'histories' => $histories,
             'activities' => $activities,
-            'vhostPreview' => $this->buildVhostPreview($website),
-            'wordpressVersions' => $this->getWordPressVersionOptions(),
         ]);
     }
 
-    public function syncVhost(string $id): RedirectResponse
+    public function webServerManager(string $id): Response
     {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+        $website = $this->normalizeWebsiteRecord($website);
+
+        $domain = (string) ($website['domain'] ?? '');
+
+        return Inertia::render('Websites/WebServerManager', [
+            'website' => $website,
+            'vhostPreview' => $this->buildVhostPreview($website),
+            'apacheServiceStatus' => $this->detectServiceStatusForWebsitePage('apache2', 'wampapache64'),
+            'nginxServiceStatus' => $this->detectServiceStatusForWebsitePage('nginx', 'wampnginx64'),
+            'hasApacheVhost' => $this->apacheVhostExists($domain),
+            'hasNginxVhost' => $this->nginxVhostExists($domain),
+        ]);
+    }
+
+    public function sslManager(string $id): Response
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+        $website = $this->normalizeWebsiteRecord($website);
+
+        return Inertia::render('Websites/SslManager', [
+            'website' => $website,
+            'sslStatus' => $this->inspectWebsiteSslStatus($website),
+        ]);
+    }
+
+    public function issueSsl(string $id): RedirectResponse
+    {
+        $requests = collect($this->readRequests());
+        $website = $requests->firstWhere('id', $id);
+        if (! is_array($website)) {
+            return redirect()->route('websites.list')->with('error', 'Website request not found.');
+        }
+
+        $website = $this->normalizeWebsiteRecord($website);
+        $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
+        $rootPath = (string) ($website['root_path'] ?? '');
+        $phpVersion = (string) ($website['php_version'] ?? '8.3');
+        if ($domain === '' || $rootPath === '') {
+            return redirect()->route('websites.ssl', $id)->with('error', 'Domain or root path is missing for SSL issue.');
+        }
+        if (! is_dir($rootPath)) {
+            return redirect()->route('websites.ssl', $id)->with('error', "Root path does not exist: {$rootPath}");
+        }
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return redirect()->route('websites.ssl', $id)->with('error', 'SSL issue is only supported on Linux servers.');
+        }
+        if (! function_exists('posix_geteuid') || posix_geteuid() !== 0) {
+            return redirect()->route('websites.ssl', $id)->with('error', 'SSL issue requires root privileges. Run ServerPanel as root.');
+        }
+
+        $certbotPath = trim((string) @shell_exec('command -v certbot 2>/dev/null'));
+        if ($certbotPath === '') {
+            return redirect()->route('websites.ssl', $id)->with('error', 'certbot not found. Install certbot first.');
+        }
+
+        $domains = [$domain];
+        if ($this->shouldAddWwwAlias($domain)) {
+            $domains[] = 'www.'.$domain;
+        }
+
+        $domainArgs = implode(' ', array_map(fn (string $item): string => '-d '.escapeshellarg($item), $domains));
+        $command = sprintf(
+            '%s certonly --non-interactive --agree-tos --register-unsafely-without-email --webroot -w %s %s',
+            escapeshellarg($certbotPath),
+            escapeshellarg($rootPath),
+            $domainArgs,
+        );
+
+        $output = [];
+        $exitCode = 1;
+        @exec($command.' 2>&1', $output, $exitCode);
+        $outputText = trim(implode("\n", $output));
+        if ($exitCode !== 0) {
+            $summary = trim((string) preg_replace('/\s+/', ' ', $outputText));
+            if ($summary !== '') {
+                $summary = substr($summary, 0, 280);
+            }
+
+            $message = 'SSL issue failed.';
+            if ($summary !== '') {
+                $message .= ' '.$summary;
+            }
+
+            return redirect()->route('websites.ssl', $id)->with('error', $message);
+        }
+
+        $syncReport = $this->syncLiveWebVhostWithReport($domain, $rootPath, $phpVersion);
+        $runtimeStatus = $this->detectRuntimeStatus([
+            'domain' => $domain,
+            'root_path' => $rootPath,
+            'status' => (string) ($website['status'] ?? 'pending'),
+        ]);
+
+        $updated = $requests->map(function (array $item) use ($id, $runtimeStatus): array {
+            if ((string) ($item['id'] ?? '') !== $id) {
+                return $item;
+            }
+
+            $item['enable_ssl'] = true;
+            $item['status'] = $runtimeStatus;
+            $item['updated_at'] = now()->toIso8601String();
+
+            return $item;
+        })->values()->all();
+
+        $this->writeRequests($updated);
+
+        $syncMessage = implode(' | ', $syncReport['messages']);
+        if (! $syncReport['generated']) {
+            $message = 'SSL certificate issued, but vhost sync failed.';
+            if ($syncMessage !== '') {
+                $message .= ' '.$syncMessage;
+            }
+
+            return redirect()->route('websites.ssl', $id)->with('error', $message);
+        }
+
+        $message = 'SSL certificate issued successfully.';
+        if ($syncMessage !== '') {
+            $message .= ' '.$syncMessage;
+        }
+
+        return redirect()->route('websites.ssl', $id)->with('success', $message);
+    }
+
+    public function Usage(string $id): Response
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+        $website = $this->normalizeWebsiteRecord($website);
+
+        $metrics = $this->safeBuildDynamicMetrics($website);
+        $histories = $this->buildDynamicHistories((string) ($website['id'] ?? $id), $metrics);
+
+        return Inertia::render('Websites/Usage', [
+            'website' => $website,
+            'metrics' => $metrics,
+            'histories' => $histories,
+        ]);
+    }
+
+    public function syncVhost(Request $request, string $id): RedirectResponse
+    {
+        $redirectTarget = function () use ($request, $id): RedirectResponse {
+            if ((string) $request->input('return_to', '') === 'apache') {
+                return redirect()->route('apache.index', ['website_id' => $id]);
+            }
+            if ((string) $request->input('return_to', '') === 'website_service') {
+                return redirect()->route('websites.web-server', $id);
+            }
+
+            return redirect()->route('websites.manage', $id);
+        };
+
         $requests = collect($this->readRequests());
         $website = $requests->firstWhere('id', $id);
         if (! is_array($website)) {
@@ -356,10 +511,10 @@ class WebsiteController extends Controller
         $rootPath = (string) ($website['root_path'] ?? '');
         $phpVersion = (string) ($website['php_version'] ?? '8.3');
         if ($domain === '' || $rootPath === '') {
-            return redirect()->route('websites.manage', $id)->with('error', 'Domain or root path is missing for vhost sync.');
+            return $redirectTarget()->with('error', 'Domain or root path is missing for vhost sync.');
         }
         if (! is_dir($rootPath)) {
-            return redirect()->route('websites.manage', $id)->with('error', "Root path does not exist: {$rootPath}");
+            return $redirectTarget()->with('error', "Root path does not exist: {$rootPath}");
         }
 
         $syncReport = $this->syncLiveWebVhostWithReport($domain, $rootPath, $phpVersion);
@@ -385,10 +540,10 @@ class WebsiteController extends Controller
 
         $message = implode(' | ', $syncReport['messages']);
         if (! $syncReport['generated']) {
-            return redirect()->route('websites.manage', $id)->with('error', $message !== '' ? $message : 'Vhost sync failed.');
+            return $redirectTarget()->with('error', $message !== '' ? $message : 'Vhost sync failed.');
         }
 
-        return redirect()->route('websites.manage', $id)->with('success', $message !== '' ? $message : 'Vhost sync completed.');
+        return $redirectTarget()->with('success', $message !== '' ? $message : 'Vhost sync completed.');
     }
 
     public function clearProjectCache(string $id): RedirectResponse
@@ -440,11 +595,32 @@ class WebsiteController extends Controller
         return redirect()->route('websites.manage', $id)->with('error', 'Project cache clear failed.'.$suffix);
     }
 
+    public function wordpressManager(string $id): Response
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+        $website = $this->normalizeWebsiteRecord($website);
+
+        return Inertia::render('Websites/WordPressInstaller', [
+            'website' => $website,
+            'wordpressVersions' => $this->getWordPressVersionOptions(),
+        ]);
+    }
+
     public function installWordPress(Request $request, string $id): RedirectResponse
     {
         $validated = $request->validate([
             'wordpress_version' => ['nullable', 'string', 'max:20', 'regex:/^(latest|\\d+\\.\\d+(?:\\.\\d+)?)$/i'],
+            'return_to' => ['nullable', 'string', 'in:manage,wordpress'],
         ]);
+        $returnToWordPress = (string) ($validated['return_to'] ?? '') === 'wordpress';
+        $redirectTarget = function () use ($id, $returnToWordPress): RedirectResponse {
+            if ($returnToWordPress) {
+                return redirect()->route('websites.wordpress.manager', $id);
+            }
+
+            return redirect()->route('websites.manage', $id);
+        };
 
         $requests = collect($this->readRequests());
         $website = $requests->firstWhere('id', $id);
@@ -460,7 +636,7 @@ class WebsiteController extends Controller
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($rootPath));
 
         if ($domain === '' || $rootPath === '') {
-            return redirect()->route('websites.manage', $id)->with('error', 'Domain or root path is missing for WordPress installation.');
+            return $redirectTarget()->with('error', 'Domain or root path is missing for WordPress installation.');
         }
 
         if ($this->hasWordPressFiles($rootPath)) {
@@ -477,7 +653,7 @@ class WebsiteController extends Controller
             })->values()->all();
 
             $this->writeRequests($updatedRequests);
-            return redirect()->route('websites.manage', $id)->with('success', 'WordPress is already installed for this website.');
+            return $redirectTarget()->with('success', 'WordPress is already installed for this website.');
         }
 
         try {
@@ -488,13 +664,13 @@ class WebsiteController extends Controller
             $installerResult = $this->installSelectedApplication('wordpress', $rootPath, $domain, $phpVersion, $wordpressVersion);
             if (! $installerResult['installed']) {
                 $message = trim((string) ($installerResult['message'] ?? ''));
-                return redirect()->route('websites.manage', $id)->with('error', $message !== '' ? $message : 'WordPress installation failed.');
+                return $redirectTarget()->with('error', $message !== '' ? $message : 'WordPress installation failed.');
             }
 
             $this->relocateApacheDefaultPage();
             $this->syncLiveWebVhost($domain, $rootPath, $phpVersion);
         } catch (\Throwable $e) {
-            return redirect()->route('websites.manage', $id)->with('error', $e->getMessage());
+            return $redirectTarget()->with('error', $e->getMessage());
         }
 
         $runtimeStatus = strtolower((string) ($website['status'] ?? '')) === 'disabled'
@@ -520,7 +696,7 @@ class WebsiteController extends Controller
 
         $this->writeRequests($updated);
 
-        return redirect()->route('websites.manage', $id)->with('success', 'WordPress installed successfully with one click.');
+        return $redirectTarget()->with('success', 'WordPress installed successfully with one click.');
     }
 
     /**
@@ -703,7 +879,7 @@ class WebsiteController extends Controller
 
         $selectedFilePath = $this->sanitizeRelativePath((string) $request->query('file', ''));
         $selectedFile = $this->readSelectedFile($basePath, $selectedFilePath);
-        $directoryTree = $this->buildDirectoryTree($basePath, '', 2, $showHidden);
+        $directoryTree = $this->buildDirectoryTree($basePath, '', 24, $showHidden, $currentPath);
 
         return Inertia::render('Websites/FileManager', [
             'website' => [
@@ -855,6 +1031,7 @@ class WebsiteController extends Controller
             'item_path' => ['required', 'string', 'max:1500'],
             'current_path' => ['nullable', 'string', 'max:1500'],
             'permissions' => ['required', 'string', 'regex:/^[0-7]{3,4}$/'],
+            'recursive' => ['nullable', 'boolean'],
         ]);
 
         $basePath = $this->resolveFileManagerBasePath($website);
@@ -871,11 +1048,20 @@ class WebsiteController extends Controller
         }
 
         $mode = octdec((string) $validated['permissions']);
-        if (! @chmod($itemPath, $mode)) {
+        $recursive = (bool) ($validated['recursive'] ?? false);
+        $changed = $recursive && is_dir($itemPath)
+            ? $this->applyPermissionsRecursively($itemPath, $mode)
+            : @chmod($itemPath, $mode);
+
+        if (! $changed) {
             return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Failed to change permissions.');
         }
 
-        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('success', 'Permissions updated.');
+        $message = $recursive && is_dir($itemPath)
+            ? 'Permissions updated recursively.'
+            : 'Permissions updated.';
+
+        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('success', $message);
     }
 
     public function renameItem(Request $request, string $id): RedirectResponse
@@ -922,6 +1108,103 @@ class WebsiteController extends Controller
         }
 
         return redirect()->route('websites.filemanager', $query)->with('success', 'Item renamed.');
+    }
+
+    public function moveItems(Request $request, string $id): RedirectResponse
+    {
+        $website = collect($this->readRequests())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+
+        $validated = $request->validate([
+            'item_path' => ['nullable', 'string', 'max:1500'],
+            'item_paths' => ['nullable', 'array', 'min:1'],
+            'item_paths.*' => ['required', 'string', 'max:1500'],
+            'current_path' => ['nullable', 'string', 'max:1500'],
+            'destination_path' => ['nullable', 'string', 'max:1500'],
+        ]);
+
+        $basePath = $this->resolveFileManagerBasePath($website);
+        $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
+        $destinationPathRelative = $this->sanitizeRelativePath((string) ($validated['destination_path'] ?? ''));
+        $destinationPath = $this->resolvePathInsideBase($basePath, $destinationPathRelative);
+
+        if (! is_dir($destinationPath)) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Destination folder not found.');
+        }
+
+        $allItems = [];
+        if (! empty($validated['item_path'])) {
+            $allItems[] = $this->sanitizeRelativePath((string) $validated['item_path']);
+        }
+        foreach ((array) ($validated['item_paths'] ?? []) as $multiItem) {
+            $allItems[] = $this->sanitizeRelativePath((string) $multiItem);
+        }
+
+        $allItems = array_values(array_unique(array_filter($allItems)));
+        if (count($allItems) === 0) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'No item selected to move.');
+        }
+
+        $movedCount = 0;
+        $sameDestinationCount = 0;
+        $errors = [];
+
+        foreach ($allItems as $itemRelative) {
+            $itemPath = $this->resolvePathInsideBase($basePath, $itemRelative);
+            if (! file_exists($itemPath)) {
+                $errors[] = "Item not found: {$itemRelative}";
+                continue;
+            }
+
+            $targetRelative = $this->sanitizeRelativePath(trim($destinationPathRelative.'/'.basename($itemPath), '/'));
+            if ($targetRelative === $itemRelative) {
+                $sameDestinationCount++;
+                continue;
+            }
+
+            if (is_dir($itemPath) && str_starts_with($targetRelative.'/', $itemRelative.'/')) {
+                $errors[] = "Cannot move folder into itself: {$itemRelative}";
+                continue;
+            }
+
+            $targetPath = $this->resolvePathInsideBase($basePath, $targetRelative);
+            if (file_exists($targetPath)) {
+                $errors[] = 'Target already exists: '.basename($targetPath);
+                continue;
+            }
+
+            if (! @rename($itemPath, $targetPath)) {
+                $errors[] = 'Failed to move: '.basename($itemPath);
+                continue;
+            }
+
+            $movedCount++;
+        }
+
+        if ($movedCount === 0 && $sameDestinationCount > 0 && count($errors) === 0) {
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', 'Selected item(s) are already in that folder.');
+        }
+
+        if ($movedCount === 0) {
+            $details = implode(' | ', array_slice($errors, 0, 3));
+
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('error', $details !== '' ? "Move failed. {$details}" : 'Move failed.');
+        }
+
+        if (count($errors) > 0 || $sameDestinationCount > 0) {
+            $parts = ["Moved {$movedCount} item(s)."];
+            if ($sameDestinationCount > 0) {
+                $parts[] = "{$sameDestinationCount} already in destination.";
+            }
+            if (count($errors) > 0) {
+                $details = implode(' | ', array_slice($errors, 0, 2));
+                $parts[] = 'Skipped: '.$details;
+            }
+
+            return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('success', implode(' ', $parts));
+        }
+
+        return redirect()->route('websites.filemanager', ['id' => $id, 'path' => $currentPath])->with('success', "Moved {$movedCount} item(s).");
     }
 
     public function downloadFile(Request $request, string $id): BinaryFileResponse|RedirectResponse
@@ -2656,10 +2939,15 @@ HTML;
 
     <Directory {$rootPath}>
         AllowOverride All
+        Options FollowSymLinks
         Require all granted
+
+        <IfModule mod_dir.c>
+            FallbackResource /index.php
+        </IfModule>
     </Directory>
 
-    DirectoryIndex index.php index.html
+    DirectoryIndex index.php index.html index.htm
 
     <FilesMatch \\.php$>
         SetHandler "proxy:unix:{$socketPath}|fcgi://localhost/"
@@ -2690,7 +2978,7 @@ server {
     listen [::]:{$listenPort};
     server_name {$domain}{$serverAlias};
     root {$rootPath};
-    index index.php index.html;
+    index index.php index.html index.htm;
 
     access_log /var/log/nginx/{$logName}_access.log;
     error_log /var/log/nginx/{$logName}_error.log;
@@ -2709,6 +2997,19 @@ server {
         access_log off;
         add_header Cache-Control "public, max-age=2592000, immutable";
         try_files \$uri @apache;
+    }
+
+    location ~ \\.php(?:\$|/) {
+        proxy_pass http://127.0.0.1:{$backendPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
     }
 
     location / {
@@ -2930,6 +3231,166 @@ CONF;
      * @param array<string, mixed> $website
      * @return array<string, int|float|string|null>
      */
+    private function safeBuildDynamicMetrics(array $website): array
+    {
+        try {
+            return $this->buildDynamicMetrics($website);
+        } catch (\Throwable $e) {
+            return [
+                'connections_current' => 0,
+                'jobs_pending' => 0,
+                'databases_count' => 0,
+                'disk_used_mb' => 0,
+                'disk_limit_mb' => 102400,
+                'cpu_usage_percent' => 0,
+                'ram_usage_mb' => 0,
+                'file_count' => 0,
+                'last_modified_at' => null,
+            ];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $website
+     * @return array<string, mixed>
+     */
+    private function inspectWebsiteSslStatus(array $website): array
+    {
+        $checkedAt = now()->toIso8601String();
+        $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
+        if ($domain === '') {
+            return [
+                'status' => 'unknown',
+                'message' => 'Domain is missing.',
+                'checked_at' => $checkedAt,
+                'domain' => '',
+                'valid_from' => null,
+                'valid_to' => null,
+                'days_remaining' => null,
+                'subject_cn' => null,
+                'issuer_cn' => null,
+            ];
+        }
+
+        $context = stream_context_create([
+            'ssl' => [
+                'capture_peer_cert' => true,
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'SNI_enabled' => true,
+                'peer_name' => $domain,
+            ],
+        ]);
+
+        $errno = 0;
+        $errstr = '';
+        $client = @stream_socket_client(
+            "ssl://{$domain}:443",
+            $errno,
+            $errstr,
+            8,
+            STREAM_CLIENT_CONNECT,
+            $context,
+        );
+
+        if (! is_resource($client)) {
+            return [
+                'status' => 'unreachable',
+                'message' => trim($errstr) !== '' ? trim($errstr) : "Unable to connect to {$domain}:443.",
+                'checked_at' => $checkedAt,
+                'domain' => $domain,
+                'valid_from' => null,
+                'valid_to' => null,
+                'days_remaining' => null,
+                'subject_cn' => null,
+                'issuer_cn' => null,
+            ];
+        }
+
+        $params = stream_context_get_params($client);
+        @fclose($client);
+
+        $certificate = $params['options']['ssl']['peer_certificate'] ?? null;
+        if ($certificate === null) {
+            return [
+                'status' => 'invalid',
+                'message' => 'No certificate was presented by the server.',
+                'checked_at' => $checkedAt,
+                'domain' => $domain,
+                'valid_from' => null,
+                'valid_to' => null,
+                'days_remaining' => null,
+                'subject_cn' => null,
+                'issuer_cn' => null,
+            ];
+        }
+
+        if (! function_exists('openssl_x509_parse')) {
+            return [
+                'status' => 'unknown',
+                'message' => 'Certificate found, but OpenSSL parsing is unavailable in PHP.',
+                'checked_at' => $checkedAt,
+                'domain' => $domain,
+                'valid_from' => null,
+                'valid_to' => null,
+                'days_remaining' => null,
+                'subject_cn' => null,
+                'issuer_cn' => null,
+            ];
+        }
+
+        $parsed = @openssl_x509_parse($certificate);
+        if (! is_array($parsed)) {
+            return [
+                'status' => 'invalid',
+                'message' => 'Certificate was presented but parsing failed.',
+                'checked_at' => $checkedAt,
+                'domain' => $domain,
+                'valid_from' => null,
+                'valid_to' => null,
+                'days_remaining' => null,
+                'subject_cn' => null,
+                'issuer_cn' => null,
+            ];
+        }
+
+        $validFromTs = isset($parsed['validFrom_time_t']) ? (int) $parsed['validFrom_time_t'] : null;
+        $validToTs = isset($parsed['validTo_time_t']) ? (int) $parsed['validTo_time_t'] : null;
+        $subjectCn = isset($parsed['subject']['CN']) ? (string) $parsed['subject']['CN'] : null;
+        $issuerCn = isset($parsed['issuer']['CN']) ? (string) $parsed['issuer']['CN'] : null;
+        $nowTs = now()->timestamp;
+        $isValidNow = $validFromTs !== null && $validToTs !== null && $nowTs >= $validFromTs && $nowTs <= $validToTs;
+        $daysRemaining = $validToTs !== null ? (int) floor(($validToTs - $nowTs) / 86400) : null;
+
+        $status = 'valid';
+        $message = 'SSL certificate is active and valid.';
+        if (! $isValidNow) {
+            if ($validToTs !== null && $validToTs < $nowTs) {
+                $status = 'expired';
+                $message = 'SSL certificate has expired.';
+            } else {
+                $status = 'invalid';
+                $message = 'SSL certificate is present but not currently valid.';
+            }
+        }
+
+        return [
+            'status' => $status,
+            'message' => $message,
+            'checked_at' => $checkedAt,
+            'domain' => $domain,
+            'valid_from' => $validFromTs !== null ? Carbon::createFromTimestamp($validFromTs)->toIso8601String() : null,
+            'valid_to' => $validToTs !== null ? Carbon::createFromTimestamp($validToTs)->toIso8601String() : null,
+            'days_remaining' => $daysRemaining,
+            'subject_cn' => $subjectCn,
+            'issuer_cn' => $issuerCn,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $website
+     * @return array<string, int|float|string|null>
+     */
     private function buildDynamicMetrics(array $website): array
     {
         $basePath = $this->resolveFileManagerBasePath($website);
@@ -2959,49 +3420,70 @@ CONF;
      */
     private function buildDynamicHistories(string $websiteId, array $currentMetrics): array
     {
-        if (! DB::getSchemaBuilder()->hasTable(self::WEBSITE_METRICS_TABLE)) {
-            return [
-                'points' => [[
-                    'time' => now()->format('H:i'),
-                    'connections' => (int) ($currentMetrics['connections_current'] ?? 0),
-                    'jobs' => (int) ($currentMetrics['jobs_pending'] ?? 0),
-                    'databases' => (int) ($currentMetrics['databases_count'] ?? 0),
-                    'disk' => (float) ($currentMetrics['disk_used_mb'] ?? 0),
-                    'cpu' => (float) ($currentMetrics['cpu_usage_percent'] ?? 0),
-                    'ram' => (int) ($currentMetrics['ram_usage_mb'] ?? 0),
-                ]],
-            ];
-        }
+        $now = now();
+        $history = $this->readWebsiteMetricsHistory($websiteId);
 
-        DB::table(self::WEBSITE_METRICS_TABLE)->insert([
-            'website_id' => $websiteId,
+        $history[] = [
+            'captured_at' => $now->toIso8601String(),
             'connections' => (int) ($currentMetrics['connections_current'] ?? 0),
             'jobs' => (int) ($currentMetrics['jobs_pending'] ?? 0),
             'databases' => (int) ($currentMetrics['databases_count'] ?? 0),
             'disk' => (float) ($currentMetrics['disk_used_mb'] ?? 0),
             'cpu' => (float) ($currentMetrics['cpu_usage_percent'] ?? 0),
             'ram' => (int) ($currentMetrics['ram_usage_mb'] ?? 0),
-            'captured_at' => now()->format('Y-m-d H:i:s'),
-            'created_at' => now()->format('Y-m-d H:i:s'),
-            'updated_at' => now()->format('Y-m-d H:i:s'),
-        ]);
+        ];
 
-        $points = DB::table(self::WEBSITE_METRICS_TABLE)
-            ->where('website_id', $websiteId)
-            ->orderByDesc('captured_at')
-            ->limit(24)
-            ->get()
-            ->reverse()
+        $cutoff = $now->copy()->subHours(self::WEBSITE_USAGE_RETENTION_HOURS);
+        $history = collect($history)
+            ->filter(function (array $point) use ($cutoff): bool {
+                $capturedAt = trim((string) ($point['captured_at'] ?? ''));
+                if ($capturedAt === '') {
+                    return false;
+                }
+
+                try {
+                    return Carbon::parse($capturedAt)->greaterThanOrEqualTo($cutoff);
+                } catch (\Throwable $e) {
+                    return false;
+                }
+            })
+            ->sortBy(function (array $point): int {
+                try {
+                    return Carbon::parse((string) ($point['captured_at'] ?? ''))->timestamp;
+                } catch (\Throwable $e) {
+                    return 0;
+                }
+            })
             ->values()
-            ->map(function ($row): array {
+            ->all();
+
+        // Safety cap for file size while still retaining enough samples in 12h.
+        if (count($history) > self::WEBSITE_USAGE_MAX_POINTS) {
+            $history = array_slice($history, -self::WEBSITE_USAGE_MAX_POINTS);
+        }
+
+        $this->writeWebsiteMetricsHistory($websiteId, $history);
+
+        $points = collect($history)
+            ->map(function (array $point): array {
+                $capturedAt = (string) ($point['captured_at'] ?? '');
+                $time = now()->format('H:i');
+                try {
+                    if ($capturedAt !== '') {
+                        $time = Carbon::parse($capturedAt)->format('H:i');
+                    }
+                } catch (\Throwable $e) {
+                    // Keep fallback time if parsing fails.
+                }
+
                 return [
-                    'time' => Carbon::parse((string) $row->captured_at)->format('H:i'),
-                    'connections' => (int) ($row->connections ?? 0),
-                    'jobs' => (int) ($row->jobs ?? 0),
-                    'databases' => (int) ($row->databases ?? 0),
-                    'disk' => (float) ($row->disk ?? 0),
-                    'cpu' => (float) ($row->cpu ?? 0),
-                    'ram' => (int) ($row->ram ?? 0),
+                    'time' => $time,
+                    'connections' => (int) ($point['connections'] ?? 0),
+                    'jobs' => (int) ($point['jobs'] ?? 0),
+                    'databases' => (int) ($point['databases'] ?? 0),
+                    'disk' => (float) ($point['disk'] ?? 0),
+                    'cpu' => (float) ($point['cpu'] ?? 0),
+                    'ram' => (int) ($point['ram'] ?? 0),
                 ];
             })
             ->all();
@@ -3009,6 +3491,179 @@ CONF;
         return [
             'points' => $points,
         ];
+    }
+
+    /**
+     * @return array<int, array<string, int|float|string>>
+     */
+    private function readWebsiteMetricsHistory(string $websiteId): array
+    {
+        $path = $this->websiteMetricsHistoryPath($websiteId);
+        if (! is_file($path)) {
+            return [];
+        }
+
+        $raw = @file_get_contents($path);
+        if (! is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        $pointsRaw = [];
+        if (isset($decoded['points']) && is_array($decoded['points'])) {
+            $pointsRaw = $decoded['points'];
+        } elseif (array_is_list($decoded)) {
+            $pointsRaw = $decoded;
+        }
+
+        return collect($pointsRaw)
+            ->filter(fn ($point): bool => is_array($point))
+            ->map(function (array $point): array {
+                return [
+                    'captured_at' => (string) ($point['captured_at'] ?? ''),
+                    'connections' => (int) ($point['connections'] ?? 0),
+                    'jobs' => (int) ($point['jobs'] ?? 0),
+                    'databases' => (int) ($point['databases'] ?? 0),
+                    'disk' => (float) ($point['disk'] ?? 0),
+                    'cpu' => (float) ($point['cpu'] ?? 0),
+                    'ram' => (int) ($point['ram'] ?? 0),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param array<int, array<string, int|float|string>> $history
+     */
+    private function writeWebsiteMetricsHistory(string $websiteId, array $history): void
+    {
+        $path = $this->websiteMetricsHistoryPath($websiteId);
+        $dir = dirname($path);
+
+        if (! is_dir($dir) && ! @mkdir($dir, 0755, true) && ! is_dir($dir)) {
+            return;
+        }
+
+        $payload = [
+            'version' => 1,
+            'website_id' => $websiteId,
+            'updated_at' => now()->toIso8601String(),
+            'points' => array_values($history),
+        ];
+
+        $json = json_encode($payload, JSON_UNESCAPED_SLASHES);
+        if (! is_string($json)) {
+            return;
+        }
+
+        $written = @file_put_contents($path, $json, LOCK_EX);
+        if ($written === false) {
+            return;
+        }
+
+        $this->cleanupWebsiteMetricsHistoryFiles();
+    }
+
+    private function websiteMetricsHistoryPath(string $websiteId): string
+    {
+        $token = preg_replace('/[^A-Za-z0-9._-]/', '_', trim($websiteId)) ?? '';
+        if ($token === '') {
+            $token = substr(sha1($websiteId), 0, 20);
+        }
+
+        return storage_path(self::WEBSITE_USAGE_HISTORY_DIR.'/'.$token.'.json');
+    }
+
+    private function cleanupWebsiteMetricsHistoryFiles(): void
+    {
+        $lockAcquired = Cache::add(
+            self::WEBSITE_USAGE_CLEANUP_CACHE_KEY,
+            now()->toIso8601String(),
+            now()->addMinutes(self::WEBSITE_USAGE_CLEANUP_INTERVAL_MINUTES),
+        );
+        if (! $lockAcquired) {
+            return;
+        }
+
+        $historyDir = storage_path(self::WEBSITE_USAGE_HISTORY_DIR);
+        if (! is_dir($historyDir)) {
+            return;
+        }
+
+        $entries = @scandir($historyDir);
+        if (! is_array($entries)) {
+            return;
+        }
+
+        $validWebsiteIds = Website::query()
+            ->pluck('id')
+            ->map(fn ($id): string => trim((string) $id))
+            ->filter()
+            ->values()
+            ->all();
+        $validWebsiteIdMap = array_fill_keys($validWebsiteIds, true);
+        $staleCutoff = now()->subDays(self::WEBSITE_USAGE_STALE_FILE_DAYS);
+
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            if (! str_ends_with(strtolower($entry), '.json')) {
+                continue;
+            }
+
+            $fullPath = str_replace('\\', '/', rtrim($historyDir, '/').'/'.$entry);
+            if (! is_file($fullPath)) {
+                continue;
+            }
+
+            if ($this->shouldDeleteWebsiteMetricsHistoryFile($fullPath, $validWebsiteIdMap, $staleCutoff)) {
+                @unlink($fullPath);
+            }
+        }
+    }
+
+    /**
+     * @param array<string, bool> $validWebsiteIdMap
+     */
+    private function shouldDeleteWebsiteMetricsHistoryFile(string $fullPath, array $validWebsiteIdMap, Carbon $staleCutoff): bool
+    {
+        $raw = @file_get_contents($fullPath);
+        if (! is_string($raw) || trim($raw) === '') {
+            return true;
+        }
+
+        $decoded = json_decode($raw, true);
+        if (! is_array($decoded)) {
+            return true;
+        }
+
+        $websiteId = trim((string) ($decoded['website_id'] ?? ''));
+        if ($websiteId !== '' && ! isset($validWebsiteIdMap[$websiteId])) {
+            return true;
+        }
+
+        $updatedAt = trim((string) ($decoded['updated_at'] ?? ''));
+        if ($updatedAt !== '') {
+            try {
+                return Carbon::parse($updatedAt)->lt($staleCutoff);
+            } catch (\Throwable $e) {
+                // Fall back to file mtime if timestamp cannot be parsed.
+            }
+        }
+
+        $mtime = @filemtime($fullPath);
+        if ($mtime === false) {
+            return false;
+        }
+
+        return Carbon::createFromTimestamp((int) $mtime)->lt($staleCutoff);
     }
 
     /**
@@ -3276,6 +3931,39 @@ CONF;
         return false;
     }
 
+    private function detectServiceStatusForWebsitePage(string $linuxService, string $windowsService): string
+    {
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            $service = trim($windowsService);
+            if ($service === '') {
+                return 'unknown';
+            }
+
+            $output = (string) @shell_exec('sc query '.escapeshellarg($service).' 2>&1');
+            $normalized = strtoupper($output);
+            if (str_contains($normalized, 'RUNNING')) {
+                return 'running';
+            }
+            if (str_contains($normalized, 'STOPPED')) {
+                return 'stopped';
+            }
+
+            return 'unknown';
+        }
+
+        $service = trim($linuxService);
+        if ($service === '') {
+            return 'unknown';
+        }
+
+        $output = trim((string) @shell_exec('systemctl is-active '.escapeshellarg($service).' 2>/dev/null'));
+        if ($output === '') {
+            return 'unknown';
+        }
+
+        return strtolower($output);
+    }
+
     private function countWebsiteCronJobs(string $websiteId): int
     {
         return (int) CronJob::query()
@@ -3512,12 +4200,13 @@ CONF;
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function buildDirectoryTree(string $basePath, string $relative, int $depth, bool $showHidden): array
+    private function buildDirectoryTree(string $basePath, string $relative, int $depth, bool $showHidden, string $activePath = ''): array
     {
         if ($depth < 0) {
             return [];
         }
 
+        $activePath = $this->sanitizeRelativePath($activePath);
         $path = $this->resolvePathInsideBase($basePath, $relative);
         $entries = @scandir($path);
         if (! is_array($entries)) {
@@ -3539,10 +4228,21 @@ CONF;
                 continue;
             }
 
+            $isActiveBranch = $activePath !== '' && (
+                $childRelative === $activePath
+                || str_starts_with($activePath.'/', $childRelative.'/')
+            );
+
+            $children = [];
+            if ($depth > 0 && $isActiveBranch) {
+                $children = $this->buildDirectoryTree($basePath, $childRelative, $depth - 1, $showHidden, $activePath);
+            }
+
             $tree[] = [
                 'name' => $entry,
                 'path' => $childRelative,
-                'children' => $depth > 0 ? $this->buildDirectoryTree($basePath, $childRelative, $depth - 1, $showHidden) : [],
+                'has_children' => count($children) > 0,
+                'children' => $children,
             ];
         }
 
@@ -3611,6 +4311,48 @@ CONF;
         }
 
         @rmdir($directory);
+    }
+
+    private function applyPermissionsRecursively(string $path, int $mode): bool
+    {
+        if (! @chmod($path, $mode)) {
+            return false;
+        }
+
+        if (! is_dir($path)) {
+            return true;
+        }
+
+        $entries = @scandir($path);
+        if (! is_array($entries)) {
+            return false;
+        }
+
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $fullPath = rtrim($path, '/').'/'.$entry;
+
+            // Do not recurse into links to avoid crossing outside website root.
+            if (is_link($fullPath)) {
+                continue;
+            }
+
+            if (is_dir($fullPath)) {
+                if (! $this->applyPermissionsRecursively($fullPath, $mode)) {
+                    return false;
+                }
+                continue;
+            }
+
+            if (! @chmod($fullPath, $mode)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function sanitizeFilename(string $filename): string

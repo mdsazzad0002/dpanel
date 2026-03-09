@@ -27,13 +27,16 @@ const extensionSyncError = ref('');
 const extensionServerSyncing = ref(false);
 const versionSwitching = ref(false);
 const versionSwitchError = ref('');
+const configSaving = ref(false);
+const configSaveMessage = ref('');
+const configSaveError = ref('');
 const applyingPayload = ref(false);
 const defaultConfig = Object.freeze({
-    memory_limit: '256M',
+    memory_limit: '512M',
     upload_max_filesize: '2G',
     post_max_size: '2G',
     max_execution_time: 300,
-    max_input_vars: 3000,
+    max_input_vars: 5000,
     display_errors: 'Off',
     log_errors: 'On',
     allow_url_fopen: 'On',
@@ -60,6 +63,7 @@ const normalizeConfigValues = (raw = {}) => ({
 
 const configMatrix = ref(clone(props.configByVersion));
 const extensionMatrix = ref(clone(props.extensionStatesByVersion));
+const persistedConfigMatrix = ref(clone(props.configByVersion));
 const initialSelectedVersion = props.selectedVersion || props.defaultVersion || (props.installedVersions[0] ?? '');
 
 const versionsForm = useForm({
@@ -115,6 +119,25 @@ const currentConfigValues = () => normalizeConfigValues({
     allow_url_fopen: configForm.allow_url_fopen,
 });
 
+const areConfigValuesEqual = (left, right) => (
+    JSON.stringify(normalizeConfigValues(left)) === JSON.stringify(normalizeConfigValues(right))
+);
+
+const rememberVersionDraft = (version) => {
+    const normalizedVersion = String(version ?? '').trim();
+    if (!normalizedVersion) return;
+
+    configMatrix.value[normalizedVersion] = currentConfigValues();
+
+    if (extensionForm.version !== normalizedVersion) return;
+
+    const selectedExtensions = new Set(extensionForm.extensions ?? []);
+    extensionMatrix.value[normalizedVersion] = extensionOptions.value.reduce((carry, extension) => {
+        carry[extension] = selectedExtensions.has(extension);
+        return carry;
+    }, {});
+};
+
 const applySelectedConfigToForm = (version, configValues) => {
     const normalized = normalizeConfigValues(configValues);
     applyingPayload.value = true;
@@ -143,17 +166,25 @@ const applyManagerPayload = (payload = {}) => {
     versionsForm.installed_versions = installedVersions;
     versionsForm.current_version = defaultVersion;
 
-    configMatrix.value = clone(allConfigs);
-    extensionMatrix.value = clone(allExtensionStates);
+    const serverConfigMatrix = clone(allConfigs);
+    const serverExtensionMatrix = clone(allExtensionStates);
+    persistedConfigMatrix.value = serverConfigMatrix;
+    configMatrix.value = { ...serverConfigMatrix, ...configMatrix.value };
+    extensionMatrix.value = { ...serverExtensionMatrix, ...extensionMatrix.value };
+    extensionMatrix.value[selectedVersion] = {
+        ...(extensionMatrix.value[selectedVersion] ?? {}),
+        ...(extensionStates ?? {}),
+    };
 
     extensionOptions.value = availableExtensions;
     applyingPayload.value = true;
     extensionForm.version = selectedVersion;
-    extensionForm.extensions = availableExtensions.filter((extension) => Boolean(extensionStates?.[extension]));
+    extensionForm.extensions = availableExtensions.filter((extension) => Boolean(extensionMatrix.value?.[selectedVersion]?.[extension]));
     applyingPayload.value = false;
 
-    applySelectedConfigToForm(selectedVersion, configValues);
-    configMatrix.value[selectedVersion] = normalizeConfigValues(configValues);
+    const selectedConfigValues = configMatrix.value?.[selectedVersion] ?? configValues;
+    applySelectedConfigToForm(selectedVersion, selectedConfigValues);
+    configMatrix.value[selectedVersion] = normalizeConfigValues(selectedConfigValues);
 };
 
 const loadVersionPayload = async (version) => {
@@ -223,6 +254,12 @@ const saveExtensions = async () => {
             },
             { headers: { Accept: 'application/json' } },
         );
+
+        const selectedExtensions = new Set(extensionForm.extensions ?? []);
+        extensionMatrix.value[extensionForm.version] = extensionOptions.value.reduce((carry, extension) => {
+            carry[extension] = selectedExtensions.has(extension);
+            return carry;
+        }, {});
     } catch (error) {
         extensionSyncError.value = error?.response?.data?.message ?? 'Failed to update extension.';
     } finally {
@@ -249,6 +286,10 @@ const syncExtensionsFromServer = async () => {
         extensionOptions.value = availableExtensions;
         extensionForm.version = version;
         extensionForm.extensions = availableExtensions.filter((extension) => Boolean(extensionStates?.[extension]));
+        extensionMatrix.value[version] = availableExtensions.reduce((carry, extension) => {
+            carry[extension] = Boolean(extensionStates?.[extension]);
+            return carry;
+        }, {});
     } catch (error) {
         extensionSyncError.value = error?.response?.data?.message ?? 'Failed to sync extensions from server.';
     } finally {
@@ -256,9 +297,53 @@ const syncExtensionsFromServer = async () => {
     }
 };
 
-const saveConfig = () => {
-    configMatrix.value[configForm.version] = currentConfigValues();
-    configForm.patch(route('php.config.update'));
+const saveConfig = async () => {
+    configSaveMessage.value = '';
+    configSaveError.value = '';
+    configForm.clearErrors();
+
+    const version = String(configForm.version ?? '').trim();
+    if (!version) return;
+
+    const values = currentConfigValues();
+    configMatrix.value[version] = values;
+
+    const persistedValues = normalizeConfigValues(persistedConfigMatrix.value?.[version] ?? {});
+    if (areConfigValuesEqual(values, persistedValues)) {
+        configSaveMessage.value = `No PHP config changes detected for ${version}.`;
+        return;
+    }
+
+    configSaving.value = true;
+    try {
+        const response = await window.axios.patch(
+            route('php.config.update'),
+            {
+                version,
+                ...values,
+            },
+            { headers: { Accept: 'application/json' } },
+        );
+
+        const payload = response?.data?.data ?? {};
+        const savedVersion = String(payload.version ?? version);
+        const savedConfigValues = normalizeConfigValues(payload.configValues ?? values);
+
+        persistedConfigMatrix.value[savedVersion] = savedConfigValues;
+        configMatrix.value[savedVersion] = savedConfigValues;
+        applySelectedConfigToForm(savedVersion, savedConfigValues);
+        configSaveMessage.value = response?.data?.message ?? `PHP config updated for ${savedVersion}.`;
+    } catch (error) {
+        const validationErrors = error?.response?.data?.errors ?? {};
+        Object.entries(validationErrors).forEach(([field, messages]) => {
+            if (Array.isArray(messages) && messages.length > 0) {
+                configForm.setError(field, messages[0]);
+            }
+        });
+        configSaveError.value = error?.response?.data?.message ?? 'Failed to update PHP config.';
+    } finally {
+        configSaving.value = false;
+    }
 };
 
 const rightPreviewOutput = computed(() => {
@@ -293,6 +378,9 @@ watch(
         if (applyingPayload.value) return;
         if (!nextVersion || nextVersion === previousVersion) return;
 
+        rememberVersionDraft(previousVersion);
+        configSaveMessage.value = '';
+        configSaveError.value = '';
         extensionForm.version = nextVersion;
         await loadVersionPayload(nextVersion);
     },
@@ -300,7 +388,6 @@ watch(
 
 watch(
     [
-        () => configForm.version,
         () => configForm.memory_limit,
         () => configForm.upload_max_filesize,
         () => configForm.post_max_size,
@@ -397,6 +484,12 @@ onMounted(() => {
                     <div v-if="versionSwitchError" class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                         {{ versionSwitchError }}
                     </div>
+                    <div v-if="configSaveMessage" class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                        {{ configSaveMessage }}
+                    </div>
+                    <div v-if="configSaveError" class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                        {{ configSaveError }}
+                    </div>
 
                     <div class="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
                         <div class="space-y-4">
@@ -454,8 +547,8 @@ onMounted(() => {
                                 </div>
                             </div>
                             <p v-if="configForm.errors.version" class="text-xs text-red-600">{{ configForm.errors.version }}</p>
-                            <button type="button" :disabled="configForm.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" @click="saveConfig">
-                                Save Config
+                            <button type="button" :disabled="configSaving || versionSwitching" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" @click="saveConfig">
+                                {{ configSaving ? 'Saving...' : 'Save Config' }}
                             </button>
                         </div>
 

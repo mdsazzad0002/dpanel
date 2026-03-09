@@ -12,31 +12,16 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
-    histories: {
-        type: Object,
-        default: () => ({ points: [] }),
-    },
     activities: {
         type: Array,
         default: () => [],
-    },
-    vhostPreview: {
-        type: Object,
-        default: () => ({
-            apache: { path: '', exists: false, source: '', content: '' },
-            nginx: { path: '', exists: false, source: '', content: '' },
-        }),
-    },
-    wordpressVersions: {
-        type: Array,
-        default: () => ['latest'],
     },
 });
 const page = usePage();
 
 const toNumber = (value) => {
-    const normalized = Number(value ?? 0);
-    return Number.isFinite(normalized) ? normalized : 0;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
 };
 
 const formatDate = (value) => {
@@ -81,23 +66,18 @@ const installerLabel = computed(() => {
         ? 'WordPress (Latest)'
         : `WordPress (${websiteWordPressVersion.value})`;
 });
-const isWordPressInstalled = computed(() => installerValue.value === 'wordpress');
 const installerClass = computed(() => (
     installerValue.value === 'wordpress'
         ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300'
         : 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
 ));
-const availableWordPressVersions = computed(() => {
-    const list = Array.isArray(props.wordpressVersions) ? props.wordpressVersions : [];
-    const normalized = list
-        .map((version) => String(version || '').trim().toLowerCase())
-        .filter((version) => version === 'latest' || /^\d+\.\d+(\.\d+)?$/.test(version));
-
-    return Array.from(new Set(['latest', websiteWordPressVersion.value, ...normalized]));
-});
-const selectedWordPressVersion = ref(websiteWordPressVersion.value);
+const webServerHref = computed(() => route('websites.web-server', props.website.id));
 
 const serviceLinks = computed(() => [
+    { label: 'WordPress Installer', short: 'WP', href: route('websites.wordpress.manager', props.website.id), description: 'Install and manage WordPress setup' },
+    { label: 'SSL Manager', short: 'SSL', href: route('websites.ssl', props.website.id), description: 'Issue and check SSL status' },
+    { label: 'Usage Details', short: 'UG', href: route('websites.usage', props.website.id), description: 'Detailed usage history and trends' },
+    { label: 'Apache + Nginx', short: 'WEB', href: webServerHref.value, description: 'Website-specific service and current vhost config' },
     { label: 'Redis Cache', short: 'RC', href: route('websites.redis-cache.index', props.website.id), description: 'Per-website cache isolation' },
     { label: 'File Manager', short: 'FM', href: route('websites.filemanager', props.website.id), description: 'Browse and edit files' },
     { label: 'Cron Jobs', short: 'CJ', href: route('websites.cronjobs.index', props.website.id), description: 'Setup scheduled tasks' },
@@ -142,20 +122,6 @@ const liveSiteUrl = computed(() => {
 
     return `${scheme.value}://${domain}`;
 });
-
-const diskUsedMb = computed(() => toNumber(props.metrics?.disk_used_mb));
-const diskLimitMb = computed(() => toNumber(props.metrics?.disk_limit_mb));
-const diskUsagePercent = computed(() => {
-    if (diskLimitMb.value <= 0) return 0;
-    return Math.max(0, Math.min(100, Math.round((diskUsedMb.value / diskLimitMb.value) * 100)));
-});
-
-const cpuUsagePercent = computed(() => Math.max(0, Math.min(100, toNumber(props.metrics?.cpu_usage_percent))));
-
-const historyPoints = computed(() => {
-    if (!Array.isArray(props.histories?.points)) return [];
-    return props.histories.points;
-});
 </script>
 
 <template>
@@ -165,7 +131,7 @@ const historyPoints = computed(() => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Website Management</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">History and resource usage for {{ website.domain }}.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Tools and configuration for {{ website.domain }}.</p>
             </div>
         </template>
 
@@ -185,14 +151,6 @@ const historyPoints = computed(() => {
                     <div class="space-y-4">
                         <div class="flex flex-wrap items-center gap-2">
                             <span class="rounded-full border px-3 py-1 text-xs font-medium" :class="statusClass">{{ statusLabel }}</span>
-                            <span
-                                class="rounded-full border px-3 py-1 text-xs font-medium"
-                                :class="sslEnabled
-                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-                                    : 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'"
-                            >
-                                {{ sslEnabled ? 'SSL Enabled' : 'SSL Disabled' }}
-                            </span>
                             <span class="rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
                                 PHP {{ website.php_version || '-' }}
                             </span>
@@ -252,35 +210,10 @@ const historyPoints = computed(() => {
                     </div>
 
                     <div class="space-y-3">
-                        <div class="rounded-xl border border-slate-200 bg-white/80 p-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/60">
+                        <div class="">
                             <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Quick Actions</p>
                             <div class="mt-3 grid gap-2">
-                                <div class="rounded-md border border-blue-200/80 p-2 dark:border-blue-800/80">
-                                    <div class="flex flex-col gap-2">
-                                        <select
-                                            v-model="selectedWordPressVersion"
-                                            :disabled="isWordPressInstalled"
-                                            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800"
-                                        >
-                                            <option v-for="version in availableWordPressVersions" :key="version" :value="version">
-                                                {{ version === 'latest' ? 'Latest Stable' : version }}
-                                            </option>
-                                        </select>
-                                        <Link
-                                            :href="route('websites.wordpress.install', website.id)"
-                                            method="post"
-                                            as="button"
-                                            :data="{ wordpress_version: selectedWordPressVersion }"
-                                            :disabled="isWordPressInstalled"
-                                            class="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                                            :class="isWordPressInstalled
-                                                ? 'border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400'
-                                                : 'border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20'"
-                                        >
-                                            {{ isWordPressInstalled ? 'WordPress Installed' : 'One-Click WordPress Install' }}
-                                        </Link>
-                                    </div>
-                                </div>
+
                                 <Link
                                     :href="route('websites.vhost.sync', website.id)"
                                     method="post"
@@ -297,80 +230,43 @@ const historyPoints = computed(() => {
                                 >
                                     Project Cache Clear
                                 </Link>
-                                <Link :href="route('apache.index')" class="rounded-md border border-cyan-300 px-3 py-2 text-sm text-cyan-700 hover:bg-cyan-50 dark:border-cyan-700 dark:text-cyan-300 dark:hover:bg-cyan-900/20">
-                                    Apache + Nginx Setup
+
+                                <Link :href="route('websites.ssl', website.id)" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
+                                    SSL Manager
+                                </Link>
+                                <Link :href="webServerHref" class="rounded-md border border-cyan-300 px-3 py-2 text-sm text-cyan-700 hover:bg-cyan-50 dark:border-cyan-700 dark:text-cyan-300 dark:hover:bg-cyan-900/20">
+                                    Apache + Nginx Service
                                 </Link>
                                 <Link :href="route('websites.filemanager', website.id)" class="rounded-md border border-emerald-300 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20">
                                     Open File Manager
                                 </Link>
-                                <Link :href="route('websites.redis-cache.index', website.id)" class="rounded-md border border-amber-300 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/20">
-                                    Redis Cache
-                                </Link>
+
                                 <Link :href="route('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                     Back to Website List
                                 </Link>
                             </div>
                         </div>
-
-                        <div class="rounded-xl border border-slate-200 bg-white/80 p-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/60">
-                            <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Custom Browser</p>
-                            <input
-                                v-model.trim="browseTarget"
-                                type="text"
-                                placeholder="example.com"
-                                class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                            />
-                            <a
-                                :href="browseUrl || '#'"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="mt-2 inline-flex w-full justify-center rounded-md border px-3 py-2 text-sm"
-                                :class="browseUrl
-                                    ? 'border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20'
-                                    : 'pointer-events-none border-slate-300 text-slate-400 dark:border-slate-700 dark:text-slate-500'"
-                            >
-                                Open URL
-                            </a>
-                        </div>
                     </div>
                 </div>
             </section>
 
-            <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Connections</p>
                     <p class="mt-2 text-2xl font-semibold">{{ toNumber(metrics.connections_current) }}</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Active visitors connected now.</p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Pending Jobs</p>
+                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Active Jobs</p>
                     <p class="mt-2 text-2xl font-semibold">{{ toNumber(metrics.jobs_pending) }}</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Background tasks waiting in queue.</p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Databases</p>
                     <p class="mt-2 text-2xl font-semibold">{{ toNumber(metrics.databases_count) }}</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Database instances linked to this site.</p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Disk Usage</p>
-                    <p class="mt-2 text-2xl font-semibold">{{ diskUsedMb }} MB</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Limit: {{ diskLimitMb }} MB</p>
-                    <div class="mt-3 h-2 rounded-full bg-slate-200 dark:bg-slate-700">
-                        <div class="h-2 rounded-full bg-blue-500 transition-all" :style="{ width: `${diskUsagePercent}%` }" />
-                    </div>
-                </div>
-                <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">CPU Usage</p>
-                    <p class="mt-2 text-2xl font-semibold">{{ cpuUsagePercent }}%</p>
-                    <div class="mt-3 h-2 rounded-full bg-slate-200 dark:bg-slate-700">
-                        <div class="h-2 rounded-full bg-cyan-500 transition-all" :style="{ width: `${cpuUsagePercent}%` }" />
-                    </div>
-                </div>
-                <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">RAM Usage</p>
-                    <p class="mt-2 text-2xl font-semibold">{{ toNumber(metrics.ram_usage_mb) }} MB</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Current memory used by this workload.</p>
+                    <p class="mt-2 text-2xl font-semibold">{{ toNumber(metrics.disk_used_mb).toFixed(2) }} MB</p>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Files: {{ toNumber(metrics.file_count) }}</p>
                 </div>
             </section>
 
@@ -410,7 +306,7 @@ const historyPoints = computed(() => {
                             <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ item.label }}</p>
                             <p class="mt-1 text-sm break-all">
                                 {{
-                                    item.label === 'Request Created' || item.label === 'Request Updated' || item.label === 'Last File Change'
+                                    item.label === 'Request Created' || item.label === 'Request Updated'
                                         ? formatDate(item.value)
                                         : (item.value || '-')
                                 }}
@@ -420,82 +316,6 @@ const historyPoints = computed(() => {
                 </div>
             </section>
 
-            <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Usage History (Last 12 hours)</h2>
-                <div class="mt-3 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                    <table class="min-w-full text-left text-sm">
-                        <thead class="bg-slate-50 dark:bg-slate-800">
-                            <tr>
-                                <th class="px-3 py-2">Time</th>
-                                <th class="px-3 py-2">Connections</th>
-                                <th class="px-3 py-2">Jobs</th>
-                                <th class="px-3 py-2">Databases</th>
-                                <th class="px-3 py-2">Disk MB</th>
-                                <th class="px-3 py-2">CPU %</th>
-                                <th class="px-3 py-2">RAM MB</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="point in historyPoints" :key="point.time" class="border-t border-slate-200 dark:border-slate-800">
-                                <td class="px-3 py-2">{{ point.time }}</td>
-                                <td class="px-3 py-2">{{ point.connections }}</td>
-                                <td class="px-3 py-2">{{ point.jobs }}</td>
-                                <td class="px-3 py-2">{{ point.databases }}</td>
-                                <td class="px-3 py-2">{{ point.disk }}</td>
-                                <td class="px-3 py-2">{{ point.cpu }}</td>
-                                <td class="px-3 py-2">{{ point.ram }}</td>
-                            </tr>
-                            <tr v-if="historyPoints.length === 0">
-                                <td colspan="7" class="px-3 py-5 text-center text-slate-500 dark:text-slate-400">
-                                    No usage history points available.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">VHost Config Render</h2>
-                <div class="mt-4 grid gap-4 lg:grid-cols-2">
-                    <div class="rounded-lg border border-slate-200 dark:border-slate-700">
-                        <div class="border-b border-slate-200 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
-                            <div class="flex items-center justify-between gap-2">
-                                <p class="font-semibold">Apache</p>
-                                <span
-                                    class="rounded-full border px-2 py-0.5"
-                                    :class="vhostPreview.apache.exists
-                                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-                                        : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300'"
-                                >
-                                    {{ vhostPreview.apache.exists ? 'Config Found' : 'Not Found' }}
-                                </span>
-                            </div>
-                            <p class="break-all">{{ vhostPreview.apache.path || '-' }}</p>
-                            <p>{{ vhostPreview.apache.source || '-' }}</p>
-                        </div>
-                        <pre class="max-h-80 overflow-auto bg-slate-950 p-3 text-xs text-slate-100"><code>{{ vhostPreview.apache.content || '# Apache config is not available yet.' }}</code></pre>
-                    </div>
-                    <div class="rounded-lg border border-slate-200 dark:border-slate-700">
-                        <div class="border-b border-slate-200 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
-                            <div class="flex items-center justify-between gap-2">
-                                <p class="font-semibold">Nginx</p>
-                                <span
-                                    class="rounded-full border px-2 py-0.5"
-                                    :class="vhostPreview.nginx.exists
-                                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-                                        : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300'"
-                                >
-                                    {{ vhostPreview.nginx.exists ? 'Config Found' : 'Not Found' }}
-                                </span>
-                            </div>
-                            <p class="break-all">{{ vhostPreview.nginx.path || '-' }}</p>
-                            <p>{{ vhostPreview.nginx.source || '-' }}</p>
-                        </div>
-                        <pre class="max-h-80 overflow-auto bg-slate-950 p-3 text-xs text-slate-100"><code>{{ vhostPreview.nginx.content || '# Nginx config is not available yet.' }}</code></pre>
-                    </div>
-                </div>
-            </section>
         </div>
     </AuthenticatedLayout>
 </template>
