@@ -18,18 +18,24 @@
         <p class="muted" id="status">Creating secure login session...</p>
         <p id="error" class="err" style="display:none;"></p>
         <form id="pma-fallback-form" method="post" action="{{ $helperUrl }}" style="display:none;">
+            <input type="hidden" name="username" value="{{ $username }}">
+            <input type="hidden" name="password" value="{{ $password }}">
+            <input type="hidden" name="host" value="{{ $host }}">
+            <input type="hidden" name="db" value="{{ $database }}">
             <input type="hidden" name="pma_username" value="{{ $username }}">
             <input type="hidden" name="pma_password" value="{{ $password }}">
             <input type="hidden" name="pma_host" value="{{ $host }}">
-            <input type="hidden" name="db" value="{{ $database }}">
         </form>
     </div>
     <script>
         const payload = {
+            username: @json($username),
+            password: @json($password),
+            host: @json($host),
+            db: @json($database),
             pma_username: @json($username),
             pma_password: @json($password),
             pma_host: @json($host),
-            db: @json($database),
         };
 
         const statusEl = document.getElementById('status');

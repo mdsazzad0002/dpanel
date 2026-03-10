@@ -54,6 +54,8 @@ OS_PRETTY_NAME=""
 FIREWALL_BACKEND=""
 PHP_CLI_SERVER_WORKERS="8"
 PKG_MANAGER=""
+PANEL_PRIMARY_DOMAIN=""
+PANEL_SSL_EMAIL=""
 
 reset_runtime_defaults() {
     PROJECT_DIR=""
@@ -99,6 +101,8 @@ reset_runtime_defaults() {
     FIREWALL_BACKEND=""
     PHP_CLI_SERVER_WORKERS="8"
     PKG_MANAGER=""
+    PANEL_PRIMARY_DOMAIN=""
+    PANEL_SSL_EMAIL=""
 }
 
 banner() {
@@ -342,6 +346,20 @@ sanitize_apache_legacy_panel_port_bindings() {
             run sed -i -E "s/^[[:space:]]*Listen[[:space:]]+${PANEL_PORT}([[:space:]]*)$/# Listen ${PANEL_PORT} # disabled-by-serverpanel-installer/" "${ports_conf}"
         fi
     fi
+}
+
+sanitize_apache_ports_for_backend_only() {
+    local ports_conf="/etc/apache2/ports.conf"
+    local backup="/etc/apache2/ports.conf.serverpanel.bak"
+    local tmp="${ports_conf}.tmp"
+
+    if [[ ! -f "${ports_conf}" ]]; then
+        return 0
+    fi
+
+    run cp "${ports_conf}" "${backup}" || true
+    run bash -lc "awk -v backend='${APACHE_BACKEND_PORT}' 'BEGIN{print \"Listen \" backend \"\\n\"} /^[[:space:]]*Listen[[:space:]]+/{print \"# \" \$0; next} {print}' '${backup}' > '${tmp}'"
+    run mv "${tmp}" "${ports_conf}"
 }
 
 write_serverpanel_apache_proxy_site_conf() {
@@ -1002,6 +1020,272 @@ wants_apache() {
 
 wants_nginx() {
     [[ "${WEB_SERVER}" == "nginx" || "${WEB_SERVER}" == "both" ]]
+}
+
+is_valid_fqdn() {
+    local value="${1:-}"
+    [[ -n "${value}" ]] || return 1
+    [[ "${#value}" -le 253 ]] || return 1
+    [[ "${value}" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]]
+}
+
+is_private_ipv4() {
+    local ip="${1:-}"
+    [[ "${ip}" =~ ^10\. ]] && return 0
+    [[ "${ip}" =~ ^127\. ]] && return 0
+    [[ "${ip}" =~ ^192\.168\. ]] && return 0
+    [[ "${ip}" =~ ^169\.254\. ]] && return 0
+    if [[ "${ip}" =~ ^172\.([0-9]+)\. ]]; then
+        local second="${BASH_REMATCH[1]}"
+        if [[ "${second}" =~ ^[0-9]+$ ]] && (( second >= 16 && second <= 31 )); then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+stop_nginx_if_running() {
+    if ! systemctl cat nginx.service >/dev/null 2>&1; then
+        return 0
+    fi
+    if systemctl is-active --quiet nginx; then
+        warn "Nginx is running but Apache frontend was selected. Stopping Nginx to free port ${NGINX_PRIMARY_PORT}."
+        run systemctl disable nginx || true
+        run systemctl stop nginx || true
+    fi
+}
+
+stop_apache_if_running() {
+    if ! systemctl cat apache2.service >/dev/null 2>&1; then
+        return 0
+    fi
+    if systemctl is-active --quiet apache2; then
+        warn "Apache is running but Nginx frontend was selected. Stopping Apache to free port ${NGINX_PRIMARY_PORT}."
+        run systemctl disable apache2 || true
+        run systemctl stop apache2 || true
+    fi
+}
+
+configure_nginx_panel_domain_site() {
+    local domain="$1"
+    local conf_base conf_path enabled_path
+
+    if ! systemctl cat nginx.service >/dev/null 2>&1; then
+        warn "nginx.service not found; cannot configure panel domain site for Nginx."
+        return 1
+    fi
+
+    run mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+    conf_base="serverpanel-panel-${domain//./_}"
+    conf_path="/etc/nginx/sites-available/${conf_base}"
+    enabled_path="/etc/nginx/sites-enabled/${conf_base}"
+
+    cat > "${conf_path}" <<EOF
+server {
+    listen ${NGINX_PRIMARY_PORT};
+    listen [::]:${NGINX_PRIMARY_PORT};
+    server_name ${domain};
+
+    client_max_body_size 64m;
+
+    set \$serverpanel_forwarded_proto \$scheme;
+    if (\$http_x_forwarded_proto != "") {
+        set \$serverpanel_forwarded_proto \$http_x_forwarded_proto;
+    }
+
+    location ^~ /phpmyadmin/ {
+        proxy_pass http://127.0.0.1:${PHPMYADMIN_PORT}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$serverpanel_forwarded_proto;
+    }
+
+    location ^~ /roundcube/ {
+        proxy_pass http://127.0.0.1:${ROUNDCUBE_PORT}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$serverpanel_forwarded_proto;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:${PANEL_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$serverpanel_forwarded_proto;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+EOF
+
+    run ln -sf "${conf_path}" "${enabled_path}"
+
+    if command -v nginx >/dev/null 2>&1; then
+        if ! nginx -t >/tmp/serverpanel-nginx-panel-domain.log 2>&1; then
+            warn "Nginx config test failed for panel domain site. Check: tail -n 80 /tmp/serverpanel-nginx-panel-domain.log"
+            return 1
+        fi
+    fi
+
+    restart_nginx_safely
+    ok "Nginx panel domain site enabled: ${domain}"
+    return 0
+}
+
+configure_apache_panel_domain_site() {
+    local domain="$1"
+    local conf_path="/etc/apache2/sites-available/serverpanel-panel-domain.conf"
+
+    if ! systemctl cat apache2.service >/dev/null 2>&1; then
+        warn "apache2.service not found; cannot configure panel domain site for Apache."
+        return 1
+    fi
+
+    run a2enmod proxy proxy_http headers rewrite >/dev/null 2>&1 || true
+    run mkdir -p /etc/apache2/sites-available /etc/apache2/sites-enabled
+
+    cat > "${conf_path}" <<EOF
+<VirtualHost *:80>
+    ServerName ${domain}
+
+    ProxyPreserveHost On
+    ProxyRequests Off
+
+    ProxyPass /phpmyadmin/ http://127.0.0.1:${PHPMYADMIN_PORT}/
+    ProxyPassReverse /phpmyadmin/ http://127.0.0.1:${PHPMYADMIN_PORT}/
+
+    ProxyPass /roundcube/ http://127.0.0.1:${ROUNDCUBE_PORT}/
+    ProxyPassReverse /roundcube/ http://127.0.0.1:${ROUNDCUBE_PORT}/
+
+    ProxyPass / http://127.0.0.1:${PANEL_PORT}/
+    ProxyPassReverse / http://127.0.0.1:${PANEL_PORT}/
+
+    RequestHeader set X-Forwarded-Proto "http"
+</VirtualHost>
+EOF
+
+    run a2ensite serverpanel-panel-domain >/dev/null 2>&1 || true
+    restart_apache_safely
+    ok "Apache panel domain site enabled: ${domain}"
+    return 0
+}
+
+install_panel_ssl_letsencrypt() {
+    local domain="$1"
+    local email="$2"
+    local ok_marker="/etc/ssl/certs/serverpanel.crt"
+    local log_file="/tmp/serverpanel-certbot-${domain//./_}.log"
+
+    if [[ -z "${email}" ]]; then
+        warn "Let's Encrypt email is empty; skipping SSL."
+        return 1
+    fi
+
+    ensure_package certbot true
+
+    if [[ "${WEB_SERVER}" == "apache" ]]; then
+        ensure_package python3-certbot-apache true
+    else
+        ensure_package python3-certbot-nginx true
+    fi
+
+    if ! command -v certbot >/dev/null 2>&1; then
+        warn "certbot is not available; cannot issue Let's Encrypt certificate."
+        return 1
+    fi
+
+    if command -v getent >/dev/null 2>&1; then
+        local resolved_ip server_ip
+        resolved_ip="$(getent ahostsv4 "${domain}" 2>/dev/null | awk '{print $1}' | head -n1 || true)"
+        server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+        if [[ -n "${resolved_ip}" && -n "${server_ip}" && "${resolved_ip}" != "${server_ip}" ]]; then
+            if is_private_ipv4 "${server_ip}"; then
+                info "DNS resolves ${domain} -> ${resolved_ip} (public) while server IP is ${server_ip} (private). This is OK behind NAT if ports 80/443 are forwarded."
+            else
+                warn "DNS mismatch for ${domain}: resolves to ${resolved_ip}, but server IP is ${server_ip}. Let's Encrypt HTTP-01 may fail."
+            fi
+        fi
+    fi
+
+    info "Requesting Let's Encrypt certificate for ${domain} (HTTP-01). DNS must point to this server and port 80 must be reachable."
+    if [[ "${WEB_SERVER}" == "apache" ]]; then
+        run bash -lc "certbot --apache -d '${domain}' --non-interactive --agree-tos -m '${email}' --redirect" >"${log_file}" 2>&1 || true
+    else
+        run bash -lc "certbot --nginx -d '${domain}' --non-interactive --agree-tos -m '${email}' --redirect" >"${log_file}" 2>&1 || true
+    fi
+
+    if [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
+        run mkdir -p /etc/ssl/certs
+        run ln -sf "/etc/letsencrypt/live/${domain}/fullchain.pem" "${ok_marker}" || true
+        ok "SSL installed for ${domain}"
+        return 0
+    fi
+
+    warn "SSL issuance did not complete for ${domain}. Check: /var/log/letsencrypt/letsencrypt.log"
+    if [[ -f "${log_file}" ]]; then
+        warn "Last certbot output (tail):"
+        tail -n 60 "${log_file}" || true
+    fi
+    return 1
+}
+
+configure_panel_primary_domain_and_ssl() {
+    local domain email enable_ssl="false"
+    local env_file=""
+
+    if [[ ! -t 0 ]]; then
+        return 0
+    fi
+
+    if ! ask_yes_no "Configure primary panel domain + SSL now?" "Y"; then
+        return 0
+    fi
+
+    domain="$(ask_input "Primary panel FQDN (example: panel.example.com)" "${PANEL_PRIMARY_DOMAIN}")"
+    domain="$(echo "${domain}" | tr -d '[:space:]')"
+    if [[ -z "${domain}" ]]; then
+        warn "No domain provided; skipping panel domain + SSL configuration."
+        return 0
+    fi
+    if ! is_valid_fqdn "${domain}"; then
+        warn "Invalid FQDN: ${domain}"
+        return 1
+    fi
+    PANEL_PRIMARY_DOMAIN="${domain}"
+
+    if [[ "${WEB_SERVER}" == "apache" ]]; then
+        configure_apache_panel_domain_site "${domain}" || true
+    else
+        configure_nginx_panel_domain_site "${domain}" || true
+    fi
+
+    if ask_yes_no "Install SSL (Let's Encrypt) for ${domain} now?" "Y"; then
+        enable_ssl="true"
+        email="$(ask_input "Email for Let's Encrypt notifications" "${PANEL_SSL_EMAIL}")"
+        email="$(echo "${email}" | tr -d '[:space:]')"
+        PANEL_SSL_EMAIL="${email}"
+        install_panel_ssl_letsencrypt "${domain}" "${email}" || true
+    fi
+
+    if [[ -d "${PROJECT_DIR}" && -f "${PROJECT_DIR}/.env" ]]; then
+        env_file="${PROJECT_DIR}/.env"
+        if [[ "${enable_ssl}" == "true" ]] && [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
+            upsert_env_value "${env_file}" "APP_URL" "https://${domain}"
+            upsert_env_value "${env_file}" "SESSION_SECURE_COOKIE" "true"
+        else
+            upsert_env_value "${env_file}" "APP_URL" "http://${domain}"
+            upsert_env_value "${env_file}" "SESSION_SECURE_COOKIE" "false"
+        fi
+        run php artisan optimize:clear >/dev/null 2>&1 || true
+        run systemctl restart serverpanel || true
+        ok "ServerPanel APP_URL updated: $(read_env_value "${env_file}" "APP_URL")"
+    fi
 }
 
 detect_db_service() {
@@ -2218,7 +2502,22 @@ service_http_port_from_unit() {
         return 0
     fi
     line="$(grep -E '^ExecStart=' "${unit_file}" | head -n1 || true)"
-    if [[ "${line}" =~ -S[[:space:]]+0\.0\.0\.0:([0-9]+) ]]; then
+    if [[ "${line}" =~ -S[[:space:]]+[^:[:space:]]+:([0-9]+) ]]; then
+        echo "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    echo ""
+}
+
+service_http_host_from_unit() {
+    local unit_file="$1"
+    local line
+    if [[ ! -f "${unit_file}" ]]; then
+        echo ""
+        return 0
+    fi
+    line="$(grep -E '^ExecStart=' "${unit_file}" | head -n1 || true)"
+    if [[ "${line}" =~ -S[[:space:]]+([^:[:space:]]+):[0-9]+ ]]; then
         echo "${BASH_REMATCH[1]}"
         return 0
     fi
@@ -2242,16 +2541,24 @@ sync_webtools_mode_from_installed_services() {
     local rc_unit="/etc/systemd/system/${ROUNDCUBE_SERVICE}.service"
     local detected_pma_port=""
     local detected_rc_port=""
+    local detected_pma_host=""
+    local detected_rc_host=""
 
     if [[ -f "${pma_unit}" || -f "${rc_unit}" ]]; then
-        WEBTOOLS_SEPARATE_PORTS="true"
         detected_pma_port="$(phpmyadmin_port_from_service_file)"
         detected_rc_port="$(roundcube_port_from_service_file)"
+        detected_pma_host="$(service_http_host_from_unit "${pma_unit}")"
+        detected_rc_host="$(service_http_host_from_unit "${rc_unit}")"
         if [[ -n "${detected_pma_port}" ]]; then
             PHPMYADMIN_PORT="${detected_pma_port}"
         fi
         if [[ -n "${detected_rc_port}" ]]; then
             ROUNDCUBE_PORT="${detected_rc_port}"
+        fi
+        if [[ "${detected_pma_host}" == "0.0.0.0" || "${detected_rc_host}" == "0.0.0.0" ]]; then
+            WEBTOOLS_SEPARATE_PORTS="true"
+        else
+            WEBTOOLS_SEPARATE_PORTS="false"
         fi
     else
         WEBTOOLS_SEPARATE_PORTS="false"
@@ -2520,6 +2827,7 @@ write_php_builtin_webtool_service() {
     local description="$2"
     local working_dir="$3"
     local listen_port="$4"
+    local listen_host="${5:-0.0.0.0}"
 
     cat > "/etc/systemd/system/${service_name}.service" <<EOF
 [Unit]
@@ -2532,7 +2840,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=${working_dir}
-ExecStart=/usr/bin/php -S 0.0.0.0:${listen_port} -t ${working_dir}
+ExecStart=/usr/bin/php -S ${listen_host}:${listen_port} -t ${working_dir}
 Restart=always
 RestartSec=3
 
@@ -2558,18 +2866,20 @@ disable_separate_webtools_services() {
 }
 
 setup_separate_webtools_services() {
+    local bind_host="${1:-0.0.0.0}"
+    local expose_ports="${2:-true}"
     local phpmyadmin_source=""
     local roundcube_source=""
     local pma_ready="false"
     local rc_ready="false"
 
-    info "Configuring dedicated webtool services (phpMyAdmin:${PHPMYADMIN_PORT}, Roundcube:${ROUNDCUBE_PORT})"
+    info "Configuring dedicated webtool services (bind:${bind_host}, phpMyAdmin:${PHPMYADMIN_PORT}, Roundcube:${ROUNDCUBE_PORT})"
     prepare_firewall_backend
 
     phpmyadmin_source="$(detect_phpmyadmin_web_root)"
     if [[ -n "${phpmyadmin_source}" ]]; then
         if ensure_webtool_root_target "${phpmyadmin_source}" "${PHPMYADMIN_ROOT}" "phpMyAdmin"; then
-            write_php_builtin_webtool_service "${PHPMYADMIN_SERVICE}" "ServerPanel phpMyAdmin HTTP Service" "${PHPMYADMIN_ROOT}" "${PHPMYADMIN_PORT}"
+            write_php_builtin_webtool_service "${PHPMYADMIN_SERVICE}" "ServerPanel phpMyAdmin HTTP Service" "${PHPMYADMIN_ROOT}" "${PHPMYADMIN_PORT}" "${bind_host}"
             pma_ready="true"
         fi
     else
@@ -2579,7 +2889,7 @@ setup_separate_webtools_services() {
     roundcube_source="$(detect_roundcube_web_root)"
     if [[ -n "${roundcube_source}" ]]; then
         if ensure_webtool_root_target "${roundcube_source}" "${ROUNDCUBE_ROOT}" "Roundcube"; then
-            write_php_builtin_webtool_service "${ROUNDCUBE_SERVICE}" "ServerPanel Roundcube HTTP Service" "${ROUNDCUBE_ROOT}" "${ROUNDCUBE_PORT}"
+            write_php_builtin_webtool_service "${ROUNDCUBE_SERVICE}" "ServerPanel Roundcube HTTP Service" "${ROUNDCUBE_ROOT}" "${ROUNDCUBE_PORT}" "${bind_host}"
             rc_ready="true"
         fi
     else
@@ -2589,11 +2899,15 @@ setup_separate_webtools_services() {
     run systemctl daemon-reload || true
     if [[ "${pma_ready}" == "true" ]]; then
         run systemctl enable --now "${PHPMYADMIN_SERVICE}" || true
-        allow_firewall_port "${PHPMYADMIN_PORT}" "tcp"
+        if [[ "${expose_ports}" == "true" ]]; then
+            allow_firewall_port "${PHPMYADMIN_PORT}" "tcp"
+        fi
     fi
     if [[ "${rc_ready}" == "true" ]]; then
         run systemctl enable --now "${ROUNDCUBE_SERVICE}" || true
-        allow_firewall_port "${ROUNDCUBE_PORT}" "tcp"
+        if [[ "${expose_ports}" == "true" ]]; then
+            allow_firewall_port "${ROUNDCUBE_PORT}" "tcp"
+        fi
     fi
 }
 
@@ -2645,7 +2959,6 @@ detect_phpmyadmin_schema() {
     local candidate
     local candidates=(
         "/usr/share/phpmyadmin/sql/create_tables.sql"
-        "/usr/share/phpMyAdmin/sql/create_tables.sql"
         "/usr/share/doc/phpmyadmin/examples/create_tables.sql"
         "/usr/share/doc/phpmyadmin/examples/create_tables.sql.gz"
     )
@@ -2661,27 +2974,11 @@ detect_phpmyadmin_schema() {
 }
 
 detect_phpmyadmin_config_file() {
-    local candidate
-    local candidates=()
-
-    if [[ -n "${PHPMYADMIN_ROOT:-}" ]]; then
-        candidates+=("${PHPMYADMIN_ROOT%/}/config.inc.php")
+    local candidate="${PHPMYADMIN_ROOT%/}/config.inc.php"
+    if [[ -f "${candidate}" ]]; then
+        echo "${candidate}"
+        return 0
     fi
-    candidates+=(
-        "/etc/phpmyadmin/config.inc.php"
-        "/etc/phpMyAdmin/config.inc.php"
-        "/usr/share/phpmyadmin/config.inc.php"
-        "/usr/share/phpMyAdmin/config.inc.php"
-        "/root/phpmyadmin/config.inc.php"
-    )
-
-    for candidate in "${candidates[@]}"; do
-        if [[ -f "${candidate}" ]]; then
-            echo "${candidate}"
-            return 0
-        fi
-    done
-
     echo ""
 }
 
@@ -2689,23 +2986,11 @@ detect_phpmyadmin_config_file() {
 
 #  ===================================== PhpMyAdmin + Maria DB ====================================
 inttool_resolve_phpmyadmin_web_root() {
-    local candidate
-    local candidates=(
-        "${PHPMYADMIN_ROOT:-}"
-        "/usr/share/phpmyadmin"
-        "/usr/share/phpMyAdmin"
-        "/var/www/phpmyadmin"
-        "/var/www/html/phpmyadmin"
-    )
-
-    for candidate in "${candidates[@]}"; do
-        [[ -z "${candidate}" ]] && continue
-        if [[ -f "${candidate%/}/index.php" ]]; then
-            echo "${candidate%/}"
-            return 0
-        fi
-    done
-
+    local root="${PHPMYADMIN_ROOT%/}"
+    if [[ -n "${root}" && -f "${root}/index.php" ]]; then
+        echo "${root}"
+        return 0
+    fi
     echo ""
 }
 
@@ -2735,14 +3020,20 @@ inttool_copy_with_retry_continue() {
 }
 
 inttool_deploy_phpmyadmin_helper() {
-    local pma_root helper_template target_bridge owner_group
+    local pma_root helper_template target_bridge owner_group override_template
 
     pma_root="$(inttool_resolve_phpmyadmin_web_root)"
     if [[ -z "${pma_root}" ]]; then
-        fail "phpMyAdmin root not found. Cannot deploy helper in copy-only mode."
+        fail "phpMyAdmin root not found at ${PHPMYADMIN_ROOT}. Install phpMyAdmin in this directory; installer will not search other locations."
     fi
 
-    helper_template="$(resolve_extra_file "phpmyadminsignin.php")"
+    override_template="/etc/phpmyadmin/serverpanel-phpmyadminsignin.php"
+    if [[ -f "${override_template}" ]]; then
+        helper_template="${override_template}"
+        info "Using custom phpMyAdmin helper override: ${override_template}"
+    else
+        helper_template="$(resolve_extra_file "phpmyadminsignin.php")"
+    fi
     if [[ -z "${helper_template}" || ! -f "${helper_template}" ]]; then
         fail "phpMyAdmin helper template not found: ServerPanel/extra/phpmyadminsignin.php"
     fi
@@ -2757,13 +3048,55 @@ inttool_deploy_phpmyadmin_helper() {
     return 0
 }
 
+inttool_deploy_phpmyadmin_autologin_tools() {
+    local pma_root owner_group rel template target
+    local -a rel_files=(
+        "autologin/token_db.php"
+        "autologin/tokens.php"
+        "autologin/.htaccess"
+        "autologin/autologin.php"
+        "admin-panel/users_db.php"
+        "admin-panel/generate_token.php"
+        "admin-panel/dashboard.php"
+    )
+
+    pma_root="$(inttool_resolve_phpmyadmin_web_root)"
+    if [[ -z "${pma_root}" ]]; then
+        fail "phpMyAdmin root not found at ${PHPMYADMIN_ROOT}. Install phpMyAdmin in this directory; installer will not search other locations."
+    fi
+
+    owner_group="$(web_owner_group)"
+
+    for rel in "${rel_files[@]}"; do
+        template="$(resolve_extra_file "${rel}")"
+        if [[ -z "${template}" || ! -f "${template}" ]]; then
+            warn "phpMyAdmin autologin template missing (skipping): ServerPanel/extra/${rel}"
+            continue
+        fi
+
+        target="${pma_root%/}/${rel}"
+        run mkdir -p "$(dirname "${target}")"
+        inttool_copy_with_retry_continue "${template}" "${target}" "phpMyAdmin ${rel}" 2
+
+        if [[ "${rel}" == "admin-panel/users_db.php" || "${rel}" == "admin-panel/generate_token.php" ]]; then
+            run chmod 640 "${target}" || true
+        else
+            run chmod 644 "${target}" || true
+        fi
+        run chown "${owner_group}" "${target}" || true
+    done
+
+    ok "phpMyAdmin autologin tools deployed under: ${pma_root}"
+    return 0
+}
+
 inttool_deploy_phpmyadmin_suite() {
     local pma_root template_config target_config owner_group
     local blowfish_secret pma_pass escaped_blowfish escaped_pma_pass
 
     pma_root="$(inttool_resolve_phpmyadmin_web_root)"
     if [[ -z "${pma_root}" ]]; then
-        fail "phpMyAdmin root not found. Cannot deploy suite in copy-only mode."
+        fail "phpMyAdmin root not found at ${PHPMYADMIN_ROOT}. Install phpMyAdmin in this directory; installer will not search other locations."
     fi
 
     template_config="$(resolve_extra_file "phpmyadmin.config.inc.php")"
@@ -2805,6 +3138,7 @@ inttool_deploy_phpmyadmin_suite() {
     ok "phpMyAdmin suite config deployed: ${target_config}"
 
     inttool_deploy_phpmyadmin_helper
+    inttool_deploy_phpmyadmin_autologin_tools
     return 0
 }
 
@@ -2822,13 +3156,11 @@ configure_phpmyadmin_runtime() {
     local admin_password="${PHPMYADMIN_ADMIN_PASSWORD:-}"
     local owner_group secret="" db_cli sql_db sql_user sql_password sql_admin_user sql_admin_password
     local schema_file pma_table_exists db_cli_q db_name_q schema_q
-    local config_candidate=""
-    local signon_url="/phpmyadmin/phpmyadminsignin.php"
+    local signon_url=""
     local -a config_files=()
-    local -A config_seen=()
 
     if ! is_package_installed phpmyadmin; then
-        warn "phpMyAdmin package is not installed. Trying custom phpMyAdmin config paths."
+        warn "phpMyAdmin package is not installed. Ensure phpMyAdmin exists under ${PHPMYADMIN_ROOT}."
     fi
 
     ensure_default_php_binary
@@ -2845,32 +3177,22 @@ configure_phpmyadmin_runtime() {
     run chmod 1770 "${temp_dir}" || true
     run mkdir -p /etc/phpmyadmin
 
-    config_candidate="$(detect_phpmyadmin_config_file)"
-    for config_file in "${config_candidate}" \
-        "/etc/phpmyadmin/config.inc.php" \
-        "/etc/phpMyAdmin/config.inc.php" \
-        "/usr/share/phpmyadmin/config.inc.php" \
-        "/usr/share/phpMyAdmin/config.inc.php" \
-        "${PHPMYADMIN_ROOT%/}/config.inc.php"; do
-        [[ -n "${config_file}" ]] || continue
-        [[ -f "${config_file}" ]] || continue
-        if [[ -z "${config_seen[${config_file}]:-}" ]]; then
-            config_files+=("${config_file}")
-            config_seen["${config_file}"]="1"
-        fi
-    done
-
-    if [[ "${#config_files[@]}" -eq 0 ]]; then
-        fail "phpMyAdmin config.inc.php not found. Copy-only mode requires template copy from ServerPanel/extra/phpmyadmin.config.inc.php."
+    config_file="$(detect_phpmyadmin_config_file)"
+    if [[ -z "${config_file}" || ! -f "${config_file}" ]]; then
+        warn "phpMyAdmin config missing at ${PHPMYADMIN_ROOT%/}/config.inc.php. Deploying ServerPanel template..."
+        inttool_deploy_phpmyadmin_suite
+        config_file="$(detect_phpmyadmin_config_file)"
     fi
-    config_file="${config_files[0]}"
+    if [[ -z "${config_file}" || ! -f "${config_file}" ]]; then
+        fail "phpMyAdmin config.inc.php not found at ${PHPMYADMIN_ROOT%/}/config.inc.php. Ensure phpMyAdmin exists under ${PHPMYADMIN_ROOT} and template exists at ServerPanel/extra/phpmyadmin.config.inc.php."
+    fi
+    config_files=("${config_file}")
     info "phpMyAdmin config detected: ${config_file}"
 
     # Keep SignonURL aligned with selected mode so panel auto-login always lands on
     # the correct helper endpoint.
-    if is_webtools_separate_mode_active; then
-        signon_url="/phpmyadminsignin.php"
-    fi
+    # Use a relative path so both embedded (/phpmyadmin/) and separate-port (/) modes work.
+    signon_url="phpmyadminsignin.php"
 
     if [[ -f "${creds_file}" ]]; then
         control_db="$(grep -E '^DB_NAME=' "${creds_file}" | head -n1 | cut -d= -f2- || true)"
@@ -2999,6 +3321,7 @@ EOF
     done
     info "phpMyAdmin credentials updated in config file(s) by int-tool.sh"
     inttool_deploy_phpmyadmin_helper
+    inttool_deploy_phpmyadmin_autologin_tools
 
     if ! php -m 2>/dev/null | grep -qi "^ctype$"; then
         warn "PHP ctype extension is still not active in CLI. phpMyAdmin may fail until ctype is enabled."
@@ -3630,6 +3953,10 @@ setup_apache_proxy_default_site() {
         return
     fi
 
+    if [[ "${WEB_SERVER}" == "apache" ]]; then
+        stop_nginx_if_running
+    fi
+
     sanitize_apache_legacy_panel_port_bindings
     info "Configuring Apache default site to proxy :80 -> :${PANEL_PORT}"
     cat > /etc/apache2/ports.conf <<EOF
@@ -3679,6 +4006,10 @@ setup_nginx_proxy_default_site() {
         return
     fi
 
+    if [[ "${WEB_SERVER}" == "nginx" ]]; then
+        stop_apache_if_running
+    fi
+
     info "Configuring Nginx default site to proxy :${NGINX_PRIMARY_PORT} -> :${PANEL_PORT}"
     cat > /etc/nginx/sites-available/serverpanel-proxy <<EOF
 server {
@@ -3686,13 +4017,36 @@ server {
     listen [::]:${NGINX_PRIMARY_PORT} default_server;
     server_name _;
 
+    set \$serverpanel_forwarded_proto \$scheme;
+    if (\$http_x_forwarded_proto != "") {
+        set \$serverpanel_forwarded_proto \$http_x_forwarded_proto;
+    }
+
+    location ^~ /phpmyadmin/ {
+        proxy_pass http://127.0.0.1:${PHPMYADMIN_PORT}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$serverpanel_forwarded_proto;
+    }
+
+    location ^~ /roundcube/ {
+        proxy_pass http://127.0.0.1:${ROUNDCUBE_PORT}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$serverpanel_forwarded_proto;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:${PANEL_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Proto \$serverpanel_forwarded_proto;
     }
 }
 EOF
@@ -3786,20 +4140,16 @@ configure_apache_backend_for_dual_stack() {
         run cp "${default_conf}" "${default_backup}" || true
     fi
 
-    # Safe migration from :80 to backend Apache port.
-    run sed -i "s/^Listen 80\$/Listen ${APACHE_BACKEND_PORT}/" "${ports_conf}" || true
-
-    # If a broken value appears (example: 808080), reset to clean backend listen.
-    if grep -q "${APACHE_BACKEND_PORT}${APACHE_BACKEND_PORT}" "${ports_conf}" 2>/dev/null; then
-        echo "Listen ${APACHE_BACKEND_PORT}" > "${ports_conf}"
-    fi
+    # Dual-stack must ensure Apache binds ONLY the backend port (avoid conflicts with Nginx/frontend/tools).
+    sanitize_apache_ports_for_backend_only
 
     if [[ -f "${default_conf}" ]]; then
         run sed -i "s/<VirtualHost \\*:80>/<VirtualHost *:${APACHE_BACKEND_PORT}>/" "${default_conf}" || true
     fi
 
     disable_apache_site_if_enabled "serverpanel-proxy"
-    run a2ensite 000-default.conf || true
+    disable_apache_site_if_enabled "default-ssl" || true
+    run a2ensite 000-default || true
 
     if ! apache_configtest_with_self_heal 2; then
         warn "Apache config test failed after backend-listener setup."
@@ -3857,9 +4207,10 @@ start_services() {
     setup_panel_startup_service
     if [[ "${WEBTOOLS_SEPARATE_PORTS}" == "true" ]]; then
         cleanup_panel_embedded_webtools_links "${PROJECT_DIR}"
-        setup_separate_webtools_services
+        setup_separate_webtools_services "0.0.0.0" "true"
     else
-        disable_separate_webtools_services
+        cleanup_panel_embedded_webtools_links "${PROJECT_DIR}"
+        setup_separate_webtools_services "127.0.0.1" "false"
         expose_panel_tools_on_port "${PROJECT_DIR}"
     fi
     # Apply runtime config after mode/link setup so helper paths and URLs match the
@@ -3876,12 +4227,12 @@ start_services() {
 
     if [[ "${WEB_SERVER}" == "both" ]]; then
         configure_apache_backend_for_dual_stack
-        disable_panel_direct_ip_proxy "false" "true"
+        setup_nginx_proxy_default_site
         ok "Both selected: Nginx frontend :${NGINX_PRIMARY_PORT}, Apache backend :${APACHE_BACKEND_PORT}. Panel kept on :${PANEL_PORT}."
     elif [[ "${WEB_SERVER}" == "apache" ]]; then
-        disable_panel_direct_ip_proxy "true" "false"
+        setup_apache_proxy_default_site
     elif [[ "${WEB_SERVER}" == "nginx" ]]; then
-        disable_panel_direct_ip_proxy "false" "true"
+        setup_nginx_proxy_default_site
     fi
     write_install_credentials_log
     ok "Services are running."
@@ -3920,12 +4271,7 @@ check_and_prepare_web_ports_before_service_ops() {
             echo "Listen ${APACHE_BACKEND_PORT}" >> "${ports_conf}"
         fi
 
-        sed -i -E 's/^[[:space:]]*Listen[[:space:]]+80([[:space:]]*)$/# Listen 80/g' "${ports_conf}" || true
-        sed -i -E 's/^[[:space:]]*Listen[[:space:]]+443([[:space:]]*)$/# Listen 443/g' "${ports_conf}" || true
-
-        if grep -q "${APACHE_BACKEND_PORT}${APACHE_BACKEND_PORT}" "${ports_conf}" 2>/dev/null; then
-            echo "Listen ${APACHE_BACKEND_PORT}" > "${ports_conf}"
-        fi
+        sanitize_apache_ports_for_backend_only
     fi
 
     if [[ -f "${default_conf}" ]]; then
@@ -4984,6 +5330,7 @@ show_control_menu() {
     echo "3) Show credentials file"
     echo "4) Password manager (SSH reset: panel/dbadmin/db users)"
     echo "5) Disable direct-IP panel proxy (keep panel on :${PANEL_PORT})"
+    echo "6) Configure panel domain + SSL"
     echo "0) Exit"
 }
 
@@ -5016,12 +5363,15 @@ run_control_center() {
             5)
                 disable_panel_direct_ip_proxy_menu
                 ;;
+            6)
+                configure_panel_primary_domain_and_ssl
+                ;;
             0)
                 info "Bye."
                 return 0
                 ;;
             *)
-                warn "Invalid option. Choose 0-5."
+                warn "Invalid option. Choose 0-6."
                 ;;
         esac
     done
@@ -5039,6 +5389,7 @@ installer_main() {
     setup_application
     setup_permissions
     start_services
+    configure_panel_primary_domain_and_ssl
     show_summary
 }
 

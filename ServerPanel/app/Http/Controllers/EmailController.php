@@ -7,6 +7,7 @@ use App\Models\Website;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -187,6 +188,21 @@ class EmailController extends Controller
             (string) ($setupCheck['webmail_url'] ?? $this->resolveWebmailUrl())
         );
 
+        $secret = trim((string) config('app.webmail_sso_secret', ''));
+        if ($secret !== '') {
+            $token = $this->issueWebmailSsoToken(
+                (string) ($mailbox->email ?? ''),
+                (string) ($mailbox->password ?? ''),
+                600
+            );
+
+            if ($token !== '') {
+                $sep = str_contains($targetUrl, '?') ? '&' : '?';
+
+                return redirect()->away($targetUrl.$sep.'sso_token='.rawurlencode($token));
+            }
+        }
+
         return response()->view('webmail.autologin', [
             'targetUrl' => $targetUrl,
             'email' => (string) ($mailbox->email ?? ''),
@@ -345,6 +361,30 @@ class EmailController extends Controller
         }
 
         return $url;
+    }
+
+    private function issueWebmailSsoToken(string $email, string $password, int $ttlSeconds = 600): string
+    {
+        $email = trim($email);
+        $password = (string) $password;
+        if ($email === '' || $password === '') {
+            return '';
+        }
+
+        $ttlSeconds = max(60, min(1800, $ttlSeconds));
+        $token = bin2hex(random_bytes(32));
+        Cache::put(
+            $this->webmailSsoCacheKey($token),
+            ['email' => $email, 'password' => $password],
+            now()->addSeconds($ttlSeconds)
+        );
+
+        return $token;
+    }
+
+    private function webmailSsoCacheKey(string $token): string
+    {
+        return 'serverpanel:webmail_sso:'.$token;
     }
 
     private function isWebtoolsSeparateMode(): bool

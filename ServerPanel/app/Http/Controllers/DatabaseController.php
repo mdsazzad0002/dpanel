@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
@@ -205,6 +206,26 @@ class DatabaseController extends Controller
             $databaseHost = '127.0.0.1';
         }
 
+        $tokenModeEnabled = trim((string) config('app.phpmyadmin_signon_issue_secret', '')) !== '';
+        if ($tokenModeEnabled) {
+            $token = $this->tryIssuePhpMyAdminToken($helperUrl, [
+                'username' => (string) ($requestItem->database_user ?? ''),
+                'password' => (string) ($requestItem->database_password ?? ''),
+                'host' => $databaseHost,
+                'db' => (string) ($requestItem->database_name ?? ''),
+                'ttl' => 900,
+            ]);
+            if (is_string($token) && $token !== '') {
+                $sep = str_contains($helperUrl, '?') ? '&' : '?';
+
+                return redirect()->away($helperUrl.$sep.'token='.rawurlencode($token));
+            }
+
+            return redirect()
+                ->route('databases.list')
+                ->with('error', 'Secure phpMyAdmin auto-login failed (token issuing). Check PHPMYADMIN_SIGNON_SECRET and PMA_SIGNON_ISSUE_SECRET.');
+        }
+
         return response()->view('phpmyadmin.autologin', [
             'targetUrl' => $targetUrl,
             'helperUrl' => $helperUrl,
@@ -223,6 +244,42 @@ class DatabaseController extends Controller
     private function normalizePort(int $value, int $fallback): int
     {
         return $value >= 1 && $value <= 65535 ? $value : $fallback;
+    }
+
+    private function tryIssuePhpMyAdminToken(string $helperUrl, array $payload): ?string
+    {
+        $secret = trim((string) config('app.phpmyadmin_signon_issue_secret', ''));
+        if ($secret === '') {
+            return null;
+        }
+
+        $issueUrl = $helperUrl.(str_contains($helperUrl, '?') ? '&' : '?').'action=issue';
+
+        try {
+            $response = Http::asJson()
+                ->acceptJson()
+                ->timeout(3)
+                ->withHeaders([
+                    'Authorization' => 'Bearer '.$secret,
+                    'X-ServerPanel-Signon' => $secret,
+                ])
+                ->post($issueUrl, $payload);
+
+            if (! $response->ok()) {
+                return null;
+            }
+
+            $json = $response->json();
+            if (! is_array($json) || ! ($json['success'] ?? false)) {
+                return null;
+            }
+
+            $token = (string) ($json['token'] ?? '');
+            return $token !== '' ? $token : null;
+        } catch (\Throwable $e) {
+            Log::debug('phpMyAdmin token issue failed: '.$e->getMessage());
+            return null;
+        }
     }
 
     /**

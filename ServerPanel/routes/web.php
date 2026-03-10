@@ -11,6 +11,7 @@ use App\Http\Controllers\PhpManagementController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RoleManagementController;
+use App\Http\Controllers\SsoController;
 use App\Http\Controllers\MonitoringController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\TerminalController;
@@ -29,6 +30,7 @@ Route::get('/', function () {
     ]);
 });
 Route::get('/roundcube', [EmailController::class, 'webmailEntry'])->name('webmail.roundcube');
+Route::post('/sso/webmail/consume', [SsoController::class, 'consumeWebmail'])->name('sso.webmail.consume');
 
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])

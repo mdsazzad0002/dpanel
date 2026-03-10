@@ -86,7 +86,10 @@ return [
     'phpmyadmin_port' => env('PHPMYADMIN_PORT', 8090),
     'phpmyadmin_url' => env('PHPMYADMIN_URL', ''),
     'phpmyadmin_helper_url' => env('PHPMYADMIN_HELPER_URL', ''),
+    'phpmyadmin_signon_issue_secret' => env('PHPMYADMIN_SIGNON_SECRET', ''),
     'roundcube_port' => env('ROUNDCUBE_PORT', 8090),
+    'webmail_sso_secret' => env('WEBMAIL_SSO_SECRET', ''),
+    'webmail_sso_require_local' => env('WEBMAIL_SSO_REQUIRE_LOCAL', true),
 
     /*
     |--------------------------------------------------------------------------

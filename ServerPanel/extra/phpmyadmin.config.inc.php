@@ -1,78 +1,159 @@
 <?php
 /**
  * ServerPanel phpMyAdmin Configuration
- * Optimized for PHP 8.3 and Custom Panel Autologin
+ * Optimized for PHP 8.3 + Custom Panel Autologin
  */
 
 declare(strict_types=1);
 
-/* Runtime installer should set a secure random value; fallback avoids empty secret. */
-$cfg['blowfish_secret'] = '___blowfish_secret___';
-$envBlowfishSecret = trim((string) getenv('PMA_BLOWFISH_SECRET'));
-if ($envBlowfishSecret !== '') {
-    $cfg['blowfish_secret'] = $envBlowfishSecret;
-}
-if ($cfg['blowfish_secret'] === '') {
-    $machineId = '';
-    foreach (['/etc/machine-id', '/var/lib/dbus/machine-id'] as $machineIdFile) {
-        if (!is_readable($machineIdFile)) {
-            continue;
-        }
-        $candidate = trim((string) @file_get_contents($machineIdFile));
-        if ($candidate !== '') {
-            $machineId = $candidate;
-            break;
-        }
-    }
-    $seed = $machineId !== '' ? $machineId : (php_uname('n') . '|' . __FILE__);
-    $cfg['blowfish_secret'] = substr(hash('sha512', 'serverpanel-pma-' . $seed), 0, 64);
-}
+/*
+|--------------------------------------------------------------------------
+| Blowfish Secret
+|--------------------------------------------------------------------------
+*/
 
-/**
- * Global Settings
- */
-$cfg['ShowCreateDb'] = true;            // Show the "New" (+) database link
-$cfg['SuggestAddress'] = false;        // Disables address suggestions
-$cfg['AllowUserDropDatabase'] = true;  // Allows dropping databases for admin user
-$cfg['MainPageIconic'] = false;        // Clean UI for the main page
-$cfg['TempDir'] = '/var/lib/phpmyadmin/tmp';
+$cfg['blowfish_secret'] = getenv('PMA_BLOWFISH_SECRET') ?: 'serverpanel_secure_secret_key_2026_change_this';
 
-/**
- * Server configuration
- */
-$i = 0;
-$i++;
 
-/* Authentication type */
-$cfg['Servers'][$i]['auth_type'] = 'signon';           // Use your custom signin script
-$cfg['Servers'][$i]['SignonSession'] = 'SignonSession'; // Session name must match your bridge
-$cfg['Servers'][$i]['SignonURL'] = '/phpmyadminsignin.php'; // The path to your script
-/* Restrict database list only when a specific DB is requested by sign-in bridge. */
-if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['PMA_single_signon_db'])) {
-    $cfg['Servers'][$i]['only_db'] = (string) $_SESSION['PMA_single_signon_db'];
-}
+/*
+|--------------------------------------------------------------------------
+| Temp Directory
+|--------------------------------------------------------------------------
+*/
+
+$cfg['TempDir'] = '/tmp';
+
+
+/*
+|--------------------------------------------------------------------------
+| Global Settings
+|--------------------------------------------------------------------------
+*/
+
+$cfg['ShowCreateDb'] = true;
+$cfg['SuggestAddress'] = false;
+$cfg['AllowUserDropDatabase'] = true;
+$cfg['MainPageIconic'] = false;
 $cfg['NavigationTreeDisplayDbFilter'] = false;
 $cfg['NavigationTreeDefaultTabTable'] = 'browse';
 
-/* Server connection */
+
+/*
+|--------------------------------------------------------------------------
+| Server Configuration
+|--------------------------------------------------------------------------
+*/
+
+$i = 0;
+$i++;
+
+
+/*
+|--------------------------------------------------------------------------
+| Authentication
+|--------------------------------------------------------------------------
+*/
+
+$cfg['Servers'][$i]['auth_type'] = 'signon';
+
+/* MUST match phpmyadminsignin.php */
+$cfg['Servers'][$i]['SignonSession'] = 'SignonSession';
+
+/* bridge file */
+$cfg['Servers'][$i]['SignonURL'] = 'phpmyadminsignin.php';
+
+/* logout handler */
+$cfg['Servers'][$i]['LogoutURL'] = 'phpmyadminsignin.php';
+
+/*
+|--------------------------------------------------------------------------
+| ServerPanel Token Issuing (optional but recommended)
+|--------------------------------------------------------------------------
+|
+| To avoid sending DB passwords through the browser, ServerPanel can request
+| a one-time signon token from phpmyadminsignin.php?action=issue.
+|
+| Set this env var for the webserver running phpMyAdmin:
+| - PMA_SIGNON_ISSUE_SECRET=... (must match ServerPanel PHPMYADMIN_SIGNON_SECRET)
+*/
+
+
+/*
+|--------------------------------------------------------------------------
+| MySQL Server Connection
+|--------------------------------------------------------------------------
+*/
+
 $cfg['Servers'][$i]['host'] = '127.0.0.1';
+$cfg['Servers'][$i]['port'] = '3306';
 $cfg['Servers'][$i]['compress'] = false;
+
 $cfg['Servers'][$i]['AllowNoPassword'] = false;
-$cfg['Servers'][$i]['AllowRoot'] = false; // Security: Block root login via autologin
+$cfg['Servers'][$i]['AllowRoot'] = false;
 
-/* Database Visibility */
-// Empty value means show all databases
-$cfg['Servers'][$i]['hide_db'] = '';
 
-/* Storage for phpMyAdmin features (Optional) */
+/*
+|--------------------------------------------------------------------------
+| Restrict database from panel
+|--------------------------------------------------------------------------
+*/
+
+if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['PMA_single_signon_db'])) {
+    $cfg['Servers'][$i]['only_db'] = $_SESSION['PMA_single_signon_db'];
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| phpMyAdmin Storage
+|--------------------------------------------------------------------------
+*/
+
 $cfg['Servers'][$i]['pmadb'] = 'phpmyadmin';
-$cfg['Servers'][$i]['controluser'] = 'pma';
-$cfg['Servers'][$i]['controlpass'] = '___pma_password___';
 
-/**
- * UI Tweaks to force hide the "New" button
- */
-$cfg['NavigationTreeEnableGrouping'] = false;
-$cfg['NavigationDisplayItemLoopback'] = false;
-$cfg['NavigationTreeDbSeparator'] = '_';
-$cfg['NavigationDisplayLogo'] = false;
+$cfg['Servers'][$i]['controluser'] = 'pma';
+$cfg['Servers'][$i]['controlpass'] = 'pmapass';
+
+
+$cfg['Servers'][$i]['bookmarktable'] = 'pma__bookmark';
+$cfg['Servers'][$i]['relation'] = 'pma__relation';
+$cfg['Servers'][$i]['table_info'] = 'pma__table_info';
+$cfg['Servers'][$i]['table_coords'] = 'pma__table_coords';
+$cfg['Servers'][$i]['pdf_pages'] = 'pma__pdf_pages';
+$cfg['Servers'][$i]['column_info'] = 'pma__column_info';
+$cfg['Servers'][$i]['history'] = 'pma__history';
+$cfg['Servers'][$i]['table_uiprefs'] = 'pma__table_uiprefs';
+$cfg['Servers'][$i]['tracking'] = 'pma__tracking';
+$cfg['Servers'][$i]['userconfig'] = 'pma__userconfig';
+$cfg['Servers'][$i]['recent'] = 'pma__recent';
+$cfg['Servers'][$i]['favorite'] = 'pma__favorite';
+$cfg['Servers'][$i]['users'] = 'pma__users';
+$cfg['Servers'][$i]['usergroups'] = 'pma__usergroups';
+$cfg['Servers'][$i]['navigationhiding'] = 'pma__navigationhiding';
+$cfg['Servers'][$i]['savedsearches'] = 'pma__savedsearches';
+$cfg['Servers'][$i]['central_columns'] = 'pma__central_columns';
+$cfg['Servers'][$i]['designer_settings'] = 'pma__designer_settings';
+$cfg['Servers'][$i]['export_templates'] = 'pma__export_templates';
+
+
+/*
+|--------------------------------------------------------------------------
+| Security Hardening
+|--------------------------------------------------------------------------
+*/
+
+$cfg['LoginCookieValidity'] = 1800;
+$cfg['CheckConfigurationPermissions'] = true;
+$cfg['AllowArbitraryServer'] = false;
+
+
+/*
+|--------------------------------------------------------------------------
+| UI
+|--------------------------------------------------------------------------
+*/
+
+$cfg['MaxRows'] = 50;
+$cfg['RowActionType'] = 'icons';
+$cfg['DefaultLang'] = 'en';
+$cfg['ThemeDefault'] = 'pmahomme';

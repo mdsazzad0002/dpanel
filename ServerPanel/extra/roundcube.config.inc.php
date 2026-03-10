@@ -35,3 +35,10 @@ $config['login_autocomplete'] = 2;
 
 // Skin and UI
 $config['skin'] = 'elastic'; // The modern, responsive Roundcube skin
+
+// --- ServerPanel SSO (optional) ---
+// Enable plugin by copying: extra/roundcube/plugins/serverpanel_sso -> roundcube/plugins/serverpanel_sso
+// Then configure:
+// $config['plugins'] = array_merge($config['plugins'] ?? [], ['serverpanel_sso']);
+// $config['serverpanel_sso_panel_url'] = 'http://127.0.0.1:8090/sso/webmail/consume';
+// $config['serverpanel_sso_secret'] = 'SET_TO_WEBMAIL_SSO_SECRET';
