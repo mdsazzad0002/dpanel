@@ -1,0 +1,13 @@
+{
+    "intent": "conversation",
+    "type": "chat",
+    "command": null,
+    "result": "",
+    "success": true,
+    "tags": [
+        "chat",
+        "chat",
+        "success"
+    ],
+    "store_memory": false
+}

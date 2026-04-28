@@ -18,6 +18,7 @@ class StoreCommandJobRequest extends FormRequest
             'command' => ['required', 'string', 'max:12000'],
             'task_id' => ['nullable', 'exists:server_tasks,id'],
             'parent_id' => ['nullable', 'exists:command_jobs,id'],
+            'auto_fix' => ['nullable', 'boolean'],
             'tags' => ['nullable', 'array'],
             'tags.*' => ['string', 'max:80'],
         ];

@@ -1,95 +1,154 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
     server: { type: Object, required: true },
-    history: { type: Array, default: () => [] },
+    quickCommands: { type: Array, default: () => [] },
+    currentDir: { type: String, default: '' },
 });
 
-const aiReviewMode = ref(true);
-const queueMode = ref(true);
-const emergencyRaw = ref(false);
+const command = ref('');
+const cwd = ref(props.currentDir || '/');
+const isRunning = ref(false);
+const errorMessage = ref('');
+const feed = ref([]);
 
-const form = useForm({
-    server_id: props.server.id,
-    command: '',
-    tags: [],
-});
+const promptUser = computed(() =>
+    String(props.server?.username || 'server').toLowerCase().replace(/\s+/g, '_'),
+);
 
-const classify = computed(() => {
-    const text = form.command.toLowerCase();
-    if (!text.trim()) return { level: 'safe', reason: 'Waiting for input.' };
-    if (/rm -rf \/|mkfs|dd if=|\|\s*bash|shutdown|reboot|truncate -s 0 \/etc\/passwd/.test(text)) {
-        return { level: 'blocked', reason: 'Dangerous command pattern detected.' };
+const runCommand = async () => {
+    const input = command.value.trim();
+    if (!input || isRunning.value) return;
+
+    errorMessage.value = '';
+    isRunning.value = true;
+
+    const entry = {
+        id: Date.now(),
+        input,
+        output: ['Running...'],
+        exitCode: null,
+        at: new Date().toLocaleString(),
+    };
+    feed.value.unshift(entry);
+
+    try {
+        const response = await window.axios.post(
+            route('terminal.execute'),
+            { command: input, cwd: cwd.value },
+            { headers: { Accept: 'application/json' } },
+        );
+
+        const terminal = response?.data?.terminal ?? {};
+        entry.output = Array.isArray(terminal.output) && terminal.output.length
+            ? terminal.output.map((line) => String(line))
+            : ['No output'];
+        entry.exitCode = terminal.exit_code ?? 0;
+        cwd.value = String(terminal.current_dir || cwd.value || '/');
+    } catch (error) {
+        const responseError = error?.response?.data?.error;
+        const message = error?.response?.data?.message;
+        const terminal = error?.response?.data?.terminal;
+        entry.output = Array.isArray(terminal?.output) && terminal.output.length
+            ? terminal.output.map((line) => String(line))
+            : [String(responseError || message || 'Execution failed.')];
+        entry.exitCode = terminal?.exit_code ?? 1;
+        errorMessage.value = String(responseError || message || 'Execution failed.');
+        if (terminal?.current_dir) {
+            cwd.value = String(terminal.current_dir);
+        }
+    } finally {
+        command.value = '';
+        isRunning.value = false;
     }
-    if (/apt install|apt upgrade|systemctl restart|composer update|npm install|php artisan migrate|chmod|chown|\brm\b/.test(text)) {
-        return { level: 'approval_required', reason: 'Potentially mutating command requires approval.' };
-    }
-    return { level: 'safe', reason: 'Read-only/diagnostic command profile.' };
-});
+};
 
-const submit = () => {
-    form.post(route('commands.store'), {
-        preserveScroll: true,
-        onSuccess: () => form.reset('command'),
-    });
+const useQuickCommand = (value) => {
+    command.value = String(value || '');
 };
 </script>
 
 <template>
-    <Head :title="`AI Terminal - ${server.name}`" />
+    <Head :title="`Realtime Terminal - ${server.name}`" />
+
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between">
-                <h1 class="text-lg font-semibold">AI Terminal: {{ server.name }}</h1>
+                <div>
+                    <h1 class="text-lg font-semibold">Realtime Terminal: {{ server.name }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">Instant command feedback, no queue flow.</p>
+                </div>
                 <Link :href="route('servers.show', server.id)" class="text-sm text-cyan-700">Back to Server</Link>
             </div>
         </template>
 
-        <div class="grid gap-4 xl:grid-cols-[2fr_1fr]">
-            <section class="rounded-xl border border-slate-200 bg-white p-5">
-                <div class="mb-3 grid gap-3 md:grid-cols-3 text-xs">
-                    <label class="flex items-center gap-2"><input v-model="aiReviewMode" type="checkbox"> AI Review Mode</label>
-                    <label class="flex items-center gap-2"><input v-model="queueMode" type="checkbox"> Queue Mode</label>
-                    <label class="flex items-center gap-2"><input v-model="emergencyRaw" type="checkbox" :disabled="server.mode !== 'emergency'"> Emergency Raw SSH</label>
+        <div class="space-y-4">
+            <div v-if="errorMessage" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {{ errorMessage }}
+            </div>
+
+            <section class="rounded-xl border border-slate-800 bg-[#0d1117] p-4 text-slate-100 shadow-xl">
+                <div class="mb-3">
+                    <p class="mb-2 text-xs uppercase tracking-wide text-slate-400">Quick Commands</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            v-for="item in quickCommands"
+                            :key="item"
+                            type="button"
+                            class="rounded-md border border-slate-600 bg-slate-900 px-3 py-1 text-xs font-mono text-emerald-300 hover:bg-slate-800"
+                            @click="useQuickCommand(item)"
+                        >
+                            {{ item }}
+                        </button>
+                    </div>
                 </div>
 
-                <form @submit.prevent="submit" class="space-y-3">
-                    <input v-model="form.command" type="text" class="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm" placeholder="Ask AI or type command" />
-                    <div class="rounded border px-3 py-2 text-xs" :class="classify.level === 'safe' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : (classify.level === 'blocked' ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700')">
-                        <span class="font-semibold">{{ classify.level }}</span> - {{ classify.reason }}
+                <form class="rounded-lg border border-slate-700 bg-black/40 p-3" @submit.prevent="runCommand">
+                    <div class="flex items-center gap-2 font-mono text-sm">
+                        <span class="text-emerald-400">{{ promptUser }}@{{ server.host }}</span>
+                        <span class="text-violet-300">{{ cwd }}</span>
+                        <span>$</span>
+                        <input
+                            v-model="command"
+                            type="text"
+                            class="w-full border-0 bg-transparent p-0 text-sm text-slate-100 outline-none ring-0"
+                            placeholder="Type command and press Enter"
+                        />
+                        <button
+                            type="submit"
+                            :disabled="isRunning"
+                            class="rounded-md border border-emerald-500 px-3 py-1 text-xs text-emerald-300 hover:bg-emerald-900/30 disabled:opacity-60"
+                        >
+                            {{ isRunning ? 'Running' : 'Run' }}
+                        </button>
                     </div>
-                    <button class="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold text-white" :disabled="form.processing">Submit Command</button>
                 </form>
-
-                <div class="mt-5">
-                    <h2 class="text-sm font-semibold">Events Timeline</h2>
-                    <div class="mt-2 max-h-[460px] space-y-2 overflow-y-auto rounded border border-slate-200 p-3 text-xs">
-                        <article v-for="item in history" :key="item.id" class="rounded border border-slate-200 p-2">
-                            <div class="flex items-center justify-between">
-                                <span class="font-semibold">{{ item.status }}</span>
-                                <span>{{ item.created_at }}</span>
-                            </div>
-                            <p class="mt-1 font-mono">{{ item.command }}</p>
-                            <div class="mt-2 flex flex-wrap gap-2">
-                                <Link :href="route('commands.show', item.id)" class="rounded border border-slate-300 px-2 py-1">Details</Link>
-                                <button type="button" class="rounded border border-slate-300 px-2 py-1" @click="router.post(route('commands.retry', item.id))">Retry</button>
-                            </div>
-                        </article>
-                    </div>
-                </div>
             </section>
 
-            <section class="rounded-xl border border-slate-200 bg-white p-5 text-xs">
-                <h2 class="font-semibold">Search History</h2>
-                <p class="mt-1 text-slate-500">Filter by success/failed/blocked from Commands page.</p>
-                <div class="mt-3 space-y-2">
-                    <Link :href="route('commands.index', { server_id: server.id, status: 'success' })" class="block rounded border border-slate-300 px-3 py-2">Success Commands</Link>
-                    <Link :href="route('commands.index', { server_id: server.id, status: 'failed' })" class="block rounded border border-slate-300 px-3 py-2">Failed Commands</Link>
-                    <Link :href="route('commands.index', { server_id: server.id, status: 'blocked' })" class="block rounded border border-slate-300 px-3 py-2">Blocked Commands</Link>
-                    <Link :href="route('ssh-memories.index')" class="block rounded border border-slate-300 px-3 py-2">Memories</Link>
+            <section class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <h2 class="text-sm font-semibold">Realtime Feed (Essential I/O)</h2>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Shows only what was given and what was received.</p>
+
+                <div v-if="feed.length === 0" class="mt-4 text-sm text-slate-500 dark:text-slate-400">
+                    No command run yet.
+                </div>
+
+                <div v-else class="mt-4 space-y-3">
+                    <article
+                        v-for="item in feed"
+                        :key="item.id"
+                        class="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50"
+                    >
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ item.at }}</p>
+                        <p class="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Input</p>
+                        <p class="font-mono text-sm text-slate-900 dark:text-slate-100">{{ item.input }}</p>
+                        <p class="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Output</p>
+                        <pre class="whitespace-pre-wrap break-words rounded bg-black/80 p-2 font-mono text-xs text-emerald-300">{{ item.output.join('\n') }}</pre>
+                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Exit Code: {{ item.exitCode ?? '-' }}</p>
+                    </article>
                 </div>
             </section>
         </div>

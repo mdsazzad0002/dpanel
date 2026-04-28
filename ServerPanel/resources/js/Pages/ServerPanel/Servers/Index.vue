@@ -96,18 +96,16 @@ const runAction = (name, serverId) => {
             <div class="flex items-center justify-between">
                 <div>
                     <h1 class="text-lg font-semibold">SSH Servers</h1>
-                    <p class="text-sm text-slate-500">SSH Connector + AI Terminal + Command History</p>
+                    <p class="text-sm text-slate-500">Simple server list and quick actions</p>
                 </div>
                 <button type="button" class="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-800" @click="openCreate">Add Server</button>
             </div>
         </template>
 
         <div class="space-y-6">
-            <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">Online</p><p class="text-2xl font-semibold">{{ statusCounts.online || 0 }}</p></div>
-                <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">Offline</p><p class="text-2xl font-semibold">{{ statusCounts.offline || 0 }}</p></div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">Errors</p><p class="text-2xl font-semibold">{{ statusCounts.error || 0 }}</p></div>
-                <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">Needs Approval</p><p class="text-2xl font-semibold">{{ statusCounts.needs_approval || 0 }}</p></div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">Failed Commands</p><p class="text-2xl font-semibold">{{ statusCounts.failed || 0 }}</p></div>
             </section>
 
@@ -120,15 +118,13 @@ const runAction = (name, serverId) => {
                         </div>
                         <span class="rounded-full px-2 py-1 text-xs font-semibold" :class="server.status === 'online' ? 'bg-emerald-100 text-emerald-700' : (server.status === 'error' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700')">{{ server.status }}</span>
                     </div>
-                    <p class="mt-2 text-xs text-slate-500">Mode: <span class="font-semibold">{{ server.mode }}</span></p>
-                    <p class="text-xs text-slate-500">Last Connected: {{ server.last_connected_at || '-' }}</p>
+                    <p class="mt-2 text-xs text-slate-500">Last Connected: {{ server.last_connected_at || '-' }}</p>
                     <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
                         <button type="button" class="rounded border border-slate-300 px-2 py-2 hover:bg-slate-50" @click="runAction('test', server.id)">Test Connection</button>
                         <button type="button" class="rounded border border-slate-300 px-2 py-2 hover:bg-slate-50" @click="runAction('scan', server.id)">Scan</button>
-                        <Link :href="route('servers.terminal', server.id)" class="rounded border border-slate-300 px-2 py-2 text-center hover:bg-slate-50">Open AI Terminal</Link>
-                        <Link :href="route('servers.commands', server.id)" class="rounded border border-slate-300 px-2 py-2 text-center hover:bg-slate-50">History</Link>
+                        <Link :href="route('servers.commands', server.id)" class="col-span-2 rounded border border-slate-300 px-2 py-2 text-center hover:bg-slate-50">Open Commands</Link>
                     </div>
-                    <div class="mt-2 flex items-center gap-3">
+                    <div class="mt-2 flex items-center gap-3 text-xs">
                         <Link :href="route('servers.show', server.id)" class="text-xs font-semibold text-cyan-700">Open Details</Link>
                         <button type="button" class="text-xs font-semibold text-slate-700" @click="openEdit(server)">Edit</button>
                     </div>

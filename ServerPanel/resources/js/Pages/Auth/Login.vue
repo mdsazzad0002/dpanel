@@ -33,68 +33,77 @@ const submit = () => {
     <GuestLayout>
         <Head title="Log in" />
 
-        <div v-if="status" class="mb-4 text-sm font-medium text-green-600 dark:text-green-400">
-            {{ status }}
-        </div>
+        <section class="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-[#07110f]/95 p-6 shadow-[0_0_35px_rgba(16,185,129,0.18)] backdrop-blur sm:p-8">
+            <div class="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(to_right,#10b98133_1px,transparent_1px),linear-gradient(to_bottom,#10b98133_1px,transparent_1px)] [background-size:24px_24px]" />
+            <div class="pointer-events-none absolute -bottom-10 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-400 to-transparent" />
 
-        <form @submit.prevent="submit">
-            <div>
-                <InputLabel for="email" value="Email" />
-
-                <TextInput
-                    id="email"
-                    type="email"
-                    class="mt-1 block w-full"
-                    v-model="form.email"
-                    required
-                    autofocus
-                    autocomplete="username"
-                />
-
-                <InputError class="mt-2" :message="form.errors.email" />
+            <div class="relative font-mono">
+                <p class="text-xs uppercase tracking-[0.24em] text-emerald-400">Secure Shell Gateway</p>
+                <h1 class="mt-2 text-2xl font-bold text-emerald-100">ServerPanel Access</h1>
+                <p class="mt-2 text-sm text-emerald-200/80">
+                    Authenticate to manage hosts, deployments, and system operations.
+                </p>
             </div>
 
-            <div class="mt-4">
-                <InputLabel for="password" value="Password" />
-
-                <TextInput
-                    id="password"
-                    type="password"
-                    class="mt-1 block w-full"
-                    v-model="form.password"
-                    required
-                    autocomplete="current-password"
-                />
-
-                <InputError class="mt-2" :message="form.errors.password" />
+            <div
+                v-if="status"
+                class="relative mt-5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"
+            >
+                {{ status }}
             </div>
 
-            <div class="mt-4 block">
-                <label class="flex items-center">
-                    <Checkbox name="remember" v-model:checked="form.remember" />
-                    <span class="ms-2 text-sm text-slate-600 dark:text-slate-300"
-                        >Remember me</span
+            <form class="relative mt-6 space-y-5 font-mono" @submit.prevent="submit">
+                <div>
+                    <InputLabel for="email" value="Admin Email" class="text-emerald-300" />
+                    <TextInput
+                        id="email"
+                        type="email"
+                        class="mt-2 block w-full rounded-xl border-emerald-600/40 bg-[#030807] text-emerald-100 transition placeholder:text-emerald-300/40 focus:border-emerald-400 focus:ring-emerald-400"
+                        v-model="form.email"
+                        required
+                        autofocus
+                        autocomplete="username"
+                        placeholder="root@host.local"
+                    />
+                    <InputError class="mt-2" :message="form.errors.email" />
+                </div>
+
+                <div>
+                    <InputLabel for="password" value="Access Key" class="text-emerald-300" />
+                    <TextInput
+                        id="password"
+                        type="password"
+                        class="mt-2 block w-full rounded-xl border-emerald-600/40 bg-[#030807] text-emerald-100 transition placeholder:text-emerald-300/40 focus:border-emerald-400 focus:ring-emerald-400"
+                        v-model="form.password"
+                        required
+                        autocomplete="current-password"
+                        placeholder="Enter secure credential"
+                    />
+                    <InputError class="mt-2" :message="form.errors.password" />
+                </div>
+
+                <div class="flex items-center justify-between">
+                    <label class="flex cursor-pointer items-center">
+                        <Checkbox name="remember" v-model:checked="form.remember" />
+                        <span class="ms-2 text-sm text-emerald-200/80">Persist session</span>
+                    </label>
+                    <Link
+                        v-if="canResetPassword"
+                        :href="route('password.request')"
+                        class="text-sm font-medium text-emerald-300 hover:text-emerald-200"
                     >
-                </label>
-            </div>
-
-            <div class="mt-4 flex items-center justify-end">
-                <Link
-                    v-if="canResetPassword"
-                    :href="route('password.request')"
-                    class="rounded-md text-sm text-slate-600 underline hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-white dark:text-slate-300 dark:hover:text-white dark:focus:ring-offset-slate-900"
-                >
-                    Forgot your password?
-                </Link>
+                        Forgot password?
+                    </Link>
+                </div>
 
                 <PrimaryButton
-                    class="ms-4"
+                    class="w-full justify-center rounded-xl bg-emerald-500 py-3 text-sm font-semibold tracking-[0.14em] text-[#032019] transition hover:bg-emerald-400 focus:bg-emerald-500"
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
-                    Log in
+                    {{ form.processing ? 'AUTHENTICATING...' : 'LOGIN TO SERVER' }}
                 </PrimaryButton>
-            </div>
-        </form>
+            </form>
+        </section>
     </GuestLayout>
 </template>

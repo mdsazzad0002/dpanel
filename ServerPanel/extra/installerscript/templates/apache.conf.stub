@@ -1,0 +1,5 @@
+<VirtualHost *:80>
+    ServerName localhost
+    DocumentRoot /var/www/serverpanel/public
+</VirtualHost>
+

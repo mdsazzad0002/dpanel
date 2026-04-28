@@ -12,6 +12,14 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    sshFailurePanel: {
+        type: Object,
+        default: () => ({
+            has_failures: false,
+            recent_failures: [],
+            suggestions: [],
+        }),
+    },
 });
 
 const roleSummary = computed(() => {
@@ -52,6 +60,53 @@ const roleSummary = computed(() => {
                     <p class="mt-2 text-2xl font-semibold">{{ stats.website_requests_pending }}</p>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Generated from website create flow</p>
                 </article>
+
+                <article class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">SSH Failures (24h)</p>
+                    <p class="mt-2 text-2xl font-semibold">{{ stats.ssh_failures_24h ?? 0 }}</p>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Failed connection tests from Servers panel</p>
+                </article>
+            </section>
+
+            <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+                <h2 class="text-base font-semibold">SSH Failure Troubleshooting</h2>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    If server connection tests fail, use this setup checklist.
+                </p>
+
+                <ul class="mt-4 space-y-2 text-sm">
+                    <li
+                        v-for="(suggestion, index) in sshFailurePanel.suggestions ?? []"
+                        :key="`ssh-suggestion-${index}`"
+                        class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60"
+                    >
+                        {{ suggestion }}
+                    </li>
+                </ul>
+
+                <div class="mt-5">
+                    <h3 class="text-sm font-semibold">Recent SSH Failures</h3>
+                    <div v-if="!(sshFailurePanel.recent_failures ?? []).length" class="mt-2 text-sm text-emerald-600 dark:text-emerald-400">
+                        No recent SSH failures detected.
+                    </div>
+                    <div v-else class="mt-3 space-y-2">
+                        <article
+                            v-for="failure in sshFailurePanel.recent_failures"
+                            :key="failure.id"
+                            class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900/60 dark:bg-red-950/20"
+                        >
+                            <p class="font-medium text-red-700 dark:text-red-300">
+                                {{ failure.server?.name }} ({{ failure.server?.host }}:{{ failure.server?.port }})
+                            </p>
+                            <p class="mt-1 text-xs text-red-600 dark:text-red-400">
+                                User: {{ failure.server?.username }} | Tested: {{ failure.tested_at }}
+                            </p>
+                            <p class="mt-2 break-words text-red-800 dark:text-red-200">
+                                {{ failure.error_output }}
+                            </p>
+                        </article>
+                    </div>
+                </div>
             </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">

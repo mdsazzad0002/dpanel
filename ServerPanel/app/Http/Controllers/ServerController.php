@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateServerRequest;
 use App\Jobs\ScanServerInventoryJob;
 use App\Models\Server;
 use App\Models\SshConnectionTest;
+use App\Services\ServerPanel\ServerInventoryService;
 use App\Services\ServerPanel\SshClientService;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
@@ -149,19 +150,25 @@ class ServerController extends Controller
         );
     }
 
-    public function scanInventory(Server $server): RedirectResponse
+    public function scanInventory(Server $server, ServerInventoryService $inventoryService): RedirectResponse
     {
-        ScanServerInventoryJob::dispatch($server->id)->onQueue('server-commands');
+        try {
+            $inventoryService->scan($server);
 
-        return redirect()->route('servers.show', $server)->with('success', 'Inventory scan queued.');
+            return redirect()->route('servers.show', $server)->with('success', 'Inventory scan completed.');
+        } catch (\Throwable $exception) {
+            $server->forceFill([
+                'status' => 'error',
+                'error_message' => $exception->getMessage(),
+            ])->save();
+
+            return redirect()->route('servers.show', $server)->with('error', 'Inventory scan failed: '.$exception->getMessage());
+        }
     }
 
-    public function terminal(Server $server): Response
+    public function terminal(Server $server): RedirectResponse
     {
-        return Inertia::render('ServerPanel/Servers/Terminal', [
-            'server' => $this->serverPayload($server),
-            'history' => $server->commandJobs()->latest()->limit(25)->get(),
-        ]);
+        return redirect()->route('servers.commands', $server);
     }
 
     private function serverPayload(Server $server): array

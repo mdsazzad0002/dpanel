@@ -83,6 +83,17 @@ class SshClientService
     }
 
     /**
+     * @param  callable(string):void  $onOutputLine
+     * @return array{output:string,error_output:string,exit_code:int|null}
+     */
+    public function executeOnServerStreaming(Server $server, string $command, callable $onOutputLine): array
+    {
+        $ssh = $this->connect($server);
+
+        return $this->runCommandStreaming($ssh, $command, $onOutputLine);
+    }
+
+    /**
      * @return array{output:string,error_output:string,exit_code:int|null}
      */
     public function runCommand(SSH2 $ssh, string $command): array
@@ -93,14 +104,57 @@ class SshClientService
         $stderr = (string) $ssh->getStdError();
 
         $exitCode = null;
-        if (preg_match('/__SERVERPANEL_EXIT__:(\d+)\s*$/m', $output, $matches) === 1) {
+        if (preg_match('/__SERVERPANEL_EXIT__:(\d+)/', $output, $matches) === 1) {
             $exitCode = (int) $matches[1];
-            $output = trim((string) preg_replace('/\n?__SERVERPANEL_EXIT__:\d+\s*$/m', '', $output));
+            $output = trim((string) preg_replace('/(?:\r?\n)?__SERVERPANEL_EXIT__:\d+\s*/', '', $output));
         }
 
         return [
-            'output' => $this->truncateOutput($output),
-            'error_output' => $this->truncateOutput($stderr),
+            'output' => $this->truncateOutput($this->sanitizeControlMarkers($output)),
+            'error_output' => $this->truncateOutput($this->sanitizeControlMarkers($stderr)),
+            'exit_code' => $exitCode,
+        ];
+    }
+
+    /**
+     * @param  callable(string):void  $onOutputLine
+     * @return array{output:string,error_output:string,exit_code:int|null}
+     */
+    public function runCommandStreaming(SSH2 $ssh, string $command, callable $onOutputLine): array
+    {
+        $wrapped = "bash -lc " . escapeshellarg($command."\n".'printf "\\n__SERVERPANEL_EXIT__:%s\\n" "$?"');
+        $collectedOutput = '';
+        $lineBuffer = '';
+
+        $output = (string) $ssh->exec($wrapped, function (string $chunk) use (&$collectedOutput, &$lineBuffer, $onOutputLine): void {
+            $collectedOutput .= $chunk;
+            $lineBuffer .= $chunk;
+
+            while (($lineEnd = strpos($lineBuffer, "\n")) !== false) {
+                $line = trim(substr($lineBuffer, 0, $lineEnd));
+                $lineBuffer = (string) substr($lineBuffer, $lineEnd + 1);
+
+                if ($line !== '' && ! str_contains($line, '__SERVERPANEL_EXIT__:')) {
+                    $onOutputLine($line);
+                }
+            }
+        });
+
+        if (trim($lineBuffer) !== '' && ! str_contains(trim($lineBuffer), '__SERVERPANEL_EXIT__:')) {
+            $onOutputLine(trim($lineBuffer));
+        }
+
+        $stderr = (string) $ssh->getStdError();
+        $exitCode = null;
+
+        if (preg_match('/__SERVERPANEL_EXIT__:(\d+)/', $output, $matches) === 1) {
+            $exitCode = (int) $matches[1];
+            $output = trim((string) preg_replace('/(?:\r?\n)?__SERVERPANEL_EXIT__:\d+\s*/', '', $output));
+        }
+
+        return [
+            'output' => $this->truncateOutput($this->sanitizeControlMarkers($output !== '' ? $output : $collectedOutput)),
+            'error_output' => $this->truncateOutput($this->sanitizeControlMarkers((string) preg_replace('/(?:\r?\n)?__SERVERPANEL_EXIT__:\d+\s*/', '', $stderr))),
             'exit_code' => $exitCode,
         ];
     }
@@ -141,5 +195,13 @@ class SshClientService
         }
 
         return mb_substr($output, 0, $maxLength).PHP_EOL.'[output truncated]';
+    }
+
+    private function sanitizeControlMarkers(string $text): string
+    {
+        $text = (string) preg_replace('/(?:^|\R)\s*n?__SERVERPANEL_EXIT__:\d*\s*(?=\R|$)/m', PHP_EOL, $text);
+        $text = (string) preg_replace('/n__SERVERPANEL_EXIT__:\d*/', '', $text);
+
+        return trim($text);
     }
 }

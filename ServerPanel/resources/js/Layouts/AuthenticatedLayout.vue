@@ -103,10 +103,8 @@ const menuItems = computed(() => [
         icon: 'SP',
         iconClass: 'bi bi-cpu',
         children: [
-            { label: 'Control Center', hint: 'Unified module overview', icon: 'CC', iconClass: 'bi bi-grid-1x2', routeName: 'serverpanel.index', roles: ['admin', 'reseller'] },
             { label: 'SSH Servers', hint: 'SSH connector and inventory', icon: 'SV', iconClass: 'bi bi-hdd-rack', routeName: 'servers.index', roles: ['admin', 'reseller'] },
-            { label: 'Command History', hint: 'Queued command timeline', icon: 'CH', iconClass: 'bi bi-clock-history', routeName: 'commands.index', roles: ['admin', 'reseller'] },
-            { label: 'Server Tasks', hint: 'AI task planning and tracking', icon: 'TS', iconClass: 'bi bi-list-task', routeName: 'server-tasks.index', roles: ['admin', 'reseller'] },
+            { label: 'AI Terminal', hint: 'Memory + SSH + AI engine', icon: 'AT', iconClass: 'bi bi-robot', routeName: 'ai-terminal.index', roles: ['admin', 'reseller'] },
             { label: 'SSH Memories', hint: 'Reusable command memories', icon: 'MM', iconClass: 'bi bi-bookmark-star', routeName: 'ssh-memories.index', roles: ['admin', 'reseller'] },
         ],
     },
@@ -375,7 +373,7 @@ watch(
                 </template>
             </nav>
 
-          
+
         </aside>
 
         <div class="md:pl-72">

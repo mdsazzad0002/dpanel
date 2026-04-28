@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\ApacheController;
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AiTerminalController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\CommandJobController;
 use App\Http\Controllers\DashboardController;
@@ -23,17 +25,26 @@ use App\Http\Controllers\TerminalController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WebsiteController;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/', function () {
+    if (Auth::check()) {
+        return redirect()->route('dashboard');
+    }
+
+    return redirect()->route('login');
+});
+
+Route::get('/init', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
 
     ]);
-});
+})->name('init.docs');
 Route::get('/roundcube', [EmailController::class, 'webmailEntry'])->name('webmail.roundcube');
 Route::post('/sso/webmail/consume', [SsoController::class, 'consumeWebmail'])->name('sso.webmail.consume');
 
@@ -42,7 +53,7 @@ Route::get('/dashboard', [DashboardController::class, 'index'])
     ->name('dashboard');
 
 Route::middleware('auth')->group(function () {
-    Route::get('/serverpanel', [ServerPanelController::class, 'index'])
+    Route::redirect('/serverpanel', '/servers')
         ->middleware('role:admin|reseller')
         ->name('serverpanel.index');
 
@@ -76,19 +87,23 @@ Route::middleware('auth')->group(function () {
     Route::get('/servers/{server}/terminal', [ServerController::class, 'terminal'])
         ->middleware('role:admin|reseller')
         ->name('servers.terminal');
-    Route::get('/servers/{server}/commands', [CommandJobController::class, 'index'])
+    Route::redirect('/servers/{server}/commands', '/commands')
         ->middleware('role:admin|reseller')
         ->name('servers.commands');
 
-    Route::get('/commands', [CommandJobController::class, 'index'])
+    Route::get('/ai-terminal', [AiTerminalController::class, 'index'])
         ->middleware('role:admin|reseller')
-        ->name('commands.index');
+        ->name('ai-terminal.index');
+  
     Route::post('/commands', [CommandJobController::class, 'store'])
         ->middleware('role:admin|reseller')
         ->name('commands.store');
     Route::get('/commands/{commandJob}', [CommandJobController::class, 'show'])
         ->middleware('role:admin|reseller')
         ->name('commands.show');
+    Route::get('/commands/{commandJob}/live', [CommandJobController::class, 'live'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.live');
     Route::post('/commands/{commandJob}/approve', [CommandJobController::class, 'approve'])
         ->middleware('role:admin|reseller')
         ->name('commands.approve');
@@ -101,9 +116,33 @@ Route::middleware('auth')->group(function () {
     Route::post('/commands/{commandJob}/run-suggested-fix', [CommandJobController::class, 'runSuggestedFix'])
         ->middleware('role:admin|reseller')
         ->name('commands.run-suggested-fix');
+    Route::post('/commands/{commandJob}/close', [CommandJobController::class, 'close'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.close');
+    Route::delete('/commands/{commandJob}', [CommandJobController::class, 'destroy'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.destroy');
     Route::get('/commands/{commandJob}/report', [CommandJobController::class, 'downloadReport'])
         ->middleware('role:admin|reseller')
         ->name('commands.report');
+    Route::post('/ai-terminal/sessions', [AiTerminalController::class, 'start'])
+        ->middleware('role:admin|reseller')
+        ->name('ai-terminal.start');
+    Route::post('/ai-terminal/message', [AiTerminalController::class, 'message'])
+        ->middleware('role:admin|reseller')
+        ->name('ai-terminal.message');
+    Route::post('/ai-terminal/file/read', [AiTerminalController::class, 'readFile'])
+        ->middleware('role:admin|reseller')
+        ->name('ai-terminal.file.read');
+    Route::post('/ai-terminal/file/save', [AiTerminalController::class, 'saveFile'])
+        ->middleware('role:admin|reseller')
+        ->name('ai-terminal.file.save');
+    Route::get('/ai-terminal/stream', [AiTerminalController::class, 'stream'])
+        ->middleware('role:admin|reseller')
+        ->name('ai-terminal.stream');
+    Route::post('/ai-terminal/close', [AiTerminalController::class, 'close'])
+        ->middleware('role:admin|reseller')
+        ->name('ai-terminal.close');
 
     Route::get('/server-tasks', [ServerTaskController::class, 'index'])
         ->middleware('role:admin|reseller')
@@ -426,7 +465,7 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:admin|reseller')
         ->name('security.ssh.update');
 
-    Route::get('/admin', [UserManagementController::class, 'index'])
+    Route::get('/admin', [AdminController::class, 'index'])
         ->middleware('role:admin')
         ->name('admin.panel');
 

@@ -27,6 +27,8 @@ class CommandRunnerService
 
     public function createAndDispatch(Server $server, string $command, ?User $requestedBy = null, array $extra = []): CommandJob
     {
+        $shouldDispatch = (bool) ($extra['dispatch'] ?? true);
+
         $job = CommandJob::query()->create([
             'uuid' => (string) Str::uuid(),
             'server_id' => $server->id,
@@ -48,7 +50,7 @@ class CommandRunnerService
             'command_hash' => hash('sha256', $classification['normalized_command']),
             'risk_level' => $classification['risk_level'],
             'risk_reason' => $classification['risk_reason'],
-            'status' => $classification['risk_level'] === 'blocked' ? 'blocked' : ($classification['risk_level'] === 'approval_required' ? 'pending_approval' : 'queued'),
+            'status' => $classification['risk_level'] === 'blocked' ? 'blocked' : 'queued',
         ])->save();
 
         $this->event($job, 'classified', 'Command risk classified.', [
@@ -63,7 +65,7 @@ class CommandRunnerService
             return $job;
         }
 
-        if ($job->status === 'queued') {
+        if ($job->status === 'queued' && $shouldDispatch) {
             $this->dispatchExecution($job);
         }
 

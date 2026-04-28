@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
 const props = defineProps({
@@ -9,11 +9,17 @@ const props = defineProps({
     recentCommands: { type: Array, default: () => [] },
 });
 
-const tab = ref('overview');
+const page = usePage();
+const actionLoading = ref('');
 
 const trigger = (action) => {
     const routeName = action === 'test' ? 'servers.test-connection' : 'servers.scan';
-    router.post(route(routeName, props.server.id));
+    actionLoading.value = action;
+    router.post(route(routeName, props.server.id), {}, {
+        onFinish: () => {
+            actionLoading.value = '';
+        },
+    });
 };
 </script>
 
@@ -24,24 +30,30 @@ const trigger = (action) => {
             <div class="flex items-center justify-between">
                 <h1 class="text-lg font-semibold">{{ server.name }} ({{ server.host }})</h1>
                 <div class="flex gap-2 text-xs">
-                    <button class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100" @click="trigger('test')">Test Connection</button>
-                    <button class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100" @click="trigger('scan')">Scan</button>
+                    <button class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100 disabled:opacity-60" :disabled="actionLoading !== ''" @click="trigger('test')">
+                        {{ actionLoading === 'test' ? 'Testing...' : 'Test Connection' }}
+                    </button>
+                    <button class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100 disabled:opacity-60" :disabled="actionLoading !== ''" @click="trigger('scan')">
+                        {{ actionLoading === 'scan' ? 'Scanning...' : 'Scan' }}
+                    </button>
                 </div>
             </div>
         </template>
 
         <div class="space-y-4">
+            <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                {{ page.props.flash.success }}
+            </div>
+            <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {{ page.props.flash.error }}
+            </div>
+
             <div class="flex flex-wrap gap-2 text-xs">
-                <button class="rounded px-3 py-1" :class="tab === 'overview' ? 'bg-cyan-700 text-white' : 'bg-slate-100'" @click="tab = 'overview'">Overview</button>
-                <Link :href="route('servers.terminal', server.id)" class="rounded bg-slate-100 px-3 py-1">AI Terminal</Link>
-                <button class="rounded px-3 py-1" :class="tab === 'history' ? 'bg-cyan-700 text-white' : 'bg-slate-100'" @click="tab = 'history'">Command History</button>
-                <button class="rounded px-3 py-1" :class="tab === 'resolver' ? 'bg-cyan-700 text-white' : 'bg-slate-100'" @click="tab = 'resolver'">Error Resolver</button>
-                <Link :href="route('ssh-memories.index')" class="rounded bg-slate-100 px-3 py-1">Memories</Link>
-                <button class="rounded px-3 py-1" :class="tab === 'reports' ? 'bg-cyan-700 text-white' : 'bg-slate-100'" @click="tab = 'reports'">Reports</button>
+                <Link :href="route('servers.commands', server.id)" class="rounded bg-slate-100 px-3 py-1">Open Commands</Link>
                 <Link :href="route('servers.edit', server.id)" class="rounded bg-slate-100 px-3 py-1">Settings</Link>
             </div>
 
-            <section v-if="tab === 'overview'" class="rounded-xl border border-slate-200 bg-white p-5">
+            <section class="rounded-xl border border-slate-200 bg-white p-5">
                 <div class="grid gap-3 md:grid-cols-3 text-sm">
                     <div><span class="text-slate-500">Status:</span> {{ server.status }}</div>
                     <div><span class="text-slate-500">Mode:</span> {{ server.mode }}</div>
@@ -55,7 +67,7 @@ const trigger = (action) => {
                 </div>
             </section>
 
-            <section v-if="tab === 'history'" class="rounded-xl border border-slate-200 bg-white p-5">
+            <section class="rounded-xl border border-slate-200 bg-white p-5">
                 <h2 class="text-sm font-semibold">Recent Commands</h2>
                 <div class="mt-3 space-y-2 text-xs">
                     <article v-for="cmd in recentCommands" :key="cmd.id" class="rounded border border-slate-200 p-3">
@@ -64,14 +76,6 @@ const trigger = (action) => {
                         <Link :href="route('commands.show', cmd.id)" class="text-cyan-700">Open</Link>
                     </article>
                 </div>
-            </section>
-
-            <section v-if="tab === 'resolver'" class="rounded-xl border border-slate-200 bg-white p-5 text-sm">
-                <p>AI resolver suggestions are attached to failed command details. Open command history and select a failed command to view suggestions and fix actions.</p>
-            </section>
-
-            <section v-if="tab === 'reports'" class="rounded-xl border border-slate-200 bg-white p-5 text-sm">
-                <p>Reports are generated per command and downloadable from command detail page.</p>
             </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-5">
