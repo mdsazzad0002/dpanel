@@ -2,9 +2,12 @@
 
 namespace App\Providers;
 
+use App\Services\ServerPanel\Contracts\AiSuggestionProvider;
+use App\Services\ServerPanel\HeuristicAiSuggestionProvider;
+use App\Services\ServerPanel\OpenAiSuggestionProvider;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Schema;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -13,7 +16,16 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(AiSuggestionProvider::class, function ($app) {
+            $provider = (string) config('serverpanel.ai.provider', 'heuristic');
+            $openAiKey = (string) config('services.openai.api_key', '');
+
+            if ($provider === 'openai' && $openAiKey !== '') {
+                return $app->make(OpenAiSuggestionProvider::class);
+            }
+
+            return $app->make(HeuristicAiSuggestionProvider::class);
+        });
     }
 
     /**

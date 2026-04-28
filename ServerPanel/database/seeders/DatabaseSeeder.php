@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(RolePermissionSeeder::class);
+        $this->call(ServerPanelCommandMemorySeeder::class);
 
         $admin = User::firstOrCreate([
             'name' => 'Test User',

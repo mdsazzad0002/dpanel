@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ApacheController;
 use App\Http\Controllers\BackupController;
+use App\Http\Controllers\CommandJobController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\CronJobController;
@@ -14,6 +15,10 @@ use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\MonitoringController;
 use App\Http\Controllers\SecurityController;
+use App\Http\Controllers\ServerController;
+use App\Http\Controllers\ServerPanelController;
+use App\Http\Controllers\ServerTaskController;
+use App\Http\Controllers\SshMemoryController;
 use App\Http\Controllers\TerminalController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WebsiteController;
@@ -37,6 +42,104 @@ Route::get('/dashboard', [DashboardController::class, 'index'])
     ->name('dashboard');
 
 Route::middleware('auth')->group(function () {
+    Route::get('/serverpanel', [ServerPanelController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('serverpanel.index');
+
+    Route::get('/servers', [ServerController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.index');
+    Route::get('/servers/create', [ServerController::class, 'create'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.create');
+    Route::post('/servers', [ServerController::class, 'store'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.store');
+    Route::get('/servers/{server}', [ServerController::class, 'show'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.show');
+    Route::get('/servers/{server}/edit', [ServerController::class, 'edit'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.edit');
+    Route::patch('/servers/{server}', [ServerController::class, 'update'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.update');
+    Route::delete('/servers/{server}', [ServerController::class, 'destroy'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.destroy');
+    Route::post('/servers/{server}/test-connection', [ServerController::class, 'testConnection'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.test-connection');
+    Route::post('/servers/{server}/scan', [ServerController::class, 'scanInventory'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.scan');
+    Route::get('/servers/{server}/terminal', [ServerController::class, 'terminal'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.terminal');
+    Route::get('/servers/{server}/commands', [CommandJobController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('servers.commands');
+
+    Route::get('/commands', [CommandJobController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.index');
+    Route::post('/commands', [CommandJobController::class, 'store'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.store');
+    Route::get('/commands/{commandJob}', [CommandJobController::class, 'show'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.show');
+    Route::post('/commands/{commandJob}/approve', [CommandJobController::class, 'approve'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.approve');
+    Route::post('/commands/{commandJob}/cancel', [CommandJobController::class, 'cancel'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.cancel');
+    Route::post('/commands/{commandJob}/retry', [CommandJobController::class, 'retry'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.retry');
+    Route::post('/commands/{commandJob}/run-suggested-fix', [CommandJobController::class, 'runSuggestedFix'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.run-suggested-fix');
+    Route::get('/commands/{commandJob}/report', [CommandJobController::class, 'downloadReport'])
+        ->middleware('role:admin|reseller')
+        ->name('commands.report');
+
+    Route::get('/server-tasks', [ServerTaskController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('server-tasks.index');
+    Route::get('/server-tasks/create', [ServerTaskController::class, 'create'])
+        ->middleware('role:admin|reseller')
+        ->name('server-tasks.create');
+    Route::post('/server-tasks', [ServerTaskController::class, 'store'])
+        ->middleware('role:admin|reseller')
+        ->name('server-tasks.store');
+    Route::get('/server-tasks/{task}', [ServerTaskController::class, 'show'])
+        ->middleware('role:admin|reseller')
+        ->name('server-tasks.show');
+    Route::post('/server-tasks/{task}/start', [ServerTaskController::class, 'start'])
+        ->middleware('role:admin|reseller')
+        ->name('server-tasks.start');
+    Route::post('/server-tasks/{task}/cancel', [ServerTaskController::class, 'cancel'])
+        ->middleware('role:admin|reseller')
+        ->name('server-tasks.cancel');
+
+    Route::get('/ssh-memories', [SshMemoryController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('ssh-memories.index');
+    Route::post('/ssh-memories', [SshMemoryController::class, 'store'])
+        ->middleware('role:admin|reseller')
+        ->name('ssh-memories.store');
+    Route::patch('/ssh-memories/{memory}', [SshMemoryController::class, 'update'])
+        ->middleware('role:admin|reseller')
+        ->name('ssh-memories.update');
+    Route::delete('/ssh-memories/{memory}', [SshMemoryController::class, 'destroy'])
+        ->middleware('role:admin|reseller')
+        ->name('ssh-memories.destroy');
+    Route::post('/ssh-memories/{memory}/mark-useful', [SshMemoryController::class, 'markUseful'])
+        ->middleware('role:admin|reseller')
+        ->name('ssh-memories.mark-useful');
+
     Route::get('/websites/create', [WebsiteController::class, 'create'])
         ->middleware('role:admin|reseller')
         ->name('websites.create');

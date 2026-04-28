@@ -97,6 +97,20 @@ const menuItems = computed(() => [
     { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN', iconClass: 'bi bi-activity', routeName: 'monitoring.index', roles: ['admin', 'reseller'] },
     { label: 'Terminal', hint: 'Run server commands', icon: 'TM', iconClass: 'bi bi-terminal', routeName: 'terminal.index', roles: ['admin', 'reseller'] },
     {
+        id: 'serverpanel-core',
+        label: 'ServerPanel Core',
+        hint: 'SSH, AI resolver, queue runner',
+        icon: 'SP',
+        iconClass: 'bi bi-cpu',
+        children: [
+            { label: 'Control Center', hint: 'Unified module overview', icon: 'CC', iconClass: 'bi bi-grid-1x2', routeName: 'serverpanel.index', roles: ['admin', 'reseller'] },
+            { label: 'SSH Servers', hint: 'SSH connector and inventory', icon: 'SV', iconClass: 'bi bi-hdd-rack', routeName: 'servers.index', roles: ['admin', 'reseller'] },
+            { label: 'Command History', hint: 'Queued command timeline', icon: 'CH', iconClass: 'bi bi-clock-history', routeName: 'commands.index', roles: ['admin', 'reseller'] },
+            { label: 'Server Tasks', hint: 'AI task planning and tracking', icon: 'TS', iconClass: 'bi bi-list-task', routeName: 'server-tasks.index', roles: ['admin', 'reseller'] },
+            { label: 'SSH Memories', hint: 'Reusable command memories', icon: 'MM', iconClass: 'bi bi-bookmark-star', routeName: 'ssh-memories.index', roles: ['admin', 'reseller'] },
+        ],
+    },
+    {
         id: 'user-management',
         label: 'User Management',
         hint: 'Admin, reseller and user panels',
