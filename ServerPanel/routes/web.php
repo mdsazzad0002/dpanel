@@ -5,6 +5,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AiTerminalController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\CommandJobController;
+use App\Http\Controllers\CodexController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\CronJobController;
@@ -94,7 +95,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/ai-terminal', [AiTerminalController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('ai-terminal.index');
-  
+
     Route::post('/commands', [CommandJobController::class, 'store'])
         ->middleware('role:admin|reseller')
         ->name('commands.store');
@@ -143,6 +144,24 @@ Route::middleware('auth')->group(function () {
     Route::post('/ai-terminal/close', [AiTerminalController::class, 'close'])
         ->middleware('role:admin|reseller')
         ->name('ai-terminal.close');
+    Route::get('/codex', [CodexController::class, 'index'])
+        ->middleware('role:admin|reseller')
+        ->name('codex.index');
+    Route::post('/codex/login', [CodexController::class, 'login'])
+        ->middleware('role:admin|reseller')
+        ->name('codex.login');
+    Route::get('/codex/login/status/{requestId}', [CodexController::class, 'loginStatus'])
+        ->middleware('role:admin|reseller')
+        ->name('codex.login.status');
+    Route::post('/codex/login/complete', [CodexController::class, 'completeFromSuccessUrl'])
+        ->middleware('role:admin|reseller')
+        ->name('codex.login.complete');
+    Route::post('/codex/test-message', [CodexController::class, 'testMessage'])
+        ->middleware('role:admin|reseller')
+        ->name('codex.test-message');
+    Route::get('/codex/auth', [CodexController::class, 'auth'])
+        ->middleware('role:admin|reseller')
+        ->name('codex.auth');
 
     Route::get('/server-tasks', [ServerTaskController::class, 'index'])
         ->middleware('role:admin|reseller')

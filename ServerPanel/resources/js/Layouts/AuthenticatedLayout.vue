@@ -106,6 +106,7 @@ const menuItems = computed(() => [
             { label: 'SSH Servers', hint: 'SSH connector and inventory', icon: 'SV', iconClass: 'bi bi-hdd-rack', routeName: 'servers.index', roles: ['admin', 'reseller'] },
             { label: 'AI Terminal', hint: 'Memory + SSH + AI engine', icon: 'AT', iconClass: 'bi bi-robot', routeName: 'ai-terminal.index', roles: ['admin', 'reseller'] },
             { label: 'SSH Memories', hint: 'Reusable command memories', icon: 'MM', iconClass: 'bi bi-bookmark-star', routeName: 'ssh-memories.index', roles: ['admin', 'reseller'] },
+            { label: 'Codex Auth', hint: 'Codex login and runtime auth', icon: 'CX', iconClass: 'bi bi-key', routeName: 'codex.index', roles: ['admin', 'reseller'] },
         ],
     },
     {
