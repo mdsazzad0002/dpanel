@@ -12,6 +12,10 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    autoRenewNotice: {
+        type: String,
+        default: '',
+    },
 });
 
 const page = usePage();
@@ -84,6 +88,12 @@ const daysRemaining = computed(() => {
             </div>
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {{ page.props.flash.error }}
+            </div>
+            <div
+                v-if="autoRenewNotice"
+                class="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700"
+            >
+                {{ autoRenewNotice }}
             </div>
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">

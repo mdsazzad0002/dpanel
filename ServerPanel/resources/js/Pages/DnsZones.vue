@@ -6,6 +6,14 @@ import { Head, useForm, usePage } from '@inertiajs/vue3';
 const props = defineProps({
     zones: { type: Array, default: () => [] },
     websiteDomains: { type: Array, default: () => [] },
+    cloudflareGuide: {
+        type: Object,
+        default: () => ({
+            notes: [],
+            records: [],
+            mail_domains: [],
+        }),
+    },
 });
 
 const page = usePage();
@@ -92,6 +100,71 @@ const syncZone = (domain) => {
             </div>
             <div class="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
                 Type mapping: <strong>master</strong> -> PowerDNS NATIVE, <strong>slave</strong> -> PowerDNS SLAVE.
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Cloudflare Mail Setup</h2>
+                        <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                            Mail domains: {{ Array.isArray(cloudflareGuide.mail_domains) && cloudflareGuide.mail_domains.length > 0 ? cloudflareGuide.mail_domains.join(', ') : 'none detected' }}
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap gap-2 text-xs">
+                        <span
+                            class="rounded-full border px-2 py-1"
+                            :class="cloudflareGuide.api_token_ready
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                                : 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300'"
+                        >
+                            API token {{ cloudflareGuide.api_token_ready ? 'ready' : 'missing' }}
+                        </span>
+                        <span
+                            class="rounded-full border px-2 py-1"
+                            :class="cloudflareGuide.zone_map_ready
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                                : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300'"
+                        >
+                            Zone map {{ cloudflareGuide.zone_map_ready ? 'ready' : 'optional' }}
+                        </span>
+                        <span
+                            class="rounded-full border px-2 py-1"
+                            :class="cloudflareGuide.sync_proxied
+                                ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+                                : 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'"
+                        >
+                            Sync proxied {{ cloudflareGuide.sync_proxied ? 'on' : 'off' }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="mt-3 grid gap-3 md:grid-cols-2">
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-950">
+                        <p class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Required Records</p>
+                        <table class="mt-2 min-w-full text-left">
+                            <thead>
+                                <tr class="text-slate-500 dark:text-slate-400">
+                                    <th class="py-1 pr-2">Type</th>
+                                    <th class="py-1 pr-2">Name</th>
+                                    <th class="py-1 pr-2">Content</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(record, index) in cloudflareGuide.records" :key="`cloudflare-record-${index}`" class="border-t border-slate-200 dark:border-slate-800">
+                                    <td class="py-2 pr-2 font-medium">{{ record.type }}</td>
+                                    <td class="py-2 pr-2 break-all">{{ record.name }}</td>
+                                    <td class="py-2 pr-2 break-all">{{ record.content }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-950">
+                        <p class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Notes</p>
+                        <ul class="mt-2 space-y-1 text-slate-600 dark:text-slate-300">
+                            <li v-for="(note, index) in cloudflareGuide.notes" :key="`cloudflare-note-${index}`">- {{ note }}</li>
+                        </ul>
+                    </div>
+                </div>
             </div>
             <div class="flex items-center justify-end">
                 <button type="button" :disabled="syncAllForm.processing" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60" @click="syncAll">

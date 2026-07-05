@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Mailbox;
 use App\Models\Website;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -221,6 +222,7 @@ class DnsController extends Controller
         return Inertia::render('DnsZones', [
             'zones' => $zones,
             'websiteDomains' => $this->readWebsiteDomains(),
+            'cloudflareGuide' => $this->buildCloudflareGuide(),
         ]);
     }
 
@@ -862,6 +864,96 @@ class DnsController extends Controller
         } catch (\Throwable $e) {
             return [];
         }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function readMailboxDomains(): array
+    {
+        try {
+            if (! DB::getSchemaBuilder()->hasTable('mailboxes')) {
+                return [];
+            }
+
+            return Mailbox::query()
+                ->pluck('domain')
+                ->filter(fn ($domain) => is_string($domain) && trim((string) $domain) !== '')
+                ->map(fn ($domain) => strtolower(trim((string) $domain)))
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildCloudflareGuide(): array
+    {
+        $mailDomains = $this->readMailboxDomains();
+        $primaryDomain = (string) ($mailDomains[0] ?? '');
+        if ($primaryDomain === '') {
+            $websiteDomains = $this->readWebsiteDomains();
+            $primaryDomain = (string) ($websiteDomains[0] ?? 'example.com');
+        }
+
+        $mailHost = 'mail.'.$primaryDomain;
+        $selector = trim((string) config('serverpanel.mail.dkim_selector', 'default'));
+        if ($selector === '') {
+            $selector = 'default';
+        }
+        $apiTokenReady = trim((string) env('CLOUDFLARE_API_TOKEN', '')) !== '';
+        $zoneMapReady = $this->cloudflareZoneMap() !== [];
+        $syncProxied = filter_var(env('CLOUDFLARE_SYNC_PROXIED', false), FILTER_VALIDATE_BOOLEAN);
+
+        return [
+            'api_token_ready' => $apiTokenReady,
+            'zone_map_ready' => $zoneMapReady,
+            'sync_proxied' => $syncProxied,
+            'mail_domains' => $mailDomains,
+            'primary_domain' => $primaryDomain,
+            'records' => [
+                [
+                    'type' => 'A',
+                    'name' => 'mail',
+                    'content' => 'YOUR_SERVER_IP',
+                    'note' => 'DNS only. Do not proxy mail hostnames.',
+                ],
+                [
+                    'type' => 'MX',
+                    'name' => '@',
+                    'content' => '10 '.$mailHost,
+                    'note' => 'DNS only. Point MX to the mail hostname.',
+                ],
+                [
+                    'type' => 'TXT',
+                    'name' => '@',
+                    'content' => 'v=spf1 mx a ~all',
+                    'note' => 'SPF for outbound mail.',
+                ],
+                [
+                    'type' => 'TXT',
+                    'name' => $selector.'._domainkey',
+                    'content' => 'v=DKIM1; k=rsa; p=YOUR_PUBLIC_KEY',
+                    'note' => 'Replace with your DKIM public key.',
+                ],
+                [
+                    'type' => 'TXT',
+                    'name' => '_dmarc',
+                    'content' => 'v=DMARC1; p=none; rua=mailto:postmaster@'.$primaryDomain,
+                    'note' => 'Start with monitoring mode.',
+                ],
+            ],
+            'notes' => [
+                'Cloudflare proxy must stay off for MX, mail, IMAP, POP3, SMTP and DKIM TXT records.',
+                'Use the Sync To Cloudflare action for web records only, then verify mail records remain DNS only.',
+                'If your mail service uses a different hostname, update the MX and DKIM values to match that hostname.',
+            ],
+        ];
     }
 
     /**

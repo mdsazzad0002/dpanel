@@ -10,7 +10,7 @@ const props = defineProps({
     },
     phpVersions: {
         type: Array,
-        default: () => ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
+        default: () => ['latest', '8.0', '7.4'],
     },
     wordpressVersions: {
         type: Array,
@@ -151,9 +151,9 @@ const availablePhpVersions = computed(() => {
     const list = Array.isArray(props.phpVersions) ? props.phpVersions : [];
     const normalized = list
         .map((version) => String(version || '').trim())
-        .filter((version) => /^\d+\.\d+$/.test(version));
+        .filter((version) => version === 'latest' || /^\d+\.\d+$/.test(version));
 
-    return normalized.length > 0 ? normalized : ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
+    return normalized.length > 0 ? normalized : ['latest', '8.0', '7.4'];
 });
 const availableWordPressVersions = computed(() => {
     const list = Array.isArray(props.wordpressVersions) ? props.wordpressVersions : [];
@@ -362,7 +362,9 @@ onBeforeUnmount(() => {
                 <div>
                     <label class="mb-1 block text-sm">PHP Version</label>
                     <select v-model="form.php_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option v-for="version in availablePhpVersions" :key="version" :value="version">{{ version }}</option>
+                        <option v-for="version in availablePhpVersions" :key="version" :value="version">
+                            {{ version === 'latest' ? 'Latest Stable' : version }}
+                        </option>
                     </select>
                     <p v-if="form.errors.php_version" class="mt-1 text-xs text-red-600">{{ form.errors.php_version }}</p>
                 </div>

@@ -38,7 +38,7 @@ class WebsiteController extends Controller
     /**
      * @var array<int, string>
      */
-    private const FALLBACK_PHP_VERSIONS = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
+    private const FALLBACK_PHP_VERSIONS = ['8.0', '7.4'];
     /**
      * Common compound public suffixes for registrable-domain detection.
      *
@@ -137,6 +137,7 @@ class WebsiteController extends Controller
         $validated = $this->validatePayload($request);
         $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? 'none')));
         $validated['wordpress_version'] = $this->normalizeWordPressVersion((string) ($validated['wordpress_version'] ?? 'latest'));
+        $validated['php_version'] = $this->normalizeWebsitePhpVersion((string) ($validated['php_version'] ?? ''));
         $validated['domain'] = $this->normalizeDomain($validated['domain']);
         $domainExists = collect($this->readRequests())
             ->contains(fn (array $item): bool => $this->normalizeDomain((string) ($item['domain'] ?? '')) === $validated['domain']);
@@ -147,6 +148,7 @@ class WebsiteController extends Controller
         $validated['site_owner'] = $this->extractSiteOwnerFromRootPath($validated['root_path']);
 
         $validated['enable_ssl'] = (bool) ($validated['enable_ssl'] ?? false);
+        $sslNotice = null;
 
         $command = $this->buildCommand($validated);
 
@@ -179,6 +181,28 @@ class WebsiteController extends Controller
                 $validated['root_path'],
                 (string) $validated['php_version'],
             );
+
+            if ($validated['enable_ssl']) {
+                $sslResult = $this->runIssueSslScript(
+                    $validated['domain'],
+                    $validated['root_path'],
+                    $this->shouldAddWwwAlias($validated['domain']),
+                );
+
+                if (! $sslResult['ran']) {
+                    $sslNotice = 'SSL auto-generate is not available on this server.';
+                } elseif (! $sslResult['success']) {
+                    $sslNotice = trim($sslResult['output']) !== ''
+                        ? 'SSL auto-generate failed: '.trim($sslResult['output'])
+                        : 'SSL auto-generate failed.';
+                } else {
+                    $this->syncLiveWebVhost(
+                        $validated['domain'],
+                        $validated['root_path'],
+                        (string) $validated['php_version'],
+                    );
+                }
+            }
         } catch (\Throwable $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
         }
@@ -209,7 +233,14 @@ class WebsiteController extends Controller
         $this->writeRequests($requests);
 
         $installerLabel = $validated['app_installer'] === 'wordpress' ? 'WordPress' : 'Starter';
-        return redirect()->route('websites.list')->with('success', "Website request created successfully. Installer: {$installerLabel}.");
+        $message = "Website request created successfully. Installer: {$installerLabel}.";
+        if ($sslNotice !== null) {
+            $message .= ' '.$sslNotice;
+        } elseif ($validated['enable_ssl']) {
+            $message .= ' SSL was auto-generated.';
+        }
+
+        return redirect()->route('websites.list')->with('success', $message);
     }
 
     /**
@@ -311,10 +342,12 @@ class WebsiteController extends Controller
     public function sslManager(string $id): Response
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
+        $autoRenewNotice = $this->autoRenewWebsiteSslIfNeeded($website);
 
         return Inertia::render('Websites/SslManager', [
             'website' => $website,
             'sslStatus' => $this->inspectWebsiteSslStatus($website),
+            'autoRenewNotice' => $autoRenewNotice,
         ]);
     }
 
@@ -324,7 +357,7 @@ class WebsiteController extends Controller
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
         $rootPath = (string) ($website['root_path'] ?? '');
-        $phpVersion = (string) ($website['php_version'] ?? '8.3');
+        $phpVersion = (string) ($website['php_version'] ?? '8.0');
         if ($domain === '' || $rootPath === '') {
             return redirect()->route('websites.ssl', $id)->with('error', 'Domain or root path is missing for SSL issue.');
         }
@@ -425,7 +458,7 @@ class WebsiteController extends Controller
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $domain = (string) ($website['domain'] ?? '');
         $rootPath = (string) ($website['root_path'] ?? '');
-        $phpVersion = (string) ($website['php_version'] ?? '8.3');
+        $phpVersion = (string) ($website['php_version'] ?? '8.0');
         if ($domain === '' || $rootPath === '') {
             return $redirectTarget()->with('error', 'Domain or root path is missing for vhost sync.');
         }
@@ -535,7 +568,7 @@ class WebsiteController extends Controller
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $domain = (string) ($website['domain'] ?? '');
         $rootPath = (string) ($website['root_path'] ?? '');
-        $phpVersion = (string) ($website['php_version'] ?? '8.3');
+        $phpVersion = (string) ($website['php_version'] ?? '8.0');
         $wordpressVersion = $this->normalizeWordPressVersion((string) ($validated['wordpress_version'] ?? ($website['wordpress_version'] ?? 'latest')));
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($rootPath));
 
@@ -704,6 +737,7 @@ class WebsiteController extends Controller
         $validated = $this->validatePayload($request);
         $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? ($existingRequest['app_installer'] ?? 'none'))));
         $validated['wordpress_version'] = $this->normalizeWordPressVersion((string) ($validated['wordpress_version'] ?? ($existingRequest['wordpress_version'] ?? 'latest')));
+        $validated['php_version'] = $this->normalizeWebsitePhpVersion((string) ($validated['php_version'] ?? ($existingRequest['php_version'] ?? '')));
         $validated['domain'] = $this->normalizeDomain($validated['domain']);
         $domainExists = collect($this->readRequests())
             ->contains(function (array $item) use ($id, $validated): bool {
@@ -719,6 +753,7 @@ class WebsiteController extends Controller
         $validated['root_path'] = $this->normalizeRootPath((string) ($validated['root_path'] ?? ''), $validated['domain']);
         $validated['site_owner'] = $this->extractSiteOwnerFromRootPath($validated['root_path']);
         $validated['enable_ssl'] = (bool) ($validated['enable_ssl'] ?? false);
+        $sslNotice = null;
 
         $this->applyWebsiteFilesystemIsolation($validated['site_owner'], $validated['root_path']);
         $this->initializeWebsiteStarterFiles(
@@ -733,6 +768,29 @@ class WebsiteController extends Controller
             (string) $validated['php_version'],
             (string) ($existingRequest['domain'] ?? ''),
         );
+
+        if ($validated['enable_ssl']) {
+            $sslResult = $this->runIssueSslScript(
+                $validated['domain'],
+                $validated['root_path'],
+                $this->shouldAddWwwAlias($validated['domain']),
+            );
+
+            if (! $sslResult['ran']) {
+                $sslNotice = 'SSL auto-generate is not available on this server.';
+            } elseif (! $sslResult['success']) {
+                $sslNotice = trim($sslResult['output']) !== ''
+                    ? 'SSL auto-generate failed: '.trim($sslResult['output'])
+                    : 'SSL auto-generate failed.';
+            } else {
+                $this->syncLiveWebVhost(
+                    $validated['domain'],
+                    $validated['root_path'],
+                    (string) $validated['php_version'],
+                    (string) ($existingRequest['domain'] ?? ''),
+                );
+            }
+        }
 
         $requests = collect($this->readRequests())->map(function (array $item) use ($id, $validated) {
             if (($item['id'] ?? null) !== $id) {
@@ -759,7 +817,14 @@ class WebsiteController extends Controller
 
         $this->writeRequests($requests);
 
-        return redirect()->route('websites.list')->with('success', 'Website request updated successfully.');
+        $message = $validated['enable_ssl']
+            ? 'Website request updated successfully and SSL auto-generation was attempted.'
+            : 'Website request updated successfully.';
+        if ($sslNotice !== null) {
+            $message .= ' '.$sslNotice;
+        }
+
+        return redirect()->route('websites.list')->with('success', $message);
     }
 
     /**
@@ -3108,7 +3173,7 @@ CONF;
     {
         $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
         $rootPath = (string) ($website['root_path'] ?? '');
-        $phpVersion = (string) ($website['php_version'] ?? '8.3');
+        $phpVersion = (string) ($website['php_version'] ?? '8.0');
 
         if ($domain === '' || $rootPath === '') {
             return [
@@ -3160,7 +3225,7 @@ CONF;
     {
         $normalized = trim($phpVersion);
         if (preg_match('/^\d+\.\d+$/', $normalized) !== 1) {
-            return '8.3';
+            return '8.0';
         }
 
         return $normalized;
@@ -3443,6 +3508,66 @@ CONF;
             'subject_cn' => $subjectCn,
             'issuer_cn' => $issuerCn,
         ];
+    }
+
+    private function autoRenewWebsiteSslIfNeeded(array $website): ?string
+    {
+        if (! (bool) config('serverpanel.ssl_auto_renew_enabled', true)) {
+            return null;
+        }
+
+        $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
+        $rootPath = (string) ($website['root_path'] ?? '');
+        if ($domain === '' || $rootPath === '') {
+            return null;
+        }
+
+        $status = $this->inspectWebsiteSslStatus($website);
+        $daysRemaining = isset($status['days_remaining']) ? (int) $status['days_remaining'] : null;
+        $isExpired = (string) ($status['status'] ?? '') === 'expired';
+        $renewThreshold = max(0, (int) config('serverpanel.ssl_auto_renew_days', 30));
+
+        if (! $isExpired && ($daysRemaining === null || $daysRemaining > $renewThreshold)) {
+            return null;
+        }
+
+        $cooldownHours = max(1, (int) config('serverpanel.ssl_auto_renew_cooldown_hours', 12));
+        $cacheKey = 'website-ssl-auto-renew:'.sha1($domain.'|'.$rootPath);
+        if (Cache::has($cacheKey)) {
+            return null;
+        }
+
+        Cache::put($cacheKey, true, now()->addHours($cooldownHours));
+
+        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return 'SSL auto-renew is disabled on Windows servers.';
+        }
+
+        if (! is_dir($rootPath)) {
+            return 'SSL auto-renew skipped because the website root path is missing.';
+        }
+
+        $result = $this->runIssueSslScript($domain, $rootPath, $this->shouldAddWwwAlias($domain));
+        if (! $result['ran']) {
+            return 'SSL auto-renew script is not available on this server.';
+        }
+
+        if (! $result['success']) {
+            $details = trim((string) ($result['output'] ?? ''));
+
+            return $details !== ''
+                ? 'SSL auto-renew failed: '.$details
+                : 'SSL auto-renew failed.';
+        }
+
+        $this->syncLiveWebVhost(
+            $domain,
+            $rootPath,
+            (string) ($website['php_version'] ?? '8.0'),
+            (string) ($website['domain'] ?? ''),
+        );
+
+        return 'SSL auto-renew completed successfully.';
     }
 
     /**
@@ -4116,7 +4241,7 @@ CONF;
     {
         try {
             if (! DB::getSchemaBuilder()->hasTable(self::PHP_SETTINGS_TABLE)) {
-                return self::FALLBACK_PHP_VERSIONS;
+                return array_values(array_unique(array_merge(['latest'], self::FALLBACK_PHP_VERSIONS)));
             }
 
             $row = DB::table(self::PHP_SETTINGS_TABLE)
@@ -4164,10 +4289,32 @@ CONF;
                 ->values()
                 ->all();
 
-            return count($merged) > 0 ? $merged : self::FALLBACK_PHP_VERSIONS;
+            $versions = count($merged) > 0 ? $merged : self::FALLBACK_PHP_VERSIONS;
+
+            return array_values(array_unique(array_merge(['latest'], $versions)));
         } catch (\Throwable $e) {
-            return self::FALLBACK_PHP_VERSIONS;
+            return array_values(array_unique(array_merge(['latest'], self::FALLBACK_PHP_VERSIONS)));
         }
+    }
+
+    private function normalizeWebsitePhpVersion(string $phpVersion): string
+    {
+        $normalized = strtolower(trim($phpVersion));
+        if ($normalized === '' || $normalized === 'latest') {
+            $versions = collect($this->getPhpVersionsForWebsites())
+                ->map(fn (string $version): string => trim($version))
+                ->filter(fn (string $version): bool => preg_match('/^\d+\.\d+$/', $version) === 1)
+                ->values()
+                ->all();
+
+            return (string) ($versions[0] ?? '8.0');
+        }
+
+        if (preg_match('/^\d+\.\d+$/', $normalized) === 1) {
+            return $normalized;
+        }
+
+        return '8.0';
     }
 
     private function resolveFileManagerBasePath(array $website): string

@@ -70,6 +70,7 @@ const versionsForm = useForm({
     installed_versions: [...props.installedVersions],
     current_version: props.defaultVersion || (props.installedVersions[0] ?? ''),
 });
+const versionSelectOptions = computed(() => Array.from(new Set(['latest', ...versionsForm.installed_versions])));
 
 const extensionForm = useForm({
     version: initialSelectedVersion || versionsForm.current_version,
@@ -458,8 +459,8 @@ onMounted(() => {
                         <label class="mb-1 block text-sm">Default PHP Version (from DB)</label>
                         <div class="flex flex-wrap gap-2">
                             <select v-model="versionsForm.current_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm md:max-w-xs dark:border-slate-700 dark:bg-slate-800">
-                                <option v-for="version in versionsForm.installed_versions" :key="version" :value="version">
-                                    PHP {{ version }}
+                                <option v-for="version in versionSelectOptions" :key="version" :value="version">
+                                    {{ version === 'latest' ? 'Latest Stable' : `PHP ${version}` }}
                                 </option>
                             </select>
                             <button type="button" :disabled="versionsForm.processing || !versionsForm.current_version" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60" @click="setDefaultVersion">
@@ -474,8 +475,8 @@ onMounted(() => {
                         <h3 class="font-medium">PHP Config (Live by Version)</h3>
                         <div class="flex items-center gap-2">
                             <select v-model="configForm.version" class="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                                <option v-for="version in versionsForm.installed_versions" :key="`cfg-version-${version}`" :value="version">
-                                    PHP {{ version }}
+                                <option v-for="version in versionSelectOptions" :key="`cfg-version-${version}`" :value="version">
+                                    {{ version === 'latest' ? 'Latest Stable' : `PHP ${version}` }}
                                 </option>
                             </select>
                             <span v-if="versionSwitching" class="text-xs text-blue-600">Loading version...</span>

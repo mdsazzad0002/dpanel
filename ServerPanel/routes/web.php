@@ -25,6 +25,7 @@ use App\Http\Controllers\SshMemoryController;
 use App\Http\Controllers\TerminalController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WebsiteController;
+use App\Models\PanelSession;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -32,7 +33,41 @@ use Inertia\Inertia;
 
 Route::get('/', function () {
     if (Auth::check()) {
-        return redirect()->route('dashboard');
+        $token = (string) session('panel_session_token', '');
+
+        if ($token !== '') {
+            return redirect()->route('dashboard', ['token' => $token]);
+        }
+
+        $urlToken = bin2hex(random_bytes(32));
+        $cookieToken = bin2hex(random_bytes(32));
+        $lifetime = max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120)));
+        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
+
+        PanelSession::create([
+            'user_id' => Auth::id(),
+            'token_hash' => hash('sha256', $urlToken),
+            'cookie_hash' => hash('sha256', $cookieToken),
+            'ip_address' => (string) request()->ip(),
+            'user_agent_hash' => hash('sha256', (string) request()->userAgent()),
+            'expires_at' => now()->addMinutes($lifetime),
+            'last_seen_at' => now(),
+        ]);
+
+        session()->put('panel_session_token', $urlToken);
+
+        return redirect()->route('dashboard', ['token' => $urlToken])
+            ->withCookie(cookie(
+                name: $cookieName,
+                value: $cookieToken,
+                minutes: $lifetime,
+                path: (string) config('session.path', '/'),
+                domain: config('session.domain'),
+                secure: (bool) config('session.secure'),
+                httpOnly: true,
+                raw: false,
+                sameSite: 'Lax'
+            ));
     }
 
     return redirect()->route('login');
@@ -49,11 +84,15 @@ Route::get('/init', function () {
 Route::get('/roundcube', [EmailController::class, 'webmailEntry'])->name('webmail.roundcube');
 Route::post('/sso/webmail/consume', [SsoController::class, 'consumeWebmail'])->name('sso.webmail.consume');
 
-Route::get('/dashboard', [DashboardController::class, 'index'])
-    ->middleware(['auth', 'verified'])
-    ->name('dashboard');
+Route::prefix('cpsess{token}')
+    ->where(['token' => '[0-9a-fA-F]{64}'])
+    ->middleware(['panel.session', 'auth'])
+    ->group(function (): void {
+        Route::get('/dashboard', [DashboardController::class, 'index'])
+            ->middleware('verified')
+            ->name('dashboard');
 
-Route::middleware('auth')->group(function () {
+        Route::middleware('auth')->group(function () {
     Route::redirect('/serverpanel', '/servers')
         ->middleware('role:admin|reseller')
         ->name('serverpanel.index');
@@ -483,6 +522,12 @@ Route::middleware('auth')->group(function () {
     Route::patch('/security/ssh', [SecurityController::class, 'updateSsh'])
         ->middleware('role:admin|reseller')
         ->name('security.ssh.update');
+    Route::patch('/security/telegram', [SecurityController::class, 'updateTelegram'])
+        ->middleware('role:admin|reseller')
+        ->name('security.telegram.update');
+    Route::post('/security/telegram/test', [SecurityController::class, 'testTelegram'])
+        ->middleware('role:admin|reseller')
+        ->name('security.telegram.test');
 
     Route::get('/admin', [AdminController::class, 'index'])
         ->middleware('role:admin')
@@ -538,6 +583,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-});
+        });
+    });
 
 require __DIR__.'/auth.php';

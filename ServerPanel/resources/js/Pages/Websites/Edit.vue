@@ -14,7 +14,7 @@ const props = defineProps({
     },
     phpVersions: {
         type: Array,
-        default: () => ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
+        default: () => ['latest', '8.0', '7.4'],
     },
     wordpressVersions: {
         type: Array,
@@ -25,7 +25,7 @@ const props = defineProps({
 const form = useForm({
     domain: props.websiteRequest.domain ?? '',
     root_path: props.websiteRequest.root_path ?? '',
-    php_version: props.websiteRequest.php_version ?? '8.3',
+    php_version: props.websiteRequest.php_version ?? '8.0',
     app_installer: props.websiteRequest.app_installer ?? 'none',
     wordpress_version: props.websiteRequest.wordpress_version ?? 'latest',
     enable_ssl: !!props.websiteRequest.enable_ssl,
@@ -98,10 +98,10 @@ const availablePhpVersions = computed(() => {
     const list = Array.isArray(props.phpVersions) ? props.phpVersions : [];
     const normalized = list
         .map((version) => String(version || '').trim())
-        .filter((version) => /^\d+\.\d+$/.test(version));
+        .filter((version) => version === 'latest' || /^\d+\.\d+$/.test(version));
 
     if (normalized.length === 0) {
-        return ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
+        return ['latest', '8.0', '7.4'];
     }
 
     return normalized.includes(form.php_version)
@@ -177,7 +177,9 @@ const submit = () => {
                 <div>
                     <label class="mb-1 block text-sm">PHP Version</label>
                     <select v-model="form.php_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option v-for="version in availablePhpVersions" :key="version" :value="version">{{ version }}</option>
+                        <option v-for="version in availablePhpVersions" :key="version" :value="version">
+                            {{ version === 'latest' ? 'Latest Stable' : version }}
+                        </option>
                     </select>
                 </div>
                 <div>

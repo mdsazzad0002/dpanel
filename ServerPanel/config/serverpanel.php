@@ -1,6 +1,19 @@
 <?php
 
 return [
+    'panel_domain' => env('PANEL_DOMAIN', 'cp.example.com'),
+    'panel_port' => (int) env('PANEL_PORT', 2083),
+    'mail' => [
+        'dkim_selector' => env('SERVERPANEL_DKIM_SELECTOR', 'default'),
+        'dkim_domain' => env('SERVERPANEL_DKIM_DOMAIN', ''),
+        'dkim_public_key' => env('SERVERPANEL_DKIM_PUBLIC_KEY', ''),
+    ],
+    'panel_cookie_name' => env('SERVERPANEL_PANEL_COOKIE', 'panel_session_proof'),
+    'panel_token_lifetime' => (int) env('SERVERPANEL_PANEL_TOKEN_LIFETIME', 120),
+    'panel_inactivity_timeout' => (int) env('SERVERPANEL_PANEL_INACTIVITY_TIMEOUT', 30),
+    'ssl_auto_renew_enabled' => (bool) env('SERVERPANEL_SSL_AUTO_RENEW_ENABLED', true),
+    'ssl_auto_renew_days' => (int) env('SERVERPANEL_SSL_AUTO_RENEW_DAYS', 30),
+    'ssl_auto_renew_cooldown_hours' => (int) env('SERVERPANEL_SSL_AUTO_RENEW_COOLDOWN_HOURS', 12),
     'ssh_timeout' => (int) env('SERVERPANEL_SSH_TIMEOUT', 20),
     'command_timeout' => (int) env('SERVERPANEL_COMMAND_TIMEOUT', 300),
     'allow_root_setup_mode' => (bool) env('SERVERPANEL_ALLOW_ROOT_SETUP_MODE', true),

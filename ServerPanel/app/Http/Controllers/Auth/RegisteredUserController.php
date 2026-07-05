@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\PanelSession;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -49,6 +51,37 @@ class RegisteredUserController extends Controller
 
         Auth::login($user);
 
-        return redirect(route('dashboard', absolute: false));
+        $request->session()->regenerate();
+
+        $urlToken = bin2hex(random_bytes(32));
+        $cookieToken = bin2hex(random_bytes(32));
+        $lifetime = max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120)));
+        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
+
+        PanelSession::create([
+            'user_id' => $user->id,
+            'token_hash' => hash('sha256', $urlToken),
+            'cookie_hash' => hash('sha256', $cookieToken),
+            'ip_address' => (string) $request->ip(),
+            'user_agent_hash' => hash('sha256', (string) $request->userAgent()),
+            'expires_at' => now()->addMinutes($lifetime),
+            'last_seen_at' => now(),
+        ]);
+
+        $request->session()->put('panel_session_token', $urlToken);
+        URL::defaults(['token' => $urlToken]);
+
+        return redirect(route('dashboard', absolute: false))
+            ->withCookie(cookie(
+                name: $cookieName,
+                value: $cookieToken,
+                minutes: $lifetime,
+                path: (string) config('session.path', '/'),
+                domain: config('session.domain'),
+                secure: (bool) config('session.secure'),
+                httpOnly: true,
+                raw: false,
+                sameSite: 'Lax'
+            ));
     }
 }

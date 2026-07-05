@@ -33,6 +33,11 @@ class HandleInertiaRequests extends Middleware
 
         return [
             ...parent::share($request),
+            'panel' => [
+                'token' => $request->session()->get('panel_session_token'),
+                'port' => config('serverpanel.panel_port', 2083),
+                'domain' => config('serverpanel.panel_domain'),
+            ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),

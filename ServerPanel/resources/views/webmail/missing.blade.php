@@ -16,7 +16,7 @@
 <body>
     <div class="box">
         <h2 style="margin-top:0;">Roundcube URL Not Ready</h2>
-        <p class="warn">`http://localhost/roundcube` is not serving a Roundcube app right now.</p>
+        <p class="warn">Roundcube is not being served on the panel webmail path right now.</p>
         <p class="muted">Set a real webmail endpoint (or use `auto`) in your `ServerPanel/.env`:</p>
         <div class="code">WEBMAIL_URL={{ ($configuredUrl !== '' && strtolower($configuredUrl) !== 'auto') ? $configuredUrl : $defaultUrl }}</div>
 

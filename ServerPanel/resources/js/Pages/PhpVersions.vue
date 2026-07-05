@@ -36,14 +36,18 @@ const normalizeVersion = (value) => String(value || '').trim();
 const addVersion = () => {
     const version = normalizeVersion(versionInput.value);
     if (!version) return;
-    if (!/^\d+\.\d+$/.test(version)) return;
+    if (version !== 'latest' && !/^\d+\.\d+$/.test(version)) return;
     if (form.installed_versions.includes(version)) {
         versionInput.value = '';
         return;
     }
 
     form.installed_versions.push(version);
-    form.installed_versions.sort((a, b) => Number(b) - Number(a));
+    form.installed_versions.sort((a, b) => {
+        if (a === 'latest') return -1;
+        if (b === 'latest') return 1;
+        return Number(b) - Number(a);
+    });
     if (!form.current_version) {
         form.current_version = version;
     }
@@ -54,7 +58,7 @@ const removeVersion = (version) => {
     form.installed_versions = form.installed_versions.filter((item) => item !== version);
 
     if (!form.installed_versions.length) {
-        form.installed_versions = [props.defaultVersion || '8.3'];
+        form.installed_versions = [props.defaultVersion || '8.0'];
     }
 
     if (!form.installed_versions.includes(form.current_version)) {
@@ -127,7 +131,7 @@ onMounted(() => {
                     <input
                         v-model="versionInput"
                         type="text"
-                        placeholder="Add version (example: 8.4)"
+                        placeholder="Add version (example: 8.0 or latest)"
                         class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                         @keydown.enter.prevent="addVersion"
                     />
@@ -155,11 +159,12 @@ onMounted(() => {
                         class="grid grid-cols-3 items-center gap-2 border-t border-slate-200 px-3 py-2 text-sm first:border-t-0 dark:border-slate-700"
                     >
                         <span>PHP {{ version }}</span>
+                        <span v-if="version === 'latest'" class="text-xs text-slate-500">Latest Stable alias</span>
                         <span
                             :class="checkingInstalled ? 'bg-slate-100 text-slate-600' : (isInstalledOnServer(version) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')"
                             class="inline-flex w-fit rounded-full px-2 py-1 text-xs"
                         >
-                            {{ checkingInstalled ? 'Checking...' : (isInstalledOnServer(version) ? 'Installed' : 'Not Found') }}
+                            {{ version === 'latest' ? 'Alias' : (checkingInstalled ? 'Checking...' : (isInstalledOnServer(version) ? 'Installed' : 'Not Found')) }}
                         </span>
                         <div class="text-right">
                             <button type="button" class="text-xs text-red-600" @click="removeVersion(version)">Remove</button>
@@ -177,10 +182,10 @@ onMounted(() => {
                 <div>
                     <label class="mb-1 block text-sm">Default PHP Version</label>
                     <select v-model="form.current_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm md:max-w-xs dark:border-slate-700 dark:bg-slate-800">
-                        <option v-for="version in form.installed_versions" :key="version" :value="version">
-                            PHP {{ version }}
-                        </option>
-                    </select>
+                            <option v-for="version in form.installed_versions" :key="version" :value="version">
+                                {{ version === 'latest' ? 'Latest Stable' : `PHP ${version}` }}
+                            </option>
+                        </select>
                     <p v-if="form.errors.current_version" class="mt-1 text-xs text-red-600">{{ form.errors.current_version }}</p>
                 </div>
 

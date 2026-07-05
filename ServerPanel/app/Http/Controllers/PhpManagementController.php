@@ -18,12 +18,12 @@ class PhpManagementController extends Controller
     /**
      * @var array<int, string>
      */
-    private const CANDIDATE_VERSIONS = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
+    private const CANDIDATE_VERSIONS = ['latest', '8.0', '7.4'];
 
     /**
      * @var array<int, string>
      */
-    private const DEFAULT_VERSIONS = ['8.3', '8.2', '8.1'];
+    private const DEFAULT_VERSIONS = ['8.0', '7.4'];
 
     /**
      * @var array<int, string>
@@ -64,7 +64,10 @@ class PhpManagementController extends Controller
     public function manager(Request $request): Response|JsonResponse
     {
         $state = $this->readState();
-        $selectedVersion = (string) $request->query('version', $state['default_version']);
+        $selectedVersion = $this->normalizePhpVersionSelection(
+            (string) $request->query('version', $state['default_version']),
+            $state['versions']
+        );
         $payload = $this->buildManagerPayload($state, $selectedVersion);
 
         if ($request->expectsJson()) {
@@ -93,19 +96,21 @@ class PhpManagementController extends Controller
     {
         $validated = $request->validate([
             'installed_versions' => ['required', 'array', 'min:1'],
-            'installed_versions.*' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
-            'current_version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
+            'installed_versions.*' => ['required', 'string', 'regex:/^(latest|\d+\.\d+)$/'],
+            'current_version' => ['required', 'string', 'regex:/^(latest|\d+\.\d+)$/'],
         ]);
 
+        $serverVersions = $this->detectServerPhpVersions();
         $versions = collect($validated['installed_versions'])
             ->map(fn ($version) => trim((string) $version))
             ->filter()
+            ->map(fn (string $version): string => $this->normalizePhpVersionSelection($version, $serverVersions))
+            ->filter(fn (string $version): bool => preg_match('/^\d+\.\d+$/', $version) === 1)
             ->unique()
             ->sort(fn ($a, $b) => version_compare($b, $a))
             ->values()
             ->all();
 
-        $serverVersions = $this->detectServerPhpVersions();
         if (count($serverVersions) > 0) {
             $missing = array_values(array_diff($versions, $serverVersions));
             if (count($missing) > 0) {
@@ -116,7 +121,7 @@ class PhpManagementController extends Controller
             }
         }
 
-        $currentVersion = (string) $validated['current_version'];
+        $currentVersion = $this->normalizePhpVersionSelection((string) $validated['current_version'], $versions);
         if (! in_array($currentVersion, $versions, true)) {
             $currentVersion = $versions[0];
         }
@@ -174,7 +179,10 @@ class PhpManagementController extends Controller
     {
         $state = $this->readState();
         $versions = $state['versions'];
-        $selectedVersion = (string) $request->query('version', $state['default_version']);
+        $selectedVersion = $this->normalizePhpVersionSelection(
+            (string) $request->query('version', $state['default_version']),
+            $versions
+        );
         if (! in_array($selectedVersion, $versions, true)) {
             $selectedVersion = $state['default_version'];
         }
@@ -210,7 +218,7 @@ class PhpManagementController extends Controller
             'extensions.*' => ['string', 'max:100'],
         ]);
 
-        $version = (string) $validated['version'];
+        $version = $this->normalizePhpVersionSelection((string) $validated['version'], $versions);
         if (! in_array($version, $versions, true)) {
             if ($request->expectsJson()) {
                 return response()->json([
@@ -303,7 +311,10 @@ class PhpManagementController extends Controller
     {
         $state = $this->readState();
         $versions = $state['versions'];
-        $selectedVersion = (string) $request->query('version', $state['default_version']);
+        $selectedVersion = $this->normalizePhpVersionSelection(
+            (string) $request->query('version', $state['default_version']),
+            $versions
+        );
         if (! in_array($selectedVersion, $versions, true)) {
             $selectedVersion = $state['default_version'];
         }
@@ -332,7 +343,7 @@ class PhpManagementController extends Controller
             'allow_url_fopen' => ['required', 'in:On,Off'],
         ]);
 
-        $version = (string) $validated['version'];
+        $version = $this->normalizePhpVersionSelection((string) $validated['version'], $versions);
         if (! in_array($version, $versions, true)) {
             if ($request->expectsJson()) {
                 return response()->json([
@@ -1183,5 +1194,25 @@ class PhpManagementController extends Controller
             'configByVersion' => $state['config'],
             'extensionStatesByVersion' => $state['extensions'],
         ];
+    }
+
+    /**
+     * @param array<int, string> $availableVersions
+     */
+    private function normalizePhpVersionSelection(string $version, array $availableVersions = []): string
+    {
+        $normalized = strtolower(trim($version));
+        if ($normalized === '' || $normalized === 'latest') {
+            $pool = collect($availableVersions)
+                ->map(fn ($item): string => trim((string) $item))
+                ->filter(fn (string $item): bool => preg_match('/^\d+\.\d+$/', $item) === 1)
+                ->sort(fn (string $a, string $b): int => version_compare($b, $a))
+                ->values()
+                ->all();
+
+            return (string) ($pool[0] ?? '8.0');
+        }
+
+        return preg_match('/^\d+\.\d+$/', $normalized) === 1 ? $normalized : '8.0';
     }
 }

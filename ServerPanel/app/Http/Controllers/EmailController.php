@@ -56,6 +56,7 @@ class EmailController extends Controller
         return Inertia::render('ListEmails', [
             'mailboxes' => $mailboxes,
             'setupCheck' => $setupCheck,
+            'mailGuide' => $this->buildMailDnsGuide(),
         ]);
     }
 
@@ -240,9 +241,14 @@ class EmailController extends Controller
         $webmailUrlValid = filter_var($webmailUrl, FILTER_VALIDATE_URL) !== false;
         $postfix = $this->serviceStatus('postfix');
         $dovecot = $this->serviceStatus('dovecot');
+        $opendkim = $this->serviceStatus('opendkim');
+        $rspamd = $this->serviceStatus('rspamd');
         $storageBackendReady = $isWindows || $this->isDovecotStorageBackendReady();
         $dovecotMysqlReady = $isWindows || $this->isDovecotMysqlDriverAvailable();
         $servicesReady = $isWindows || $dovecot === 'running';
+        $dkimPublicKey = trim((string) config('serverpanel.mail.dkim_public_key', ''));
+        $dkimServiceReady = $isWindows || $opendkim === 'running' || $rspamd === 'running';
+        $dkimReady = $dkimServiceReady || $dkimPublicKey !== '';
         $webmailReachable = $webmailUrlValid ? $this->isUrlReachable($webmailUrl) : false;
         $messages = [];
 
@@ -263,6 +269,9 @@ class EmailController extends Controller
         }
         if (! $isWindows && $postfix !== 'running') {
             $messages[] = 'Postfix is down. Sending mail may fail even if login works.';
+        }
+        if (! $isWindows && ! $dkimReady) {
+            $messages[] = 'DKIM signing is not configured. Install OpenDKIM or Rspamd and publish the DKIM TXT record.';
         }
         if ($webmailReachable === false) {
             $messages[] = 'Webmail endpoint is unreachable from panel server.';
@@ -286,12 +295,93 @@ class EmailController extends Controller
             'services' => [
                 'postfix' => $postfix,
                 'dovecot' => $dovecot,
+                'opendkim' => $opendkim,
+                'rspamd' => $rspamd,
             ],
             'services_ready' => $servicesReady,
+            'dkim_ready' => $dkimReady,
             'storage_backend_ready' => $storageBackendReady,
             'dovecot_mysql_ready' => $dovecotMysqlReady,
             'autologin_ready' => $autologinReady,
             'messages' => $messages,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildMailDnsGuide(): array
+    {
+        $domains = $this->readMailboxDomains();
+        if ($domains === []) {
+            $domains = $this->readWebsiteDomains();
+        }
+
+        $domain = trim((string) config('serverpanel.mail.dkim_domain', ''));
+        if ($domain === '') {
+            $domain = (string) ($domains[0] ?? '');
+        }
+        if ($domain === '') {
+            $domain = 'example.com';
+        }
+
+        $selector = trim((string) config('serverpanel.mail.dkim_selector', 'default'));
+        if ($selector === '') {
+            $selector = 'default';
+        }
+
+        $publicKey = trim((string) config('serverpanel.mail.dkim_public_key', ''));
+        $recordName = $selector.'._domainkey.'.$domain;
+        $mailHost = 'mail.'.$domain;
+        $dkimValue = $publicKey !== ''
+            ? 'v=DKIM1; k=rsa; p='.$publicKey
+            : 'v=DKIM1; k=rsa; p=PASTE_YOUR_PUBLIC_KEY_HERE';
+
+        return [
+            'domains' => $domains,
+            'primary_domain' => $domain,
+            'selector' => $selector,
+            'dkim_record_name' => $recordName,
+            'dkim_record_value' => $dkimValue,
+            'dkim_public_key_ready' => $publicKey !== '',
+            'mail_host' => $mailHost,
+            'records' => [
+                [
+                    'type' => 'A',
+                    'name' => 'mail',
+                    'content' => 'YOUR_SERVER_IP',
+                    'note' => 'Proxy off / DNS only',
+                ],
+                [
+                    'type' => 'MX',
+                    'name' => '@',
+                    'content' => '10 '.$mailHost,
+                    'note' => 'Proxy off / DNS only',
+                ],
+                [
+                    'type' => 'TXT',
+                    'name' => '@',
+                    'content' => 'v=spf1 mx a ~all',
+                    'note' => 'Allow your mail server to send mail',
+                ],
+                [
+                    'type' => 'TXT',
+                    'name' => $recordName,
+                    'content' => $dkimValue,
+                    'note' => 'DKIM public key',
+                ],
+                [
+                    'type' => 'TXT',
+                    'name' => '_dmarc',
+                    'content' => 'v=DMARC1; p=none; rua=mailto:postmaster@'.$domain,
+                    'note' => 'Start with monitoring mode',
+                ],
+            ],
+            'notes' => [
+                'Keep mail host, IMAP, SMTP, POP3 and Roundcube records on DNS only. Cloudflare proxy will break mail traffic.',
+                'Publish the DKIM TXT record exactly as generated by your signing service.',
+                'If you use Cloudflare, keep MX and TXT records unproxied and only proxy web traffic that should be public.',
+            ],
         ];
     }
 
@@ -303,18 +393,20 @@ class EmailController extends Controller
             return $configured;
         }
 
-        if ($this->isWebtoolsSeparateMode()) {
-            $roundcubePort = $this->normalizePort((int) config('app.roundcube_port', 8090), 8090);
-
-            return $request->getScheme().'://'.$request->getHost().':'.$roundcubePort.'/';
-        }
-
         return $this->buildPanelRoundcubeUrl($request);
     }
 
     private function buildPanelRoundcubeUrl(Request $request): string
     {
-        return rtrim($request->getSchemeAndHttpHost(), '/').'/roundcube/';
+        $scheme = $request->getScheme();
+        $host = trim((string) config('serverpanel.panel_domain', ''));
+        if ($host === '') {
+            $host = $request->getHost();
+        }
+
+        $port = $this->normalizePort((int) config('serverpanel.panel_port', 2083), 2083);
+
+        return sprintf('%s://%s:%d/roundcube/', $scheme, $host, $port);
     }
 
     private function buildRoundcubeLoginUrl(string $baseUrl): string
@@ -385,11 +477,6 @@ class EmailController extends Controller
     private function webmailSsoCacheKey(string $token): string
     {
         return 'serverpanel:webmail_sso:'.$token;
-    }
-
-    private function isWebtoolsSeparateMode(): bool
-    {
-        return filter_var((string) config('app.webtools_separate_ports', false), FILTER_VALIDATE_BOOL);
     }
 
     private function normalizePort(int $value, int $fallback): int
@@ -818,5 +905,24 @@ CFG;
             ->sort()
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function readMailboxDomains(): array
+    {
+        try {
+            return Mailbox::query()
+                ->pluck('domain')
+                ->filter(fn ($domain) => is_string($domain) && trim($domain) !== '')
+                ->map(fn ($domain) => strtolower(trim((string) $domain)))
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
     }
 }

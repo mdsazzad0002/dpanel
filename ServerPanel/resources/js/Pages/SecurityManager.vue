@@ -6,6 +6,7 @@ import { Head, useForm } from '@inertiajs/vue3';
 const props = defineProps({
     firewall: { type: Object, default: () => ({}) },
     ssh: { type: Object, default: () => ({}) },
+    telegram: { type: Object, default: () => ({}) },
 });
 
 const syncLoading = ref(false);
@@ -15,6 +16,8 @@ const firewallMessage = ref('');
 const firewallError = ref('');
 const sshMessage = ref('');
 const sshError = ref('');
+const telegramMessage = ref('');
+const telegramError = ref('');
 
 const firewallForm = useForm({
     enabled: Boolean(props.firewall.enabled ?? false),
@@ -28,6 +31,13 @@ const sshForm = useForm({
     password_authentication: props.ssh.password_authentication ?? 'Off',
     permit_root_login: props.ssh.permit_root_login ?? 'prohibit-password',
     pubkey_authentication: props.ssh.pubkey_authentication ?? 'On',
+});
+
+const telegramForm = useForm({
+    enabled: Boolean(props.telegram.enabled ?? false),
+    bot_token: props.telegram.bot_token ?? '',
+    chat_id: props.telegram.chat_id ?? '',
+    message: props.telegram.message ?? 'Security alert from ServerPanel',
 });
 
 const parsePorts = (text) => {
@@ -106,6 +116,47 @@ const saveSsh = async () => {
         sshMessage.value = 'SSH settings saved.';
     } catch (error) {
         sshError.value = error?.response?.data?.message ?? 'Failed to save SSH settings.';
+    }
+};
+
+const saveTelegram = async () => {
+    telegramMessage.value = '';
+    telegramError.value = '';
+
+    try {
+        await window.axios.patch(
+            route('security.telegram.update'),
+            {
+                enabled: telegramForm.enabled,
+                bot_token: telegramForm.bot_token,
+                chat_id: telegramForm.chat_id,
+                message: telegramForm.message,
+            },
+            { headers: { Accept: 'application/json' } },
+        );
+        telegramMessage.value = 'Telegram settings saved.';
+    } catch (error) {
+        telegramError.value = error?.response?.data?.message ?? 'Failed to save Telegram settings.';
+    }
+};
+
+const testTelegram = async () => {
+    telegramMessage.value = '';
+    telegramError.value = '';
+
+    try {
+        await window.axios.post(
+            route('security.telegram.test'),
+            {
+                bot_token: telegramForm.bot_token,
+                chat_id: telegramForm.chat_id,
+                message: telegramForm.message,
+            },
+            { headers: { Accept: 'application/json' } },
+        );
+        telegramMessage.value = 'Telegram test message sent.';
+    } catch (error) {
+        telegramError.value = error?.response?.data?.message ?? 'Failed to send Telegram test message.';
     }
 };
 </script>
@@ -223,6 +274,51 @@ const saveSsh = async () => {
                     </div>
                 </section>
             </div>
+
+            <section class="space-y-4 rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-base font-semibold">Telegram Security Channel</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400">Connect a Telegram bot to send security or install alerts.</p>
+                    </div>
+                    <label class="inline-flex items-center gap-2 text-sm">
+                        <input v-model="telegramForm.enabled" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                        Enabled
+                    </label>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                        <label class="mb-1 block text-sm">Bot Token</label>
+                        <input v-model="telegramForm.bot_token" type="password" placeholder="123456789:AA..." class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm">Chat ID</label>
+                        <input v-model="telegramForm.chat_id" type="text" placeholder="-1001234567890" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm">Message</label>
+                    <textarea v-model="telegramForm.message" rows="3" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" placeholder="Security alert from ServerPanel"></textarea>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="saveTelegram">
+                        Save Telegram
+                    </button>
+                    <button type="button" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="testTelegram">
+                        Test Message
+                    </button>
+                </div>
+
+                <div v-if="telegramMessage" class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                    {{ telegramMessage }}
+                </div>
+                <div v-if="telegramError" class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {{ telegramError }}
+                </div>
+            </section>
         </div>
     </AuthenticatedLayout>
 </template>

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -30,6 +31,12 @@ class SecurityController extends Controller
             'permit_root_login' => 'prohibit-password',
             'pubkey_authentication' => 'On',
         ],
+        'telegram' => [
+            'enabled' => false,
+            'bot_token' => '',
+            'chat_id' => '',
+            'message' => 'Security alert from ServerPanel',
+        ],
     ];
 
     public function manager(): Response
@@ -39,6 +46,7 @@ class SecurityController extends Controller
         return Inertia::render('SecurityManager', [
             'firewall' => $state['firewall'],
             'ssh' => $state['ssh'],
+            'telegram' => $state['telegram'],
         ]);
     }
 
@@ -131,6 +139,77 @@ class SecurityController extends Controller
         return redirect()->route('security.manager')->with('success', 'SSH settings updated.');
     }
 
+    public function updateTelegram(Request $request): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'enabled' => ['required', 'boolean'],
+            'bot_token' => ['required', 'string', 'max:255'],
+            'chat_id' => ['required', 'string', 'max:255'],
+            'message' => ['nullable', 'string', 'max:512'],
+        ]);
+
+        $state = $this->readState();
+        $state['telegram'] = [
+            'enabled' => (bool) $validated['enabled'],
+            'bot_token' => trim((string) $validated['bot_token']),
+            'chat_id' => trim((string) $validated['chat_id']),
+            'message' => trim((string) ($validated['message'] ?? 'Security alert from ServerPanel')),
+        ];
+        $this->writeState($state);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Telegram settings saved.',
+                'data' => ['telegram' => $state['telegram']],
+            ]);
+        }
+
+        return redirect()->route('security.manager')->with('success', 'Telegram settings saved.');
+    }
+
+    public function testTelegram(Request $request): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'bot_token' => ['required', 'string', 'max:255'],
+            'chat_id' => ['required', 'string', 'max:255'],
+            'message' => ['nullable', 'string', 'max:512'],
+        ]);
+
+        $botToken = trim((string) $validated['bot_token']);
+        $chatId = trim((string) $validated['chat_id']);
+        $message = trim((string) ($validated['message'] ?? 'Security alert from ServerPanel'));
+
+        $response = Http::timeout(10)
+            ->acceptJson()
+            ->post("https://api.telegram.org/bot{$botToken}/sendMessage", [
+                'chat_id' => $chatId,
+                'text' => $message,
+            ]);
+
+        if (! $response->successful()) {
+            $description = (string) data_get($response->json(), 'description', 'Telegram request failed.');
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $description,
+                ], 422);
+            }
+
+            return redirect()->route('security.manager')->with('error', $description);
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Telegram test message sent.',
+            ]);
+        }
+
+        return redirect()->route('security.manager')->with('success', 'Telegram test message sent.');
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -153,6 +232,7 @@ class SecurityController extends Controller
         return [
             'firewall' => array_merge(self::DEFAULT_STATE['firewall'], $decoded['firewall'] ?? []),
             'ssh' => array_merge(self::DEFAULT_STATE['ssh'], $decoded['ssh'] ?? []),
+            'telegram' => array_merge(self::DEFAULT_STATE['telegram'], $decoded['telegram'] ?? []),
         ];
     }
 

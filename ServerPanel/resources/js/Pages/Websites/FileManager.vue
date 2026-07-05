@@ -1,6 +1,9 @@
 <script setup>
+defineOptions({
+    layout: null,
+});
+
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -1055,17 +1058,17 @@ const formatBytes = (bytes) => {
 <template>
     <Head :title="`File Manager - ${website.domain}`" />
 
-    <AuthenticatedLayout>
-        <template #header>
-            <div>
-                <h1 class="text-lg font-semibold">File Manager</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">{{ website.domain }} (base: {{ basePath }})</p>
-            </div>
-        </template>
-
-        <div class="space-y-4">
-            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <div class="flex flex-wrap items-center gap-2">
+    <div class="flex min-h-screen flex-col bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+        <header class="border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+            <div class="flex flex-wrap items-center gap-3 px-4 py-3 lg:px-6">
+                <div class="min-w-0">
+                    <h1 class="truncate text-lg font-semibold">File Manager</h1>
+                    <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ website.domain }} - base {{ basePath }}</p>
+                </div>
+                <div class="ml-auto flex flex-wrap items-center gap-2">
+                    <Link :href="route('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                        Back to Websites
+                    </Link>
                     <button type="button" title="Edit/Open" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="editSelected">
                         <i aria-hidden="true" class="itc bi bi-pencil-square text-sm"></i>
                         <span class="sr-only">Edit/Open</span>
@@ -1119,15 +1122,72 @@ const formatBytes = (bytes) => {
                         <svg v-else aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6"/></svg>
                         <span class="sr-only">{{ hiddenEnabled ? 'Hide Dot Files' : 'Show Dot Files' }}</span>
                     </button>
-                    <Link :href="route('websites.list')" title="Back to Websites" class="ml-auto rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0m3.5 8.5h-6l2 2-.707.707L3.586 8l3.207-3.207.707.707-2 2h6z"/></svg>
-                        <span class="sr-only">Back to Websites</span>
-                    </Link>
                 </div>
             </div>
+        </header>
 
-            <div class="grid gap-4 xl:grid-cols-12">
-                <aside class="xl:col-span-4 flex h-[70vh] flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+        <main class="flex-1 overflow-hidden p-4 lg:p-6">
+            <div class="space-y-4">
+                <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" title="Edit/Open" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="editSelected">
+                            <i aria-hidden="true" class="itc bi bi-pencil-square text-sm"></i>
+                            <span class="sr-only">Edit/Open</span>
+                        </button>
+                        <button type="button" title="Rename" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!singleSelectedItem || isBusy" @click="openModal('rename')">
+                            <i aria-hidden="true" class="itc bi bi-input-cursor-text text-sm"></i>
+                            <span class="sr-only">Rename</span>
+                        </button>
+                        <button type="button" title="Move" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="(!singleSelectedItem && !selectedCount) || isBusy" @click="openModal('move')">
+                            <i aria-hidden="true" class="itc bi bi-arrows-move text-sm"></i>
+                            <span class="sr-only">Move</span>
+                        </button>
+                        <button type="button" title="New File" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="openModal('create-file')">
+                            <i aria-hidden="true" class="itc bi bi-file-earmark-plus text-sm"></i>
+                            <span class="sr-only">New File</span>
+                        </button>
+                        <button type="button" title="New Folder" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="openModal('create-folder')">
+                            <i aria-hidden="true" class="itc bi bi-folder-plus text-sm"></i>
+                            <span class="sr-only">New Folder</span>
+                        </button>
+                        <button type="button" title="Upload" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="openModal('upload')">
+                            <i aria-hidden="true" class="itc bi bi-cloud-arrow-up text-sm"></i>
+                            <span class="sr-only">Upload</span>
+                        </button>
+                        <button type="button" title="Delete" class="rounded-md border border-red-300 px-3 py-2 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400" :disabled="(!singleSelectedItem && !selectedCount) || isBusy" @click="deleteSelected">
+                            <i aria-hidden="true" class="itc bi bi-trash text-sm"></i>
+                            <span class="sr-only">Delete</span>
+                        </button>
+                        <button type="button" title="Zip" class="rounded-md border border-amber-300 px-3 py-2 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300" :disabled="(!singleSelectedItem && !selectedCount) || isBusy" @click="openModal('zip')">
+                            <i aria-hidden="true" class="itc bi bi-file-earmark-zip text-sm"></i>
+                            <span class="sr-only">Zip</span>
+                        </button>
+                        <button type="button" title="Unzip" class="rounded-md border border-emerald-300 px-3 py-2 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400" :disabled="!isZipSelected || isBusy" @click="openModal('unzip')">
+                            <i aria-hidden="true" class="itc bi bi-file-earmark-arrow-up text-sm"></i>
+                            <span class="sr-only">Unzip</span>
+                        </button>
+                        <button type="button" title="Permissions" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!singleSelectedItem || isBusy" @click="openModal('permissions')">
+                            <i aria-hidden="true" class="itc bi bi-shield-lock text-sm"></i>
+                            <span class="sr-only">Permissions</span>
+                        </button>
+                        <button type="button" title="Download" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!singleSelectedItem || singleSelectedItem.type !== 'file'" @click="downloadSelected">
+                            <i aria-hidden="true" class="itc bi bi-download text-sm"></i>
+                            <span class="sr-only">Download</span>
+                        </button>
+                        <button type="button" title="Up One Level" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="goParent">
+                            <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="m8 2-3 3h2v4h2V5h2z"/><path d="M2 12h12v2H2z"/></svg>
+                            <span class="sr-only">Up One Level</span>
+                        </button>
+                        <button type="button" :title="hiddenEnabled ? 'Hide Dot Files' : 'Show Dot Files'" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="toggleHidden">
+                            <svg v-if="hiddenEnabled" aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M13.359 11.238C14.52 10.15 15.37 8.89 16 8c-1.12-1.58-3.32-4.5-6.88-5.32l1.06 1.06a8.8 8.8 0 0 1 4.72 4.26 11.8 11.8 0 0 1-2.24 2.66z"/><path d="M11.297 13.176A8.7 8.7 0 0 1 8 13.5C3 13.5 0 8 0 8c.71-1.03 1.6-2.12 2.72-3.03l1.43 1.43A3 3 0 0 0 7.6 9.85z"/><path d="m14.854 15.146-14-14 .708-.708 14 14z"/></svg>
+                            <svg v-else aria-hidden="true" class="h-4 w-4" viewBox="0 0 16 16" fill="currentColor"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6"/></svg>
+                            <span class="sr-only">{{ hiddenEnabled ? 'Hide Dot Files' : 'Show Dot Files' }}</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid gap-4 xl:grid-cols-12">
+                    <aside class="xl:col-span-4 flex h-[calc(100vh-13rem)] flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
                     <div>
                         <div class="mb-2 flex items-center justify-between">
                             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick Path</p>
@@ -1186,15 +1246,15 @@ const formatBytes = (bytes) => {
                         <p class="mt-2 text-[11px] text-slate-500">Drag selected file/folder rows and drop on a folder to move.</p>
                     </div>
 
-                </aside>
+                    </aside>
 
-                <section
-                    class="relative xl:col-span-8 space-y-4"
-                    @dragenter.prevent="handleTableDragEnter"
-                    @dragover.prevent="handleTableDragOver"
-                    @dragleave.prevent="handleTableDragLeave"
-                    @drop.prevent="handleTableDrop"
-                >
+                    <section
+                        class="relative xl:col-span-8 space-y-4"
+                        @dragenter.prevent="handleTableDragEnter"
+                        @dragover.prevent="handleTableDragOver"
+                        @dragleave.prevent="handleTableDragLeave"
+                        @drop.prevent="handleTableDrop"
+                    >
                     <div v-if="tableDragActive" class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-sky-500 bg-sky-500/10">
                         <div class="rounded-lg bg-white/90 px-5 py-3 text-center text-sm font-semibold text-sky-700 shadow-sm dark:bg-slate-900/90 dark:text-sky-300">
                             Drop file here to upload into
@@ -1263,16 +1323,17 @@ const formatBytes = (bytes) => {
                     </div>
 
                    
-                </section>
-            </div>
+                    </section>
+                </div>
 
-            <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                {{ page.props.flash.success }}
+                <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    {{ page.props.flash.success }}
+                </div>
+                <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {{ page.props.flash.error }}
+                </div>
             </div>
-            <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {{ page.props.flash.error }}
-            </div>
-        </div>
+        </main>
 
         <div
             v-if="contextMenu.visible"
@@ -1460,5 +1521,5 @@ const formatBytes = (bytes) => {
                 </div>
             </div>
         </div>
-    </AuthenticatedLayout>
+    </div>
 </template>
