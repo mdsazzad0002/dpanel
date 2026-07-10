@@ -1,0 +1,25 @@
+<IfModule mod_rewrite.c>
+    Options -Indexes
+    RewriteEngine On
+
+    # Block direct access to sensitive script/config files if they ever land in public/
+    RewriteRule ^.*\.(?:sh|bash|env|ini|conf|sql|sqlite|yml|yaml|json|md)$ - [F,NC,L]
+
+    # Remove /public from typed URL
+    RewriteCond %{THE_REQUEST} \s/+public(?:/|\s|\?) [NC]
+    RewriteRule ^public(?:/(.*))?$ /$1 [R=301,L]
+
+    # Exclude systemUpdater
+    RewriteRule ^systemUpdater(?:/.*)?$ - [L]
+
+    # Root URL -> public/
+    RewriteRule ^$ public/ [L]
+
+    # Skip existing files/folders
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Everything else -> public
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>

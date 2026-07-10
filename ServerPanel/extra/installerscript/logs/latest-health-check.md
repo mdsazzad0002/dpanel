@@ -1,2 +1,0 @@
-# latest health-check log
-

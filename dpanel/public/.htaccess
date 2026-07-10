@@ -1,0 +1,12 @@
+<IfModule mod_rewrite.c>
+    Options -Indexes
+    RewriteEngine On
+
+    # Never serve shell, env, config, or manifest files from the web root.
+    RewriteRule ^.*\.(?:sh|bash|env|ini|conf|sql|sqlite|yml|yaml|json|md)$ - [F,NC,L]
+
+    # Laravel front controller.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>

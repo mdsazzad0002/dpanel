@@ -1,0 +1,13 @@
+{
+  "nginx": "1.0.1",
+  "php": "1.2.0",
+  "redis": "1.0.0",
+  "mariadb": "1.0.0",
+  "ssl": "1.0.0",
+  "firewall": "1.0.0",
+  "fail2ban": "1.0.0",
+  "queue": "1.0.0",
+  "supervisor": "1.0.0",
+  "admin-user": "1.0.0",
+  "ssh-root-login": "1.0.0"
+}
