@@ -6,8 +6,9 @@ DB_NAME="${2:-}"
 DB_USER="${3:-}"
 DB_PASSWORD="${4:-}"
 DB_HOST_RAW="${5:-127.0.0.1}"
-DB_CHARSET="${6:-utf8mb4}"
-DB_COLLATION="${7:-utf8mb4_unicode_ci}"
+DB_PORT_RAW="${6:-3306}"
+DB_CHARSET="${7:-utf8mb4}"
+DB_COLLATION="${8:-utf8mb4_unicode_ci}"
 
 fail() {
     echo "[database-request] $*" >&2
@@ -44,6 +45,9 @@ fi
 if [[ ! "${DB_COLLATION}" =~ ^[A-Za-z0-9_]{1,64}$ ]]; then
     fail "Invalid collation value."
 fi
+if [[ ! "${DB_PORT_RAW}" =~ ^[0-9]{1,5}$ ]] || (( DB_PORT_RAW < 1 || DB_PORT_RAW > 65535 )); then
+    fail "Invalid database port value."
+fi
 if [[ -z "${DB_PASSWORD}" ]]; then
     fail "Database password is required."
 fi
@@ -52,6 +56,7 @@ DB_HOST="$(normalize_host "${DB_HOST_RAW}")"
 if [[ ! "${DB_HOST}" =~ ^[A-Za-z0-9._%-]{1,255}$ ]]; then
     fail "Invalid database host value."
 fi
+DB_PORT="${DB_PORT_RAW}"
 
 DB_CLI=""
 if command -v mariadb >/dev/null 2>&1; then
@@ -65,7 +70,7 @@ fi
 
 sql_exec() {
     local sql="$1"
-    "${DB_CLI}" -e "${sql}"
+    "${DB_CLI}" --host="${DB_HOST}" --port="${DB_PORT}" -e "${sql}"
 }
 
 grant_for_host() {
@@ -91,4 +96,3 @@ fi
 
 sql_exec "FLUSH PRIVILEGES;"
 echo "[database-request] Database/user synced successfully: ${DB_NAME} / ${DB_USER}@${DB_HOST}"
-

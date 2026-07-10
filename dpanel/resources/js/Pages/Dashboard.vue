@@ -4,6 +4,10 @@ import { computed } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 
 const page = usePage();
+const panelToken = page.props.panel?.token;
+const panelRoute = (name, params = {}) => (
+    panelToken ? route(name, { token: panelToken, ...params }) : route(name, params)
+);
 const dashboardStats = computed(() => page.props.dashboardStats ?? {});
 
 const formatDate = (value) => {
@@ -82,7 +86,7 @@ const statusClass = (status) => {
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Quick Actions</h2>
                     <div class="mt-4 space-y-2">
                         <a :href="route('websites.create')" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Create Website</a>
-                        <a :href="route('emails.create')" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Add Mailbox</a>
+                        <a :href="panelRoute('emails.create')" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Add Mailbox</a>
                         <a :href="route('websites.list')" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Manage Websites</a>
                         <a href="/" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Installer Setup Guide</a>
                     </div>

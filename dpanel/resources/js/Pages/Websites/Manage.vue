@@ -18,6 +18,10 @@ const props = defineProps({
     },
 });
 const page = usePage();
+const panelToken = page.props.panel?.token;
+const panelRoute = (name, params = {}) => (
+    panelToken ? route(name, { token: panelToken, ...params }) : route(name, params)
+);
 
 const toNumber = (value) => {
     const parsed = Number(value);
@@ -81,7 +85,7 @@ const serviceLinks = computed(() => [
     { label: 'Redis Cache', short: 'RC', href: route('websites.redis-cache.index', props.website.id), description: 'Per-website cache isolation' },
     { label: 'File Manager', short: 'FM', href: route('websites.filemanager', props.website.id), description: 'Browse and edit files' },
     { label: 'Cron Jobs', short: 'CJ', href: route('websites.cronjobs.index', props.website.id), description: 'Setup scheduled tasks' },
-    { label: 'Email Accounts', short: 'EM', href: route('emails.list'), description: 'Manage mailbox services' },
+    { label: 'Email Accounts', short: 'EM', href: panelRoute('emails.list'), description: 'Manage mailbox services' },
     { label: 'Databases', short: 'DB', href: route('databases.list'), description: 'Manage database services' },
     { label: 'DNS Records', short: 'DNS', href: route('dns.records'), description: 'Manage DNS entries' },
     { label: 'PHP Manager', short: 'PHP', href: route('php.manager'), description: 'Manage PHP versions and modules' },

@@ -4,6 +4,11 @@ import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 
 const page = usePage();
 const deleteForm = useForm({});
+const panelToken = page.props.panel?.token;
+
+const panelRoute = (name, params = {}) => (
+    panelToken ? route(name, { token: panelToken, ...params }) : route(name, params)
+);
 
 defineProps({
     mailboxes: {
@@ -40,7 +45,7 @@ const formatDate = (value) => {
 
 const deleteMailbox = (id) => {
     if (!confirm('Delete this mailbox?')) return;
-    deleteForm.delete(route('emails.destroy', id));
+    deleteForm.delete(panelRoute('emails.destroy', { id }));
 };
 
 const serviceBadgeClass = (status) => {
@@ -71,7 +76,7 @@ const serviceBadgeClass = (status) => {
             </div>
 
             <div class="flex justify-end">
-                <Link :href="route('emails.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
+                <Link :href="panelRoute('emails.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Email
                 </Link>
             </div>
@@ -81,7 +86,7 @@ const serviceBadgeClass = (status) => {
                     <div>
                         <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Mail Setup Check</h2>
                         <p class="mt-1 break-all text-sm text-slate-600 dark:text-slate-300">{{ setupCheck.webmail_url || '-' }}</p>
-                        <p class="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">Login endpoint: {{ setupCheck.webmail_login_url || '-' }}</p>
+                        <p class="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">Mail client endpoint: {{ setupCheck.webmail_login_url || '-' }}</p>
                     </div>
                     <span
                         class="rounded-full border px-3 py-1 text-xs font-medium"
@@ -89,7 +94,7 @@ const serviceBadgeClass = (status) => {
                             ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
                             : 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300'"
                     >
-                        {{ setupCheck.autologin_ready ? 'Auto Login Ready' : 'Auto Login Not Ready' }}
+                        {{ setupCheck.autologin_ready ? 'Mailbox Ready' : 'Mailbox Not Ready' }}
                     </span>
                 </div>
 
@@ -229,15 +234,13 @@ const serviceBadgeClass = (status) => {
                             <td class="px-4 py-3">{{ formatDate(item.created_at) }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
-                                    <a
+                                    <Link
                                         v-if="item.autologin_ready"
-                                        :href="route('emails.login', item.id)"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
+                                        :href="panelRoute('mailbox.open', { id: item.id })"
                                         class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
                                     >
-                                        Roundcube Login
-                                    </a>
+                                        Open Mailbox
+                                    </Link>
                                     <span
                                         v-else
                                         class="cursor-not-allowed rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-400 dark:border-slate-700 dark:text-slate-500"
@@ -245,7 +248,7 @@ const serviceBadgeClass = (status) => {
                                     >
                                         Login Blocked
                                     </span>
-                                    <Link :href="route('emails.edit', item.id)" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                                    <Link :href="panelRoute('emails.edit', { id: item.id })" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                         Edit
                                     </Link>
                                     <button

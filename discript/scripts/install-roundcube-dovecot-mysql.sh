@@ -10,6 +10,11 @@ CHECK_ONLY=0
 SKIP_UPDATE=0
 PHPMYADMIN_ROOT="${PHPMYADMIN_ROOT:-}"
 ROUNDCUBE_ROOT="${ROUNDCUBE_ROOT:-}"
+ROUNDCUBE_DB_HOST="${ROUNDCUBE_DB_HOST:-127.0.0.1}"
+ROUNDCUBE_DB_PORT="${ROUNDCUBE_DB_PORT:-3306}"
+ROUNDCUBE_DB_NAME="${ROUNDCUBE_DB_NAME:-roundcube}"
+ROUNDCUBE_DB_USER="${ROUNDCUBE_DB_USER:-roundcube}"
+ROUNDCUBE_DB_PASSWORD="${ROUNDCUBE_DB_PASSWORD:-}"
 
 usage() {
     cat <<'EOF'
@@ -111,6 +116,73 @@ generate_secret() {
     fi
 }
 
+find_mysql_cli() {
+    local candidate=""
+    for candidate in mariadb mysql; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+roundcube_db_exec() {
+    local sql="$1"
+    local cli
+
+    cli="$(find_mysql_cli)" || return 1
+    "${cli}" --host="${ROUNDCUBE_DB_HOST}" --port="${ROUNDCUBE_DB_PORT}" \
+        --user="${ROUNDCUBE_DB_USER}" --password="${ROUNDCUBE_DB_PASSWORD}" \
+        --database="${ROUNDCUBE_DB_NAME}" -e "${sql}"
+}
+
+roundcube_db_admin_exec() {
+    local sql="$1"
+    local cli
+
+    cli="$(find_mysql_cli)" || return 1
+    "${cli}" --host="${ROUNDCUBE_DB_HOST}" --port="${ROUNDCUBE_DB_PORT}" \
+        --user="${ROUNDCUBE_DB_USER}" --password="${ROUNDCUBE_DB_PASSWORD}" \
+        -e "${sql}"
+}
+
+roundcube_db_is_initialized() {
+    local out=""
+    if ! out="$(roundcube_db_exec "SHOW TABLES LIKE 'users';" 2>/dev/null | tail -n +2)"; then
+        return 1
+    fi
+
+    [[ -n "$out" ]]
+}
+
+provision_roundcube_database() {
+    local db_password db_cli
+
+    db_password="${ROUNDCUBE_DB_PASSWORD:-$(generate_secret)}"
+    ROUNDCUBE_DB_PASSWORD="${db_password}"
+
+    db_cli="$(find_mysql_cli)" || fail "No mysql/mariadb client found."
+
+    "${db_cli}" --host="${ROUNDCUBE_DB_HOST}" --port="${ROUNDCUBE_DB_PORT}" \
+        -u root -e "CREATE DATABASE IF NOT EXISTS \`${ROUNDCUBE_DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+    "${db_cli}" --host="${ROUNDCUBE_DB_HOST}" --port="${ROUNDCUBE_DB_PORT}" \
+        -u root -e "CREATE USER IF NOT EXISTS '${ROUNDCUBE_DB_USER}'@'${ROUNDCUBE_DB_HOST}' IDENTIFIED BY '${ROUNDCUBE_DB_PASSWORD}';"
+    "${db_cli}" --host="${ROUNDCUBE_DB_HOST}" --port="${ROUNDCUBE_DB_PORT}" \
+        -u root -e "ALTER USER '${ROUNDCUBE_DB_USER}'@'${ROUNDCUBE_DB_HOST}' IDENTIFIED BY '${ROUNDCUBE_DB_PASSWORD}';"
+    "${db_cli}" --host="${ROUNDCUBE_DB_HOST}" --port="${ROUNDCUBE_DB_PORT}" \
+        -u root -e "GRANT ALL PRIVILEGES ON \`${ROUNDCUBE_DB_NAME}\`.* TO '${ROUNDCUBE_DB_USER}'@'${ROUNDCUBE_DB_HOST}'; FLUSH PRIVILEGES;"
+
+    if ! roundcube_db_is_initialized; then
+        log "Initializing Roundcube schema in ${ROUNDCUBE_DB_NAME}..."
+        "${db_cli}" --host="${ROUNDCUBE_DB_HOST}" --port="${ROUNDCUBE_DB_PORT}" \
+            --user="${ROUNDCUBE_DB_USER}" --password="${ROUNDCUBE_DB_PASSWORD}" \
+            "${ROUNDCUBE_DB_NAME}" < "${ROUNDCUBE_ROOT}/SQL/mysql.initial.sql"
+    fi
+}
+
 deploy_phpmyadmin_templates() {
     local root="$1"
     local config_target helper_target secret panel_domain panel_port
@@ -164,7 +236,12 @@ deploy_roundcube_templates() {
     render_template \
         "${TEMPLATE_ROOT}/roundcube/config.inc.php" \
         "$config_target" \
-        roundcube_des_key "$secret"
+        roundcube_des_key "$secret" \
+        roundcube_db_host "$ROUNDCUBE_DB_HOST" \
+        roundcube_db_port "$ROUNDCUBE_DB_PORT" \
+        roundcube_db_name "$ROUNDCUBE_DB_NAME" \
+        roundcube_db_user "$ROUNDCUBE_DB_USER" \
+        roundcube_db_password "$ROUNDCUBE_DB_PASSWORD"
 
     mkdir -p "$plugin_root"
     cp "${TEMPLATE_ROOT}/roundcube/plugins/serverpanel_sso/serverpanel_sso.php" "$plugin_root/serverpanel_sso.php"
@@ -245,6 +322,8 @@ fi
 
 if roundcube_root="$(detect_roundcube_root 2>/dev/null || true)"; then
     if [[ -n "$roundcube_root" ]]; then
+        ROUNDCUBE_ROOT="$roundcube_root"
+        provision_roundcube_database
         deploy_roundcube_templates "$roundcube_root"
     fi
 fi

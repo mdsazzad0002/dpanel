@@ -14,6 +14,7 @@ use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\MonitoringController;
+use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerPanelController;
@@ -86,8 +87,16 @@ Route::get('/init', function () {
 
     ]);
 })->name('init.docs');
-Route::match(['get', 'post'], '/webmail', [EmailController::class, 'webmailEntry'])->name('webmail.roundcube');
-Route::post('/sso/webmail/consume', [SsoController::class, 'consumeWebmail'])->name('sso.webmail.consume');
+
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+
+Route::middleware(['panel.session'])->group(function (): void {
+    Route::match(['get', 'post'], '/webmail', [EmailController::class, 'webmailEntry'])
+        ->name('webmail.mailbox');
+});
+
+Route::post('/sso/webmail/consume', [SsoController::class, 'consumeWebmail'])
+    ->name('sso.webmail.consume');
 
 Route::prefix('cpsess{token}')
     ->where(['token' => '[0-9a-fA-F]{64}'])
@@ -277,9 +286,44 @@ Route::prefix('cpsess{token}')
     Route::delete('/emails/{id}', [EmailController::class, 'destroy'])
         ->middleware('role:admin|reseller')
         ->name('emails.destroy');
-    Route::get('/emails/{id}/login', [EmailController::class, 'login'])
+
+    Route::get('/mail/{id}', [MailClientController::class, 'show'])
+        ->middleware('role:admin|reseller')
+        ->name('mailbox.open');
+
+    Route::get('/mail/{id}/data', [MailClientController::class, 'data'])
+        ->middleware('role:admin|reseller')
+        ->name('mailbox.data');
+
+    Route::post('/mail/{id}/send', [MailClientController::class, 'send'])
+        ->middleware('role:admin|reseller')
+        ->name('mailbox.send');
+
+    Route::post('/mail/{id}/delete', [MailClientController::class, 'delete'])
+        ->middleware('role:admin|reseller')
+        ->name('mailbox.delete-message');
+
+    Route::get('/emails/{id}/login', function ($id) {
+        return redirect()->route('mailbox.open', [
+            'id' => $id,
+            'token' => request('token'),
+        ]);
+    })
         ->middleware('role:admin|reseller')
         ->name('emails.login');
+
+    Route::get('/emails/{id}/login/data', [MailClientController::class, 'data'])
+        ->middleware('role:admin|reseller')
+        ->name('emails.data');
+
+    Route::post('/emails/{id}/login/send', [MailClientController::class, 'send'])
+        ->middleware('role:admin|reseller')
+        ->name('emails.send');
+
+    Route::post('/emails/{id}/login/delete', [MailClientController::class, 'delete'])
+        ->middleware('role:admin|reseller')
+        ->name('emails.delete-message');
+
     Route::get('/emails/list', [EmailController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('emails.list');

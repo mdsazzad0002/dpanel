@@ -22,18 +22,7 @@ class EmailController extends Controller
 
     public function webmailEntry(Request $request): RedirectResponse|HttpResponse
     {
-        $targetUrl = rtrim($this->resolveWebmailUrl($request), '/');
-        if ($targetUrl !== '' && filter_var($targetUrl, FILTER_VALIDATE_URL) !== false) {
-            return redirect()->away($targetUrl);
-        }
-
-        $configured = trim((string) config('app.webmail_url', ''));
-
-        return response()->view('webmail.missing', [
-            'configuredUrl' => $configured,
-            'defaultUrl' => $this->buildPanelRoundcubeUrl($request),
-            'panelUrl' => $request->getSchemeAndHttpHost().'/emails/list',
-        ]);
+        return redirect()->route('emails.list');
     }
 
     public function create(): Response
@@ -78,16 +67,24 @@ class EmailController extends Controller
                 ->with('error', "Mailbox {$email} was not created: ".$storageSync['message']);
         }
 
-        Mailbox::query()->create([
-            'id' => (string) str()->uuid(),
-            'domain' => $domain,
-            'mailbox' => $mailbox,
-            'email' => $email,
-            'password' => $password,
-            'quota_mb' => (int) $validated['quota_mb'],
-            'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
-            'status' => 'active',
-        ]);
+        try {
+            Mailbox::query()->create([
+                'id' => (string) str()->uuid(),
+                'domain' => $domain,
+                'mailbox' => $mailbox,
+                'email' => $email,
+                'password' => $password,
+                'quota_mb' => (int) $validated['quota_mb'],
+                'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
+                'status' => 'active',
+            ]);
+        } catch (\Throwable $e) {
+            $this->removeMailboxFromStorage($email);
+
+            return redirect()
+                ->route('emails.create')
+                ->with('error', "Mailbox {$email} was not created: ".$e->getMessage());
+        }
 
         return redirect()->route('emails.list')->with('success', "Mailbox {$email} created and synced to storage server.");
     }
@@ -193,19 +190,16 @@ class EmailController extends Controller
                 ->with('error', 'Webmail URL is not configured. Set WEBMAIL_URL to your Roundcube endpoint.');
         }
 
-        $secret = trim((string) config('app.webmail_sso_secret', ''));
-        if ($secret !== '') {
-            $token = $this->issueWebmailSsoToken(
-                (string) ($mailbox->email ?? ''),
-                (string) ($mailbox->password ?? ''),
-                600
-            );
+        $token = $this->issueWebmailSsoToken(
+            (string) ($mailbox->email ?? ''),
+            (string) ($mailbox->password ?? ''),
+            600
+        );
 
-            if ($token !== '') {
-                $sep = str_contains($targetUrl, '?') ? '&' : '?';
+        if ($token !== '') {
+            $sep = str_contains($targetUrl, '?') ? '&' : '?';
 
-                return redirect()->away($targetUrl.$sep.'sso_token='.rawurlencode($token));
-            }
+            return redirect()->away($targetUrl.$sep.'sso_token='.rawurlencode($token));
         }
 
         return response()->view('webmail.autologin', [
@@ -258,13 +252,13 @@ class EmailController extends Controller
         $messages = [];
 
         if (! $webmailUrlValid) {
-            $messages[] = 'Roundcube URL is invalid. Set WEBMAIL_URL to a full URL or use WEBMAIL_URL=auto.';
+            $messages[] = 'Mail client URL is invalid. Set WEBMAIL_URL to a full URL or use WEBMAIL_URL=auto.';
         }
         if (! $shouldProbeWebmail && $configuredWebmailEnv !== '') {
             $messages[] = 'WEBMAIL_URL value is invalid. Use a full URL or set WEBMAIL_URL=auto.';
         }
         if (! $servicesReady) {
-            $messages[] = 'Dovecot is down. Start Dovecot to enable Roundcube IMAP login.';
+            $messages[] = 'Dovecot is down. Start Dovecot to enable mailbox access.';
         }
         if (! $storageBackendReady) {
             $messages[] = 'Dovecot mailbox backend is not ready. Sync mailbox storage first.';
@@ -279,9 +273,9 @@ class EmailController extends Controller
             $messages[] = 'DKIM signing is not configured. Install OpenDKIM or Rspamd and publish the DKIM TXT record.';
         }
         if ($webmailReachable === false) {
-            $messages[] = 'Webmail endpoint is unreachable from panel server.';
+            $messages[] = 'Mail client endpoint is unreachable from panel server.';
         } elseif ($shouldProbeWebmail && $webmailReachable === null) {
-            $messages[] = 'Webmail reachability check unavailable (curl extension missing).';
+            $messages[] = 'Mail client reachability check unavailable (curl extension missing).';
         }
 
         $autologinReady = $webmailConfigured
@@ -406,7 +400,13 @@ class EmailController extends Controller
         $scheme = $request->getScheme();
         $host = trim((string) $request->getHost());
 
-        return sprintf('%s://%s/roundcube/', $scheme, $host);
+        $pathPrefix = '';
+        $firstSegment = $request->segment(1);
+        if ($firstSegment !== null && str_starts_with($firstSegment, 'cpsess') && preg_match('/^cpsess[0-9a-fA-F]{64}$/', $firstSegment)) {
+            $pathPrefix = '/'.$firstSegment;
+        }
+
+        return sprintf('%s://%s%s/roundcube/', $scheme, $host, $pathPrefix);
     }
 
     private function buildRoundcubeLoginUrl(string $baseUrl): string
@@ -548,7 +548,7 @@ class EmailController extends Controller
             return ['ready' => false, 'message' => 'Mailbox status is not active.'];
         }
 
-        
+
 
         if ($email === '' || $password === '') {
             return ['ready' => false, 'message' => 'Mailbox credentials are incomplete.'];
@@ -565,7 +565,7 @@ class EmailController extends Controller
             return ['ready' => false, 'message' => $storageCheck['message']];
         }
 
-        return ['ready' => true, 'message' => 'Auto login is ready. Roundcube users row is created after first successful login.'];
+        return ['ready' => true, 'message' => 'Mailbox client is ready. User record is created on demand.'];
     }
 
     private function isDovecotStorageBackendReady(): bool

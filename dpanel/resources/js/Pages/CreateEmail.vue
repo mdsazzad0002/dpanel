@@ -1,7 +1,11 @@
 <script setup>
+import { usePage } from '@inertiajs/vue3';
 import { watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+
+const page = usePage();
+const panelToken = page.props.panel?.token;
 
 const props = defineProps({
     websiteDomains: {
@@ -19,7 +23,7 @@ const form = useForm({
 });
 
 const submit = () => {
-    form.post(route('emails.store'));
+    form.post(panelToken ? route('emails.store', { token: panelToken }) : route('emails.store'));
 };
 
 const generatePassword = () => {
@@ -55,7 +59,7 @@ watch(
 
         <div class="space-y-4">
             <div class="flex justify-end">
-                <Link :href="route('emails.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Link :href="panelToken ? route('emails.list', { token: panelToken }) : route('emails.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                     List Emails
                 </Link>
             </div>

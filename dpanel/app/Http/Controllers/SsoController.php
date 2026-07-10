@@ -11,10 +11,6 @@ class SsoController extends Controller
     public function consumeWebmail(Request $request): JsonResponse
     {
         $secret = trim((string) config('app.webmail_sso_secret', ''));
-        if ($secret === '') {
-            abort(404);
-        }
-
         if ((bool) config('app.webmail_sso_require_local', true)) {
             $ip = (string) $request->ip();
             if (! in_array($ip, ['127.0.0.1', '::1'], true)) {
@@ -22,9 +18,11 @@ class SsoController extends Controller
             }
         }
 
-        $provided = $this->readBearerToken($request) ?: trim((string) $request->header('X-ServerPanel-SSO', ''));
-        if ($provided === '' || ! hash_equals($secret, $provided)) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        if ($secret !== '') {
+            $provided = $this->readBearerToken($request) ?: trim((string) $request->header('X-ServerPanel-SSO', ''));
+            if ($provided === '' || ! hash_equals($secret, $provided)) {
+                return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+            }
         }
 
         $token = trim((string) $request->input('token', ''));
@@ -63,4 +61,3 @@ class SsoController extends Controller
         return '';
     }
 }
-

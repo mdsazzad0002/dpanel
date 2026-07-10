@@ -89,9 +89,7 @@ return [
     'phpmyadmin_signon_issue_secret' => env('PHPMYADMIN_SIGNON_SECRET', ''),
     'webmail_url' => env('WEBMAIL_URL', ''),
     'webmail_helper_url' => env('WEBMAIL_HELPER_URL', ''),
-    'roundcube_port' => env('ROUNDCUBE_PORT', env('PANEL_PORT')),
-    'webmail_sso_secret' => env('WEBMAIL_SSO_SECRET', ''),
-    'webmail_sso_require_local' => env('WEBMAIL_SSO_REQUIRE_LOCAL', true),
+    'roundcube_imap_host' => env('ROUNDCUBE_IMAP_HOST', 'tls://127.0.0.1'),
 
     /*
     |--------------------------------------------------------------------------

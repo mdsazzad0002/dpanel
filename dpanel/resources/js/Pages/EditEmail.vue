@@ -1,7 +1,11 @@
 <script setup>
 import { computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+
+const page = usePage();
+const panelToken = page.props.panel?.token;
 
 const props = defineProps({
     mailbox: {
@@ -30,7 +34,7 @@ const domainOptions = computed(() => {
 });
 
 const submit = () => {
-    form.patch(route('emails.update', props.mailbox.id));
+    form.patch(panelToken ? route('emails.update', { token: panelToken, id: props.mailbox.id }) : route('emails.update', props.mailbox.id));
 };
 </script>
 
@@ -47,7 +51,7 @@ const submit = () => {
 
         <div class="space-y-4">
             <div class="flex justify-end">
-                <Link :href="route('emails.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Link :href="panelToken ? route('emails.list', { token: panelToken }) : route('emails.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                     Back to List
                 </Link>
             </div>

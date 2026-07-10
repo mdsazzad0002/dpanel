@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\PanelSession;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\URL;
 use Symfony\Component\HttpFoundation\Response;
@@ -18,7 +19,7 @@ class EnsurePanelSessionIsValid
         $cookieToken = (string) $request->cookie($cookieName, '');
 
         if ($token === '' || $cookieToken === '') {
-            abort(403);
+            return $this->revokeAndRedirect($request, null, $cookieName);
         }
 
         $session = PanelSession::query()
@@ -29,26 +30,23 @@ class EnsurePanelSessionIsValid
             ->first();
 
         if (! $session) {
-            abort(403);
+            return $this->revokeAndRedirect($request, null, $cookieName);
         }
 
         if ($session->ip_address !== (string) $request->ip()) {
-            $session->forceFill(['revoked_at' => now()])->save();
-            abort(403);
+            return $this->revokeAndRedirect($request, $session, $cookieName);
         }
 
         $currentUserAgentHash = hash('sha256', (string) $request->userAgent());
 
         if ($session->user_agent_hash !== $currentUserAgentHash) {
-            $session->forceFill(['revoked_at' => now()])->save();
-            abort(403);
+            return $this->revokeAndRedirect($request, $session, $cookieName);
         }
 
         $timeoutMinutes = max(1, (int) config('serverpanel.panel_inactivity_timeout', config('session.lifetime', 120)));
 
         if ($session->last_seen_at && $session->last_seen_at->lt(now()->subMinutes($timeoutMinutes))) {
-            $session->forceFill(['revoked_at' => now()])->save();
-            abort(403);
+            return $this->revokeAndRedirect($request, $session, $cookieName);
         }
 
         $session->forceFill(['last_seen_at' => now()])->save();
@@ -61,5 +59,22 @@ class EnsurePanelSessionIsValid
         URL::defaults(['token' => $token]);
 
         return $next($request);
+    }
+
+    private function revokeAndRedirect(Request $request, ?PanelSession $session, string $cookieName): Response
+    {
+        if ($session !== null && $session->revoked_at === null) {
+            $session->forceFill(['revoked_at' => now()])->save();
+        }
+
+        Auth::guard('web')->logout();
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        $request->session()->forget('panel_session_token');
+
+        return redirect()
+            ->route('login')
+            ->withCookie(Cookie::forget($cookieName));
     }
 }

@@ -577,7 +577,7 @@ panel_setup_application_database() {
   fi
 
   panel_info_log "Provisioning application database ${db_name} and user ${db_user}."
-  panel_run_runtime_script "database-request.sh" create "$db_name" "$db_user" "$db_password" "$db_host" "$db_charset" "$db_collation"
+  panel_run_runtime_script "database-request.sh" create "$db_name" "$db_user" "$db_password" "$db_host" "$db_port" "$db_charset" "$db_collation"
 
   panel_env_set "$env_file" DB_CONNECTION mysql
   panel_env_set "$env_file" DB_HOST "$db_host"
