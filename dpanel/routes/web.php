@@ -14,6 +14,7 @@ use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\MonitoringController;
+use App\Http\Controllers\PhpMyAdminProxyController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\ServerController;
@@ -371,8 +372,18 @@ Route::prefix('cpsess{token}')
     Route::get('/databases/{id}/edit', [DatabaseController::class, 'edit'])
         ->middleware('role:admin|reseller')
         ->name('databases.edit');
-    Route::get('/databases/{id}/phpmyadmin', [DatabaseController::class, 'openPhpMyAdmin'])
+    Route::get('/databases/{id}/phpmyadmin/check', [PhpMyAdminProxyController::class, 'check'])
         ->middleware('role:admin|reseller')
+        ->where('id', '[^/]+')
+        ->name('databases.phpmyadmin.check');
+    Route::match(['get', 'post'], '/databases/{id}/phpmyadmin/{path?}', [PhpMyAdminProxyController::class, 'handle'])
+        ->withoutMiddleware([
+            VerifyCsrfToken::class,
+            \App\Http\Middleware\EnsurePanelSessionIsValid::class,
+            \Illuminate\Auth\Middleware\Authenticate::class,
+            \Spatie\Permission\Middleware\RoleMiddleware::class,
+        ])
+        ->where('path', '.*')
         ->name('databases.phpmyadmin');
     Route::patch('/databases/{id}', [DatabaseController::class, 'update'])
         ->middleware('role:admin|reseller')

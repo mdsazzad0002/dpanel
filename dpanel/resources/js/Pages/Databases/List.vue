@@ -1,11 +1,13 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, reactive, ref } from 'vue';
 
 const page = usePage();
 const deleteForm = useForm({});
 const panelToken = computed(() => String(page.props.panel?.token || ''));
+const checkingId = ref('');
+const checkStates = reactive({});
 
 defineProps({
     databaseRequests: {
@@ -25,6 +27,42 @@ const deleteRequest = (id) => {
     if (!confirm('Delete this database request?')) return;
 
     deleteForm.delete(route('databases.destroy', id));
+};
+
+const checkPhpMyAdmin = async (item) => {
+    checkingId.value = item.id;
+    checkStates[item.id] = {
+        type: 'info',
+        message: 'Checking phpMyAdmin preflight...',
+    };
+
+    try {
+        const response = await fetch(route('databases.phpmyadmin.check', { token: panelToken.value, id: item.id }), {
+            headers: {
+                Accept: 'application/json',
+            },
+            credentials: 'same-origin',
+        });
+
+        const data = await response.json().catch(() => ({}));
+        const databaseMessage = data?.checks?.database?.message || 'Database check unavailable.';
+        const assetMessage = data?.checks?.assets?.message || 'Asset check unavailable.';
+        const sessionMessage = data?.checks?.session || 'unknown';
+
+        checkStates[item.id] = {
+            type: response.ok ? 'success' : 'error',
+            message: response.ok ? 'Preflight passed.' : (data?.message || 'Preflight failed.'),
+            details: `Session: ${sessionMessage}. Database: ${databaseMessage} Assets: ${assetMessage}`,
+        };
+    } catch (error) {
+        checkStates[item.id] = {
+            type: 'error',
+            message: 'Preflight request failed.',
+            details: error?.message || 'Unknown error.',
+        };
+    } finally {
+        checkingId.value = '';
+    }
 };
 </script>
 
@@ -85,10 +123,19 @@ const deleteRequest = (id) => {
                             </td>
                             <td class="px-4 py-3">{{ formatDate(item.created_at) }}</td>
                             <td class="px-4 py-3">
-                                <div class="flex items-center gap-2">
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex items-center gap-2">
                                     <Link :href="route('databases.edit', item.id)" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                         Edit
                                     </Link>
+                                    <button
+                                        type="button"
+                                        :disabled="checkingId === item.id"
+                                        class="rounded-md border border-amber-300 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/20"
+                                        @click="checkPhpMyAdmin(item)"
+                                    >
+                                        {{ checkingId === item.id ? 'Checking...' : 'Check' }}
+                                    </button>
                                     <a
                                         :href="route('databases.phpmyadmin', { token: panelToken, id: item.id })"
                                         target="_blank"
@@ -104,6 +151,17 @@ const deleteRequest = (id) => {
                                     >
                                         Delete
                                     </button>
+                                    </div>
+                                    <p
+                                        v-if="checkStates[item.id]"
+                                        class="max-w-md text-xs"
+                                        :class="checkStates[item.id].type === 'success' ? 'text-emerald-600 dark:text-emerald-400' : checkStates[item.id].type === 'error' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'"
+                                    >
+                                        {{ checkStates[item.id].message }}
+                                        <span v-if="checkStates[item.id].details" class="block opacity-80">
+                                            {{ checkStates[item.id].details }}
+                                        </span>
+                                    </p>
                                 </div>
                             </td>
                         </tr>

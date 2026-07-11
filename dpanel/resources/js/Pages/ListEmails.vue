@@ -15,27 +15,6 @@ defineProps({
         type: Array,
         default: () => [],
     },
-    mailGuide: {
-        type: Object,
-        default: () => ({
-            domains: [],
-            notes: [],
-            records: [],
-        }),
-    },
-    setupCheck: {
-        type: Object,
-        default: () => ({
-            services: {},
-            messages: [],
-            webmail_url: '',
-            webmail_login_url: '',
-            autologin_ready: false,
-            webmail_reachable: null,
-            storage_backend_ready: false,
-            dkim_ready: false,
-        }),
-    },
 });
 
 const formatDate = (value) => {
@@ -48,12 +27,6 @@ const deleteMailbox = (id) => {
     deleteForm.delete(panelRoute('emails.destroy', { id }));
 };
 
-const serviceBadgeClass = (status) => {
-    const value = String(status || '').toLowerCase();
-    if (value === 'running') return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300';
-    if (value === 'down') return 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300';
-    return 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
-};
 </script>
 
 <template>
@@ -84,120 +57,19 @@ const serviceBadgeClass = (status) => {
             <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Mail Setup Check</h2>
-                        <p class="mt-1 break-all text-sm text-slate-600 dark:text-slate-300">{{ setupCheck.webmail_url || '-' }}</p>
-                        <p class="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">Mail client endpoint: {{ setupCheck.webmail_login_url || '-' }}</p>
-                    </div>
-                    <span
-                        class="rounded-full border px-3 py-1 text-xs font-medium"
-                        :class="setupCheck.autologin_ready
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-                            : 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300'"
-                    >
-                        {{ setupCheck.autologin_ready ? 'Mailbox Ready' : 'Mailbox Not Ready' }}
-                    </span>
-                </div>
-
-                <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                    <span class="rounded-full border px-2 py-1" :class="serviceBadgeClass(setupCheck.services?.postfix)">Postfix: {{ setupCheck.services?.postfix || 'unknown' }}</span>
-                    <span class="rounded-full border px-2 py-1" :class="serviceBadgeClass(setupCheck.services?.dovecot)">Dovecot: {{ setupCheck.services?.dovecot || 'unknown' }}</span>
-                    <span
-                        class="rounded-full border px-2 py-1"
-                        :class="setupCheck.dkim_ready
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-                            : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300'"
-                    >
-                        DKIM: {{ setupCheck.dkim_ready ? 'ready' : 'not configured' }}
-                    </span>
-                    <span
-                        class="rounded-full border px-2 py-1"
-                        :class="setupCheck.storage_backend_ready
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-                            : 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300'"
-                    >
-                        Storage Sync: {{ setupCheck.storage_backend_ready ? 'ready' : 'not ready' }}
-                    </span>
-                    <span
-                        class="rounded-full border px-2 py-1"
-                        :class="setupCheck.webmail_reachable === true
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-                            : setupCheck.webmail_reachable === false
-                                ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300'
-                                : 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'"
-                    >
-                        Webmail: {{ setupCheck.webmail_reachable === true ? 'reachable' : setupCheck.webmail_reachable === false ? 'unreachable' : 'unknown' }}
-                    </span>
-                </div>
-
-                <ul v-if="Array.isArray(setupCheck.messages) && setupCheck.messages.length > 0" class="mt-3 space-y-1 text-xs text-red-600 dark:text-red-300">
-                    <li v-for="(message, index) in setupCheck.messages" :key="`setup-message-${index}`">- {{ message }}</li>
-                </ul>
-            </div>
-
-            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">DKIM & Mail DNS</h2>
+                        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">DNS Management</h2>
                         <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                            Primary domain: {{ mailGuide.primary_domain || '-' }}
-                        </p>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            Selector: {{ mailGuide.selector || 'default' }}
-                        </p>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            Mail host: {{ mailGuide.mail_host || '-' }}
+                            Mail DNS and DKIM helpers now live in the DNS management area.
                         </p>
                     </div>
-                    <span
-                        class="rounded-full border px-3 py-1 text-xs font-medium"
-                        :class="mailGuide.dkim_public_key_ready
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-                            : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300'"
-                    >
-                        {{ mailGuide.dkim_public_key_ready ? 'DKIM Key Ready' : 'DKIM Key Missing' }}
-                    </span>
-                </div>
-
-                <div v-if="Array.isArray(mailGuide.domains) && mailGuide.domains.length > 0" class="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                    Mail domains: {{ mailGuide.domains.join(', ') }}
-                </div>
-
-                <div class="mt-3 grid gap-3 md:grid-cols-2">
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-950">
-                        <p class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">DKIM TXT</p>
-                        <p class="mt-1 break-all text-slate-700 dark:text-slate-200">{{ mailGuide.dkim_record_name || '-' }}</p>
-                        <p class="mt-2 break-all rounded-md bg-white p-2 text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-                            {{ mailGuide.dkim_record_value || '-' }}
-                        </p>
+                    <div class="flex flex-wrap gap-2">
+                        <Link :href="panelRoute('dns.zones')" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
+                            DNS Zones
+                        </Link>
+                        <Link :href="panelRoute('dns.records')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                            DNS Records
+                        </Link>
                     </div>
-
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-950">
-                        <p class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Cloudflare Notes</p>
-                        <ul class="mt-2 space-y-1 text-slate-600 dark:text-slate-300">
-                            <li v-for="(note, index) in mailGuide.notes" :key="`mail-guide-note-${index}`">- {{ note }}</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="mt-3 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                    <table class="min-w-full text-left text-xs">
-                        <thead class="bg-slate-50 dark:bg-slate-800">
-                            <tr>
-                                <th class="px-3 py-2">Type</th>
-                                <th class="px-3 py-2">Name</th>
-                                <th class="px-3 py-2">Content</th>
-                                <th class="px-3 py-2">Note</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="(record, index) in mailGuide.records" :key="`mail-guide-record-${index}`" class="border-t border-slate-200 dark:border-slate-800">
-                                <td class="px-3 py-2 font-medium">{{ record.type }}</td>
-                                <td class="px-3 py-2 break-all">{{ record.name }}</td>
-                                <td class="px-3 py-2 break-all">{{ record.content }}</td>
-                                <td class="px-3 py-2 text-slate-500 dark:text-slate-400">{{ record.note }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
                 </div>
             </div>
 
@@ -218,12 +90,6 @@ const serviceBadgeClass = (status) => {
                             <td class="px-4 py-3">{{ item.domain || '-' }}</td>
                             <td class="px-4 py-3 font-medium">
                                 <p>{{ item.email }}</p>
-                                <p
-                                    class="mt-1 text-xs"
-                                    :class="item.autologin_ready ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300'"
-                                >
-                                    {{ item.autologin_message || '-' }}
-                                </p>
                             </td>
                             <td class="px-4 py-3">{{ item.quota_mb }} MB</td>
                             <td class="px-4 py-3">

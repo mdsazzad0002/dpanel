@@ -169,77 +169,9 @@ class DatabaseController extends Controller
      */
     public function openPhpMyAdmin(Request $request, string $token, string $id)
     {
-        $this->migrateLegacyJsonRequests();
-
-        $requestItem = DatabaseRequestModel::query()->find($id);
-        abort_if($requestItem === null, 404);
-
-        $configuredTargetUrl = trim((string) config('app.phpmyadmin_url', ''));
-        $configuredHelperUrl = trim((string) config('app.phpmyadmin_helper_url', ''));
-        $isSeparateMode = $this->isWebtoolsSeparateMode();
-
-        if ($configuredTargetUrl !== '') {
-            $targetUrl = rtrim($configuredTargetUrl, '/');
-        } else {
-            $origin = rtrim($request->getSchemeAndHttpHost(), '/');
-            if ($isSeparateMode) {
-                $port = $this->normalizePort((int) config('app.phpmyadmin_port', 8090), 8090);
-                $origin = $request->getScheme().'://'.$request->getHost().':'.$port;
-                $targetUrl = $origin.'/index.php';
-            } else {
-                $targetUrl = $origin.'/phpmyadmin/index.php';
-            }
-        }
-
-        if ($configuredHelperUrl !== '') {
-            $helperUrl = $configuredHelperUrl;
-        } else {
-            $parsedTarget = parse_url($targetUrl);
-            if (is_array($parsedTarget) && isset($parsedTarget['scheme'], $parsedTarget['host'])) {
-                $helperBase = $parsedTarget['scheme'].'://'.$parsedTarget['host'];
-                if (isset($parsedTarget['port'])) {
-                    $helperBase .= ':'.$parsedTarget['port'];
-                }
-            } else {
-                $helperBase = preg_replace('#/phpmyadmin/index\.php/?$#i', '', $targetUrl);
-                $helperBase = is_string($helperBase) ? rtrim($helperBase, '/') : rtrim($targetUrl, '/');
-            }
-            $helperPath = $isSeparateMode ? '/phpmyadminsignin.php' : '/phpmyadmin/phpmyadminsignin.php';
-            $helperUrl = $helperBase.$helperPath;
-        }
-
-        $databaseHost = trim((string) ($requestItem->database_host ?? '127.0.0.1'));
-        if ($databaseHost === '' || strcasecmp($databaseHost, 'localhost') === 0) {
-            $databaseHost = '127.0.0.1';
-        }
-
-        $tokenModeEnabled = trim((string) config('app.phpmyadmin_signon_issue_secret', '')) !== '';
-        if ($tokenModeEnabled) {
-            $token = $this->tryIssuePhpMyAdminToken($helperUrl, [
-                'username' => (string) ($requestItem->database_user ?? ''),
-                'password' => (string) ($requestItem->database_password ?? ''),
-                'host' => $databaseHost,
-                'db' => (string) ($requestItem->database_name ?? ''),
-                'ttl' => 900,
-            ]);
-            if (is_string($token) && $token !== '') {
-                $sep = str_contains($helperUrl, '?') ? '&' : '?';
-
-                return redirect()->away($helperUrl.$sep.'token='.rawurlencode($token));
-            }
-
-            return redirect()
-                ->route('databases.list')
-                ->with('error', 'Secure phpMyAdmin auto-login failed (token issuing). Check PHPMYADMIN_SIGNON_SECRET and PMA_SIGNON_ISSUE_SECRET.');
-        }
-
-        return response()->view('phpmyadmin.autologin', [
-            'targetUrl' => $targetUrl,
-            'helperUrl' => $helperUrl,
-            'username' => (string) ($requestItem->database_user ?? ''),
-            'password' => (string) ($requestItem->database_password ?? ''),
-            'database' => (string) ($requestItem->database_name ?? ''),
-            'host' => $databaseHost,
+        return redirect()->route('databases.phpmyadmin', [
+            'token' => $token,
+            'id' => $id,
         ]);
     }
 
