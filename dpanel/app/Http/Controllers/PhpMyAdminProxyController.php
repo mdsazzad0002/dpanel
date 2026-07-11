@@ -10,16 +10,14 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Client\Response as HttpResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Http;
 
 class PhpMyAdminProxyController extends Controller
 {
     public function autologin(Request $request, string $token, string $id): RedirectResponse|View
     {
-        $panelAccess = $this->ensurePanelSessionIsActive($request, $token);
-        if ($panelAccess !== null) {
-            return $panelAccess;
+        if (! Auth::check()) {
+            return redirect()->route('login');
         }
 
         $requestItem = DatabaseRequestModel::query()->find($id);
@@ -47,6 +45,10 @@ class PhpMyAdminProxyController extends Controller
 
     public function handle(Request $request, string $token, string $id, string $path = '')
     {
+        if (! Auth::check()) {
+            return redirect()->route('login');
+        }
+
         $phpMyAdminPath = realpath(base_path('../3rdparty/phpMyAdmin'));
         abort_if($phpMyAdminPath === false, 404);
 
@@ -80,11 +82,6 @@ class PhpMyAdminProxyController extends Controller
             ]);
         }
 
-        $panelAccess = $this->ensurePanelSessionIsActive($request, $token);
-        if ($panelAccess !== null) {
-            return $panelAccess;
-        }
-
         $requestItem = DatabaseRequestModel::query()->find($id);
         abort_if($requestItem === null, 404);
 
@@ -98,15 +95,14 @@ class PhpMyAdminProxyController extends Controller
 
     public function check(Request $request, string $token, string $id): JsonResponse
     {
-        $panelAccess = $this->ensurePanelSessionIsActive($request, $token);
-        if ($panelAccess !== null) {
+        if (! Auth::check()) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Panel session is no longer active.',
+                'message' => 'Laravel auth session is no longer active.',
                 'checks' => [
                     'session' => [
                         'ok' => false,
-                        'message' => 'Panel session is no longer active.',
+                        'message' => 'Laravel auth session is no longer active.',
                     ],
                 ],
             ], 401);
@@ -134,82 +130,6 @@ class PhpMyAdminProxyController extends Controller
                 'assets' => $assetChecks,
             ],
         ], $ok ? 200 : 422);
-    }
-
-    private function ensurePanelSessionIsActive(Request $request, string $token): ?RedirectResponse
-    {
-        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
-        $cookieToken = (string) $request->cookie($cookieName, '');
-
-        if ($token === '' || $cookieToken === '') {
-            if ($token !== '' && $this->reissuePanelProofCookieIfPossible($request, $token, $cookieName)) {
-                return null;
-            }
-
-            return redirect()->route('login');
-        }
-
-        $session = PanelSession::query()
-            ->where('token_hash', hash('sha256', $token))
-            ->where('cookie_hash', hash('sha256', $cookieToken))
-            ->whereNull('revoked_at')
-            ->where('expires_at', '>', now())
-            ->first();
-
-        if (! $session) {
-            return redirect()->route('login');
-        }
-
-        if ($session->ip_address !== (string) $request->ip()) {
-            return redirect()->route('login');
-        }
-
-        if ($session->user_agent_hash !== hash('sha256', (string) $request->userAgent())) {
-            return redirect()->route('login');
-        }
-
-        $session->forceFill(['last_seen_at' => now()])->save();
-
-        return null;
-    }
-
-    private function reissuePanelProofCookieIfPossible(Request $request, string $token, string $cookieName): bool
-    {
-        if (! Auth::check() || ! $request->hasSession()) {
-            return false;
-        }
-
-        $sessionToken = (string) $request->session()->get('panel_session_token', '');
-        if ($sessionToken === '' || $sessionToken !== $token) {
-            return false;
-        }
-
-        $cookieToken = bin2hex(random_bytes(32));
-
-        PanelSession::create([
-            'user_id' => (int) Auth::id(),
-            'token_hash' => hash('sha256', $token),
-            'cookie_hash' => hash('sha256', $cookieToken),
-            'ip_address' => (string) $request->ip(),
-            'user_agent_hash' => hash('sha256', (string) $request->userAgent()),
-            'expires_at' => now()->addYear(),
-            'last_seen_at' => now(),
-        ]);
-
-        $request->cookies->set($cookieName, $cookieToken);
-        Cookie::queue(cookie(
-            name: $cookieName,
-            value: $cookieToken,
-            minutes: 60 * 24 * 365,
-            path: (string) config('session.path', '/'),
-            domain: config('session.domain'),
-            secure: (bool) config('session.secure'),
-            httpOnly: true,
-            raw: false,
-            sameSite: 'Lax'
-        ));
-
-        return true;
     }
 
     private function buildUpstreamBaseUrl(Request $request): string

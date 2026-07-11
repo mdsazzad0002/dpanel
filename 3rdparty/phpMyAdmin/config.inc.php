@@ -101,18 +101,80 @@ function serverpanelDecodeSignonToken(string $token): ?array
     return $payload;
 }
 
-function serverpanelApplySignonServerConfig(array &$cfg, int $index, array $payload): void
+function serverpanelApplySignonServerConfig(array &$cfg, int $index, array $payload, string $signonSessionName, string $signonUrl): void
 {
-    $cfg['Servers'][$index]['auth_type'] = 'config';
-    $cfg['Servers'][$index]['user'] = (string) ($payload['user'] ?? '');
-    $cfg['Servers'][$index]['password'] = (string) ($payload['pass'] ?? '');
+    $cfg['Servers'][$index]['auth_type'] = 'signon';
     $cfg['Servers'][$index]['host'] = (string) ($payload['host'] ?? '127.0.0.1');
     $cfg['Servers'][$index]['port'] = (int) ($payload['port'] ?? 3306);
     $cfg['Servers'][$index]['verbose'] = 'ServerPanel';
     $cfg['Servers'][$index]['AllowNoPassword'] = false;
+    $cfg['Servers'][$index]['SignonSession'] = $signonSessionName;
+    $cfg['Servers'][$index]['SignonURL'] = $signonUrl;
+    $cfg['Servers'][$index]['SignonScript'] = '';
 
     if (! empty($payload['db'])) {
         $cfg['Servers'][$index]['only_db'] = (string) $payload['db'];
+    }
+}
+
+function serverpanelSeedSignonSession(array $payload, string $sessionName): void
+{
+    $previousSessionName = session_name();
+    $previousCookieParams = session_get_cookie_params();
+
+    $cookieParams = [
+        'lifetime' => 0,
+        'path' => '/',
+        'domain' => '',
+        'secure' => serverpanelRequestIsSecure(),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ];
+
+    if (version_compare(PHP_VERSION, '7.3.0', '>=')) {
+        session_set_cookie_params($cookieParams);
+    } else {
+        session_set_cookie_params(
+            $cookieParams['lifetime'],
+            $cookieParams['path'],
+            $cookieParams['domain'],
+            $cookieParams['secure'],
+            $cookieParams['httponly']
+        );
+    }
+
+    session_name($sessionName);
+    session_start();
+    $_COOKIE[$sessionName] = session_id();
+    $_REQUEST[$sessionName] = session_id();
+
+    $_SESSION['PMA_single_signon_user'] = (string) ($payload['user'] ?? '');
+    $_SESSION['PMA_single_signon_password'] = (string) ($payload['pass'] ?? '');
+    $_SESSION['PMA_single_signon_host'] = (string) ($payload['host'] ?? '127.0.0.1');
+    $_SESSION['PMA_single_signon_port'] = (int) ($payload['port'] ?? 3306);
+    $_SESSION['PMA_single_signon_cfgupdate'] = [
+        'verbose' => 'ServerPanel',
+        'only_db' => ! empty($payload['db']) ? (string) $payload['db'] : '',
+    ];
+    $_SESSION['PMA_single_signon_HMAC_secret'] = hash('sha256', serverpanelResolveSignonSecret().'|'.$sessionName.'|HMAC');
+    $_SESSION['PMA_single_signon_token'] = bin2hex(random_bytes(16));
+
+    session_write_close();
+
+    if ($previousSessionName !== '') {
+        session_name($previousSessionName);
+    }
+
+    if (version_compare(PHP_VERSION, '7.3.0', '>=')) {
+        session_set_cookie_params($previousCookieParams);
+    } else {
+        session_set_cookie_params(
+            $previousCookieParams['lifetime'] ?? 0,
+            $previousCookieParams['path'] ?? '/',
+            $previousCookieParams['domain'] ?? '',
+            $previousCookieParams['secure'] ?? false,
+            $previousCookieParams['httponly'] ?? false
+        );
     }
 }
 
@@ -167,48 +229,16 @@ serverpanelDebugLog('bootstrap', [
 ]);
 
 if (is_array($signonPayload)) {
-    $proxyBase = trim((string) ($_SERVER['HTTP_X_SERVERPANEL_PMA_BASE'] ?? ''));
-    $cookiePath = $proxyBase !== '' ? (str_ends_with($proxyBase, '/') ? $proxyBase : $proxyBase.'/') : '/';
-
-    setcookie('SERVERPANEL_PMA_SIGNON', $signonToken, [
-        'expires' => time() + 300,
-        'path' => $cookiePath,
-        'secure' => serverpanelRequestIsSecure(),
-        'httponly' => true,
-        'samesite' => 'Lax',
-    ]);
-
-    serverpanelApplySignonServerConfig($cfg, 0, $signonPayload);
-    serverpanelApplySignonServerConfig($cfg, 1, $signonPayload);
+    $cfg['Servers'] = [];
+    $signonSessionName = 'SignonSession';
+    serverpanelSeedSignonSession($signonPayload, $signonSessionName);
+    serverpanelApplySignonServerConfig($cfg, 1, $signonPayload, $signonSessionName, $signonUrl);
 
     serverpanelDebugLog('applied-signon', [
         'db' => (string) ($signonPayload['db'] ?? ''),
         'user' => (string) ($signonPayload['user'] ?? ''),
         'host' => (string) ($signonPayload['host'] ?? ''),
         'port' => (int) ($signonPayload['port'] ?? 0),
+        'session' => $signonSessionName,
     ]);
 }
-
-$i = 1;
-$cookieSignonToken = (string) ($_COOKIE['SERVERPANEL_PMA_SIGNON'] ?? '');
-if ($cookieSignonToken !== '' && $signonToken === '') {
-    $cookiePayload = serverpanelDecodeSignonToken($cookieSignonToken);
-    if (is_array($cookiePayload)) {
-        $signonPayload = $cookiePayload;
-        serverpanelApplySignonServerConfig($cfg, 0, $cookiePayload);
-        serverpanelApplySignonServerConfig($cfg, 1, $cookiePayload);
-
-        serverpanelDebugLog('applied-cookie-signon', [
-            'db' => (string) ($cookiePayload['db'] ?? ''),
-            'user' => (string) ($cookiePayload['user'] ?? ''),
-            'host' => (string) ($cookiePayload['host'] ?? ''),
-            'port' => (int) ($cookiePayload['port'] ?? 0),
-        ]);
-    }
-}
-$cfg['Servers'][$i]['auth_type'] = $cfg['Servers'][$i]['auth_type'] ?? 'cookie';
-$cfg['Servers'][$i]['host'] = $cfg['Servers'][$i]['host'] ?? '127.0.0.1';
-$cfg['Servers'][$i]['AllowNoPassword'] = false;
-$cfg['Servers'][$i]['compress'] = false;
-$cfg['Servers'][$i]['extension'] = 'mysqli';
-$cfg['Servers'][$i]['ShowAll'] = true;
