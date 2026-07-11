@@ -1,11 +1,21 @@
 <?php
 declare(strict_types=1);
 
+function serverpanelRequestIsSecure(): bool
+{
+    $forwardedProto = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+    if ($forwardedProto !== '') {
+        return $forwardedProto === 'https';
+    }
+
+    return !empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off';
+}
+
 session_name('SignonSession');
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
-    'secure' => (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off'),
+    'secure' => serverpanelRequestIsSecure(),
     'httponly' => true,
     'samesite' => 'Lax',
 ]);
@@ -82,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action !== 'redirect') {
         setcookie(session_name(), '', [
             'expires' => time() - 3600,
             'path' => '/',
-            'secure' => (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off'),
+            'secure' => serverpanelRequestIsSecure(),
             'httponly' => true,
             'samesite' => 'Lax',
         ]);

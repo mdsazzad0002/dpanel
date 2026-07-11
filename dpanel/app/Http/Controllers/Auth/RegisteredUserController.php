@@ -71,17 +71,21 @@ class RegisteredUserController extends Controller
         $request->session()->put('panel_session_token', $urlToken);
         URL::defaults(['token' => $urlToken]);
 
+        $panelCookie = cookie(
+            name: $cookieName,
+            value: $cookieToken,
+            minutes: $lifetime,
+            path: (string) config('session.path', '/'),
+            domain: config('session.domain'),
+            secure: (bool) config('session.secure'),
+            httpOnly: true,
+            raw: false,
+            sameSite: 'Lax'
+        );
+
+        \Illuminate\Support\Facades\Cookie::queue($panelCookie);
+
         return redirect(route('dashboard', absolute: false))
-            ->withCookie(cookie(
-                name: $cookieName,
-                value: $cookieToken,
-                minutes: $lifetime,
-                path: (string) config('session.path', '/'),
-                domain: config('session.domain'),
-                secure: (bool) config('session.secure'),
-                httpOnly: true,
-                raw: false,
-                sameSite: 'Lax'
-            ));
+            ->withCookie($panelCookie);
     }
 }

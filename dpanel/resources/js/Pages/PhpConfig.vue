@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, usePage, router } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const props = defineProps({
     versions: {
@@ -18,6 +19,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 
 const form = useForm({
     version: props.selectedVersion,
@@ -33,14 +38,14 @@ const form = useForm({
 
 const switchVersion = () => {
     router.get(
-        route('php.config'),
+        panelRoute('php.config'),
         { version: form.version },
         { preserveScroll: true, preserveState: true, replace: true },
     );
 };
 
 const submit = () => {
-    form.patch(route('php.config.update'));
+    form.patch(panelRoute('php.config.update'));
 };
 </script>
 

@@ -6,6 +6,9 @@ import { computed, reactive, ref } from 'vue';
 const page = usePage();
 const deleteForm = useForm({});
 const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const checkingId = ref('');
 const checkStates = reactive({});
 
@@ -26,7 +29,7 @@ const formatDate = (value) => {
 const deleteRequest = (id) => {
     if (!confirm('Delete this database request?')) return;
 
-    deleteForm.delete(route('databases.destroy', id));
+    deleteForm.delete(panelRoute('databases.destroy', { id }));
 };
 
 const checkPhpMyAdmin = async (item) => {
@@ -37,7 +40,7 @@ const checkPhpMyAdmin = async (item) => {
     };
 
     try {
-        const response = await fetch(route('databases.phpmyadmin.check', { token: panelToken.value, id: item.id }), {
+        const response = await fetch(panelRoute('databases.phpmyadmin.check', { id: item.id }), {
             headers: {
                 Accept: 'application/json',
             },
@@ -58,6 +61,44 @@ const checkPhpMyAdmin = async (item) => {
         checkStates[item.id] = {
             type: 'error',
             message: 'Preflight request failed.',
+            details: error?.message || 'Unknown error.',
+        };
+    } finally {
+        checkingId.value = '';
+    }
+};
+
+const openPhpMyAdmin = async (item) => {
+    checkingId.value = item.id;
+    checkStates[item.id] = {
+        type: 'info',
+        message: 'Verifying session before opening phpMyAdmin...',
+    };
+
+    try {
+        const response = await fetch(panelRoute('databases.phpmyadmin.check', { id: item.id }), {
+            headers: {
+                Accept: 'application/json',
+            },
+            credentials: 'same-origin',
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            checkStates[item.id] = {
+                type: 'error',
+                message: data?.message || 'Session verification failed.',
+                details: data?.checks?.session?.message || data?.checks?.session || 'Cookie/session mismatch.',
+            };
+            return;
+        }
+
+        window.location.assign(panelRoute('databases.phpmyadmin.autologin', { id: item.id }));
+    } catch (error) {
+        checkStates[item.id] = {
+            type: 'error',
+            message: 'Session verification failed.',
             details: error?.message || 'Unknown error.',
         };
     } finally {
@@ -86,7 +127,7 @@ const checkPhpMyAdmin = async (item) => {
             </div>
 
             <div class="flex justify-end">
-                <Link :href="route('databases.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
+                <Link :href="panelRoute('databases.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Database
                 </Link>
             </div>
@@ -125,7 +166,7 @@ const checkPhpMyAdmin = async (item) => {
                             <td class="px-4 py-3">
                                 <div class="flex flex-col gap-2">
                                     <div class="flex items-center gap-2">
-                                    <Link :href="route('databases.edit', item.id)" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                                    <Link :href="panelRoute('databases.edit', { id: item.id })" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                         Edit
                                     </Link>
                                     <button
@@ -136,14 +177,14 @@ const checkPhpMyAdmin = async (item) => {
                                     >
                                         {{ checkingId === item.id ? 'Checking...' : 'Check' }}
                                     </button>
-                                    <a
-                                        :href="route('databases.phpmyadmin', { token: panelToken, id: item.id })"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
+                                    <button
+                                        type="button"
+                                        :disabled="checkingId === item.id"
+                                        class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
+                                        @click="openPhpMyAdmin(item)"
                                     >
                                         phpMyAdmin
-                                    </a>
+                                    </button>
                                     <button
                                         :disabled="deleteForm.processing"
                                         class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-400"

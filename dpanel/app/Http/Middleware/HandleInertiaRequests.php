@@ -30,16 +30,19 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $user = $request->user();
+        $panelToken = $request->hasSession() ? $request->session()->get('panel_session_token') : null;
+        $flashSuccess = $request->hasSession() ? fn () => $request->session()->get('success') : fn () => null;
+        $flashError = $request->hasSession() ? fn () => $request->session()->get('error') : fn () => null;
 
         return [
             ...parent::share($request),
             'panel' => [
-                'token' => $request->session()->get('panel_session_token'),
+                'token' => $panelToken,
                 'domain' => config('serverpanel.panel_domain'),
             ],
             'flash' => [
-                'success' => fn () => $request->session()->get('success'),
-                'error' => fn () => $request->session()->get('error'),
+                'success' => $flashSuccess,
+                'error' => $flashError,
             ],
             'auth' => [
                 'user' => $user,

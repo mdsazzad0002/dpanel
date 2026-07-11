@@ -4,6 +4,10 @@ import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const deleteForm = useForm({});
 const statusForm = useForm({ status: '' });
 const search = ref('');
@@ -82,14 +86,14 @@ const formatDate = (value) => {
 const deleteRequest = (id) => {
     if (!confirm('Delete this website request?')) return;
 
-    deleteForm.delete(route('websites.destroy', id));
+    deleteForm.delete(panelRoute('websites.destroy', { id }));
 };
 
 const toggleStatus = (item) => {
     const current = String(item.status || '').toLowerCase();
     const next = current === 'disabled' ? 'enabled' : 'disabled';
     statusForm.status = next;
-    statusForm.patch(route('websites.status.update', item.id), {
+    statusForm.patch(panelRoute('websites.status.update', { id: item.id }), {
         preserveScroll: true,
     });
 };
@@ -159,7 +163,7 @@ const createdByLabel = (item) => String(
                         <option value="wordpress">WordPress</option>
                     </select>
                 </div>
-                <Link :href="route('websites.create')" class="inline-flex rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
+                <Link :href="panelRoute('websites.create')" class="inline-flex rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Website
                 </Link>
             </div>
@@ -178,10 +182,10 @@ const createdByLabel = (item) => String(
                         <tr v-for="item in paginatedWebsites" :key="item.id" class="border-t border-slate-200 dark:border-slate-800">
                             <td class="px-4 py-3 align-top">
                                 <div class="space-y-1">
-                                    <Link :href="route('websites.manage', item.id)" class="block font-medium text-blue-700 underline hover:text-blue-800 dark:text-blue-400">
+                                    <Link :href="panelRoute('websites.manage', { id: item.id })" class="block font-medium text-blue-700 underline hover:text-blue-800 dark:text-blue-400">
                                         {{ item.domain }}
                                     </Link>
-                                    <Link :href="route('websites.filemanager', item.id)" class="block break-all text-xs text-emerald-700 underline hover:text-emerald-800 dark:text-emerald-400">
+                                    <Link :href="panelRoute('websites.filemanager', { id: item.id })" class="block break-all text-xs text-emerald-700 underline hover:text-emerald-800 dark:text-emerald-400">
                                         {{ item.root_path }}
                                     </Link>
                                 </div>
@@ -222,13 +226,13 @@ const createdByLabel = (item) => String(
                             </td>
                             <td class="px-4 py-3 align-top">
                                 <div class="flex flex-wrap gap-2">
-                                    <Link :href="route('websites.manage', item.id)" class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
+                                    <Link :href="panelRoute('websites.manage', { id: item.id })" class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
                                         Manage
                                     </Link>
-                                    <Link :href="route('websites.filemanager', item.id)" class="rounded-md border border-emerald-300 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/20">
+                                    <Link :href="panelRoute('websites.filemanager', { id: item.id })" class="rounded-md border border-emerald-300 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/20">
                                         Files
                                     </Link>
-                                    <Link :href="route('websites.edit', item.id)" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                                    <Link :href="panelRoute('websites.edit', { id: item.id })" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                         Edit
                                     </Link>
                                     <button

@@ -87,9 +87,11 @@ return [
     'phpmyadmin_url' => env('PHPMYADMIN_URL', ''),
     'phpmyadmin_helper_url' => env('PHPMYADMIN_HELPER_URL', ''),
     'phpmyadmin_signon_issue_secret' => env('PHPMYADMIN_SIGNON_SECRET', ''),
+    'phpmyadmin_debug' => env('PHPMYADMIN_DEBUG', false),
     'webmail_url' => env('WEBMAIL_URL', ''),
     'webmail_helper_url' => env('WEBMAIL_HELPER_URL', ''),
     'roundcube_imap_host' => env('ROUNDCUBE_IMAP_HOST', 'tls://127.0.0.1'),
+    
 
     /*
     |--------------------------------------------------------------------------

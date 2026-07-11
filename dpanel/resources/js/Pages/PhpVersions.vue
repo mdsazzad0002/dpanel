@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const props = defineProps({
     installedVersions: {
@@ -15,6 +16,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const versionInput = ref('');
 
 const form = useForm({
@@ -55,7 +60,7 @@ const removeVersion = (version) => {
 };
 
 const submit = () => {
-    form.patch(route('php.versions.update'));
+    form.patch(panelRoute('php.versions.update'));
 };
 </script>
 

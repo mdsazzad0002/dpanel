@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, usePage, router } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const props = defineProps({
     versions: {
@@ -22,6 +23,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 
 const selectedByDefault = props.availableExtensions.filter((extension) => props.extensionStates?.[extension]);
 
@@ -32,14 +37,14 @@ const form = useForm({
 
 const switchVersion = () => {
     router.get(
-        route('php.extensions'),
+        panelRoute('php.extensions'),
         { version: form.version },
         { preserveScroll: true, preserveState: true, replace: true },
     );
 };
 
 const submit = () => {
-    form.patch(route('php.extensions.update'));
+    form.patch(panelRoute('php.extensions.update'));
 };
 </script>
 

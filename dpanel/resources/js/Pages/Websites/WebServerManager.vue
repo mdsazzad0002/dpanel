@@ -34,6 +34,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 
 const formatStatus = (value) => {
     const text = String(value || 'unknown').toLowerCase();
@@ -83,7 +87,7 @@ const nginxVhostTone = computed(() => (
 
             <div class="mb-4 flex justify-end gap-2">
                 <Link
-                    :href="route('websites.vhost.sync', website.id)"
+                    :href="panelRoute('websites.vhost.sync', { id: website.id })"
                     method="post"
                     as="button"
                     :data="{ return_to: 'website_service' }"
@@ -91,10 +95,10 @@ const nginxVhostTone = computed(() => (
                 >
                     <i class="fa fa-sync"></i> Sync VHost
                 </Link>
-                <Link :href="route('websites.ssl', website.id)" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
+                <Link :href="panelRoute('websites.ssl', { id: website.id })" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
                     <i class="bi bi-shield-check mr-2"></i> Open SSL Manager
                 </Link>
-                 <Link :href="route('websites.manage', website.id)" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                 <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                    <i class="bi bi-arrow-left mr-2"></i> Back to Manage
                 </Link>
             </div>

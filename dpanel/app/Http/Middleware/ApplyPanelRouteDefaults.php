@@ -11,6 +11,10 @@ class ApplyPanelRouteDefaults
 {
     public function handle(Request $request, Closure $next): Response
     {
+        if (! $request->hasSession()) {
+            return $next($request);
+        }
+
         $token = (string) $request->session()->get('panel_session_token', '');
 
         if ($token !== '') {

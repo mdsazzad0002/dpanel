@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const props = defineProps({
     website: {
@@ -21,11 +22,15 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const clearForm = useForm({});
 
 const clearWebsiteCache = () => {
     if (!confirm(`Clear Redis keys for ${props.website.domain}?`)) return;
-    clearForm.post(route('websites.redis-cache.clear', props.website.id));
+    clearForm.post(panelRoute('websites.redis-cache.clear', { id: props.website.id }));
 };
 </script>
 
@@ -42,7 +47,7 @@ const clearWebsiteCache = () => {
 
         <div class="space-y-4">
             <div class="flex justify-end gap-2">
-                <Link :href="route('websites.manage', website.id)" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                     Back to Website Management
                 </Link>
             </div>
@@ -111,4 +116,3 @@ const clearWebsiteCache = () => {
         </div>
     </AuthenticatedLayout>
 </template>
-

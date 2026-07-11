@@ -85,9 +85,9 @@ const statusClass = (status) => {
                 <div class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Quick Actions</h2>
                     <div class="mt-4 space-y-2">
-                        <a :href="route('websites.create')" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Create Website</a>
+                        <a :href="panelRoute('websites.create')" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Create Website</a>
                         <a :href="panelRoute('emails.create')" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Add Mailbox</a>
-                        <a :href="route('websites.list')" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Manage Websites</a>
+                        <a :href="panelRoute('websites.list')" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Manage Websites</a>
                         <a href="/" class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Installer Setup Guide</a>
                     </div>
                 </div>

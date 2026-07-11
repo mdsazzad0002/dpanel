@@ -19,6 +19,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 
 const actionForm = useForm({
     action: 'test',
@@ -28,11 +32,11 @@ const syncForm = useForm({});
 
 const runAction = (action) => {
     actionForm.action = action;
-    actionForm.post(route('apache.action'));
+    actionForm.post(panelRoute('apache.action'));
 };
 
 const syncSharedWebsites = () => {
-    syncForm.post(route('apache.sync-shared-websites'));
+    syncForm.post(panelRoute('apache.sync-shared-websites'));
 };
 
 const selectedWebsiteIdInput = ref(String(props.selectedWebsiteId ?? props.selectedWebsite?.id ?? ''));
@@ -48,7 +52,7 @@ const loadWebsitePreview = (websiteId) => {
     selectedWebsiteIdInput.value = normalizedId;
 
     router.get(
-        route('apache.index'),
+        panelRoute('apache.index'),
         normalizedId ? { website_id: normalizedId } : {},
         {
             preserveState: true,
@@ -228,14 +232,14 @@ const boolTone = (flag) => (flag
                         </button>
                         <Link
                             v-if="selectedWebsite?.id"
-                            :href="route('websites.manage', selectedWebsite.id)"
+                            :href="panelRoute('websites.manage', { id: selectedWebsite.id })"
                             class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                         >
                             Open Website Manage
                         </Link>
                         <Link
                             v-if="selectedWebsite?.id"
-                            :href="route('websites.vhost.sync', selectedWebsite.id)"
+                            :href="panelRoute('websites.vhost.sync', { id: selectedWebsite.id })"
                             method="post"
                             :data="{ return_to: 'apache' }"
                             as="button"

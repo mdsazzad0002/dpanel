@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const props = defineProps({
     zones: { type: Array, default: () => [] },
@@ -25,6 +26,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const editingId = ref(null);
 const deleteForm = useForm({});
 const syncAllForm = useForm({ domain: '' });
@@ -43,10 +48,10 @@ const form = useForm({
 
 const submit = () => {
     if (editingId.value) {
-        form.patch(route('dns.zones.update', editingId.value), { onSuccess: resetForm });
+        form.patch(panelRoute('dns.zones.update', { id: editingId.value }), { onSuccess: resetForm });
         return;
     }
-    form.post(route('dns.zones.store'), { onSuccess: resetForm });
+    form.post(panelRoute('dns.zones.store'), { onSuccess: resetForm });
 };
 
 const editItem = (item) => {
@@ -74,17 +79,17 @@ const resetForm = () => {
 
 const deleteItem = (id) => {
     if (!confirm('Delete this zone? Related records will be removed.')) return;
-    deleteForm.delete(route('dns.zones.destroy', id));
+    deleteForm.delete(panelRoute('dns.zones.destroy', { id }));
 };
 
 const syncAll = () => {
     syncAllForm.domain = '';
-    syncAllForm.post(route('dns.cloudflare.sync'));
+    syncAllForm.post(panelRoute('dns.cloudflare.sync'));
 };
 
 const syncZone = (domain) => {
     syncZoneForm.domain = domain;
-    syncZoneForm.post(route('dns.cloudflare.sync'));
+    syncZoneForm.post(panelRoute('dns.cloudflare.sync'));
 };
 </script>
 

@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const props = defineProps({
     nameservers: { type: Array, default: () => [] },
@@ -9,6 +10,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const editingId = ref(null);
 const deleteForm = useForm({});
 
@@ -23,11 +28,11 @@ const form = useForm({
 
 const submit = () => {
     if (editingId.value) {
-        form.patch(route('dns.nameservers.update', editingId.value), { onSuccess: resetForm });
+        form.patch(panelRoute('dns.nameservers.update', { id: editingId.value }), { onSuccess: resetForm });
         return;
     }
 
-    form.post(route('dns.nameservers.store'), { onSuccess: resetForm });
+    form.post(panelRoute('dns.nameservers.store'), { onSuccess: resetForm });
 };
 
 const editItem = (item) => {
@@ -49,7 +54,7 @@ const resetForm = () => {
 
 const deleteItem = (id) => {
     if (!confirm('Delete this nameserver?')) return;
-    deleteForm.delete(route('dns.nameservers.destroy', id));
+    deleteForm.delete(panelRoute('dns.nameservers.destroy', { id }));
 };
 </script>
 

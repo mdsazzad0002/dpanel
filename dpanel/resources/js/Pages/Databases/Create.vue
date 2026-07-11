@@ -1,7 +1,8 @@
 <script setup>
 import { ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const props = defineProps({
     websiteDomains: {
@@ -19,10 +20,15 @@ const form = useForm({
     charset: 'utf8mb4',
     collation: 'utf8mb4_unicode_ci',
 });
+const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const showPassword = ref(false);
 
 const submit = () => {
-    form.post(route('databases.store'));
+    form.post(panelRoute('databases.store'));
 };
 
 const generatePassword = () => {
@@ -67,7 +73,7 @@ watch(
 
         <div class="space-y-4">
             <div class="flex justify-end">
-                <Link :href="route('databases.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Link :href="panelRoute('databases.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                     List Databases
                 </Link>
             </div>

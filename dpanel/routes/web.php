@@ -53,18 +53,20 @@ Route::get('/', function () {
 
         session()->put('panel_session_token', $urlToken);
 
+        $panelCookie = cookie(
+            name: $cookieName,
+            value: $cookieToken,
+            minutes: $lifetime,
+            path: (string) config('session.path', '/'),
+            domain: config('session.domain'),
+            secure: (bool) config('session.secure'),
+            httpOnly: true,
+            raw: false,
+            sameSite: 'Lax'
+        );
+
         return redirect()->route('dashboard', ['token' => $urlToken])
-            ->withCookie(cookie(
-                name: $cookieName,
-                value: $cookieToken,
-                minutes: $lifetime,
-                path: (string) config('session.path', '/'),
-                domain: config('session.domain'),
-                secure: (bool) config('session.secure'),
-                httpOnly: true,
-                raw: false,
-                sameSite: 'Lax'
-            ));
+            ->withCookie($panelCookie);
     }
 
     return redirect()->route('login');
@@ -372,19 +374,39 @@ Route::prefix('cpsess{token}')
     Route::get('/databases/{id}/edit', [DatabaseController::class, 'edit'])
         ->middleware('role:admin|reseller')
         ->name('databases.edit');
+
+    Route::match(['get', 'post'], '/databases/{id}/phpmyadmin/autologin', [PhpMyAdminProxyController::class, 'autologin'])
+        ->middleware('role:admin|reseller')
+        ->where('id', '[^/]+')
+        ->name('databases.phpmyadmin.autologin');
+
     Route::get('/databases/{id}/phpmyadmin/check', [PhpMyAdminProxyController::class, 'check'])
+        ->withoutMiddleware([
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+            \App\Http\Middleware\ApplyPanelRouteDefaults::class,
+            \App\Http\Middleware\HandleInertiaRequests::class,
+        ])
         ->middleware('role:admin|reseller')
         ->where('id', '[^/]+')
         ->name('databases.phpmyadmin.check');
+
     Route::match(['get', 'post'], '/databases/{id}/phpmyadmin/{path?}', [PhpMyAdminProxyController::class, 'handle'])
         ->withoutMiddleware([
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+            \App\Http\Middleware\ApplyPanelRouteDefaults::class,
+            \App\Http\Middleware\HandleInertiaRequests::class,
             VerifyCsrfToken::class,
             \App\Http\Middleware\EnsurePanelSessionIsValid::class,
             \Illuminate\Auth\Middleware\Authenticate::class,
             \Spatie\Permission\Middleware\RoleMiddleware::class,
         ])
         ->where('path', '.*')
+        // ->middleware('role:admin|reseller')
         ->name('databases.phpmyadmin');
+
+
     Route::patch('/databases/{id}', [DatabaseController::class, 'update'])
         ->middleware('role:admin|reseller')
         ->name('databases.update');

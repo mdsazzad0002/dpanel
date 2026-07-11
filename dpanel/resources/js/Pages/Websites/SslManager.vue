@@ -19,6 +19,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 
 const formatDate = (value) => {
     if (!value) return '-';
@@ -75,10 +79,10 @@ const daysRemaining = computed(() => {
 
 
             <div class="flex justify-end gap-2 mb-6">
-                <Link :href="route('websites.manage', website.id)" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                    <i class="bi bi-arrow-left mr-2"></i> Back to Manage
                 </Link>
-                <Link :href="route('websites.usage', website.id)" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
+                <Link :href="panelRoute('websites.usage', { id: website.id })" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
                    <i class="bi bi-graph-up mr-2"></i>  Usage Details
                 </Link>
             </div>
@@ -138,11 +142,11 @@ const daysRemaining = computed(() => {
                 </div>
 
                 <div class="mt-4 flex flex-wrap gap-2">
-                    <Link :href="route('websites.ssl', website.id)" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                    <Link :href="panelRoute('websites.ssl', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                         Check SSL Now
                     </Link>
                     <Link
-                        :href="route('websites.ssl.issue', website.id)"
+                        :href="panelRoute('websites.ssl.issue', { id: website.id })"
                         method="post"
                         as="button"
                         class="rounded-md border border-emerald-300 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
@@ -150,14 +154,14 @@ const daysRemaining = computed(() => {
                         Issue / Renew SSL
                     </Link>
                     <Link
-                        :href="route('websites.vhost.sync', website.id)"
+                        :href="panelRoute('websites.vhost.sync', { id: website.id })"
                         method="post"
                         as="button"
                         class="rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
                     >
                         Sync VHost
                     </Link>
-                    <Link :href="route('websites.web-server', website.id)" class="rounded-md border border-cyan-300 px-3 py-2 text-sm text-cyan-700 hover:bg-cyan-50 dark:border-cyan-700 dark:text-cyan-300 dark:hover:bg-cyan-900/20">
+                    <Link :href="panelRoute('websites.web-server', { id: website.id })" class="rounded-md border border-cyan-300 px-3 py-2 text-sm text-cyan-700 hover:bg-cyan-50 dark:border-cyan-700 dark:text-cyan-300 dark:hover:bg-cyan-900/20">
                         Apache + Nginx Service
                     </Link>
                 </div>

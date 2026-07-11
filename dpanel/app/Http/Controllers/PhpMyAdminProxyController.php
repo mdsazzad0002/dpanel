@@ -3,20 +3,52 @@
 namespace App\Http\Controllers;
 
 use App\Models\DatabaseRequest as DatabaseRequestModel;
+use App\Models\PanelSession;
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Client\Response as HttpResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Http;
 
 class PhpMyAdminProxyController extends Controller
 {
+    public function autologin(Request $request, string $token, string $id): RedirectResponse|View
+    {
+        $panelAccess = $this->ensurePanelSessionIsActive($request, $token);
+        if ($panelAccess !== null) {
+            return $panelAccess;
+        }
+
+        $requestItem = DatabaseRequestModel::query()->find($id);
+        abort_if($requestItem === null, 404);
+
+        if ($request->isMethod('post') && (string) $request->input('action', '') === 'issue') {
+            $signonToken = $this->buildPhpMyAdminSignonToken($requestItem, $request);
+            return redirect()->away(route('databases.phpmyadmin', [
+                'token' => $token,
+                'id' => $id,
+                'spm' => $signonToken,
+                'spm_debug' => config('app.phpmyadmin_debug') ? 1 : null,
+            ]));
+        }
+
+        return view('phpmyadmin.autologin', [
+            'database' => (string) ($requestItem->database_name ?? 'database'),
+            'issueUrl' => route('databases.phpmyadmin.autologin', [
+                'token' => $token,
+                'id' => $id,
+            ]),
+            'debugEnabled' => (bool) config('app.phpmyadmin_debug'),
+        ]);
+    }
+
     public function handle(Request $request, string $token, string $id, string $path = '')
     {
         $phpMyAdminPath = realpath(base_path('../3rdparty/phpMyAdmin'));
         abort_if($phpMyAdminPath === false, 404);
-
-        $requestItem = DatabaseRequestModel::query()->find($id);
-        abort_if($requestItem === null, 404);
 
         $relativePath = ltrim(rawurldecode((string) $path), '/');
         abort_if(! $this->isSafeRelativePath($relativePath), 404);
@@ -48,10 +80,16 @@ class PhpMyAdminProxyController extends Controller
             ]);
         }
 
-        $upstreamBaseUrl = $this->buildUpstreamBaseUrl($request);
-        $upstreamUrl = $this->buildUpstreamUrl($upstreamBaseUrl, $relativePath, $request->query());
+        $panelAccess = $this->ensurePanelSessionIsActive($request, $token);
+        if ($panelAccess !== null) {
+            return $panelAccess;
+        }
 
-        $this->bootstrapSignonSession($request, $requestItem, $proxyBasePath);
+        $requestItem = DatabaseRequestModel::query()->find($id);
+        abort_if($requestItem === null, 404);
+
+        $upstreamBaseUrl = $this->buildUpstreamBaseUrl($request);
+        $upstreamUrl = $this->buildUpstreamUrl($upstreamBaseUrl, $relativePath, $request->query(), $requestItem, $request);
 
         $response = $this->forwardToUpstream($request, $upstreamUrl, $proxyBasePath);
 
@@ -60,6 +98,20 @@ class PhpMyAdminProxyController extends Controller
 
     public function check(Request $request, string $token, string $id): JsonResponse
     {
+        $panelAccess = $this->ensurePanelSessionIsActive($request, $token);
+        if ($panelAccess !== null) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Panel session is no longer active.',
+                'checks' => [
+                    'session' => [
+                        'ok' => false,
+                        'message' => 'Panel session is no longer active.',
+                    ],
+                ],
+            ], 401);
+        }
+
         $phpMyAdminPath = realpath(base_path('../3rdparty/phpMyAdmin'));
         abort_if($phpMyAdminPath === false, 404);
 
@@ -84,41 +136,80 @@ class PhpMyAdminProxyController extends Controller
         ], $ok ? 200 : 422);
     }
 
-    private function bootstrapSignonSession(Request $request, DatabaseRequestModel $requestItem, string $proxyBasePath): void
+    private function ensurePanelSessionIsActive(Request $request, string $token): ?RedirectResponse
     {
-        $username = trim((string) ($requestItem->database_user ?? ''));
-        abort_if($username === '', 422, 'Database user is required for phpMyAdmin.');
-        abort_if(strcasecmp($username, 'root') === 0, 403, 'Root login is disabled for phpMyAdmin.');
+        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
+        $cookieToken = (string) $request->cookie($cookieName, '');
 
-        $password = (string) ($requestItem->database_password ?? '');
-        $host = $this->resolvePreferredDatabaseHost($requestItem);
-        $database = trim((string) ($requestItem->database_name ?? ''));
+        if ($token === '' || $cookieToken === '') {
+            if ($token !== '' && $this->reissuePanelProofCookieIfPossible($request, $token, $cookieName)) {
+                return null;
+            }
 
-        session_name('SignonSession');
-        session_set_cookie_params([
-            'lifetime' => 0,
-            'path' => '/',
-            'secure' => $request->isSecure(),
-            'httponly' => true,
-            'samesite' => 'Lax',
+            return redirect()->route('login');
+        }
+
+        $session = PanelSession::query()
+            ->where('token_hash', hash('sha256', $token))
+            ->where('cookie_hash', hash('sha256', $cookieToken))
+            ->whereNull('revoked_at')
+            ->where('expires_at', '>', now())
+            ->first();
+
+        if (! $session) {
+            return redirect()->route('login');
+        }
+
+        if ($session->ip_address !== (string) $request->ip()) {
+            return redirect()->route('login');
+        }
+
+        if ($session->user_agent_hash !== hash('sha256', (string) $request->userAgent())) {
+            return redirect()->route('login');
+        }
+
+        $session->forceFill(['last_seen_at' => now()])->save();
+
+        return null;
+    }
+
+    private function reissuePanelProofCookieIfPossible(Request $request, string $token, string $cookieName): bool
+    {
+        if (! Auth::check() || ! $request->hasSession()) {
+            return false;
+        }
+
+        $sessionToken = (string) $request->session()->get('panel_session_token', '');
+        if ($sessionToken === '' || $sessionToken !== $token) {
+            return false;
+        }
+
+        $cookieToken = bin2hex(random_bytes(32));
+
+        PanelSession::create([
+            'user_id' => (int) Auth::id(),
+            'token_hash' => hash('sha256', $token),
+            'cookie_hash' => hash('sha256', $cookieToken),
+            'ip_address' => (string) $request->ip(),
+            'user_agent_hash' => hash('sha256', (string) $request->userAgent()),
+            'expires_at' => now()->addYear(),
+            'last_seen_at' => now(),
         ]);
 
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            session_start();
-        }
+        $request->cookies->set($cookieName, $cookieToken);
+        Cookie::queue(cookie(
+            name: $cookieName,
+            value: $cookieToken,
+            minutes: 60 * 24 * 365,
+            path: (string) config('session.path', '/'),
+            domain: config('session.domain'),
+            secure: (bool) config('session.secure'),
+            httpOnly: true,
+            raw: false,
+            sameSite: 'Lax'
+        ));
 
-        $_SESSION['PMA_single_signon_user'] = $username;
-        $_SESSION['PMA_single_signon_password'] = $password;
-        $_SESSION['PMA_single_signon_host'] = $host;
-
-        if ($database !== '') {
-            $_SESSION['PMA_single_signon_db'] = $database;
-        } else {
-            unset($_SESSION['PMA_single_signon_db']);
-        }
-
-        $_SESSION['SERVERPANEL_PMA_PROXY_BASE'] = $proxyBasePath;
-        session_write_close();
+        return true;
     }
 
     private function buildUpstreamBaseUrl(Request $request): string
@@ -130,6 +221,10 @@ class PhpMyAdminProxyController extends Controller
         }
 
         $scheme = $request->getScheme();
+        if ($this->isRequestSecure($request)) {
+            $scheme = 'https';
+        }
+
         $host = $request->getHost();
         $port = $request->getPort();
         $authority = $host;
@@ -145,10 +240,18 @@ class PhpMyAdminProxyController extends Controller
     /**
      * @param  array<string, mixed>  $query
      */
-    private function buildUpstreamUrl(string $upstreamBaseUrl, string $relativePath, array $query): string
+    private function buildUpstreamUrl(string $upstreamBaseUrl, string $relativePath, array $query, DatabaseRequestModel $requestItem, Request $request): string
     {
         $baseUrl = rtrim($upstreamBaseUrl, '/');
         $targetPath = $relativePath === '' ? '/index.php' : '/'.ltrim($relativePath, '/');
+
+        if (! array_key_exists('spm', $query) || $query['spm'] === null || $query['spm'] === '') {
+            $query['spm'] = $this->buildPhpMyAdminSignonToken($requestItem, $request);
+        }
+
+        if (config('app.phpmyadmin_debug') && ! array_key_exists('spm_debug', $query)) {
+            $query['spm_debug'] = 1;
+        }
 
         if (! array_key_exists('lang', $query) || $query['lang'] === null || $query['lang'] === '') {
             $query['lang'] = 'en';
@@ -157,6 +260,49 @@ class PhpMyAdminProxyController extends Controller
         $qs = http_build_query($query, '', '&', PHP_QUERY_RFC3986);
 
         return $baseUrl.$targetPath.($qs !== '' ? '?'.$qs : '');
+    }
+
+    private function buildPhpMyAdminSignonToken(DatabaseRequestModel $requestItem, Request $request): string
+    {
+        $secret = $this->resolvePhpMyAdminSignonSecret();
+
+        $payload = [
+            'exp' => now()->addMinutes(5)->timestamp,
+            'db' => trim((string) ($requestItem->database_name ?? '')),
+            'host' => $this->resolvePreferredDatabaseHost($requestItem),
+            'port' => $this->resolvePreferredDatabasePort($requestItem),
+            'user' => trim((string) ($requestItem->database_user ?? '')),
+            'pass' => (string) ($requestItem->database_password ?? ''),
+            'secure' => $this->isRequestSecure($request),
+        ];
+
+        $payloadJson = json_encode($payload, JSON_UNESCAPED_SLASHES);
+        abort_if($payloadJson === false, 500, 'Unable to prepare phpMyAdmin signon payload.');
+
+        $encodedPayload = rtrim(strtr(base64_encode($payloadJson), '+/', '-_'), '=');
+        $signature = hash_hmac('sha256', $encodedPayload, $secret);
+        if (config('app.phpmyadmin_debug')) {
+            logger()->debug('phpMyAdmin signon token built', [
+                'db' => $payload['db'],
+                'host' => $payload['host'],
+                'port' => $payload['port'],
+                'user' => $payload['user'],
+                'secure' => $payload['secure'],
+                'payload_len' => strlen($encodedPayload),
+            ]);
+        }
+
+        return $encodedPayload.'.'.$signature;
+    }
+
+    private function resolvePhpMyAdminSignonSecret(): string
+    {
+        $sharedSecretPath = realpath(base_path('storage/app/phpmyadmin_signon.secret'));
+        if ($sharedSecretPath !== false) {
+            return hash('sha256', $sharedSecretPath.'|ServerPanel|phpMyAdminSignon');
+        }
+
+        return hash('sha256', base_path('storage/app/phpmyadmin_signon.secret').'|ServerPanel|phpMyAdminSignon');
     }
 
     private function forwardToUpstream(Request $request, string $upstreamUrl, string $proxyBasePath): HttpResponse
@@ -187,6 +333,9 @@ class PhpMyAdminProxyController extends Controller
             'User-Agent' => (string) $request->header('User-Agent', 'ServerPanel'),
             'X-Requested-With' => (string) $request->header('X-Requested-With', ''),
             'X-ServerPanel-PMA-Base' => $proxyBasePath,
+            'X-Forwarded-Proto' => $this->isRequestSecure($request) ? 'https' : 'http',
+            'X-Forwarded-Host' => (string) $request->header('Host', $request->getHttpHost()),
+            'X-Forwarded-Port' => (string) $request->getPort(),
         ];
 
         $cookie = (string) $request->header('Cookie', '');
@@ -300,10 +449,20 @@ class PhpMyAdminProxyController extends Controller
 
     private function buildCurrentProxyBaseUrl(string $proxyBasePath): string
     {
-        $scheme = request()->isSecure() ? 'https' : 'http';
+        $scheme = $this->isRequestSecure(request()) ? 'https' : 'http';
         $host = request()->getHttpHost();
 
         return $scheme.'://'.$host.$proxyBasePath;
+    }
+
+    private function isRequestSecure(Request $request): bool
+    {
+        $forwardedProto = strtolower(trim((string) $request->header('X-Forwarded-Proto', '')));
+        if ($forwardedProto !== '') {
+            return $forwardedProto === 'https';
+        }
+
+        return $request->isSecure();
     }
 
     private function isSafeRelativePath(string $relativePath): bool
@@ -402,6 +561,13 @@ class PhpMyAdminProxyController extends Controller
         $candidates = $this->resolveDatabaseHostCandidates((string) ($requestItem->database_host ?? ''));
 
         return $candidates[0] ?? '127.0.0.1';
+    }
+
+    private function resolvePreferredDatabasePort(DatabaseRequestModel $requestItem): int
+    {
+        $candidates = $this->resolveDatabasePortCandidates();
+
+        return $candidates[0] ?? 3306;
     }
 
     /**

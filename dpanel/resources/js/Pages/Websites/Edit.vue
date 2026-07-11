@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
 
 const props = defineProps({
@@ -30,6 +30,11 @@ const form = useForm({
     wordpress_version: props.websiteRequest.wordpress_version ?? 'latest',
     enable_ssl: !!props.websiteRequest.enable_ssl,
 });
+const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 
 const normalizedDomain = computed(() => form.domain.trim().toLowerCase());
 const normalizedBaseDir = computed(() => String(props.serverBaseDir || '/home').replace(/\\/g, '/').replace(/\/+$/, ''));
@@ -139,7 +144,7 @@ watch(
 
 const submit = () => {
     form.root_path = deriveRootPath(normalizedDomain.value);
-    form.patch(route('websites.update', props.websiteRequest.id));
+    form.patch(panelRoute('websites.update', { id: props.websiteRequest.id }));
 };
 </script>
 
@@ -158,7 +163,7 @@ const submit = () => {
 
         <div class="space-y-4">
             <div class="flex justify-end">
-                <Link :href="route('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Link :href="panelRoute('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                     Back to List
                 </Link>
             </div>

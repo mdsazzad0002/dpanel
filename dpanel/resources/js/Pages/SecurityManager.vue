@@ -2,6 +2,14 @@
 import { ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
+import { computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
+
+const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 
 const props = defineProps({
     firewall: { type: Object, default: () => ({}) },
@@ -53,7 +61,7 @@ const syncFromServer = async () => {
     syncError.value = '';
 
     try {
-        const response = await window.axios.post(route('security.sync'), {}, { headers: { Accept: 'application/json' } });
+        const response = await window.axios.post(panelRoute('security.sync'), {}, { headers: { Accept: 'application/json' } });
         const data = response?.data?.data ?? {};
 
         if (data.firewall) {
@@ -83,7 +91,7 @@ const saveFirewall = async () => {
 
     try {
         await window.axios.patch(
-            route('security.firewall.update'),
+            panelRoute('security.firewall.update'),
             {
                 enabled: firewallForm.enabled,
                 default_incoming: firewallForm.default_incoming,
@@ -104,7 +112,7 @@ const saveSsh = async () => {
 
     try {
         await window.axios.patch(
-            route('security.ssh.update'),
+            panelRoute('security.ssh.update'),
             {
                 port: sshForm.port,
                 password_authentication: sshForm.password_authentication,
@@ -125,7 +133,7 @@ const saveTelegram = async () => {
 
     try {
         await window.axios.patch(
-            route('security.telegram.update'),
+            panelRoute('security.telegram.update'),
             {
                 enabled: telegramForm.enabled,
                 bot_token: telegramForm.bot_token,
@@ -146,7 +154,7 @@ const testTelegram = async () => {
 
     try {
         await window.axios.post(
-            route('security.telegram.test'),
+            panelRoute('security.telegram.test'),
             {
                 bot_token: telegramForm.bot_token,
                 chat_id: telegramForm.chat_id,

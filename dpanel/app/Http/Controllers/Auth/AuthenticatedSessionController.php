@@ -36,14 +36,29 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        $urlToken = bin2hex(random_bytes(32));
+        $panelCookie = $this->issuePanelSessionProof($request);
+
+        return redirect()->intended(route('dashboard', absolute: false))
+            ->withCookie($panelCookie);
+    }
+
+    private function issuePanelSessionProof(Request $request, ?string $token = null)
+    {
+        $token ??= (string) $request->session()->get('panel_session_token', '');
+        if ($token === '') {
+            $token = bin2hex(random_bytes(32));
+            $request->session()->put('panel_session_token', $token);
+        }
+
+        URL::defaults(['token' => $token]);
+
         $cookieToken = bin2hex(random_bytes(32));
         $lifetime = max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120)));
         $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
 
         PanelSession::create([
-            'user_id' => $request->user()->id,
-            'token_hash' => hash('sha256', $urlToken),
+            'user_id' => (int) $request->user()->id,
+            'token_hash' => hash('sha256', $token),
             'cookie_hash' => hash('sha256', $cookieToken),
             'ip_address' => (string) $request->ip(),
             'user_agent_hash' => hash('sha256', (string) $request->userAgent()),
@@ -51,21 +66,22 @@ class AuthenticatedSessionController extends Controller
             'last_seen_at' => now(),
         ]);
 
-        $request->session()->put('panel_session_token', $urlToken);
-        URL::defaults(['token' => $urlToken]);
+        $panelCookie = cookie(
+            name: $cookieName,
+            value: $cookieToken,
+            minutes: $lifetime,
+            path: (string) config('session.path', '/'),
+            domain: config('session.domain'),
+            secure: (bool) config('session.secure'),
+            httpOnly: true,
+            raw: false,
+            sameSite: 'Lax'
+        );
 
-        return redirect()->intended(route('dashboard', absolute: false))
-            ->withCookie(cookie(
-                name: $cookieName,
-                value: $cookieToken,
-                minutes: $lifetime,
-                path: (string) config('session.path', '/'),
-                domain: config('session.domain'),
-                secure: (bool) config('session.secure'),
-                httpOnly: true,
-                raw: false,
-                sameSite: 'Lax'
-            ));
+        $request->cookies->set($cookieName, $cookieToken);
+        Cookie::queue($panelCookie);
+
+        return $panelCookie;
     }
 
     /**

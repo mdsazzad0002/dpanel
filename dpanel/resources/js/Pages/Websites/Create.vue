@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps({
@@ -29,6 +29,11 @@ const form = useForm({
     wordpress_version: 'latest',
     enable_ssl: true,
 });
+const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const parentDomainSearch = ref('');
 const parentDomainOptions = ref([]);
 const parentDomainLoading = ref(false);
@@ -221,7 +226,7 @@ watch(
 const submit = () => {
     form.domain = finalDomain.value;
     form.root_path = deriveRootPath();
-    form.post(route('websites.store'));
+    form.post(panelRoute('websites.store'));
 };
 
 const fetchParentDomains = async (search = '') => {
@@ -231,7 +236,7 @@ const fetchParentDomains = async (search = '') => {
 
     parentDomainLoading.value = true;
     try {
-        const response = await window.axios.get(route('websites.parent-domains.search'), {
+        const response = await window.axios.get(panelRoute('websites.parent-domains.search'), {
             params: {
                 q: search,
                 limit: 10,
@@ -288,7 +293,7 @@ onBeforeUnmount(() => {
 
         <div class="space-y-4">
             <div class="flex justify-end">
-                <Link :href="route('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Link :href="panelRoute('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                     List Website Requests
                 </Link>
             </div>

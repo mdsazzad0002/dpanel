@@ -20,6 +20,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const modalType = ref('');
 function normalizePathValue(value) {
     return String(value || '').trim();
@@ -448,7 +452,7 @@ const imagePreviewUrl = computed(() => {
     const path = props.selectedFile?.path;
     if (!path) return '';
 
-    return route('websites.filemanager.file.download', {
+    return panelRoute('websites.filemanager.file.download', {
         id: props.website.id,
         file_path: path,
         inline: 1,
@@ -487,7 +491,7 @@ const normalizePathInput = (value) => {
 
 const openPath = (path) => {
     if (!confirmDiscardChanges()) return;
-    router.get(route('websites.filemanager', props.website.id), { path, show_hidden: hiddenEnabled.value ? 1 : 0 }, { preserveState: false, preserveScroll: true });
+    router.get(panelRoute('websites.filemanager', { id: props.website.id }), { path, show_hidden: hiddenEnabled.value ? 1 : 0 }, { preserveState: false, preserveScroll: true });
 };
 
 const openFileInEditor = (path, options = {}) => {
@@ -505,11 +509,11 @@ const openFileInEditor = (path, options = {}) => {
     };
 
     if (openInNewTab) {
-        window.open(route('websites.filemanager', query), '_blank');
+        window.open(panelRoute('websites.filemanager', query), '_blank');
         return;
     }
 
-    router.get(route('websites.filemanager', props.website.id), query, { preserveState: false, preserveScroll: true });
+    router.get(panelRoute('websites.filemanager', { id: props.website.id }), query, { preserveState: false, preserveScroll: true });
 };
 
 const goFromPathInput = () => {
@@ -532,7 +536,7 @@ const goRoot = () => {
 
 const toggleHidden = () => {
     hiddenEnabled.value = !hiddenEnabled.value;
-    router.get(route('websites.filemanager', props.website.id), fmQuery({}), { preserveState: false, preserveScroll: true });
+    router.get(panelRoute('websites.filemanager', { id: props.website.id }), fmQuery({}), { preserveState: false, preserveScroll: true });
 };
 
 const openEditorInNewTab = () => {
@@ -659,7 +663,7 @@ const triggerContextAction = (action) => {
 
     if (action === 'download') {
         if (item.type !== 'file') return;
-        const url = route('websites.filemanager.file.download', { id: props.website.id, file_path: item.path });
+        const url = panelRoute('websites.filemanager.file.download', { id: props.website.id, file_path: item.path });
         window.location.href = url;
         return;
     }
@@ -827,7 +831,7 @@ const submitMoveToPath = (destinationPath, itemPaths = null, { closeMoveModal = 
     moveForm.item_path = '';
     moveForm.item_paths = targets;
 
-    moveForm.patch(route('websites.filemanager.item.move', props.website.id), {
+    moveForm.patch(panelRoute('websites.filemanager.item.move', { id: props.website.id }), {
         preserveScroll: true,
         onSuccess: () => {
             if (closeMoveModal) {
@@ -988,7 +992,7 @@ const closeModal = () => {
 
 const submitCreateFolder = () => {
     createFolderForm.path = props.currentPath;
-    createFolderForm.post(route('websites.filemanager.folder.store', props.website.id), {
+    createFolderForm.post(panelRoute('websites.filemanager.folder.store', { id: props.website.id }), {
         onSuccess: () => {
             closeModal();
         },
@@ -997,7 +1001,7 @@ const submitCreateFolder = () => {
 
 const submitCreateFile = () => {
     createFileForm.path = props.currentPath;
-    createFileForm.post(route('websites.filemanager.file.store', props.website.id), {
+    createFileForm.post(panelRoute('websites.filemanager.file.store', { id: props.website.id }), {
         onSuccess: () => {
             closeModal();
         },
@@ -1007,7 +1011,7 @@ const submitCreateFile = () => {
 const submitRename = () => {
     renameForm.item_path = singleSelectedItem.value?.path || renameForm.item_path;
     renameForm.current_path = props.currentPath;
-    renameForm.patch(route('websites.filemanager.item.rename', props.website.id), {
+    renameForm.patch(panelRoute('websites.filemanager.item.rename', { id: props.website.id }), {
         onSuccess: () => {
             closeModal();
         },
@@ -1017,7 +1021,7 @@ const submitRename = () => {
 const submitPermissions = () => {
     permissionForm.item_path = singleSelectedItem.value?.path || permissionForm.item_path;
     permissionForm.current_path = props.currentPath;
-    permissionForm.patch(route('websites.filemanager.permissions', props.website.id), {
+    permissionForm.patch(panelRoute('websites.filemanager.permissions', { id: props.website.id }), {
         onSuccess: () => {
             closeModal();
         },
@@ -1031,7 +1035,7 @@ const deleteSelected = () => {
 
     deleteForm.item_paths = targets;
     deleteForm.current_path = props.currentPath;
-    deleteForm.delete(route('websites.filemanager.item.delete', props.website.id));
+    deleteForm.delete(panelRoute('websites.filemanager.item.delete', { id: props.website.id }));
 };
 
 const submitZip = () => {
@@ -1040,7 +1044,7 @@ const submitZip = () => {
 
     zipForm.current_path = props.currentPath;
     zipForm.item_paths = targets;
-    zipForm.post(route('websites.filemanager.zip', props.website.id), {
+    zipForm.post(panelRoute('websites.filemanager.zip', { id: props.website.id }), {
         onSuccess: () => {
             closeModal();
         },
@@ -1053,7 +1057,7 @@ const submitUnzip = () => {
 
     unzipForm.zip_path = targetZip;
     unzipForm.current_path = props.currentPath;
-    unzipForm.post(route('websites.filemanager.unzip', props.website.id), {
+    unzipForm.post(panelRoute('websites.filemanager.unzip', { id: props.website.id }), {
         onSuccess: () => {
             closeModal();
         },
@@ -1079,7 +1083,7 @@ const handleUploadDrop = (event) => {
 
 const submitUpload = ({ fromDrop = false } = {}) => {
     uploadForm.path = props.currentPath;
-    uploadForm.post(route('websites.filemanager.upload', props.website.id), {
+    uploadForm.post(panelRoute('websites.filemanager.upload', { id: props.website.id }), {
         forceFormData: true,
         onStart: () => {
             uploadForm.clearErrors();
@@ -1126,7 +1130,7 @@ const handleTableDrop = (event) => {
 
 const saveFile = () => {
     saveForm.file_path = props.selectedFile?.path ?? '';
-    saveForm.patch(route('websites.filemanager.file.save', props.website.id), {
+    saveForm.patch(panelRoute('websites.filemanager.file.save', { id: props.website.id }), {
         onSuccess: () => {
             originalEditorContent.value = saveForm.content ?? '';
         },
@@ -1148,7 +1152,7 @@ const editSelected = () => {
 const downloadSelected = () => {
     const item = singleSelectedItem.value;
     if (!item || item.type !== 'file') return;
-    const url = route('websites.filemanager.file.download', { id: props.website.id, file_path: item.path });
+    const url = panelRoute('websites.filemanager.file.download', { id: props.website.id, file_path: item.path });
     window.location.href = url;
 };
 
@@ -1172,7 +1176,7 @@ const formatBytes = (bytes) => {
                     <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ website.domain }} - base {{ basePath }}</p>
                 </div>
                 <div class="ml-auto flex flex-wrap items-center gap-2">
-                    <Link :href="route('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                    <Link :href="panelRoute('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                         Back to Websites
                     </Link>
                     <button type="button" title="Edit/Open" class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="isBusy" @click="editSelected">

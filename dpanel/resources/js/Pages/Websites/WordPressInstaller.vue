@@ -15,6 +15,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 
 const installerValue = computed(() => String(props.website?.app_installer ?? 'none').toLowerCase());
 const websiteWordPressVersion = computed(() => {
@@ -52,7 +56,7 @@ const selectedWordPressVersion = ref(websiteWordPressVersion.value);
         </template>
 
             <div class="flex justify-end mb-6">
-                <Link :href="route('websites.manage', website.id)" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                    <i class="bi bi-arrow-left mr-2"></i> Back to Manage
                 </Link>
             </div>
@@ -105,7 +109,7 @@ const selectedWordPressVersion = ref(websiteWordPressVersion.value);
                         </select>
                     </div>
                     <Link
-                        :href="route('websites.wordpress.install', website.id)"
+                        :href="panelRoute('websites.wordpress.install', { id: website.id })"
                         method="post"
                         as="button"
                         :data="{ wordpress_version: selectedWordPressVersion, return_to: 'wordpress' }"

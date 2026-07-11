@@ -1,13 +1,20 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
+
+const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 
 const cards = [
     {
         title: 'PHP Versions',
         short: 'Default',
         description: 'Set the active PHP versions and choose the default runtime version.',
-        href: route('php.versions'),
+        href: panelRoute('php.versions'),
         accent: 'from-blue-500/20 to-cyan-500/10 border-blue-300 dark:border-blue-800',
         badge: 'Versions',
     },
@@ -15,7 +22,7 @@ const cards = [
         title: 'PHP Config',
         short: 'Config',
         description: 'Edit php.ini style runtime values for each PHP version.',
-        href: route('php.config'),
+        href: panelRoute('php.config'),
         accent: 'from-emerald-500/20 to-teal-500/10 border-emerald-300 dark:border-emerald-800',
         badge: 'Config',
     },
@@ -23,7 +30,7 @@ const cards = [
         title: 'PHP Extensions',
         short: 'Modules',
         description: 'Enable or disable PHP modules for each installed version.',
-        href: route('php.extensions'),
+        href: panelRoute('php.extensions'),
         accent: 'from-amber-500/20 to-orange-500/10 border-amber-300 dark:border-amber-800',
         badge: 'Extensions',
     },

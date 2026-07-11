@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 const props = defineProps({
@@ -16,6 +16,11 @@ const props = defineProps({
 
 const roleText = computed(() => (props.panelUser?.roles ?? []).join(', ') || 'No role');
 const verifiedText = computed(() => (props.panelUser?.email_verified_at ? 'Verified' : 'Not verified'));
+const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 
 </script>
 
@@ -65,14 +70,14 @@ const verifiedText = computed(() => (props.panelUser?.email_verified_at ? 'Verif
                         </Link>
                         <Link
                             v-if="($page.props.auth.roles || []).includes('admin') || ($page.props.auth.roles || []).includes('reseller')"
-                            :href="route('websites.list')"
+                            :href="panelRoute('websites.list')"
                             class="block rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                         >
                             Website Requests
                         </Link>
                         <Link
                             v-if="($page.props.auth.roles || []).includes('admin') || ($page.props.auth.roles || []).includes('reseller')"
-                            :href="route('databases.list')"
+                            :href="panelRoute('databases.list')"
                             class="block rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                         >
                             Database Requests

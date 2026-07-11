@@ -9,6 +9,10 @@ const props = defineProps({
 });
 
 const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const editingId = ref('');
 const deleteForm = useForm({});
 
@@ -25,11 +29,11 @@ const disabledCount = computed(() => props.cronJobs.filter((job) => job.status !
 
 const submit = () => {
     if (editingId.value) {
-        form.patch(route('websites.cronjobs.update', { id: props.website.id, jobId: editingId.value }), { onSuccess: resetForm });
+        form.patch(panelRoute('websites.cronjobs.update', { id: props.website.id, jobId: editingId.value }), { onSuccess: resetForm });
         return;
     }
 
-    form.post(route('websites.cronjobs.store', props.website.id), { onSuccess: resetForm });
+    form.post(panelRoute('websites.cronjobs.store', { id: props.website.id }), { onSuccess: resetForm });
 };
 
 const editItem = (item) => {
@@ -50,7 +54,7 @@ const resetForm = () => {
 
 const deleteItem = (id) => {
     if (!confirm('Delete this cron job?')) return;
-    deleteForm.delete(route('websites.cronjobs.destroy', { id: props.website.id, jobId: id }));
+    deleteForm.delete(panelRoute('websites.cronjobs.destroy', { id: props.website.id, jobId: id }));
 };
 </script>
 
@@ -67,7 +71,7 @@ const deleteItem = (id) => {
 
         <div class="space-y-4">
             <div class="flex justify-end gap-2">
-                <Link :href="route('websites.manage', website.id)" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                     Back to Website Manage
                 </Link>
             </div>
@@ -178,4 +182,3 @@ const deleteItem = (id) => {
         </div>
     </AuthenticatedLayout>
 </template>
-

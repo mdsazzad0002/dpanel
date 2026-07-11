@@ -18,9 +18,9 @@ const props = defineProps({
     },
 });
 const page = usePage();
-const panelToken = page.props.panel?.token;
+const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
-    panelToken ? route(name, { token: panelToken, ...params }) : route(name, params)
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
 
 const toNumber = (value) => {
@@ -75,21 +75,21 @@ const installerClass = computed(() => (
         ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300'
         : 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
 ));
-const webServerHref = computed(() => route('websites.web-server', props.website.id));
+const webServerHref = computed(() => panelRoute('websites.web-server', { id: props.website.id }));
 
 const serviceLinks = computed(() => [
-    { label: 'WordPress Installer', short: 'WP', href: route('websites.wordpress.manager', props.website.id), description: 'Install and manage WordPress setup' },
-    { label: 'SSL Manager', short: 'SSL', href: route('websites.ssl', props.website.id), description: 'Issue and check SSL status' },
-    { label: 'Usage Details', short: 'UG', href: route('websites.usage', props.website.id), description: 'Detailed usage history and trends' },
+    { label: 'WordPress Installer', short: 'WP', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress setup' },
+    { label: 'SSL Manager', short: 'SSL', href: panelRoute('websites.ssl', { id: props.website.id }), description: 'Issue and check SSL status' },
+    { label: 'Usage Details', short: 'UG', href: panelRoute('websites.usage', { id: props.website.id }), description: 'Detailed usage history and trends' },
     { label: 'Apache + Nginx', short: 'WEB', href: webServerHref.value, description: 'Website-specific service and current vhost config' },
-    { label: 'Redis Cache', short: 'RC', href: route('websites.redis-cache.index', props.website.id), description: 'Per-website cache isolation' },
-    { label: 'File Manager', short: 'FM', href: route('websites.filemanager', props.website.id), description: 'Browse and edit files' },
-    { label: 'Cron Jobs', short: 'CJ', href: route('websites.cronjobs.index', props.website.id), description: 'Setup scheduled tasks' },
+    { label: 'Redis Cache', short: 'RC', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
+    { label: 'File Manager', short: 'FM', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
+    { label: 'Cron Jobs', short: 'CJ', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Setup scheduled tasks' },
     { label: 'Email Accounts', short: 'EM', href: panelRoute('emails.list'), description: 'Manage mailbox services' },
-    { label: 'Databases', short: 'DB', href: route('databases.list'), description: 'Manage database services' },
-    { label: 'DNS Records', short: 'DNS', href: route('dns.records'), description: 'Manage DNS entries' },
-    { label: 'PHP Manager', short: 'PHP', href: route('php.manager'), description: 'Manage PHP versions and modules' },
-    { label: 'Security', short: 'SEC', href: route('security.manager'), description: 'Firewall and SSH settings' },
+    { label: 'Databases', short: 'DB', href: panelRoute('databases.list'), description: 'Manage database services' },
+    { label: 'DNS Records', short: 'DNS', href: panelRoute('dns.records'), description: 'Manage DNS entries' },
+    { label: 'PHP Manager', short: 'PHP', href: panelRoute('php.manager'), description: 'Manage PHP versions and modules' },
+    { label: 'Security', short: 'SEC', href: panelRoute('security.manager'), description: 'Firewall and SSH settings' },
 ]);
 
 const browseTarget = ref(
@@ -218,7 +218,7 @@ const liveSiteUrl = computed(() => {
                             <div class="mt-3 grid gap-2">
 
                                 <Link
-                                    :href="route('websites.vhost.sync', website.id)"
+                                    :href="panelRoute('websites.vhost.sync', { id: website.id })"
                                     method="post"
                                     as="button"
                                     class="rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
@@ -226,7 +226,7 @@ const liveSiteUrl = computed(() => {
                                     Sync VHost
                                 </Link>
                                 <Link
-                                    :href="route('websites.project-cache.clear', website.id)"
+                                    :href="panelRoute('websites.project-cache.clear', { id: website.id })"
                                     method="post"
                                     as="button"
                                     class="rounded-md border border-rose-300 px-3 py-2 text-sm text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-900/20"
@@ -234,17 +234,17 @@ const liveSiteUrl = computed(() => {
                                     Project Cache Clear
                                 </Link>
 
-                                <Link :href="route('websites.ssl', website.id)" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
+                                <Link :href="panelRoute('websites.ssl', { id: website.id })" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
                                     SSL Manager
                                 </Link>
                                 <Link :href="webServerHref" class="rounded-md border border-cyan-300 px-3 py-2 text-sm text-cyan-700 hover:bg-cyan-50 dark:border-cyan-700 dark:text-cyan-300 dark:hover:bg-cyan-900/20">
                                     Apache + Nginx Service
                                 </Link>
-                                <Link :href="route('websites.filemanager', website.id)" class="rounded-md border border-emerald-300 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20">
+                                <Link :href="panelRoute('websites.filemanager', { id: website.id })" class="rounded-md border border-emerald-300 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20">
                                     Open File Manager
                                 </Link>
 
-                                <Link :href="route('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                                <Link :href="panelRoute('websites.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                     Back to Website List
                                 </Link>
                             </div>

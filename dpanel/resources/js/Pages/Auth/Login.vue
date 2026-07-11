@@ -23,6 +23,10 @@ const form = useForm({
 });
 
 const submit = () => {
+    if (form.processing) {
+        return;
+    }
+
     form.post(route('login'), {
         onFinish: () => form.reset('password'),
     });
@@ -97,6 +101,7 @@ const submit = () => {
                 </div>
 
                 <PrimaryButton
+                    type="submit"
                     class="w-full justify-center rounded-xl bg-emerald-500 py-3 text-sm font-semibold tracking-[0.14em] text-[#032019] transition hover:bg-emerald-400 focus:bg-emerald-500"
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"

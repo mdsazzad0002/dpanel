@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     databaseRequest: {
@@ -23,6 +23,11 @@ const form = useForm({
     charset: props.databaseRequest.charset ?? 'utf8mb4',
     collation: props.databaseRequest.collation ?? 'utf8mb4_unicode_ci',
 });
+const page = usePage();
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => (
+    panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
+);
 const showPassword = ref(false);
 
 const domainOptions = computed(() => {
@@ -33,7 +38,7 @@ const domainOptions = computed(() => {
 });
 
 const submit = () => {
-    form.patch(route('databases.update', props.databaseRequest.id));
+    form.patch(panelRoute('databases.update', { id: props.databaseRequest.id }));
 };
 
 const generatePassword = () => {
@@ -58,7 +63,7 @@ const generatePassword = () => {
 
         <div class="space-y-4">
             <div class="flex justify-end">
-                <Link :href="route('databases.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Link :href="panelRoute('databases.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                     Back to List
                 </Link>
             </div>
