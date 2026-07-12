@@ -375,27 +375,36 @@ Route::prefix('cpsess{token}')
         ->middleware('role:admin|reseller')
         ->name('databases.edit');
 
-    Route::get('/phpmyadmin.php', [PhpMyAdminController::class, 'index'])
+
+    Route::get('/phpmyadmin', [PhpMyAdminController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('phpmyadmin.index');
-    Route::get('/phpmyadmin.php/sql', [PhpMyAdminController::class, 'sql'])
+    Route::get('/phpmyadmin/sql', [PhpMyAdminController::class, 'sql'])
         ->middleware('role:admin|reseller')
         ->name('phpmyadmin.sql');
-    Route::get('/phpmyadmin.php/databases', [PhpMyAdminController::class, 'databases'])
+    Route::get('/phpmyadmin/databases', [PhpMyAdminController::class, 'databases'])
         ->middleware('role:admin|reseller')
         ->name('phpmyadmin.databases');
-    Route::get('/phpmyadmin.php/databases/{database}', [PhpMyAdminController::class, 'database'])
+    Route::get('/phpmyadmin/databases/{database}', [PhpMyAdminController::class, 'database'])
         ->middleware('role:admin|reseller')
         ->where('database', '[A-Za-z0-9_]+')
         ->name('phpmyadmin.database');
-    Route::get('/phpmyadmin.php/databases/{database}/tables/{table}', [PhpMyAdminController::class, 'table'])
+    Route::get('/phpmyadmin/databases/{database}/tables/{table}', [PhpMyAdminController::class, 'table'])
         ->middleware('role:admin|reseller')
         ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
         ->name('phpmyadmin.table');
-    Route::get('/phpmyadmin.php/check', [PhpMyAdminController::class, 'health'])
+    Route::delete('/phpmyadmin/databases/{database}/tables/{table}', [PhpMyAdminController::class, 'destroyTable'])
+        ->middleware('role:admin|reseller')
+        ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
+        ->name('phpmyadmin.table.destroy');
+    Route::post('/phpmyadmin/databases/{database}/tables/{table}/empty', [PhpMyAdminController::class, 'emptyTable'])
+        ->middleware('role:admin|reseller')
+        ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
+        ->name('phpmyadmin.table.empty');
+    Route::get('/phpmyadmin/check', [PhpMyAdminController::class, 'health'])
         ->middleware('role:admin|reseller')
         ->name('phpmyadmin.health');
-    Route::post('/phpmyadmin.php/query', [PhpMyAdminController::class, 'execute'])
+    Route::post('/phpmyadmin/query', [PhpMyAdminController::class, 'execute'])
         ->middleware('role:admin|reseller')
         ->name('phpmyadmin.execute');
 
@@ -410,12 +419,12 @@ Route::prefix('cpsess{token}')
         ->where('id', '[^/]+')
         ->name('databases.phpmyadmin.check');
 
-    Route::redirect('/databases/{id}/phpmyadmin/autologin', '/phpmyadmin.php')
+    Route::redirect('/databases/{id}/phpmyadmin/autologin', '/phpmyadmin')
         ->middleware('role:admin|reseller')
         ->where('id', '[^/]+')
         ->name('databases.phpmyadmin.autologin');
 
-    Route::redirect('/databases/{id}/phpmyadmin/{path?}', '/phpmyadmin.php')
+    Route::redirect('/databases/{id}/phpmyadmin/{path?}', '/phpmyadmin')
         ->middleware('role:admin|reseller')
         ->where('path', '.*')
         ->where('id', '[^/]+')

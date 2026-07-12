@@ -34,10 +34,6 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
-    sqlHref: {
-        type: String,
-        default: '',
-    },
     plain: {
         type: Boolean,
         default: false,
@@ -51,6 +47,8 @@ const props = defineProps({
 const emit = defineEmits(['select-table', 'select-database', 'reset', 'filter-change', 'action']);
 const filterText = ref('');
 const aboutTab = ref('about');
+
+const databaseName = (database) => (typeof database === 'string' ? database : String(database?.name || ''));
 
 const filteredTables = computed(() => {
     const needle = filterText.value.trim().toLowerCase();
@@ -66,10 +64,7 @@ const filteredDatabases = computed(() => {
     const needle = filterText.value.trim().toLowerCase();
     if (!needle) return props.databases;
 
-    return props.databases.filter((database) => {
-        const text = `${database.name} ${database.comment || ''}`.toLowerCase();
-        return text.includes(needle);
-    });
+    return props.databases.filter((database) => databaseName(database).toLowerCase().includes(needle));
 });
 
 const connectionCards = computed(() => ([
@@ -81,8 +76,13 @@ const connectionCards = computed(() => ([
 const actions = [
     { key: 'browse', label: 'Browse', icon: 'bi bi-table' },
     { key: 'structure', label: 'Structure', icon: 'bi bi-diagram-3' },
-    { key: 'search', label: 'Search', icon: 'bi bi-search' },
     { key: 'insert', label: 'Insert', icon: 'bi bi-plus-circle' },
+];
+
+const secondaryActions = [
+    { key: 'select', label: 'Select', icon: 'bi bi-cursor-text' },
+    { key: 'update', label: 'Update', icon: 'bi bi-pencil-square' },
+    { key: 'search', label: 'Search', icon: 'bi bi-search' },
     { key: 'empty', label: 'Empty', icon: 'bi bi-dash-circle' },
     { key: 'drop', label: 'Drop', icon: 'bi bi-trash3' },
 ];
@@ -128,25 +128,16 @@ const actions = [
                         <div class="space-y-2">
                             <button
                                 v-for="database in filteredDatabases"
-                                :key="database.name"
+                                :key="databaseName(database)"
                                 type="button"
                                 class="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-cyan-300 hover:bg-cyan-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-900/60 dark:hover:bg-cyan-950/20"
-                                @click="emit('select-database', database.name)"
+                                @click="emit('select-database', databaseName(database))"
                             >
                                 <div class="min-w-0">
-                                    <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{{ database.name }}</p>
-                                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                        {{ database.tables_count ?? 0 }} tables
-                                    </p>
+                                    <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{{ databaseName(database) }}</p>
                                 </div>
                                 <div class="flex shrink-0 items-center gap-2">
-                                    <span
-                                        v-if="database.is_current"
-                                        class="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-                                    >
-                                        current
-                                    </span>
-                                    <span class="text-slate-400">›</span>
+                                    <span class="text-slate-400">&gt;</span>
                                 </div>
                             </button>
                         </div>
@@ -162,9 +153,9 @@ const actions = [
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div>
                                 <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-600/80 dark:text-cyan-300/80">First-party database module</p>
-                                <h2 class="mt-1 text-xl font-semibold">Database Studio</h2>
+                                <h2 class="mt-1 text-xl font-semibold">Database Structure</h2>
                                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                    Select a database from the left tree to open tables and browse rows.
+                                    Select a database from the left tree to inspect its tables and metadata.
                                 </p>
                             </div>
                             <div class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
@@ -200,13 +191,6 @@ const actions = [
                         </span>
                     </div>
                     <div class="flex items-center gap-2">
-                        <a
-                            v-if="sqlHref"
-                            :href="sqlHref"
-                            class="rounded border border-cyan-300 bg-cyan-50 px-3 py-1.5 text-cyan-800 hover:bg-cyan-100 dark:border-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-200 dark:hover:bg-cyan-950/50"
-                        >
-                            SQL Console
-                        </a>
                         <button
                             type="button"
                             class="rounded border border-slate-300 bg-white px-3 py-1.5 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -214,6 +198,21 @@ const actions = [
                         >
                             Reset
                         </button>
+                    </div>
+                </div>
+
+                <div class="mb-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-600/80 dark:text-cyan-300/80">Database Structure</p>
+                            <h2 class="mt-1 text-xl font-semibold">{{ selectedDatabase || 'Selected database' }}</h2>
+                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                Inspect the tables in this database, then open a table to switch to browse mode.
+                            </p>
+                        </div>
+                        <div class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+                            Structure
+                        </div>
                     </div>
                 </div>
 
@@ -239,8 +238,8 @@ const actions = [
                     Loading database details...
                 </div>
 
-                <div v-else class="mt-4 min-h-0 flex-1 overflow-hidden rounded border border-slate-300 dark:border-slate-700">
-                    <div class="h-full overflow-auto">
+                <div v-else class="mt-4 min-h-0 flex-1  rounded border border-slate-300 dark:border-slate-700">
+                    <div class="">
                         <table class="min-w-full table-fixed border-collapse text-left text-sm">
                             <colgroup>
                                 <col class="w-8">
@@ -277,18 +276,30 @@ const actions = [
                                         <button
                                             type="button"
                                             class="block w-full truncate text-left font-semibold text-sky-700 hover:underline dark:text-sky-300"
-                                            @click="emit('select-table', table.name)"
+                                            @click="emit('action', { action: 'browse', table: table.name })"
                                         >
                                             {{ table.name }}
                                         </button>
                                     </td>
                                     <td class="whitespace-nowrap px-3 py-2">
-                                        <div class="flex flex-nowrap items-center gap-3 overflow-x-auto text-xs">
+                                        <div class="flex flex-wrap gap-x-3 gap-y-2 text-xs">
                                             <button
                                                 v-for="action in actions"
                                                 :key="action.key"
                                                 type="button"
                                                 class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-sky-700 hover:underline dark:text-sky-300"
+                                                @click="emit('action', { action: action.key, table: table.name })"
+                                            >
+                                                <i :class="action.icon"></i>
+                                                <span>{{ action.label }}</span>
+                                            </button>
+                                        </div>
+                                        <div class="mt-2 flex flex-wrap gap-x-3 gap-y-2 text-xs">
+                                            <button
+                                                v-for="action in secondaryActions"
+                                                :key="action.key"
+                                                type="button"
+                                                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-slate-600 hover:underline dark:text-slate-300"
                                                 @click="emit('action', { action: action.key, table: table.name })"
                                             >
                                                 <i :class="action.icon"></i>

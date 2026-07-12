@@ -227,14 +227,14 @@ onMounted(() => {
 </script>
 
 <template>
-    <Head title="SQL Console" />
+    <Head title="SQL" />
 
     <DatabaseStudioLayout :server="server" @toolbar-action="handleToolbarAction">
         <div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
             <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-600/80 dark:text-cyan-300/80">SQL Console Page</p>
-                    <h1 class="text-lg font-semibold">Database-scoped query runner</h1>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-600/80 dark:text-cyan-300/80">SQL</p>
+                    <h1 class="text-lg font-semibold">Database-scoped queries</h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
                         Active database: <strong>{{ currentDatabase || 'none' }}</strong>
                     </p>

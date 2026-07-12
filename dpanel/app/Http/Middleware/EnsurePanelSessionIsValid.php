@@ -17,6 +17,14 @@ class EnsurePanelSessionIsValid
             return redirect()->route('login');
         }
 
+        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
+        $cookieToken = (string) $request->cookie($cookieName, '');
+        $issueCookie = false;
+        if ($cookieToken === '') {
+            $cookieToken = bin2hex(random_bytes(32));
+            $issueCookie = true;
+        }
+
         $token = (string) $request->route('token');
         if ($token === '' && $request->hasSession()) {
             $token = (string) $request->session()->get('panel_session_token', '');
@@ -37,7 +45,7 @@ class EnsurePanelSessionIsValid
                 ['token_hash' => hash('sha256', $token)],
                 [
                     'user_id' => (int) Auth::id(),
-                    'cookie_hash' => hash('sha256', $request->cookie((string) config('serverpanel.panel_cookie_name', 'panel_session_proof'), '')),
+                    'cookie_hash' => hash('sha256', $cookieToken),
                     'ip_address' => (string) $request->ip(),
                     'user_agent_hash' => hash('sha256', (string) $request->userAgent()),
                     'expires_at' => now()->addYear(),
@@ -47,6 +55,22 @@ class EnsurePanelSessionIsValid
             );
         }
 
-        return $next($request);
+        $response = $next($request);
+
+        if ($issueCookie) {
+            $response->headers->setCookie(cookie(
+                name: $cookieName,
+                value: $cookieToken,
+                minutes: max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120))),
+                path: (string) config('session.path', '/'),
+                domain: config('session.domain'),
+                secure: (bool) config('session.secure'),
+                httpOnly: true,
+                raw: false,
+                sameSite: 'Lax'
+            ));
+        }
+
+        return $response;
     }
 }

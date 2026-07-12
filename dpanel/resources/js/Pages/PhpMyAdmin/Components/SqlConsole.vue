@@ -26,7 +26,15 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    historyOpenTrigger: {
+        type: Number,
+        default: 0,
+    },
     plain: {
+        type: Boolean,
+        default: false,
+    },
+    dockOnly: {
         type: Boolean,
         default: false,
     },
@@ -118,6 +126,27 @@ const suggestionItems = computed(() => {
 
     return items.slice(0, 8);
 });
+
+const insertIntoEditor = async (text) => {
+    const value = String(text || '');
+    if (!value) return;
+
+    const textarea = textareaRef.value;
+    if (!textarea) {
+        sql.value = `${sql.value}${value}`;
+        return;
+    }
+
+    const start = textarea.selectionStart ?? sql.value.length;
+    const end = textarea.selectionEnd ?? sql.value.length;
+    const next = `${sql.value.slice(0, start)}${value}${sql.value.slice(end)}`;
+    sql.value = next;
+
+    await nextTick();
+    const cursor = start + value.length;
+    textarea.focus();
+    textarea.setSelectionRange(cursor, cursor);
+};
 
 const loadHistory = () => {
     if (typeof window === 'undefined') return;
@@ -263,6 +292,16 @@ watch(
     { immediate: true }
 );
 
+watch(
+    () => props.historyOpenTrigger,
+    () => {
+        historyOpen.value = true;
+        if (historyHeight.value <= HISTORY_COLLAPSED) {
+            historyHeight.value = HISTORY_EXPANDED;
+        }
+    }
+);
+
 const executeSql = async () => {
     executing.value = true;
     queryError.value = '';
@@ -336,14 +375,17 @@ onMounted(() => {
 <template>
     <section
         ref="consoleShell"
-        class="relative flex h-full min-h-0 flex-col p-5"
-        :class="plain ? 'bg-transparent shadow-none' : 'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900'"
+        class="relative flex min-h-0 flex-col"
+        :class="[
+            dockOnly ? 'fixed inset-x-0 bottom-0 z-30 h-auto p-0' : 'h-full p-5',
+            plain ? 'bg-transparent shadow-none' : 'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900',
+        ]"
     >
-        <div class="flex min-h-0 flex-1 flex-col" :style="{ paddingBottom: footerHeight }">
+        <div v-if="!dockOnly" class="flex min-h-0 flex-1 flex-col" :style="{ paddingBottom: footerHeight }">
             <div class="mb-4">
-                <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">SQL Console</h2>
+                <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">SQL</h2>
                 <p class="text-sm text-slate-500 dark:text-slate-400">
-                    Execute a single SQL statement against the active database.
+                    Execute SQL statements against the active database.
                 </p>
             </div>
 
@@ -432,7 +474,7 @@ onMounted(() => {
             </div>
 
             <div
-                class="absolute inset-x-0 bottom-0 border-t border-slate-200 bg-white/98 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/95"
+                class="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/98 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/95"
                 :style="{ height: footerHeight }"
             >
                 <div
@@ -443,22 +485,17 @@ onMounted(() => {
                     <span class="h-1 w-12 rounded-full bg-slate-300 dark:bg-slate-600"></span>
                 </div>
 
-                <div class="flex h-[calc(100%-0.75rem)] flex-col px-4 pb-3">
-                    <button
-                        type="button"
-                        class="mb-2 flex items-center justify-between gap-3 text-left"
-                        @click="toggleHistory"
-                    >
-                        <div>
-                            <h3 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">SQL History</h3>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400">Click to toggle 200px. Drag to resize.</p>
-                        </div>
-                        <span class="rounded-full border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                            {{ props.selectedDatabase || 'global' }}
-                        </span>
-                    </button>
+                <button
+                    type="button"
+                    class="absolute bottom-2 left-3 z-10 inline-flex items-center gap-1 border border-slate-300 bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    @click="toggleHistory"
+                >
+                    <i class="bi bi-terminal text-[11px]"></i>
+                    <span>Console</span>
+                </button>
 
-                    <div v-if="historyOpen" class="min-h-0 flex-1 space-y-2 overflow-auto pr-1">
+                <div class="flex h-[calc(100%-0.75rem)] flex-col ">
+                    <div v-if="historyOpen" class="min-h-0 flex-1 space-y-2 overflow-auto pr-1 pb-10">
                         <button
                             v-for="entry in historyEntries"
                             :key="`${entry.created_at}-${entry.sql}`"

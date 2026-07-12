@@ -22,62 +22,45 @@ class DatabaseAdminService
             'database' => (string) config('database.connections.mysql.database', config('database.connections.mariadb.database', '')),
             'username' => (string) config('database.connections.mysql.username', config('database.connections.mariadb.username', '')),
             'version' => $this->serverVersion(),
-            'current_database' => $this->currentDatabase(),
+
         ];
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
     public function listDatabases(): array
     {
-        if (! $this->supportsCatalogQueries()) {
-            return [[
-                'name' => $this->currentDatabase(),
-                'charset' => null,
-                'collation' => null,
-                'tables_count' => 0,
-                'size_bytes' => 0,
-                'estimated_rows' => 0,
-                'is_current' => true,
-            ]];
+        if ($this->connection()->getDriverName() === 'sqlite') {
+            $rows = $this->connection()->select('PRAGMA database_list');
+
+            return collect($rows)
+                ->map(fn ($row): string => (string) ($row->name ?? ''))
+                ->filter(static fn (string $name): bool => $name !== '')
+                ->values()
+                ->all();
         }
 
         $rows = $this->connection()->select(
             'SELECT
-                schema_name AS name,
-                default_character_set_name AS charset,
-                default_collation_name AS collation
+                schema_name AS name
             FROM information_schema.schemata
             ORDER BY schema_name'
         );
 
-        $stats = collect($this->connection()->select(
-            'SELECT
-                table_schema AS name,
-                COUNT(*) AS tables_count,
-                COALESCE(SUM(data_length + index_length), 0) AS size_bytes,
-                COALESCE(SUM(table_rows), 0) AS estimated_rows
-            FROM information_schema.tables
-            GROUP BY table_schema'
-        ))->keyBy('name');
+        return collect($rows)
+            ->map(fn ($row): string => (string) ($row->name ?? ''))
+            ->filter(static fn (string $name): bool => $name !== '')
+            ->values()
+            ->all();
+    }
 
-        $currentDatabase = $this->currentDatabase();
+    public function currentDatabase(): string
+    {
+        $driver = $this->connection()->getDriverName();
 
-        return collect($rows)->map(function ($row) use ($stats, $currentDatabase): array {
-            $name = (string) ($row->name ?? '');
-            $stat = $stats->get($name);
+        if ($driver === 'sqlite') {
+            return (string) config('database.connections.sqlite.database', ':memory:');
+        }
 
-            return [
-                'name' => $name,
-                'charset' => $row->charset ?? null,
-                'collation' => $row->collation ?? null,
-                'tables_count' => (int) ($stat->tables_count ?? 0),
-                'size_bytes' => (int) ($stat->size_bytes ?? 0),
-                'estimated_rows' => (int) ($stat->estimated_rows ?? 0),
-                'is_current' => $currentDatabase !== '' && strcasecmp($name, $currentDatabase) === 0,
-            ];
-        })->all();
+        return (string) config('database.connections.mysql.database', config('database.connections.mariadb.database', ''));
     }
 
     /**
@@ -154,6 +137,26 @@ class DatabaseAdminService
             'collation' => $row->collation ?? null,
             'comment' => $row->comment ?? null,
         ])->all();
+    }
+
+    public function dropTable(string $database, string $table): void
+    {
+        $database = $this->assertSafeIdentifier($database);
+        $table = $this->assertSafeIdentifier($table);
+
+        $qualifiedTable = $this->qualifyTable($database, $table);
+
+        $this->connection()->statement('DROP TABLE '.$qualifiedTable);
+    }
+
+    public function truncateTable(string $database, string $table): void
+    {
+        $database = $this->assertSafeIdentifier($database);
+        $table = $this->assertSafeIdentifier($table);
+
+        $qualifiedTable = $this->qualifyTable($database, $table);
+
+        $this->connection()->statement('TRUNCATE TABLE '.$qualifiedTable);
     }
 
     /**
@@ -294,16 +297,6 @@ class DatabaseAdminService
         ])->all();
     }
 
-    public function currentDatabase(): string
-    {
-        try {
-            $row = $this->connection()->selectOne('SELECT DATABASE() AS database_name');
-
-            return (string) ($row->database_name ?? '');
-        } catch (\Throwable) {
-            return (string) config('database.connections.mysql.database', config('database.connections.mariadb.database', ''));
-        }
-    }
 
     public function supportsCatalogQueries(): bool
     {

@@ -35,16 +35,10 @@ class PhpMyAdminController extends Controller
         $table = $this->resolveIdentifier($request->query('table', ''));
         $activeDatabase = $database !== '' ? $database : $service->currentDatabase();
 
-        return Inertia::render('PhpMyAdmin/Sql', [
-            'panelToken' => $token,
-            'server' => $service->serverInfo(),
-            'initialSelection' => [
-                'database' => $activeDatabase,
-                'table' => $table,
-            ],
-            'queryDefaults' => [
-                'sql' => $this->defaultSql($activeDatabase, $table),
-            ],
+        return redirect()->route('phpmyadmin.index', [
+            'token' => $token,
+            'database' => $activeDatabase,
+            'table' => $table,
         ]);
     }
 
@@ -96,6 +90,32 @@ class PhpMyAdminController extends Controller
         return response()->json([
             'ok' => true,
             'table_details' => $service->tableDetails($database, $table, $page, $perPage),
+        ]);
+    }
+
+    public function destroyTable(Request $request, string $token, string $database, string $table, DatabaseAdminService $service): JsonResponse
+    {
+        $database = $this->resolveIdentifier($database);
+        $table = $this->resolveIdentifier($table);
+
+        $service->dropTable($database, $table);
+
+        return response()->json([
+            'ok' => true,
+            'message' => sprintf('Table %s.%s dropped successfully.', $database, $table),
+        ]);
+    }
+
+    public function emptyTable(Request $request, string $token, string $database, string $table, DatabaseAdminService $service): JsonResponse
+    {
+        $database = $this->resolveIdentifier($database);
+        $table = $this->resolveIdentifier($table);
+
+        $service->truncateTable($database, $table);
+
+        return response()->json([
+            'ok' => true,
+            'message' => sprintf('Table %s.%s emptied successfully.', $database, $table),
         ]);
     }
 
