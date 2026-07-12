@@ -2,8 +2,12 @@
 
 namespace App\Services\PhpMyAdmin;
 
+use App\Models\DatabaseRequest;
+use App\Models\User;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
 
 class DatabaseAdminService
@@ -26,30 +30,128 @@ class DatabaseAdminService
         ];
     }
 
-    public function listDatabases(): array
+    public function listDatabases(?string $onlyDatabase = null): array
     {
+        $onlyDatabase = $onlyDatabase !== null && trim($onlyDatabase) !== ''
+            ? $this->assertSafeIdentifier($onlyDatabase)
+            : '';
+
         if ($this->connection()->getDriverName() === 'sqlite') {
             $rows = $this->connection()->select('PRAGMA database_list');
 
-            return collect($rows)
+            $databases = collect($rows)
                 ->map(fn ($row): string => (string) ($row->name ?? ''))
                 ->filter(static fn (string $name): bool => $name !== '')
-                ->values()
-                ->all();
+                ->values();
+
+            if ($onlyDatabase !== '') {
+                $databases = $databases->filter(static fn (string $name): bool => $name === $onlyDatabase);
+            }
+
+            return $databases->values()->all();
         }
 
-        $rows = $this->connection()->select(
-            'SELECT
-                schema_name AS name
-            FROM information_schema.schemata
-            ORDER BY schema_name'
-        );
+        if ($onlyDatabase !== '') {
+            $rows = $this->connection()->select(
+                'SELECT schema_name AS name
+                 FROM information_schema.schemata
+                 WHERE schema_name = ?
+                 ORDER BY schema_name',
+                [$onlyDatabase]
+            );
+        } else {
+            $rows = $this->connection()->select(
+                'SELECT
+                    schema_name AS name
+                FROM information_schema.schemata
+                ORDER BY schema_name'
+            );
+        }
 
         return collect($rows)
             ->map(fn ($row): string => (string) ($row->name ?? ''))
             ->filter(static fn (string $name): bool => $name !== '')
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function listDatabasesForUser(?User $user, ?string $onlyDatabase = null, bool $allowAllAccess = false): array
+    {
+        $allDatabases = $this->listDatabases();
+        if ($allowAllAccess && $this->canAccessAllDatabases($user)) {
+            if ($onlyDatabase !== null && trim($onlyDatabase) !== '') {
+                $onlyDatabase = $this->assertSafeIdentifier($onlyDatabase);
+                return array_values(array_filter($allDatabases, static fn (string $name): bool => $name === $onlyDatabase));
+            }
+
+            return $allDatabases;
+        }
+
+        if ($user === null) {
+            return [];
+        }
+
+        $assigned = DatabaseRequest::query()
+            ->where('assigned_user_id', $user->id)
+            ->pluck('database_name')
+            ->map(static fn ($name): string => trim((string) $name))
+            ->filter(static fn (string $name): bool => $name !== '')
+            ->map(fn (string $name): string => $this->assertSafeIdentifier($name))
+            ->unique()
+            ->values()
+            ->all();
+
+        $filtered = array_values(array_intersect($allDatabases, $assigned));
+
+        if ($onlyDatabase !== null && trim($onlyDatabase) !== '') {
+            $onlyDatabase = $this->assertSafeIdentifier($onlyDatabase);
+            $filtered = array_values(array_filter($filtered, static fn (string $name): bool => $name === $onlyDatabase));
+        }
+
+        return $filtered;
+    }
+
+    public function firstAccessibleDatabase(?User $user, bool $allowAllAccess = false): string
+    {
+        return $this->listDatabasesForUser($user, null, $allowAllAccess)[0] ?? '';
+    }
+
+    public function canAccessDatabase(?User $user, string $database, bool $allowAllAccess = false): bool
+    {
+        $database = $this->assertSafeIdentifier($database);
+
+        if ($database === '') {
+            return false;
+        }
+
+        if ($allowAllAccess && $this->canAccessAllDatabases($user)) {
+            return true;
+        }
+
+        if ($user === null) {
+            return false;
+        }
+
+        return DatabaseRequest::query()
+            ->where('assigned_user_id', $user->id)
+            ->where('database_name', $database)
+            ->exists();
+    }
+
+    public function resolveAccessibleDatabase(?User $user, ?string $requestedDatabase = null, bool $allowAllAccess = false): string
+    {
+        $requestedDatabase = $requestedDatabase !== null && trim($requestedDatabase) !== ''
+            ? $this->assertSafeIdentifier($requestedDatabase)
+            : '';
+
+        if ($requestedDatabase !== '' && $this->canAccessDatabase($user, $requestedDatabase, $allowAllAccess)) {
+            return $requestedDatabase;
+        }
+
+        return $this->firstAccessibleDatabase($user, $allowAllAccess);
     }
 
     public function currentDatabase(): string
@@ -159,6 +261,265 @@ class DatabaseAdminService
         $this->connection()->statement('TRUNCATE TABLE '.$qualifiedTable);
     }
 
+    public function renameTable(string $database, string $table, string $newTable): void
+    {
+        $database = $this->assertSafeIdentifier($database);
+        $table = $this->assertSafeIdentifier($table);
+        $newTable = $this->assertSafeIdentifier($newTable);
+
+        $currentQualified = $this->qualifyTable($database, $table);
+        $newQualified = $this->qualifyTable($database, $newTable);
+
+        $this->connection()->statement('RENAME TABLE '.$currentQualified.' TO '.$newQualified);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $columns
+     */
+    public function createTable(string $database, string $table, array $columns = []): void
+    {
+        $database = $this->assertSafeIdentifier($database);
+        $table = $this->assertSafeIdentifier($table);
+        $normalizedColumns = $this->normalizeSchemaColumns($columns, true);
+        if ($normalizedColumns === []) {
+            $normalizedColumns = $this->normalizeSchemaColumns([
+                [
+                    'name' => 'id',
+                    'type' => 'BIGINT',
+                    'length' => '',
+                    'nullable' => false,
+                    'defaultValue' => '',
+                    'unsigned' => true,
+                    'autoIncrement' => true,
+                    'primaryKey' => true,
+                ],
+            ], true);
+        }
+
+        $this->assertUniqueColumnNames($normalizedColumns);
+
+        $definitions = [];
+        $primaryKeys = [];
+        foreach ($normalizedColumns as $column) {
+            $definitions[] = $this->buildColumnDefinitionSql($column, true);
+            if ($column['primaryKey']) {
+                $primaryKeys[] = $column['name'];
+            }
+        }
+
+        if ($primaryKeys !== []) {
+            $definitions[] = 'PRIMARY KEY ('.$this->joinQuotedIdentifiers($primaryKeys).')';
+        }
+
+        $sql = sprintf(
+            'CREATE TABLE %s (%s) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4',
+            $this->qualifyTable($database, $table),
+            implode(', ', $definitions)
+        );
+
+        $this->connection()->statement($sql);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $columns
+     */
+    public function alterTableStructure(string $database, string $table, array $columns = []): void
+    {
+        $database = $this->assertSafeIdentifier($database);
+        $table = $this->assertSafeIdentifier($table);
+
+        $normalizedColumns = $this->normalizeSchemaColumns($columns, false);
+        if ($normalizedColumns === []) {
+            throw new InvalidArgumentException('No column definitions were provided.');
+        }
+
+        $this->assertUniqueColumnNames($normalizedColumns);
+
+        $clauses = [];
+        foreach ($normalizedColumns as $column) {
+            if ($column['remove']) {
+                if ($column['originalName'] === '') {
+                    continue;
+                }
+
+                $clauses[] = 'DROP COLUMN '.$this->quoteIdentifier($column['originalName']);
+                continue;
+            }
+
+            $definition = $this->buildColumnDefinitionSql($column, false);
+            $originalName = $column['originalName'] !== '' ? $column['originalName'] : $column['name'];
+
+            if ($column['originalName'] === '' || $column['originalName'] !== $column['name']) {
+                $clauses[] = 'CHANGE COLUMN '.$this->quoteIdentifier($originalName).' '.$definition;
+            } else {
+                $clauses[] = 'MODIFY COLUMN '.$definition;
+            }
+        }
+
+        if ($clauses === []) {
+            throw new InvalidArgumentException('No changes detected.');
+        }
+
+        $sql = sprintf(
+            'ALTER TABLE %s %s',
+            $this->qualifyTable($database, $table),
+            implode(', ', $clauses)
+        );
+
+        $this->connection()->statement($sql);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $columns
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeSchemaColumns(array $columns, bool $isCreate): array
+    {
+        return collect($columns)
+            ->map(function ($column, $index) use ($isCreate): array {
+                $name = $this->assertSafeIdentifier((string) ($column['name'] ?? ''));
+                $originalName = $this->assertSafeIdentifier((string) ($column['originalName'] ?? $name));
+                $type = strtoupper(trim((string) ($column['type'] ?? 'VARCHAR')));
+                $length = trim((string) ($column['length'] ?? ''));
+                $nullable = (bool) ($column['nullable'] ?? false);
+                $defaultValue = trim((string) ($column['defaultValue'] ?? ''));
+                $unsigned = (bool) ($column['unsigned'] ?? false);
+                $autoIncrement = (bool) ($column['autoIncrement'] ?? false);
+                $primaryKey = (bool) ($column['primaryKey'] ?? false);
+                $comment = trim((string) ($column['comment'] ?? ''));
+                $after = trim((string) ($column['after'] ?? ''));
+                $remove = (bool) ($column['remove'] ?? false);
+
+                if ($name === '') {
+                    throw new InvalidArgumentException('Column name is required.');
+                }
+
+                return [
+                    'name' => $name,
+                    'originalName' => $originalName,
+                    'type' => $this->normalizeColumnType($type),
+                    'length' => $length,
+                    'nullable' => $nullable,
+                    'defaultValue' => $defaultValue,
+                    'unsigned' => $unsigned,
+                    'autoIncrement' => $autoIncrement,
+                    'primaryKey' => $primaryKey,
+                    'comment' => $comment,
+                    'after' => $after,
+                    'remove' => $remove,
+                    '_index' => $index,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $columns
+     */
+    private function assertUniqueColumnNames(array $columns): void
+    {
+        $names = [];
+        foreach ($columns as $column) {
+            if (! empty($column['remove'])) {
+                continue;
+            }
+
+            $name = (string) ($column['name'] ?? '');
+            if ($name === '') {
+                continue;
+            }
+
+            if (in_array($name, $names, true)) {
+                throw new InvalidArgumentException('Duplicate column names are not allowed.');
+            }
+
+            $names[] = $name;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $column
+     */
+    private function buildColumnDefinitionSql(array $column, bool $allowAfter = false): string
+    {
+        $name = $this->assertSafeIdentifier((string) ($column['name'] ?? ''));
+        $type = $this->normalizeColumnType((string) ($column['type'] ?? 'VARCHAR'));
+        $length = trim((string) ($column['length'] ?? ''));
+        $nullable = (bool) ($column['nullable'] ?? false);
+        $defaultValue = trim((string) ($column['defaultValue'] ?? ''));
+        $unsigned = (bool) ($column['unsigned'] ?? false);
+        $autoIncrement = (bool) ($column['autoIncrement'] ?? false);
+        $comment = trim((string) ($column['comment'] ?? ''));
+        $after = trim((string) ($column['after'] ?? ''));
+
+        $sqlType = $type;
+        if (in_array($type, ['VARCHAR', 'CHAR', 'VARBINARY', 'BINARY'], true)) {
+            $sqlType .= '('.($length !== '' ? $length : '255').')';
+        } elseif (in_array($type, ['DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE'], true)) {
+            $sqlType .= '('.($length !== '' ? $length : '10,2').')';
+        }
+
+        $parts = [
+            $this->quoteIdentifier($name).' '.$sqlType,
+        ];
+
+        if ($unsigned && in_array($type, ['INT', 'BIGINT', 'SMALLINT', 'TINYINT', 'MEDIUMINT', 'DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE'], true)) {
+            $parts[] = 'UNSIGNED';
+        }
+
+        $parts[] = $nullable ? 'NULL' : 'NOT NULL';
+
+        if ($defaultValue !== '') {
+            $parts[] = 'DEFAULT '.$this->quoteSqlValue($defaultValue);
+        }
+
+        if ($autoIncrement) {
+            $parts[] = 'AUTO_INCREMENT';
+        }
+
+        if ($comment !== '') {
+            $parts[] = 'COMMENT '.$this->quoteSqlValue($comment);
+        }
+
+        if ($allowAfter && $after !== '') {
+            $parts[] = 'AFTER '.$this->quoteIdentifier($this->assertSafeIdentifier($after));
+        }
+
+        return implode(' ', $parts);
+    }
+
+    private function normalizeColumnType(string $type): string
+    {
+        $type = strtoupper(trim($type));
+        $allowed = [
+            'INT', 'BIGINT', 'SMALLINT', 'TINYINT', 'MEDIUMINT',
+            'DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE',
+            'VARCHAR', 'CHAR', 'TEXT', 'MEDIUMTEXT', 'LONGTEXT', 'BLOB',
+            'DATE', 'DATETIME', 'TIMESTAMP', 'TIME', 'JSON', 'BOOLEAN',
+            'VARBINARY', 'BINARY',
+        ];
+
+        if (! in_array($type, $allowed, true)) {
+            throw new InvalidArgumentException('Unsupported column type: '.$type);
+        }
+
+        return $type;
+    }
+
+    private function quoteSqlValue(string $value): string
+    {
+        return "'".str_replace("'", "''", $value)."'";
+    }
+
+    /**
+     * @param array<int, string> $identifiers
+     */
+    private function joinQuotedIdentifiers(array $identifiers): string
+    {
+        return implode(', ', array_map(fn (string $identifier): string => $this->quoteIdentifier($this->assertSafeIdentifier($identifier)), $identifiers));
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -226,31 +587,172 @@ class DatabaseAdminService
         }
 
         $connection = $this->connection();
-        $started = microtime(true);
-        $keyword = strtolower(strtok(ltrim($normalized), " \t\n\r\0\x0B") ?: '');
+        $restoreDatabase = null;
 
-        if (in_array($keyword, ['select', 'show', 'describe', 'desc', 'explain', 'with'], true)) {
-            $rows = $connection->select($normalized);
-            $data = collect($rows)->map(static fn ($row): array => (array) $row)->all();
-            $columns = $data !== [] ? array_keys($data[0]) : [];
-
-            return [
-                'mode' => 'result',
-                'columns' => $columns,
-                'rows' => $data,
-                'affected_rows' => null,
-                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
-            ];
+        if ($database !== null && $database !== '') {
+            $restoreDatabase = $this->activeDatabase($connection);
+            $connection->statement('USE '.$this->quoteIdentifier((string) $database));
         }
 
-        $affectedRows = $connection->affectingStatement($normalized);
+        $started = microtime(true);
+
+        try {
+            $keyword = strtolower(strtok(ltrim($normalized), " \t\n\r\0\x0B") ?: '');
+
+            if (in_array($keyword, ['select', 'show', 'describe', 'desc', 'explain', 'with'], true)) {
+                $rows = $connection->select($normalized);
+                $data = collect($rows)->map(static fn ($row): array => (array) $row)->all();
+                $columns = $data !== [] ? array_keys($data[0]) : [];
+
+                return [
+                    'mode' => 'result',
+                    'columns' => $columns,
+                    'rows' => $data,
+                    'affected_rows' => null,
+                    'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                ];
+            }
+
+            $affectedRows = $connection->affectingStatement($normalized);
+
+            return [
+                'mode' => 'statement',
+                'columns' => [],
+                'rows' => [],
+                'affected_rows' => $affectedRows,
+                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+            ];
+        } finally {
+            if ($restoreDatabase !== null && $restoreDatabase !== '' && $restoreDatabase !== $database) {
+                $connection->statement('USE '.$this->quoteIdentifier($restoreDatabase));
+            }
+        }
+    }
+
+    /**
+     * @return array{path: string, filename: string, database: string}
+     */
+    /**
+     * @return array{path: string, filename: string, database: string, table: string}
+     */
+    public function exportDatabase(?string $database = null, ?string $table = null): array
+    {
+        $connection = $this->connection();
+        $driver = $connection->getDriverName();
+        if (! in_array($driver, ['mysql', 'mariadb'], true)) {
+            throw new InvalidArgumentException('Export is only supported for MySQL and MariaDB.');
+        }
+
+        $databaseName = $database !== null && trim($database) !== ''
+            ? $this->assertSafeIdentifier($database)
+            : $this->currentDatabase();
+
+        $databaseName = $this->assertSafeIdentifier($databaseName);
+        $tableName = $table !== null && trim($table) !== ''
+            ? $this->assertSafeIdentifier($table)
+            : '';
+        $config = $this->databaseConnectionConfig();
+        $mysqldumpPath = $this->resolveMysqlClientBinary('mysqldump', $driver);
+        $targetDir = storage_path('app/phpmyadmin-exports');
+        File::ensureDirectoryExists($targetDir);
+
+        $filename = $tableName !== ''
+            ? sprintf('%s-%s-%s.sql', $databaseName, $tableName, now()->format('Ymd_His'))
+            : sprintf('%s-%s.sql', $databaseName, now()->format('Ymd_His'));
+        $targetPath = $targetDir.DIRECTORY_SEPARATOR.$filename;
+
+        $arguments = [
+            $mysqldumpPath,
+            '--single-transaction',
+            '--skip-lock-tables',
+            '--column-statistics=0',
+            '--routines',
+            '--events',
+            '--triggers',
+            '--default-character-set=utf8mb4',
+            '--host='.(string) ($config['host'] ?? '127.0.0.1'),
+            '--port='.(string) ($config['port'] ?? '3306'),
+            '--user='.(string) ($config['username'] ?? ''),
+            $databaseName,
+        ];
+
+        if ($tableName !== '') {
+            $arguments[] = $tableName;
+        }
+
+        $password = (string) ($config['password'] ?? '');
+        $socket = (string) ($config['unix_socket'] ?? '');
+
+        if ($password !== '') {
+            $arguments[] = '--password='.$password;
+        }
+
+        if ($socket !== '') {
+            $arguments[] = '--socket='.$socket;
+        }
+
+        $result = Process::timeout(600)->run($arguments);
+        if (! $result->successful()) {
+            throw new InvalidArgumentException(trim($result->errorOutput().' '.$result->output()) ?: 'Database export failed.');
+        }
+
+        File::put($targetPath, $result->output());
 
         return [
-            'mode' => 'statement',
-            'columns' => [],
-            'rows' => [],
-            'affected_rows' => $affectedRows,
-            'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+            'path' => $targetPath,
+            'filename' => $filename,
+            'database' => $databaseName,
+            'table' => $tableName,
+        ];
+    }
+
+    /**
+     * @return array{database: string, output: string}
+     */
+    public function importDatabase(string $database, string $sql): array
+    {
+        $connection = $this->connection();
+        $driver = $connection->getDriverName();
+        if (! in_array($driver, ['mysql', 'mariadb'], true)) {
+            throw new InvalidArgumentException('Import is only supported for MySQL and MariaDB.');
+        }
+
+        $databaseName = $this->assertSafeIdentifier($database);
+        $sql = trim($sql);
+        if ($sql === '') {
+            throw new InvalidArgumentException('Import file is empty.');
+        }
+
+        $config = $this->databaseConnectionConfig();
+        $mysqlPath = $this->resolveMysqlClientBinary('mysql', $driver);
+        $arguments = [
+            $mysqlPath,
+            '--host='.(string) ($config['host'] ?? '127.0.0.1'),
+            '--port='.(string) ($config['port'] ?? '3306'),
+            '--user='.(string) ($config['username'] ?? ''),
+            '--default-character-set=utf8mb4',
+            $databaseName,
+        ];
+
+        $password = (string) ($config['password'] ?? '');
+        $socket = (string) ($config['unix_socket'] ?? '');
+
+        if ($password !== '') {
+            $arguments[] = '--password='.$password;
+        }
+
+        if ($socket !== '') {
+            $arguments[] = '--socket='.$socket;
+        }
+
+        $result = Process::timeout(600)->input($sql)->run($arguments);
+        if (! $result->successful()) {
+            throw new InvalidArgumentException(trim($result->errorOutput().' '.$result->output()) ?: 'Database import failed.');
+        }
+
+        return [
+            'database' => $databaseName,
+            'output' => trim($result->output()),
         ];
     }
 
@@ -319,6 +821,91 @@ class DatabaseAdminService
         return DB::connection();
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function databaseConnectionConfig(): array
+    {
+        $driver = $this->connection()->getDriverName();
+        $configKey = $driver === 'mariadb' ? 'mariadb' : 'mysql';
+
+        return (array) config('database.connections.'.$configKey, []);
+    }
+
+    private function resolveMysqlClientBinary(string $binary, ?string $preferredFamily = null): string
+    {
+        $binary = strtolower(trim($binary));
+        if (! in_array($binary, ['mysql', 'mysqldump'], true)) {
+            throw new InvalidArgumentException('Unsupported MySQL client binary.');
+        }
+
+        $envKey = $binary === 'mysqldump' ? 'MYSQLDUMP_PATH' : 'MYSQL_PATH';
+        $candidate = trim((string) env($envKey, ''));
+        if ($candidate !== '' && is_file($candidate)) {
+            return $candidate;
+        }
+
+        $commonRoots = [];
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $preferredFamily = strtolower(trim((string) $preferredFamily));
+            $families = $preferredFamily === 'mariadb'
+                ? ['mariadb', 'mysql']
+                : ['mysql', 'mariadb'];
+
+            foreach ($families as $family) {
+                foreach (['D:\\wamp64\\bin', 'C:\\wamp64\\bin'] as $basePath) {
+                    $commonRoots[] = $basePath.DIRECTORY_SEPARATOR.$family;
+                }
+            }
+        }
+
+        foreach ($commonRoots as $root) {
+            foreach ($this->globClientCandidates($root, $binary) as $path) {
+                if (is_file($path)) {
+                    return $path;
+                }
+            }
+        }
+
+        return $binary;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function globClientCandidates(string $root, string $binary): array
+    {
+        $patterns = [
+            $root.DIRECTORY_SEPARATOR.'*'.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.$binary.'.exe',
+        ];
+
+        $matches = [];
+        foreach ($patterns as $pattern) {
+            $found = glob($pattern);
+            if (is_array($found)) {
+                $matches = array_merge($matches, $found);
+            }
+        }
+
+        return $matches;
+    }
+
+    private function activeDatabase(ConnectionInterface $connection): string
+    {
+        if ($connection->getDriverName() === 'sqlite') {
+            return (string) config('database.connections.sqlite.database', ':memory:');
+        }
+
+        try {
+            $row = $connection->selectOne('SELECT DATABASE() AS database');
+
+            return (string) ($row->database ?? '');
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
     private function assertSafeIdentifier(string $value): string
     {
         $value = trim($value);
@@ -328,6 +915,11 @@ class DatabaseAdminService
         }
 
         return $value;
+    }
+
+    public function canAccessAllDatabases(?User $user): bool
+    {
+        return (int) ($user?->id ?? 0) === 1;
     }
 
     private function quoteIdentifier(string $identifier): string

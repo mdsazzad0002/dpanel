@@ -38,6 +38,10 @@ const props = defineProps({
         type: Number,
         default: 25,
     },
+    renameBusy: {
+        type: Boolean,
+        default: false,
+    },
     plain: {
         type: Boolean,
         default: false,
@@ -51,6 +55,8 @@ const emit = defineEmits([
     'bulk-delete',
     'row-delete',
     'row-save',
+    'table-rename',
+    'edit-structure',
 ]);
 
 const selectedTableDetails = computed(() => props.tableDetails || null);
@@ -66,6 +72,7 @@ const selectedRowKeys = ref(new Set());
 const editingRowKey = ref('');
 const editDraft = reactive({});
 const bulkAction = ref('delete');
+const renameTarget = ref('');
 
 const functionOptions = [
     { label: 'None', value: '' },
@@ -76,7 +83,9 @@ const functionOptions = [
 ];
 
 const isInsertAction = computed(() => props.activeAction === 'insert');
+const isOperationsAction = computed(() => props.activeAction === 'operations');
 const title = computed(() => {
+    if (props.activeAction === 'operations') return 'Table Operations';
     if (props.activeAction === 'structure') return 'Table Structure';
     if (props.activeAction === 'insert') return 'Insert Row';
     return 'Browse Table';
@@ -251,6 +260,22 @@ const submitInsert = () => {
         })),
     });
 };
+
+const submitRename = () => {
+    emit('table-rename', {
+        newTable: renameTarget.value,
+    });
+};
+
+watch(
+    [() => props.selectedTable, () => props.activeAction],
+    () => {
+        if (props.activeAction === 'operations') {
+            renameTarget.value = props.selectedTable || '';
+        }
+    },
+    { immediate: true }
+);
 </script>
 
 <template>
@@ -267,8 +292,16 @@ const submitInsert = () => {
             </div>
             <div class="flex items-center gap-2">
                 <span class="rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-700 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-300">
-                    {{ activeAction === 'browse' ? 'Browse active' : activeAction === 'structure' ? 'Structure active' : activeAction === 'insert' ? 'Insert active' : activeAction }}
+                    {{ activeAction === 'browse' ? 'Browse active' : activeAction === 'structure' ? 'Structure active' : activeAction === 'insert' ? 'Insert active' : activeAction === 'operations' ? 'Operations active' : activeAction }}
                 </span>
+                <button
+                    v-if="activeAction === 'structure' && selectedTableDetails"
+                    type="button"
+                    class="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-700 hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-300 dark:hover:bg-cyan-950/50"
+                    @click="emit('edit-structure')"
+                >
+                    Edit Structure
+                </button>
                 <div v-if="pagination" class="text-xs text-slate-500 dark:text-slate-400">
                     Page {{ pagination.current_page }} of {{ pagination.last_page }}
                 </div>
@@ -311,6 +344,62 @@ const submitInsert = () => {
                     </tr>
                 </tbody>
             </table>
+        </div>
+
+        <div v-else-if="selectedTableDetails && isOperationsAction" class="space-y-4">
+            <div class="rounded-xl border border-cyan-200 bg-cyan-50 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">Operations</p>
+                <h3 class="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">Rename table</h3>
+                <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                    Rename <span class="font-semibold">{{ selectedDatabase }}</span>.<span class="font-semibold">{{ selectedTable }}</span> without changing the data.
+                </p>
+            </div>
+
+            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                            Current table
+                        </label>
+                        <input
+                            type="text"
+                            :value="selectedTable"
+                            disabled
+                            class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                        >
+                    </div>
+
+                    <div>
+                        <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                            New table name
+                        </label>
+                        <input
+                            v-model="renameTarget"
+                            type="text"
+                            placeholder="Enter new table name"
+                            class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-cyan-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                        >
+                    </div>
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-3">
+                        <button
+                            type="button"
+                            class="rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="renameBusy || !renameTarget.trim() || renameTarget.trim() === selectedTable"
+                            @click="submitRename"
+                        >
+                            {{ renameBusy ? 'Renaming...' : 'Rename Table' }}
+                        </button>
+                    <button
+                        type="button"
+                        class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                        @click="renameTarget = selectedTable || ''"
+                    >
+                        Reset
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div v-else-if="selectedTableDetails && isInsertAction" class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">

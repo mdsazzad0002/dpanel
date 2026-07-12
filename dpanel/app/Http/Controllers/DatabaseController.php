@@ -38,8 +38,10 @@ class DatabaseController extends Controller
     public function index(): Response
     {
         $this->migrateLegacyJsonRequests();
+        $actor = request()->user();
 
         $requests = DatabaseRequestModel::query()
+            ->visibleTo($actor)
             ->with('assignedUser:id,name,email')
             ->orderByDesc('created_at')
             ->get()
@@ -96,8 +98,11 @@ class DatabaseController extends Controller
     public function edit(string $token, string $id): Response
     {
         $this->migrateLegacyJsonRequests();
+        $actor = request()->user();
 
-        $requestItem = DatabaseRequestModel::query()->find($id);
+        $requestItem = DatabaseRequestModel::query()
+            ->visibleTo($actor)
+            ->find($id);
         abort_if($requestItem === null, 404);
 
         return Inertia::render('Databases/Edit', [
@@ -112,11 +117,14 @@ class DatabaseController extends Controller
     public function update(Request $request, string $token, string $id): RedirectResponse
     {
         $this->migrateLegacyJsonRequests();
+        $actor = $request->user();
 
-        $prepared = $this->preparePayload($request->all(), $request->user());
+        $prepared = $this->preparePayload($request->all(), $actor);
         $validated = $this->normalizePayload($this->validatePayload($prepared));
 
-        $requestItem = DatabaseRequestModel::query()->find($id);
+        $requestItem = DatabaseRequestModel::query()
+            ->visibleTo($actor)
+            ->find($id);
         if (! $requestItem) {
             return redirect()->route('databases.list')->with('error', 'Database request not found.');
         }
@@ -156,7 +164,10 @@ class DatabaseController extends Controller
     {
         $this->migrateLegacyJsonRequests();
 
-        $deleted = DatabaseRequestModel::query()->where('id', $id)->delete();
+        $deleted = DatabaseRequestModel::query()
+            ->visibleTo($request->user())
+            ->where('id', $id)
+            ->delete();
         if ($deleted === 0) {
             return redirect()->route('databases.list')->with('error', 'Database request not found.');
         }
@@ -169,7 +180,9 @@ class DatabaseController extends Controller
      */
     public function openPhpMyAdmin(Request $request, string $token, string $id)
     {
-        $requestItem = DatabaseRequestModel::query()->find($id);
+        $requestItem = DatabaseRequestModel::query()
+            ->visibleTo($request->user())
+            ->find($id);
         abort_if($requestItem === null, 404);
 
         return redirect()->route('phpmyadmin.index', [

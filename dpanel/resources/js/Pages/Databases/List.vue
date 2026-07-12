@@ -1,16 +1,16 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed, reactive, ref } from 'vue';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 const page = usePage();
 const deleteForm = useForm({});
 const panelToken = computed(() => String(page.props.panel?.token || ''));
+const currentUserId = computed(() => Number(page.props.auth?.user?.id || 0));
+const canOpenAllDatabases = computed(() => currentUserId.value === 1);
 const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
-const checkingId = ref('');
-const checkStates = reactive({});
 
 defineProps({
     databaseRequests: {
@@ -32,77 +32,22 @@ const deleteRequest = (id) => {
     deleteForm.delete(panelRoute('databases.destroy', { id }));
 };
 
-const checkPhpMyAdmin = async (item) => {
-    checkingId.value = item.id;
-    checkStates[item.id] = {
-        type: 'info',
-        message: 'Checking database studio preflight...',
-    };
-
-    try {
-        const response = await fetch(panelRoute('phpmyadmin.health', { database: item.database_name }), {
-            headers: {
-                Accept: 'application/json',
-            },
-            credentials: 'same-origin',
-        });
-
-        const data = await response.json().catch(() => ({}));
-        const connectionMessage = data?.checks?.connection?.message || 'Connection check unavailable.';
-        const sessionMessage = data?.checks?.session?.message || 'unknown';
-
-        checkStates[item.id] = {
-            type: response.ok ? 'success' : 'error',
-            message: response.ok ? 'Preflight passed.' : (data?.message || 'Preflight failed.'),
-            details: `Session: ${sessionMessage}. Connection: ${connectionMessage}`,
-        };
-    } catch (error) {
-        checkStates[item.id] = {
-            type: 'error',
-            message: 'Preflight request failed.',
-            details: error?.message || 'Unknown error.',
-        };
-    } finally {
-        checkingId.value = '';
-    }
+const openPhpMyAdmin = async (item) => {
+    router.visit(panelRoute('phpmyadmin.index', { database: item.database_name }), {
+        preserveScroll: true,
+        preserveState: false,
+    });
 };
 
-const openPhpMyAdmin = async (item) => {
-    checkingId.value = item.id;
-    checkStates[item.id] = {
-        type: 'info',
-        message: 'Opening database studio...',
-    };
+const openDatabaseStudio = async (item) => {
+    await openPhpMyAdmin(item);
+};
 
-    try {
-        const response = await fetch(panelRoute('phpmyadmin.health', { database: item.database_name }), {
-            headers: {
-                Accept: 'application/json',
-            },
-            credentials: 'same-origin',
-        });
-
-        const data = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-            checkStates[item.id] = {
-                type: 'error',
-                message: data?.message || 'Session verification failed.',
-                details: data?.checks?.connection?.message || data?.checks?.session?.message || 'Cookie/session mismatch.',
-            };
-            return;
-        }
-
-        window.location.assign(panelRoute('phpmyadmin.index', { database: item.database_name }));
-    } catch (error) {
-        checkStates[item.id] = {
-            type: 'error',
-            message: 'Session verification failed.',
-            details: error?.message || 'Unknown error.',
-        };
-    } finally {
-        checkingId.value = '';
-    }
+const openAllDatabaseStudio = () => {
+    router.visit(panelRoute('phpmyadmin.index', { access: 'all' }), {
+        preserveScroll: true,
+        preserveState: false,
+    });
 };
 </script>
 
@@ -125,7 +70,15 @@ const openPhpMyAdmin = async (item) => {
                 {{ page.props.flash.error }}
             </div>
 
-            <div class="flex justify-end">
+            <div class="flex justify-end gap-2">
+                <button
+                    v-if="canOpenAllDatabases"
+                    type="button"
+                    class="rounded-md border border-cyan-300 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-100 dark:border-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-200 dark:hover:bg-cyan-950/50"
+                    @click="openAllDatabaseStudio"
+                >
+                    All Database Access
+                </button>
                 <Link :href="panelRoute('databases.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Database
                 </Link>
@@ -154,7 +107,15 @@ const openPhpMyAdmin = async (item) => {
                             <td class="px-4 py-3 text-slate-600 dark:text-slate-300">
                                 {{ item.assigned_user_name || item.assigned_user_email || 'Dpanel user' }}
                             </td>
-                            <td class="px-4 py-3 font-medium">{{ item.database_name }}</td>
+                            <td class="px-4 py-3 font-medium">
+                                <button
+                                    type="button"
+                                    class="text-left text-blue-700 hover:underline dark:text-blue-300"
+                                    @click="openDatabaseStudio(item)"
+                                >
+                                    {{ item.database_name }}
+                                </button>
+                            </td>
                             <td class="px-4 py-3">{{ item.database_user }}</td>
                             <td class="px-4 py-3">
                                 <span class="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">
@@ -170,15 +131,6 @@ const openPhpMyAdmin = async (item) => {
                                     </Link>
                                     <button
                                         type="button"
-                                        :disabled="checkingId === item.id"
-                                        class="rounded-md border border-amber-300 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/20"
-                                        @click="checkPhpMyAdmin(item)"
-                                    >
-                                        {{ checkingId === item.id ? 'Checking...' : 'Check' }}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        :disabled="checkingId === item.id"
                                         class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
                                         @click="openPhpMyAdmin(item)"
                                     >
@@ -192,16 +144,6 @@ const openPhpMyAdmin = async (item) => {
                                         Delete
                                     </button>
                                     </div>
-                                    <p
-                                        v-if="checkStates[item.id]"
-                                        class="max-w-md text-xs"
-                                        :class="checkStates[item.id].type === 'success' ? 'text-emerald-600 dark:text-emerald-400' : checkStates[item.id].type === 'error' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'"
-                                    >
-                                        {{ checkStates[item.id].message }}
-                                        <span v-if="checkStates[item.id].details" class="block opacity-80">
-                                            {{ checkStates[item.id].details }}
-                                        </span>
-                                    </p>
                                 </div>
                             </td>
                         </tr>

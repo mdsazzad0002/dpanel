@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\User;
@@ -29,5 +30,14 @@ class DatabaseRequest extends Model
     public function assignedUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_user_id');
+    }
+
+    public function scopeVisibleTo(Builder $query, ?User $actor): Builder
+    {
+        if ($actor === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where('assigned_user_id', $actor->id);
     }
 }

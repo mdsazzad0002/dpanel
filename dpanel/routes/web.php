@@ -401,23 +401,27 @@ Route::prefix('cpsess{token}')
         ->middleware('role:admin|reseller')
         ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
         ->name('phpmyadmin.table.empty');
-    Route::get('/phpmyadmin/check', [PhpMyAdminController::class, 'health'])
+    Route::post('/phpmyadmin/databases/{database}/tables/{table}/rename', [PhpMyAdminController::class, 'renameTable'])
         ->middleware('role:admin|reseller')
-        ->name('phpmyadmin.health');
+        ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
+        ->name('phpmyadmin.table.rename');
+    Route::post('/phpmyadmin/databases/{database}/tables/{table}/structure', [PhpMyAdminController::class, 'alterTableStructure'])
+        ->middleware('role:admin|reseller')
+        ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
+        ->name('phpmyadmin.table.structure.update');
+    Route::post('/phpmyadmin/databases/{database}/tables', [PhpMyAdminController::class, 'createTable'])
+        ->middleware('role:admin|reseller')
+        ->where(['database' => '[A-Za-z0-9_]+'])
+        ->name('phpmyadmin.table.create');
     Route::post('/phpmyadmin/query', [PhpMyAdminController::class, 'execute'])
         ->middleware('role:admin|reseller')
         ->name('phpmyadmin.execute');
-
-    Route::get('/databases/{id}/phpmyadmin/check', [PhpMyAdminController::class, 'health'])
-        ->withoutMiddleware([
-            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
-            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
-            \App\Http\Middleware\ApplyPanelRouteDefaults::class,
-            \App\Http\Middleware\HandleInertiaRequests::class,
-        ])
+    Route::post('/phpmyadmin/export', [PhpMyAdminController::class, 'export'])
         ->middleware('role:admin|reseller')
-        ->where('id', '[^/]+')
-        ->name('databases.phpmyadmin.check');
+        ->name('phpmyadmin.export');
+    Route::post('/phpmyadmin/import', [PhpMyAdminController::class, 'import'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.import');
 
     Route::redirect('/databases/{id}/phpmyadmin/autologin', '/phpmyadmin')
         ->middleware('role:admin|reseller')

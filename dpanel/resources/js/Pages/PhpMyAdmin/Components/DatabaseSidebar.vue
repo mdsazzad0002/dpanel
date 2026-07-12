@@ -96,7 +96,7 @@ const handleDatabaseToggle = (database) => {
                     <p class="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-700/80 dark:text-blue-300/80">
                         First-party database module
                     </p>
-                    <h1 class="text-base font-semibold leading-tight">Database Studio</h1>
+                    <h1 class="text-base font-semibold leading-tight">Databases</h1>
                 </div>
             </div>
         </div>
