@@ -14,7 +14,7 @@ use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\MonitoringController;
-use App\Http\Controllers\PhpMyAdminProxyController;
+use App\Http\Controllers\PhpMyAdmin\PhpMyAdminController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\ServerController;
@@ -375,12 +375,31 @@ Route::prefix('cpsess{token}')
         ->middleware('role:admin|reseller')
         ->name('databases.edit');
 
-    Route::match(['get', 'post'], '/databases/{id}/phpmyadmin/autologin', [PhpMyAdminProxyController::class, 'autologin'])
+    Route::get('/phpmyadmin.php', [PhpMyAdminController::class, 'index'])
         ->middleware('role:admin|reseller')
-        ->where('id', '[^/]+')
-        ->name('databases.phpmyadmin.autologin');
+        ->name('phpmyadmin.index');
+    Route::get('/phpmyadmin.php/sql', [PhpMyAdminController::class, 'sql'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.sql');
+    Route::get('/phpmyadmin.php/databases', [PhpMyAdminController::class, 'databases'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.databases');
+    Route::get('/phpmyadmin.php/databases/{database}', [PhpMyAdminController::class, 'database'])
+        ->middleware('role:admin|reseller')
+        ->where('database', '[A-Za-z0-9_]+')
+        ->name('phpmyadmin.database');
+    Route::get('/phpmyadmin.php/databases/{database}/tables/{table}', [PhpMyAdminController::class, 'table'])
+        ->middleware('role:admin|reseller')
+        ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
+        ->name('phpmyadmin.table');
+    Route::get('/phpmyadmin.php/check', [PhpMyAdminController::class, 'health'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.health');
+    Route::post('/phpmyadmin.php/query', [PhpMyAdminController::class, 'execute'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.execute');
 
-    Route::get('/databases/{id}/phpmyadmin/check', [PhpMyAdminProxyController::class, 'check'])
+    Route::get('/databases/{id}/phpmyadmin/check', [PhpMyAdminController::class, 'health'])
         ->withoutMiddleware([
             \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
@@ -391,19 +410,15 @@ Route::prefix('cpsess{token}')
         ->where('id', '[^/]+')
         ->name('databases.phpmyadmin.check');
 
-    Route::match(['get', 'post'], '/databases/{id}/phpmyadmin/{path?}', [PhpMyAdminProxyController::class, 'handle'])
-        ->withoutMiddleware([
-            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
-            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
-            \App\Http\Middleware\ApplyPanelRouteDefaults::class,
-            \App\Http\Middleware\HandleInertiaRequests::class,
-            VerifyCsrfToken::class,
-            \App\Http\Middleware\EnsurePanelSessionIsValid::class,
-            \Illuminate\Auth\Middleware\Authenticate::class,
-            \Spatie\Permission\Middleware\RoleMiddleware::class,
-        ])
+    Route::redirect('/databases/{id}/phpmyadmin/autologin', '/phpmyadmin.php')
+        ->middleware('role:admin|reseller')
+        ->where('id', '[^/]+')
+        ->name('databases.phpmyadmin.autologin');
+
+    Route::redirect('/databases/{id}/phpmyadmin/{path?}', '/phpmyadmin.php')
+        ->middleware('role:admin|reseller')
         ->where('path', '.*')
-        // ->middleware('role:admin|reseller')
+        ->where('id', '[^/]+')
         ->name('databases.phpmyadmin');
 
 

@@ -81,6 +81,7 @@ const menuItems = computed(() => [
         children: [
             { label: 'Create Database', hint: 'Create a new database', icon: 'CD', iconClass: 'bi bi-database-add', routeName: 'databases.create', roles: ['admin', 'reseller'] },
             { label: 'List Databases', hint: 'View all databases', icon: 'LD', iconClass: 'bi bi-table', routeName: 'databases.list', roles: ['admin', 'reseller'] },
+            { label: 'Database Studio', hint: 'First-party phpMyAdmin replacement', icon: 'DS', iconClass: 'bi bi-columns-gap', routeName: 'phpmyadmin.index', roles: ['admin', 'reseller'] },
         ],
     },
     {

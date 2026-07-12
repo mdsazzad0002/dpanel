@@ -169,9 +169,12 @@ class DatabaseController extends Controller
      */
     public function openPhpMyAdmin(Request $request, string $token, string $id)
     {
-        return redirect()->route('databases.phpmyadmin.autologin', [
+        $requestItem = DatabaseRequestModel::query()->find($id);
+        abort_if($requestItem === null, 404);
+
+        return redirect()->route('phpmyadmin.index', [
             'token' => $token,
-            'id' => $id,
+            'database' => (string) $requestItem->database_name,
         ]);
     }
 

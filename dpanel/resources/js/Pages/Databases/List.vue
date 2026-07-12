@@ -36,11 +36,11 @@ const checkPhpMyAdmin = async (item) => {
     checkingId.value = item.id;
     checkStates[item.id] = {
         type: 'info',
-        message: 'Checking phpMyAdmin preflight...',
+        message: 'Checking database studio preflight...',
     };
 
     try {
-        const response = await fetch(panelRoute('databases.phpmyadmin.check', { id: item.id }), {
+        const response = await fetch(panelRoute('phpmyadmin.health', { database: item.database_name }), {
             headers: {
                 Accept: 'application/json',
             },
@@ -48,14 +48,13 @@ const checkPhpMyAdmin = async (item) => {
         });
 
         const data = await response.json().catch(() => ({}));
-        const databaseMessage = data?.checks?.database?.message || 'Database check unavailable.';
-        const assetMessage = data?.checks?.assets?.message || 'Asset check unavailable.';
-        const sessionMessage = data?.checks?.session || 'unknown';
+        const connectionMessage = data?.checks?.connection?.message || 'Connection check unavailable.';
+        const sessionMessage = data?.checks?.session?.message || 'unknown';
 
         checkStates[item.id] = {
             type: response.ok ? 'success' : 'error',
             message: response.ok ? 'Preflight passed.' : (data?.message || 'Preflight failed.'),
-            details: `Session: ${sessionMessage}. Database: ${databaseMessage} Assets: ${assetMessage}`,
+            details: `Session: ${sessionMessage}. Connection: ${connectionMessage}`,
         };
     } catch (error) {
         checkStates[item.id] = {
@@ -72,11 +71,11 @@ const openPhpMyAdmin = async (item) => {
     checkingId.value = item.id;
     checkStates[item.id] = {
         type: 'info',
-        message: 'Verifying session before opening phpMyAdmin...',
+        message: 'Opening database studio...',
     };
 
     try {
-        const response = await fetch(panelRoute('databases.phpmyadmin.check', { id: item.id }), {
+        const response = await fetch(panelRoute('phpmyadmin.health', { database: item.database_name }), {
             headers: {
                 Accept: 'application/json',
             },
@@ -89,12 +88,12 @@ const openPhpMyAdmin = async (item) => {
             checkStates[item.id] = {
                 type: 'error',
                 message: data?.message || 'Session verification failed.',
-                details: data?.checks?.session?.message || data?.checks?.session || 'Cookie/session mismatch.',
+                details: data?.checks?.connection?.message || data?.checks?.session?.message || 'Cookie/session mismatch.',
             };
             return;
         }
 
-        window.location.assign(panelRoute('databases.phpmyadmin.autologin', { id: item.id }));
+        window.location.assign(panelRoute('phpmyadmin.index', { database: item.database_name }));
     } catch (error) {
         checkStates[item.id] = {
             type: 'error',
@@ -183,7 +182,7 @@ const openPhpMyAdmin = async (item) => {
                                         class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
                                         @click="openPhpMyAdmin(item)"
                                     >
-                                        phpMyAdmin
+                                        Database Studio
                                     </button>
                                     <button
                                         :disabled="deleteForm.processing"
