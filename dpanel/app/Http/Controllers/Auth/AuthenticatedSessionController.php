@@ -36,7 +36,7 @@ class AuthenticatedSessionController extends Controller
         $user = $request->authenticate();
         $request->session()->regenerate();
 
-        if ($twoFactor->isEnabled() && $twoFactor->appliesToUser($user) && $twoFactor->availableMethods($user) === []) {
+        if ((bool) $user->two_factor_enabled && $twoFactor->availableMethods($user) === []) {
             return back()->withErrors([
                 'email' => 'Two-factor is enabled for your account, but no verification method is configured.',
             ]);

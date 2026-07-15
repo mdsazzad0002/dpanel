@@ -35,11 +35,17 @@ class SecuritySettings
                 return $defaults;
             }
 
+            $twoFactor = array_merge($defaults['two_factor'], (array) ($decoded['two_factor'] ?? []));
+            $twoFactor['enabled'] = true;
+            $twoFactor['email'] = true;
+            $twoFactor['enforce_admin'] = true;
+            $twoFactor['enforce_reseller'] = true;
+
             return [
                 'firewall' => array_merge($defaults['firewall'], (array) ($decoded['firewall'] ?? [])),
                 'ssh' => array_merge($defaults['ssh'], (array) ($decoded['ssh'] ?? [])),
                 'telegram' => array_merge($defaults['telegram'], (array) ($decoded['telegram'] ?? [])),
-                'two_factor' => array_merge($defaults['two_factor'], (array) ($decoded['two_factor'] ?? [])),
+                'two_factor' => $twoFactor,
             ];
         } catch (\Throwable) {
             return $defaults;
@@ -75,13 +81,13 @@ class SecuritySettings
                 'message' => trim((string) ($state['telegram']['message'] ?? 'Security alert from ServerPanel')),
             ],
             'two_factor' => [
-                'enabled' => (bool) ($state['two_factor']['enabled'] ?? false),
-                'email' => (bool) ($state['two_factor']['email'] ?? true),
+                'enabled' => true,
+                'email' => true,
                 'telegram' => (bool) ($state['two_factor']['telegram'] ?? false),
                 'google_auth_app' => (bool) ($state['two_factor']['google_auth_app'] ?? true),
                 'code_ttl_minutes' => max(1, (int) ($state['two_factor']['code_ttl_minutes'] ?? 10)),
-                'enforce_admin' => (bool) ($state['two_factor']['enforce_admin'] ?? true),
-                'enforce_reseller' => (bool) ($state['two_factor']['enforce_reseller'] ?? false),
+                'enforce_admin' => true,
+                'enforce_reseller' => true,
             ],
         ];
 
@@ -120,13 +126,13 @@ class SecuritySettings
                 'message' => 'Security alert from ServerPanel',
             ],
             'two_factor' => [
-                'enabled' => false,
+                'enabled' => true,
                 'email' => true,
                 'telegram' => false,
                 'google_auth_app' => true,
                 'code_ttl_minutes' => 10,
                 'enforce_admin' => true,
-                'enforce_reseller' => false,
+                'enforce_reseller' => true,
             ],
         ];
     }

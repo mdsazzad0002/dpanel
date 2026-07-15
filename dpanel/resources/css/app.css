@@ -8,3 +8,26 @@
     justify-content: center;
     line-height: 1;
 }
+
+.login-input,
+.login-input:-webkit-autofill,
+.login-input:-webkit-autofill:hover,
+.login-input:-webkit-autofill:focus,
+.login-input:-webkit-autofill:active,
+.challenge-input,
+.challenge-input:-webkit-autofill,
+.challenge-input:-webkit-autofill:hover,
+.challenge-input:-webkit-autofill:focus,
+.challenge-input:-webkit-autofill:active {
+    background-color: #000 !important;
+    color: #fff !important;
+    -webkit-text-fill-color: #fff !important;
+    caret-color: #fff !important;
+    box-shadow: 0 0 0 1000px #000 inset !important;
+    -webkit-box-shadow: 0 0 0 1000px #000 inset !important;
+}
+
+.login-input::placeholder,
+.challenge-input::placeholder {
+    color: rgba(148, 163, 184, 0.7);
+}

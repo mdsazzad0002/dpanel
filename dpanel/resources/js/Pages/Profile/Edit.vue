@@ -1,8 +1,7 @@
 <script setup>
-import { computed, ref } from 'vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import DeleteUserForm from './Partials/DeleteUserForm.vue';
 import UpdatePasswordForm from './Partials/UpdatePasswordForm.vue';
 import UpdateProfileInformationForm from './Partials/UpdateProfileInformationForm.vue';
 import TwoFactorForm from './Partials/TwoFactorForm.vue';
@@ -22,13 +21,54 @@ const roles = computed(() => page.props.auth?.roles ?? []);
 const twoFactor = computed(() => page.props.twoFactor ?? {});
 const emailVerified = computed(() => Boolean(user.value?.email_verified_at));
 const twoFactorEnabled = computed(() => Boolean(twoFactor.value.enabled ?? false));
-const twoFactorMethod = computed(() => String(twoFactor.value.method ?? '').replace(/_/g, ' ') || 'not set');
+const twoFactorMethod = computed(() => String(twoFactor.value.method ?? 'email').replace(/_/g, ' ') || 'email');
 const userInitials = computed(() => String(user.value?.name ?? 'User')
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('') || 'U');
+
+let verificationPoll = null;
+
+const stopVerificationPolling = () => {
+    if (verificationPoll !== null) {
+        clearInterval(verificationPoll);
+        verificationPoll = null;
+    }
+};
+
+const refreshVerificationState = () => {
+    if (emailVerified.value) {
+        stopVerificationPolling();
+        return;
+    }
+
+    router.reload({
+        only: ['auth'],
+        preserveScroll: true,
+        preserveState: true,
+    });
+};
+
+watch(
+    emailVerified,
+    (verified) => {
+        if (verified) {
+            stopVerificationPolling();
+            return;
+        }
+
+        if (verificationPoll === null) {
+            verificationPoll = window.setInterval(refreshVerificationState, 5000);
+        }
+    },
+    { immediate: true },
+);
+
+onBeforeUnmount(() => {
+    stopVerificationPolling();
+});
 
 const tabs = [
     {
@@ -45,15 +85,9 @@ const tabs = [
     },
     {
         key: 'two-factor',
-        label: '2FA',
-        hint: 'Login verification',
+        label: 'Security',
+        hint: 'Email, Telegram, Authenticator',
         icon: 'bi bi-phone-lock',
-    },
-    {
-        key: 'danger',
-        label: 'Danger Zone',
-        hint: 'Delete account',
-        icon: 'bi bi-exclamation-triangle',
     },
 ];
 
@@ -79,7 +113,7 @@ const setActiveTab = (tab) => {
         </template>
 
         <div class="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-            <div class="mx-auto max-w-7xl space-y-6">
+            <div class="mx-auto space-y-6">
                 <section class="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_20px_60px_-30px_rgba(15,23,42,0.45)] dark:border-slate-800 dark:bg-slate-900">
                     <div class="grid gap-6 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-6 py-8 text-white md:grid-cols-[1.4fr_0.9fr] md:px-8">
                         <div class="space-y-4">
@@ -118,7 +152,7 @@ const setActiveTab = (tab) => {
                                     class="rounded-full px-3 py-1 text-xs font-medium"
                                     :class="twoFactorEnabled ? 'bg-cyan-500/15 text-cyan-200 ring-1 ring-cyan-400/20' : 'bg-white/10 text-white/70 ring-1 ring-white/15'"
                                 >
-                                    {{ twoFactorEnabled ? `2FA enabled · ${twoFactorMethod}` : '2FA disabled' }}
+                                    {{ twoFactorEnabled ? `2FA enabled - ${twoFactorMethod}` : '2FA disabled' }}
                                 </span>
                             </div>
                         </div>
@@ -134,6 +168,12 @@ const setActiveTab = (tab) => {
                                 <p class="mt-2 text-lg font-semibold text-white">{{ twoFactorEnabled ? 'Protected' : 'Open' }}</p>
                                 <p class="mt-1 text-sm text-white/65">
                                     {{ twoFactorEnabled ? '2FA is active for sign-in.' : 'Enable 2FA for stronger account protection.' }}
+                                </p>
+                                <p
+                                    v-if="!emailVerified"
+                                    class="mt-3 text-xs text-white/55"
+                                >
+                                    Email status checks every 5 seconds.
                                 </p>
                             </div>
                         </div>
@@ -202,28 +242,8 @@ const setActiveTab = (tab) => {
                         <div v-else-if="activeTab === 'two-factor'" class="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                             <TwoFactorForm class="max-w-none" />
                         </div>
-
-                        <div v-else class="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                            <DeleteUserForm class="max-w-none" />
-                        </div>
                     </div>
                 </section>
-
-                <div class="rounded-[1.5rem] border border-slate-200 bg-gradient-to-br from-blue-600 to-cyan-500 p-5 text-white shadow-sm">
-                    <h3 class="text-sm font-semibold uppercase tracking-[0.24em] text-white/70">
-                        Quick Note
-                    </h3>
-                    <p class="mt-3 text-sm leading-6 text-white/85">
-                        Keep your email verified and enable 2FA. That reduces account recovery risk and protects panel access.
-                    </p>
-                    <Link
-                        v-if="route().has('security.manager')"
-                        :href="route('security.manager')"
-                        class="mt-4 inline-flex items-center rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/15"
-                    >
-                        Open security console
-                    </Link>
-                </div>
             </div>
         </div>
     </AuthenticatedLayout>

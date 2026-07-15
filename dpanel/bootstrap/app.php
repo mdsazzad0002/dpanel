@@ -23,6 +23,10 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
+        $middleware->validateCsrfTokens(except: [
+            'telegram/webhook',
+        ]);
+
         $middleware->alias([
             'panel.session' => \App\Http\Middleware\EnsurePanelSessionIsValid::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,

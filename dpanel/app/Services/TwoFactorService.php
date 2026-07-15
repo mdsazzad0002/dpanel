@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use App\Support\SecuritySettings;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -25,18 +26,12 @@ class TwoFactorService
 
     public function isEnabled(): bool
     {
-        $policy = $this->policy();
-
-        return (bool) ($policy['enabled'] ?? false);
+        return true;
     }
 
     public function requiresChallenge(User $user): bool
     {
-        if (! $this->isEnabled()) {
-            return false;
-        }
-
-        if (! $this->appliesToUser($user)) {
+        if (! (bool) $user->two_factor_enabled) {
             return false;
         }
 
@@ -48,7 +43,7 @@ class TwoFactorService
      */
     public function availableMethods(User $user): array
     {
-        if (! $this->isEnabled() || ! $this->appliesToUser($user)) {
+        if (! $this->isEnabled() || ! $this->appliesToUser($user) || ! (bool) $user->two_factor_enabled) {
             return [];
         }
 
@@ -119,6 +114,58 @@ class TwoFactorService
         );
     }
 
+    public function buildTelegramStartLink(User $user, string $token): ?string
+    {
+        $username = $this->telegramBotUsername();
+        if ($username === null || trim($token) === '') {
+            return null;
+        }
+
+        return 'https://t.me/'.ltrim($username, '@').'?start='.rawurlencode($token);
+    }
+
+    public function ensureTelegramStartToken(User $user): string
+    {
+        $token = trim((string) ($user->two_factor_telegram_start_token ?? ''));
+        if ($token !== '') {
+            return $token;
+        }
+
+        return bin2hex(random_bytes(16));
+    }
+
+    public function telegramBotUsername(): ?string
+    {
+        $configuredUsername = trim((string) config('services.telegram.bot_username', ''));
+        if ($configuredUsername !== '') {
+            return ltrim($configuredUsername, '@');
+        }
+
+        $botToken = (string) config('services.telegram.bot_token', '');
+        if ($botToken === '') {
+            return null;
+        }
+
+        return Cache::remember('telegram.bot_username.'.sha1($botToken), now()->addHours(12), function () use ($botToken): ?string {
+            try {
+                $response = Http::timeout(30)
+                    ->withoutVerifying()
+                    ->acceptJson()
+                    ->get("https://api.telegram.org/bot{$botToken}/getMe");
+
+                if (! $response->successful()) {
+                    return null;
+                }
+
+                $username = (string) data_get($response->json(), 'result.username', '');
+
+                return $username !== '' ? $username : null;
+            } catch (\Throwable) {
+                return null;
+            }
+        });
+    }
+
     public function sendChallenge(User $user, string $method, string $code): void
     {
         if ($method === 'email') {
@@ -134,7 +181,7 @@ class TwoFactorService
         }
 
         if ($method === 'telegram') {
-            $botToken = (string) ($this->settings->read()['telegram']['bot_token'] ?? '');
+            $botToken = (string) config('services.telegram.bot_token', '');
             if ($botToken === '') {
                 throw new RuntimeException('Telegram bot token is not configured.');
             }
@@ -148,7 +195,8 @@ class TwoFactorService
                 throw new RuntimeException('Telegram chat ID is not configured.');
             }
 
-            $response = Http::timeout(10)
+            $response = Http::timeout(30)
+                ->withoutVerifying()
                 ->acceptJson()
                 ->post("https://api.telegram.org/bot{$botToken}/sendMessage", [
                     'chat_id' => $chatId,
@@ -164,6 +212,54 @@ class TwoFactorService
         }
 
         throw new RuntimeException('Unsupported two-factor method.');
+    }
+
+    public function sendSecurityCode(User $user, string $channel, string $code, string $purpose = 'security change'): void
+    {
+        if ($channel === 'email') {
+            Mail::raw(
+                "Your dPanel {$purpose} code is: {$code}\n\nIf you did not request this change, ignore this email.",
+                static function ($message) use ($user): void {
+                    $message->to($user->email)
+                        ->subject('dPanel security code');
+                }
+            );
+
+            return;
+        }
+
+        if ($channel === 'telegram') {
+            $botToken = (string) config('services.telegram.bot_token', '');
+            if ($botToken === '') {
+                throw new RuntimeException('Telegram bot token is not configured.');
+            }
+
+            $chatId = trim((string) ($user->two_factor_telegram_chat_id ?: ''));
+            if ($chatId === '') {
+                $chatId = trim((string) ($this->settings->read()['telegram']['chat_id'] ?? ''));
+            }
+
+            if ($chatId === '') {
+                throw new RuntimeException('Telegram chat ID is not configured.');
+            }
+
+            $response = Http::timeout(30)
+                ->withoutVerifying()
+                ->acceptJson()
+                ->post("https://api.telegram.org/bot{$botToken}/sendMessage", [
+                    'chat_id' => $chatId,
+                    'text' => "Your dPanel {$purpose} code is: {$code}",
+                ]);
+
+            if (! $response->successful()) {
+                $description = (string) data_get($response->json(), 'description', 'Telegram request failed.');
+                throw new RuntimeException($description);
+            }
+
+            return;
+        }
+
+        throw new RuntimeException('Unsupported security code channel.');
     }
 
     public function verifyTotp(User $user, string $code): bool
@@ -201,18 +297,7 @@ class TwoFactorService
 
     public function appliesToUser(User $user): bool
     {
-        $policy = $this->policy();
-        $roles = $user->roles()->pluck('name')->all();
-
-        if ((bool) ($policy['enforce_admin'] ?? true) && in_array('admin', $roles, true)) {
-            return true;
-        }
-
-        if ((bool) ($policy['enforce_reseller'] ?? false) && in_array('reseller', $roles, true)) {
-            return true;
-        }
-
-        return false;
+        return true;
     }
 
     public function telegramCanSend(User $user): bool

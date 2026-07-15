@@ -47,6 +47,7 @@ class User extends Authenticatable
         'password',
         'remember_token',
         'two_factor_secret',
+        'two_factor_telegram_start_token',
     ];
 
     /**

@@ -35,6 +35,11 @@ return [
         ],
     ],
 
+    'telegram' => [
+        'bot_token' => '8841389169:AAE_gW3WTOAUwMKlYvUHL-SM8xfSJTokP7s',
+        'bot_username' => '@dPanel_security_bot',
+    ],
+
     'openai' => [
         'api_key' => env('OPENAI_API_KEY'),
         'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),

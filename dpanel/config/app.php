@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    'name' => 'dPanel',
 
     /*
     |--------------------------------------------------------------------------
@@ -91,7 +91,7 @@ return [
     'webmail_url' => env('WEBMAIL_URL', ''),
     'webmail_helper_url' => env('WEBMAIL_HELPER_URL', ''),
     'roundcube_imap_host' => env('ROUNDCUBE_IMAP_HOST', 'tls://127.0.0.1'),
-    
+
 
     /*
     |--------------------------------------------------------------------------

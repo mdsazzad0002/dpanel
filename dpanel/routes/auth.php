@@ -19,6 +19,8 @@ Route::middleware('guest')->group(function () {
 
     Route::get('two-factor-challenge', [TwoFactorChallengeController::class, 'create'])
         ->name('two-factor.challenge');
+    Route::post('two-factor-challenge/method', [TwoFactorChallengeController::class, 'selectMethod'])
+        ->name('two-factor.method');
     Route::post('two-factor-challenge', [TwoFactorChallengeController::class, 'store'])
         ->name('two-factor.verify');
     Route::post('two-factor-challenge/resend', [TwoFactorChallengeController::class, 'resend'])

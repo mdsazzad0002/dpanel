@@ -25,6 +25,8 @@ class SecurityController extends Controller
             'ssh' => $state['ssh'],
             'telegram' => $state['telegram'],
             'twoFactor' => $state['two_factor'],
+            'telegramBotConfigured' => trim((string) config('services.telegram.bot_token', '')) !== '',
+            'telegramBotUsername' => trim((string) config('services.telegram.bot_username', '')),
         ]);
     }
 
@@ -121,19 +123,44 @@ class SecurityController extends Controller
     {
         $validated = $request->validate([
             'enabled' => ['required', 'boolean'],
-            'bot_token' => ['required', 'string', 'max:255'],
             'chat_id' => ['required', 'string', 'max:255'],
             'message' => ['nullable', 'string', 'max:512'],
         ]);
 
+        $botToken = (string) config('services.telegram.bot_token', '');
+        if ($botToken === '') {
+            $error = 'Telegram bot token is not configured in the environment.';
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $error,
+                ], 422);
+            }
+
+            return redirect()->route('security.manager')->with('error', $error);
+        }
+
         $state = $this->settings->read();
         $state['telegram'] = [
             'enabled' => (bool) $validated['enabled'],
-            'bot_token' => trim((string) $validated['bot_token']),
             'chat_id' => trim((string) $validated['chat_id']),
             'message' => trim((string) ($validated['message'] ?? 'Security alert from ServerPanel')),
         ];
         $this->settings->write($state);
+
+        $webhookError = $this->syncTelegramWebhook($state['telegram']['enabled'], $botToken);
+        if ($webhookError !== null) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $webhookError,
+                    'data' => ['telegram' => $state['telegram']],
+                ], 422);
+            }
+
+            return redirect()->route('security.manager')->with('error', $webhookError);
+        }
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -160,13 +187,13 @@ class SecurityController extends Controller
 
         $state = $this->settings->read();
         $state['two_factor'] = [
-            'enabled' => (bool) $validated['enabled'],
+            'enabled' => true,
             'email' => (bool) $validated['email'],
             'telegram' => (bool) $validated['telegram'],
             'google_auth_app' => (bool) $validated['google_auth_app'],
             'code_ttl_minutes' => (int) $validated['code_ttl_minutes'],
-            'enforce_admin' => (bool) $validated['enforce_admin'],
-            'enforce_reseller' => (bool) $validated['enforce_reseller'],
+            'enforce_admin' => true,
+            'enforce_reseller' => true,
         ];
         $this->settings->write($state);
 
@@ -184,16 +211,29 @@ class SecurityController extends Controller
     public function testTelegram(Request $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
-            'bot_token' => ['required', 'string', 'max:255'],
             'chat_id' => ['required', 'string', 'max:255'],
             'message' => ['nullable', 'string', 'max:512'],
         ]);
 
-        $botToken = trim((string) $validated['bot_token']);
+        $botToken = (string) config('services.telegram.bot_token', '');
+        if ($botToken === '') {
+            $error = 'Telegram bot token is not configured.';
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $error,
+                ], 422);
+            }
+
+            return redirect()->route('security.manager')->with('error', $error);
+        }
+
         $chatId = trim((string) $validated['chat_id']);
         $message = trim((string) ($validated['message'] ?? 'Security alert from ServerPanel'));
 
-        $response = Http::timeout(10)
+        $response = Http::timeout(30)
+            ->withoutVerifying()
             ->acceptJson()
             ->post("https://api.telegram.org/bot{$botToken}/sendMessage", [
                 'chat_id' => $chatId,
@@ -221,6 +261,39 @@ class SecurityController extends Controller
         }
 
         return redirect()->route('security.manager')->with('success', 'Telegram test message sent.');
+    }
+
+    private function syncTelegramWebhook(bool $enabled, string $botToken): ?string
+    {
+        if ($botToken === '') {
+            return null;
+        }
+
+        $webhookUrl = route('telegram.webhook', absolute: true);
+
+        try {
+            $response = Http::timeout(30)
+                ->withoutVerifying()
+                ->acceptJson()
+                ->post("https://api.telegram.org/bot{$botToken}/".($enabled ? 'setWebhook' : 'deleteWebhook'), $enabled
+                    ? [
+                        'url' => $webhookUrl,
+                        'drop_pending_updates' => true,
+                    ]
+                    : [
+                        'drop_pending_updates' => true,
+                    ]);
+
+            if (! $response->successful()) {
+                $description = (string) data_get($response->json(), 'description', 'Telegram webhook request failed.');
+
+                return $description;
+            }
+        } catch (\Throwable $e) {
+            return $e->getMessage() !== '' ? $e->getMessage() : 'Unable to sync Telegram webhook.';
+        }
+
+        return null;
     }
 
     /**

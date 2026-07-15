@@ -21,6 +21,7 @@ use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerPanelController;
 use App\Http\Controllers\ServerTaskController;
+use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WebsiteController;
 use App\Models\PanelSession;
@@ -101,6 +102,11 @@ Route::middleware(['panel.session'])->group(function (): void {
 
 Route::post('/sso/webmail/consume', [SsoController::class, 'consumeWebmail'])
     ->name('sso.webmail.consume');
+
+Route::post('/telegram/webhook', [TelegramWebhookController::class, 'store'])
+    ->name('telegram.webhook');
+Route::get('/telegram/webhook-url', [TelegramWebhookController::class, 'url'])
+    ->name('telegram.webhook-url');
 
 Route::prefix('cpsess{token}')
     ->where(['token' => '[0-9a-fA-F]{64}'])

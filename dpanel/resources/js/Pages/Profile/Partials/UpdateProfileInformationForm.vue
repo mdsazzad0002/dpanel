@@ -2,7 +2,6 @@
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
 import { Link, useForm, usePage } from '@inertiajs/vue3';
 
 defineProps({
@@ -18,7 +17,6 @@ const user = usePage().props.auth.user;
 
 const form = useForm({
     name: user.name,
-    email: user.email,
 });
 </script>
 
@@ -55,18 +53,15 @@ const form = useForm({
             </div>
 
             <div>
-                <InputLabel for="email" value="Email" />
+                <InputLabel value="Email" />
 
-                <TextInput
-                    id="email"
-                    type="email"
-                    class="mt-1 block w-full"
-                    v-model="form.email"
-                    required
-                    autocomplete="username"
-                />
+                <p class="mt-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                    {{ user.email }}
+                </p>
 
-                <InputError class="mt-2" :message="form.errors.email" />
+                <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Email address is locked from the profile page.
+                </p>
             </div>
 
             <div v-if="mustVerifyEmail && user.email_verified_at === null">

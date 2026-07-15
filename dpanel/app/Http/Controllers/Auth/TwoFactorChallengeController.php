@@ -32,8 +32,13 @@ class TwoFactorChallengeController extends Controller
             return redirect()->route('login');
         }
 
+        $availableMethods = $twoFactor->availableMethods($user);
         $method = (string) ($pending['method'] ?? $twoFactor->preferredMethod($user) ?? '');
-        if ($method === '' || ! in_array($method, $twoFactor->availableMethods($user), true)) {
+        if ($method === '' || ! in_array($method, $availableMethods, true)) {
+            $method = (string) ($twoFactor->preferredMethod($user) ?? $availableMethods[0] ?? '');
+        }
+
+        if ($method === '' || ! in_array($method, $availableMethods, true)) {
             $request->session()->forget('two_factor.challenge');
 
             return redirect()->route('login')->withErrors([
@@ -41,23 +46,21 @@ class TwoFactorChallengeController extends Controller
             ]);
         }
 
-        if (in_array($method, ['email', 'telegram'], true) && ! isset($pending['code_hash'])) {
-            $code = $twoFactor->generateNumericCode();
-            $request->session()->put('two_factor.challenge.code_hash', hash('sha256', $code));
+        $request->session()->put('two_factor.challenge.method', $method);
 
-            try {
-                $twoFactor->sendChallenge($user, $method, $code);
-            } catch (\Throwable $e) {
-                $request->session()->forget('two_factor.challenge');
+        try {
+            $this->sendChallengeIfNeeded($request, $user, $twoFactor, $method);
+        } catch (\Throwable $e) {
+            $request->session()->forget('two_factor.challenge');
 
-                return redirect()->route('login')->withErrors([
-                    'email' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to send two-factor code.',
-                ]);
-            }
+            return redirect()->route('login')->withErrors([
+                'email' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to send two-factor code.',
+            ]);
         }
 
         return Inertia::render('Auth/TwoFactorChallenge', [
             'method' => $method,
+            'availableMethods' => $availableMethods,
             'methodLabel' => $twoFactor->methodLabel($method),
             'maskedDestination' => $this->maskedDestination($user, $method),
             'expiresIn' => (int) ($twoFactor->policy()['code_ttl_minutes'] ?? 10),
@@ -78,11 +81,16 @@ class TwoFactorChallengeController extends Controller
             return redirect()->route('login');
         }
 
+        $availableMethods = $twoFactor->availableMethods($user);
         $validated = $request->validate([
             'code' => ['required', 'string', 'max:32'],
         ]);
 
-        $method = (string) ($pending['method'] ?? '');
+        $method = (string) ($pending['method'] ?? $twoFactor->preferredMethod($user) ?? '');
+        if ($method === '' || ! in_array($method, $availableMethods, true)) {
+            return redirect()->route('two-factor.challenge');
+        }
+
         $expiresAt = isset($pending['expires_at']) ? strtotime((string) $pending['expires_at']) : false;
         if ($expiresAt !== false && $expiresAt < time()) {
             $request->session()->forget('two_factor.challenge');
@@ -121,6 +129,47 @@ class TwoFactorChallengeController extends Controller
             ->withCookie($panelCookie);
     }
 
+    public function selectMethod(Request $request, TwoFactorService $twoFactor): RedirectResponse
+    {
+        $pending = $request->session()->get('two_factor.challenge');
+        if (! is_array($pending) || ! isset($pending['user_id'])) {
+            return redirect()->route('login');
+        }
+
+        $user = User::query()->find((int) $pending['user_id']);
+        if (! $user instanceof User) {
+            $request->session()->forget('two_factor.challenge');
+
+            return redirect()->route('login');
+        }
+
+        $validated = $request->validate([
+            'method' => ['required', 'in:email,telegram,google_auth_app'],
+        ]);
+
+        $method = (string) $validated['method'];
+        if (! in_array($method, $twoFactor->availableMethods($user), true)) {
+            return back()->withErrors([
+                'method' => 'This verification method is not available.',
+            ]);
+        }
+
+        $request->session()->put('two_factor.challenge.method', $method);
+        $request->session()->forget('two_factor.challenge.code_hash');
+        $request->session()->forget('two_factor.challenge.expires_at');
+        $request->session()->put('two_factor.challenge.attempts', 0);
+
+        try {
+            $this->sendChallengeIfNeeded($request, $user, $twoFactor, $method);
+        } catch (\Throwable $e) {
+            return back()->withErrors([
+                'method' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to change verification method.',
+            ]);
+        }
+
+        return redirect()->route('two-factor.challenge');
+    }
+
     public function resend(Request $request, TwoFactorService $twoFactor): RedirectResponse
     {
         $pending = $request->session()->get('two_factor.challenge');
@@ -140,12 +189,8 @@ class TwoFactorChallengeController extends Controller
             return redirect()->route('two-factor.challenge');
         }
 
-        $code = $twoFactor->generateNumericCode();
-        $request->session()->put('two_factor.challenge.code_hash', hash('sha256', $code));
-        $request->session()->put('two_factor.challenge.expires_at', now()->addMinutes((int) ($twoFactor->policy()['code_ttl_minutes'] ?? 10))->toIso8601String());
-
         try {
-            $twoFactor->sendChallenge($user, $method, $code);
+            $this->sendChallengeIfNeeded($request, $user, $twoFactor, $method, true);
         } catch (\Throwable $e) {
             return back()->withErrors([
                 'code' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to resend two-factor code.',
@@ -153,6 +198,33 @@ class TwoFactorChallengeController extends Controller
         }
 
         return back()->with('status', 'A fresh two-factor code has been sent.');
+    }
+
+    private function sendChallengeIfNeeded(Request $request, User $user, TwoFactorService $twoFactor, string $method, bool $force = false): void
+    {
+        if (! in_array($method, ['email', 'telegram'], true)) {
+            return;
+        }
+
+        $pending = $request->session()->get('two_factor.challenge');
+        $hasCode = is_array($pending) && trim((string) ($pending['code_hash'] ?? '')) !== '';
+
+        if (! $force && $hasCode) {
+            $request->session()->put('two_factor.challenge.method', $method);
+            return;
+        }
+
+        $code = $twoFactor->generateNumericCode();
+        $request->session()->put('two_factor.challenge.code_hash', hash('sha256', $code));
+        $request->session()->put('two_factor.challenge.expires_at', now()->addMinutes((int) ($twoFactor->policy()['code_ttl_minutes'] ?? 10))->toIso8601String());
+
+        try {
+            $twoFactor->sendChallenge($user, $method, $code);
+        } catch (\Throwable $e) {
+            $request->session()->forget('two_factor.challenge.code_hash');
+            $request->session()->forget('two_factor.challenge.expires_at');
+            throw $e;
+        }
     }
 
     private function maskedDestination(User $user, string $method): ?string
