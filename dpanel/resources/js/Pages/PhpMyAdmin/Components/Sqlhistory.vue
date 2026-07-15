@@ -17,7 +17,8 @@ const emit = defineEmits(['use-entry']);
 const HISTORY_HEIGHT_KEY = 'serverpanel-phpmyadmin-sql-history-height';
 const HISTORY_MIN = 12;
 const HISTORY_MAX = 200;
-const HISTORY_DEFAULT = 200;
+const HISTORY_DEFAULT = 0;
+const HISTORY_OPEN = 200;
 
 const footerShell = ref(null);
 const historyHeight = ref(HISTORY_DEFAULT);
@@ -60,7 +61,7 @@ const saveHistoryHeight = () => {
 };
 
 const toggleHistory = () => {
-    applyHistoryHeight(historyHeight.value <= 50 ? HISTORY_DEFAULT : 0);
+    applyHistoryHeight(historyHeight.value <= 50 ? HISTORY_OPEN : 0);
 };
 
 const stopResize = () => {

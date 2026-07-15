@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 
 const props = defineProps({
     tableDetails: {
@@ -69,10 +69,45 @@ const primaryKeyColumns = computed(() => selectedTableColumns.value.filter((colu
 const insertState = reactive({});
 const searchTerm = ref('');
 const selectedRowKeys = ref(new Set());
-const editingRowKey = ref('');
-const editDraft = reactive({});
+const editingCell = ref({ rowKey: '', rowIndex: -1, columnName: '', columnIndex: -1 });
+const editDraft = ref('');
+const suppressBlurSave = ref(false);
+const editSessionId = ref(0);
 const bulkAction = ref('delete');
 const renameTarget = ref('');
+const editInputRef = ref(null);
+const expandedCells = ref(new Set());
+const copyFeedback = ref('');
+
+const toggleCellExpand = (rowKey, columnName) => {
+    const key = `${rowKey}-${columnName}`;
+    const next = new Set(expandedCells.value);
+    if (next.has(key)) {
+        next.delete(key);
+    } else {
+        next.add(key);
+    }
+    expandedCells.value = next;
+};
+
+const copyCellValue = async (value) => {
+    const text = String(value ?? '');
+    try {
+        await navigator.clipboard.writeText(text);
+        copyFeedback.value = 'Copied!';
+        setTimeout(() => { copyFeedback.value = ''; }, 1500);
+    } catch {
+        // Fallback
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        copyFeedback.value = 'Copied!';
+        setTimeout(() => { copyFeedback.value = ''; }, 1500);
+    }
+};
 
 const functionOptions = [
     { label: 'None', value: '' },
@@ -133,32 +168,190 @@ const isEditableRow = (row) => {
 
 const cloneRow = (row) => JSON.parse(JSON.stringify(row || {}));
 
-const startInlineEdit = (row, index) => {
-    if (!isEditableRow(row)) return;
-
-    editingRowKey.value = rowKeyFor(row, index);
-    Object.keys(editDraft).forEach((field) => {
-        delete editDraft[field];
-    });
-    Object.assign(editDraft, cloneRow(row));
+const getEditTarget = () => {
+    const target = editInputRef.value;
+    if (!target) return null;
+    return Array.isArray(target) ? target[0] : target;
 };
 
-const cancelInlineEdit = () => {
-    editingRowKey.value = '';
-    Object.keys(editDraft).forEach((field) => {
-        delete editDraft[field];
-    });
+const focusEditInput = async () => {
+    await nextTick();
+
+    const target = getEditTarget();
+    if (!target) return;
+
+    const focusTarget = typeof target.focus === 'function' ? target : target?.$el;
+    if (focusTarget && typeof focusTarget.focus === 'function') {
+        focusTarget.focus();
+    }
+
+    const selectTarget = typeof target.select === 'function' ? target : target?.$el;
+    if (selectTarget && typeof selectTarget.select === 'function') {
+        selectTarget.select();
+    }
 };
 
-const saveInlineEdit = (row, index) => {
-    if (!isEditableRow(row)) return;
+const isCellEditing = (rowKey, columnName) => {
+    return editingCell.value.rowKey === rowKey && editingCell.value.columnName === columnName;
+};
 
-    emit('row-save', {
-        original: row,
-        draft: cloneRow(editDraft),
-        rowKey: rowKeyFor(row, index),
-    });
-    cancelInlineEdit();
+const getEditableCell = (rowIndex, columnIndex) => {
+    const row = browseRows.value[rowIndex];
+    const column = selectedTableColumns.value[columnIndex];
+
+    if (!row || !column) return null;
+
+    return {
+        row,
+        rowIndex,
+        column,
+        columnIndex,
+        rowKey: rowKeyFor(row, rowIndex),
+    };
+};
+
+const startRowEdit = async (row, rowIndex) => {
+    const firstCell = getEditableCell(rowIndex, 0);
+    if (!firstCell) return;
+
+    await startCellEdit(firstCell.row, firstCell.column, firstCell.rowIndex, firstCell.columnIndex);
+};
+
+const startCellEdit = async (row, column, rowIndex, columnIndex) => {
+    editSessionId.value += 1;
+    const rowKey = rowKeyFor(row, rowIndex);
+    editingCell.value = {
+        rowKey,
+        rowIndex,
+        columnName: column.name,
+        columnIndex,
+    };
+    editDraft.value = String(row[column.name] ?? '');
+    await focusEditInput();
+    suppressBlurSave.value = false;
+};
+
+const cancelCellEdit = () => {
+    editSessionId.value += 1;
+    suppressBlurSave.value = false;
+    editingCell.value = { rowKey: '', rowIndex: -1, columnName: '', columnIndex: -1 };
+    editDraft.value = '';
+};
+
+const moveToAdjacentCell = async (direction) => {
+    const { rowIndex, columnIndex } = editingCell.value;
+    const totalRows = browseRows.value.length;
+
+    if (totalRows === 0 || columnIndex < 0) {
+        cancelCellEdit();
+        return;
+    }
+
+    const nextRowIndex = rowIndex + direction;
+    if (nextRowIndex < 0 || nextRowIndex >= totalRows) {
+        cancelCellEdit();
+        return;
+    }
+
+    const nextCell = getEditableCell(nextRowIndex, columnIndex);
+    if (!nextCell) {
+        cancelCellEdit();
+        return;
+    }
+
+    await startCellEdit(nextCell.row, nextCell.column, nextCell.rowIndex, nextCell.columnIndex);
+};
+
+const saveCellEdit = async (row, column, rowIndex, columnIndex, options = {}) => {
+    const rowKey = rowKeyFor(row, rowIndex);
+    const originalValue = String(row[column.name] ?? '');
+    const newValue = editDraft.value;
+    const shouldAdvance = Boolean(options.advance);
+    const direction = options.direction ?? 1;
+    const sessionId = editSessionId.value;
+
+    const finishSuccess = async () => {
+        if (sessionId !== editSessionId.value) {
+            return;
+        }
+
+        suppressBlurSave.value = true;
+        if (shouldAdvance) {
+            await moveToAdjacentCell(direction);
+            return;
+        }
+
+        cancelCellEdit();
+    };
+
+    const finishError = () => {
+        if (sessionId !== editSessionId.value) {
+            return;
+        }
+
+        editingCell.value = {
+            rowKey,
+            rowIndex,
+            columnName: column.name,
+            columnIndex,
+        };
+        editDraft.value = originalValue;
+        void focusEditInput();
+    };
+
+    // Only save if value changed
+    if (originalValue !== newValue) {
+        const updatedRow = cloneRow(row);
+        updatedRow[column.name] = newValue;
+        emit('row-save', {
+            original: row,
+            draft: updatedRow,
+            rowKey,
+            rowIndex,
+            columnName: column.name,
+            previousValue: originalValue,
+            onSuccess: finishSuccess,
+            onError: finishError,
+        });
+        return;
+    }
+
+    await finishSuccess();
+};
+
+const handleCellKeydown = async (event, row, column, rowIndex, columnIndex) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        suppressBlurSave.value = true;
+        await saveCellEdit(row, column, rowIndex, columnIndex, { advance: true, direction: 1 });
+    } else if (event.key === 'Escape') {
+        event.preventDefault();
+        cancelCellEdit();
+    } else if (event.key === 'Tab') {
+        event.preventDefault();
+        suppressBlurSave.value = true;
+        await saveCellEdit(row, column, rowIndex, columnIndex, {
+            advance: true,
+            direction: event.shiftKey ? -1 : 1,
+        });
+    } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        suppressBlurSave.value = true;
+        await saveCellEdit(row, column, rowIndex, columnIndex, { advance: true, direction: 1 });
+    } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        suppressBlurSave.value = true;
+        await saveCellEdit(row, column, rowIndex, columnIndex, { advance: true, direction: -1 });
+    }
+};
+
+const handleCellBlur = async (event, row, column, rowIndex, columnIndex) => {
+    if (suppressBlurSave.value) {
+        suppressBlurSave.value = false;
+        return;
+    }
+
+    await saveCellEdit(row, column, rowIndex, columnIndex);
 };
 
 const browseRows = computed(() => {
@@ -228,7 +421,7 @@ watch(
     [() => props.activeAction, () => props.selectedTable, () => props.tableDetails],
     () => {
         selectedRowKeys.value = new Set();
-        cancelInlineEdit();
+        cancelCellEdit();
         searchTerm.value = '';
         if (props.activeAction === 'insert') {
             resetInsertValues();
@@ -280,444 +473,461 @@ watch(
 
 <template>
     <section
-        class="flex h-full min-h-0 flex-col p-5 xl:col-span-2"
-        :class="plain ? 'bg-transparent shadow-none' : 'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900'"
+        class="flex h-full min-h-0 flex-col"
+        :class="plain ? 'bg-transparent' : 'rounded-3xl border border-slate-800 bg-[#08111d] shadow-[0_24px_80px_rgba(0,0,0,0.35)]'"
     >
-        <div class="mb-4 flex items-center justify-between gap-3">
-            <div>
-                <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">{{ title }}</h2>
-                <p class="text-sm text-slate-500 dark:text-slate-400">
-                    {{ selectedDatabase && selectedTable ? `${selectedDatabase}.${selectedTable}` : 'Choose a table to inspect rows or structure.' }}
-                </p>
-            </div>
-            <div class="flex items-center gap-2">
-                <span class="rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-700 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-300">
-                    {{ activeAction === 'browse' ? 'Browse active' : activeAction === 'structure' ? 'Structure active' : activeAction === 'insert' ? 'Insert active' : activeAction === 'operations' ? 'Operations active' : activeAction }}
-                </span>
-                <button
-                    v-if="activeAction === 'structure' && selectedTableDetails"
-                    type="button"
-                    class="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-700 hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-300 dark:hover:bg-cyan-950/50"
-                    @click="emit('edit-structure')"
-                >
-                    Edit Structure
-                </button>
-                <div v-if="pagination" class="text-xs text-slate-500 dark:text-slate-400">
-                    Page {{ pagination.current_page }} of {{ pagination.last_page }}
+        <div class="border-b border-slate-800 px-4 py-4 sm:px-5">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">Browse table</p>
+                    <h2 class="mt-1 truncate text-lg font-semibold text-slate-100">
+                        {{ selectedDatabase && selectedTable ? `${selectedDatabase}.${selectedTable}` : 'Choose a table to inspect rows or structure.' }}
+                    </h2>
+                    <p class="mt-1 text-sm text-slate-400">
+                        {{ title }}
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200">
+                        {{ activeAction === 'browse' ? 'Browse active' : activeAction === 'structure' ? 'Structure active' : activeAction === 'insert' ? 'Insert active' : activeAction === 'operations' ? 'Operations active' : activeAction }}
+                    </span>
+                    <button
+                        v-if="activeAction === 'structure' && selectedTableDetails"
+                        type="button"
+                        class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200 hover:bg-slate-800"
+                        @click="emit('edit-structure')"
+                    >
+                        Edit Structure
+                    </button>
+                    <span v-if="pagination" class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] font-medium text-slate-400">
+                        Page {{ pagination.current_page }} of {{ pagination.last_page }}
+                    </span>
                 </div>
             </div>
         </div>
 
-        <div v-if="loading" class="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        <div v-if="loading" class="m-4 rounded-2xl border border-dashed border-slate-700 bg-[#0b1220] px-4 py-4 text-sm text-slate-400">
             Loading table rows...
         </div>
 
-        <div v-else-if="error" class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+        <div v-else-if="error" class="m-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-4 text-sm text-red-200">
             {{ error }}
         </div>
 
-        <div v-else-if="selectedTableDetails && activeAction === 'structure'" class="rounded-xl border border-slate-200 dark:border-slate-800">
-            <table class="min-w-full text-left text-sm">
-                <thead class="bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-500 dark:bg-slate-800">
-                    <tr>
-                        <th class="px-4 py-3">Column</th>
-                        <th class="px-4 py-3">Type</th>
-                        <th class="px-4 py-3">Null</th>
-                        <th class="px-4 py-3">Default</th>
-                        <th class="px-4 py-3">Extra</th>
-                        <th class="px-4 py-3">Key</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="column in structureRows" :key="column.name" class="border-t border-slate-200 dark:border-slate-800">
-                        <td class="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">{{ column.name }}</td>
-                        <td class="px-4 py-3 text-slate-700 dark:text-slate-300">{{ column.type || '-' }}</td>
-                        <td class="px-4 py-3 text-slate-700 dark:text-slate-300">{{ column.is_nullable || '-' }}</td>
-                        <td class="px-4 py-3 text-slate-700 dark:text-slate-300">{{ column.default_value ?? '-' }}</td>
-                        <td class="px-4 py-3 text-slate-700 dark:text-slate-300">{{ column.extra || '-' }}</td>
-                        <td class="px-4 py-3 text-slate-700 dark:text-slate-300">{{ column.key || '-' }}</td>
-                    </tr>
-                    <tr v-if="structureRows.length === 0">
-                        <td colspan="6" class="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
-                            No structure information available.
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div v-else-if="selectedTableDetails && isOperationsAction" class="space-y-4">
-            <div class="rounded-xl border border-cyan-200 bg-cyan-50 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20">
-                <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">Operations</p>
-                <h3 class="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">Rename table</h3>
-                <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                    Rename <span class="font-semibold">{{ selectedDatabase }}</span>.<span class="font-semibold">{{ selectedTable }}</span> without changing the data.
-                </p>
+        <template v-else-if="selectedTableDetails && activeAction === 'structure'">
+            <div class="m-4 overflow-hidden rounded-2xl border border-slate-800 bg-[#0b1220]">
+                <table class="min-w-full border-collapse text-left text-sm">
+                    <thead class="sticky top-0 z-10 bg-[#111a2d] text-xs uppercase tracking-[0.16em] text-slate-400">
+                        <tr>
+                            <th class="px-4 py-3">Column</th>
+                            <th class="px-4 py-3">Type</th>
+                            <th class="px-4 py-3">Null</th>
+                            <th class="px-4 py-3">Default</th>
+                            <th class="px-4 py-3">Extra</th>
+                            <th class="px-4 py-3">Key</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="column in structureRows" :key="column.name" class="border-t border-slate-800">
+                            <td class="px-4 py-3 font-medium text-slate-100">{{ column.name }}</td>
+                            <td class="px-4 py-3 text-slate-300">{{ column.type || '-' }}</td>
+                            <td class="px-4 py-3 text-slate-300">{{ column.is_nullable || '-' }}</td>
+                            <td class="px-4 py-3 text-slate-300">{{ column.default_value ?? '-' }}</td>
+                            <td class="px-4 py-3 text-slate-300">{{ column.extra || '-' }}</td>
+                            <td class="px-4 py-3 text-slate-300">{{ column.key || '-' }}</td>
+                        </tr>
+                        <tr v-if="structureRows.length === 0">
+                            <td colspan="6" class="px-4 py-6 text-center text-slate-500">
+                                No structure information available.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
+        </template>
 
-            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <div class="grid gap-4 sm:grid-cols-2">
-                    <div>
-                        <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                            Current table
-                        </label>
-                        <input
-                            type="text"
-                            :value="selectedTable"
-                            disabled
-                            class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                        >
-                    </div>
-
-                    <div>
-                        <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                            New table name
-                        </label>
-                        <input
-                            v-model="renameTarget"
-                            type="text"
-                            placeholder="Enter new table name"
-                            class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-cyan-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                        >
-                    </div>
+        <template v-else-if="selectedTableDetails && isOperationsAction">
+            <div class="m-4 space-y-4">
+                <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-4 text-cyan-100">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">Operations</p>
+                    <h3 class="mt-1 text-lg font-semibold text-white">Rename table</h3>
+                    <p class="mt-1 text-sm text-cyan-100/80">
+                        Rename <span class="font-semibold">{{ selectedDatabase }}</span>.<span class="font-semibold">{{ selectedTable }}</span> without changing the data.
+                    </p>
                 </div>
 
-                <div class="mt-4 flex flex-wrap gap-3">
+                <div class="rounded-2xl border border-slate-800 bg-[#0b1220] p-4">
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Current table
+                            </label>
+                            <input
+                                type="text"
+                                :value="selectedTable"
+                                disabled
+                                class="w-full rounded-xl border border-slate-700 bg-[#111a2d] px-3 py-2 text-sm text-slate-300"
+                            >
+                        </div>
+                        <div>
+                            <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                New table name
+                            </label>
+                            <input
+                                v-model="renameTarget"
+                                type="text"
+                                placeholder="Enter new table name"
+                                class="w-full rounded-xl border border-slate-700 bg-[#111a2d] px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-500"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="mt-4 flex flex-wrap gap-3">
                         <button
                             type="button"
-                            class="rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                            class="rounded-xl bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
                             :disabled="renameBusy || !renameTarget.trim() || renameTarget.trim() === selectedTable"
                             @click="submitRename"
                         >
                             {{ renameBusy ? 'Renaming...' : 'Rename Table' }}
                         </button>
-                    <button
-                        type="button"
-                        class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                        @click="renameTarget = selectedTable || ''"
-                    >
-                        Reset
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div v-else-if="selectedTableDetails && isInsertAction" class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-            <div class="mb-4 flex items-center justify-between gap-3">
-                <div>
-                    <h3 class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Insert Row</h3>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">
-                        Fill the values below for {{ selectedDatabase }}.{{ selectedTable }} and submit a new record.
-                    </p>
-                </div>
-                <span class="text-xs text-slate-500 dark:text-slate-400">
-                    {{ insertableColumns.length }} fields
-                </span>
-            </div>
-
-            <form class="space-y-4" @submit.prevent="submitInsert">
-                <div class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
-                    <table class="min-w-full border-collapse text-left text-sm">
-                        <thead class="bg-slate-100 text-xs uppercase tracking-[0.14em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                            <tr>
-                                <th class="w-[18%] px-4 py-3">Column</th>
-                                <th class="w-[18%] px-4 py-3">Type</th>
-                                <th class="w-[18%] px-4 py-3">Function</th>
-                                <th class="w-[8%] px-4 py-3">Null</th>
-                                <th class="px-4 py-3">Value</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="(column, index) in insertableColumns"
-                                :key="column.name"
-                                class="border-t border-slate-200 align-top dark:border-slate-800"
-                                :class="index % 2 === 0 ? 'bg-slate-50/70 dark:bg-slate-950/20' : 'bg-white dark:bg-slate-900'"
-                            >
-                                <td class="px-4 py-4 font-medium text-slate-900 dark:text-slate-100">
-                                    {{ column.name }}
-                                </td>
-                                <td class="px-4 py-4 text-slate-700 dark:text-slate-300">
-                                    {{ column.type || '-' }}
-                                </td>
-                                <td class="px-4 py-4">
-                                    <select
-                                        v-model="insertState[column.name].function"
-                                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-cyan-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                                    >
-                                        <option v-for="option in functionOptions" :key="option.value || option.label" :value="option.value">
-                                            {{ option.label }}
-                                        </option>
-                                    </select>
-                                </td>
-                                <td class="px-4 py-4 text-center">
-                                    <input
-                                        v-model="insertState[column.name].useNull"
-                                        type="checkbox"
-                                        class="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 dark:border-slate-700"
-                                        :disabled="String(column.extra || '').toLowerCase().includes('auto_increment')"
-                                    >
-                                </td>
-                                <td class="px-4 py-3">
-                                    <textarea
-                                        v-if="isLongTextColumn(column)"
-                                        v-model="insertState[column.name].value"
-                                        rows="5"
-                                        class="min-h-[120px] w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-cyan-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                                        :placeholder="column.default_value ?? 'Enter value'"
-                                        :disabled="insertState[column.name].useNull"
-                                    />
-                                    <input
-                                        v-else
-                                        v-model="insertState[column.name].value"
-                                        :type="isNumericColumn(column) ? 'number' : 'text'"
-                                        class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-cyan-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                                        :placeholder="column.default_value ?? 'Enter value'"
-                                        :disabled="insertState[column.name].useNull"
-                                    >
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="flex items-center justify-between gap-3">
-                    <button
-                        type="reset"
-                        class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                        @click="resetInsertValues"
-                    >
-                        Clear
-                    </button>
-                    <button
-                        type="submit"
-                        class="rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500"
-                    >
-                        Insert Row
-                    </button>
-                </div>
-            </form>
-        </div>
-
-        <div v-else-if="selectedTableDetails && activeAction === 'browse'" class="space-y-3">
-            <div class="rounded-xl border border-lime-200 bg-lime-50 px-4 py-3 text-sm text-lime-900 dark:border-lime-900/50 dark:bg-lime-950/30 dark:text-lime-100">
-                {{ rowRangeLabel }}
-                <span v-if="queryLabel" class="mt-1 block text-xs text-lime-800/80 dark:text-lime-100/80">
-                    {{ queryLabel }}
-                </span>
-            </div>
-
-            <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950/40">
-                <div class="flex flex-wrap items-center gap-3">
-                    <label class="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                        <span>Show</span>
-                        <select
-                            :value="pagination?.per_page || rowsPerPage"
-                            class="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                            @change="emit('per-page-change', Number($event.target.value))"
+                        <button
+                            type="button"
+                            class="rounded-xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-white/5"
+                            @click="renameTarget = selectedTable || ''"
                         >
-                            <option :value="10">10</option>
-                            <option :value="25">25</option>
-                            <option :value="50">50</option>
-                            <option :value="100">100</option>
-                        </select>
-                    </label>
-                    <label class="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                        <span>Search</span>
-                        <input
-                            v-model="searchTerm"
-                            type="search"
-                            placeholder="Search this table"
-                            class="w-56 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-cyan-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        >
-                    </label>
-                </div>
-
-                <div class="flex items-center gap-2">
-                    <select
-                        v-model="bulkAction"
-                        class="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                        <option value="delete">Delete selected</option>
-                    </select>
-                    <button
-                        type="button"
-                        class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-                        :disabled="selectedCount === 0"
-                        @click="runBulkAction"
-                    >
-                        {{ bulkActionLabel }}
-                    </button>
+                            Reset
+                        </button>
+                    </div>
                 </div>
             </div>
+        </template>
 
-            <div class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
-                <div class="overflow-x-auto">
-                    <table class="min-w-full border-collapse text-left text-sm">
-                        <thead class="bg-slate-100 text-xs uppercase tracking-[0.14em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                            <tr>
-                                <th class="w-10 px-3 py-3">
-                                    <input
-                                        type="checkbox"
-                                        :checked="allVisibleSelected"
-                                        class="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 dark:border-slate-700"
-                                        @change="toggleSelectAll($event.target.checked)"
-                                    >
-                                </th>
-                                <th v-for="column in selectedTableColumns" :key="column.name" class="px-4 py-3">
-                                    {{ column.name }}
-                                </th>
-                                <th class="w-36 px-4 py-3">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="(row, index) in browseRows"
-                                :key="rowKeyFor(row, index)"
-                                class="group border-t border-slate-200 dark:border-slate-800"
-                                :class="editingRowKey === rowKeyFor(row, index) ? 'bg-cyan-50/70 dark:bg-cyan-950/20' : index % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50/60 dark:bg-slate-950/20'"
-                                @dblclick="startInlineEdit(row, index)"
-                            >
-                                <td class="px-3 py-3 align-top">
-                                    <input
-                                        type="checkbox"
-                                        :checked="selectedRowKeys.has(rowKeyFor(row, index))"
-                                        class="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 dark:border-slate-700"
-                                        @change="toggleRowSelected(row, index, $event.target.checked)"
-                                    >
-                                </td>
+        <template v-else-if="selectedTableDetails && isInsertAction">
+            <div class="m-4 rounded-2xl border border-slate-800 bg-[#0b1220] p-4">
+                <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Insert Row</h3>
+                        <p class="text-sm text-slate-400">
+                            Fill the values below for {{ selectedDatabase }}.{{ selectedTable }} and submit a new record.
+                        </p>
+                    </div>
+                    <span class="text-xs text-slate-500">
+                        {{ insertableColumns.length }} fields
+                    </span>
+                </div>
 
-                                <template v-if="editingRowKey === rowKeyFor(row, index)">
-                                    <td v-for="column in selectedTableColumns" :key="column.name" class="max-w-[220px] px-4 py-3 align-top">
-                                        <textarea
-                                            v-if="isLongTextColumn(column)"
-                                            v-model="editDraft[column.name]"
-                                            rows="4"
-                                            class="min-h-[90px] w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-cyan-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                        />
+                <form class="space-y-4" @submit.prevent="submitInsert">
+                    <div class="overflow-hidden rounded-2xl border border-slate-800">
+                        <table class="min-w-full border-collapse text-left text-sm">
+                            <thead class="bg-[#111a2d] text-xs uppercase tracking-[0.16em] text-slate-400">
+                                <tr>
+                                    <th class="w-[18%] px-4 py-3">Column</th>
+                                    <th class="w-[18%] px-4 py-3">Type</th>
+                                    <th class="w-[18%] px-4 py-3">Function</th>
+                                    <th class="w-[8%] px-4 py-3">Null</th>
+                                    <th class="px-4 py-3">Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="(column, index) in insertableColumns"
+                                    :key="column.name"
+                                    class="border-t border-slate-800 align-top"
+                                    :class="index % 2 === 0 ? 'bg-[#0b1220]' : 'bg-[#0e1627]'"
+                                >
+                                    <td class="px-4 py-4 font-medium text-slate-100">{{ column.name }}</td>
+                                    <td class="px-4 py-4 text-slate-300">{{ column.type || '-' }}</td>
+                                    <td class="px-4 py-4">
+                                        <select
+                                            v-model="insertState[column.name].function"
+                                            class="w-full rounded-xl border border-slate-700 bg-[#111a2d] px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-cyan-500"
+                                        >
+                                            <option v-for="option in functionOptions" :key="option.value || option.label" :value="option.value">
+                                                {{ option.label }}
+                                            </option>
+                                        </select>
+                                    </td>
+                                    <td class="px-4 py-4 text-center">
                                         <input
-                                            v-else
-                                            v-model="editDraft[column.name]"
-                                            :type="isNumericColumn(column) ? 'number' : 'text'"
-                                            class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-cyan-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                            v-model="insertState[column.name].useNull"
+                                            type="checkbox"
+                                            class="h-4 w-4 rounded border-slate-700 text-cyan-500 focus:ring-cyan-500"
+                                            :disabled="String(column.extra || '').toLowerCase().includes('auto_increment')"
                                         >
                                     </td>
                                     <td class="px-4 py-3">
-                                        <div class="flex flex-wrap gap-2">
-                                            <button
-                                                type="button"
-                                                class="rounded-md bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-cyan-500"
-                                                @click="saveInlineEdit(row, index)"
-                                            >
-                                                Save
-                                            </button>
-                                            <button
-                                                type="button"
-                                                class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                                                @click="cancelInlineEdit"
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
+                                        <textarea
+                                            v-if="isLongTextColumn(column)"
+                                            v-model="insertState[column.name].value"
+                                            rows="5"
+                                            class="min-h-[120px] w-full rounded-xl border border-slate-700 bg-[#111a2d] px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500"
+                                            :placeholder="column.default_value ?? 'Enter value'"
+                                            :disabled="insertState[column.name].useNull"
+                                        />
+                                        <input
+                                            v-else
+                                            v-model="insertState[column.name].value"
+                                            :type="isNumericColumn(column) ? 'number' : 'text'"
+                                            class="w-full rounded-xl border border-slate-700 bg-[#111a2d] px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500"
+                                            :placeholder="column.default_value ?? 'Enter value'"
+                                            :disabled="insertState[column.name].useNull"
+                                        >
                                     </td>
-                                </template>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
 
-                                <template v-else>
-                                    <td v-for="column in selectedTableColumns" :key="column.name" class="max-w-[220px] px-4 py-3 align-top">
-                                        <span class="block truncate" :title="String(row[column.name] ?? '')">
-                                            {{ row[column.name] ?? 'NULL' }}
-                                        </span>
-                                    </td>
-                                    <td class="px-4 py-3">
-                                        <div class="flex flex-wrap gap-2">
+                    <div class="flex items-center justify-between gap-3">
+                        <button
+                            type="reset"
+                            class="rounded-xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-white/5"
+                            @click="resetInsertValues"
+                        >
+                            Clear
+                        </button>
+                        <button
+                            type="submit"
+                            class="rounded-xl bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500"
+                        >
+                            Insert Row
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </template>
+
+        <template v-else-if="selectedTableDetails && activeAction === 'browse'">
+            <div class="m-4 space-y-3">
+                <div class="rounded-2xl border border-lime-500/20 bg-lime-500/10 px-4 py-3 text-sm text-lime-100">
+                    {{ rowRangeLabel }}
+                    <span v-if="queryLabel" class="mt-1 block text-xs text-lime-100/80">
+                        {{ queryLabel }}
+                    </span>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-[#0b1220] px-4 py-3">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <label class="flex items-center gap-2 text-slate-300">
+                            <span>Show</span>
+                            <select
+                                :value="pagination?.per_page || rowsPerPage"
+                                class="rounded-xl border border-slate-700 bg-[#111a2d] px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-cyan-500"
+                                @change="emit('per-page-change', Number($event.target.value))"
+                            >
+                                <option :value="10">10</option>
+                                <option :value="25">25</option>
+                                <option :value="50">50</option>
+                                <option :value="100">100</option>
+                            </select>
+                        </label>
+                        <label class="flex items-center gap-2 text-slate-300">
+                            <span>Search</span>
+                            <input
+                                v-model="searchTerm"
+                                type="search"
+                                placeholder="Search this table"
+                                class="w-56 rounded-xl border border-slate-700 bg-[#111a2d] px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-500"
+                            >
+                        </label>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            class="rounded-xl border border-slate-700 bg-[#111a2d] px-4 py-2 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                            :disabled="selectedCount === 0"
+                            @click="runBulkAction"
+                        >
+                            {{ bulkActionLabel }}
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-xl bg-slate-200 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-white"
+                            :disabled="selectedCount === 0"
+                            @click="runBulkAction"
+                        >
+                            Delete selected
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-hidden rounded-2xl border border-slate-800 bg-[#0b1220]">
+                    <div class="overflow-x-auto" style="max-height: calc(100vh - 390px); overflow-y: auto;">
+                        <table class="min-w-full border-collapse text-left text-sm">
+                            <thead class="sticky top-0 z-10 bg-[#111a2d] text-xs tracking-[0.16em] text-slate-400">
+                                <tr>
+                                    <th class="w-20 px-3 py-3 text-center">Actions</th>
+                                    <th class="w-10 px-3 py-3">
+                                        <input
+                                            type="checkbox"
+                                            :checked="allVisibleSelected"
+                                            class="h-4 w-4 rounded border-slate-700 text-cyan-500 focus:ring-cyan-500"
+                                            @change="toggleSelectAll($event.target.checked)"
+                                        >
+                                    </th>
+                                    <th v-for="column in selectedTableColumns" :key="column.name" class="min-w-[120px] px-4 py-3">
+                                        {{ column.name }}
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="(row, index) in browseRows"
+                                    :key="rowKeyFor(row, index)"
+                                    class="group border-t border-slate-800"
+                                    :class="index % 2 === 0 ? 'bg-[#0b1220]' : 'bg-[#0e1627]'"
+                                >
+                                    <td class="px-3 py-2.5">
+                                        <div class="flex items-center gap-1">
                                             <button
                                                 type="button"
-                                                class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                                                @click="startInlineEdit(row, index)"
+                                                class="rounded p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+                                                title="Edit row"
+                                                @click="startRowEdit(row, index)"
                                             >
-                                                Edit
+                                                <i class="bi bi-pencil text-xs"></i>
                                             </button>
                                             <button
                                                 type="button"
-                                                class="rounded-md border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                                                class="rounded p-1.5 text-red-300 transition hover:bg-red-500/10 hover:text-red-200"
+                                                title="Delete row"
                                                 @click="emit('row-delete', { row, rowKey: rowKeyFor(row, index) })"
                                             >
-                                                Delete
+                                                <i class="bi bi-trash3 text-xs"></i>
                                             </button>
                                         </div>
                                     </td>
-                                </template>
-                            </tr>
-                            <tr v-if="browseRows.length === 0">
-                                <td :colspan="selectedTableColumns.length + 2" class="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
-                                    No rows returned for the current page.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                                    <td class="px-3 py-2.5 align-top">
+                                        <input
+                                            type="checkbox"
+                                            :checked="selectedRowKeys.has(rowKeyFor(row, index))"
+                                            class="h-4 w-4 rounded border-slate-700 text-cyan-500 focus:ring-cyan-500"
+                                            @change="toggleRowSelected(row, index, $event.target.checked)"
+                                        >
+                                    </td>
+                                    <td
+                                        v-for="(column, columnIndex) in selectedTableColumns"
+                                        :key="column.name"
+                                        class="max-w-[220px] cursor-pointer px-3 py-2.5 align-top"
+                                        :class="isCellEditing(rowKeyFor(row, index), column.name) ? 'bg-cyan-500/10' : 'hover:bg-white/5'"
+                                        @click="!isCellEditing(rowKeyFor(row, index), column.name) && startCellEdit(row, column, index, columnIndex)"
+                                        @dblclick.stop="copyCellValue(row[column.name])"
+                                    >
+                                        <template v-if="isCellEditing(rowKeyFor(row, index), column.name)">
+                                            <textarea
+                                                v-if="isLongTextColumn(column)"
+                                                ref="editInputRef"
+                                                v-model="editDraft"
+                                                rows="3"
+                                                class="min-h-[60px] w-full rounded-lg border border-cyan-500 bg-[#111a2d] px-2 py-1 text-sm text-slate-100 outline-none ring-1 ring-cyan-500/20"
+                                                @blur="handleCellBlur($event, row, column, index, columnIndex)"
+                                                @keydown="handleCellKeydown($event, row, column, index, columnIndex)"
+                                            />
+                                            <input
+                                                v-else
+                                                ref="editInputRef"
+                                                v-model="editDraft"
+                                                :type="isNumericColumn(column) ? 'number' : 'text'"
+                                                class="w-full rounded-lg border border-cyan-500 bg-[#111a2d] px-2 py-1 text-sm text-slate-100 outline-none ring-1 ring-cyan-500/20"
+                                                @blur="handleCellBlur($event, row, column, index, columnIndex)"
+                                                @keydown="handleCellKeydown($event, row, column, index, columnIndex)"
+                                            >
+                                        </template>
+                                        <template v-else>
+                                            <div class="relative">
+                                                <span
+                                                    class="block rounded px-1 py-0.5 text-sm"
+                                                    :class="[
+                                                        row[column.name] === null || row[column.name] === '' ? 'italic text-slate-500' : 'text-slate-200',
+                                                        expandedCells.has(`${rowKeyFor(row, index)}-${column.name}`) ? '' : 'truncate'
+                                                    ]"
+                                                    :title="String(row[column.name] ?? 'NULL')"
+                                                >
+                                                    {{ row[column.name] === null ? 'NULL' : (row[column.name] === '' ? '.empty' : row[column.name]) }}
+                                                </span>
+                                                <button
+                                                    v-if="String(row[column.name] ?? '').length > 50"
+                                                    type="button"
+                                                    class="absolute -right-1 -top-1 hidden rounded bg-slate-800 p-0.5 text-[8px] text-slate-400 hover:bg-slate-700 group-hover/cell:inline-block"
+                                                    @click.stop="toggleCellExpand(rowKeyFor(row, index), column.name)"
+                                                >
+                                                    <i :class="['bi', expandedCells.has(`${rowKeyFor(row, index)}-${column.name}`) ? 'bi-arrows-collapse' : 'bi-arrows-expand']"></i>
+                                                </button>
+                                            </div>
+                                        </template>
+                                    </td>
+                                </tr>
+                                <tr v-if="browseRows.length === 0">
+                                    <td :colspan="selectedTableColumns.length + 2" class="px-4 py-6 text-center text-slate-500">
+                                        No rows returned for the current page.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div v-if="pagination" class="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+                    <span>{{ pagination.total }} total rows | {{ pagination.per_page }} per page</span>
+                    <div class="flex gap-2">
+                        <button
+                            v-if="pagination.has_previous"
+                            type="button"
+                            class="rounded-xl border border-slate-700 px-3 py-2 hover:bg-white/5"
+                            @click="emit('paginate', pagination.current_page - 1)"
+                        >
+                            Previous
+                        </button>
+                        <button
+                            v-if="pagination.has_more"
+                            type="button"
+                            class="rounded-xl border border-slate-700 px-3 py-2 hover:bg-white/5"
+                            @click="emit('paginate', pagination.current_page + 1)"
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
             </div>
+        </template>
 
-            <div v-if="pagination" class="flex flex-wrap items-center justify-between gap-3 text-sm">
-                <span class="text-slate-500 dark:text-slate-400">
-                    {{ pagination.total }} total rows · {{ pagination.per_page }} per page
-                </span>
-                <div class="flex gap-2">
-                    <button
-                        v-if="pagination.has_previous"
-                        type="button"
-                        class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                        @click="emit('paginate', pagination.current_page - 1)"
-                    >
-                        Previous
-                    </button>
-                    <button
-                        v-if="pagination.has_more"
-                        type="button"
-                        class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                        @click="emit('paginate', pagination.current_page + 1)"
-                    >
-                        Next
-                    </button>
-                </div>
+        <template v-else-if="selectedTableDetails">
+            <div class="m-4 overflow-hidden rounded-2xl border border-slate-800 bg-[#0b1220]">
+                <table class="min-w-full border-collapse text-left text-sm">
+                    <thead class="bg-[#111a2d] text-xs tracking-[0.16em] text-slate-400">
+                        <tr>
+                            <th v-for="column in selectedTableColumns" :key="column.name" class="min-w-[120px] px-4 py-3">
+                                {{ column.name }}
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="(row, index) in selectedTableRows" :key="index" class="border-t border-slate-800">
+                            <td v-for="column in selectedTableColumns" :key="column.name" class="max-w-[220px] px-4 py-3 align-top text-slate-200">
+                                <span class="block truncate" :title="String(row[column.name] ?? '')">
+                                    {{ row[column.name] ?? 'NULL' }}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr v-if="selectedTableRows.length === 0">
+                            <td :colspan="Math.max(selectedTableColumns.length, 1)" class="px-4 py-6 text-center text-slate-500">
+                                No rows returned for the current page.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
-        </div>
+        </template>
 
-        <div v-else-if="selectedTableDetails" class="rounded-xl border border-slate-200 dark:border-slate-800">
-            <table class="min-w-full text-left text-sm">
-                <thead class="bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-500 dark:bg-slate-800">
-                    <tr>
-                        <th v-for="column in selectedTableColumns" :key="column.name" class="px-4 py-3">
-                            {{ column.name }}
-                        </th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="(row, index) in selectedTableRows" :key="index" class="border-t border-slate-200 dark:border-slate-800">
-                        <td v-for="column in selectedTableColumns" :key="column.name" class="max-w-[220px] px-4 py-3 align-top">
-                            <span class="block truncate" :title="String(row[column.name] ?? '')">
-                                {{ row[column.name] ?? 'NULL' }}
-                            </span>
-                        </td>
-                    </tr>
-                    <tr v-if="selectedTableRows.length === 0">
-                        <td :colspan="Math.max(selectedTableColumns.length, 1)" class="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
-                            No rows returned for the current page.
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div v-if="pagination && activeAction !== 'browse'" class="mt-4 flex items-center justify-between gap-3 text-sm">
-            <span class="text-slate-500 dark:text-slate-400">
-                {{ pagination.total }} total rows · {{ pagination.per_page }} per page
-            </span>
+        <div v-if="pagination && activeAction !== 'browse'" class="m-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+            <span>{{ pagination.total }} total rows | {{ pagination.per_page }} per page</span>
             <div class="flex gap-2">
                 <button
                     v-if="pagination.has_previous"
                     type="button"
-                    class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                    class="rounded-xl border border-slate-700 px-3 py-2 hover:bg-white/5"
                     @click="emit('paginate', pagination.current_page - 1)"
                 >
                     Previous
@@ -725,7 +935,7 @@ watch(
                 <button
                     v-if="pagination.has_more"
                     type="button"
-                    class="rounded-md border border-slate-300 px-3 py-2 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                    class="rounded-xl border border-slate-700 px-3 py-2 hover:bg-white/5"
                     @click="emit('paginate', pagination.current_page + 1)"
                 >
                     Next

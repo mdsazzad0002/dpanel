@@ -9,6 +9,38 @@ export function usePhpMyAdminWriteState(readState, transport) {
     const renameInProgress = ref(false);
     const createInProgress = ref(false);
 
+    const patchTableRow = (original, draft, columns) => {
+        const details = readState.tableDetails.value;
+        const rows = Array.isArray(details?.rows) ? details.rows : [];
+        if (rows.length === 0) return false;
+
+        const primaryColumns = (columns || []).filter((column) => column.is_primary);
+        const rowIndex = rows.findIndex((row) => {
+            if (primaryColumns.length === 0) {
+                return false;
+            }
+
+            return primaryColumns.every((column) => String(row?.[column.name] ?? '') === String(original?.[column.name] ?? ''));
+        });
+
+        if (rowIndex < 0) return false;
+
+        const nextRows = rows.map((row, index) => {
+            if (index !== rowIndex) return row;
+            return {
+                ...row,
+                ...draft,
+            };
+        });
+
+        readState.tableDetails.value = {
+            ...details,
+            rows: nextRows,
+        };
+
+        return true;
+    };
+
     const openConfirm = (action, table) => {
         if (!readState.selectedDatabase.value || !table) return;
 
@@ -74,7 +106,7 @@ export function usePhpMyAdminWriteState(readState, transport) {
         }
     };
 
-    const handleRowSave = async ({ original, draft }) => {
+    const handleRowSave = async ({ original, draft, onSuccess, onError }) => {
         if (!readState.selectedDatabase.value || !readState.selectedTable.value) return;
 
         try {
@@ -87,14 +119,15 @@ export function usePhpMyAdminWriteState(readState, transport) {
             );
             const data = await transport.executeSql(sql, readState.selectedDatabase.value);
             transport.pushToast(data.message || 'Row updated successfully.');
-            await readState.loadTable(readState.selectedDatabase.value, readState.selectedTable.value, {
-                page: readState.selectedTablePage.value || 1,
-                perPage: readState.perPage.value,
-                action: 'browse',
-            });
-            readState.activeTableAction.value = 'browse';
+            patchTableRow(original, draft, readState.tableDetails.value?.columns || []);
+            if (typeof onSuccess === 'function') {
+                await onSuccess({ original, draft, data });
+            }
         } catch (error) {
             transport.pushToast(error?.message || 'Row update failed.');
+            if (typeof onError === 'function') {
+                onError(error);
+            }
         }
     };
 

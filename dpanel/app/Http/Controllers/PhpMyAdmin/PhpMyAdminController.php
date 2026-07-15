@@ -13,11 +13,13 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PhpMyAdminController extends Controller
 {
-    public function index(Request $request, string $token, DatabaseAdminService $service): Response
+    private function renderPage(Request $request, string $token, DatabaseAdminService $service, array $initialSelectionOverrides = []): Response
     {
         $user = $request->user();
         $allAccessRequested = $request->string('access')->toString() === 'all' && $service->canAccessAllDatabases($user);
         $requestedDatabase = $this->resolveIdentifier($request->query('database', ''));
+        $view = $this->resolveIdentifier($request->query('view', ''));
+        $action = $this->resolveIdentifier($request->query('action', ''));
         $accessibleDatabase = $allAccessRequested
             ? $requestedDatabase
             : $service->resolveAccessibleDatabase($user, $requestedDatabase !== '' ? $requestedDatabase : null);
@@ -35,29 +37,74 @@ class PhpMyAdminController extends Controller
                 'table' => $this->resolveIdentifier($request->query('table', '')),
                 'page' => max(1, (int) $request->integer('page', 1)),
                 'perPage' => min(200, max(10, (int) $request->integer('perPage', 25))),
-            ],
+                'view' => $view !== '' ? $view : 'about',
+                'action' => $action !== '' ? $action : 'browse',
+                'tab' => $this->resolveIdentifier($request->query('tab', '')),
+            ] + $initialSelectionOverrides,
             'queryDefaults' => [
                 'sql' => '',
             ],
         ]);
     }
 
+    public function index(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service);
+    }
+
+    public function about(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service, ['view' => 'about', 'tab' => 'About']);
+    }
+
+    public function sqlPage(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service, ['view' => 'sql', 'action' => 'browse', 'tab' => 'SQL']);
+    }
+
+    public function databasesPage(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service, ['view' => 'databases', 'tab' => 'Databases']);
+    }
+
+    public function transferPage(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service, ['view' => 'transfer', 'tab' => 'Transfer']);
+    }
+
+    public function statusPage(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service, ['view' => 'about', 'tab' => 'Status']);
+    }
+
+    public function userAccountsPage(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service, ['view' => 'about', 'tab' => 'User accounts']);
+    }
+
+    public function settingsPage(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service, ['view' => 'about', 'tab' => 'Settings']);
+    }
+
+    public function replicationPage(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service, ['view' => 'about', 'tab' => 'Replication']);
+    }
+
+    public function variablesPage(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service, ['view' => 'about', 'tab' => 'Variables']);
+    }
+
+    public function charsetsPage(Request $request, string $token, DatabaseAdminService $service): Response
+    {
+        return $this->renderPage($request, $token, $service, ['view' => 'about', 'tab' => 'Charsets']);
+    }
+
     public function sql(Request $request, string $token, DatabaseAdminService $service): Response
     {
-        $user = $request->user();
-        $allAccessRequested = $request->string('access')->toString() === 'all' && $service->canAccessAllDatabases($user);
-        $database = $this->resolveIdentifier($request->query('database', ''));
-        $database = $allAccessRequested
-            ? $database
-            : $service->resolveAccessibleDatabase($user, $database !== '' ? $database : null);
-        $table = $this->resolveIdentifier($request->query('table', ''));
-
-        return redirect()->route('phpmyadmin.index', [
-            'token' => $token,
-            'database' => $database,
-            'table' => $table,
-            'access' => $allAccessRequested ? 'all' : null,
-        ]);
+        return $this->renderPage($request, $token, $service, ['view' => 'sql', 'action' => 'browse']);
     }
 
     public function databases(Request $request, string $token, DatabaseAdminService $service): JsonResponse

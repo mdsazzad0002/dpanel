@@ -4,9 +4,13 @@ defineProps({
         type: String,
         default: 'w-[304px]',
     },
+    src: {
+        type: String,
+        default: '/dpanel_logo.png',
+    },
 });
 </script>
 
 <template>
-    <img src="/dpanel_logo.png" alt="dPanel Logo" :class="[sizeClass, 'h-auto']" />
+    <img :src="src" alt="dPanel Logo" :class="[sizeClass, 'h-auto']" />
 </template>

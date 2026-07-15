@@ -5,6 +5,7 @@ const SPLIT_KEY = 'serverpanel-phpmyadmin-split-width';
 const SPLIT_MIN = 24;
 const SPLIT_MAX = 58;
 const THEME_KEY = 'serverpanel-theme';
+const UI_STATE_KEY = 'serverpanel-phpmyadmin-ui';
 
 const normalizeIdentifier = (value) => {
     const text = String(value ?? '').trim();
@@ -20,30 +21,60 @@ const clamp = (value, min, max, fallback) => {
 
 const clampSplitWidth = (value) => clamp(value, SPLIT_MIN, SPLIT_MAX, 34);
 
+const readPersistedUiState = () => {
+    if (typeof window === 'undefined') {
+        return {};
+    }
+
+    try {
+        return JSON.parse(window.sessionStorage.getItem(UI_STATE_KEY) || '{}') || {};
+    } catch {
+        return {};
+    }
+};
+
+const writePersistedUiState = (state) => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    try {
+        window.sessionStorage.setItem(UI_STATE_KEY, JSON.stringify(state));
+    } catch {
+        // Ignore storage failures.
+    }
+};
+
 export function usePhpMyAdminReadState(props, transport) {
     const initialSelection = props.initialSelection || {};
     const accessControl = props.accessControl || {};
+    const persistedState = readPersistedUiState();
 
     const databases = ref([]);
-    const selectedDatabase = ref(normalizeIdentifier(initialSelection.database));
-    const selectedTable = ref(normalizeIdentifier(initialSelection.table));
+    const selectedDatabase = ref(normalizeIdentifier(initialSelection.database || persistedState.database));
+    const selectedTable = ref(normalizeIdentifier(initialSelection.table || persistedState.table));
     const databaseSummary = ref(null);
     const tables = ref([]);
     const tableDetails = ref(null);
     const tableQueryMeta = ref({ label: '', durationMs: 0 });
-    const activeTableAction = ref(selectedTable.value ? 'browse' : 'structure');
+    const activeTableAction = ref(normalizeIdentifier(initialSelection.action || persistedState.action || (selectedTable.value ? 'browse' : 'structure')) || 'browse');
     const loadingDatabases = ref(false);
     const loadingDatabase = ref(false);
     const loadingTable = ref(false);
     const databaseError = ref('');
     const tableError = ref('');
-    const pageNumber = ref(clamp(initialSelection.page || 1, 1, 9999, 1));
-    const perPage = ref(clamp(initialSelection.perPage || 25, 10, 200, 25));
-    const selectedTablePage = ref(clamp(initialSelection.page || 1, 1, 9999, 1));
+    const pageNumber = ref(clamp(initialSelection.page || persistedState.page || 1, 1, 9999, 1));
+    const perPage = ref(clamp(initialSelection.perPage || persistedState.perPage || 25, 10, 200, 25));
+    const selectedTablePage = ref(clamp(initialSelection.page || persistedState.page || 1, 1, 9999, 1));
     const databaseCache = ref({});
     const expandedDatabases = ref(new Set());
     const sidebarFilter = ref('');
-    const overviewMode = ref('about');
+    const overviewMode = ref(String(initialSelection.view || persistedState.view || 'about'));
+    const overviewTab = ref(String(
+        initialSelection.tab
+        || persistedState.tab
+        || (overviewMode.value === 'sql' ? 'SQL' : overviewMode.value === 'transfer' ? 'Transfer' : overviewMode.value === 'databases' ? 'Databases' : 'About')
+    ));
     const overviewSqlFullscreen = ref(false);
     const historyOpenTrigger = ref(0);
     const theme = ref('light');
@@ -88,19 +119,11 @@ export function usePhpMyAdminReadState(props, transport) {
     const headerMode = computed(() => (selectedDatabase.value ? 'compact' : 'overview'));
     const topbarActiveAction = computed(() => (overviewMode.value === 'sql' ? 'sql' : activeTableAction.value));
     const overviewActiveTab = computed(() => {
-        if (overviewMode.value === 'sql') {
-            return 'SQL';
-        }
-
-        if (overviewMode.value === 'transfer') {
-            return 'Transfer';
-        }
-
         if (selectedDatabase.value) {
             return 'about';
         }
 
-        return overviewMode.value === 'databases' ? 'Databases' : 'About';
+        return overviewTab.value || 'About';
     });
 
     const isDatabaseExpanded = (database) => expandedDatabases.value.has(String(database || ''));
@@ -225,6 +248,7 @@ export function usePhpMyAdminReadState(props, transport) {
         if (pageNumber.value > 1) params.set('page', String(pageNumber.value));
         if (perPage.value !== 25) params.set('perPage', String(perPage.value));
         if (overviewMode.value !== 'about') params.set('view', overviewMode.value);
+        if (overviewTab.value && overviewTab.value !== 'About') params.set('tab', overviewTab.value);
         if (overviewSqlFullscreen.value) params.set('fullscreen', '1');
 
         const hash = params.toString();
@@ -233,9 +257,19 @@ export function usePhpMyAdminReadState(props, transport) {
     };
 
     watch(
-        [selectedDatabase, selectedTable, pageNumber, perPage, overviewMode, overviewSqlFullscreen],
+        [selectedDatabase, selectedTable, pageNumber, perPage, overviewMode, overviewTab, overviewSqlFullscreen, activeTableAction],
         () => {
             syncHashState();
+            writePersistedUiState({
+                database: selectedDatabase.value,
+                table: selectedTable.value,
+                page: pageNumber.value,
+                perPage: perPage.value,
+                view: overviewMode.value,
+                tab: overviewTab.value,
+                action: activeTableAction.value,
+                fullscreen: overviewSqlFullscreen.value,
+            });
         },
         { flush: 'post' },
     );
@@ -502,21 +536,25 @@ export function usePhpMyAdminReadState(props, transport) {
 
     const handleOverviewSelect = (tab) => {
         if (tab === 'Databases') {
+            overviewTab.value = 'Databases';
             overviewMode.value = 'databases';
             overviewSqlFullscreen.value = false;
             return;
         }
 
         if (tab === 'SQL') {
+            overviewTab.value = 'SQL';
             overviewMode.value = 'sql';
             return;
         }
 
         if (tab === 'Transfer') {
+            overviewTab.value = 'Transfer';
             overviewMode.value = 'transfer';
             return;
         }
 
+        overviewTab.value = tab || 'About';
         overviewMode.value = 'about';
         overviewSqlFullscreen.value = false;
     };
@@ -854,6 +892,10 @@ export function usePhpMyAdminReadState(props, transport) {
             overviewMode.value = hashState.view;
         }
 
+        if (hashState.tab) {
+            overviewTab.value = hashState.tab;
+        }
+
         overviewSqlFullscreen.value = Boolean(hashState.fullscreen);
 
         setTimeout(() => {
@@ -913,6 +955,7 @@ export function usePhpMyAdminReadState(props, transport) {
         expandedDatabases,
         sidebarFilter,
         overviewMode,
+        overviewTab,
         overviewSqlFullscreen,
         historyOpenTrigger,
         theme,

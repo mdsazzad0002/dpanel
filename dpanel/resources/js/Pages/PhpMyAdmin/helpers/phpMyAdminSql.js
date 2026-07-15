@@ -91,7 +91,7 @@ export const buildRowCondition = (row, columns) => {
 };
 
 export const buildUpdateSql = (database, table, original, draft, columns) => {
-    const editableColumns = (columns || []).filter((column) => !column.is_primary && !String(column.extra || '').toLowerCase().includes('auto_increment'));
+    const editableColumns = (columns || []).filter((column) => !String(column.extra || '').toLowerCase().includes('generated'));
     const changes = editableColumns
         .map((column) => {
             const nextValue = draft?.[column.name];
@@ -113,4 +113,3 @@ export const buildUpdateSql = (database, table, original, draft, columns) => {
 export const buildDeleteSql = (database, table, row, columns) => (
     `DELETE FROM ${quoteIdentifier(database)}.${quoteIdentifier(table)} WHERE ${buildRowCondition(row, columns)} LIMIT 1;`
 );
-

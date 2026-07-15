@@ -390,9 +390,36 @@ Route::prefix('cpsess{token}')
     Route::get('/phpmyadmin', [PhpMyAdminController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('phpmyadmin.index');
-    Route::get('/phpmyadmin/sql', [PhpMyAdminController::class, 'sql'])
+    Route::get('/phpmyadmin/about', [PhpMyAdminController::class, 'about'])
         ->middleware('role:admin|reseller')
-        ->name('phpmyadmin.sql');
+        ->name('phpmyadmin.about');
+    Route::get('/phpmyadmin/sql', [PhpMyAdminController::class, 'sqlPage'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.page.sql');
+    Route::get('/phpmyadmin/databases-page', [PhpMyAdminController::class, 'databasesPage'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.page.databases');
+    Route::get('/phpmyadmin/transfer', [PhpMyAdminController::class, 'transferPage'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.page.transfer');
+    Route::get('/phpmyadmin/status', [PhpMyAdminController::class, 'statusPage'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.page.status');
+    Route::get('/phpmyadmin/user-accounts', [PhpMyAdminController::class, 'userAccountsPage'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.page.user-accounts');
+    Route::get('/phpmyadmin/settings', [PhpMyAdminController::class, 'settingsPage'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.page.settings');
+    Route::get('/phpmyadmin/replication', [PhpMyAdminController::class, 'replicationPage'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.page.replication');
+    Route::get('/phpmyadmin/variables', [PhpMyAdminController::class, 'variablesPage'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.page.variables');
+    Route::get('/phpmyadmin/charsets', [PhpMyAdminController::class, 'charsetsPage'])
+        ->middleware('role:admin|reseller')
+        ->name('phpmyadmin.page.charsets');
     Route::get('/phpmyadmin/databases', [PhpMyAdminController::class, 'databases'])
         ->middleware('role:admin|reseller')
         ->name('phpmyadmin.databases');
