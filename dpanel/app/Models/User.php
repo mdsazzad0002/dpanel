@@ -32,6 +32,10 @@ class User extends Authenticatable
         'databases_limit',
         'bandwidth_gb_limit',
         'websites_limit',
+        'two_factor_enabled',
+        'two_factor_method',
+        'two_factor_secret',
+        'two_factor_telegram_chat_id',
     ];
 
     /**
@@ -42,6 +46,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'two_factor_secret',
     ];
 
     /**
@@ -61,6 +66,7 @@ class User extends Authenticatable
             'databases_limit' => 'integer',
             'bandwidth_gb_limit' => 'integer',
             'websites_limit' => 'integer',
+            'two_factor_enabled' => 'boolean',
         ];
     }
 

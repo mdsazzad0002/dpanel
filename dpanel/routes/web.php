@@ -14,6 +14,7 @@ use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\MonitoringController;
+use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpMyAdmin\PhpMyAdminController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\SecurityController;
@@ -108,6 +109,10 @@ Route::prefix('cpsess{token}')
         Route::get('/dashboard', [DashboardController::class, 'index'])
             ->middleware('verified')
             ->name('dashboard');
+
+        Route::get('/search', [PanelSearchController::class, 'index'])
+            ->middleware('verified')
+            ->name('panel.search');
 
         Route::middleware('auth')->group(function () {
     Route::redirect('/serverpanel', '/servers')
@@ -536,6 +541,9 @@ Route::prefix('cpsess{token}')
     Route::patch('/security/ssh', [SecurityController::class, 'updateSsh'])
         ->middleware('role:admin|reseller')
         ->name('security.ssh.update');
+    Route::patch('/security/two-factor', [SecurityController::class, 'updateTwoFactor'])
+        ->middleware('role:admin|reseller')
+        ->name('security.two-factor.update');
     Route::patch('/security/telegram', [SecurityController::class, 'updateTelegram'])
         ->middleware('role:admin|reseller')
         ->name('security.telegram.update');
@@ -596,6 +604,7 @@ Route::prefix('cpsess{token}')
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::patch('/profile/two-factor', [ProfileController::class, 'updateTwoFactor'])->name('profile.two-factor.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
         });
     });

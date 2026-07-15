@@ -37,32 +37,33 @@ const submit = () => {
     <GuestLayout>
         <Head title="Log in" />
 
-        <section class="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-[#07110f]/95 p-6 shadow-[0_0_35px_rgba(16,185,129,0.18)] backdrop-blur sm:p-8">
-            <div class="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(to_right,#10b98133_1px,transparent_1px),linear-gradient(to_bottom,#10b98133_1px,transparent_1px)] [background-size:24px_24px]" />
-            <div class="pointer-events-none absolute -bottom-10 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-400 to-transparent" />
-
-            <div class="relative font-mono">
-                <p class="text-xs uppercase tracking-[0.24em] text-emerald-400">Secure Shell Gateway</p>
-                <h1 class="mt-2 text-2xl font-bold text-emerald-100">ServerPanel Access</h1>
-                <p class="mt-2 text-sm text-emerald-200/80">
-                    Authenticate to manage hosts, deployments, and system operations.
+        <section class="space-y-6">
+            <div class="space-y-2">
+                <p class="font-mono text-xs uppercase tracking-[0.32em] text-emerald-300/80">
+                    Admin portal
+                </p>
+                <h2 class="text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">
+                    Sign in to dPanel
+                </h2>
+                <p class="text-sm leading-6 text-slate-300">
+                    Use your administrative credentials to continue.
                 </p>
             </div>
 
             <div
                 v-if="status"
-                class="relative mt-5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"
+                class="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100"
             >
                 {{ status }}
             </div>
 
-            <form class="relative mt-6 space-y-5 font-mono" @submit.prevent="submit">
+            <form class="space-y-5" @submit.prevent="submit">
                 <div>
-                    <InputLabel for="email" value="Admin Email" class="text-emerald-300" />
+                    <InputLabel for="email" value="Admin Email" class="text-slate-200" />
                     <TextInput
                         id="email"
                         type="email"
-                        class="mt-2 block w-full rounded-xl border-emerald-600/40 bg-[#030807] text-emerald-100 transition placeholder:text-emerald-300/40 focus:border-emerald-400 focus:ring-emerald-400"
+                        class="mt-2 block w-full rounded-xl border-white/10 bg-white/[0.04] text-slate-100 transition placeholder:text-slate-400/70 focus:border-emerald-400 focus:ring-emerald-400"
                         v-model="form.email"
                         required
                         autofocus
@@ -73,11 +74,11 @@ const submit = () => {
                 </div>
 
                 <div>
-                    <InputLabel for="password" value="Access Key" class="text-emerald-300" />
+                    <InputLabel for="password" value="Access Key" class="text-slate-200" />
                     <TextInput
                         id="password"
                         type="password"
-                        class="mt-2 block w-full rounded-xl border-emerald-600/40 bg-[#030807] text-emerald-100 transition placeholder:text-emerald-300/40 focus:border-emerald-400 focus:ring-emerald-400"
+                        class="mt-2 block w-full rounded-xl border-white/10 bg-white/[0.04] text-slate-100 transition placeholder:text-slate-400/70 focus:border-emerald-400 focus:ring-emerald-400"
                         v-model="form.password"
                         required
                         autocomplete="current-password"
@@ -89,12 +90,12 @@ const submit = () => {
                 <div class="flex items-center justify-between">
                     <label class="flex cursor-pointer items-center">
                         <Checkbox name="remember" v-model:checked="form.remember" />
-                        <span class="ms-2 text-sm text-emerald-200/80">Persist session</span>
+                        <span class="ms-2 text-sm text-slate-300">Persist session</span>
                     </label>
                     <Link
                         v-if="canResetPassword"
                         :href="route('password.request')"
-                        class="text-sm font-medium text-emerald-300 hover:text-emerald-200"
+                        class="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
                     >
                         Forgot password?
                     </Link>
@@ -102,7 +103,7 @@ const submit = () => {
 
                 <PrimaryButton
                     type="submit"
-                    class="w-full justify-center rounded-xl bg-emerald-500 py-3 text-sm font-semibold tracking-[0.14em] text-[#032019] transition hover:bg-emerald-400 focus:bg-emerald-500"
+                    class="w-full justify-center rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 py-3 text-sm font-semibold tracking-[0.14em] text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:from-emerald-300 hover:to-cyan-300 focus:bg-emerald-400"
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >

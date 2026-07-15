@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\Controllers\PanelSearchController;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -40,6 +41,7 @@ class HandleInertiaRequests extends Middleware
                 'token' => $panelToken,
                 'domain' => config('serverpanel.panel_domain'),
             ],
+            'panelSearch' => fn () => app(PanelSearchController::class)->buildItems($request),
             'flash' => [
                 'success' => $flashSuccess,
                 'error' => $flashError,

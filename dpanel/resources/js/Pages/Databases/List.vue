@@ -105,7 +105,7 @@ const openAllDatabaseStudio = () => {
                                 </span>
                             </td>
                             <td class="px-4 py-3 text-slate-600 dark:text-slate-300">
-                                {{ item.assigned_user_name || item.assigned_user_email || 'Dpanel user' }}
+                                {{ item.assigned_user_name || item.assigned_user_email || 'dPanel user' }}
                             </td>
                             <td class="px-4 py-3 font-medium">
                                 <button

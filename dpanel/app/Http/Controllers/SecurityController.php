@@ -2,57 +2,35 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\SecuritySettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SecurityController extends Controller
 {
-    private const SETTINGS_TABLE = 'security_settings';
-    private const STATE_KEY = 'state';
-
-    /**
-     * @var array<string, mixed>
-     */
-    private const DEFAULT_STATE = [
-        'firewall' => [
-            'enabled' => false,
-            'default_incoming' => 'deny',
-            'default_outgoing' => 'allow',
-            'allowed_ports' => [22, 80, 443],
-        ],
-        'ssh' => [
-            'port' => 22,
-            'password_authentication' => 'Off',
-            'permit_root_login' => 'no',
-            'pubkey_authentication' => 'On',
-        ],
-        'telegram' => [
-            'enabled' => false,
-            'bot_token' => '',
-            'chat_id' => '',
-            'message' => 'Security alert from ServerPanel',
-        ],
-    ];
+    public function __construct(private readonly SecuritySettings $settings)
+    {
+    }
 
     public function manager(): Response
     {
-        $state = $this->readState();
+        $state = $this->settings->read();
 
         return Inertia::render('SecurityManager', [
             'firewall' => $state['firewall'],
             'ssh' => $state['ssh'],
             'telegram' => $state['telegram'],
+            'twoFactor' => $state['two_factor'],
         ]);
     }
 
     public function syncFromServer(Request $request): RedirectResponse|JsonResponse
     {
-        $state = $this->readState();
+        $state = $this->settings->read();
 
         $detectedFirewall = $this->detectFirewallFromServer();
         if (count($detectedFirewall) > 0) {
@@ -64,7 +42,7 @@ class SecurityController extends Controller
             $state['ssh'] = array_merge($state['ssh'], $detectedSsh);
         }
 
-        $this->writeState($state);
+        $this->settings->write($state);
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -90,14 +68,14 @@ class SecurityController extends Controller
             'allowed_ports.*' => ['integer', 'min:1', 'max:65535'],
         ]);
 
-        $state = $this->readState();
+        $state = $this->settings->read();
         $state['firewall'] = [
             'enabled' => (bool) $validated['enabled'],
             'default_incoming' => (string) $validated['default_incoming'],
             'default_outgoing' => (string) $validated['default_outgoing'],
             'allowed_ports' => collect($validated['allowed_ports'] ?? [])->unique()->values()->all(),
         ];
-        $this->writeState($state);
+        $this->settings->write($state);
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -119,14 +97,14 @@ class SecurityController extends Controller
             'pubkey_authentication' => ['required', 'in:On,Off'],
         ]);
 
-        $state = $this->readState();
+        $state = $this->settings->read();
         $state['ssh'] = [
             'port' => (int) $validated['port'],
             'password_authentication' => (string) $validated['password_authentication'],
             'permit_root_login' => (string) $validated['permit_root_login'],
             'pubkey_authentication' => (string) $validated['pubkey_authentication'],
         ];
-        $this->writeState($state);
+        $this->settings->write($state);
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -148,14 +126,14 @@ class SecurityController extends Controller
             'message' => ['nullable', 'string', 'max:512'],
         ]);
 
-        $state = $this->readState();
+        $state = $this->settings->read();
         $state['telegram'] = [
             'enabled' => (bool) $validated['enabled'],
             'bot_token' => trim((string) $validated['bot_token']),
             'chat_id' => trim((string) $validated['chat_id']),
             'message' => trim((string) ($validated['message'] ?? 'Security alert from ServerPanel')),
         ];
-        $this->writeState($state);
+        $this->settings->write($state);
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -166,6 +144,41 @@ class SecurityController extends Controller
         }
 
         return redirect()->route('security.manager')->with('success', 'Telegram settings saved.');
+    }
+
+    public function updateTwoFactor(Request $request): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'enabled' => ['required', 'boolean'],
+            'email' => ['required', 'boolean'],
+            'telegram' => ['required', 'boolean'],
+            'google_auth_app' => ['required', 'boolean'],
+            'code_ttl_minutes' => ['required', 'integer', 'min:1', 'max:1440'],
+            'enforce_admin' => ['required', 'boolean'],
+            'enforce_reseller' => ['required', 'boolean'],
+        ]);
+
+        $state = $this->settings->read();
+        $state['two_factor'] = [
+            'enabled' => (bool) $validated['enabled'],
+            'email' => (bool) $validated['email'],
+            'telegram' => (bool) $validated['telegram'],
+            'google_auth_app' => (bool) $validated['google_auth_app'],
+            'code_ttl_minutes' => (int) $validated['code_ttl_minutes'],
+            'enforce_admin' => (bool) $validated['enforce_admin'],
+            'enforce_reseller' => (bool) $validated['enforce_reseller'],
+        ];
+        $this->settings->write($state);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Two-factor settings saved.',
+                'data' => ['two_factor' => $state['two_factor']],
+            ]);
+        }
+
+        return redirect()->route('security.manager')->with('success', 'Two-factor settings saved.');
     }
 
     public function testTelegram(Request $request): RedirectResponse|JsonResponse
@@ -208,51 +221,6 @@ class SecurityController extends Controller
         }
 
         return redirect()->route('security.manager')->with('success', 'Telegram test message sent.');
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function readState(): array
-    {
-        if (! DB::getSchemaBuilder()->hasTable(self::SETTINGS_TABLE)) {
-            return self::DEFAULT_STATE;
-        }
-
-        $row = DB::table(self::SETTINGS_TABLE)->where('setting_key', self::STATE_KEY)->first();
-        if ($row === null || ! isset($row->setting_value)) {
-            return self::DEFAULT_STATE;
-        }
-
-        $decoded = json_decode((string) $row->setting_value, true);
-        if (! is_array($decoded)) {
-            return self::DEFAULT_STATE;
-        }
-
-        return [
-            'firewall' => array_merge(self::DEFAULT_STATE['firewall'], $decoded['firewall'] ?? []),
-            'ssh' => array_merge(self::DEFAULT_STATE['ssh'], $decoded['ssh'] ?? []),
-            'telegram' => array_merge(self::DEFAULT_STATE['telegram'], $decoded['telegram'] ?? []),
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $state
-     */
-    private function writeState(array $state): void
-    {
-        if (! DB::getSchemaBuilder()->hasTable(self::SETTINGS_TABLE)) {
-            return;
-        }
-
-        DB::table(self::SETTINGS_TABLE)->updateOrInsert(
-            ['setting_key' => self::STATE_KEY],
-            [
-                'setting_value' => json_encode($state, JSON_PRETTY_PRINT),
-                'updated_at' => now(),
-                'created_at' => now(),
-            ],
-        );
     }
 
     /**

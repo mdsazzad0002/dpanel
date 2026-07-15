@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\PanelSession;
+use App\Services\TwoFactorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -30,12 +31,47 @@ class AuthenticatedSessionController extends Controller
     /**
      * Handle an incoming authentication request.
      */
-    public function store(LoginRequest $request): RedirectResponse
+    public function store(LoginRequest $request, TwoFactorService $twoFactor): RedirectResponse
     {
-        $request->authenticate();
-
+        $user = $request->authenticate();
         $request->session()->regenerate();
 
+        if ($twoFactor->isEnabled() && $twoFactor->appliesToUser($user) && $twoFactor->availableMethods($user) === []) {
+            return back()->withErrors([
+                'email' => 'Two-factor is enabled for your account, but no verification method is configured.',
+            ]);
+        }
+
+        if ($twoFactor->requiresChallenge($user)) {
+            $method = (string) ($twoFactor->preferredMethod($user) ?? 'email');
+            $code = $twoFactor->normalizeCode($twoFactor->generateNumericCode());
+
+            $request->session()->put('two_factor.challenge', [
+                'user_id' => $user->id,
+                'remember' => $request->boolean('remember'),
+                'method' => $method,
+                'code_hash' => hash('sha256', $code),
+                'expires_at' => now()->addMinutes((int) ($twoFactor->policy()['code_ttl_minutes'] ?? 10))->toIso8601String(),
+                'attempts' => 0,
+            ]);
+
+            try {
+                if (in_array($method, ['email', 'telegram'], true)) {
+                    $twoFactor->sendChallenge($user, $method, $code);
+                }
+            } catch (\Throwable $e) {
+                $request->session()->forget('two_factor.challenge');
+
+                return back()->withErrors([
+                    'email' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to send two-factor code.',
+                ]);
+            }
+
+            return redirect()->route('two-factor.challenge');
+        }
+
+        Auth::login($user, $request->boolean('remember'));
+        $request->session()->regenerate();
         $panelCookie = $this->issuePanelSessionProof($request);
 
         return redirect()->intended(route('dashboard', absolute: false))
