@@ -61,6 +61,8 @@ const {
     tables,
     tableDetails,
     tableQueryMeta,
+    sortColumn,
+    sortDirection,
     activeTableAction,
     loadingDatabases,
     loadingDatabase,
@@ -94,6 +96,7 @@ const {
     handleSidebarToggleDatabase,
     handlePaginate,
     handlePerPageChange,
+    handleSortChange,
     loadDatabase,
     handleToolbarAction: readToolbarAction,
     loadDatabases,
@@ -103,6 +106,7 @@ const querySql = ref(String(props.queryDefaults?.sql || 'SHOW TABLES;'));
 const sqlHistoryEntries = ref([]);
 const transferActiveTab = ref('export');
 const schemaEditorMode = ref('');
+const schemaEditorColumns = ref([]);
 const tableStructureColumns = computed(() => Array.isArray(tableDetails.value?.columns) ? tableDetails.value.columns : []);
 const topbarActionDisplay = computed(() => (schemaEditorMode.value === 'create' ? 'create' : topbarActiveAction.value));
 
@@ -119,6 +123,7 @@ const {
     handleRowSave,
     handleRowDelete,
     handleBulkDelete,
+    handleBulkTableAction,
     handleInsertSubmit,
     handleTableRename,
     handleTableCreate,
@@ -127,6 +132,7 @@ const {
 
 const handleAction = async ({ action, table }) => {
     if (!table) return;
+    const shouldResetSort = String(table || '') !== String(selectedTable.value || '');
 
     if (action === 'drop') {
         openConfirm('drop', table);
@@ -139,11 +145,19 @@ const handleAction = async ({ action, table }) => {
     }
 
     if (action === 'search') {
+        if (shouldResetSort) {
+            sortColumn.value = '';
+            sortDirection.value = 'asc';
+        }
         await handleSelectTable({ database: selectedDatabase.value, table });
         return;
     }
 
     if (action === 'select' || action === 'update') {
+        if (shouldResetSort) {
+            sortColumn.value = '';
+            sortDirection.value = 'asc';
+        }
         await loadTable(selectedDatabase.value, table, {
             page: selectedTablePage.value || 1,
             perPage: perPage.value,
@@ -153,6 +167,10 @@ const handleAction = async ({ action, table }) => {
     }
 
     if (action === 'structure' || action === 'browse' || action === 'insert') {
+        if (shouldResetSort) {
+            sortColumn.value = '';
+            sortDirection.value = 'asc';
+        }
         await loadTable(selectedDatabase.value, table, {
             page: selectedTablePage.value || 1,
             perPage: perPage.value,
@@ -225,13 +243,19 @@ const handleToolbarAction = async (action) => {
     await readToolbarAction(action);
 };
 
-const handleOpenStructureEditor = () => {
+const handleOpenStructureEditor = ({ action = 'change', column } = {}) => {
+    const sourceColumns = Array.isArray(tableStructureColumns.value) ? tableStructureColumns.value : [];
+    schemaEditorColumns.value = sourceColumns.map((item) => ({
+        ...item,
+        remove: action === 'drop' && String(item?.name || '') === String(column || '') ? true : Boolean(item?.remove),
+    }));
     schemaEditorMode.value = 'edit';
     overviewMode.value = 'about';
 };
 
 const handleCloseSchemaEditor = () => {
     schemaEditorMode.value = '';
+    schemaEditorColumns.value = [];
     activeTableAction.value = selectedTable.value ? 'structure' : 'browse';
 };
 
@@ -243,6 +267,7 @@ const handleSchemaSave = async (payload = {}) => {
     }
 
     schemaEditorMode.value = '';
+    schemaEditorColumns.value = [];
 };
 
 const handleOverviewSelect = async (tab) => {
@@ -354,7 +379,7 @@ const handleOverviewSelect = async (tab) => {
 
                 <!-- Content Area -->
                 <div
-                    class="flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5"
+                    class="flex-1  overflow-auto px-4 py-4 sm:px-5"
                     :style="{ paddingBottom: 'calc(var(--phpmyadmin-sql-history-height, 0px) + 1rem)' }"
                 >
                     <Transition name="content-fade" mode="out-in">
@@ -394,7 +419,7 @@ const handleOverviewSelect = async (tab) => {
                             :mode="schemaEditorMode"
                             :selected-database="selectedDatabase"
                             :selected-table="selectedTable"
-                            :initial-columns="schemaEditorMode === 'edit' ? tableStructureColumns : []"
+                            :initial-columns="schemaEditorMode === 'edit' ? schemaEditorColumns : []"
                             :save-busy="createInProgress"
                             @save="handleSchemaSave"
                             @cancel="handleCloseSchemaEditor"
@@ -418,6 +443,7 @@ const handleOverviewSelect = async (tab) => {
                             @select-database="handleSelectDatabaseFromSummary"
                             @reset="resetView"
                             @action="handleAction"
+                            @bulk-action="handleBulkTableAction"
                         />
 
                         <!-- Table Browser -->
@@ -433,10 +459,13 @@ const handleOverviewSelect = async (tab) => {
                             :query-label="tableQueryMeta.label"
                             :query-duration-ms="tableQueryMeta.durationMs"
                             :rows-per-page="perPage"
+                            :sort-column="sortColumn"
+                            :sort-direction="sortDirection"
                             :rename-busy="renameInProgress"
                             :plain="true"
                             @paginate="handlePaginate"
                             @per-page-change="handlePerPageChange"
+                            @sort-change="handleSortChange"
                             @bulk-delete="handleBulkDelete"
                             @row-delete="handleRowDelete"
                             @row-save="handleRowSave"

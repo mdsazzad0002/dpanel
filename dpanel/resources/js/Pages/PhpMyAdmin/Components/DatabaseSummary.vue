@@ -44,10 +44,12 @@ const props = defineProps({
     },
 });
 
-const emit = defineEmits(['select-table', 'select-database', 'reset', 'filter-change', 'action']);
+const emit = defineEmits(['select-table', 'select-database', 'reset', 'filter-change', 'action', 'bulk-action']);
 const filterText = ref('');
 const aboutTab = ref('about');
 const animatedCounters = ref({});
+const selectedTableNames = ref(new Set());
+const bulkAction = ref('browse');
 
 const databaseName = (database) => (typeof database === 'string' ? database : String(database?.name || ''));
 
@@ -60,6 +62,53 @@ const filteredTables = computed(() => {
         return text.includes(needle);
     });
 });
+
+const tableNameFor = (table) => String(table?.name || '').trim();
+
+const visibleTableNames = computed(() => filteredTables.value.map((table) => tableNameFor(table)).filter(Boolean));
+const selectedTableCount = computed(() => selectedTableNames.value.size);
+const allVisibleSelected = computed(() => visibleTableNames.value.length > 0 && visibleTableNames.value.every((name) => selectedTableNames.value.has(name)));
+
+const rowCountLabel = (table) => {
+    const count = Number(table?.estimated_rows ?? 0);
+    if (!Number.isFinite(count) || count <= 0) {
+        return '0';
+    }
+
+    return new Intl.NumberFormat().format(count);
+};
+
+const toggleTableSelected = (table, checked) => {
+    const name = tableNameFor(table);
+    if (!name) return;
+
+    const next = new Set(selectedTableNames.value);
+    if (checked) {
+        next.add(name);
+    } else {
+        next.delete(name);
+    }
+
+    selectedTableNames.value = next;
+};
+
+const toggleSelectAllVisible = (checked) => {
+    if (!checked) {
+        selectedTableNames.value = new Set();
+        return;
+    }
+
+    selectedTableNames.value = new Set(visibleTableNames.value);
+};
+
+const runBulkAction = () => {
+    if (selectedTableNames.value.size === 0) return;
+
+    emit('bulk-action', {
+        action: bulkAction.value,
+        tables: filteredTables.value.filter((table) => selectedTableNames.value.has(tableNameFor(table))),
+    });
+};
 
 const filteredDatabases = computed(() => {
     const needle = filterText.value.trim().toLowerCase();
@@ -112,10 +161,16 @@ const actions = [
 
 watch(() => props.selectedDatabase, () => {
     animatedCounters.value = {};
+    selectedTableNames.value = new Set();
     if (props.selectedDatabase) {
         animateCounter('tables', props.tables.length);
     }
 }, { immediate: true });
+
+watch(() => props.tables, () => {
+    const visible = new Set(props.tables.map((table) => tableNameFor(table)).filter(Boolean));
+    selectedTableNames.value = new Set(Array.from(selectedTableNames.value).filter((name) => visible.has(name)));
+}, { deep: true });
 </script>
 
 <template>
@@ -215,6 +270,9 @@ watch(() => props.selectedDatabase, () => {
                     <div class="flex items-center justify-between">
                         <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300">Tables</h3>
                         <div class="flex items-center gap-2">
+                            <span v-if="selectedTableCount > 0" class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                {{ selectedTableCount }} selected
+                            </span>
                             <div class="relative">
                                 <i class="bi bi-search pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400"></i>
                                 <input
@@ -245,7 +303,16 @@ watch(() => props.selectedDatabase, () => {
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                                <th class="w-10 px-1 py-1 text-center">
+                                    <input
+                                        type="checkbox"
+                                        :checked="allVisibleSelected"
+                                        class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600"
+                                        @change="toggleSelectAllVisible($event.target.checked)"
+                                    >
+                                </th>
                                 <th class="px-1 py-1">Table</th>
+                                <th class="px-1 py-1 text-center">Rows</th>
                                 <th class="px-1 py-1 text-center">Actions</th>
                                 <th class="px-1 py-1 text-center">Type</th>
                                 <th class="px-1 py-1 text-center">Collation</th>
@@ -257,6 +324,14 @@ watch(() => props.selectedDatabase, () => {
                                 :key="table.name"
                                 class="group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
                             >
+                                <td class="px-1 py-1 text-center align-middle">
+                                    <input
+                                        type="checkbox"
+                                        :checked="selectedTableNames.has(table.name)"
+                                        class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600"
+                                        @change="toggleTableSelected(table, $event.target.checked)"
+                                    >
+                                </td>
                                 <td class="px-1 py-1">
                                     <div class="flex items-center gap-2">
                                         <div class="flex h-5 w-5 items-center justify-center rounded bg-slate-100 dark:bg-slate-800">
@@ -271,7 +346,10 @@ watch(() => props.selectedDatabase, () => {
                                         </button>
                                     </div>
                                 </td>
-                                  <td class="px-1 py-1">
+                                <td class="px-1 py-1 text-center text-slate-600 dark:text-slate-400">
+                                    ~{{ rowCountLabel(table) }}
+                                </td>
+                                <td class="px-1 py-1">
                                     <div class="flex items-center justify-center gap-1 opacity-60 transition-opacity group-hover:opacity-100">
                                         <button
                                             v-for="action in actions"
@@ -296,6 +374,34 @@ watch(() => props.selectedDatabase, () => {
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm dark:border-slate-700">
+                    <div class="text-slate-500 dark:text-slate-400">
+                        {{ filteredTables.length }} table{{ filteredTables.length === 1 ? '' : 's' }} shown
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <label class="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                            <span class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">With selected</span>
+                            <select
+                                v-model="bulkAction"
+                                class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                                <option value="browse">Browse first</option>
+                                <option value="structure">Structure first</option>
+                                <option value="empty">Empty</option>
+                                <option value="drop">Drop</option>
+                            </select>
+                        </label>
+                        <button
+                            type="button"
+                            class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                            :disabled="selectedTableCount === 0"
+                            @click="runBulkAction"
+                        >
+                            Apply
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

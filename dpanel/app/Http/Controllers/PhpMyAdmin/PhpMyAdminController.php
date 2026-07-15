@@ -141,7 +141,16 @@ class PhpMyAdminController extends Controller
             $table = (string) ($tables[0]['name'] ?? '');
         }
 
-        $tableDetails = $table !== '' ? $service->tableDetails($database, $table, $page, $perPage) : null;
+        $tableDetails = $table !== ''
+            ? $service->tableDetails(
+                $database,
+                $table,
+                $page,
+                $perPage,
+                $this->optionalIdentifier($request->query('sortColumn', '')),
+                $request->query('sortDirection', 'asc')
+            )
+            : null;
 
         return response()->json([
             'ok' => true,
@@ -172,7 +181,14 @@ class PhpMyAdminController extends Controller
 
         return response()->json([
             'ok' => true,
-            'table_details' => $service->tableDetails($database, $table, $page, $perPage),
+            'table_details' => $service->tableDetails(
+                $database,
+                $table,
+                $page,
+                $perPage,
+                $this->optionalIdentifier($request->query('sortColumn', '')),
+                $request->query('sortDirection', 'asc')
+            ),
         ]);
     }
 
@@ -511,6 +527,17 @@ class PhpMyAdminController extends Controller
         }
 
         return $value;
+    }
+
+    private function optionalIdentifier(mixed $value): string
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return '';
+        }
+
+        return preg_match('/^[A-Za-z0-9_]+$/', $value) ? $value : '';
     }
 
     private function defaultSql(string $database, string $table): string

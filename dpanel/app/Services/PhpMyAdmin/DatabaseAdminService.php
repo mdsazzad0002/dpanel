@@ -523,7 +523,7 @@ class DatabaseAdminService
     /**
      * @return array<string, mixed>
      */
-    public function tableDetails(string $database, string $table, int $page = 1, int $perPage = 25): array
+    public function tableDetails(string $database, string $table, int $page = 1, int $perPage = 25, string $sortColumn = '', string $sortDirection = 'asc'): array
     {
         $database = $this->assertSafeIdentifier($database);
         $table = $this->assertSafeIdentifier($table);
@@ -540,8 +540,26 @@ class DatabaseAdminService
 
         $qualifiedTable = $this->qualifyTable($database, $table);
         $offset = ($page - 1) * $perPage;
-        $orderBy = $primaryKeys !== []
-            ? ' ORDER BY '.$this->quoteIdentifier($primaryKeys[0])
+
+        $availableColumns = array_values(array_filter(array_map(
+            static fn (array $column): string => (string) ($column['name'] ?? ''),
+            $columns
+        )));
+        $requestedSortColumn = trim($sortColumn);
+        if ($requestedSortColumn !== '') {
+            $requestedSortColumn = $this->assertSafeIdentifier($requestedSortColumn);
+        }
+        $requestedSortDirection = strtoupper(trim($sortDirection)) === 'DESC' ? 'DESC' : 'ASC';
+        $orderColumn = '';
+
+        if ($requestedSortColumn !== '' && in_array($requestedSortColumn, $availableColumns, true)) {
+            $orderColumn = $requestedSortColumn;
+        } elseif ($primaryKeys !== []) {
+            $orderColumn = $primaryKeys[0];
+        }
+
+        $orderBy = $orderColumn !== ''
+            ? ' ORDER BY '.$this->quoteIdentifier($orderColumn).' '.$requestedSortDirection
             : '';
 
         $totalRow = $this->connection()->selectOne('SELECT COUNT(*) AS aggregate FROM '.$qualifiedTable);

@@ -60,7 +60,7 @@ export const buildInsertSql = (database, table, rows) => {
     return `INSERT INTO ${quoteIdentifier(database)}.${quoteIdentifier(table)} (${columns}) VALUES (${payload});`;
 };
 
-export const buildTableQueryLabel = (database, table, page, limit, action = 'browse') => {
+export const buildTableQueryLabel = (database, table, page, limit, action = 'browse', sortColumn = '', sortDirection = 'asc') => {
     if (!database || !table) return '';
 
     if (action === 'structure') {
@@ -70,8 +70,9 @@ export const buildTableQueryLabel = (database, table, page, limit, action = 'bro
     const safeLimit = Math.max(1, Number(limit || 25));
     const safePage = Math.max(1, Number(page || 1));
     const offset = (safePage - 1) * safeLimit;
+    const orderBy = sortColumn ? ` ORDER BY ${quoteIdentifier(sortColumn)} ${String(sortDirection).toUpperCase() === 'DESC' ? 'DESC' : 'ASC'}` : '';
 
-    return `SELECT * FROM ${quoteIdentifier(database)}.${quoteIdentifier(table)} LIMIT ${safeLimit} OFFSET ${offset};`;
+    return `SELECT * FROM ${quoteIdentifier(database)}.${quoteIdentifier(table)}${orderBy} LIMIT ${safeLimit} OFFSET ${offset};`;
 };
 
 export const buildRowCondition = (row, columns) => {

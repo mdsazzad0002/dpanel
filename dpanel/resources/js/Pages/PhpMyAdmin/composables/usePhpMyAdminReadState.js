@@ -66,6 +66,8 @@ export function usePhpMyAdminReadState(props, transport) {
     const pageNumber = ref(clamp(initialSelection.page || persistedState.page || 1, 1, 9999, 1));
     const perPage = ref(clamp(initialSelection.perPage || persistedState.perPage || 25, 10, 200, 25));
     const selectedTablePage = ref(clamp(initialSelection.page || persistedState.page || 1, 1, 9999, 1));
+    const sortColumn = ref(String(initialSelection.sortColumn || persistedState.sortColumn || ''));
+    const sortDirection = ref(String(initialSelection.sortDirection || persistedState.sortDirection || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc');
     const databaseCache = ref({});
     const expandedDatabases = ref(new Set());
     const sidebarFilter = ref('');
@@ -127,6 +129,13 @@ export function usePhpMyAdminReadState(props, transport) {
     });
 
     const isDatabaseExpanded = (database) => expandedDatabases.value.has(String(database || ''));
+
+    const normalizeSortColumn = (value) => {
+        const text = String(value || '').trim();
+        return /^[A-Za-z0-9_]+$/.test(text) ? text : '';
+    };
+
+    const normalizeSortDirection = (value) => (String(value || '').toLowerCase() === 'desc' ? 'desc' : 'asc');
 
     const setDatabaseExpanded = (database, expanded) => {
         const name = String(database || '');
@@ -234,6 +243,8 @@ export function usePhpMyAdminReadState(props, transport) {
             perPage: clamp(params.get('perPage') || perPage.value, 10, 200, perPage.value),
             view: params.get('view') || '',
             fullscreen: params.get('fullscreen') === '1',
+            sortColumn: normalizeSortColumn(params.get('sort')),
+            sortDirection: normalizeSortDirection(params.get('dir')),
         };
     };
 
@@ -250,6 +261,8 @@ export function usePhpMyAdminReadState(props, transport) {
         if (overviewMode.value !== 'about') params.set('view', overviewMode.value);
         if (overviewTab.value && overviewTab.value !== 'About') params.set('tab', overviewTab.value);
         if (overviewSqlFullscreen.value) params.set('fullscreen', '1');
+        if (sortColumn.value) params.set('sort', sortColumn.value);
+        if (sortColumn.value) params.set('dir', sortDirection.value);
 
         const hash = params.toString();
         const nextUrl = `${window.location.pathname}${window.location.search}${hash ? `#${hash}` : ''}`;
@@ -257,7 +270,7 @@ export function usePhpMyAdminReadState(props, transport) {
     };
 
     watch(
-        [selectedDatabase, selectedTable, pageNumber, perPage, overviewMode, overviewTab, overviewSqlFullscreen, activeTableAction],
+        [selectedDatabase, selectedTable, pageNumber, perPage, overviewMode, overviewTab, overviewSqlFullscreen, activeTableAction, sortColumn, sortDirection],
         () => {
             syncHashState();
             writePersistedUiState({
@@ -269,6 +282,8 @@ export function usePhpMyAdminReadState(props, transport) {
                 tab: overviewTab.value,
                 action: activeTableAction.value,
                 fullscreen: overviewSqlFullscreen.value,
+                sortColumn: sortColumn.value,
+                sortDirection: sortDirection.value,
             });
         },
         { flush: 'post' },
@@ -357,6 +372,8 @@ export function usePhpMyAdminReadState(props, transport) {
         const query = {
             perPage: options.perPage || perPage.value || 25,
             page: options.page || pageNumber.value || 1,
+            sortColumn: normalizeSortColumn(options.sortColumn ?? sortColumn.value),
+            sortDirection: normalizeSortDirection(options.sortDirection ?? sortDirection.value),
         };
 
         if (loadRows && options.table) {
@@ -393,6 +410,8 @@ export function usePhpMyAdminReadState(props, transport) {
                     perPage: Number(data?.table_details?.pagination?.per_page || query.perPage || 25),
                     reusePayload: data.table_details || null,
                     action: options.action || 'structure',
+                    sortColumn: query.sortColumn,
+                    sortDirection: query.sortDirection,
                 });
             } else {
                 tableDetails.value = null;
@@ -433,6 +452,14 @@ export function usePhpMyAdminReadState(props, transport) {
             perPage.value = options.perPage;
         }
 
+        if (Object.prototype.hasOwnProperty.call(options, 'sortColumn')) {
+            sortColumn.value = normalizeSortColumn(options.sortColumn);
+        }
+
+        if (Object.prototype.hasOwnProperty.call(options, 'sortDirection')) {
+            sortDirection.value = normalizeSortDirection(options.sortDirection);
+        }
+
         const queryStartedAt = performance?.now?.() || Date.now();
         tableQueryMeta.value = {
             label: buildTableQueryLabel(
@@ -441,6 +468,8 @@ export function usePhpMyAdminReadState(props, transport) {
                 options.page || selectedTablePage.value || 1,
                 options.perPage || perPage.value || 25,
                 options.action || activeTableAction.value || 'browse',
+                sortColumn.value,
+                sortDirection.value,
             ),
             durationMs: 0,
         };
@@ -457,6 +486,8 @@ export function usePhpMyAdminReadState(props, transport) {
                 table,
                 page: options.page || selectedTablePage.value || 1,
                 perPage: options.perPage || perPage.value || 25,
+                sortColumn: sortColumn.value,
+                sortDirection: sortDirection.value,
             });
 
             if (!response.ok || !data?.ok) {
@@ -484,6 +515,8 @@ export function usePhpMyAdminReadState(props, transport) {
         pageNumber.value = 1;
         tableDetails.value = null;
         overviewSqlFullscreen.value = false;
+        sortColumn.value = '';
+        sortDirection.value = 'asc';
 
         if (selectedDatabase.value) {
             await loadDatabase(selectedDatabase.value, { page: 1, perPage: perPage.value, loadRows: false });
@@ -504,6 +537,8 @@ export function usePhpMyAdminReadState(props, transport) {
         activeTableAction.value = 'structure';
         pageNumber.value = 1;
         selectedTablePage.value = 1;
+        sortColumn.value = '';
+        sortDirection.value = 'asc';
 
         await loadDatabase(database, {
             page: 1,
@@ -526,8 +561,30 @@ export function usePhpMyAdminReadState(props, transport) {
         activeTableAction.value = 'browse';
         pageNumber.value = 1;
         selectedTablePage.value = 1;
+        sortColumn.value = '';
+        sortDirection.value = 'asc';
         await loadTable(database, table, { page: 1, perPage: perPage.value, action: 'browse' });
         setDatabaseExpanded(database, true);
+    };
+
+    const handleSortChange = async ({ column, direction } = {}) => {
+        if (!selectedDatabase.value || !selectedTable.value) return;
+
+        const nextColumn = normalizeSortColumn(column);
+        if (!nextColumn) return;
+
+        sortColumn.value = nextColumn;
+        sortDirection.value = normalizeSortDirection(direction);
+        pageNumber.value = 1;
+        selectedTablePage.value = 1;
+
+        await loadTable(selectedDatabase.value, selectedTable.value, {
+            page: 1,
+            perPage: perPage.value,
+            action: activeTableAction.value || 'browse',
+            sortColumn: sortColumn.value,
+            sortDirection: sortDirection.value,
+        });
     };
 
     const handleSidebarFilterChange = (value) => {
@@ -789,6 +846,8 @@ export function usePhpMyAdminReadState(props, transport) {
                 page: selectedTablePage.value || 1,
                 perPage: perPage.value,
                 action: 'structure',
+                sortColumn: sortColumn.value,
+                sortDirection: sortDirection.value,
             });
             return;
         }
@@ -798,6 +857,8 @@ export function usePhpMyAdminReadState(props, transport) {
                 page: selectedTablePage.value || 1,
                 perPage: perPage.value,
                 action: 'browse',
+                sortColumn: sortColumn.value,
+                sortDirection: sortDirection.value,
             });
             return;
         }
@@ -807,6 +868,8 @@ export function usePhpMyAdminReadState(props, transport) {
                 page: selectedTablePage.value || 1,
                 perPage: perPage.value,
                 action: 'insert',
+                sortColumn: sortColumn.value,
+                sortDirection: sortDirection.value,
             });
             return;
         }
@@ -816,6 +879,8 @@ export function usePhpMyAdminReadState(props, transport) {
                 page: selectedTablePage.value || 1,
                 perPage: perPage.value,
                 action,
+                sortColumn: sortColumn.value,
+                sortDirection: sortDirection.value,
             });
             return;
         }
@@ -838,6 +903,8 @@ export function usePhpMyAdminReadState(props, transport) {
                 page: selectedTablePage.value || 1,
                 perPage: perPage.value,
                 action: 'operations',
+                sortColumn: sortColumn.value,
+                sortDirection: sortDirection.value,
             });
         }
     };
@@ -887,6 +954,8 @@ export function usePhpMyAdminReadState(props, transport) {
         pageNumber.value = hashState.page;
         selectedTablePage.value = hashState.page;
         perPage.value = hashState.perPage;
+        sortColumn.value = normalizeSortColumn(hashState.sortColumn);
+        sortDirection.value = normalizeSortDirection(hashState.sortDirection);
 
         if (hashState.view === 'sql' || hashState.view === 'databases' || hashState.view === 'about' || hashState.view === 'transfer') {
             overviewMode.value = hashState.view;
@@ -990,7 +1059,10 @@ export function usePhpMyAdminReadState(props, transport) {
         handlePaginate,
         handlePerPageChange,
         handleToolbarAction,
+        handleSortChange,
         initializeState,
         applyHashState,
+        sortColumn,
+        sortDirection,
     };
 }

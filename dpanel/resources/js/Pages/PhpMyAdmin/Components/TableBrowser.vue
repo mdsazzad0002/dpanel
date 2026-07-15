@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
 const props = defineProps({
     tableDetails: {
@@ -38,6 +38,14 @@ const props = defineProps({
         type: Number,
         default: 25,
     },
+    sortColumn: {
+        type: String,
+        default: '',
+    },
+    sortDirection: {
+        type: String,
+        default: 'asc',
+    },
     renameBusy: {
         type: Boolean,
         default: false,
@@ -57,6 +65,7 @@ const emit = defineEmits([
     'row-save',
     'table-rename',
     'edit-structure',
+    'sort-change',
 ]);
 
 const selectedTableDetails = computed(() => props.tableDetails || null);
@@ -78,6 +87,20 @@ const renameTarget = ref('');
 const editInputRef = ref(null);
 const expandedCells = ref(new Set());
 const copyFeedback = ref('');
+const structureMoreOpenFor = ref('');
+const normalizedSortDirection = computed(() => (String(props.sortDirection || '').toLowerCase() === 'desc' ? 'desc' : 'asc'));
+
+const isSortedColumn = (columnName) => String(columnName || '') === String(props.sortColumn || '');
+
+const handleColumnSort = (columnName) => {
+    if (!columnName) return;
+
+    const nextDirection = isSortedColumn(columnName) && normalizedSortDirection.value === 'asc' ? 'desc' : 'asc';
+    emit('sort-change', {
+        column: columnName,
+        direction: nextDirection,
+    });
+};
 
 const toggleCellExpand = (rowKey, columnName) => {
     const key = `${rowKey}-${columnName}`;
@@ -460,6 +483,59 @@ const submitRename = () => {
     });
 };
 
+const openStructureEditor = (column = null) => {
+    emit('edit-structure', {
+        action: 'change',
+        column: column?.name || '',
+    });
+};
+
+const openColumnDrop = (column = null) => {
+    emit('edit-structure', {
+        action: 'drop',
+        column: column?.name || '',
+    });
+};
+
+const toggleMoreMenu = (columnName) => {
+    structureMoreOpenFor.value = structureMoreOpenFor.value === columnName ? '' : columnName;
+};
+
+const closeMoreMenu = () => {
+    structureMoreOpenFor.value = '';
+};
+
+const copyStructureText = async (text) => {
+    const value = String(text ?? '');
+    try {
+        await navigator.clipboard.writeText(value);
+        copyFeedback.value = 'Copied!';
+        setTimeout(() => { copyFeedback.value = ''; }, 1500);
+    } catch {
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        copyFeedback.value = 'Copied!';
+        setTimeout(() => { copyFeedback.value = ''; }, 1500);
+    }
+};
+
+const buildColumnDefinitionLabel = (column) => {
+    if (!column) return '';
+
+    const pieces = [
+        column.name || '',
+        column.type || '',
+        column.collation || '',
+        column.extra || '',
+    ].filter(Boolean);
+
+    return pieces.join(' | ');
+};
+
 watch(
     [() => props.selectedTable, () => props.activeAction],
     () => {
@@ -469,6 +545,14 @@ watch(
     },
     { immediate: true }
 );
+
+onMounted(() => {
+    document.addEventListener('click', closeMoreMenu);
+});
+
+onBeforeUnmount(() => {
+    document.removeEventListener('click', closeMoreMenu);
+});
 </script>
 
 <template>
@@ -515,34 +599,102 @@ watch(
         </div>
 
         <template v-else-if="selectedTableDetails && activeAction === 'structure'">
-            <div class="m-4 overflow-hidden rounded-2xl border border-slate-800 bg-[#0b1220]">
+            <div class="m-4  rounded-2xl border border-slate-800 bg-[#0b1220]">
+                <div class="border-b border-slate-800 px-4 py-3 text-sm text-slate-400">
+                    Structure for <span class="font-semibold text-slate-200">{{ selectedDatabase }}.{{ selectedTable }}</span>
+                </div>
+                <div >
                 <table class="min-w-full border-collapse text-left text-sm">
                     <thead class="sticky top-0 z-10 bg-[#111a2d] text-xs uppercase tracking-[0.16em] text-slate-400">
                         <tr>
-                            <th class="px-4 py-3">Column</th>
+                            <th class="w-12 px-4 py-3 text-center">#</th>
+                            <th class="px-4 py-3 text-center">Action</th>
+                            <th class="px-4 py-3">Name</th>
                             <th class="px-4 py-3">Type</th>
-                            <th class="px-4 py-3">Null</th>
+                            <th class="px-4 py-3">Collation</th>
+                            <th class="px-4 py-3">Attributes</th>
+                            <th class="px-4 py-3 text-center">Null</th>
                             <th class="px-4 py-3">Default</th>
+                            <th class="px-4 py-3">Comments</th>
                             <th class="px-4 py-3">Extra</th>
-                            <th class="px-4 py-3">Key</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="column in structureRows" :key="column.name" class="border-t border-slate-800">
+                        <tr v-for="(column, index) in structureRows" :key="column.name" class="border-t border-slate-800">
+                               <td class="px-4 py-3 text-center text-slate-400">{{ index + 1 }}</td>
+                            <td class="px-4 py-3">
+                                <div class="relative flex items-center justify-center gap-2">
+                                    <button
+                                        type="button"
+                                        class="rounded-md border border-cyan-500/30 px-3 py-1.5 text-xs font-medium text-cyan-200 transition hover:bg-cyan-500/10"
+                                        @click="openStructureEditor(column)"
+                                    >
+                                        Change
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="rounded-md border border-rose-500/30 px-3 py-1.5 text-xs font-medium text-rose-200 transition hover:bg-rose-500/10"
+                                        @click="openColumnDrop(column)"
+                                    >
+                                        Drop
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="rounded-md border border-slate-600 px-2.5 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/5"
+                                        @click.stop="toggleMoreMenu(column.name)"
+                                    >
+                                        More
+                                    </button>
+                                    <div
+                                        v-if="structureMoreOpenFor === column.name"
+                                        class="absolute right-0 top-full z-20 mt-2 w-56 rounded-lg border border-slate-700 bg-[#0b1220] py-1 shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
+                                    >
+                                        <button
+                                            type="button"
+                                            class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 hover:bg-white/5"
+                                            @click="copyStructureText(column.name)"
+                                        >
+                                            <i class="bi bi-copy text-xs text-slate-500"></i>
+                                            Copy column name
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 hover:bg-white/5"
+                                            @click="copyStructureText(buildColumnDefinitionLabel(column))"
+                                        >
+                                            <i class="bi bi-clipboard text-xs text-slate-500"></i>
+                                            Copy definition
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 hover:bg-white/5"
+                                            @click="openStructureEditor(column)"
+                                        >
+                                            <i class="bi bi-pencil text-xs text-slate-500"></i>
+                                            Open editor
+                                        </button>
+                                    </div>
+                                </div>
+                            </td>
+
                             <td class="px-4 py-3 font-medium text-slate-100">{{ column.name }}</td>
                             <td class="px-4 py-3 text-slate-300">{{ column.type || '-' }}</td>
-                            <td class="px-4 py-3 text-slate-300">{{ column.is_nullable || '-' }}</td>
+                            <td class="px-4 py-3 text-slate-300">{{ column.collation || '-' }}</td>
+                            <td class="px-4 py-3 text-slate-300">{{ column.unsigned ? 'UNSIGNED' : '-' }}</td>
+                            <td class="px-4 py-3 text-center text-slate-300">{{ column.is_nullable || '-' }}</td>
                             <td class="px-4 py-3 text-slate-300">{{ column.default_value ?? '-' }}</td>
+                            <td class="px-4 py-3 text-slate-300">{{ column.comment || '-' }}</td>
                             <td class="px-4 py-3 text-slate-300">{{ column.extra || '-' }}</td>
-                            <td class="px-4 py-3 text-slate-300">{{ column.key || '-' }}</td>
+
                         </tr>
                         <tr v-if="structureRows.length === 0">
-                            <td colspan="6" class="px-4 py-6 text-center text-slate-500">
+                            <td colspan="10" class="px-4 py-6 text-center text-slate-500">
                                 No structure information available.
                             </td>
                         </tr>
                     </tbody>
                 </table>
+                </div>
             </div>
         </template>
 
@@ -753,8 +905,8 @@ watch(
                     </div>
                 </div>
 
-                <div class="overflow-hidden rounded-2xl border border-slate-800 bg-[#0b1220]">
-                    <div class="overflow-x-auto" style="max-height: calc(100vh - 390px); overflow-y: auto;">
+                <div class=" rounded-2xl border border-slate-800 bg-[#0b1220]">
+                    <div >
                         <table class="min-w-full border-collapse text-left text-sm">
                             <thead class="sticky top-0 z-10 bg-[#111a2d] text-xs tracking-[0.16em] text-slate-400">
                                 <tr>
@@ -768,7 +920,21 @@ watch(
                                         >
                                     </th>
                                     <th v-for="column in selectedTableColumns" :key="column.name" class="min-w-[120px] px-4 py-3">
-                                        {{ column.name }}
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1 text-left font-semibold uppercase tracking-[0.14em] text-slate-400 transition hover:text-slate-100"
+                                            @click="handleColumnSort(column.name)"
+                                        >
+                                            <span>{{ column.name }}</span>
+                                            <i
+                                                v-if="isSortedColumn(column.name)"
+                                                :class="[
+                                                    'bi text-[10px]',
+                                                    normalizedSortDirection === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down',
+                                                ]"
+                                            ></i>
+                                            <i v-else class="bi bi-arrow-down-up text-[10px] text-slate-600"></i>
+                                        </button>
                                     </th>
                                 </tr>
                             </thead>

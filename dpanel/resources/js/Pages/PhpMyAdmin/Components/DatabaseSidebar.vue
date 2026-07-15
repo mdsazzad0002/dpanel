@@ -217,7 +217,13 @@ onBeforeUnmount(() => {
                                 >
                                     <i class="bi bi-table text-xs text-slate-500"></i>
                                     <span class="truncate">{{ table.name }}</span>
-                                    <i class="bi bi-three-dots-vertical ml-auto text-[10px] text-slate-500 opacity-0 transition-opacity group-hover:opacity-100"></i>
+                                    <span
+                                        v-if="Number.isFinite(Number(table?.estimated_rows ?? 0))"
+                                        class="ml-auto rounded-full border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] font-medium text-slate-400"
+                                    >
+                                        ~{{ Number(table?.estimated_rows ?? 0).toLocaleString() }}
+                                    </span>
+                                    <i class="bi bi-three-dots-vertical text-[10px] text-slate-500 opacity-0 transition-opacity group-hover:opacity-100"></i>
                                 </button>
 
                                 <div v-if="filteredTables(database).length === 0 && tableFilterText(database)" class="px-2 py-2 text-xs text-slate-500">

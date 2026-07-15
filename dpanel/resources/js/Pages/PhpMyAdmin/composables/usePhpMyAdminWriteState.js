@@ -8,6 +8,7 @@ export function usePhpMyAdminWriteState(readState, transport) {
     const dropInProgress = ref(false);
     const renameInProgress = ref(false);
     const createInProgress = ref(false);
+    const bulkTableMutationInProgress = ref(false);
 
     const patchTableRow = (original, draft, columns) => {
         const details = readState.tableDetails.value;
@@ -188,6 +189,85 @@ export function usePhpMyAdminWriteState(readState, transport) {
         }
     };
 
+    const handleBulkTableAction = async ({ action, tables } = {}) => {
+        const database = readState.selectedDatabase.value;
+        const selectedTables = Array.isArray(tables)
+            ? tables
+                .map((table) => String(table?.name || table || '').trim())
+                .filter(Boolean)
+            : [];
+
+        if (!database || selectedTables.length === 0) return;
+
+        if (action === 'browse' || action === 'structure') {
+            const targetTable = selectedTables[0];
+            readState.activeTableAction.value = action;
+            await readState.loadTable(database, targetTable, {
+                page: 1,
+                perPage: readState.perPage.value,
+                action,
+            });
+            readState.setDatabaseExpanded(database, true);
+            if (selectedTables.length > 1) {
+                transport.pushToast(`Opened ${targetTable}.`);
+            }
+            return;
+        }
+
+        if (action !== 'empty' && action !== 'drop') {
+            return;
+        }
+
+        if (bulkTableMutationInProgress.value) {
+            return;
+        }
+
+        const confirmLabel = action === 'empty' ? 'empty' : 'drop';
+        if (typeof window !== 'undefined' && !window.confirm(`${confirmLabel === 'empty' ? 'Empty' : 'Drop'} ${selectedTables.length} selected table(s) from ${database}?`)) {
+            return;
+        }
+
+        bulkTableMutationInProgress.value = true;
+
+        try {
+            const routeName = action === 'empty' ? 'phpmyadmin.table.empty' : 'phpmyadmin.table.destroy';
+            const method = action === 'empty' ? 'POST' : 'DELETE';
+
+            for (const table of selectedTables) {
+                const { response, data } = await transport.requestJson(routeName, {
+                    database,
+                    table,
+                }, {
+                    method,
+                    headers: {
+                        'X-CSRF-TOKEN': transport.csrfToken.value,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+
+                if (!response.ok || !data?.ok) {
+                    throw new Error(data?.message || `Failed to ${confirmLabel} table ${table}.`);
+                }
+            }
+
+            transport.pushToast(`${selectedTables.length} table(s) ${action === 'empty' ? 'emptied' : 'dropped'} successfully.`, 'success');
+            readState.selectedTable.value = '';
+            readState.tableDetails.value = null;
+            readState.activeTableAction.value = 'structure';
+            await readState.loadDatabase(database, {
+                page: 1,
+                perPage: readState.perPage.value,
+                loadRows: false,
+                selectDatabase: true,
+            });
+            readState.setDatabaseExpanded(database, true);
+        } catch (error) {
+            transport.pushToast(error?.message || `Failed to ${confirmLabel} selected tables.`, 'error');
+        } finally {
+            bulkTableMutationInProgress.value = false;
+        }
+    };
+
     const handleInsertSubmit = async ({ rows }) => {
         if (!readState.selectedDatabase.value || !readState.selectedTable.value) return;
 
@@ -355,6 +435,7 @@ export function usePhpMyAdminWriteState(readState, transport) {
         handleRowSave,
         handleRowDelete,
         handleBulkDelete,
+        handleBulkTableAction,
         handleInsertSubmit,
         handleTableRename,
         handleTableCreate,

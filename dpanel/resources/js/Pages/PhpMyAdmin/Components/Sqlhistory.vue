@@ -15,7 +15,7 @@ const props = defineProps({
 const emit = defineEmits(['use-entry']);
 
 const HISTORY_HEIGHT_KEY = 'serverpanel-phpmyadmin-sql-history-height';
-const HISTORY_MIN = 12;
+const HISTORY_MIN = 0;
 const HISTORY_MAX = 200;
 const HISTORY_DEFAULT = 0;
 const HISTORY_OPEN = 200;
@@ -116,7 +116,7 @@ onBeforeUnmount(() => {
             <div class="relative border-b border-slate-200 px-0  dark:border-slate-800">
                 <button
                     type="button"
-                    class="absolute -top-4 right-0 inline-flex items-center gap-1 border border-slate-300 bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    class="absolute -top-5 right-0 inline-flex items-center gap-1 border border-slate-300 bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                     @click="toggleHistory"
                 >
                     <i class="bi bi-terminal text-[11px]"></i>
@@ -129,20 +129,20 @@ onBeforeUnmount(() => {
                 >
                     <span class="h-1 w-12 rounded-full bg-slate-300 dark:bg-slate-600"></span>
                 </div>
-               
-              
+
+
             </div>
 
             <div v-show="historyHeight > 0" class="absolute h-[calc(100%-1rem)] left-0 right-0 top-[1rem] w-full  overflow-auto px-3 pt-0 pb-3">
             <button v-for="entry in historyEntries" :key="`${entry.created_at}-${entry.sql}`" type="button" class="w-full   bg-slate-50  text-left border-b  border-slate-700 text-slate-700 transition hover:border-cyan-300 hover:bg-cyan-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-700 dark:hover:bg-slate-900" @click="handleUseEntry(entry)">
-                
+
                 <div class="flex items-center justify-between ">
                     <span class="truncate font-medium">{{ entry.label }} ( <span class="truncate">{{ entry.database || 'global' }}</span>)</span>
                     <span class="shrink-0  bg-cyan-100  text-[10px] font-semibold uppercase text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300">
                         {{ entry.mode }} ( <span v-if="entry.duration_ms !== null">{{ entry.duration_ms }} ms</span>)
                     </span>
                 </div>
-              
+
             </button>
 
             <div
