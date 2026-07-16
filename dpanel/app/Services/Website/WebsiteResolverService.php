@@ -3,12 +3,13 @@
 namespace App\Services\Website;
 
 use App\Models\User;
+use App\Services\PathService;
 
 class WebsiteResolverService
 {
     public function __construct(
         private readonly WebsiteAccessService $access,
-        private readonly WebsitePathService $paths,
+        private readonly PathService $paths,
     ) {
     }
 

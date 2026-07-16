@@ -7,9 +7,6 @@ use App\Models\Website;
 use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\User;
-use App\Services\Website\WebsiteCreateEditService;
-use App\Services\Website\WebsiteTemplateCatalogService;
-use App\Services\Website\WebsiteResolverService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -24,6 +21,15 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use ZipArchive;
+
+// Service Quick Use
+use App\Services\Website\WebsiteCreateEditService;
+use App\Services\Website\WebsiteTemplateCatalogService;
+use App\Services\Website\WebsiteResolverService;
+
+use App\Services\Php\PhpService;
+use App\Services\PathService;
+
 
 class WebsiteController extends Controller
 {
@@ -67,12 +73,12 @@ class WebsiteController extends Controller
     public function create(): Response
     {
         return Inertia::render('Websites/Create', [
-            'serverBaseDir' => $this->websiteBaseDirectory(),
-            'phpVersions' => $this->getPhpVersionsForWebsites(),
-            'defaultPhpVersion' => $this->getDefaultWebsitePhpVersion('starter'),
-            'wordpressVersions' => $this->getWordPressVersionOptions(),
-        ]);
+           'serverBaseDir' => PathService::websiteBaseDirectory(),
+            'phpVersions' => PhpService::getPhpVersions()]
+        );
     }
+
+
 
     public function searchParentDomains(Request $request): JsonResponse
     {

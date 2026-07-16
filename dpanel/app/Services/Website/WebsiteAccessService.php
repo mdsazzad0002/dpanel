@@ -24,6 +24,8 @@ class WebsiteAccessService
         return $normalized;
     }
 
+
+    
     public function actorCanAccessWebsite(array $website, ?User $actor = null): bool
     {
         if ($actor === null) {

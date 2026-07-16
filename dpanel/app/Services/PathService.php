@@ -1,11 +1,39 @@
 <?php
 
-namespace App\Services\Website;
+namespace App\Services;
 
-class WebsitePathService
+class PathService
 {
     private const HOME_BASE = '/home';
     private const DEFAULT_SITE_DIR = 'public_html';
+
+
+
+
+    public static function websiteBaseDirectory(): string
+    {
+        $configured = trim((string) config('app.server_base_dir', ''));
+        if ($configured !== '') {
+            return rtrim(self::normalizeAbsolutePath($configured), '/');
+        }
+        return self::HOME_BASE;
+    }
+
+
+
+
+    // Helper functions
+    private static function normalizeAbsolutePath(string $path): string
+    {
+        return trim(str_replace('\\', '/', $path));
+    }
+
+
+
+    
+
+
+
 
     public function normalizeDomain(string $domain): string
     {
@@ -56,15 +84,6 @@ class WebsitePathService
         return 'latest';
     }
 
-    public function websiteBaseDirectory(): string
-    {
-        $configured = trim((string) config('app.server_base_dir', ''));
-        if ($configured !== '') {
-            return rtrim($this->normalizeAbsolutePath($configured), '/');
-        }
-
-        return self::HOME_BASE;
-    }
 
     /**
      * @return array{site_owner: string, site_dir: string, root_path: string, project_root: string}
@@ -172,10 +191,7 @@ class WebsitePathService
         return $this->normalizeSiteOwner((string) ($parts[0] ?? ''), 'site_default');
     }
 
-    public function normalizeAbsolutePath(string $path): string
-    {
-        return trim(str_replace('\\', '/', $path));
-    }
+
 
     public function pathStartsWith(string $path, string $prefix): bool
     {

@@ -1,5 +1,5 @@
 <?php
-use App\Http\Controllers\Website\WebsiteAdminController;
+use App\Http\Controllers\Website\WebsiteController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
 use App\Http\Controllers\Website\WordpressController;
@@ -7,25 +7,28 @@ use App\Http\Controllers\CronJobController;
 use App\Http\Controllers\RedisCacheController;
 use Illuminate\Support\Facades\Route;
 
-    Route::get('/websites/create', [WebsiteAdminController::class, 'create'])
+    Route::get('/websites/create', [WebsiteController::class, 'create'])
         ->middleware('role:admin|reseller')
         ->name('websites.create');
-    Route::post('/websites', [WebsiteAdminController::class, 'store'])
+
+    Route::post('/websites', [WebsiteController::class, 'store'])
         ->middleware('role:admin|reseller')
         ->name('websites.store');
-    Route::get('/websites/parent-domains/search', [WebsiteAdminController::class, 'searchParentDomains'])
+
+    Route::get('/websites/parent-domains/search', [WebsiteController::class, 'searchParentDomains'])
         ->middleware('role:admin|reseller')
         ->name('websites.parent-domains.search');
-    Route::get('/websites/{id}/edit', [WebsiteAdminController::class, 'edit'])
+
+    Route::get('/websites/{id}/edit', [WebsiteController::class, 'edit'])
         ->middleware('role:admin|reseller')
         ->name('websites.edit');
-    Route::patch('/websites/{id}', [WebsiteAdminController::class, 'update'])
+    Route::patch('/websites/{id}', [WebsiteController::class, 'update'])
         ->middleware('role:admin|reseller')
         ->name('websites.update');
-    Route::delete('/websites/{id}', [WebsiteAdminController::class, 'destroy'])
+    Route::delete('/websites/{id}', [WebsiteController::class, 'destroy'])
         ->middleware('role:admin|reseller')
         ->name('websites.destroy');
-    Route::patch('/websites/{id}/status', [WebsiteAdminController::class, 'updateStatus'])
+    Route::patch('/websites/{id}/status', [WebsiteController::class, 'updateStatus'])
         ->middleware('role:admin|reseller')
         ->name('websites.status.update');
     Route::get('/websites/{id}/manage', [WebsiteOperationsController::class, 'manage'])
@@ -122,6 +125,6 @@ use Illuminate\Support\Facades\Route;
     Route::delete('/websites/{id}/filemanager/item', [WebsiteFileManagerController::class, 'deleteItem'])
         ->middleware('role:admin|reseller')
         ->name('websites.filemanager.item.delete');
-    Route::get('/websites/list', [WebsiteAdminController::class, 'index'])
+    Route::get('/websites/list', [WebsiteController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('websites.list');
