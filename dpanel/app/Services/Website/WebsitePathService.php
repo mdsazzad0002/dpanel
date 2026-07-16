@@ -6,30 +6,6 @@ class WebsitePathService
 {
     private const HOME_BASE = '/home';
     private const DEFAULT_SITE_DIR = 'public_html';
-    /**
-     * Common compound public suffixes for registrable-domain detection.
-     *
-     * @var array<int, string>
-     */
-    private const COMPOUND_PUBLIC_SUFFIXES = [
-        'com.bd',
-        'net.bd',
-        'org.bd',
-        'edu.bd',
-        'gov.bd',
-        'ac.bd',
-        'com.au',
-        'net.au',
-        'org.au',
-        'co.uk',
-        'org.uk',
-        'gov.uk',
-        'ac.uk',
-        'co.jp',
-        'com.sg',
-        'com.my',
-        'co.nz',
-    ];
 
     public function normalizeDomain(string $domain): string
     {
@@ -147,7 +123,7 @@ class WebsitePathService
         $suffixParts = 1;
         if ($count >= 3) {
             $lastTwo = strtolower($labels[$count - 2].'.'.$labels[$count - 1]);
-            if (in_array($lastTwo, self::COMPOUND_PUBLIC_SUFFIXES, true)) {
+            if (in_array($lastTwo, (array) config('serverpanel.compound_public_suffixes', []), true)) {
                 $suffixParts = 2;
             }
         }

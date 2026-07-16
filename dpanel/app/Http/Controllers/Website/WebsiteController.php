@@ -7,7 +7,7 @@ use App\Models\Website;
 use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\User;
-use App\Services\Website\WebsiteLifecycleService;
+use App\Services\Website\WebsiteCreateEditService;
 use App\Services\Website\WebsiteTemplateCatalogService;
 use App\Services\Website\WebsiteResolverService;
 use Carbon\Carbon;
@@ -24,14 +24,13 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use ZipArchive;
-use App\Http\Controllers\PhpManagementController;
 
 class WebsiteController extends Controller
 {
     public function __construct(
         protected WebsiteResolverService $websiteResolver,
         protected WebsiteTemplateCatalogService $templateCatalog,
-        protected WebsiteLifecycleService $websiteLifecycle,
+        protected WebsiteCreateEditService $websiteCreateEdit,
     ) {
     }
 
@@ -52,30 +51,6 @@ class WebsiteController extends Controller
      * @var array<int, string>
      */
     private const FALLBACK_PHP_VERSIONS = ['8.0', '7.4'];
-    /**
-     * Common compound public suffixes for registrable-domain detection.
-     *
-     * @var array<int, string>
-     */
-    private const COMPOUND_PUBLIC_SUFFIXES = [
-        'com.bd',
-        'net.bd',
-        'org.bd',
-        'edu.bd',
-        'gov.bd',
-        'ac.bd',
-        'com.au',
-        'net.au',
-        'org.au',
-        'co.uk',
-        'org.uk',
-        'gov.uk',
-        'ac.uk',
-        'co.jp',
-        'com.sg',
-        'com.my',
-        'co.nz',
-    ];
 
     public function __call(string $method, array $parameters): mixed
     {
@@ -155,54 +130,9 @@ class WebsiteController extends Controller
      * Create a website command request.
      * Command execution is intentionally commented out.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): RedirectResponse|JsonResponse
     {
-        $validated = $this->validatePayload($request);
-        $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? 'none')));
-        $validated['wordpress_version'] = $this->normalizeWordPressVersion((string) ($validated['wordpress_version'] ?? 'latest'));
-        $validated['php_version'] = PhpManagementController::normalizePhpVersionSelection((string) ($validated['php_version'] ?? ''), []);
-        $validated['start_directory'] = $this->normalizeStartDirectoryAlias((string) ($validated['start_directory'] ?? 'public'));
-        $validated['domain'] = $this->normalizeDomain($validated['domain']);
-        $domainExists = collect($this->readRequests())
-            ->contains(fn (array $item): bool => $this->normalizeDomain((string) ($item['domain'] ?? '')) === $validated['domain']);
-        if ($domainExists) {
-            return back()->withErrors(['domain' => 'This domain already exists.']);
-        }
-        $validated['root_path'] = $this->normalizeRootPath((string) ($validated['root_path'] ?? ''), $validated['domain']);
-        $validated['project_root'] = $this->deriveProjectRootPath($validated['root_path'], $validated['domain']);
-        $validated['site_owner'] = $this->extractSiteOwnerFromRootPath($validated['project_root']);
-
-        $validated['enable_ssl'] = (bool) ($validated['enable_ssl'] ?? false);
-        return $this->websiteLifecycle->storeWebsite($request, $validated, [
-            'buildCommand' => fn (array $payload): string => $this->buildCommand($payload),
-            'applyWebsiteFilesystemIsolation' => function (string $siteOwner, string $projectRoot, string $rootPath): void {
-                $this->applyWebsiteFilesystemIsolation($siteOwner, $projectRoot, $rootPath);
-            },
-            'ensureWebsiteFoldersExist' => function (Request $request, string $rootPath, string $projectRoot, string $context): RedirectResponse|JsonResponse|null {
-                return $this->ensureWebsiteFoldersExist($request, $rootPath, $projectRoot, $context);
-            },
-            'installSelectedApplication' => fn (string $installer, string $rootPath, string $domain, string $phpVersion, string $wordpressVersion = 'latest'): array => $this->installSelectedApplication($installer, $rootPath, $domain, $phpVersion, $wordpressVersion),
-            'initializeWebsiteStarterFiles' => function (string $rootPath, string $domain, ?string $phpVersion = null): void {
-                $this->initializeWebsiteStarterFiles($rootPath, $domain, $phpVersion);
-            },
-            'relocateApacheDefaultPage' => function (): void {
-                $this->relocateApacheDefaultPage();
-            },
-            'syncLiveWebVhost' => function (string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null): void {
-                $this->syncLiveWebVhost($domain, $rootPath, $phpVersion, $oldDomain);
-            },
-            'runIssueSslScript' => fn (string $domain, string $rootPath, bool $includeWwwAlias): array => $this->runIssueSslScript($domain, $rootPath, $includeWwwAlias),
-            'shouldAddWwwAlias' => fn (string $domain): bool => $this->shouldAddWwwAlias($domain),
-            'readRequests' => fn (): array => $this->readRequests(),
-            'writeRequests' => function (array $requests): void {
-                $this->writeRequests($requests);
-            },
-            'detectRuntimeStatus' => fn (array $website): string => $this->detectRuntimeStatus($website),
-            'defaultResellerId' => function () use ($request): ?int {
-                $actor = $request->user();
-                return $actor && $actor->hasRole('reseller') ? (int) $actor->id : null;
-            },
-        ]);
+        return $this->websiteCreateEdit->store($request, $this->websiteMutationDeps($request));
     }
 
     /**
@@ -606,35 +536,15 @@ class WebsiteController extends Controller
      */
     public function update(Request $request, string $token, string $id): RedirectResponse|JsonResponse
     {
-        $existingRequest = $this->findAuthorizedWebsiteOrFail($id);
+        return $this->websiteCreateEdit->update($request, $id, $this->websiteMutationDeps($request));
+    }
 
-        $validated = $this->validatePayload($request);
-
-        $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? ($existingRequest['app_installer'] ?? 'none'))));
-        if ($validated['app_installer'] === 'starter') {
-            $validated['app_installer'] = 'none';
-        }
-        $validated['wordpress_version'] = $this->normalizeWordPressVersion((string) ($validated['wordpress_version'] ?? ($existingRequest['wordpress_version'] ?? 'latest')));
-        $validated['php_version'] = PhpManagementController::normalizePhpVersionSelection((string) ($validated['php_version'] ?? ''), []);
-        $validated['start_directory'] = $this->normalizeStartDirectoryAlias((string) ($validated['start_directory'] ?? ''));
-        $validated['domain'] = $this->normalizeDomain($validated['domain']);
-        $domainExists = collect($this->readRequests())
-            ->contains(function (array $item) use ($id, $validated): bool {
-                if ((string) ($item['id'] ?? '') === $id) {
-                    return false;
-                }
-
-                return $this->normalizeDomain((string) ($item['domain'] ?? '')) === $validated['domain'];
-            });
-        if ($domainExists) {
-            return back()->withErrors(['domain' => 'This domain already exists.']);
-        }
-
-        $validated['root_path'] = $this->normalizeRootPath((string) ($validated['root_path'] ?? ''), $validated['domain']);
-        $validated['project_root'] = $this->deriveProjectRootPath($validated['root_path'], $validated['domain']);
-        $validated['site_owner'] = $this->extractSiteOwnerFromRootPath($validated['project_root']);
-        $validated['enable_ssl'] = (bool) ($validated['enable_ssl'] ?? false);
-        return $this->websiteLifecycle->updateWebsite($request, $id, $validated, $existingRequest, [
+    /**
+     * @return array<string, callable>
+     */
+    protected function websiteMutationDeps(Request $request): array
+    {
+        return [
             'buildCommand' => fn (array $payload): string => $this->buildCommand($payload),
             'applyWebsiteFilesystemIsolation' => function (string $siteOwner, string $projectRoot, string $rootPath): void {
                 $this->applyWebsiteFilesystemIsolation($siteOwner, $projectRoot, $rootPath);
@@ -659,8 +569,12 @@ class WebsiteController extends Controller
                 $this->writeRequests($requests);
             },
             'detectRuntimeStatus' => fn (array $website): string => $this->detectRuntimeStatus($website),
+            'defaultResellerId' => function () use ($request): ?int {
+                $actor = $request->user();
+                return $actor && $actor->hasRole('reseller') ? (int) $actor->id : null;
+            },
             'websiteModelToArray' => fn (Website $website): array => $this->websiteModelToArray($website),
-        ]);
+        ];
     }
 
     /**
@@ -1322,40 +1236,6 @@ class WebsiteController extends Controller
             escapeshellarg((string) $payload['php_version']),
             ! empty($payload['enable_ssl']) ? ' --ssl' : '',
         );
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    protected function validatePayload(Request $request): array
-    {
-        return $request->validate([
-            'domain' => [
-                'required',
-                'string',
-                'max:255',
-                'regex:/^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/',
-            ],
-            'root_path' => [
-                'nullable',
-                'string',
-                'max:255',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    if (! is_string($value) || trim($value) === '') {
-                        return;
-                    }
-
-                    if (! $this->isValidWebsiteRootPath($value)) {
-                        $fail("The {$attribute} must be inside ".$this->websiteBaseDirectory().' and follow <base>/<owner>/<site_dir>.');
-                    }
-                },
-            ],
-            'start_directory' => ['nullable', 'string', 'max:255'],
-            'php_version' => ['required', 'string', 'max:10'],
-            'app_installer' => ['nullable', 'string', 'in:none,starter,wordpress'],
-            'wordpress_version' => ['nullable', 'string', 'max:20', 'regex:/^(latest|\\d+\\.\\d+(?:\\.\\d+)?)$/i'],
-            'enable_ssl' => ['boolean'],
-        ]);
     }
 
     protected function normalizeStartDirectoryAlias(string $value): string

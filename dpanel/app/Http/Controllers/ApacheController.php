@@ -14,30 +14,6 @@ class ApacheController extends Controller
 {
     private const DEFAULT_APACHE_BACKEND_PORT = 8080;
     private const DEFAULT_NGINX_PRIMARY_PORT = 80;
-    /**
-     * Common compound public suffixes for registrable-domain detection.
-     *
-     * @var array<int, string>
-     */
-    private const COMPOUND_PUBLIC_SUFFIXES = [
-        'com.bd',
-        'net.bd',
-        'org.bd',
-        'edu.bd',
-        'gov.bd',
-        'ac.bd',
-        'com.au',
-        'net.au',
-        'org.au',
-        'co.uk',
-        'org.uk',
-        'gov.uk',
-        'ac.uk',
-        'co.jp',
-        'com.sg',
-        'com.my',
-        'co.nz',
-    ];
 
     public function index(Request $request): Response
     {
@@ -770,7 +746,7 @@ CONF;
         $suffixParts = 1;
         if ($count >= 3) {
             $lastTwo = strtolower($labels[$count - 2].'.'.$labels[$count - 1]);
-            if (in_array($lastTwo, self::COMPOUND_PUBLIC_SUFFIXES, true)) {
+            if (in_array($lastTwo, (array) config('serverpanel.compound_public_suffixes', []), true)) {
                 $suffixParts = 2;
             }
         }
