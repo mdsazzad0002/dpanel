@@ -19,12 +19,16 @@ class Website extends Model
     protected $fillable = [
         'id',
         'domain',
+        'start_directory',
         'root_path',
+        'project_root',
         'site_owner',
         'php_version',
         'app_installer',
         'wordpress_version',
+        'wordpress_db_prefix',
         'enable_ssl',
+        'filemanager_show_hidden',
         'assigned_user_id',
         'assigned_reseller_id',
         'command',
@@ -33,6 +37,7 @@ class Website extends Model
 
     protected $casts = [
         'enable_ssl' => 'boolean',
+        'filemanager_show_hidden' => 'boolean',
         'assigned_user_id' => 'integer',
         'assigned_reseller_id' => 'integer',
     ];

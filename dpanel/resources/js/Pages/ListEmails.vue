@@ -48,7 +48,10 @@ const deleteMailbox = (id) => {
                 {{ page.props.flash.error }}
             </div>
 
-            <div class="flex justify-end">
+            <div class="flex justify-end gap-2">
+                <Link :href="panelRoute('mail-plans.index')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                    Mail Plans
+                </Link>
                 <Link :href="panelRoute('emails.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Email
                 </Link>
@@ -79,6 +82,7 @@ const deleteMailbox = (id) => {
                         <tr>
                             <th class="px-4 py-3">Attached Website</th>
                             <th class="px-4 py-3">Email</th>
+                            <th class="px-4 py-3">Plan</th>
                             <th class="px-4 py-3">Quota</th>
                             <th class="px-4 py-3">Status</th>
                             <th class="px-4 py-3">Created</th>
@@ -90,6 +94,12 @@ const deleteMailbox = (id) => {
                             <td class="px-4 py-3">{{ item.domain || '-' }}</td>
                             <td class="px-4 py-3 font-medium">
                                 <p>{{ item.email }}</p>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span v-if="item.plan" class="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">
+                                    {{ item.plan.name }}
+                                </span>
+                                <span v-else class="text-xs text-slate-400">No plan</span>
                             </td>
                             <td class="px-4 py-3">{{ item.quota_mb }} MB</td>
                             <td class="px-4 py-3">
@@ -128,7 +138,7 @@ const deleteMailbox = (id) => {
                             </td>
                         </tr>
                         <tr v-if="mailboxes.length === 0">
-                            <td colspan="6" class="px-4 py-6 text-center text-slate-500">No mailbox found.</td>
+                            <td colspan="7" class="px-4 py-6 text-center text-slate-500">No mailbox found.</td>
                         </tr>
                     </tbody>
                 </table>

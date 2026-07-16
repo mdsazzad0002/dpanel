@@ -12,6 +12,10 @@ const props = defineProps({
         type: Array,
         default: () => ['latest', '8.0', '7.4'],
     },
+    defaultPhpVersion: {
+        type: String,
+        default: 'latest',
+    },
     wordpressVersions: {
         type: Array,
         default: () => ['latest'],
@@ -23,8 +27,9 @@ const form = useForm({
     domain: '',
     subdomain_prefix: '',
     parent_domain: '',
+    start_directory: 'public',
     root_path: '',
-    php_version: '',
+    php_version: props.defaultPhpVersion || '',
     app_installer: 'none',
     wordpress_version: 'latest',
     enable_ssl: true,
@@ -63,58 +68,11 @@ const sanitizeDir = (value, fallback = 'public_html') => {
     return dir ? dir.slice(0, 64) : fallback;
 };
 
-const compoundPublicSuffixes = new Set([
-    'com.bd',
-    'net.bd',
-    'org.bd',
-    'edu.bd',
-    'gov.bd',
-    'ac.bd',
-    'com.au',
-    'net.au',
-    'org.au',
-    'co.uk',
-    'org.uk',
-    'gov.uk',
-    'ac.uk',
-    'co.jp',
-    'com.sg',
-    'com.my',
-    'co.nz',
-]);
-
-const splitDomainParts = (labels) => {
-    if (labels.length < 2) return { registrable: labels, sub: [] };
-
-    let suffixParts = 1;
-    if (labels.length >= 3) {
-        const lastTwo = `${labels[labels.length - 2]}.${labels[labels.length - 1]}`.toLowerCase();
-        if (compoundPublicSuffixes.has(lastTwo)) suffixParts = 2;
-    }
-
-    const registrableLength = Math.min(labels.length, suffixParts + 1);
-    return {
-        registrable: labels.slice(-registrableLength),
-        sub: labels.slice(0, -registrableLength),
-    };
-};
-
 const deriveOwnerFromDomain = (domain) => {
-    const labels = domain.split('.').map((label) => label.trim()).filter(Boolean);
-    if (labels.length < 2) return '';
+    const normalized = String(domain || '').trim().toLowerCase();
+    if (!normalized) return '';
 
-    const { registrable } = splitDomainParts(labels);
-    const ownerSeed = registrable.length <= 2 ? (registrable[0] || labels[0]) : registrable.join('_');
-    return sanitizeOwner(ownerSeed);
-};
-
-const deriveAddonDirectory = (domain) => {
-    const labels = domain.split('.').map((label) => label.trim()).filter(Boolean);
-    if (labels.length < 2) return 'public_html';
-
-    const { registrable } = splitDomainParts(labels);
-    const addonSeed = registrable.length <= 2 ? (registrable[0] || labels[0]) : registrable.join('_');
-    return sanitizeDir(addonSeed);
+    return sanitizeOwner(normalized);
 };
 
 const finalDomain = computed(() => {
@@ -138,14 +96,8 @@ const deriveRootPath = () => {
 
     if (form.domain_type === 'subdomain') {
         const parentOwner = deriveOwnerFromDomain(normalizedParentDomain.value) || domainOwner;
-        const subDir = sanitizeDir(normalizedSubdomainPrefix.value || 'subdomain', 'subdomain');
-        return `${normalizedBaseDir.value}/${parentOwner}/${subDir}`;
-    }
-
-    if (form.domain_type === 'addon') {
-        const parentOwner = deriveOwnerFromDomain(normalizedParentDomain.value) || domainOwner;
-        const addonDir = deriveAddonDirectory(domain);
-        return `${normalizedBaseDir.value}/${parentOwner}/${addonDir}`;
+        const subDir = normalizedSubdomainPrefix.value || 'subdomain';
+        return `${normalizedBaseDir.value}/${parentOwner}/public_html/${sanitizeDir(subDir, 'subdomain')}`;
     }
 
     return `${normalizedBaseDir.value}/${domainOwner}/public_html`;
@@ -208,7 +160,9 @@ watch(
     availablePhpVersions,
     (versions) => {
         if (!form.php_version || !versions.includes(form.php_version)) {
-            form.php_version = versions[0];
+            form.php_version = props.defaultPhpVersion && versions.includes(props.defaultPhpVersion)
+                ? props.defaultPhpVersion
+                : versions[0];
         }
     },
     { immediate: true },
@@ -298,6 +252,13 @@ onBeforeUnmount(() => {
                 </Link>
             </div>
 
+            <div v-if="form.errors.error" class="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400">
+                <svg viewBox="0 0 24 24" class="mt-0.5 h-5 w-5 shrink-0 fill-current">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                </svg>
+                <span>{{ form.errors.error }}</span>
+            </div>
+
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-2 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div>
                     <label class="mb-1 block text-sm">Domain Type</label>
@@ -360,7 +321,19 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm">Root Path</label>
+                    <label class="mb-1 block text-sm">Start Directory Alias</label>
+                    <input
+                        v-model="form.start_directory"
+                        type="text"
+                        placeholder="public"
+                        class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                    />
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Stored as metadata only. It does not change the actual website path.
+                    </p>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Resolved Root Path</label>
                     <input :value="suggestedRootPath || `${normalizedBaseDir}/<auto>/public_html`" readonly type="text" class="w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.root_path" class="mt-1 text-xs text-red-600">{{ form.errors.root_path }}</p>
                 </div>

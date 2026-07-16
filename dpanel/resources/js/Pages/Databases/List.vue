@@ -12,16 +12,60 @@ const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
 
-defineProps({
+const props = defineProps({
     databaseRequests: {
         type: Array,
         default: () => [],
     },
+    websiteOptions: {
+        type: Array,
+        default: () => [],
+    },
+    userOptions: {
+        type: Array,
+        default: () => [],
+    },
+    filters: {
+        type: Object,
+        default: () => ({}),
+    },
 });
+
+const selectedWebsite = ref(String(props.filters?.website || ''));
+const selectedUser = ref(String(props.filters?.user || ''));
 
 const formatDate = (value) => {
     if (!value) return '-';
     return new Date(value).toLocaleString();
+};
+
+const applyFilters = () => {
+    const query = {};
+
+    if (selectedWebsite.value.trim() !== '') {
+        query.website = selectedWebsite.value.trim();
+    }
+
+    if (selectedUser.value.trim() !== '') {
+        query.user = selectedUser.value.trim();
+    }
+
+    router.get(panelRoute('databases.list'), query, {
+        preserveScroll: true,
+        preserveState: false,
+        replace: true,
+    });
+};
+
+const clearFilters = () => {
+    selectedWebsite.value = '';
+    selectedUser.value = '';
+
+    router.get(panelRoute('databases.list'), {}, {
+        preserveScroll: true,
+        preserveState: false,
+        replace: true,
+    });
 };
 
 
@@ -82,6 +126,44 @@ const openAllDatabaseStudio = () => {
                 <Link :href="panelRoute('databases.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Database
                 </Link>
+            </div>
+
+            <div class="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto_auto] md:items-end">
+                <div>
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Website</label>
+                    <select v-model="selectedWebsite" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                        <option value="">All websites</option>
+                        <option v-for="website in props.websiteOptions" :key="website" :value="website">
+                            {{ website }}
+                        </option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">User</label>
+                    <select v-model="selectedUser" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                        <option value="">All users</option>
+                        <option v-for="user in props.userOptions" :key="user.value" :value="user.value">
+                            {{ user.label }}
+                        </option>
+                    </select>
+                </div>
+
+                <button
+                    type="button"
+                    class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                    @click="clearFilters"
+                >
+                    Clear
+                </button>
+
+                <button
+                    type="button"
+                    class="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                    @click="applyFilters"
+                >
+                    Apply Filters
+                </button>
             </div>
 
             <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
@@ -147,8 +229,8 @@ const openAllDatabaseStudio = () => {
                                 </div>
                             </td>
                         </tr>
-                        <tr v-if="databaseRequests.length === 0">
-                            <td colspan="11" class="px-4 py-6 text-center text-slate-500">No database requests found.</td>
+                        <tr v-if="props.databaseRequests.length === 0">
+                            <td colspan="7" class="px-4 py-6 text-center text-slate-500">No database requests found.</td>
                         </tr>
                     </tbody>
                 </table>

@@ -38,6 +38,10 @@ class DatabaseRequest extends Model
             return $query->whereRaw('1 = 0');
         }
 
+        if ($actor->hasRole('admin') || $actor->hasRole('reseller')) {
+            return $query;
+        }
+
         return $query->where('assigned_user_id', $actor->id);
     }
 }

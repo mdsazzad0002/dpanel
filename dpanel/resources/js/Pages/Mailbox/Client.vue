@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import MailboxSidebar from './components/MailboxSidebar.vue';
 import MailboxThreadPanel from './components/MailboxThreadPanel.vue';
@@ -50,6 +50,10 @@ const props = defineProps({
         type: String,
         required: true,
     },
+    markReadEndpoint: {
+        type: String,
+        default: '',
+    },
     composeDefaults: {
         type: Object,
         default: () => ({
@@ -84,7 +88,20 @@ const theme = ref('light');
 const isDark = computed(() => theme.value === 'dark');
 const toasts = ref([]);
 let toastSeq = 0;
+const sidebarCollapsed = ref(false);
+const sidebarOpen = ref(false);
+
+const toggleSidebar = () => {
+    sidebarCollapsed.value = !sidebarCollapsed.value;
+};
+
+const toggleMobileSidebar = () => {
+    sidebarOpen.value = !sidebarOpen.value;
+};
 const defaultFolderNames = ['INBOX', 'Sent', 'Drafts', 'Spam', 'Trash', 'Outbox', 'All Mail'];
+
+const currentPage = ref(1);
+const perPage = ref(50);
 
 function normalizeFolderName(value) {
     return String(value || '').trim().toLowerCase();
@@ -145,7 +162,7 @@ function pushToast(message, type = 'error') {
 
 const filteredMessages = computed(() => {
     const needle = searchQuery.value.trim().toLowerCase();
-    return messages.value.filter((item) => {
+    const all = messages.value.filter((item) => {
         const haystack = `${item.subject || ''} ${item.from || ''} ${item.snippet || ''}`.toLowerCase();
         const matchesSearch = !needle || haystack.includes(needle);
         const isUnread = !item.seen;
@@ -154,7 +171,24 @@ const filteredMessages = computed(() => {
             || (messageFilter.value === 'read' && !isUnread);
         return matchesSearch && matchesFilter;
     });
+    const start = (currentPage.value - 1) * perPage.value;
+    return all.slice(start, start + perPage.value);
 });
+
+const totalFilteredMessages = computed(() => {
+    const needle = searchQuery.value.trim().toLowerCase();
+    return messages.value.filter((item) => {
+        const haystack = `${item.subject || ''} ${item.from || ''} ${item.snippet || ''}`.toLowerCase();
+        const matchesSearch = !needle || haystack.includes(needle);
+        const isUnread = !item.seen;
+        const matchesFilter = messageFilter.value === 'all'
+            || (messageFilter.value === 'unread' && isUnread)
+            || (messageFilter.value === 'read' && !isUnread);
+        return matchesSearch && matchesFilter;
+    }).length;
+});
+
+const totalPages = computed(() => Math.max(1, Math.ceil(totalFilteredMessages.value / perPage.value)));
 
 const currentMessage = computed(() => activeMessage.value || null);
 
@@ -436,6 +470,69 @@ const deleteMessage = async (uid) => {
     }
 };
 
+const replyToMessage = (message) => {
+    if (!message) return;
+    composeTo.value = message.from || '';
+    composeSubject.value = `Re: ${(message.subject || '').replace(/^Re:\s*/i, '')}`;
+    composeBody.value = '';
+    composeCc.value = '';
+    composeBcc.value = '';
+    showCc.value = false;
+    showBcc.value = false;
+    composeOpen.value = true;
+};
+
+const replyAllToMessage = (message) => {
+    if (!message) return;
+    composeTo.value = message.from || '';
+    composeSubject.value = `Re: ${(message.subject || '').replace(/^Re:\s*/i, '')}`;
+    composeBody.value = '';
+    composeCc.value = message.to || '';
+    composeBcc.value = '';
+    showCc.value = !!message.to;
+    showBcc.value = false;
+    composeOpen.value = true;
+};
+
+const forwardMessage = (message) => {
+    if (!message) return;
+    composeTo.value = '';
+    composeSubject.value = `Fwd: ${(message.subject || '').replace(/^Fwd:\s*/i, '')}`;
+    composeBody.value = `\n\n--- Forwarded message ---\nFrom: ${message.from || ''}\nDate: ${message.date || ''}\nSubject: ${message.subject || ''}\n\n${message.text || message.raw_body || ''}`;
+    composeCc.value = '';
+    composeBcc.value = '';
+    showCc.value = false;
+    showBcc.value = false;
+    composeOpen.value = true;
+};
+
+const toggleRead = async (message) => {
+    if (!message || !props.markReadEndpoint) return;
+
+    try {
+        await window.axios.post(
+            props.markReadEndpoint,
+            {
+                folder: activeFolder.value,
+                uid: message.uid,
+                seen: !message.seen,
+            },
+            { headers: { Accept: 'application/json' } },
+        );
+
+        const msg = messages.value.find((m) => m.uid === message.uid);
+        if (msg) msg.seen = !msg.seen;
+        if (activeMessage.value?.uid === message.uid) {
+            activeMessage.value = { ...activeMessage.value, seen: !message.seen };
+        }
+
+        pushToast(message.seen ? 'Marked as unread.' : 'Marked as read.', 'success');
+    }
+    catch (error) {
+        pushToast(error?.response?.data?.message || 'Could not update message status.');
+    }
+};
+
 onMounted(() => {
     const savedTheme = localStorage.getItem('serverpanel-theme');
     const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -444,61 +541,128 @@ onMounted(() => {
 
     loadMailbox(activeFolder.value);
 });
+
+watch(() => searchQuery.value, () => {
+    currentPage.value = 1;
+});
+
+watch(() => messageFilter.value, () => {
+    currentPage.value = 1;
+});
 </script>
 
 <template>
     <Head :title="`Mailbox - ${mailbox.email}`" />
 
     <div :class="isDark ? 'min-h-screen bg-slate-950 text-slate-100' : 'min-h-screen bg-[#f6f8fc] text-slate-900'">
-        <MailboxTopbar
-            :mailbox="mailbox"
-            :is-dark="isDark"
-            :search-query="searchQuery"
-            :active-filter-label="activeFilterLabel"
-            :filter-options="filterOptions"
-            :message-filter="messageFilter"
-            :filtered-message-count="filteredMessageCount"
-            :total-message-count="totalMessageCount"
-            :related-mailboxes="relatedMailboxesToShow"
-            :mailboxes-href="mailboxesHref"
-            :logout-href="logoutHref"
-            @refresh-inbox="refreshInbox"
-            @update:searchQuery="searchQuery = $event"
-            @set-message-filter="setMessageFilter"
-            @toggle-theme="toggleTheme"
-            @open-mailbox="openMailbox"
+        <!-- Mobile Sidebar Overlay -->
+        <div
+            v-if="sidebarOpen"
+            class="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm md:hidden"
+            @click="sidebarOpen = false"
         />
 
-        <div v-if="statusMessage" :class="isDark
-            ? 'mx-4 mt-4 rounded-2xl border border-emerald-900/40 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200 md:mx-6'
-            : 'mx-4 mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 md:mx-6'">
-            {{ statusMessage }}
-        </div>
-        <main class="grid lg:grid-cols-[280px_minmax(0,1fr)]">
-            <MailboxSidebar
-                :folders="compactFolders"
-                :active-folder="activeFolder"
-                :loading="loading"
-                :is-dark="isDark"
+        <!-- Fixed Sidebar -->
+        <MailboxSidebar
+            :folders="compactFolders"
+            :active-folder="activeFolder"
+            :loading="loading"
+            :is-dark="isDark"
+            :mailbox="mailbox"
+            :collapsed="sidebarCollapsed"
+            :mobile-open="sidebarOpen"
+            class="fixed inset-y-0 left-0 z-50"
+            @compose="startCompose"
+            @open-folder="openFolder"
+            @close-mobile="sidebarOpen = false"
+        />
+
+        <!-- Main Content Area -->
+        <div
+            :class="[
+                sidebarCollapsed ? 'md:ml-[72px]' : 'md:ml-[280px]',
+                'flex min-h-screen flex-col transition-all duration-300'
+            ]"
+        >
+            <MailboxTopbar
                 :mailbox="mailbox"
-                @compose="startCompose"
-                @open-folder="openFolder"
+                :is-dark="isDark"
+                :search-query="searchQuery"
+                :active-filter-label="activeFilterLabel"
+                :filter-options="filterOptions"
+                :message-filter="messageFilter"
+                :filtered-message-count="filteredMessageCount"
+                :total-message-count="totalMessageCount"
+                :related-mailboxes="relatedMailboxesToShow"
+                :mailboxes-href="mailboxesHref"
+                :logout-href="logoutHref"
+                :sidebar-collapsed="sidebarCollapsed"
+                @refresh-inbox="refreshInbox"
+                @update:searchQuery="searchQuery = $event"
+                @set-message-filter="setMessageFilter"
+                @toggle-theme="toggleTheme"
+                @open-mailbox="openMailbox"
+                @toggle-sidebar="toggleSidebar"
+                @toggle-mobile-sidebar="toggleMobileSidebar"
             />
 
-            <MailboxThreadPanel
-                :active-folder="activeFolder"
-                :filtered-messages="filteredMessages"
-                :current-message="currentMessage"
-                :loading="loading"
-                :deleting-uid="deletingUid"
-                :is-dark="isDark"
-                :has-search-query="hasSearchQuery"
-                @open-message="openMessage"
-                @close-preview="closePreview"
-                @start-compose="startCompose"
-                @delete-message="deleteMessage"
-            />
-        </main>
+            <div v-if="statusMessage" :class="isDark
+                ? 'mx-4 mt-4 rounded-2xl border border-emerald-900/40 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200 md:mx-6'
+                : 'mx-4 mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 md:mx-6'">
+                {{ statusMessage }}
+            </div>
+
+            <main class="flex-1 p-4 md:p-6">
+                <MailboxThreadPanel
+                    :active-folder="activeFolder"
+                    :filtered-messages="filteredMessages"
+                    :current-message="currentMessage"
+                    :loading="loading"
+                    :deleting-uid="deletingUid"
+                    :is-dark="isDark"
+                    :has-search-query="hasSearchQuery"
+                    @open-message="openMessage"
+                    @close-preview="closePreview"
+                    @start-compose="startCompose"
+                    @delete-message="deleteMessage"
+                    @reply="replyToMessage"
+                    @reply-all="replyAllToMessage"
+                    @forward="forwardMessage"
+                    @toggle-read="toggleRead"
+                />
+
+                <div v-if="totalPages > 1" :class="isDark ? 'mt-4 flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm' : 'mt-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm'">
+                    <div :class="isDark ? 'text-slate-400' : 'text-slate-500'">
+                        Page {{ currentPage }} of {{ totalPages }} ({{ totalFilteredMessages }} messages)
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            :disabled="currentPage <= 1"
+                            :class="isDark
+                                ? 'rounded-full border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-40'
+                                : 'rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40'"
+                            @click="currentPage--"
+                        >
+                            Previous
+                        </button>
+                        <span :class="isDark ? 'text-xs text-slate-500' : 'text-xs text-slate-400'">
+                            {{ currentPage }} / {{ totalPages }}
+                        </span>
+                        <button
+                            type="button"
+                            :disabled="currentPage >= totalPages"
+                            :class="isDark
+                                ? 'rounded-full border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-40'
+                                : 'rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40'"
+                            @click="currentPage++"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            </main>
+        </div>
 
         <div v-if="composeOpen" class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-3 backdrop-blur-sm sm:items-center sm:p-4">
             <div :class="isDark

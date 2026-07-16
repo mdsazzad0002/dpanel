@@ -21,6 +21,11 @@ return [
     'auto_run_safe_fixes' => (bool) env('SERVERPANEL_AUTO_RUN_SAFE_FIXES', false),
     'max_output_length' => (int) env('SERVERPANEL_MAX_OUTPUT_LENGTH', 120000),
     'report_base_path' => env('SERVERPANEL_REPORT_BASE_PATH', 'serverpanel/reports'),
+    'template_repository_dir' => env('SERVERPANEL_TEMPLATE_REPOSITORY_DIR', ''),
+    'website_php_defaults' => [
+        'starter' => env('SERVERPANEL_WEBSITE_PHP_DEFAULT_STARTER', 'latest'),
+        'wordpress' => env('SERVERPANEL_WEBSITE_PHP_DEFAULT_WORDPRESS', 'latest'),
+    ],
     'installer_search_paths' => array_values(array_filter(array_map('trim', explode(',', env('SERVERPANEL_INSTALLER_SEARCH_PATHS', implode(',', [
         base_path('discript'),
         '/var/www/panel/discript',

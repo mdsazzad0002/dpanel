@@ -5,25 +5,25 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
-use App\Http\Controllers\CronJobController;
+
 use App\Http\Controllers\DnsController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\PhpManagementController;
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\MonitoringController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpMyAdmin\PhpMyAdminController;
 use App\Http\Controllers\MailClientController;
+use App\Http\Controllers\MailPlanController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerPanelController;
 use App\Http\Controllers\ServerTaskController;
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\UserManagementController;
-use App\Http\Controllers\WebsiteController;
+
 use App\Models\PanelSession;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
@@ -108,6 +108,8 @@ Route::post('/telegram/webhook', [TelegramWebhookController::class, 'store'])
 Route::get('/telegram/webhook-url', [TelegramWebhookController::class, 'url'])
     ->name('telegram.webhook-url');
 
+
+
 Route::prefix('cpsess{token}')
     ->where(['token' => '[0-9a-fA-F]{64}'])
     ->middleware(['panel.session', 'auth'])
@@ -175,115 +177,6 @@ Route::prefix('cpsess{token}')
         ->middleware('role:admin|reseller')
         ->name('server-tasks.cancel');
 
-    Route::get('/websites/create', [WebsiteController::class, 'create'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.create');
-    Route::post('/websites', [WebsiteController::class, 'store'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.store');
-    Route::get('/websites/parent-domains/search', [WebsiteController::class, 'searchParentDomains'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.parent-domains.search');
-    Route::get('/websites/{id}/edit', [WebsiteController::class, 'edit'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.edit');
-    Route::patch('/websites/{id}', [WebsiteController::class, 'update'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.update');
-    Route::delete('/websites/{id}', [WebsiteController::class, 'destroy'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.destroy');
-    Route::patch('/websites/{id}/status', [WebsiteController::class, 'updateStatus'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.status.update');
-    Route::get('/websites/{id}/manage', [WebsiteController::class, 'manage'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.manage');
-    Route::get('/websites/{id}/web-server', [WebsiteController::class, 'webServerManager'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.web-server');
-    Route::get('/websites/{id}/ssl', [WebsiteController::class, 'sslManager'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.ssl');
-    Route::post('/websites/{id}/ssl/issue', [WebsiteController::class, 'issueSsl'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.ssl.issue');
-    Route::get('/websites/{id}/usage', [WebsiteController::class, 'Usage'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.usage');
-    Route::post('/websites/{id}/vhost/sync', [WebsiteController::class, 'syncVhost'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.vhost.sync');
-    Route::post('/websites/{id}/project-cache/clear', [WebsiteController::class, 'clearProjectCache'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.project-cache.clear');
-    Route::get('/websites/{id}/wordpress', [WebsiteController::class, 'wordpressManager'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.wordpress.manager');
-    Route::post('/websites/{id}/wordpress/install', [WebsiteController::class, 'installWordPress'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.wordpress.install');
-    Route::get('/websites/{id}/preview/{path?}', [WebsiteController::class, 'preview'])
-        ->middleware('role:admin|reseller')
-        ->where('path', '.*')
-        ->name('websites.preview');
-    Route::get('/websites/{id}/redis-cache', [RedisCacheController::class, 'index'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.redis-cache.index');
-    Route::post('/websites/{id}/redis-cache/clear', [RedisCacheController::class, 'clearWebsiteCache'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.redis-cache.clear');
-    Route::get('/websites/{id}/filemanager', [WebsiteController::class, 'fileManager'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager');
-    Route::get('/websites/{id}/cron-jobs', [CronJobController::class, 'index'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.cronjobs.index');
-    Route::post('/websites/{id}/cron-jobs', [CronJobController::class, 'store'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.cronjobs.store');
-    Route::patch('/websites/{id}/cron-jobs/{jobId}', [CronJobController::class, 'update'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.cronjobs.update');
-    Route::delete('/websites/{id}/cron-jobs/{jobId}', [CronJobController::class, 'destroy'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.cronjobs.destroy');
-    Route::post('/websites/{id}/filemanager/folder', [WebsiteController::class, 'createFolder'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.folder.store');
-    Route::post('/websites/{id}/filemanager/file', [WebsiteController::class, 'createFile'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.file.store');
-    Route::patch('/websites/{id}/filemanager/file', [WebsiteController::class, 'saveFile'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.file.save');
-    Route::post('/websites/{id}/filemanager/upload', [WebsiteController::class, 'uploadFile'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.upload');
-    Route::patch('/websites/{id}/filemanager/permissions', [WebsiteController::class, 'changePermissions'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.permissions');
-    Route::patch('/websites/{id}/filemanager/rename', [WebsiteController::class, 'renameItem'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.item.rename');
-    Route::patch('/websites/{id}/filemanager/move', [WebsiteController::class, 'moveItems'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.item.move');
-    Route::get('/websites/{id}/filemanager/download', [WebsiteController::class, 'downloadFile'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.file.download');
-    Route::post('/websites/{id}/filemanager/zip', [WebsiteController::class, 'zipSelected'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.zip');
-    Route::post('/websites/{id}/filemanager/unzip', [WebsiteController::class, 'unzipItem'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.unzip');
-    Route::delete('/websites/{id}/filemanager/item', [WebsiteController::class, 'deleteItem'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.filemanager.item.delete');
-    Route::get('/websites/list', [WebsiteController::class, 'index'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.list');
 
     Route::get('/emails/create', [EmailController::class, 'create'])
         ->middleware('role:admin|reseller')
@@ -341,6 +234,29 @@ Route::prefix('cpsess{token}')
     Route::get('/emails/list', [EmailController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('emails.list');
+
+    Route::post('/mail/{id}/mark-read', [MailClientController::class, 'markRead'])
+        ->middleware('role:admin|reseller')
+        ->name('mailbox.mark-read');
+
+    Route::get('/mail-plans', [MailPlanController::class, 'index'])
+        ->middleware('role:admin')
+        ->name('mail-plans.index');
+    Route::get('/mail-plans/create', [MailPlanController::class, 'create'])
+        ->middleware('role:admin')
+        ->name('mail-plans.create');
+    Route::post('/mail-plans', [MailPlanController::class, 'store'])
+        ->middleware('role:admin')
+        ->name('mail-plans.store');
+    Route::get('/mail-plans/{id}/edit', [MailPlanController::class, 'edit'])
+        ->middleware('role:admin')
+        ->name('mail-plans.edit');
+    Route::patch('/mail-plans/{id}', [MailPlanController::class, 'update'])
+        ->middleware('role:admin')
+        ->name('mail-plans.update');
+    Route::delete('/mail-plans/{id}', [MailPlanController::class, 'destroy'])
+        ->middleware('role:admin')
+        ->name('mail-plans.destroy');
 
     Route::get('/apache', [ApacheController::class, 'index'])
         ->middleware('role:admin|reseller')
@@ -472,6 +388,7 @@ Route::prefix('cpsess{token}')
         ->where('id', '[^/]+')
         ->name('databases.phpmyadmin');
 
+        include __DIR__.'/website.php';
 
     Route::patch('/databases/{id}', [DatabaseController::class, 'update'])
         ->middleware('role:admin|reseller')

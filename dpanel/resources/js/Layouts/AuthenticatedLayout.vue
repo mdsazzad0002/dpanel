@@ -136,6 +136,7 @@ const menuItems = computed(() => [
         children: [
             { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'] },
             { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'] },
+            { label: 'Mail Plans', hint: 'Manage subscription plans', icon: 'MP', iconClass: 'bi bi-credit-card', routeName: 'mail-plans.index', roles: ['admin'] },
         ],
     },
     {

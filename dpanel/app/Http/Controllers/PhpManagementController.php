@@ -92,7 +92,7 @@ class PhpManagementController extends Controller
     public function versions(): Response
     {
         $state = $this->readState();
-        $selectedVersion = $this->normalizePhpVersionSelection(
+        $selectedVersion = self::normalizePhpVersionSelection(
             (string) request()->query('version', $state['default_version']),
             $state['versions']
         );
@@ -121,14 +121,14 @@ class PhpManagementController extends Controller
         $versions = collect($validated['installed_versions'] ?? [])
             ->map(fn ($version) => trim((string) $version))
             ->filter()
-            ->map(fn (string $version): string => $this->normalizePhpVersionSelection($version, []))
+            ->map(fn (string $version): string => self::normalizePhpVersionSelection($version, []))
             ->filter(fn (string $version): bool => preg_match('/^\d+\.\d+$/', $version) === 1)
             ->unique()
             ->sort(fn ($a, $b) => version_compare($b, $a))
             ->values()
             ->all();
 
-        $currentVersion = $this->normalizePhpVersionSelection((string) ($validated['current_version'] ?? ''), $versions);
+        $currentVersion = self::normalizePhpVersionSelection((string) ($validated['current_version'] ?? ''), $versions);
         if ($currentVersion === '' || ! in_array($currentVersion, $versions, true)) {
             $currentVersion = $versions[0] ?? '';
         }
@@ -166,7 +166,7 @@ class PhpManagementController extends Controller
     {
         $state = $this->readState();
         $versions = $state['versions'];
-        $selectedVersion = $this->normalizePhpVersionSelection(
+        $selectedVersion = self::normalizePhpVersionSelection(
             (string) $request->query('version', $state['default_version']),
             $versions
         );
@@ -205,7 +205,7 @@ class PhpManagementController extends Controller
             'extensions.*' => ['string', 'max:100'],
         ]);
 
-        $version = $this->normalizePhpVersionSelection((string) $validated['version'], $versions);
+        $version = self::normalizePhpVersionSelection((string) $validated['version'], $versions);
         if (! in_array($version, $versions, true)) {
             if ($request->expectsJson()) {
                 return response()->json([
@@ -298,7 +298,7 @@ class PhpManagementController extends Controller
     {
         $state = $this->readState();
         $versions = $state['versions'];
-        $selectedVersion = $this->normalizePhpVersionSelection(
+        $selectedVersion = self::normalizePhpVersionSelection(
             (string) $request->query('version', $state['default_version']),
             $versions
         );
@@ -330,7 +330,7 @@ class PhpManagementController extends Controller
             'allow_url_fopen' => ['required', 'in:On,Off'],
         ]);
 
-        $version = $this->normalizePhpVersionSelection((string) $validated['version'], $versions);
+        $version = self::normalizePhpVersionSelection((string) $validated['version'], $versions);
         if (! in_array($version, $versions, true)) {
             if ($request->expectsJson()) {
                 return response()->json([
@@ -1184,10 +1184,13 @@ class PhpManagementController extends Controller
         ];
     }
 
+
+
+
     /**
      * @param array<int, string> $availableVersions
      */
-    private function normalizePhpVersionSelection(string $version, array $availableVersions = []): string
+    static function normalizePhpVersionSelection(string $version, array $availableVersions = []): string
     {
         $normalized = strtolower(trim($version));
         if (count($availableVersions) === 0) {

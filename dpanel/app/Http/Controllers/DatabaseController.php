@@ -35,22 +35,76 @@ class DatabaseController extends Controller
     /**
      * List created database requests.
      */
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $this->migrateLegacyJsonRequests();
-        $actor = request()->user();
+        $actor = $request->user();
+        $websiteFilter = strtolower(trim((string) $request->query('website', '')));
+        $userFilter = trim((string) $request->query('user', ''));
 
         $requests = DatabaseRequestModel::query()
             ->visibleTo($actor)
             ->with('assignedUser:id,name,email')
             ->orderByDesc('created_at')
-            ->get()
+            ->get();
+
+        $websiteOptions = $requests
+            ->pluck('domain')
+            ->filter(fn ($domain) => is_string($domain) && trim((string) $domain) !== '')
+            ->map(fn ($domain) => strtolower(trim((string) $domain)))
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        $userOptions = $requests
+            ->map(function (DatabaseRequestModel $request): ?array {
+                if (! $request->assignedUser) {
+                    return null;
+                }
+
+                return [
+                    'value' => (string) $request->assignedUser->id,
+                    'label' => trim(implode(' ', array_filter([
+                        $request->assignedUser->name ?: null,
+                        $request->assignedUser->email ? '('.$request->assignedUser->email.')' : null,
+                    ]))) ?: ('User #'.$request->assignedUser->id),
+                    'email' => $request->assignedUser->email,
+                ];
+            })
+            ->filter()
+            ->unique('value')
+            ->sortBy('label')
+            ->values()
+            ->all();
+
+        $requests = $requests
+            ->filter(function (DatabaseRequestModel $request) use ($websiteFilter, $userFilter): bool {
+                if ($websiteFilter !== '' && strtolower(trim((string) $request->domain)) !== $websiteFilter) {
+                    return false;
+                }
+
+                if ($userFilter !== '') {
+                    $assignedUserId = (string) ($request->assigned_user_id ?? '');
+                    if ($assignedUserId !== $userFilter) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })
             ->map(fn (DatabaseRequestModel $request): array => $this->databaseRequestToArray($request))
             ->values()
             ->all();
 
         return Inertia::render('Databases/List', [
             'databaseRequests' => $requests,
+            'websiteOptions' => $websiteOptions,
+            'userOptions' => $userOptions,
+            'filters' => [
+                'website' => $websiteFilter,
+                'user' => $userFilter,
+            ],
         ]);
     }
 
@@ -160,7 +214,7 @@ class DatabaseController extends Controller
     /**
      * Delete a database request.
      */
-    public function destroy(string $token, string $id): RedirectResponse
+    public function destroy(Request $request, string $token, string $id): RedirectResponse
     {
         $this->migrateLegacyJsonRequests();
 

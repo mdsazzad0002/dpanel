@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MailPlan;
 use App\Models\Mailbox;
 use App\Models\Website;
 use Illuminate\Http\RedirectResponse;
@@ -29,6 +30,7 @@ class EmailController extends Controller
     {
         return Inertia::render('CreateEmail', [
             'websiteDomains' => $this->readWebsiteDomains(),
+            'plans' => $this->readPlans(),
         ]);
     }
 
@@ -76,6 +78,7 @@ class EmailController extends Controller
                 'quota_mb' => (int) $validated['quota_mb'],
                 'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
                 'status' => 'active',
+                'plan_id' => ! empty($validated['plan_id']) ? $validated['plan_id'] : null,
             ]);
         } catch (\Throwable $e) {
             $this->removeMailboxFromStorage($email);
@@ -96,6 +99,7 @@ class EmailController extends Controller
         return Inertia::render('EditEmail', [
             'mailbox' => $mailbox->toArray(),
             'websiteDomains' => $this->readWebsiteDomains(),
+            'plans' => $this->readPlans(),
         ]);
     }
 
@@ -136,6 +140,7 @@ class EmailController extends Controller
             'password' => $password,
             'quota_mb' => (int) $validated['quota_mb'],
             'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
+            'plan_id' => ! empty($validated['plan_id']) ? $validated['plan_id'] : null,
         ]);
         $mailboxRecord->save();
 
@@ -219,6 +224,18 @@ class EmailController extends Controller
         unset($row['password']);
         $row['autologin_ready'] = $autoLoginCheck['ready'];
         $row['autologin_message'] = $autoLoginCheck['message'];
+
+        if (! empty($row['plan_id'])) {
+            $plan = MailPlan::query()->find($row['plan_id']);
+            $row['plan'] = $plan ? [
+                'id' => $plan->id,
+                'name' => $plan->name,
+                'slug' => $plan->slug,
+                'max_storage_mb' => $plan->max_storage_mb,
+            ] : null;
+        } else {
+            $row['plan'] = null;
+        }
 
         return $row;
     }
@@ -812,6 +829,7 @@ CFG;
             'password' => ['required', 'string', 'min:6', 'max:255'],
             'quota_mb' => ['required', 'integer', 'min:1', 'max:102400'],
             'forwarding_to' => ['nullable', 'email', 'max:255'],
+            'plan_id' => ['nullable', 'string', 'exists:mail_plans,id'],
         ]);
     }
 
@@ -843,6 +861,22 @@ CFG;
                 ->unique()
                 ->sort()
                 ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * @return array<int, array{id: string, name: string, slug: string, max_storage_mb: int, max_mailboxes: int}>
+     */
+    private function readPlans(): array
+    {
+        try {
+            return MailPlan::query()
+                ->orderBy('sort_order')
+                ->get(['id', 'name', 'slug', 'max_storage_mb', 'max_mailboxes'])
+                ->map(fn (MailPlan $plan): array => $plan->toArray())
                 ->all();
         } catch (\Throwable $e) {
             return [];

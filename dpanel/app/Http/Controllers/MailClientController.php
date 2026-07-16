@@ -47,6 +47,7 @@ class MailClientController extends Controller
             'loadEndpoint' => route('mailbox.data', ['token' => $token, 'id' => $id]),
             'sendEndpoint' => route('mailbox.send', ['token' => $token, 'id' => $id]),
             'deleteEndpoint' => route('mailbox.delete-message', ['token' => $token, 'id' => $id]),
+            'markReadEndpoint' => route('mailbox.mark-read', ['token' => $token, 'id' => $id]),
             'composeDefaults' => [
                 'to' => '',
                 'subject' => '',
@@ -150,5 +151,25 @@ class MailClientController extends Controller
         return redirect()
             ->route('mailbox.open', ['token' => $token, 'id' => $id, 'folder' => (string) $validated['folder']])
             ->with('success', 'Message deleted.');
+    }
+
+    public function markRead(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): JsonResponse
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        $validated = $request->validate([
+            'folder' => ['required', 'string'],
+            'uid' => ['required', 'integer', 'min:1'],
+            'seen' => ['required', 'boolean'],
+        ]);
+
+        try {
+            $mailboxImapService->markRead($mailbox, (string) $validated['folder'], (int) $validated['uid'], (bool) $validated['seen']);
+        } catch (RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['success' => true, 'message' => (bool) $validated['seen'] ? 'Marked as read.' : 'Marked as unread.']);
     }
 }

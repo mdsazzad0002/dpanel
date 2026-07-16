@@ -1,0 +1,22 @@
+{
+  "families": {
+    "starter": {
+      "default_php_version": "8.3",
+      "site_template": "repository/templates/nginx/laravel.conf",
+      "pool_template": "repository/templates/php/pool.conf",
+      "description": "Default site scaffold for non-WordPress websites"
+    },
+    "wordpress": {
+      "default_php_version": "8.2",
+      "site_template": "repository/templates/nginx/laravel.conf",
+      "pool_template": "repository/templates/php/pool.conf",
+      "description": "WordPress-friendly scaffold"
+    }
+  },
+  "php_versions": [
+    "7.4",
+    "8.2",
+    "8.3",
+    "8.4"
+  ]
+}

@@ -16,6 +16,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    plans: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const form = useForm({
@@ -24,6 +28,7 @@ const form = useForm({
     password: props.mailbox.password ?? '',
     quota_mb: Number(props.mailbox.quota_mb ?? 1024),
     forwarding_to: props.mailbox.forwarding_to ?? '',
+    plan_id: props.mailbox.plan_id ?? '',
 });
 
 const domainOptions = computed(() => {
@@ -64,6 +69,14 @@ const submit = () => {
                         <option v-for="domain in domainOptions" :key="domain" :value="domain">{{ domain }}</option>
                     </select>
                     <p v-if="form.errors.domain" class="mt-1 text-xs text-red-600">{{ form.errors.domain }}</p>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="mb-1 block text-sm">Mail Plan (Optional)</label>
+                    <select v-model="form.plan_id" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                        <option value="">No plan</option>
+                        <option v-for="plan in plans" :key="plan.id" :value="plan.id">{{ plan.name }} - {{ plan.max_storage_mb >= 1024 ? (plan.max_storage_mb / 1024).toFixed(0) + ' GB' : plan.max_storage_mb + ' MB' }}</option>
+                    </select>
+                    <p v-if="form.errors.plan_id" class="mt-1 text-xs text-red-600">{{ form.errors.plan_id }}</p>
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Mailbox</label>

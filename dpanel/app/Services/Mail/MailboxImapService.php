@@ -66,6 +66,18 @@ class MailboxImapService
         }
     }
 
+    public function markRead(Mailbox $mailbox, string $folder, int $uid, bool $seen): void
+    {
+        $stream = $this->open($mailbox, $folder);
+        $flags = $seen ? '\\Seen' : '\\Unseen';
+        $result = @imap_setflag_full($stream, (string) $uid, $flags, FT_UID);
+        $this->close($stream);
+
+        if (! $result) {
+            throw new RuntimeException(imap_last_error() ?: 'Unable to update message flag.');
+        }
+    }
+
     /**
      * @return resource
      */
