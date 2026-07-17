@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 
@@ -38,6 +38,10 @@ const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
+const csrfToken = computed(() => String(page.props.csrfToken || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''));
+const syncMessage = ref('');
+const syncMessageType = ref('success');
+const syncLoading = ref(false);
 
 const formatStatus = (value) => {
     const text = String(value || 'unknown').toLowerCase();
@@ -67,6 +71,42 @@ const nginxVhostTone = computed(() => (
         ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
         : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
 ));
+
+const syncVhost = async () => {
+    if (syncLoading.value) {
+        return;
+    }
+
+    syncLoading.value = true;
+    syncMessage.value = '';
+
+    try {
+        const response = await fetch(panelRoute('websites.vhost.sync', { id: props.website.id }), {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({}),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || payload?.type === 'error' || payload?.errors) {
+            throw new Error(payload?.message || 'VHost sync failed.');
+        }
+
+        syncMessageType.value = 'success';
+        syncMessage.value = payload?.message || 'VHost synced successfully.';
+    } catch (error) {
+        syncMessageType.value = 'error';
+        syncMessage.value = error?.message || 'VHost sync failed.';
+    } finally {
+        syncLoading.value = false;
+    }
+};
 </script>
 
 <template>
@@ -86,15 +126,15 @@ const nginxVhostTone = computed(() => (
         </template>
 
             <div class="mb-4 flex justify-end gap-2">
-                <Link
-                    :href="panelRoute('websites.vhost.sync', { id: website.id })"
-                    method="post"
-                    as="button"
-                    :data="{ return_to: 'website_service' }"
+                <button
+                    type="button"
+                    :disabled="syncLoading"
+                    @click="syncVhost"
                     class="rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
                 >
-                    <i class="fa fa-sync"></i> Sync VHost
-                </Link>
+                    <span v-if="syncLoading">Syncing...</span>
+                    <span v-else><i class="fa fa-sync"></i> Sync VHost</span>
+                </button>
                 <Link :href="panelRoute('websites.ssl', { id: website.id })" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
                     <i class="bi bi-shield-check mr-2"></i> Open SSL Manager
                 </Link>
@@ -104,6 +144,9 @@ const nginxVhostTone = computed(() => (
             </div>
 
         <div class="space-y-6">
+            <div v-if="syncMessage" class="rounded-md px-4 py-3 text-sm whitespace-pre-line" :class="syncMessageType === 'error' ? 'border border-red-200 bg-red-50 text-red-700' : 'border border-emerald-200 bg-emerald-50 text-emerald-700'">
+                {{ syncMessage }}
+            </div>
             <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 whitespace-pre-line">
                 {{ page.props.flash.success }}
             </div>

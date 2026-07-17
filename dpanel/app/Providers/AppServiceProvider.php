@@ -64,7 +64,8 @@ class AppServiceProvider extends ServiceProvider
         }
 
         $requestHost = strtolower((string) request()->getHost());
-        if ($requestHost === '') {
+
+        if (str_ends_with($requestHost, '.localhost')) {
             return false;
         }
 

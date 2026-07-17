@@ -162,7 +162,7 @@ panel_install_runtime_assets() {
 
   if [[ -n "$source_scripts_dir" ]]; then
     mkdir -p "${LIKESOFT_RUNTIME_DIR}/scripts"
-    for script_name in create-admin-user.sh disable-root-login.sh database-request.sh fix-panel-web-stack.sh; do
+    for script_name in create-admin-user.sh disable-root-login.sh database-request.sh; do
       if [[ -f "${source_scripts_dir}/${script_name}" ]]; then
         install -m 0755 "${source_scripts_dir}/${script_name}" "${LIKESOFT_RUNTIME_DIR}/scripts/${script_name}"
       fi
@@ -392,15 +392,6 @@ panel_run_module() {
   local version="${3:-}"
   shift 3 || true
 
-  panel_run_module_exact "$module" "$action" "$version" "$@"
-}
-
-panel_run_module_exact() {
-  local module="$1"
-  local action="${2:-install}"
-  local version="${3:-}"
-  shift 3 || true
-
   local script
   script="$(panel_local_module_script "$module" "$action" "$version")"
   if [[ -z "$script" ]]; then
@@ -508,7 +499,7 @@ panel_site_create() {
   fi
 
   if [[ -z "$web_server" ]]; then
-    read -rp "Web server (apache/nginx): " web_server
+    read -rp "Web server (nginx/apache): " web_server
   fi
 
   root_path="${6:-/home/${username}/public_html}"
@@ -719,7 +710,7 @@ panel_install_cli_launcher() {
 }
 
 panel_bootstrap() {
-  local requested_modules="${PANEL_MODULES:-apache,nginx,php,mariadb,supervisor,firewall,fail2ban}"
+  local requested_modules="${PANEL_MODULES:-nginx,php,mariadb,supervisor,firewall,fail2ban}"
   local skip_firewall="${SKIP_FIREWALL:-false}"
   local skip_ssl="${SKIP_SSL:-false}"
   local skip_test="${SKIP_TEST:-false}"
@@ -856,27 +847,19 @@ panel_cli_dispatch() {
       ;;
     filemanager)
       if [[ $# -lt 1 ]]; then
-        panel_die "Usage: panel filemanager <create|remove|exists|file-exists|user> <path>..."
+        panel_die "Usage: panel filemanager <create|remove|exists|file-exists> <path>..."
       fi
       local filemanager_command="$1"
       shift || true
       case "$filemanager_command" in
-        user)
-          if [[ $# -lt 1 ]]; then
-            panel_die "Usage: panel filemanager user <create|ensure> <username> [options]"
-          fi
-          local filemanager_user_command="$1"
-          shift || true
-          panel_run_module_exact "filemanager" user "" "$filemanager_user_command" "$@"
-          ;;
         remove)
-          panel_run_module_exact "filemanager" remove "$@"
+          panel_run_module "filemanager" remove "" "$@"
           ;;
         create|exists|file-exists)
-          panel_run_module_exact "filemanager" install "$filemanager_command" "$@"
+          panel_run_module "filemanager" install "" "$filemanager_command" "$@"
           ;;
         *)
-          panel_run_module_exact "filemanager" install "$filemanager_command" "$@"
+          panel_run_module "filemanager" install "" "$filemanager_command" "$@"
           ;;
       esac
       ;;

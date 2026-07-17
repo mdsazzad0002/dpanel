@@ -1,8 +1,10 @@
 {
+  "apache": "1.0.0",
   "nginx": "1.0.1",
   "php": "1.2.0",
   "redis": "1.0.0",
   "mariadb": "1.0.0",
+  "filemanager": "1.0.0",
   "ssl": "1.0.0",
   "firewall": "1.0.0",
   "fail2ban": "1.0.0",

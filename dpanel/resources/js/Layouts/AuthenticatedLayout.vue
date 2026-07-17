@@ -123,6 +123,7 @@ const menuItems = computed(() => [
         color: 'emerald',
         children: [
             { label: 'Create Website', hint: 'Add a new website', icon: 'CW', iconClass: 'bi bi-plus-square', routeName: 'websites.create', roles: ['admin', 'reseller'] },
+            { label: 'Create Alias Website', hint: 'Add a new alias website', icon: 'CA', iconClass: 'bi bi-link-45deg', routeName: 'websites.alias.create', roles: ['admin', 'reseller'] },
             { label: 'List Websites', hint: 'View all websites', icon: 'LW', iconClass: 'bi bi-list-ul', routeName: 'websites.list', roles: ['admin', 'reseller'] },
         ],
     },

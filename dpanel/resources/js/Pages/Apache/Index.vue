@@ -23,6 +23,10 @@ const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
+const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '');
+const syncMessage = ref('');
+const syncMessageType = ref('success');
+const syncLoading = ref(false);
 
 const actionForm = useForm({
     action: 'test',
@@ -37,6 +41,41 @@ const runAction = (action) => {
 
 const syncSharedWebsites = () => {
     syncForm.post(panelRoute('apache.sync-shared-websites'));
+};
+
+const syncSelectedWebsiteVhost = async () => {
+    if (!selectedWebsite?.id || syncLoading.value) {
+        return;
+    }
+
+    syncMessage.value = '';
+    syncLoading.value = true;
+
+    try {
+        const response = await fetch(panelRoute('websites.vhost.sync', { id: selectedWebsite.id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw data;
+        }
+
+        syncMessageType.value = String(data.type || 'success');
+        syncMessage.value = String(data.message || 'Live vhost synced successfully.');
+    } catch (error) {
+        syncMessageType.value = 'error';
+        syncMessage.value = String(error?.message || error?.errors?.vhost_sync || 'Live vhost sync failed.');
+    } finally {
+        syncLoading.value = false;
+    }
 };
 
 const selectedWebsiteIdInput = ref(String(props.selectedWebsiteId ?? props.selectedWebsite?.id ?? ''));
@@ -111,6 +150,11 @@ const boolTone = (flag) => (flag
             </div>
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 whitespace-pre-line">
                 {{ page.props.flash.error }}
+            </div>
+            <div v-if="syncMessage" :class="syncMessageType === 'success'
+                ? 'rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 whitespace-pre-line'
+                : 'rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 whitespace-pre-line'">
+                {{ syncMessage }}
             </div>
 
             <section class="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-cyan-50 via-white to-indigo-50 p-5 dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
@@ -237,16 +281,15 @@ const boolTone = (flag) => (flag
                         >
                             Open Website Manage
                         </Link>
-                        <Link
+                        <button
                             v-if="selectedWebsite?.id"
-                            :href="panelRoute('websites.vhost.sync', { id: selectedWebsite.id })"
-                            method="post"
-                            :data="{ return_to: 'apache' }"
-                            as="button"
-                            class="rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
+                            type="button"
+                            :disabled="syncLoading"
+                            class="rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
+                            @click="syncSelectedWebsiteVhost"
                         >
                             Sync Selected VHost
-                        </Link>
+                        </button>
                     </div>
                 </div>
                 <p class="mt-2 text-xs text-slate-500">

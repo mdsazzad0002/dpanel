@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec "/home/bdsoft/likesoftbd_com/discript/.dpanel/runtime/launcher.sh" "$@"

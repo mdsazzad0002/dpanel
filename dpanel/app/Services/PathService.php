@@ -19,13 +19,23 @@ class PathService
         return self::HOME_BASE;
     }
 
+    public function websiteBaseDirectoryValue(): string
+    {
+        return self::websiteBaseDirectory();
+    }
+
 
 
 
     // Helper functions
-    private static function normalizeAbsolutePath(string $path): string
+    public static function normalizeAbsolutePath(string $path): string
     {
         return trim(str_replace('\\', '/', $path));
+    }
+
+    public function normalizeAbsolutePathValue(string $path): string
+    {
+        return self::normalizeAbsolutePath($path);
     }
 
 

@@ -80,7 +80,7 @@ const passwordCopyStatus = ref('');
 const presetMatrix = {
     basic: {
         label: 'Basic',
-        modules: 'nginx,php,mariadb,supervisor',
+        modules: 'apache,nginx,php,mariadb,supervisor',
         include_firewall: false,
         include_ssl: false,
         disable_root: false,
@@ -88,7 +88,7 @@ const presetMatrix = {
     },
     production: {
         label: 'Production',
-        modules: 'nginx,php,mariadb,supervisor,firewall,fail2ban,ssl',
+        modules: 'apache,nginx,php,mariadb,supervisor,firewall,fail2ban,ssl',
         include_firewall: true,
         include_ssl: true,
         disable_root: true,
@@ -96,7 +96,7 @@ const presetMatrix = {
     },
     secure: {
         label: 'Secure',
-        modules: 'nginx,php,mariadb,supervisor,firewall,fail2ban,ssl,ssh-root-login',
+        modules: 'apache,nginx,php,mariadb,supervisor,firewall,fail2ban,ssl,ssh-root-login',
         include_firewall: true,
         include_ssl: true,
         disable_root: true,
@@ -104,7 +104,7 @@ const presetMatrix = {
     },
     mail: {
         label: 'Mail Server',
-        modules: 'nginx,php,mariadb,supervisor,firewall,fail2ban,ssl',
+        modules: 'apache,nginx,php,mariadb,supervisor,firewall,fail2ban,ssl',
         include_firewall: true,
         include_ssl: true,
         disable_root: true,
@@ -496,7 +496,7 @@ ssh ubuntu@your_server_ip</code></pre>
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">2. Install Required Packages</h2>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>sudo apt update && sudo apt upgrade -y
-sudo apt install -y nginx git unzip curl sqlite3
+sudo apt install -y apache2 nginx git unzip curl sqlite3
 sudo apt install -y php-cli php-fpm php-mbstring php-xml php-curl php-zip php-sqlite3
 sudo apt install -y composer nodejs npm</code></pre>
                     </section>
@@ -524,8 +524,10 @@ php artisan optimize</code></pre>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>sudo chown -R www-data:www-data /var/www/serverpanel
 sudo chmod -R 775 /var/www/serverpanel/storage /var/www/serverpanel/bootstrap/cache
 
+sudo systemctl enable apache2
 sudo systemctl enable nginx
 sudo systemctl enable php8.3-fpm
+sudo systemctl restart apache2
 sudo systemctl restart nginx
 sudo systemctl restart php8.3-fpm</code></pre>
                     </section>
@@ -716,7 +718,7 @@ sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" bash discript/inst
 sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DOMAIN="panel.example.com" bash discript/install.sh panel install
 
 # Secure preset
-sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DOMAIN="panel.example.com" PANEL_MODULES="nginx,php,mariadb,supervisor,firewall,fail2ban,ssl,ssh-root-login" bash discript/install.sh panel install
+sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DOMAIN="panel.example.com" PANEL_MODULES="apache,nginx,php,mariadb,supervisor,firewall,fail2ban,ssl,ssh-root-login" bash discript/install.sh panel install
 
 # Custom DB credentials
 sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DB_NAME="serverpanel" PANEL_DB_USER="serverpanel" PANEL_DB_PASSWORD="StrongPassword123" bash discript/install.sh panel install</code></pre>

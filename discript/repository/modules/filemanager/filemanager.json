@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "install": "repository/modules/filemanager/install.sh",
+  "uninstall": "repository/modules/filemanager/uninstall.sh",
+  "remove": "repository/modules/filemanager/remove.sh",
+  "update": "repository/modules/filemanager/update.sh"
+}

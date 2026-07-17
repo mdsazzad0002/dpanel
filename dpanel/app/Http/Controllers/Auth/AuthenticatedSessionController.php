@@ -92,8 +92,10 @@ class AuthenticatedSessionController extends Controller
         $lifetime = max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120)));
         $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
 
-        PanelSession::create([
-            'user_id' => (int) $request->user()->id,
+        PanelSession::updateOrCreate(
+            [
+                'user_id' => (int) $request->user()->id,
+            ],[
             'token_hash' => hash('sha256', $token),
             'cookie_hash' => hash('sha256', $cookieToken),
             'ip_address' => (string) $request->ip(),

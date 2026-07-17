@@ -1,0 +1,13 @@
+[INFO] Installing runtime assets into /home/bdsoft/likesoftbd_com/discript/.dpanel/runtime
+[INFO] folder created: /home/bdsoft/likesoftbd_com/discript/hello
+[INFO] folder created: /home/likesoft
+[INFO] folder created: /home/likesoft
+[INFO] folder exists: /home/likesoft
+[INFO] folder exists: /home/likesoft
+[ERROR] Path must be absolute: user
+[ERROR] Path must be absolute: user
+[ERROR] Unsupported filemanager user action: likesoft
+[INFO] user created: likesoft
+[INFO] home prepared: /home/likesoft
+[INFO] user created: likesoft1
+[INFO] home prepared: /home/likesoft1

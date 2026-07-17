@@ -22,6 +22,10 @@ const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
+const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '');
+const actionMessage = ref('');
+const actionMessageType = ref('success');
+const actionLoading = ref(false);
 
 const toNumber = (value) => {
     const parsed = Number(value);
@@ -120,7 +124,7 @@ const serviceColorClasses = {
 
 const quickActions = computed(() => [
     { label: 'Edit Website', icon: 'bi-pencil-square', href: panelRoute('websites.edit', { id: props.website.id }), color: 'slate', method: 'get' },
-    { label: 'Sync VHost', icon: 'bi-arrow-repeat', href: panelRoute('websites.vhost.sync', { id: props.website.id }), color: 'blue', method: 'post' },
+    { label: 'Sync VHost', icon: 'bi-arrow-repeat', action: 'syncVhost', color: 'blue' },
     { label: 'Clear Cache', icon: 'bi-trash3', href: panelRoute('websites.project-cache.clear', { id: props.website.id }), color: 'red', method: 'post' },
     { label: 'File Manager', icon: 'bi-folder2-open', href: panelRoute('websites.filemanager', { id: props.website.id }), color: 'emerald', method: 'get' },
     { label: 'Back to List', icon: 'bi-arrow-left', href: panelRoute('websites.list'), color: 'slate', method: 'get' },
@@ -163,6 +167,42 @@ const copyToClipboard = (text) => {
         navigator.clipboard.writeText(text);
     }
 };
+
+const syncVhost = async () => {
+    if (actionLoading.value) {
+        return;
+    }
+
+    actionMessage.value = '';
+    actionLoading.value = true;
+
+    try {
+        const response = await fetch(panelRoute('websites.vhost.sync', { id: props.website.id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({}),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw data;
+        }
+
+        actionMessageType.value = String(data.type || 'success');
+        actionMessage.value = String(data.message || 'Live vhost synced successfully.');
+    } catch (error) {
+        actionMessageType.value = 'error';
+        actionMessage.value = String(error?.message || error?.errors?.vhost_sync || 'Live vhost sync failed.');
+    } finally {
+        actionLoading.value = false;
+    }
+};
 </script>
 
 <template>
@@ -185,6 +225,15 @@ const copyToClipboard = (text) => {
             <div v-if="page.props.flash?.error" class="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400">
                 <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 fill-current"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" /></svg>
                 {{ page.props.flash.error }}
+            </div>
+            <div v-if="actionMessage" :class="actionMessageType === 'success'
+                ? 'flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400'
+                : 'flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400'">
+                <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 fill-current">
+                    <path v-if="actionMessageType !== 'success'" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                    <path v-else d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.2-4.6-4.6 1.4-1.4L11 13.4l5.2-5.2 1.4 1.4-6.6 6.6z" />
+                </svg>
+                <span>{{ actionMessage }}</span>
             </div>
 
             <!-- Hero Section -->
@@ -300,7 +349,7 @@ const copyToClipboard = (text) => {
                             <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Quick Actions</p>
                             <div class="mt-3 space-y-2">
                                 <Link
-                                    v-for="action in quickActions"
+                                    v-for="action in quickActions.filter((item) => !item.action)"
                                     :key="action.label"
                                     :href="action.href"
                                     :method="action.method"
@@ -313,6 +362,20 @@ const copyToClipboard = (text) => {
                                     <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
                                     {{ action.label }}
                                 </Link>
+                                <button
+                                    v-for="action in quickActions.filter((item) => item.action === 'syncVhost')"
+                                    :key="action.label"
+                                    type="button"
+                                    :disabled="actionLoading"
+                                    :class="[
+                                        'flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60',
+                                        quickActionColorClasses[action.color] || quickActionColorClasses.slate,
+                                    ]"
+                                    @click="syncVhost"
+                                >
+                                    <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
+                                    {{ action.label }}
+                                </button>
                             </div>
                         </div>
                     </div>

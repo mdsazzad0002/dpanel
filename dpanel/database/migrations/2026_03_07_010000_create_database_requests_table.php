@@ -20,7 +20,6 @@ return new class extends Migration
             $table->string('database_host')->default('localhost');
             $table->string('charset', 32)->default('utf8mb4');
             $table->string('collation', 64)->default('utf8mb4_unicode_ci');
-            $table->text('command')->nullable();
             $table->string('status', 32)->default('pending');
             $table->timestamps();
 

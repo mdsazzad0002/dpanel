@@ -20,8 +20,9 @@ return new class extends Migration
             $table->boolean('enable_ssl')->default(false);
             $table->unsignedBigInteger('assigned_user_id')->nullable();
             $table->unsignedBigInteger('assigned_reseller_id')->nullable();
-            $table->text('command')->nullable();
             $table->string('status', 32)->default('pending');
+             $table->enum('type', ['main', 'sub', 'alis'])
+              ->nullable();
             $table->timestamps();
         });
     }

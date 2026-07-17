@@ -155,47 +155,8 @@ pkg_php_fpm_service() {
   esac
 }
 
-pkg_install_apache_stack() {
-  case "$(pkg_distro_family)" in
-    debian)
-      pkg_install apache2
-      ;;
-    rpm)
-      pkg_install httpd
-      ;;
-  esac
-}
-
-pkg_install_nginx_stack() {
-  case "$(pkg_distro_family)" in
-    debian)
-      pkg_install nginx
-      ;;
-    rpm)
-      pkg_install nginx
-      ;;
-  esac
-}
-
 pkg_install_web_stack() {
-  pkg_install_apache_stack
-  pkg_install_nginx_stack
-}
-
-pkg_configure_apache_backend_ports() {
-  case "$(pkg_distro_family)" in
-    debian)
-      local ports_conf="/etc/apache2/ports.conf"
-      if [[ -f "${ports_conf}" ]]; then
-        if ! grep -qE "^[[:space:]]*Listen[[:space:]]+8080[[:space:]]*$" "${ports_conf}"; then
-          echo "Listen 8080" >> "${ports_conf}"
-        fi
-
-        sed -i -E 's/^[[:space:]]*Listen[[:space:]]+80([[:space:]]*)$/# Listen 80/g' "${ports_conf}" || true
-        sed -i -E 's/^[[:space:]]*Listen[[:space:]]+443([[:space:]]*)$/# Listen 443/g' "${ports_conf}" || true
-      fi
-      ;;
-  esac
+  pkg_install nginx
 }
 
 pkg_install_mariadb_stack() {

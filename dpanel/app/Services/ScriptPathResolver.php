@@ -1,42 +1,259 @@
 <?php
+
 namespace App\Services;
+
+use RuntimeException;
 
 class ScriptPathResolver
 {
-
-   public static function resolveScriptPath(string $group, string $need): array|string
+    /**
+     * @return array<int, string>
+     */
+    public static function repositorySearchPaths(): array
     {
-        switch ($group) {
-            case 'php':
-                $scriptName = 'repository/modules/php/php.json';
-                break;
-
-            case 'sync-vhost':
-                $scriptName = 'sync-vhost.sh';
-                break;
-
-            case 'issue-ssl':
-                $scriptName = 'issue-ssl.sh';
-                break;
-
-            default:
-                throw new \RuntimeException("Unknown script group: {$group}");
+        $configured = config('serverpanel.installer_search_paths', []);
+        if (! is_array($configured)) {
+            $configured = [];
         }
 
-        $scriptPath = base_path('../discript/' . $scriptName);
+        $fallbacks = [
+            base_path('discript'),
+            dirname(base_path()).'/discript',
+            '/var/www/panel/discript',
+            '/usr/local/panel/scripts',
+            '/root/ServerPanel/discript',
+            '/home/ubuntu/ServerPanel/discript',
+        ];
 
-        if (!file_exists($scriptPath)) {
-            throw new \RuntimeException("Script not found: {$scriptName}");
+        return array_values(array_unique(array_filter(array_merge($configured, $fallbacks), static fn ($path) => is_string($path) && trim($path) !== '')));
+    }
+
+    public static function resolveRepositoryRoot(): string
+    {
+        foreach (self::repositorySearchPaths() as $candidate) {
+            $candidate = rtrim(str_replace('\\', '/', $candidate), '/');
+            if ($candidate !== '' && is_dir($candidate)) {
+                return $candidate;
+            }
         }
 
-        $content = file_get_contents($scriptPath);
+        throw new RuntimeException('Unable to locate the discript repository root.');
+    }
 
-        $json = json_decode($content, true);
+    /**
+     * Resolve a script or manifest path within the repository.
+     *
+     * @return array<string, mixed>|array<int, string>|string
+     */
+    public static function resolveScriptPath(string $group, string $need = ''): array|string
+    {
+        $root = self::resolveRepositoryRoot();
 
-        if (json_last_error() === JSON_ERROR_NONE) {
-            return $need ? ($json[$need] ?? '') : $json;
+        $scriptName = match ($group) {
+            'php' => 'repository/modules/php/php.json',
+            'filemanager' => 'repository/modules/filemanager/filemanager.json',
+            'sync-vhost' => 'scripts/sync-vhost.sh',
+            'fix-web-stack' => 'scripts/fix-web-stack.sh',
+            'fix-panel-web-stack' => 'scripts/fix-panel-web-stack.sh',
+            'issue-ssl' => 'scripts/issue-ssl.sh',
+            'create-admin-user' => 'scripts/create-admin-user.sh',
+            'disable-root-login' => 'scripts/disable-root-login.sh',
+            'database-request' => 'scripts/database-request.sh',
+            default => throw new RuntimeException("Unknown script group: {$group}"),
+        };
+
+        $scriptPath = $root.DIRECTORY_SEPARATOR.$scriptName;
+        if (! file_exists($scriptPath)) {
+            throw new RuntimeException("Script not found: {$scriptName}");
+        }
+
+        if (in_array($group, ['php', 'filemanager'], true)) {
+            $content = file_get_contents($scriptPath);
+            $json = json_decode((string) $content, true);
+
+            if (json_last_error() === JSON_ERROR_NONE && is_array($json)) {
+                return $need !== '' ? ($json[$need] ?? '') : $json;
+            }
+        }
+
+        if ($need !== '') {
+            return '';
         }
 
         return $scriptPath;
+    }
+
+    public static function runSystemScript(string $path, array $args = []): bool
+    {
+        return self::runSystemScriptWithOutput($path, $args)['success'];
+    }
+
+    /**
+     * Execute a script with root privileges when available.
+     *
+     * This still requires the host to allow passwordless sudo for the web user.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string|int|float|bool|null> $env
+     * @return array{success: bool, output: string, exit_code: int, path: string}
+     */
+    public static function runSystemScriptAsRootWithOutput(string $path, array $args = [], array $env = []): array
+    {
+        $effectiveUid = function_exists('posix_geteuid')
+            ? (int) posix_geteuid()
+            : (int) trim((string) shell_exec('id -u 2>/dev/null'));
+
+        if ($effectiveUid === 0) {
+            return self::runSystemScriptWithOutput($path, $args, $env);
+        }
+
+        try {
+            $scriptPath = self::normalizePath($path);
+            if ($scriptPath === '' || ! file_exists($scriptPath)) {
+                throw new RuntimeException("Script not found: {$path}");
+            }
+
+            if (! self::commandExists('sudo')) {
+                return [
+                    'success' => false,
+                    'output' => 'sudo is required to run this script as root, but it is not installed.',
+                    'exit_code' => 1,
+                    'path' => $scriptPath,
+                ];
+            }
+
+            $commandParts = array_merge(['sudo', '-n', $scriptPath], array_map(static fn ($arg) => (string) $arg, $args));
+            $command = implode(' ', array_map('escapeshellarg', $commandParts));
+
+            return self::runCommandWithOutput($command, $scriptPath, $env);
+        } catch (\Throwable $e) {
+            logger()->error($e->getMessage());
+
+            return [
+                'success' => false,
+                'output' => $e->getMessage(),
+                'exit_code' => 1,
+                'path' => self::normalizePath($scriptPath ?? $path ?? ''),
+            ];
+        }
+    }
+
+    /**
+     * Execute a script and capture its output.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string|int|float|bool|null> $env
+     * @return array{success: bool, output: string, exit_code: int, path: string}
+     */
+    public static function runSystemScriptWithOutput(string $path, array $args = [], array $env = []): array
+    {
+        try {
+            $scriptPath = self::normalizePath($path);
+            if ($scriptPath === '' || ! file_exists($scriptPath)) {
+                throw new RuntimeException("Script not found: {$path}");
+            }
+
+            $commandParts = array_merge(['bash', $scriptPath], array_map(static fn ($arg) => (string) $arg, $args));
+            $command = implode(' ', array_map('escapeshellarg', $commandParts));
+
+            return self::runCommandWithOutput($command, $scriptPath, $env);
+        } catch (\Throwable $e) {
+            logger()->error($e->getMessage());
+
+            return [
+                'success' => false,
+                'output' => $e->getMessage(),
+                'exit_code' => 1,
+                'path' => self::normalizePath($scriptPath),
+            ];
+        }
+    }
+
+    /**
+     * @param array<string, string|int|float|bool|null> $env
+     * @return array{success: bool, output: string, exit_code: int, path: string}
+     */
+    private static function runCommandWithOutput(string $command, string $scriptPath, array $env = []): array
+    {
+        try {
+            $descriptors = [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ];
+
+            $environment = $_ENV;
+            if (! is_array($environment)) {
+                $environment = [];
+            }
+            foreach ($env as $key => $value) {
+                if (! is_string($key) || $key === '') {
+                    continue;
+                }
+                $environment[$key] = (string) $value;
+            }
+
+            $process = proc_open($command, $descriptors, $pipes, null, $environment);
+            if (! is_resource($process)) {
+                throw new RuntimeException('Unable to start script process.');
+            }
+
+            fclose($pipes[0]);
+            $stdout = stream_get_contents($pipes[1]);
+            fclose($pipes[1]);
+            $stderr = stream_get_contents($pipes[2]);
+            fclose($pipes[2]);
+
+            $status = proc_close($process);
+            $output = trim((string) $stdout);
+            $errorOutput = trim((string) $stderr);
+            $combined = trim($output."\n".$errorOutput);
+
+            if ($status !== 0) {
+                logger()->error('Script execution failed', [
+                    'path' => $scriptPath,
+                    'status' => $status,
+                    'output' => $combined,
+                ]);
+            }
+
+            return [
+                'success' => $status === 0,
+                'output' => $combined,
+                'exit_code' => $status,
+                'path' => $scriptPath,
+            ];
+        } catch (\Throwable $e) {
+            logger()->error($e->getMessage());
+
+            return [
+                'success' => false,
+                'output' => $e->getMessage(),
+                'exit_code' => 1,
+                'path' => self::normalizePath($path),
+            ];
+        }
+    }
+
+    private static function commandExists(string $command): bool
+    {
+        $result = trim((string) shell_exec('command -v '.escapeshellarg($command).' 2>/dev/null'));
+
+        return $result !== '';
+    }
+
+    private static function normalizePath(string $path): string
+    {
+        $path = trim(str_replace('\\', '/', $path));
+        if ($path === '') {
+            return '';
+        }
+
+        if (is_file($path)) {
+            return $path;
+        }
+
+        $realpath = realpath($path);
+        return $realpath !== false ? $realpath : $path;
     }
 }

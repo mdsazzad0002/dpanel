@@ -1,5 +1,5 @@
 <?php
-use App\Http\Controllers\Website\WebsiteController;
+
 use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
 use App\Http\Controllers\Website\WordpressController;
@@ -7,13 +7,46 @@ use App\Http\Controllers\CronJobController;
 use App\Http\Controllers\RedisCacheController;
 use Illuminate\Support\Facades\Route;
 
-    Route::get('/websites/create', [WebsiteController::class, 'create'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.create');
+use App\Http\Controllers\Website\WebsiteController;
 
-    Route::post('/websites', [WebsiteController::class, 'store'])
+// Manage Website ===================================================================
+use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
+Route::get('/websites/create', [MainWebsiteController::class, 'create'])
+    ->middleware('role:admin|reseller')
+    ->name('websites.create');
+
+
+Route::post('/websites', [MainWebsiteController::class, 'store'])
+    ->middleware('role:admin|reseller')
+    ->name('websites.store');
+
+// Manage Website
+
+
+
+// Manage Alis Website =============================================================
+use App\Http\Controllers\Website\WebsiteManage\AlisWebsiteController;
+    Route::get('/websites/alias/create', [AlisWebsiteController::class, 'create'])
         ->middleware('role:admin|reseller')
-        ->name('websites.store');
+        ->name('websites.alias.create');
+
+// End Alis Website
+
+
+
+// WEbsite Preview ==========================================================
+use App\Http\Controllers\Website\WebsiteManage\WebsitePreviewController;
+    Route::get('/websites/{id}/preview/{path?}', [WebsitePreviewController::class, 'preview'])
+        ->middleware('role:admin|reseller')
+        ->where('path', '.*')
+        ->name('websites.preview');
+
+use App\Http\Controllers\Website\WebsiteManage\WebsiteVhostSyncController;
+    Route::post('/websites/{id}/vhost/sync', [WebsiteVhostSyncController::class, 'sync'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.vhost.sync');
+
+
 
     Route::get('/websites/parent-domains/search', [WebsiteController::class, 'searchParentDomains'])
         ->middleware('role:admin|reseller')
@@ -46,9 +79,6 @@ use Illuminate\Support\Facades\Route;
     Route::get('/websites/{id}/usage', [WebsiteOperationsController::class, 'Usage'])
         ->middleware('role:admin|reseller')
         ->name('websites.usage');
-    Route::post('/websites/{id}/vhost/sync', [WebsiteOperationsController::class, 'syncVhost'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.vhost.sync');
     Route::post('/websites/{id}/project-cache/clear', [WebsiteOperationsController::class, 'clearProjectCache'])
         ->middleware('role:admin|reseller')
         ->name('websites.project-cache.clear');
@@ -63,10 +93,7 @@ use Illuminate\Support\Facades\Route;
 
 
 
-    Route::get('/websites/{id}/preview/{path?}', [WebsiteOperationsController::class, 'preview'])
-        ->middleware('role:admin|reseller')
-        ->where('path', '.*')
-        ->name('websites.preview');
+
 
     Route::get('/websites/{id}/redis-cache', [RedisCacheController::class, 'index'])
         ->middleware('role:admin|reseller')

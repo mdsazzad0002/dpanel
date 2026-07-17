@@ -33,6 +33,7 @@ class Website extends Model
         'assigned_reseller_id',
         'command',
         'status',
+        'type',
     ];
 
     protected $casts = [

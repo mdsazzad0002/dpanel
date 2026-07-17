@@ -32,6 +32,14 @@ class PhpService extends Controller
         return ScriptPathResolver::resolveScriptPath('php', 'versions');
     }
 
- 
+    public static function normalizePhpVersion(string $version): string
+    {
+        $version = trim(strtolower($version));
+        if ($version === '' || $version === 'latest' || preg_match('/^\d+\.\d+$/', $version) !== 1) {
+            return '8.3';
+        }
+
+        return $version;
+    }
 
 }
