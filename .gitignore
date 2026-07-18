@@ -1,0 +1,12 @@
+# Ignore everything
+*
+
+# Keep .gitignore itself
+!.gitignore
+
+# Keep these folders
+!discript/
+!discript/**
+
+!dpanel/
+!dpanel/**
