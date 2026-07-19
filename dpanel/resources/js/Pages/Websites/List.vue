@@ -12,7 +12,6 @@ const deleteForm = useForm({});
 const statusForm = useForm({ status: '' });
 const search = ref('');
 const statusFilter = ref('all');
-const installerFilter = ref('all');
 const currentPage = ref(1);
 const perPage = 20;
 
@@ -27,13 +26,11 @@ const filteredWebsites = computed(() => {
     const needle = search.value.trim().toLowerCase();
     return props.websiteRequests.filter((item) => {
         const status = String(item.status ?? '').toLowerCase();
-        const installer = String(item.app_installer ?? 'none').toLowerCase();
         if (statusFilter.value !== 'all' && status !== statusFilter.value) return false;
-        if (installerFilter.value !== 'all' && installer !== installerFilter.value) return false;
         if (!needle) return true;
         const haystack = [
             item.domain, item.root_path, item.php_version, item.status,
-            item.app_installer, item.created_by_label, item.assigned_reseller_name,
+            item.created_by_label, item.assigned_reseller_name,
             item.assigned_user_name, item.enable_ssl ? 'yes' : 'no',
         ].map((v) => String(v ?? '').toLowerCase()).join(' ');
         return haystack.includes(needle);
@@ -54,11 +51,10 @@ const stats = computed(() => {
         total: all.length,
         live: all.filter((w) => String(w.status ?? '').toLowerCase() === 'live').length,
         disabled: all.filter((w) => String(w.status ?? '').toLowerCase() === 'disabled').length,
-        wordpress: all.filter((w) => String(w.app_installer ?? '').toLowerCase() === 'wordpress').length,
     };
 });
 
-watch([search, statusFilter, installerFilter], () => { currentPage.value = 1; });
+watch([search, statusFilter], () => { currentPage.value = 1; });
 watch(totalPages, (value) => { if (currentPage.value > value) currentPage.value = value; });
 
 const formatDate = (value) => {
@@ -105,14 +101,6 @@ const statusClass = (status) => {
     return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 };
 
-const installerLabel = (installer) => String(installer || 'none').toLowerCase() === 'wordpress' ? 'WordPress' : 'Starter';
-
-const installerClass = (installer) => {
-    const v = String(installer || 'none').toLowerCase();
-    if (v === 'wordpress') return 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400';
-    return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
-};
-
 const createdByLabel = (item) => String(item?.created_by_label || item?.assigned_reseller_name || item?.assigned_user_name || 'Admin');
 
 const siteUrl = (item) => {
@@ -149,7 +137,7 @@ const copyUrl = (url) => {
             </div>
 
             <!-- Stats Row -->
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
                     <div class="flex items-center justify-between">
                         <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Total</p>
@@ -177,15 +165,6 @@ const copyUrl = (url) => {
                     </div>
                     <p class="mt-2 text-2xl font-bold text-red-600 dark:text-red-400">{{ stats.disabled }}</p>
                 </div>
-                <div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
-                    <div class="flex items-center justify-between">
-                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">WordPress</p>
-                        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-500/15">
-                            <svg viewBox="0 0 24 24" class="h-4 w-4 text-blue-600 dark:text-blue-400" fill="currentColor"><path d="M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10 10-4.49 10-10S17.51 2 12 2zm-1.5 15.5v-1.1l1.4-3.3h.2l1.4 3.3V17.5h-3zm4.7-6.2c0-.5-.3-.8-.8-.8-.5 0-.8.3-.8.8 0 .5.3.8.8.8.5 0 .8-.3.8-.8zm2.8 6.2v-1l1.2-2.9c.1-.2.1-.3.1-.5 0-.6-.4-.9-1.1-.9H17l.5-2.2h2.7V11l-1.9 4.5h-1.3z" /></svg>
-                        </div>
-                    </div>
-                    <p class="mt-2 text-2xl font-bold text-blue-600 dark:text-blue-400">{{ stats.wordpress }}</p>
-                </div>
             </div>
 
             <!-- Search + Filters -->
@@ -211,14 +190,6 @@ const copyUrl = (url) => {
                         <option value="partial">Partial</option>
                         <option value="disabled">Disabled</option>
                     </select>
-                    <select
-                        v-model="installerFilter"
-                        class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
-                    >
-                        <option value="all">All Types</option>
-                        <option value="none">Starter</option>
-                        <option value="wordpress">WordPress</option>
-                    </select>
                     <Link
                         :href="panelRoute('websites.create')"
                         class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:from-blue-500 hover:to-blue-400 hover:shadow-blue-500/30"
@@ -239,10 +210,10 @@ const copyUrl = (url) => {
                         </svg>
                     </div>
                     <p class="mt-4 text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {{ search || statusFilter !== 'all' || installerFilter !== 'all' ? 'No websites match your filters' : 'No websites yet' }}
+                        {{ search || statusFilter !== 'all' ? 'No websites match your filters' : 'No websites yet' }}
                     </p>
                     <p class="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                        {{ search || statusFilter !== 'all' || installerFilter !== 'all' ? 'Try adjusting your search or filters' : 'Create your first website to get started' }}
+                        {{ search || statusFilter !== 'all' ? 'Try adjusting your search or filters' : 'Create your first website to get started' }}
                     </p>
                 </div>
 
@@ -270,9 +241,6 @@ const copyUrl = (url) => {
                                         <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="statusClass(item.status)">
                                             <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(item.status)"></span>
                                             {{ item.status }}
-                                        </span>
-                                        <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="installerClass(item.app_installer)">
-                                            {{ installerLabel(item.app_installer) }}
                                         </span>
                                     </div>
                                     <div class="mt-1 flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">

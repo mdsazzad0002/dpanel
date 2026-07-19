@@ -1,27 +1,33 @@
 <?php
 
 namespace App\Http\Controllers\Website\WebsiteManage;
+
 use App\Http\Controllers\Controller;
+use App\Models\CronJob;
+use App\Models\DatabaseRequest;
 use App\Models\Website;
-use Illuminate\Http\Request;
+use App\Services\Filemanager\FilemanagerService;
+use App\Services\PathService;
+use App\Services\Php\PhpService;
+use App\Services\ScriptPathResolver;
+use App\Services\Website\WebsiteService;
+use App\Services\Website\WebsiteTrashService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
 use Inertia\Response;
 
-// Service Quick Use
-use App\Services\Filemanager\FilemanagerService;
-
-use App\Services\Php\PhpService;
-use App\Services\Website\WebsiteService;
-use App\Services\PathService;
-
-
-class MainWebsiteController extends Controller{
+class MainWebsiteController extends Controller
+{
     public function __construct(
         protected FilemanagerService $filemanagerService,
         protected WebsiteService $websiteService,
         protected PathService $paths,
+        protected WebsiteTrashService $websiteTrashService,
     ) {
     }
 
@@ -125,7 +131,7 @@ class MainWebsiteController extends Controller{
             return response()->json([
                 'type' => 'error',
                 'message' => 'Website Already Exists',
-            ]);
+            ], 422);
         }
 
 
@@ -183,6 +189,7 @@ class MainWebsiteController extends Controller{
                 (string) $validated['domain'],
                 (string) $validated['php_version'],
                 $startDirectory,
+                $siteOwner,
             );
         } catch (\Throwable $e) {
             return response()->json([
@@ -223,9 +230,126 @@ class MainWebsiteController extends Controller{
         ]);
     }
 
+    /**
+     * Destroy a website and archive its files for restore.
+     */
+    public function destroy(Request $request, string $token, string $id): RedirectResponse|JsonResponse
+    {
+        $website = Website::query()
+            ->visibleTo($request->user())
+            ->firstWhere('id', $id);
 
+        abort_if($website === null, 404);
 
+        $domain = strtolower(trim((string) ($website->domain ?? '')));
+        $databaseRequests = DatabaseRequest::query()
+            ->where('domain', $domain)
+            ->get(['id', 'domain', 'database_name', 'database_user', 'database_host', 'charset', 'collation', 'status', 'assigned_user_id'])
+            ->map(fn (DatabaseRequest $item): array => [
+                'id' => (string) $item->id,
+                'domain' => (string) $item->domain,
+                'database_name' => (string) $item->database_name,
+                'database_user' => (string) $item->database_user,
+                'database_host' => (string) $item->database_host,
+                'charset' => (string) $item->charset,
+                'collation' => (string) $item->collation,
+                'status' => (string) $item->status,
+                'assigned_user_id' => $item->assigned_user_id,
+            ])
+            ->all();
+        $cronJobs = CronJob::query()
+            ->where('website_id', $id)
+            ->get(['id', 'website_id', 'domain', 'name', 'expression', 'command', 'status', 'description'])
+            ->map(fn (CronJob $job): array => [
+                'id' => (string) $job->id,
+                'website_id' => (string) $job->website_id,
+                'domain' => (string) ($job->domain ?? ''),
+                'name' => (string) ($job->name ?? ''),
+                'expression' => (string) ($job->expression ?? ''),
+                'command' => (string) ($job->command ?? ''),
+                'status' => (string) ($job->status ?? ''),
+                'description' => (string) ($job->description ?? ''),
+            ])
+            ->all();
+        $cleanupMessages = [];
 
+        try {
+            $archive = $this->websiteTrashService->archiveWebsite($website, $databaseRequests, $cronJobs);
+            $cleanupMessages[] = 'Website files archived to '.$archive['zip_name'].'.';
+        } catch (\Throwable $e) {
+            Log::error('Website trash archive failed', [
+                'website_id' => $id,
+                'domain' => $domain,
+                'error' => $e->getMessage(),
+            ]);
 
+            return response()->json([
+                'type' => 'error',
+                'message' => 'Website archive failed.',
+                'errors' => [
+                    'archive' => $e->getMessage(),
+                ],
+            ], 422);
+        }
 
+        if ($domain !== '') {
+            $scriptPath = ScriptPathResolver::resolveScriptPath('sync-vhost');
+            if (is_string($scriptPath) && $scriptPath !== '') {
+                $result = ScriptPathResolver::runSystemScriptAsRootWithOutput($scriptPath, ['remove', $domain]);
+                if ($result['success']) {
+                    $cleanupMessages[] = 'Live vhost removed.';
+                } else {
+                    $message = trim((string) $result['output']);
+                    $cleanupMessages[] = 'Live vhost removal failed: '.($message !== '' ? $message : 'unknown error');
+
+                    return response()->json([
+                        'type' => 'error',
+                        'message' => 'Website vhost cleanup failed.',
+                        'errors' => [
+                            'vhost' => $message !== '' ? $message : 'Unable to remove live vhost.',
+                        ],
+                    ], 422);
+                }
+            }
+        }
+
+        try {
+            DB::transaction(function () use ($website, $domain, $id): void {
+                if ($domain !== '') {
+                    DatabaseRequest::query()->where('domain', $domain)->delete();
+                }
+
+                CronJob::query()->where('website_id', $id)->delete();
+                $website->delete();
+            });
+        } catch (\Throwable $e) {
+            Log::error('Website destroy failed', [
+                'website_id' => $id,
+                'domain' => $domain,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'type' => 'error',
+                'message' => 'Website destroy failed.',
+                'errors' => [
+                    'destroy' => $e->getMessage(),
+                ],
+            ], 422);
+        }
+
+        $message = 'Website deleted successfully.';
+        if ($cleanupMessages !== []) {
+            $message .= ' '.implode(' ', $cleanupMessages);
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'type' => 'success',
+                'message' => $message,
+            ]);
+        }
+
+        return redirect()->route('websites.list')->with('success', $message);
+    }
 }

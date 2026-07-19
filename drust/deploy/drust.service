@@ -1,0 +1,20 @@
+[Unit]
+Description=drust execution API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/drust
+EnvironmentFile=/etc/drust/drust.env
+ExecStart=/usr/local/bin/drust-start
+Restart=always
+RestartSec=3
+User=root
+Group=root
+NoNewPrivileges=no
+PrivateTmp=true
+ProtectHome=false
+ReadWritePaths=/var/www /home
+
+[Install]
+WantedBy=multi-user.target

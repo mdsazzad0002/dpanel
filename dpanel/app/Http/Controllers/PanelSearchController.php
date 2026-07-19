@@ -248,7 +248,6 @@ class PanelSearchController extends Controller
                 $rootPath = str_replace('\\', '/', trim((string) ($website->root_path ?? '')));
                 $status = strtolower(trim((string) ($website->status ?? 'pending'))) ?: 'pending';
                 $phpVersion = trim((string) ($website->php_version ?? ''));
-                $installer = trim((string) ($website->app_installer ?? ''));
                 $assignedResellerName = trim((string) ($website->assignedReseller?->name ?? ''));
                 $assignedUserName = trim((string) ($website->assignedUser?->name ?? ''));
                 $href = route('websites.manage', [
@@ -271,7 +270,6 @@ class PanelSearchController extends Controller
                         $rootPath,
                         $status,
                         $phpVersion,
-                        $installer,
                         $assignedResellerName,
                         $assignedUserName,
                         'manage website',

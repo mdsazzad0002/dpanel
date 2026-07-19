@@ -3,33 +3,32 @@
 namespace App\Http\Controllers\Website;
 
 use App\Http\Controllers\Controller;
-use App\Models\Website;
 use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\User;
+use App\Models\Website;
+use App\Services\Filemanager\FilemanagerService;
+use App\Services\ScriptExecutionGateway;
+use App\Services\ScriptPathResolver;
+use App\Services\Ssl\SslLifecycleService;
+use App\Services\Website\WebsiteCreateEditService;
+use App\Services\Website\WebsiteResolverService;
+use App\Services\Website\WebsiteTemplateCatalogService;
+use App\Services\Website\WebsiteWebServerSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+// Service Quick Use
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use ZipArchive;
-
-// Service Quick Use
-use App\Services\Website\WebsiteCreateEditService;
-use App\Services\Website\WebsiteTemplateCatalogService;
-use App\Services\Website\WebsiteResolverService;
-
-use App\Services\Php\PhpService;
-use App\Services\PathService;
-
 
 class WebsiteController extends Controller
 {
@@ -37,26 +36,41 @@ class WebsiteController extends Controller
         protected WebsiteResolverService $websiteResolver,
         protected WebsiteTemplateCatalogService $templateCatalog,
         protected WebsiteCreateEditService $websiteCreateEdit,
-    ) {
-    }
+        protected SslLifecycleService $sslLifecycleService,
+        protected WebsiteWebServerSyncService $websiteWebServerSyncService,
+        protected FilemanagerService $filemanagerService,
+    ) {}
 
     private const HOME_BASE = '/home';
+
     private const WEBSITE_METRICS_TABLE = 'website_metrics';
+
     private const DEFAULT_SITE_DIR = 'public_html';
+
     private const PHP_SETTINGS_TABLE = 'php_management_settings';
+
     private const PHP_STATE_KEY = 'state';
+
     private const DEFAULT_APACHE_BACKEND_PORT = 8080;
+
     private const DEFAULT_NGINX_PRIMARY_PORT = 80;
+
     private const WEBSITE_USAGE_HISTORY_DIR = 'app/website-usage-history';
+
     private const WEBSITE_USAGE_RETENTION_HOURS = 12;
+
     private const WEBSITE_USAGE_MAX_POINTS = 720;
+
     private const WEBSITE_USAGE_STALE_FILE_DAYS = 3;
+
     private const WEBSITE_USAGE_CLEANUP_CACHE_KEY = 'websites:usage-history:last-cleanup';
+
     private const WEBSITE_USAGE_CLEANUP_INTERVAL_MINUTES = 30;
+
     /**
      * @var array<int, string>
      */
-    private const FALLBACK_PHP_VERSIONS = ['8.0', '7.4'];
+    private const FALLBACK_PHP_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
 
     public function __call(string $method, array $parameters): mixed
     {
@@ -66,9 +80,6 @@ class WebsiteController extends Controller
 
         throw new \BadMethodCallException(sprintf('Method %s::%s does not exist.', static::class, $method));
     }
-
-
-
 
     public function searchParentDomains(Request $request): JsonResponse
     {
@@ -124,8 +135,6 @@ class WebsiteController extends Controller
         ]);
     }
 
-
-
     /**
      * Edit website request.
      */
@@ -143,7 +152,7 @@ class WebsiteController extends Controller
         return Inertia::render('Websites/Edit', [
             'websiteRequest' => $requestItem,
             'serverBaseDir' => $this->websiteBaseDirectory(),
-            'defaultPhpVersion' => $this->getDefaultWebsitePhpVersion((string) ($requestItem['app_installer'] ?? 'none')),
+            'defaultPhpVersion' => $this->getDefaultWebsitePhpVersion('none'),
             'phpVersions' => array_values(
                 collect($phpVersions)
                     ->map(fn (string $version): string => trim($version))
@@ -184,10 +193,6 @@ class WebsiteController extends Controller
                 'value' => $runtimeStatus,
             ],
             [
-                'label' => 'Installer',
-                'value' => strtolower((string) ($website['app_installer'] ?? 'none')) === 'wordpress' ? 'wordpress' : 'starter',
-            ],
-            [
                 'label' => 'Root Path',
                 'value' => (string) ($website['root_path'] ?? '-'),
             ],
@@ -211,6 +216,7 @@ class WebsiteController extends Controller
     public function webServerManager(string $token, string $id): Response
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
+        $website['client_max_body_size'] = (string) (Website::query()->whereKey($id)->value('client_max_body_size') ?? '2G');
 
         $domain = (string) ($website['domain'] ?? '');
 
@@ -222,6 +228,29 @@ class WebsiteController extends Controller
             'hasApacheVhost' => $this->apacheVhostExists($domain),
             'hasNginxVhost' => $this->nginxVhostExists($domain),
         ]);
+    }
+
+    public function updateWebServer(Request $request, string $token, string $id): RedirectResponse|JsonResponse
+    {
+        $this->findAuthorizedWebsiteOrFail($id);
+        $validated = $request->validate([
+            'client_max_body_size' => ['required', 'string', 'regex:/^[1-9][0-9]*(?:K|M|G|T)$/i'],
+        ]);
+        $website = Website::query()->findOrFail($id);
+        $website->client_max_body_size = strtoupper((string) $validated['client_max_body_size']);
+
+        try {
+            $website->save();
+            $this->websiteWebServerSyncService->syncWebsite($website->fresh());
+        } catch (\Throwable $e) {
+            return $request->expectsJson()
+                ? response()->json(['message' => 'Web server configuration update failed.', 'error' => $e->getMessage()], 422)
+                : back()->with('error', 'Web server configuration update failed. '.$e->getMessage());
+        }
+
+        return $request->expectsJson()
+            ? response()->json(['message' => 'Web server configuration updated.'])
+            : back()->with('success', 'Web server configuration updated.');
     }
 
     public function sslManager(string $token, string $id): Response
@@ -238,75 +267,20 @@ class WebsiteController extends Controller
 
     public function issueSsl(string $token, string $id): RedirectResponse
     {
-        $requests = collect($this->readRequests());
-        $website = $this->findAuthorizedWebsiteOrFail($id);
-        $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
-        $rootPath = (string) ($website['root_path'] ?? '');
-        $phpVersion = (string) ($website['php_version'] ?? '8.0');
-        if ($domain === '' || $rootPath === '') {
-            return redirect()->route('websites.ssl', $id)->with('error', 'Domain or root path is missing for SSL issue.');
-        }
-        if (! is_dir($rootPath)) {
-            return redirect()->route('websites.ssl', $id)->with('error', "Root path does not exist: {$rootPath}");
-        }
-        $issueResult = $this->runIssueSslScript($domain, $rootPath, $this->shouldAddWwwAlias($domain));
-        if (! $issueResult['ran']) {
-            return redirect()->route('websites.ssl', $id)->with('error', 'SSL issue script is not available on this server.');
-        }
-        if (! $issueResult['success']) {
-            $summary = trim((string) preg_replace('/\s+/', ' ', (string) ($issueResult['output'] ?? '')));
-            if ($summary !== '') {
-                $summary = substr($summary, 0, 280);
-            }
+        $this->findAuthorizedWebsiteOrFail($id);
+        $website = Website::query()->findOrFail($id);
+        $website->forceFill(['enable_ssl' => true])->save();
 
-            $message = 'SSL issue failed.';
-            if ((int) ($issueResult['exit_code'] ?? 1) === 77) {
-                $message = 'SSL issue requires root privileges. Run ServerPanel as root or allow passwordless sudo for this action.';
-            }
-            if ($summary !== '') {
-                $message .= ' '.$summary;
-            }
-
-            return redirect()->route('websites.ssl', $id)->with('error', $message);
+        try {
+            $result = $this->sslLifecycleService->ensureForWebsite($website->fresh());
+            $this->websiteWebServerSyncService->syncWebsite($website->fresh());
+        } catch (\Throwable $e) {
+            return redirect()->route('websites.ssl', $id)->with('error', 'SSL issue failed. '.$e->getMessage());
         }
 
-        $syncReport = $this->syncLiveWebVhostWithReport($domain, $rootPath, $phpVersion);
-        $runtimeStatus = $this->detectRuntimeStatus([
-            'domain' => $domain,
-            'root_path' => $rootPath,
-            'status' => (string) ($website['status'] ?? 'pending'),
-        ]);
+        $action = ! empty($result['renewed']) ? 'renewed' : (! empty($result['issued']) ? 'issued' : 'verified');
 
-        $updated = $requests->map(function (array $item) use ($id, $runtimeStatus): array {
-            if ((string) ($item['id'] ?? '') !== $id) {
-                return $item;
-            }
-
-            $item['enable_ssl'] = true;
-            $item['status'] = $runtimeStatus;
-            $item['updated_at'] = now()->toIso8601String();
-
-            return $item;
-        })->values()->all();
-
-        $this->writeRequests($updated);
-
-        $syncMessage = implode(' | ', $syncReport['messages']);
-        if (! $syncReport['generated']) {
-            $message = 'SSL certificate issued, but vhost sync failed.';
-            if ($syncMessage !== '') {
-                $message .= ' '.$syncMessage;
-            }
-
-            return redirect()->route('websites.ssl', $id)->with('error', $message);
-        }
-
-        $message = 'SSL certificate issued successfully.';
-        if ($syncMessage !== '') {
-            $message .= ' '.$syncMessage;
-        }
-
-        return redirect()->route('websites.ssl', $id)->with('success', $message);
+        return redirect()->route('websites.ssl', $id)->with('success', "SSL certificate {$action} successfully.");
     }
 
     public function Usage(string $token, string $id): Response
@@ -421,8 +395,6 @@ class WebsiteController extends Controller
         return redirect()->route('websites.manage', $id)->with('error', 'Project cache clear failed.'.$suffix);
     }
 
-
-   
     /**
      * Update website request.
      */
@@ -463,6 +435,7 @@ class WebsiteController extends Controller
             'detectRuntimeStatus' => fn (array $website): string => $this->detectRuntimeStatus($website),
             'defaultResellerId' => function () use ($request): ?int {
                 $actor = $request->user();
+
                 return $actor && $actor->hasRole('reseller') ? (int) $actor->id : null;
             },
             'websiteModelToArray' => fn (Website $website): array => $this->websiteModelToArray($website),
@@ -478,6 +451,7 @@ class WebsiteController extends Controller
 
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
         $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
         $websiteRoot = $this->normalizeRootPath((string) ($website['root_path'] ?? ''), (string) ($website['domain'] ?? 'site'));
         $defaultPath = $scopeRoot !== ''
             ? $scopeRoot
@@ -603,13 +577,11 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'File already exists.');
         }
 
-        $dir = dirname($targetPath);
-        if (! is_dir($dir) && ! @mkdir($dir, 0755, true) && ! is_dir($dir)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create parent folder.');
-        }
-
-        if (@file_put_contents($targetPath, '') === false) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create file.');
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+        try {
+            $this->filemanagerService->writeTextFile($siteOwner, $targetPath, '');
+        } catch (\Throwable $e) {
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create file. '.$e->getMessage());
         }
 
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['file' => $targetRelative]))->with('success', 'File created.');
@@ -629,20 +601,20 @@ class WebsiteController extends Controller
         $fileRelative = $this->sanitizeRelativePath((string) $validated['file_path']);
         $filePath = $this->resolvePathInsideBase($basePath, $fileRelative);
 
-        if (! is_file($filePath)) {
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+        try {
+            $this->filemanagerService->writeTextFile(
+                $siteOwner,
+                $filePath,
+                (string) ($validated['content'] ?? ''),
+                true,
+            );
+        } catch (\Throwable $e) {
             if ($request->expectsJson()) {
-                return response()->json(['message' => 'File not found.'], 422);
+                return response()->json(['message' => 'Failed to save file.', 'error' => $e->getMessage()], 422);
             }
 
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, '', $scopeRoot))->with('error', 'File not found.');
-        }
-
-        if (@file_put_contents($filePath, (string) ($validated['content'] ?? '')) === false) {
-            if ($request->expectsJson()) {
-                return response()->json(['message' => 'Failed to save file.'], 422);
-            }
-
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, '', $scopeRoot, ['file_path' => $fileRelative]))->with('error', 'Failed to save file.');
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, '', $scopeRoot, ['file_path' => $fileRelative]))->with('error', 'Failed to save file. '.$e->getMessage());
         }
 
         $parent = dirname($fileRelative);
@@ -663,10 +635,12 @@ class WebsiteController extends Controller
     public function uploadFile(Request $request, string $token, string $id): RedirectResponse
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
+        $websiteUploadLimit = strtoupper((string) (Website::query()->whereKey($id)->value('client_max_body_size') ?? '2G'));
+        $uploadMaxKilobytes = $this->iniSizeToKilobytes($websiteUploadLimit, 2 * 1024 * 1024);
 
         $validated = $request->validate([
             'path' => ['nullable', 'string', 'max:1500'],
-            'upload' => ['required', 'file', 'max:2097152'],
+            'upload' => ['required', 'file', 'max:'.$uploadMaxKilobytes],
         ]);
 
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
@@ -746,13 +720,10 @@ class WebsiteController extends Controller
 
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
         $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
         $itemRelative = $this->sanitizeRelativePath((string) $validated['item_path']);
         $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
         $itemPath = $this->resolvePathInsideBase($basePath, $itemRelative);
-
-        if (! file_exists($itemPath)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Item not found.');
-        }
 
         $newName = $this->sanitizeFilename((string) $validated['new_name']);
         if ($newName === '') {
@@ -764,18 +735,13 @@ class WebsiteController extends Controller
         $targetRelative = $this->sanitizeRelativePath(trim($parent.'/'.$newName, '/'));
         $targetPath = $this->resolvePathInsideBase($basePath, $targetRelative);
 
-        if (file_exists($targetPath)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Target name already exists.');
+        try {
+            $this->filemanagerService->movePath($siteOwner, $itemPath, $targetPath);
+        } catch (\Throwable $e) {
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to rename item. '.$e->getMessage());
         }
 
-        if (! @rename($itemPath, $targetPath)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to rename item.');
-        }
-
-        return redirect()->route(
-            'websites.filemanager',
-            $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, is_file($targetPath) ? ['file' => $targetRelative] : [])
-        )->with('success', 'Item renamed.');
+        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Item renamed.');
     }
 
     public function moveItems(Request $request, string $token, string $id): RedirectResponse
@@ -792,13 +758,10 @@ class WebsiteController extends Controller
 
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
         $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
         $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
         $destinationPathRelative = $this->sanitizeRelativePath((string) ($validated['destination_path'] ?? ''));
-        $destinationPath = $this->resolvePathInsideBase($basePath, $destinationPathRelative);
-
-        if (! is_dir($destinationPath)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Destination folder not found.');
-        }
+        $this->resolvePathInsideBase($basePath, $destinationPathRelative);
 
         $allItems = [];
         if (! empty($validated['item_path'])) {
@@ -819,30 +782,25 @@ class WebsiteController extends Controller
 
         foreach ($allItems as $itemRelative) {
             $itemPath = $this->resolvePathInsideBase($basePath, $itemRelative);
-            if (! file_exists($itemPath)) {
-                $errors[] = "Item not found: {$itemRelative}";
-                continue;
-            }
-
-            $targetRelative = $this->sanitizeRelativePath(trim($destinationPathRelative.'/'.basename($itemPath), '/'));
+            $targetRelative = $this->sanitizeRelativePath(trim($destinationPathRelative.'/'.basename($itemRelative), '/'));
             if ($targetRelative === $itemRelative) {
                 $sameDestinationCount++;
+
                 continue;
             }
 
-            if (is_dir($itemPath) && str_starts_with($targetRelative.'/', $itemRelative.'/')) {
+            if (str_starts_with($targetRelative.'/', $itemRelative.'/')) {
                 $errors[] = "Cannot move folder into itself: {$itemRelative}";
+
                 continue;
             }
 
             $targetPath = $this->resolvePathInsideBase($basePath, $targetRelative);
-            if (file_exists($targetPath)) {
-                $errors[] = 'Target already exists: '.basename($targetPath);
-                continue;
-            }
+            try {
+                $this->filemanagerService->movePath($siteOwner, $itemPath, $targetPath);
+            } catch (\Throwable $e) {
+                $errors[] = basename($itemRelative).': '.$e->getMessage();
 
-            if (! @rename($itemPath, $targetPath)) {
-                $errors[] = 'Failed to move: '.basename($itemPath);
                 continue;
             }
 
@@ -940,7 +898,7 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', $this->zipExtensionMissingMessage());
         }
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         if ($zip->open($zipPath, ZipArchive::CREATE) !== true) {
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create zip file.');
         }
@@ -992,7 +950,7 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Extract target directory is not writable.');
         }
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         try {
             $openResult = $zip->open($zipPath);
             if ($openResult !== true) {
@@ -1034,6 +992,7 @@ class WebsiteController extends Controller
 
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
         $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
         $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
         $allItems = [];
 
@@ -1052,10 +1011,10 @@ class WebsiteController extends Controller
 
         foreach ($allItems as $itemRelative) {
             $itemPath = $this->resolvePathInsideBase($basePath, $itemRelative);
-            if (is_dir($itemPath)) {
-                $this->deleteDirectoryRecursive($itemPath);
-            } elseif (is_file($itemPath)) {
-                @unlink($itemPath);
+            try {
+                $this->filemanagerService->deletePath($siteOwner, $itemPath);
+            } catch (\Throwable $e) {
+                return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to delete '.basename($itemRelative).'. '.$e->getMessage());
             }
         }
 
@@ -1117,7 +1076,7 @@ class WebsiteController extends Controller
     /**
      * Build execution command from payload.
      *
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     protected function buildCommand(array $payload): string
     {
@@ -1145,7 +1104,6 @@ class WebsiteController extends Controller
      * @return RedirectResponse|JsonResponse|null
      */
 
-
     /**
      * Best-effort ownership and chmod isolation.
      * Only applies when running as root on Linux.
@@ -1167,17 +1125,17 @@ class WebsiteController extends Controller
             $rootPath = $publicRoot;
         }
 
-        $this->runSystemCommand("getent group ".escapeshellarg($siteOwner)." >/dev/null 2>&1 || groupadd ".escapeshellarg($siteOwner));
-        $this->runSystemCommand("id -u ".escapeshellarg($siteOwner)." >/dev/null 2>&1 || useradd -m -d ".escapeshellarg($homePath)." -s /usr/sbin/nologin -g ".escapeshellarg($siteOwner)." ".escapeshellarg($siteOwner));
-        $this->runSystemCommand("mkdir -p ".escapeshellarg($homePath));
-        $this->runSystemCommand("chown root:root ".escapeshellarg($homePath));
-        $this->runSystemCommand("chmod 711 ".escapeshellarg($homePath));
-        $this->runSystemCommand("mkdir -p ".escapeshellarg($projectRoot));
-        $this->runSystemCommand("chown -R ".escapeshellarg($siteOwner).":www-data ".escapeshellarg($projectRoot));
-        $this->runSystemCommand("find ".escapeshellarg($projectRoot)." -type d -exec chmod 750 {} \\;");
-        $this->runSystemCommand("find ".escapeshellarg($projectRoot)." -type f -exec chmod 640 {} \\;");
-        $this->runSystemCommand("mkdir -p ".escapeshellarg($publicRoot));
-        $this->runSystemCommand("mkdir -p ".escapeshellarg($rootPath));
+        $this->runSystemCommand('getent group '.escapeshellarg($siteOwner).' >/dev/null 2>&1 || groupadd '.escapeshellarg($siteOwner));
+        $this->runSystemCommand('id -u '.escapeshellarg($siteOwner).' >/dev/null 2>&1 || useradd -m -d '.escapeshellarg($homePath).' -s /usr/sbin/nologin -g '.escapeshellarg($siteOwner).' '.escapeshellarg($siteOwner));
+        $this->runSystemCommand('mkdir -p '.escapeshellarg($homePath));
+        $this->runSystemCommand('chown root:root '.escapeshellarg($homePath));
+        $this->runSystemCommand('chmod 711 '.escapeshellarg($homePath));
+        $this->runSystemCommand('mkdir -p '.escapeshellarg($projectRoot));
+        $this->runSystemCommand('chown -R '.escapeshellarg($siteOwner).':www-data '.escapeshellarg($projectRoot));
+        $this->runSystemCommand('find '.escapeshellarg($projectRoot).' -type d -exec chmod 750 {} \\;');
+        $this->runSystemCommand('find '.escapeshellarg($projectRoot).' -type f -exec chmod 640 {} \\;');
+        $this->runSystemCommand('mkdir -p '.escapeshellarg($publicRoot));
+        $this->runSystemCommand('mkdir -p '.escapeshellarg($rootPath));
     }
 
     protected function runSystemCommand(string $command): void
@@ -1289,58 +1247,33 @@ class WebsiteController extends Controller
             '/usr/local/bin/serverpanel-issue-ssl.sh',
         ];
 
-        $scriptPath = '';
-        foreach ($scriptCandidates as $candidate) {
-            if (is_file($candidate)) {
-                $scriptPath = $candidate;
-                break;
-            }
-        }
+        $scriptPath = $this->resolveScriptPath($scriptCandidates);
         if ($scriptPath === '') {
             return ['ran' => false, 'success' => false, 'output' => 'issue-ssl script not found', 'exit_code' => 1];
         }
 
-        $parts = [
-            'bash',
-            escapeshellarg($scriptPath),
-            escapeshellarg($this->normalizeDomain($domain)),
-            escapeshellarg($rootPath),
+        $result = app(ScriptExecutionGateway::class)->execute($scriptPath, [
+            $this->normalizeDomain($domain),
+            $rootPath,
             $includeWwwAlias ? '1' : '0',
-        ];
-        $command = implode(' ', $parts);
-        $output = [];
-        $exitCode = 1;
-
-        $isRoot = function_exists('posix_geteuid') && posix_geteuid() === 0;
-        if ($isRoot) {
-            @exec($command.' 2>&1', $output, $exitCode);
-        } else {
-            $sudoPath = trim((string) @shell_exec('command -v sudo 2>/dev/null'));
-            if ($sudoPath === '') {
-                $output = ['sudo command not found and process is not root.'];
-                $exitCode = 77;
-            } else {
-                @exec(escapeshellarg($sudoPath).' -n '.$command.' 2>&1', $output, $exitCode);
-            }
-        }
-
-        $message = trim(implode("\n", $output));
-        if ($exitCode !== 0) {
+        ], [], true);
+        $message = trim((string) ($result['output'] ?? ''));
+        if (! ($result['success'] ?? false)) {
             Log::warning('SSL issue script failed', [
                 'domain' => $domain,
                 'root_path' => $rootPath,
                 'include_www_alias' => $includeWwwAlias,
                 'script' => $scriptPath,
-                'exit_code' => $exitCode,
+                'exit_code' => (int) ($result['exit_code'] ?? 1),
                 'output' => $message,
             ]);
         }
 
         return [
-            'ran' => true,
-            'success' => $exitCode === 0,
+            'ran' => (bool) ($result['ran'] ?? true),
+            'success' => (bool) ($result['success'] ?? false),
             'output' => $message,
-            'exit_code' => $exitCode,
+            'exit_code' => (int) ($result['exit_code'] ?? 1),
         ];
     }
 
@@ -1354,48 +1287,28 @@ class WebsiteController extends Controller
             '/usr/local/bin/serverpanel-sync-vhost.sh',
         ];
 
-        $scriptPath = '';
-        foreach ($scriptCandidates as $candidate) {
-            if (is_file($candidate)) {
-                $scriptPath = $candidate;
-                break;
-            }
-        }
+        $scriptPath = $this->resolveScriptPath($scriptCandidates);
         if ($scriptPath === '') {
             return ['ran' => false, 'success' => false, 'output' => 'sync-vhost script not found'];
         }
 
-        $parts = [
-            'bash',
-            escapeshellarg($scriptPath),
-            escapeshellarg($action),
-            escapeshellarg($this->normalizeDomain($domain)),
-        ];
-        if ($rootPath !== null) {
-            $parts[] = escapeshellarg($rootPath);
-        }
-        if ($phpVersion !== null) {
-            $parts[] = escapeshellarg($phpVersion);
-        }
-        if ($oldDomain !== null) {
-            $parts[] = escapeshellarg($this->normalizeDomain($oldDomain));
-        }
+        $result = app(ScriptExecutionGateway::class)->execute($scriptPath, array_values(array_filter([
+            $action,
+            $this->normalizeDomain($domain),
+            $rootPath,
+            $phpVersion,
+            $oldDomain !== null ? $this->normalizeDomain($oldDomain) : null,
+        ], static fn ($value) => $value !== null && $value !== '')), [
+            'PANEL_PORT' => $this->panelPort(),
+            'APACHE_BACKEND_PORT' => $this->apacheBackendPort(),
+            'NGINX_PRIMARY_PORT' => $this->nginxPrimaryPort(),
+            'PHPMYADMIN_PORT' => $this->phpMyAdminPort(),
+            'REDIS_SERVICE' => $this->redisServiceUnit(),
+        ], true);
+        $message = trim((string) ($result['output'] ?? ''));
+        $success = in_array((int) ($result['exit_code'] ?? 1), [0, 3], true);
 
-        $envPrefix = sprintf(
-            'PANEL_PORT=%d APACHE_BACKEND_PORT=%d NGINX_PRIMARY_PORT=%d PHPMYADMIN_PORT=%d REDIS_SERVICE=%s ',
-            $this->panelPort(),
-            $this->apacheBackendPort(),
-            $this->nginxPrimaryPort(),
-            $this->phpMyAdminPort(),
-            escapeshellarg($this->redisServiceUnit()),
-        );
-        $output = [];
-        $exitCode = 1;
-        @exec($envPrefix.implode(' ', $parts).' 2>&1', $output, $exitCode);
-        $message = trim(implode("\n", $output));
-        $success = in_array($exitCode, [0, 3], true);
-
-        if ($exitCode === 3) {
+        if ((int) ($result['exit_code'] ?? 1) === 3) {
             Log::warning('Vhost sync script completed with recoverable errors', [
                 'action' => $action,
                 'domain' => $domain,
@@ -1403,10 +1316,10 @@ class WebsiteController extends Controller
                 'php_version' => $phpVersion,
                 'old_domain' => $oldDomain,
                 'script' => $scriptPath,
-                'exit_code' => $exitCode,
+                'exit_code' => (int) ($result['exit_code'] ?? 1),
                 'output' => $message,
             ]);
-        } elseif ($exitCode !== 0) {
+        } elseif (! $success) {
             Log::warning('Vhost sync script failed', [
                 'action' => $action,
                 'domain' => $domain,
@@ -1414,13 +1327,13 @@ class WebsiteController extends Controller
                 'php_version' => $phpVersion,
                 'old_domain' => $oldDomain,
                 'script' => $scriptPath,
-                'exit_code' => $exitCode,
+                'exit_code' => (int) ($result['exit_code'] ?? 1),
                 'output' => $message,
             ]);
         }
 
         return [
-            'ran' => true,
+            'ran' => (bool) ($result['ran'] ?? true),
             'success' => $success,
             'output' => $message,
         ];
@@ -1439,7 +1352,7 @@ class WebsiteController extends Controller
     }
 
     /**
-     * @param Collection<int, array<string, mixed>> $requests
+     * @param  Collection<int, array<string, mixed>>  $requests
      * @return array<int, array<string, mixed>>
      */
     protected function decorateWebsiteRecords(Collection $requests): array
@@ -1489,8 +1402,6 @@ class WebsiteController extends Controller
             ->values()
             ->all();
     }
-
-
 
     protected function isValidWebsiteRootPath(string $rootPath): bool
     {
@@ -1811,21 +1722,16 @@ HTML;
         $extractMethod = '';
         $tmpTar = '';
 
+        $tempDir = $this->resolveTemporaryDirectory();
+
         if ($hasZipArchive) {
-            $tmpArchive = (string) @tempnam(sys_get_temp_dir(), 'wpzip_');
-            if ($tmpArchive === '') {
-                return [
-                    'attempted' => true,
-                    'installed' => false,
-                    'message' => 'WordPress install failed: cannot create temporary zip file.',
-                ];
-            }
+            $tmpArchive = $this->buildTemporaryFilePath($tempDir, 'wpzip_', '.zip');
             $packageUrl = $wordpressVersion === 'latest'
                 ? 'https://wordpress.org/latest.zip'
                 : 'https://wordpress.org/wordpress-'.$wordpressVersion.'.zip';
             $extractMethod = 'zip';
         } else {
-            $tmpArchive = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/').'/wp_targz_'.bin2hex(random_bytes(6)).'.tar.gz';
+            $tmpArchive = $this->buildTemporaryFilePath($tempDir, 'wp_targz_', '.tar.gz');
             $tmpTar = substr($tmpArchive, 0, -3);
             $packageUrl = $wordpressVersion === 'latest'
                 ? 'https://wordpress.org/latest.tar.gz'
@@ -1833,7 +1739,7 @@ HTML;
             $extractMethod = 'targz';
         }
 
-        $tmpExtract = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/').'/wp_extract_'.bin2hex(random_bytes(6));
+        $tmpExtract = $this->buildTemporaryDirectoryPath($tempDir, 'wp_extract_');
         $downloaded = false;
 
         try {
@@ -1849,7 +1755,7 @@ HTML;
                     $statusCode = (int) @curl_getinfo($ch, CURLINFO_HTTP_CODE);
                     @curl_close($ch);
                     if (is_string($body) && $body !== '' && $statusCode >= 200 && $statusCode < 400) {
-                        $downloaded = @file_put_contents($tmpZip, $body) !== false;
+                        $downloaded = @file_put_contents($tmpArchive, $body) !== false;
                     }
                 }
             }
@@ -1871,7 +1777,7 @@ HTML;
             }
 
             if ($extractMethod === 'zip') {
-                $zip = new ZipArchive();
+                $zip = new ZipArchive;
                 if ($zip->open($tmpArchive) !== true) {
                     return [
                         'attempted' => true,
@@ -2020,51 +1926,58 @@ HTML;
 
     protected function runtimeDatabaseScriptPath(): string
     {
-        return rtrim(dirname(base_path()), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'discript'.DIRECTORY_SEPARATOR.'scripts'.DIRECTORY_SEPARATOR.'database-request.sh';
+        foreach (ScriptPathResolver::repositorySearchPaths() as $root) {
+            $candidate = rtrim((string) $root, '/').'/scripts/database-request.sh';
+            if (trim($candidate) !== '') {
+                return $candidate;
+            }
+        }
+
+        return rtrim(dirname(base_path()), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'dscript'.DIRECTORY_SEPARATOR.'scripts'.DIRECTORY_SEPARATOR.'database-request.sh';
     }
 
     /**
-     * @param array<string, string> $databaseConfig
+     * @param  array<int, string>  $scriptCandidates
+     */
+    protected function resolveScriptPath(array $scriptCandidates): string
+    {
+        foreach ($scriptCandidates as $candidate) {
+            if (trim((string) $candidate) !== '') {
+                return (string) $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param  array<string, string>  $databaseConfig
      * @return array{ran: bool, success: bool, output: string}
      */
     protected function provisionWordPressDatabase(array $databaseConfig): array
     {
         $scriptPath = $this->runtimeDatabaseScriptPath();
-        if (! is_file($scriptPath)) {
-            return [
-                'ran' => false,
-                'success' => false,
-                'output' => 'Database provisioning script not found: '.$scriptPath,
-            ];
-        }
-
-        $parts = [
-            'bash',
-            escapeshellarg($scriptPath),
+        $result = app(ScriptExecutionGateway::class)->execute($scriptPath, [
             'create',
-            escapeshellarg((string) ($databaseConfig['database_name'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_user'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_password'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_host'] ?? '127.0.0.1')),
-            escapeshellarg((string) ($databaseConfig['database_port'] ?? '3306')),
-            escapeshellarg((string) ($databaseConfig['charset'] ?? 'utf8mb4')),
-            escapeshellarg((string) ($databaseConfig['collation'] ?? 'utf8mb4_unicode_ci')),
-        ];
-
-        $output = [];
-        $exitCode = 1;
-        @exec(implode(' ', $parts).' 2>&1', $output, $exitCode);
-        $message = trim(implode("\n", $output));
+            (string) ($databaseConfig['database_name'] ?? ''),
+            (string) ($databaseConfig['database_user'] ?? ''),
+            (string) ($databaseConfig['database_password'] ?? ''),
+            (string) ($databaseConfig['database_host'] ?? '127.0.0.1'),
+            (string) ($databaseConfig['database_port'] ?? '3306'),
+            (string) ($databaseConfig['charset'] ?? 'utf8mb4'),
+            (string) ($databaseConfig['collation'] ?? 'utf8mb4_unicode_ci'),
+        ]);
+        $message = trim((string) ($result['output'] ?? ''));
 
         return [
-            'ran' => true,
-            'success' => $exitCode === 0,
-            'output' => $message !== '' ? $message : ($exitCode === 0 ? 'Database provisioning completed.' : 'Database provisioning failed.'),
+            'ran' => (bool) ($result['ran'] ?? true),
+            'success' => (bool) ($result['success'] ?? false),
+            'output' => $message !== '' ? $message : ((bool) ($result['success'] ?? false) ? 'Database provisioning completed.' : 'Database provisioning failed.'),
         ];
     }
 
     /**
-     * @param array<string, string> $databaseConfig
+     * @param  array<string, string>  $databaseConfig
      */
     protected function buildWordPressDatabaseCommand(array $databaseConfig): string
     {
@@ -2084,7 +1997,7 @@ HTML;
     }
 
     /**
-     * @param array<string, string> $databaseConfig
+     * @param  array<string, string>  $databaseConfig
      * @return array{success: bool, message: string}
      */
     protected function writeWordPressConfig(string $rootPath, array $databaseConfig, string $tablePrefix): array
@@ -2290,6 +2203,7 @@ HTML;
                 if (! $result['success']) {
                     return $result;
                 }
+
                 continue;
             }
 
@@ -2812,7 +2726,7 @@ CONF;
     }
 
     /**
-     * @param array<string, mixed> $website
+     * @param  array<string, mixed>  $website
      * @return array<string, mixed>
      */
     protected function buildVhostPreview(array $website): array
@@ -2993,7 +2907,7 @@ CONF;
     }
 
     /**
-     * @param array<string, mixed> $website
+     * @param  array<string, mixed>  $website
      * @return array<string, int|float|string|null>
      */
     protected function safeBuildDynamicMetrics(array $website): array
@@ -3016,7 +2930,7 @@ CONF;
     }
 
     /**
-     * @param array<string, mixed> $website
+     * @param  array<string, mixed>  $website
      * @return array<string, mixed>
      */
     protected function inspectWebsiteSslStatus(array $website): array
@@ -3209,7 +3123,7 @@ CONF;
     }
 
     /**
-     * @param array<string, mixed> $website
+     * @param  array<string, mixed>  $website
      * @return array<string, int|float|string|null>
      */
     protected function buildDynamicMetrics(array $website): array
@@ -3236,7 +3150,7 @@ CONF;
     }
 
     /**
-     * @param array<string, int|float|string|null> $currentMetrics
+     * @param  array<string, int|float|string|null>  $currentMetrics
      * @return array<string, array<int, array<string, int|float|string>>>
      */
     protected function buildDynamicHistories(string $websiteId, array $currentMetrics): array
@@ -3359,7 +3273,7 @@ CONF;
     }
 
     /**
-     * @param array<int, array<string, int|float|string>> $history
+     * @param  array<int, array<string, int|float|string>>  $history
      */
     protected function writeWebsiteMetricsHistory(string $websiteId, array $history): void
     {
@@ -3450,8 +3364,47 @@ CONF;
         }
     }
 
+    protected function resolveTemporaryDirectory(): string
+    {
+        $candidates = [
+            sys_get_temp_dir(),
+            storage_path('app/tmp'),
+            storage_path('framework/tmp'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            $candidate = rtrim(str_replace('\\', '/', trim((string) $candidate)), '/');
+            if ($candidate === '') {
+                continue;
+            }
+
+            if (! is_dir($candidate) && ! @mkdir($candidate, 0755, true) && ! is_dir($candidate)) {
+                continue;
+            }
+
+            if (is_writable($candidate)) {
+                return $candidate;
+            }
+        }
+
+        throw new \RuntimeException('WordPress install failed: no writable temporary directory is available.');
+    }
+
+    protected function buildTemporaryFilePath(string $directory, string $prefix, string $suffix): string
+    {
+        $directory = rtrim(str_replace('\\', '/', $directory), '/');
+        $prefix = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $prefix) ?: 'tmp_';
+
+        return $directory.'/'.$prefix.bin2hex(random_bytes(8)).$suffix;
+    }
+
+    protected function buildTemporaryDirectoryPath(string $directory, string $prefix): string
+    {
+        return $this->buildTemporaryFilePath($directory, $prefix, '');
+    }
+
     /**
-     * @param array<string, bool> $validWebsiteIdMap
+     * @param  array<string, bool>  $validWebsiteIdMap
      */
     protected function shouldDeleteWebsiteMetricsHistoryFile(string $fullPath, array $validWebsiteIdMap, Carbon $staleCutoff): bool
     {
@@ -3501,7 +3454,7 @@ CONF;
     }
 
     /**
-     * @param array<int, array<string, mixed>> $requests
+     * @param  array<int, array<string, mixed>>  $requests
      */
     protected function writeRequests(array $requests): void
     {
@@ -3509,11 +3462,11 @@ CONF;
     }
 
     /**
-     * @param array<int, array<string, mixed>> $requests
+     * @param  array<int, array<string, mixed>>  $requests
      */
     protected function persistRequestsToDatabase(array $requests): void
     {
-            $rows = collect($requests)
+        $rows = collect($requests)
             ->filter(fn ($row): bool => is_array($row))
             ->map(function (array $row): array {
                 $id = trim((string) ($row['id'] ?? ''));
@@ -3543,8 +3496,6 @@ CONF;
                     'project_root' => $projectRoot,
                     'site_owner' => $siteOwner,
                     'php_version' => (string) ($row['php_version'] ?? ''),
-                    'app_installer' => strtolower(trim((string) ($row['app_installer'] ?? 'none'))) ?: 'none',
-                    'wordpress_version' => $this->normalizeWordPressVersion((string) ($row['wordpress_version'] ?? 'latest')),
                     'wordpress_db_prefix' => $this->normalizeWordPressDatabasePrefix((string) ($row['wordpress_db_prefix'] ?? ''), $domain),
                     'enable_ssl' => (bool) ($row['enable_ssl'] ?? false),
                     'filemanager_show_hidden' => (bool) ($row['filemanager_show_hidden'] ?? false),
@@ -3565,6 +3516,7 @@ CONF;
         DB::transaction(function () use ($rows): void {
             if ($rows->isEmpty()) {
                 Website::query()->delete();
+
                 return;
             }
 
@@ -3577,8 +3529,6 @@ CONF;
                     'root_path',
                     'site_owner',
                     'php_version',
-                    'app_installer',
-                    'wordpress_version',
                     'wordpress_db_prefix',
                     'enable_ssl',
                     'filemanager_show_hidden',
@@ -3633,8 +3583,6 @@ CONF;
             'project_root' => $projectRoot,
             'site_owner' => $siteOwner,
             'php_version' => (string) ($website->php_version ?? ''),
-            'app_installer' => strtolower(trim((string) ($website->app_installer ?? 'none'))) ?: 'none',
-            'wordpress_version' => $this->normalizeWordPressVersion((string) ($website->wordpress_version ?? 'latest')),
             'wordpress_db_prefix' => $this->normalizeWordPressDatabasePrefix((string) ($website->wordpress_db_prefix ?? ''), $domain),
             'enable_ssl' => (bool) ($website->enable_ssl ?? false),
             'filemanager_show_hidden' => (bool) ($website->filemanager_show_hidden ?? false),
@@ -3865,6 +3813,8 @@ CONF;
      */
     protected function getPhpVersionsForWebsites(): array
     {
+        return $this->templateCatalog->availablePhpVersions();
+
         try {
             $templateVersions = $this->templateCatalog->availablePhpVersions();
             $installedVersions = [];
@@ -3917,9 +3867,9 @@ CONF;
 
             $versions = count($merged) > 0 ? $merged : ($this->templateCatalog->availablePhpVersions() ?: self::FALLBACK_PHP_VERSIONS);
 
-            return array_values(array_unique(array_merge(['latest'], $versions)));
+            return $versions;
         } catch (\Throwable $e) {
-            return array_values(array_unique(array_merge(['latest'], $this->templateCatalog->availablePhpVersions() ?: self::FALLBACK_PHP_VERSIONS)));
+            return $this->templateCatalog->availablePhpVersions() ?: self::FALLBACK_PHP_VERSIONS;
         }
     }
 
@@ -4036,12 +3986,32 @@ CONF;
             }
             if ($part === '..') {
                 array_pop($parts);
+
                 continue;
             }
             $parts[] = $part;
         }
 
         return implode('/', $parts);
+    }
+
+    protected function iniSizeToKilobytes(string $value, int $fallback): int
+    {
+        $value = strtoupper(trim($value));
+        if (preg_match('/^(\d+)([KMGT])$/', $value, $matches) !== 1) {
+            return $fallback;
+        }
+
+        $number = (int) $matches[1];
+        $multiplier = match ($matches[2]) {
+            'K' => 1,
+            'M' => 1024,
+            'G' => 1024 * 1024,
+            'T' => 1024 * 1024 * 1024,
+            default => 1,
+        };
+
+        return max(1, $number * $multiplier);
     }
 
     protected function resolvePathInsideBase(string $basePath, string $relative): string
@@ -4243,6 +4213,7 @@ CONF;
                 if (! $this->applyPermissionsRecursively($fullPath, $mode)) {
                     return false;
                 }
+
                 continue;
             }
 
@@ -4301,7 +4272,7 @@ CONF;
     }
 
     /**
-     * @param int|bool $openResult
+     * @param  int|bool  $openResult
      */
     protected function zipOpenErrorMessage($openResult): string
     {
@@ -4356,4 +4327,3 @@ CONF;
         }
     }
 }
-

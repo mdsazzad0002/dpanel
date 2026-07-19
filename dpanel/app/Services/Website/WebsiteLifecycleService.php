@@ -55,8 +55,6 @@ class WebsiteLifecycleService
             'project_root' => $validated['project_root'],
             'site_owner' => $validated['site_owner'],
             'php_version' => $validated['php_version'],
-            'app_installer' => $validated['app_installer'],
-            'wordpress_version' => $validated['wordpress_version'],
             'enable_ssl' => $validated['enable_ssl'],
             'assigned_user_id' => null,
             'assigned_reseller_id' => $defaultResellerId,
@@ -66,8 +64,7 @@ class WebsiteLifecycleService
         ];
         $callbacks['writeRequests']($requests);
 
-        $installerLabel = $validated['app_installer'] === 'wordpress' ? 'WordPress' : 'Starter';
-        $message = "Website request created successfully. Installer: {$installerLabel}.";
+        $message = 'Website request created successfully.';
         if (! empty($validated['enable_ssl'])) {
             $sslNotice = $bootstrap['ssl_notice'] ?? null;
             $message .= $sslNotice !== null ? ' '.$sslNotice : ' SSL was auto-generated.';
@@ -99,8 +96,6 @@ class WebsiteLifecycleService
             $item['project_root'] = $validated['project_root'];
             $item['site_owner'] = $validated['site_owner'];
             $item['php_version'] = $validated['php_version'];
-            $item['app_installer'] = $validated['app_installer'];
-            $item['wordpress_version'] = $validated['wordpress_version'];
             $item['wordpress_db_prefix'] = (string) ($item['wordpress_db_prefix'] ?? '');
             $item['enable_ssl'] = $validated['enable_ssl'];
             $item['command'] = (string) ($bootstrap['command'] ?? '');
@@ -174,23 +169,11 @@ class WebsiteLifecycleService
                 return $response;
             }
 
-            $appInstallerResult = $callbacks['installSelectedApplication'](
-                $validated['app_installer'],
+            $callbacks['initializeWebsiteStarterFiles'](
                 $validated['root_path'],
                 $validated['domain'],
                 (string) $validated['php_version'],
-                (string) $validated['wordpress_version'],
             );
-            if ($appInstallerResult['attempted'] && ! $appInstallerResult['installed']) {
-                return back()->withErrors(['app_installer' => $appInstallerResult['message']]);
-            }
-            if (! $appInstallerResult['installed']) {
-                $callbacks['initializeWebsiteStarterFiles'](
-                    $validated['root_path'],
-                    $validated['domain'],
-                    (string) $validated['php_version'],
-                );
-            }
             $callbacks['relocateApacheDefaultPage']();
             $callbacks['syncLiveWebVhost'](
                 $validated['domain'],
@@ -226,7 +209,6 @@ class WebsiteLifecycleService
             return [
                 'command' => $command,
                 'ssl_notice' => $sslNotice,
-                'installer_result' => $appInstallerResult,
             ];
         } catch (\Throwable $e) {
             return back()->withErrors(['error' => $e->getMessage()]);

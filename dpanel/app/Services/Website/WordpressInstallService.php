@@ -4,6 +4,8 @@ namespace App\Services\Website;
 
 use App\Models\DatabaseRequest;
 use App\Models\User;
+use App\Services\ScriptExecutionGateway;
+use App\Services\ScriptPathResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use ZipArchive;
@@ -200,7 +202,7 @@ class WordpressInstallService
         $rootPath = (string) ($website['root_path'] ?? '');
         $projectRoot = (string) ($website['project_root'] ?? $this->resolver->deriveProjectRootPath($rootPath, $domain));
         $phpVersion = (string) ($website['php_version'] ?? '8.0');
-        $wordpressVersion = $this->normalizeWordPressVersion((string) ($input['wordpress_version'] ?? ($website['wordpress_version'] ?? 'latest')));
+        $wordpressVersion = $this->normalizeWordPressVersion((string) ($input['wordpress_version'] ?? 'latest'));
         $siteOwner = (string) ($website['site_owner'] ?? $this->resolver->extractSiteOwnerFromRootPath($projectRoot));
         $databasePrefix = $this->normalizeWordPressDatabasePrefix(
             (string) ($input['database_prefix'] ?? ($website['wordpress_db_prefix'] ?? '')),
@@ -252,8 +254,6 @@ class WordpressInstallService
             $existingDatabaseRequest ?? null
         );
         $website = array_merge($website, [
-            'app_installer' => 'wordpress',
-            'wordpress_version' => $wordpressVersion,
             'wordpress_db_prefix' => $databasePrefix,
             'status' => $runtimeStatus,
         ]);
@@ -370,7 +370,14 @@ class WordpressInstallService
 
     private function runtimeDatabaseScriptPath(): string
     {
-        return rtrim(dirname(base_path()), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'discript'.DIRECTORY_SEPARATOR.'scripts'.DIRECTORY_SEPARATOR.'database-request.sh';
+        foreach (ScriptPathResolver::repositorySearchPaths() as $root) {
+            $candidate = rtrim((string) $root, '/').'/scripts/database-request.sh';
+            if (trim($candidate) !== '') {
+                return $candidate;
+            }
+        }
+
+        return rtrim(dirname(base_path()), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'dscript'.DIRECTORY_SEPARATOR.'scripts'.DIRECTORY_SEPARATOR.'database-request.sh';
     }
 
     /**
@@ -380,36 +387,22 @@ class WordpressInstallService
     private function provisionWordPressDatabase(array $databaseConfig): array
     {
         $scriptPath = $this->runtimeDatabaseScriptPath();
-        if (! is_file($scriptPath)) {
-            return [
-                'ran' => false,
-                'success' => false,
-                'output' => 'Database provisioning script not found: '.$scriptPath,
-            ];
-        }
-
-        $parts = [
-            'bash',
-            escapeshellarg($scriptPath),
+        $result = app(ScriptExecutionGateway::class)->execute($scriptPath, [
             'create',
-            escapeshellarg((string) ($databaseConfig['database_name'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_user'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_password'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_host'] ?? '127.0.0.1')),
-            escapeshellarg((string) ($databaseConfig['database_port'] ?? '3306')),
-            escapeshellarg((string) ($databaseConfig['charset'] ?? 'utf8mb4')),
-            escapeshellarg((string) ($databaseConfig['collation'] ?? 'utf8mb4_unicode_ci')),
-        ];
-
-        $output = [];
-        $exitCode = 1;
-        @exec(implode(' ', $parts).' 2>&1', $output, $exitCode);
-        $message = trim(implode("\n", $output));
+            (string) ($databaseConfig['database_name'] ?? ''),
+            (string) ($databaseConfig['database_user'] ?? ''),
+            (string) ($databaseConfig['database_password'] ?? ''),
+            (string) ($databaseConfig['database_host'] ?? '127.0.0.1'),
+            (string) ($databaseConfig['database_port'] ?? '3306'),
+            (string) ($databaseConfig['charset'] ?? 'utf8mb4'),
+            (string) ($databaseConfig['collation'] ?? 'utf8mb4_unicode_ci'),
+        ]);
+        $message = trim((string) ($result['output'] ?? ''));
 
         return [
-            'ran' => true,
-            'success' => $exitCode === 0,
-            'output' => $message !== '' ? $message : ($exitCode === 0 ? 'Database provisioning completed.' : 'Database provisioning failed.'),
+            'ran' => (bool) ($result['ran'] ?? true),
+            'success' => (bool) ($result['success'] ?? false),
+            'output' => $message !== '' ? $message : ((bool) ($result['success'] ?? false) ? 'Database provisioning completed.' : 'Database provisioning failed.'),
         ];
     }
 
@@ -556,21 +549,16 @@ class WordpressInstallService
         $extractMethod = '';
         $tmpTar = '';
 
+        $tempDir = $this->resolveTemporaryDirectory();
+
         if ($hasZipArchive) {
-            $tmpArchive = (string) @tempnam(sys_get_temp_dir(), 'wpzip_');
-            if ($tmpArchive === '') {
-                return [
-                    'attempted' => true,
-                    'installed' => false,
-                    'message' => 'WordPress install failed: cannot create temporary zip file.',
-                ];
-            }
+            $tmpArchive = $this->buildTemporaryFilePath($tempDir, 'wpzip_', '.zip');
             $packageUrl = $wordpressVersion === 'latest'
                 ? 'https://wordpress.org/latest.zip'
                 : 'https://wordpress.org/wordpress-'.$wordpressVersion.'.zip';
             $extractMethod = 'zip';
         } else {
-            $tmpArchive = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/').'/wp_targz_'.bin2hex(random_bytes(6)).'.tar.gz';
+            $tmpArchive = $this->buildTemporaryFilePath($tempDir, 'wp_targz_', '.tar.gz');
             $tmpTar = substr($tmpArchive, 0, -3);
             $packageUrl = $wordpressVersion === 'latest'
                 ? 'https://wordpress.org/latest.tar.gz'
@@ -578,7 +566,7 @@ class WordpressInstallService
             $extractMethod = 'targz';
         }
 
-        $tmpExtract = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/').'/wp_extract_'.bin2hex(random_bytes(6));
+        $tmpExtract = $this->buildTemporaryDirectoryPath($tempDir, 'wp_extract_');
         $downloaded = false;
 
         try {
@@ -836,6 +824,45 @@ class WordpressInstallService
         }
 
         @rmdir($directory);
+    }
+
+    private function resolveTemporaryDirectory(): string
+    {
+        $candidates = [
+            sys_get_temp_dir(),
+            storage_path('app/tmp'),
+            storage_path('framework/tmp'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            $candidate = rtrim(str_replace('\\', '/', trim((string) $candidate)), '/');
+            if ($candidate === '') {
+                continue;
+            }
+
+            if (! is_dir($candidate) && ! @mkdir($candidate, 0755, true) && ! is_dir($candidate)) {
+                continue;
+            }
+
+            if (is_writable($candidate)) {
+                return $candidate;
+            }
+        }
+
+        throw new \RuntimeException('WordPress install failed: no writable temporary directory is available.');
+    }
+
+    private function buildTemporaryFilePath(string $directory, string $prefix, string $suffix): string
+    {
+        $directory = rtrim(str_replace('\\', '/', $directory), '/');
+        $prefix = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $prefix) ?: 'tmp_';
+
+        return $directory.'/'.$prefix.bin2hex(random_bytes(8)).$suffix;
+    }
+
+    private function buildTemporaryDirectoryPath(string $directory, string $prefix): string
+    {
+        return $this->buildTemporaryFilePath($directory, $prefix, '');
     }
 
     /**

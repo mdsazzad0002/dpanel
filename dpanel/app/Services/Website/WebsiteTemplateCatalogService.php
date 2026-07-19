@@ -14,10 +14,15 @@ class WebsiteTemplateCatalogService
         $configured = trim((string) config('serverpanel.template_repository_dir', ''));
         $candidates = array_values(array_filter([
             $configured !== '' ? $configured : null,
-            dirname(base_path()).'/discript',
-            base_path('discript'),
-            '/var/www/panel/discript',
-            '/root/ServerPanel/discript',
+            dirname(base_path()).'/installer/bootstrap/dscript',
+            base_path('installer/bootstrap/dscript'),
+            dirname(base_path()).'/dscript',
+            base_path('dscript'),
+            '/var/www/dscript',
+            '/var/www/panel/dscript',
+            '/usr/local/panel/scripts',
+            '/root/ServerPanel/dscript',
+            '/home/ubuntu/ServerPanel/dscript',
         ]));
 
         foreach ($candidates as $candidate) {
@@ -27,7 +32,7 @@ class WebsiteTemplateCatalogService
             }
         }
 
-        return rtrim($this->normalizeAbsolutePath(dirname(base_path()).'/discript'), '/');
+        return rtrim($this->normalizeAbsolutePath(dirname(base_path()).'/installer/bootstrap/dscript'), '/');
     }
 
     /**
@@ -71,34 +76,18 @@ class WebsiteTemplateCatalogService
     }
 
     /**
-     * Read available PHP versions from reusable template/module files.
+     * Read available PHP versions from configuration.
      *
      * @return array<int, string>
      */
     public function availablePhpVersions(): array
     {
-        $phpModuleDir = rtrim($this->moduleRoot(), '/').'/php';
-        $versions = [];
-        foreach ((array) ($this->manifest()['php_versions'] ?? []) as $item) {
-            $version = trim((string) $item);
-            if (preg_match('/^\d+\.\d+$/', $version) === 1) {
-                $versions[] = $version;
-            }
-        }
+        $versions = (array) config('serverpanel.php_versions', []);
 
-        if (is_dir($phpModuleDir)) {
-            foreach (glob($phpModuleDir.'/*.sh') ?: [] as $path) {
-                $basename = basename((string) $path);
-                if (preg_match('/^([0-9]+\.[0-9]+)\.sh$/', $basename, $matches) === 1) {
-                    $versions[] = $matches[1];
-                }
-            }
-        }
-
-        $versions = array_values(array_unique(array_filter($versions, static fn (string $version): bool => preg_match('/^\d+\.\d+$/', $version) === 1)));
-        usort($versions, static fn (string $a, string $b): int => version_compare($b, $a));
-
-        return $versions;
+        return array_values(array_filter(array_map(
+            static fn (mixed $version): string => trim((string) $version),
+            $versions,
+        ), static fn (string $version): bool => preg_match('/^\d+\.\d+$/', $version) === 1));
     }
 
     /**
@@ -114,7 +103,7 @@ class WebsiteTemplateCatalogService
             $family['default_php_version']
             ?? $defaults[$template]
             ?? $defaults['starter']
-            ?? 'latest'
+            ?? ''
         );
 
         return \App\Http\Controllers\PhpManagementController::normalizePhpVersionSelection(

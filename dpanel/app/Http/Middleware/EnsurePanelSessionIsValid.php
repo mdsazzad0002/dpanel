@@ -41,17 +41,14 @@ class EnsurePanelSessionIsValid
         }
 
         if ($token !== '' && Auth::check()) {
-            PanelSession::query()->updateOrCreate(
-                ['token_hash' => hash('sha256', $token)],
-                [
-                    'user_id' => (int) Auth::id(),
-                    'cookie_hash' => hash('sha256', $cookieToken),
-                    'ip_address' => (string) $request->ip(),
-                    'user_agent_hash' => hash('sha256', (string) $request->userAgent()),
-                    'expires_at' => now()->addYear(),
-                    'last_seen_at' => now(),
-                    'revoked_at' => null,
-                ]
+            PanelSession::syncSingleSession(
+                userId: (int) Auth::id(),
+                token: $token,
+                cookieToken: $cookieToken,
+                ipAddress: (string) $request->ip(),
+                userAgent: (string) $request->userAgent(),
+                expiresAt: now()->addYear(),
+                lastSeenAt: now(),
             );
         }
 

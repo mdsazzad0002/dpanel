@@ -15,3 +15,7 @@ if ((bool) ($backupSettings['schedule_enabled'] ?? true)) {
         ->dailyAt((string) ($backupSettings['schedule_time'] ?? '02:30'))
         ->withoutOverlapping();
 }
+
+Schedule::command('serverpanel:ssl-reconcile')
+    ->twiceDaily(3, 15)
+    ->withoutOverlapping();

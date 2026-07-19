@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec /var/www/drust/target/release/drust serve \
+  --port "${DRUST_API_PORT:-9500}" \
+  --token "${DRUST_API_TOKEN}"

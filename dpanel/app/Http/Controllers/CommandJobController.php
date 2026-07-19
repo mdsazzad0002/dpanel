@@ -6,6 +6,7 @@ use App\Http\Requests\StoreCommandJobRequest;
 use App\Models\CommandJob;
 use App\Models\Server;
 use App\Models\SshCommandMemory;
+use App\Services\ScriptPathResolver;
 use App\Services\ServerPanel\Contracts\AiSuggestionProvider;
 use App\Services\ServerPanel\CommandSafetyService;
 use App\Services\ServerPanel\CommandRunnerService;
@@ -743,13 +744,7 @@ class CommandJobController extends Controller
     private function buildInstallerCommand(string $script, ?string $arg = null): string
     {
         $argPart = $arg !== null ? ' '.escapeshellarg($arg) : '';
-        $searchPaths = config('serverpanel.installer_search_paths', [
-            base_path('discript'),
-            '/var/www/panel/discript',
-            '/usr/local/panel/scripts',
-            '/root/ServerPanel/discript',
-            '/home/ubuntu/ServerPanel/discript',
-        ]);
+        $searchPaths = ScriptPathResolver::repositorySearchPaths();
 
         $paths = [];
         foreach ($searchPaths as $root) {

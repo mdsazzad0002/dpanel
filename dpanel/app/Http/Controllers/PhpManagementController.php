@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ScriptExecutionGateway;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -13,12 +15,15 @@ use Inertia\Response;
 class PhpManagementController extends Controller
 {
     private const STATE_SETTING_KEY = 'state';
+
     private const SETTINGS_TABLE = 'php_management_settings';
+
     private const LEGACY_STORAGE_FILE = 'php-management.json';
+
     /**
      * @var array<int, string>
      */
-    private const CANDIDATE_VERSIONS = ['8.0', '7.4'];
+    private const CANDIDATE_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
 
     /**
      * @var array<int, string>
@@ -375,7 +380,7 @@ class PhpManagementController extends Controller
                 ]);
             }
 
-                return redirect()->route('php.config', ['version' => $version])->with('success', $message);
+            return redirect()->route('php.config', ['version' => $version])->with('success', $message);
         }
 
         $serverApply = $this->applyConfigToServer($version, $configValues);
@@ -423,22 +428,18 @@ class PhpManagementController extends Controller
             }
         }
 
-        $fallbackVersions = self::CANDIDATE_VERSIONS;
-
-        $versions = collect($raw['versions'] ?? $fallbackVersions)
+        $versions = collect((array) config('serverpanel.php_versions', self::CANDIDATE_VERSIONS))
             ->map(fn ($version) => trim((string) $version))
             ->filter(fn ($version) => preg_match('/^\d+\.\d+$/', $version) === 1)
-            ->unique()
-            ->sort(fn ($a, $b) => version_compare($b, $a))
             ->values()
             ->all();
 
         if (count($versions) === 0) {
-            $versions = $fallbackVersions;
+            $versions = self::CANDIDATE_VERSIONS;
         }
 
         $defaultVersion = (string) ($raw['default_version'] ?? ($versions[0] ?? ''));
-        if ($defaultVersion !== '' && ! in_array($defaultVersion, $versions, true)) {
+        if ($defaultVersion === '' || ! in_array($defaultVersion, $versions, true)) {
             $defaultVersion = (string) ($versions[0] ?? '');
         }
 
@@ -451,7 +452,7 @@ class PhpManagementController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $state
+     * @param  array<string, mixed>  $state
      */
     private function writeState(array $state): void
     {
@@ -495,7 +496,7 @@ class PhpManagementController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $state
+     * @param  array<string, mixed>  $state
      */
     private function writeRawState(array $state): void
     {
@@ -526,8 +527,8 @@ class PhpManagementController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $raw
-     * @param array<int, string> $versions
+     * @param  array<string, mixed>  $raw
+     * @param  array<int, string>  $versions
      * @return array<string, array<string, bool>>
      */
     private function normalizeExtensions(array $raw, array $versions): array
@@ -549,8 +550,8 @@ class PhpManagementController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $raw
-     * @param array<int, string> $versions
+     * @param  array<string, mixed>  $raw
+     * @param  array<int, string>  $versions
      * @return array<string, array<string, string>>
      */
     private function normalizeConfig(array $raw, array $versions): array
@@ -632,6 +633,7 @@ class PhpManagementController extends Controller
             $version = $this->extractVersionFromPath($path);
             if ($version !== '') {
                 $versions[] = $version;
+
                 continue;
             }
 
@@ -707,8 +709,8 @@ class PhpManagementController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $existing
-     * @param array<int, string> $versions
+     * @param  array<string, mixed>  $existing
+     * @param  array<int, string>  $versions
      * @return array<string, array<string, bool>>
      */
     private function syncAllExtensionsFromServer(array $existing, array $versions): array
@@ -720,6 +722,7 @@ class PhpManagementController extends Controller
             $detected = $this->detectExtensionsForVersion($version);
             if (count($detected) === 0) {
                 $synced[$version] = $normalizedExisting[$version];
+
                 continue;
             }
 
@@ -732,8 +735,8 @@ class PhpManagementController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $existing
-     * @param array<int, string> $versions
+     * @param  array<string, mixed>  $existing
+     * @param  array<int, string>  $versions
      * @return array<string, array<string, string>>
      */
     private function syncConfigFromServer(string $token, array $existing, array $versions): array
@@ -752,7 +755,7 @@ class PhpManagementController extends Controller
     /**
      * @return array<string, string>
      */
-    private function detectConfigForVersion(string $token,  string $version): array
+    private function detectConfigForVersion(string $token, string $version): array
     {
         $scriptConfig = $this->detectConfigForVersionViaScript($version);
         if (count($scriptConfig) > 0) {
@@ -930,8 +933,8 @@ class PhpManagementController extends Controller
     }
 
     /**
-     * @param array<int, string> $scriptCandidates
-     * @param array<int, string> $arguments
+     * @param  array<int, string>  $scriptCandidates
+     * @param  array<int, string>  $arguments
      * @return array{output: string, exitCode: int}
      */
     private function runScript(array $scriptCandidates, array $arguments = []): array
@@ -951,32 +954,22 @@ class PhpManagementController extends Controller
             ];
         }
 
-        @chmod($scriptPath, 0755);
-
-        $commandParts = array_merge(
-            ['bash', $scriptPath],
-            array_map(fn ($argument) => (string) $argument, $arguments),
-        );
-        $command = implode(' ', array_map(fn ($part) => escapeshellarg($part), $commandParts));
-
-        $output = [];
-        $exitCode = 1;
-        exec($command.' 2>&1', $output, $exitCode);
+        $result = app(ScriptExecutionGateway::class)->execute($scriptPath, $arguments);
 
         return [
-            'output' => trim(implode("\n", $output)),
-            'exitCode' => $exitCode,
+            'output' => trim((string) ($result['output'] ?? '')),
+            'exitCode' => (int) ($result['exit_code'] ?? 1),
         ];
     }
 
     /**
-     * @param array<int, string> $scriptCandidates
+     * @param  array<int, string>  $scriptCandidates
      */
     private function resolveScriptPath(array $scriptCandidates): string
     {
         foreach ($scriptCandidates as $candidate) {
-            if (is_file($candidate)) {
-                return $candidate;
+            if (trim((string) $candidate) !== '') {
+                return (string) $candidate;
             }
         }
 
@@ -1000,66 +993,48 @@ class PhpManagementController extends Controller
             ];
         }
 
-        $scriptCandidates = [
-            base_path('scripts/php-config-apply.sh'),
-            '/usr/local/bin/serverpanel-php-config-apply.sh',
-        ];
-
-        $scriptPath = '';
-        foreach ($scriptCandidates as $candidate) {
-            if (is_file($candidate)) {
-                $scriptPath = $candidate;
-                break;
-            }
-        }
-
-        if ($scriptPath === '') {
+        $scriptUrl = trim((string) config('serverpanel.execution_api_url', ''));
+        $apiUrl = preg_replace('#/api/v1/script/run/?$#', '/api/v1/php/config', $scriptUrl) ?: '';
+        if ($apiUrl === '') {
             return [
                 'applied' => false,
-                'message' => 'PHP config apply script not found. Expected: scripts/php-config-apply.sh',
+                'message' => 'drust PHP configuration API is not configured.',
             ];
         }
 
-        @chmod($scriptPath, 0755);
-
-        $command = implode(' ', [
-            'bash',
-            escapeshellarg($scriptPath),
-            '--version',
-            escapeshellarg($version),
-            '--memory-limit',
-            escapeshellarg((string) ($configValues['memory_limit'] ?? self::DEFAULT_CONFIG['memory_limit'])),
-            '--upload-max-filesize',
-            escapeshellarg((string) ($configValues['upload_max_filesize'] ?? self::DEFAULT_CONFIG['upload_max_filesize'])),
-            '--post-max-size',
-            escapeshellarg((string) ($configValues['post_max_size'] ?? self::DEFAULT_CONFIG['post_max_size'])),
-            '--max-execution-time',
-            escapeshellarg((string) ($configValues['max_execution_time'] ?? self::DEFAULT_CONFIG['max_execution_time'])),
-            '--max-input-vars',
-            escapeshellarg((string) ($configValues['max_input_vars'] ?? self::DEFAULT_CONFIG['max_input_vars'])),
-            '--display-errors',
-            escapeshellarg((string) ($configValues['display_errors'] ?? self::DEFAULT_CONFIG['display_errors'])),
-            '--log-errors',
-            escapeshellarg((string) ($configValues['log_errors'] ?? self::DEFAULT_CONFIG['log_errors'])),
-            '--allow-url-fopen',
-            escapeshellarg((string) ($configValues['allow_url_fopen'] ?? self::DEFAULT_CONFIG['allow_url_fopen'])),
-        ]);
-
-        $output = [];
-        $exitCode = 1;
-        exec($command.' 2>&1', $output, $exitCode);
-        $message = trim(implode("\n", $output));
-
-        if ($exitCode !== 0) {
+        $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
+        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($token !== '') {
+            $request = $request->withToken($token);
+        }
+        try {
+            $response = $request->post($apiUrl, [
+                'version' => $version,
+                'memory_limit' => (string) ($configValues['memory_limit'] ?? self::DEFAULT_CONFIG['memory_limit']),
+                'upload_max_filesize' => (string) ($configValues['upload_max_filesize'] ?? self::DEFAULT_CONFIG['upload_max_filesize']),
+                'post_max_size' => (string) ($configValues['post_max_size'] ?? self::DEFAULT_CONFIG['post_max_size']),
+                'max_execution_time' => (int) ($configValues['max_execution_time'] ?? self::DEFAULT_CONFIG['max_execution_time']),
+                'max_input_vars' => (int) ($configValues['max_input_vars'] ?? self::DEFAULT_CONFIG['max_input_vars']),
+                'display_errors' => (string) ($configValues['display_errors'] ?? self::DEFAULT_CONFIG['display_errors']),
+                'log_errors' => (string) ($configValues['log_errors'] ?? self::DEFAULT_CONFIG['log_errors']),
+                'allow_url_fopen' => (string) ($configValues['allow_url_fopen'] ?? self::DEFAULT_CONFIG['allow_url_fopen']),
+            ]);
+            $json = $response->json();
+            $message = is_array($json) ? trim((string) ($json['message'] ?? '')) : trim((string) $response->body());
+        } catch (\Throwable $e) {
             return [
                 'applied' => false,
-                'message' => $message !== '' ? $message : 'PHP config apply script failed.',
+                'message' => $e->getMessage(),
             ];
+        }
+
+        if (! $response->successful() || ! (is_array($json) && (bool) ($json['success'] ?? false))) {
+            return ['applied' => false, 'message' => $message !== '' ? $message : 'drust PHP configuration apply failed.'];
         }
 
         return [
             'applied' => true,
-            'message' => $message !== '' ? $message : 'Applied to server and restarted related services.',
+            'message' => $message !== '' ? $message : 'Applied to server and reloaded PHP-FPM.',
         ];
     }
 
@@ -1107,6 +1082,7 @@ class PhpManagementController extends Controller
 
             if ($minor === '' && strlen($major) === 2) {
                 $versions[] = $major[0].'.'.$major[1];
+
                 continue;
             }
 
@@ -1142,11 +1118,12 @@ class PhpManagementController extends Controller
     private function normalizeOnOff(string $value): string
     {
         $normalized = strtolower(trim($value));
+
         return in_array($normalized, ['1', 'on', 'true', 'yes'], true) ? 'On' : 'Off';
     }
 
     /**
-     * @param array<string, mixed> $state
+     * @param  array<string, mixed>  $state
      * @return array<string, mixed>
      */
     private function buildManagerPayload(array $state, string $selectedVersion): array
@@ -1184,13 +1161,10 @@ class PhpManagementController extends Controller
         ];
     }
 
-
-
-
     /**
-     * @param array<int, string> $availableVersions
+     * @param  array<int, string>  $availableVersions
      */
-    static function normalizePhpVersionSelection(string $version, array $availableVersions = []): string
+    public static function normalizePhpVersionSelection(string $version, array $availableVersions = []): string
     {
         $normalized = strtolower(trim($version));
         if (count($availableVersions) === 0) {

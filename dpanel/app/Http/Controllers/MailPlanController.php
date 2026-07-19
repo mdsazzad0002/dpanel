@@ -8,19 +8,22 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Validation\Rule;
 
 class MailPlanController extends Controller
 {
     public function index(): Response
     {
         $plans = MailPlan::query()
+            ->withCount('mailboxes')
+            ->withSum('mailboxes', 'quota_mb')
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
             ->map(fn (MailPlan $plan): array => [
                 ...$plan->toArray(),
-                'mailbox_count' => $plan->mailboxCount(),
-                'total_storage_mb' => $plan->totalStorageMb(),
+                'mailbox_count' => (int) ($plan->mailboxes_count ?? 0),
+                'total_storage_mb' => (int) ($plan->mailboxes_sum_quota_mb ?? 0),
             ])
             ->all();
 
@@ -37,7 +40,7 @@ class MailPlanController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:64'],
+            'name' => ['required', 'string', 'max:64', Rule::unique('mail_plans', 'name')],
             'max_storage_mb' => ['required', 'integer', 'min:1', 'max:1048576'],
             'max_mailboxes' => ['required', 'integer', 'min:1', 'max:99999'],
             'allow_forwarding' => ['boolean'],
@@ -46,12 +49,12 @@ class MailPlanController extends Controller
             'sort_order' => ['integer', 'min:0', 'max:9999'],
         ]);
 
-        $slug = Str::slug($validated['name']);
+        $slug = $this->generateSlug($validated['name']);
 
         $exists = MailPlan::query()->where('slug', $slug)->exists();
         if ($exists) {
             return redirect()->route('mail-plans.create')
-                ->with('error', "A plan named '{$validated['name']}' already exists.");
+                ->with('error', "A plan with the slug '{$slug}' already exists.");
         }
 
         MailPlan::create([
@@ -89,7 +92,7 @@ class MailPlanController extends Controller
         }
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:64'],
+            'name' => ['required', 'string', 'max:64', Rule::unique('mail_plans', 'name')->ignore($id)],
             'max_storage_mb' => ['required', 'integer', 'min:1', 'max:1048576'],
             'max_mailboxes' => ['required', 'integer', 'min:1', 'max:99999'],
             'allow_forwarding' => ['boolean'],
@@ -98,11 +101,11 @@ class MailPlanController extends Controller
             'sort_order' => ['integer', 'min:0', 'max:9999'],
         ]);
 
-        $slug = Str::slug($validated['name']);
+        $slug = $this->generateSlug($validated['name']);
         $exists = MailPlan::query()->where('slug', $slug)->where('id', '!=', $id)->exists();
         if ($exists) {
             return redirect()->route('mail-plans.edit', $id)
-                ->with('error', "A plan named '{$validated['name']}' already exists.");
+                ->with('error', "A plan with the slug '{$slug}' already exists.");
         }
 
         $plan->fill([
@@ -137,5 +140,16 @@ class MailPlanController extends Controller
 
         return redirect()->route('mail-plans.index')
             ->with('success', "Plan '{$plan->name}' deleted successfully.");
+    }
+
+    private function generateSlug(string $name): string
+    {
+        $slug = Str::slug($name);
+
+        if ($slug !== '') {
+            return $slug;
+        }
+
+        return 'plan-'.substr(md5($name), 0, 8);
     }
 }

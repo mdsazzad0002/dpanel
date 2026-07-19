@@ -9,8 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('mailboxes', function (Blueprint $table) {
-            $table->uuid('plan_id')->nullable()->after('status');
-            $table->foreign('plan_id')->references('id')->on('mail_plans')->nullOnDelete();
+            $table->foreignUuid('plan_id')->nullable()->after('status')->constrained('mail_plans')->nullOnDelete();
         });
     }
 

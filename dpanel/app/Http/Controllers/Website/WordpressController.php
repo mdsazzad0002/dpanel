@@ -80,8 +80,6 @@ class WordpressController extends WebsiteController
                 return $item;
             }
 
-            $item['app_installer'] = (string) ($updatedWebsite['app_installer'] ?? 'wordpress');
-            $item['wordpress_version'] = (string) ($updatedWebsite['wordpress_version'] ?? 'latest');
             $item['wordpress_db_prefix'] = (string) ($updatedWebsite['wordpress_db_prefix'] ?? '');
             $item['status'] = (string) ($updatedWebsite['status'] ?? ($item['status'] ?? 'pending'));
             $item['updated_at'] = now()->toIso8601String();

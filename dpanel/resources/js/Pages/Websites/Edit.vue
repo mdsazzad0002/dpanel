@@ -14,11 +14,11 @@ const props = defineProps({
     },
     defaultPhpVersion: {
         type: String,
-        default: 'latest',
+        default: '',
     },
     phpVersions: {
         type: Array,
-        default: () => ['latest', '8.0', '7.4'],
+        default: () => ['8.0', '7.4'],
     },
     wordpressVersions: {
         type: Array,
@@ -30,9 +30,7 @@ const form = useForm({
     domain: props.websiteRequest.domain ?? '',
     root_path: props.websiteRequest.root_path ?? '',
     start_directory: props.websiteRequest.start_directory || '',
-    php_version: props.websiteRequest.php_version ?? props.defaultPhpVersion ?? 'latest',
-    app_installer: String(props.websiteRequest.app_installer ?? '').toLowerCase() === 'wordpress' ? 'wordpress' : 'none',
-    wordpress_version: props.websiteRequest.wordpress_version ?? '',
+    php_version: props.websiteRequest.php_version ?? props.defaultPhpVersion ?? '',
     enable_ssl: !!props.websiteRequest.enable_ssl,
 });
 const page = usePage();
@@ -83,41 +81,27 @@ const availablePhpVersions = computed(() => {
     const list = Array.isArray(props.phpVersions) ? props.phpVersions : [];
     const normalized = list
         .map((version) => String(version || '').trim())
-        .filter((version) => version === 'latest' || /^\d+\.\d+$/.test(version));
+        .filter((version) => /^\d+\.\d+$/.test(version));
 
-    if (normalized.length === 0) {
-        return ['latest', '8.0', '7.4'];
-    }
-
-    return normalized.includes(form.php_version)
-        ? normalized
-        : [form.php_version, ...normalized];
+    return normalized.length > 0 ? normalized : ['8.0', '7.4'];
 });
-const availableWordPressVersions = computed(() => {
-    const list = Array.isArray(props.wordpressVersions) ? props.wordpressVersions : [];
-    const normalized = list
-        .map((version) => String(version || '').trim().toLowerCase())
-        .filter((version) => version === 'latest' || /^\d+\.\d+(\.\d+)?$/.test(version));
-    const deduped = Array.from(new Set(['latest', ...normalized]));
 
-    return deduped.includes(form.wordpress_version)
-        ? deduped
-        : [form.wordpress_version, ...deduped];
-});
+watch(
+    availablePhpVersions,
+    (versions) => {
+        if (!versions.includes(form.php_version)) {
+            form.php_version = props.defaultPhpVersion && versions.includes(props.defaultPhpVersion)
+                ? props.defaultPhpVersion
+                : (versions[0] || '');
+        }
+    },
+    { immediate: true },
+);
 
 watch(
     normalizedDomain,
     (domain) => {
         form.root_path = deriveRootPath(domain);
-    },
-    { immediate: true },
-);
-watch(
-    availableWordPressVersions,
-    (versions) => {
-        if (!form.wordpress_version || !versions.includes(form.wordpress_version)) {
-            form.wordpress_version = 'latest';
-        }
     },
     { immediate: true },
 );
@@ -134,8 +118,6 @@ const submit = () => {
         root_path: form.root_path,
         start_directory: normalizedStartDirectory.value,
         php_version: form.php_version,
-        app_installer: form.app_installer,
-        wordpress_version: form.wordpress_version,
         enable_ssl: form.enable_ssl,
         }, {
             headers: {
@@ -233,26 +215,9 @@ const submit = () => {
                     <label class="mb-1 block text-sm">PHP Version</label>
                     <select v-model="form.php_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option v-for="version in availablePhpVersions" :key="version" :value="version">
-                            {{ version === 'latest' ? 'Latest Stable' : version }}
+                            {{ version }}
                         </option>
                     </select>
-                </div>
-                <div>
-                    <label class="mb-1 block text-sm">App Installer</label>
-                    <select v-model="form.app_installer" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="none">Starter Files (Default)</option>
-                        <option value="wordpress">WordPress</option>
-                    </select>
-                    <p v-if="form.errors.app_installer" class="mt-1 text-xs text-red-600">{{ form.errors.app_installer }}</p>
-                </div>
-                <div v-if="form.app_installer === 'wordpress'">
-                    <label class="mb-1 block text-sm">WordPress Version</label>
-                    <select v-model="form.wordpress_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option v-for="version in availableWordPressVersions" :key="version" :value="version">
-                            {{ version === 'latest' ? 'Latest Stable' : version }}
-                        </option>
-                    </select>
-                    <p v-if="form.errors.wordpress_version" class="mt-1 text-xs text-red-600">{{ form.errors.wordpress_version }}</p>
                 </div>
                 <div class="flex items-center gap-2 pt-7">
                     <input id="enable_ssl" v-model="form.enable_ssl" type="checkbox" class="rounded border-slate-300" />

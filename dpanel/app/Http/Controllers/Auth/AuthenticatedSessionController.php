@@ -92,17 +92,15 @@ class AuthenticatedSessionController extends Controller
         $lifetime = max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120)));
         $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
 
-        PanelSession::updateOrCreate(
-            [
-                'user_id' => (int) $request->user()->id,
-            ],[
-            'token_hash' => hash('sha256', $token),
-            'cookie_hash' => hash('sha256', $cookieToken),
-            'ip_address' => (string) $request->ip(),
-            'user_agent_hash' => hash('sha256', (string) $request->userAgent()),
-            'expires_at' => now()->addMinutes($lifetime),
-            'last_seen_at' => now(),
-        ]);
+        PanelSession::syncSingleSession(
+            userId: (int) $request->user()->id,
+            token: $token,
+            cookieToken: $cookieToken,
+            ipAddress: (string) $request->ip(),
+            userAgent: (string) $request->userAgent(),
+            expiresAt: now()->addMinutes($lifetime),
+            lastSeenAt: now(),
+        );
 
         $panelCookie = cookie(
             name: $cookieName,
@@ -134,8 +132,7 @@ class AuthenticatedSessionController extends Controller
             PanelSession::query()
                 ->where('user_id', $request->user()?->id)
                 ->where('token_hash', hash('sha256', $token))
-                ->whereNull('revoked_at')
-                ->update(['revoked_at' => now()]);
+                ->delete();
         }
 
         Auth::guard('web')->logout();

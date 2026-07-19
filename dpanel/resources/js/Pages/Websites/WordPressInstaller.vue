@@ -30,6 +30,7 @@ watch(
 );
 
 const website = computed(() => websiteState.value || {});
+const isWordPressDetected = computed(() => String(props.rootInspection?.detected_app ?? '').toLowerCase() === 'wordpress');
 
 const normalizeVersion = (value) => {
     const normalized = String(value || 'latest').trim().toLowerCase();
@@ -46,20 +47,16 @@ const normalizePrefix = (value) => {
     return normalized.slice(0, 32);
 };
 
-const installerValue = computed(() => String(website.value?.app_installer ?? 'none').toLowerCase());
-const websiteWordPressVersion = computed(() => normalizeVersion(website.value?.wordpress_version ?? 'latest'));
-const isWordPressInstalled = computed(() => installerValue.value === 'wordpress');
-
 const availableWordPressVersions = computed(() => {
     const list = Array.isArray(props.wordpressVersions) ? props.wordpressVersions : [];
     const normalized = list
         .map((version) => normalizeVersion(version))
         .filter((version) => version === 'latest' || /^\d+\.\d+(\.\d+)?$/.test(version));
 
-    return Array.from(new Set(['latest', websiteWordPressVersion.value, ...normalized]));
+    return Array.from(new Set(['latest', ...normalized]));
 });
 
-const selectedWordPressVersion = ref(websiteWordPressVersion.value);
+const selectedWordPressVersion = ref('latest');
 const suggestedDatabasePrefix = computed(() => {
     const stored = normalizePrefix(website.value?.wordpress_db_prefix || '');
     if (stored !== '') return stored;
@@ -106,7 +103,6 @@ const installWordPress = async () => {
         const payload = response?.data || {};
         if (payload.website) {
             websiteState.value = { ...payload.website };
-            selectedWordPressVersion.value = normalizeVersion(payload.website.wordpress_version ?? version);
             databasePrefix.value = normalizePrefix(payload.website.wordpress_db_prefix || prefix) || prefix;
         }
 
@@ -177,13 +173,11 @@ const installWordPress = async () => {
                 <div class="mt-3">
                     <span
                         class="rounded-full border px-3 py-1 text-xs font-medium"
-                        :class="isWordPressInstalled
+                        :class="isWordPressDetected
                             ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
                             : 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'"
                     >
-                        {{ isWordPressInstalled
-                            ? `Installed (${websiteWordPressVersion === 'latest' ? 'latest' : websiteWordPressVersion})`
-                            : 'Not Installed' }}
+                        {{ isWordPressDetected ? 'WordPress detected' : 'Not Installed' }}
                     </span>
                 </div>
 
@@ -226,7 +220,7 @@ const installWordPress = async () => {
                     >
                         {{ installBusy
                             ? 'Applying...'
-                            : (isWordPressInstalled ? 'Update Configuration' : 'Install WordPress') }}
+                        : (isWordPressDetected ? 'Update Configuration' : 'Install WordPress') }}
                     </button>
                 </div>
             </section>

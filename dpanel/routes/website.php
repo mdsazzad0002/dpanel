@@ -58,7 +58,7 @@ use App\Http\Controllers\Website\WebsiteManage\WebsiteVhostSyncController;
     Route::patch('/websites/{id}', [WebsiteController::class, 'update'])
         ->middleware('role:admin|reseller')
         ->name('websites.update');
-    Route::delete('/websites/{id}', [WebsiteController::class, 'destroy'])
+    Route::delete('/websites/{id}', [MainWebsiteController::class, 'destroy'])
         ->middleware('role:admin|reseller')
         ->name('websites.destroy');
     Route::patch('/websites/{id}/status', [WebsiteController::class, 'updateStatus'])
@@ -70,6 +70,9 @@ use App\Http\Controllers\Website\WebsiteManage\WebsiteVhostSyncController;
     Route::get('/websites/{id}/web-server', [WebsiteOperationsController::class, 'webServerManager'])
         ->middleware('role:admin|reseller')
         ->name('websites.web-server');
+    Route::patch('/websites/{id}/web-server', [WebsiteOperationsController::class, 'updateWebServer'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.web-server.update');
     Route::get('/websites/{id}/ssl', [WebsiteOperationsController::class, 'sslManager'])
         ->middleware('role:admin|reseller')
         ->name('websites.ssl');

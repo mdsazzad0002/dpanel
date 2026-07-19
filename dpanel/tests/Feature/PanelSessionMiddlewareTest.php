@@ -52,5 +52,6 @@ class PanelSessionMiddlewareTest extends TestCase
 
         $this->assertNotNull($session);
         $this->assertNotSame(hash('sha256', ''), $session->cookie_hash);
+        $this->assertSame(1, PanelSession::query()->where('user_id', $user->id)->count());
     }
 }

@@ -116,7 +116,7 @@ const selectedPreset = computed(() => presetMatrix[firstRunWizard.preset] || pre
 const generatedPasswordText = computed(() => generatedPassword.value || firstRunWizard.panel_password || '');
 const remoteDownloadSnippet = computed(() => `
 
-curl -fsSL "${normalizedInstallerBaseUrl.value}/discript/install.sh" -o install.sh
+curl -fsSL "${normalizedInstallerBaseUrl.value}/dscript/install.sh" -o install.sh
 chmod +x install.sh
 sudo env PANEL_INSTALL_BASE_URL="${normalizedInstallerBaseUrl.value}" bash install.sh panel install`);
 
@@ -134,7 +134,7 @@ const generatedInstallSnippet = computed(() => {
     const dbPassword = String(firstRunWizard.db_password || '').trim();
     const installCommand = [
         'curl -fsSL',
-        shellEscape(`${installerBaseUrl}/discript/install.sh`),
+        shellEscape(`${installerBaseUrl}/dscript/install.sh`),
         '-o install.sh && chmod +x install.sh && sudo env',
         `PANEL_INSTALL_BASE_URL=${shellEscape(installerBaseUrl)}`,
         projectDir ? `SERVER_BASE_DIR=${shellEscape(projectDir)}` : null,
@@ -262,8 +262,8 @@ pwd
 find / -type f -path "*/ServerPanel/artisan" 2>/dev/null
 
 # If download fails
-curl -I "${normalizedInstallerBaseUrl.value}/discript/install.sh"
-curl -I "${normalizedInstallerBaseUrl.value}/discript/bootstrap/core.sh"`);
+curl -I "${normalizedInstallerBaseUrl.value}/dscript/install.sh"
+curl -I "${normalizedInstallerBaseUrl.value}/dscript/bootstrap/core.sh"`);
 
 function applyTheme(nextTheme) {
     theme.value = nextTheme;
@@ -389,7 +389,7 @@ onMounted(() => {
                             <div class="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
                                 <p class="font-semibold text-slate-900 dark:text-white">Installer Setup</p>
                                 <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                                    One-command installation using `discript/install.sh`.
+                                    One-command installation using `dscript/install.sh`.
                                 </p>
                             </div>
                         </div>
@@ -690,7 +690,7 @@ sudo systemctl restart php8.3-fpm</code></pre>
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Bootstrap Setup Guide</h2>
                         <p class="mt-2 text-sm text-slate-700 dark:text-slate-300">
-                            Use one file: `discript/install.sh` (installer + bootstrap menu).
+                            Use one file: `dscript/install.sh` (installer + bootstrap menu).
                         </p>
                     </section>
 
@@ -700,13 +700,13 @@ sudo systemctl restart php8.3-fpm</code></pre>
 ls -la
 
 # Required file in root:
-# discript/install.sh</code></pre>
+# dscript/install.sh</code></pre>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">2. Run Interactive Menu</h2>
-                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>chmod +x discript/install.sh
-sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" bash discript/install.sh panel install</code></pre>
+                        <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>chmod +x dscript/install.sh
+sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" bash dscript/install.sh panel install</code></pre>
                         <p class="mt-3 text-sm text-slate-700 dark:text-slate-300">
                             The install flow brings in the runtime, installs selected modules, provisions the database, and updates `.env` automatically.
                         </p>
@@ -715,13 +715,13 @@ sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" bash discript/inst
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">3. Direct CLI Examples (No Menu)</h2>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code># Recommended baseline
-sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DOMAIN="panel.example.com" bash discript/install.sh panel install
+sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DOMAIN="panel.example.com" bash dscript/install.sh panel install
 
 # Secure preset
-sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DOMAIN="panel.example.com" PANEL_MODULES="apache,nginx,php,mariadb,supervisor,firewall,fail2ban,ssl,ssh-root-login" bash discript/install.sh panel install
+sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DOMAIN="panel.example.com" PANEL_MODULES="apache,nginx,php,mariadb,supervisor,firewall,fail2ban,ssl,ssh-root-login" bash dscript/install.sh panel install
 
 # Custom DB credentials
-sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DB_NAME="serverpanel" PANEL_DB_USER="serverpanel" PANEL_DB_PASSWORD="StrongPassword123" bash discript/install.sh panel install</code></pre>
+sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DB_NAME="serverpanel" PANEL_DB_USER="serverpanel" PANEL_DB_PASSWORD="StrongPassword123" bash dscript/install.sh panel install</code></pre>
                     </section>
 
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">

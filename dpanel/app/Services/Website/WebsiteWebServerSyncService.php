@@ -3,15 +3,14 @@
 namespace App\Services\Website;
 
 use App\Models\Website;
-use App\Services\ScriptPathResolver;
 use App\Services\Php\PhpService;
+use Illuminate\Support\Facades\Http;
 
 class WebsiteWebServerSyncService
 {
     public function __construct(
         protected WebsiteService $websiteService,
-    ) {
-    }
+    ) {}
 
     /**
      * Sync Apache/Nginx vhost files and reload Apache if available.
@@ -40,12 +39,23 @@ class WebsiteWebServerSyncService
             throw new \InvalidArgumentException('Website document root is required for vhost sync.');
         }
 
-        $vhostResult = $this->runSyncVhostScript($domain, $documentRoot, $phpVersion, $oldDomain);
+        $vhostResult = $this->runSyncVhostScript(
+            $domain,
+            $documentRoot,
+            $phpVersion,
+            $oldDomain,
+            (string) ($website->type ?? '') === 'sub',
+            (string) ($website->client_max_body_size ?? '2G'),
+        );
         if (! $vhostResult['success']) {
             throw new \RuntimeException($vhostResult['output'] !== '' ? $vhostResult['output'] : 'Website vhost sync failed.');
         }
 
-        $verification = $this->verifySyncedVhostFiles($domain, $documentRoot);
+        $verification = $this->verifySyncedVhostFiles(
+            $domain,
+            $documentRoot,
+            (string) ($website->client_max_body_size ?? '2G'),
+        );
         if (! $verification['valid']) {
             $errors = array_filter(array_merge(
                 $verification['apache']['errors'] ?? [],
@@ -58,7 +68,7 @@ class WebsiteWebServerSyncService
         $apacheResult = [
             'ran' => true,
             'success' => true,
-            'output' => 'Handled by sync-vhost.sh.',
+            'output' => 'Handled by the drust sync-vhost API.',
         ];
 
         return [
@@ -77,10 +87,10 @@ class WebsiteWebServerSyncService
      *     nginx: array{available: bool, valid: bool, conf_path: string, enabled_path: string, matched_paths: array<int, string>, errors: array<int, string>}
      * }
      */
-    public function verifySyncedVhostFiles(string $domain, string $documentRoot): array
+    public function verifySyncedVhostFiles(string $domain, string $documentRoot, string $clientMaxBodySize = '2G'): array
     {
         $apache = $this->verifyApacheVhost($domain, $documentRoot);
-        $nginx = $this->verifyNginxVhost($domain, $documentRoot);
+        $nginx = $this->verifyNginxVhost($domain, $documentRoot, strtoupper(trim($clientMaxBodySize)));
 
         $availableChecks = array_filter([$apache['available'], $nginx['available']]);
         $valid = $availableChecks === [] ? false : ($apache['valid'] && $nginx['valid']);
@@ -95,35 +105,47 @@ class WebsiteWebServerSyncService
     /**
      * @return array{ran: bool, success: bool, output: string}
      */
-    public function runSyncVhostScript(string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null): array
+    public function runSyncVhostScript(string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null, bool $noWww = false, string $clientMaxBodySize = '2G'): array
     {
-        try {
-            $scriptPath = (string) ScriptPathResolver::resolveScriptPath('sync-vhost');
-        } catch (\Throwable) {
-            $scriptPath = '';
-        }
-
-        if ($scriptPath === '') {
+        $scriptUrl = trim((string) config('serverpanel.execution_api_url', ''));
+        $apiUrl = preg_replace('#/api/v1/script/run/?$#', '/api/v1/sync-vhost', $scriptUrl) ?: '';
+        if ($apiUrl === '') {
             return [
                 'ran' => false,
                 'success' => false,
-                'output' => 'sync-vhost script not found',
+                'output' => 'drust sync-vhost API is not configured.',
             ];
         }
 
-        $result = ScriptPathResolver::runSystemScriptAsRootWithOutput($scriptPath, array_values(array_filter([
-            'sync',
-            $this->websiteService->normalizeDomain($domain),
-            $this->websiteService->normalizeAbsolutePath($rootPath),
-            PhpService::normalizePhpVersion($phpVersion),
-            $oldDomain !== null && trim($oldDomain) !== '' ? $this->websiteService->normalizeDomain($oldDomain) : null,
-        ], static fn ($value): bool => $value !== null)));
+        $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
+        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($token !== '') {
+            $request = $request->withToken($token);
+        }
 
-        return [
-            'ran' => true,
-            'success' => in_array((int) ($result['exit_code'] ?? 1), [0, 3], true),
-            'output' => (string) ($result['output'] ?? ''),
-        ];
+        try {
+            $response = $request->post($apiUrl, [
+                'action' => 'sync',
+                'domain' => $this->websiteService->normalizeDomain($domain),
+                'root_path' => $this->websiteService->normalizeAbsolutePath($rootPath),
+                'php_version' => PhpService::normalizePhpVersion($phpVersion),
+                'old_domain' => $oldDomain !== null && trim($oldDomain) !== ''
+                    ? $this->websiteService->normalizeDomain($oldDomain)
+                    : null,
+                'no_www' => $noWww,
+                'client_max_body_size' => $clientMaxBodySize,
+            ]);
+            $json = $response->json();
+            $message = is_array($json) ? (string) ($json['message'] ?? '') : '';
+
+            return [
+                'ran' => true,
+                'success' => $response->successful() && (bool) ($json['success'] ?? false),
+                'output' => $message !== '' ? $message : trim((string) $response->body()),
+            ];
+        } catch (\Throwable $e) {
+            return ['ran' => true, 'success' => false, 'output' => $e->getMessage()];
+        }
     }
 
     /**
@@ -167,7 +189,7 @@ class WebsiteWebServerSyncService
     /**
      * @return array{available: bool, valid: bool, conf_path: string, enabled_path: string, matched_paths: array<int, string>, errors: array<int, string>}
      */
-    private function verifyNginxVhost(string $domain, string $rootPath): array
+    private function verifyNginxVhost(string $domain, string $rootPath, string $clientMaxBodySize): array
     {
         $confDir = '/etc/nginx/sites-available';
         $enabledDir = '/etc/nginx/sites-enabled';
@@ -184,7 +206,9 @@ class WebsiteWebServerSyncService
         if ($candidate === '') {
             $errors[] = 'Nginx vhost file not found at expected path(s): '.implode(', ', $expectedPaths).'.';
         } elseif (! $this->vhostFileLooksValid($candidate, $domain, $rootPath, 'nginx')) {
-            $errors[] = 'Nginx vhost file exists but does not contain the expected domain and root path.';
+            $errors[] = 'Nginx vhost file exists but does not contain the expected domain and Apache upstream.';
+        } elseif (! str_contains((string) @file_get_contents($candidate), 'client_max_body_size '.$clientMaxBodySize.';')) {
+            $errors[] = "Nginx vhost does not contain the database upload limit ({$clientMaxBodySize}). Deploy the latest drust binary and sync again.";
         }
 
         $enabledCandidate = $this->pickBestVhostMatch($expectedEnabledPaths, $domain, $rootPath, 'nginx');
@@ -276,7 +300,7 @@ class WebsiteWebServerSyncService
     }
 
     /**
-     * @param array<int, string> $matches
+     * @param  array<int, string>  $matches
      */
     private function pickBestVhostMatch(array $matches, string $domain, string $rootPath, string $type): string
     {
@@ -318,7 +342,9 @@ class WebsiteWebServerSyncService
                 && preg_match('/^\s*DocumentRoot\s+'.$quotedRoot.'\/?\s*$/mi', $content) === 1;
         }
 
+        $apacheBackendPort = (int) env('APACHE_BACKEND_PORT', 8080);
+
         return preg_match('/^\s*server_name\s+.*\b'.$quotedDomain.'\b.*;\s*$/mi', $content) === 1
-            && preg_match('/^\s*root\s+'.$quotedRoot.'\/?\s*;\s*$/mi', $content) === 1;
+            && preg_match('/^\s*proxy_pass\s+http:\/\/127\.0\.0\.1:'.preg_quote((string) $apacheBackendPort, '/').'\/?;\s*$/mi', $content) === 1;
     }
 }

@@ -6,6 +6,7 @@ use App\Services\ScriptPathResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 
 class FilemanagerService
 {
@@ -22,7 +23,7 @@ class FilemanagerService
 
         if ($missing !== []) {
             try {
-                $this->createDirectoriesByCommand($missing);
+                $this->createDirectoriesViaApi($missing);
             } catch (\Throwable $e) {
                 $errors['folder_command'] = $e->getMessage();
             }
@@ -31,6 +32,7 @@ class FilemanagerService
         foreach ($targets as $path) {
             if (! is_dir($path)) {
                 $errors[$path === $this->normalizeAbsolutePath($projectRoot) ? 'project_root' : 'root_path'] = "Could not create directory: {$path}";
+
                 continue;
             }
 
@@ -74,7 +76,18 @@ class FilemanagerService
         $siteDirectory = $this->normalizeRelativeDirectory($siteDirectory, 'public_html');
         $rootPath = $projectRoot.'/'.$siteDirectory;
         $publicHtml = $projectRoot.'/public_html';
-        $this->createDirectoriesByCommand(array_values(array_unique([$projectRoot, $rootPath, $publicHtml])));
+        $result = $this->filemanagerApiRequest('user', [
+            'action' => 'create',
+            'username' => $username,
+            'home' => $projectRoot,
+            'shell' => $shell,
+            'site_directory' => $siteDirectory,
+        ]);
+
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Failed to create website account home.');
+        }
 
         return [
             'user_created' => false,
@@ -85,41 +98,73 @@ class FilemanagerService
         ];
     }
 
-    public function repositoryRoot(): string
-    {
-        return ScriptPathResolver::resolveRepositoryRoot();
-    }
-
     public function repositoryScript(string $group, string $need = ''): array|string
     {
         return ScriptPathResolver::resolveScriptPath($group, $need);
     }
 
-    private function ensureDirectory(string $path, string $missingMessage, array &$created, array &$errors, string $errorKey): void
+    public function writeTextFile(string $username, string $path, string $content, bool $mustExist = false): void
     {
+        $username = $this->normalizeUsername($username);
         $path = $this->normalizeAbsolutePath($path);
-
         if ($path === '') {
-            $errors[$errorKey] = $missingMessage;
-            return;
+            throw new \InvalidArgumentException('File path is required.');
         }
 
-        if (is_dir($path)) {
-            return;
+        $result = $this->filemanagerApiRequest('write', [
+            'username' => $username,
+            'path' => $path,
+            'content' => $content,
+            'must_exist' => $mustExist,
+        ]);
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Failed to write file through the filemanager API.');
+        }
+    }
+
+    public function movePath(string $username, string $source, string $destination): void
+    {
+        $username = $this->normalizeUsername($username);
+        $source = $this->normalizeAbsolutePath($source);
+        $destination = $this->normalizeAbsolutePath($destination);
+        if ($source === '' || $destination === '') {
+            throw new \InvalidArgumentException('Source and destination paths are required.');
         }
 
-        if (! @mkdir($path, 0750, true) && ! is_dir($path)) {
-            $errors[$errorKey] = "Could not create directory: {$path}";
-            return;
+        $result = $this->filemanagerApiRequest('move', [
+            'username' => $username,
+            'source' => $source,
+            'destination' => $destination,
+        ]);
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Failed to move path through the filemanager API.');
+        }
+    }
+
+    public function deletePath(string $username, string $path): void
+    {
+        $username = $this->normalizeUsername($username);
+        $path = $this->normalizeAbsolutePath($path);
+        if ($path === '') {
+            throw new \InvalidArgumentException('Path is required.');
         }
 
-        $created[] = $path;
+        $result = $this->filemanagerApiRequest('delete', [
+            'username' => $username,
+            'path' => $path,
+        ]);
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Failed to delete path through the filemanager API.');
+        }
     }
 
     /**
-     * @param array<int, string> $paths
+     * @param  array<int, string>  $paths
      */
-    private function createDirectoriesByCommand(array $paths): void
+    private function createDirectoriesViaApi(array $paths): void
     {
         $paths = array_values(array_unique(array_filter(array_map(
             fn (string $path): string => $this->normalizeAbsolutePath($path),
@@ -130,50 +175,48 @@ class FilemanagerService
             return;
         }
 
-        $scriptPath = $this->filemanagerScriptPath();
-        $command = implode(' ', array_map('escapeshellarg', array_merge(
-            [$scriptPath, 'install', 'create'],
-            $paths,
-        )));
-
-        $this->runSystemCommand($command);
-    }
-
-    private function filemanagerScriptPath(): string
-    {
-        $scriptPath = $this->repositoryRoot().DIRECTORY_SEPARATOR.'repository'.DIRECTORY_SEPARATOR.'modules'.DIRECTORY_SEPARATOR.'filemanager'.DIRECTORY_SEPARATOR.'install.sh';
-
-        if (! is_file($scriptPath)) {
-            throw new \RuntimeException('Filemanager command script is missing: '.$scriptPath);
+        $result = $this->filemanagerApiRequest('create', ['paths' => $paths]);
+        if ($result['success']) {
+            return;
         }
 
-        return $scriptPath;
+        $output = trim((string) $result['output']);
+        throw new \RuntimeException($output !== '' ? $output : 'Filemanager command failed.');
     }
 
-    private function runSystemCommand(string $command): void
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{success: bool, output: string}
+     */
+    private function filemanagerApiRequest(string $operation, array $payload): array
     {
-        $uid = (int) trim((string) shell_exec('id -u'));
-        if ($uid !== 0) {
-            $sudoPath = trim((string) shell_exec('command -v sudo 2>/dev/null'));
-            if ($sudoPath !== '') {
-                $command = escapeshellarg($sudoPath).' -n '.$command;
-            }
+        $baseUrl = trim((string) config('serverpanel.filemanager_api_url', ''));
+        if ($baseUrl === '') {
+            $scriptUrl = trim((string) config('serverpanel.execution_api_url', ''));
+            $baseUrl = preg_replace('#/api/v1/script/run/?$#', '/api/v1/filemanager', $scriptUrl) ?: '';
         }
 
-        $output = [];
-        $exitCode = 1;
-        exec($command.' 2>&1', $output, $exitCode);
+        if ($baseUrl === '') {
+            return ['success' => false, 'output' => 'Filemanager API is not configured.'];
+        }
 
-        if ($exitCode !== 0) {
-            $message = trim(implode("\n", $output)) !== ''
-                ? trim(implode("\n", $output))
-                : "Command failed: {$command}";
+        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
+        if ($token !== '') {
+            $request = $request->withToken($token);
+        }
 
-            if (str_contains(strtolower($message), 'permission denied')) {
-                $message .= ' You may need passwordless sudo for the web server user or ownership/write access on the target directory.';
-            }
+        try {
+            $response = $request->post(rtrim($baseUrl, '/').'/'.ltrim($operation, '/'), $payload);
+            $json = $response->json();
+            $message = is_array($json) ? (string) ($json['message'] ?? '') : '';
 
-            throw new \RuntimeException($message);
+            return [
+                'success' => $response->successful() && (bool) ($json['success'] ?? false),
+                'output' => $message !== '' ? $message : trim((string) $response->body()),
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'output' => $e->getMessage()];
         }
     }
 
@@ -207,5 +250,4 @@ class FilemanagerService
 
         return substr($path, 0, 64);
     }
-
 }

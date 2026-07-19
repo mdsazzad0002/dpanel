@@ -77,20 +77,6 @@ const statusClass = computed(() => {
 
 const sslEnabled = computed(() => Boolean(props.website?.enable_ssl));
 const scheme = computed(() => (sslEnabled.value ? 'https' : 'http'));
-const installerValue = computed(() => String(props.website?.app_installer ?? 'none').toLowerCase());
-const websiteWordPressVersion = computed(() => {
-    const normalized = String(props.website?.wordpress_version ?? 'latest').trim().toLowerCase();
-    return normalized === '' ? 'latest' : normalized;
-});
-const installerLabel = computed(() => {
-    if (installerValue.value !== 'wordpress') return 'Starter Files';
-    return websiteWordPressVersion.value === 'latest' ? 'WordPress (Latest)' : `WordPress (${websiteWordPressVersion.value})`;
-});
-const installerClass = computed(() => (
-    installerValue.value === 'wordpress'
-        ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400'
-        : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-));
 const webServerHref = computed(() => panelRoute('websites.web-server', { id: props.website.id }));
 
 const serviceLinks = computed(() => [
@@ -255,9 +241,6 @@ const syncVhost = async () => {
                                 <span class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400">
                                     <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" /></svg>
                                     PHP {{ website.php_version || '-' }}
-                                </span>
-                                <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium" :class="installerClass">
-                                    {{ installerLabel }}
                                 </span>
                                 <span v-if="sslEnabled" class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">
                                     <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>

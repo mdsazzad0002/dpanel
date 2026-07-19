@@ -42,6 +42,8 @@ const csrfToken = computed(() => String(page.props.csrfToken || document.querySe
 const syncMessage = ref('');
 const syncMessageType = ref('success');
 const syncLoading = ref(false);
+const bodySize = ref(String(props.website.client_max_body_size || '2G'));
+const bodySizeLoading = ref(false);
 
 const formatStatus = (value) => {
     const text = String(value || 'unknown').toLowerCase();
@@ -106,6 +108,26 @@ const syncVhost = async () => {
     } finally {
         syncLoading.value = false;
     }
+};
+
+const updateBodySize = async () => {
+    if (bodySizeLoading.value) return;
+    bodySizeLoading.value = true;
+    syncMessage.value = '';
+    try {
+        const response = await fetch(panelRoute('websites.web-server.update', { id: props.website.id }), {
+            method: 'PATCH',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken.value },
+            body: JSON.stringify({ client_max_body_size: bodySize.value }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error || payload?.errors?.client_max_body_size?.[0] || payload?.message || 'Configuration update failed.');
+        syncMessageType.value = 'success';
+        syncMessage.value = payload?.message || 'Upload limit updated.';
+    } catch (error) {
+        syncMessageType.value = 'error';
+        syncMessage.value = error?.message || 'Configuration update failed.';
+    } finally { bodySizeLoading.value = false; }
 };
 </script>
 
@@ -179,6 +201,15 @@ const syncVhost = async () => {
                         <p class="text-xs text-slate-500 dark:text-slate-400">PHP Version</p>
                         <p class="mt-1 text-sm font-semibold">{{ website.php_version || '-' }}</p>
                     </div>
+                </div>
+
+                <div class="mt-4 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                    <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Maximum request/upload size</label>
+                    <div class="mt-2 flex max-w-md gap-2">
+                        <input v-model="bodySize" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" placeholder="2G" />
+                        <button type="button" :disabled="bodySizeLoading" @click="updateBodySize" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-60">{{ bodySizeLoading ? 'Saving...' : 'Update' }}</button>
+                    </div>
+                    <p class="mt-1 text-xs text-slate-500">Examples: 512M, 2G, 3G. Requires admin/reseller permission.</p>
                 </div>
 
             </section>

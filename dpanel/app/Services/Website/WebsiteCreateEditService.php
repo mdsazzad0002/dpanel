@@ -51,8 +51,6 @@ class WebsiteCreateEditService
             'project_root' => $validated['project_root'],
             'site_owner' => $validated['site_owner'],
             'php_version' => $validated['php_version'],
-            'app_installer' => $validated['app_installer'],
-            'wordpress_version' => $validated['wordpress_version'],
             'enable_ssl' => $validated['enable_ssl'],
             'assigned_user_id' => null,
             'assigned_reseller_id' => $defaultResellerId,
@@ -62,8 +60,7 @@ class WebsiteCreateEditService
         ];
         $deps['writeRequests']($requests);
 
-        $installerLabel = $validated['app_installer'] === 'wordpress' ? 'WordPress' : 'Starter';
-        $message = "Website request created successfully. Installer: {$installerLabel}.";
+        $message = 'Website request created successfully.';
         if (! empty($validated['enable_ssl'])) {
             $sslNotice = $bootstrap['ssl_notice'] ?? null;
             $message .= $sslNotice !== null ? ' '.$sslNotice : ' SSL was auto-generated.';
@@ -97,8 +94,6 @@ class WebsiteCreateEditService
             $item['project_root'] = $validated['project_root'];
             $item['site_owner'] = $validated['site_owner'];
             $item['php_version'] = $validated['php_version'];
-            $item['app_installer'] = $validated['app_installer'];
-            $item['wordpress_version'] = $validated['wordpress_version'];
             $item['wordpress_db_prefix'] = (string) ($item['wordpress_db_prefix'] ?? '');
             $item['enable_ssl'] = $validated['enable_ssl'];
             $item['command'] = (string) ($bootstrap['command'] ?? '');
@@ -159,16 +154,9 @@ class WebsiteCreateEditService
             ],
             'start_directory' => ['nullable', 'string', 'max:255'],
             'php_version' => ['required', 'string', 'max:10'],
-            'app_installer' => ['nullable', 'string', 'in:none,starter,wordpress'],
-            'wordpress_version' => ['nullable', 'string', 'max:20', 'regex:/^(latest|\\d+\\.\\d+(?:\\.\\d+)?)$/i'],
             'enable_ssl' => ['boolean'],
         ]);
 
-        $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? 'none')));
-        if ($validated['app_installer'] === 'starter') {
-            $validated['app_installer'] = 'none';
-        }
-        $validated['wordpress_version'] = $this->resolver->normalizeWordPressVersion((string) ($validated['wordpress_version'] ?? 'latest'));
         $validated['php_version'] = PhpManagementController::normalizePhpVersionSelection((string) ($validated['php_version'] ?? ''), []);
         $validated['start_directory'] = $this->resolver->normalizeSiteDirectory((string) ($validated['start_directory'] ?? 'public'), 'public');
         $validated['domain'] = $this->resolver->normalizeDomain((string) $validated['domain']);
@@ -176,7 +164,13 @@ class WebsiteCreateEditService
         $domainExists = collect((array) ($deps['readRequests'] ?? fn (): array => [])())
             ->contains(fn (array $item): bool => $this->resolver->normalizeDomain((string) ($item['domain'] ?? '')) === $validated['domain']);
         if ($domainExists) {
-            abort(response()->json(['errors' => ['domain' => ['This domain already exists.']]], 422));
+            if ($request->expectsJson()) {
+                abort(response()->json(['errors' => ['domain' => ['This domain already exists.']]], 422));
+            }
+
+            return back()
+                ->withErrors(['domain' => 'This domain already exists.'])
+                ->withInput();
         }
 
         $validated['root_path'] = $this->resolver->normalizeRootPath((string) ($validated['root_path'] ?? ''), $validated['domain']);
@@ -217,16 +211,9 @@ class WebsiteCreateEditService
             ],
             'start_directory' => ['nullable', 'string', 'max:255'],
             'php_version' => ['required', 'string', 'max:10'],
-            'app_installer' => ['nullable', 'string', 'in:none,starter,wordpress'],
-            'wordpress_version' => ['nullable', 'string', 'max:20', 'regex:/^(latest|\\d+\\.\\d+(?:\\.\\d+)?)$/i'],
             'enable_ssl' => ['boolean'],
         ]);
 
-        $validated['app_installer'] = strtolower(trim((string) ($validated['app_installer'] ?? ($existingRequest['app_installer'] ?? 'none'))));
-        if ($validated['app_installer'] === 'starter') {
-            $validated['app_installer'] = 'none';
-        }
-        $validated['wordpress_version'] = $this->resolver->normalizeWordPressVersion((string) ($validated['wordpress_version'] ?? ($existingRequest['wordpress_version'] ?? 'latest')));
         $validated['php_version'] = PhpManagementController::normalizePhpVersionSelection((string) ($validated['php_version'] ?? ''), []);
         $validated['start_directory'] = $this->resolver->normalizeSiteDirectory((string) ($validated['start_directory'] ?? ''), 'public');
         $validated['domain'] = $this->resolver->normalizeDomain((string) $validated['domain']);
@@ -240,7 +227,13 @@ class WebsiteCreateEditService
                 return $this->resolver->normalizeDomain((string) ($item['domain'] ?? '')) === $validated['domain'];
             });
         if ($domainExists) {
-            abort(response()->json(['errors' => ['domain' => ['This domain already exists.']]], 422));
+            if ($request->expectsJson()) {
+                abort(response()->json(['errors' => ['domain' => ['This domain already exists.']]], 422));
+            }
+
+            return back()
+                ->withErrors(['domain' => 'This domain already exists.'])
+                ->withInput();
         }
 
         $validated['root_path'] = $this->resolver->normalizeRootPath((string) ($validated['root_path'] ?? ''), $validated['domain']);

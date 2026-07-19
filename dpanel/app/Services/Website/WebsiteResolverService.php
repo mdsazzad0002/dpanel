@@ -36,7 +36,6 @@ class WebsiteResolverService
         $website['root_path'] = $this->paths->normalizeRootPath((string) ($website['root_path'] ?? ''), $domain);
         $website['project_root'] = $this->paths->deriveProjectRootPath((string) ($website['root_path'] ?? ''), $domain);
         $website['site_owner'] = $this->paths->extractSiteOwnerFromRootPath((string) $website['root_path']);
-        $website['wordpress_version'] = $this->paths->normalizeWordPressVersion((string) ($website['wordpress_version'] ?? 'latest'));
 
         return $website;
     }

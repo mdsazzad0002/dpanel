@@ -140,9 +140,11 @@ const effectiveStartDirectory = computed(() => {
 });
 const availablePhpVersions = computed(() => {
     const list = Array.isArray(props.phpVersions) ? props.phpVersions : [];
-    return list
+    const normalized = list
         .map((version) => String(version || '').trim())
-        .filter((version) => version === 'latest' || /^\d+\.\d+$/.test(version));
+        .filter((version) => /^\d+\.\d+$/.test(version));
+
+    return normalized.length > 0 ? normalized : ['8.0', '7.4'];
 });
 
 const validateBeforeSubmit = () => {
@@ -247,7 +249,13 @@ const submit = async () => {
 
     submitting.value = true;
     try {
-        const response = await window.axios.post(panelRoute('websites.store'), form.data());
+        const response = await window.axios.post(panelRoute('websites.store'), form.data(), {
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
         const data = response?.data || {};
         const website = data?.website || {};
         const websiteId = String(website?.id || '').trim();
@@ -506,7 +514,7 @@ onBeforeUnmount(() => {
                     <label class="mb-1 block text-sm">PHP Version </label>
                     <select v-model="form.php_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option v-for="version in availablePhpVersions" :key="version" :value="version">
-                            {{ version === 'latest' ? 'Latest Stable' : version }}
+                            {{ version }}
                         </option>
                     </select>
                     <p v-if="form.errors.php_version" class="mt-1 text-xs text-red-600">{{ form.errors.php_version }}</p>

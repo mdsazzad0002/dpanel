@@ -1,0 +1,1 @@
+/var/www/drust/target/debug/drust: /var/www/drust/src/api.rs /var/www/drust/src/app.rs /var/www/drust/src/filemanager.rs /var/www/drust/src/main.rs /var/www/drust/src/scripts.rs /var/www/drust/src/vhost.rs

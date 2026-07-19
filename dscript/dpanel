@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+on_error() {
+  local exit_code="$?"
+  local line_no="${1:-unknown}"
+  local command="${2:-unknown}"
+  printf '[ERROR] Command failed at line %s: %s (exit %s)\n' "$line_no" "$command" "$exit_code" >&2
+}
+
+trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/bootstrap/core.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/package-manager.sh"
+
+panel_cli_dispatch "$@"

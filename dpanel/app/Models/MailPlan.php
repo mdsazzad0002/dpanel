@@ -39,11 +39,11 @@ class MailPlan extends Model
 
     public function mailboxCount(): int
     {
-        return $this->mailboxes()->count();
+        return (int) ($this->getAttribute('mailboxes_count') ?? $this->mailboxes()->count());
     }
 
     public function totalStorageMb(): int
     {
-        return (int) $this->mailboxes()->sum('quota_mb');
+        return (int) ($this->getAttribute('mailboxes_sum_quota_mb') ?? $this->mailboxes()->sum('quota_mb'));
     }
 }

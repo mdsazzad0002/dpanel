@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Website\WebsiteManage;
 use App\Http\Controllers\Controller;
 use App\Models\Website;
 use App\Services\Website\WebsiteWebServerSyncService;
+use App\Services\Ssl\SslLifecycleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -12,6 +13,7 @@ class WebsiteVhostSyncController extends Controller
 {
     public function __construct(
         protected WebsiteWebServerSyncService $webServerSyncService,
+        protected SslLifecycleService $sslLifecycleService,
     ) {
     }
 
@@ -30,6 +32,10 @@ class WebsiteVhostSyncController extends Controller
 
         try {
             $syncResult = $this->webServerSyncService->syncWebsite($website);
+            $sslResult = $this->sslLifecycleService->ensureForWebsite($website);
+            if ((bool) $website->enable_ssl && ($sslResult['status'] ?? '') === 'valid') {
+                $syncResult = $this->webServerSyncService->syncWebsite($website);
+            }
         } catch (\Throwable $e) {
             return response()->json([
                 'type' => 'error',
@@ -45,6 +51,7 @@ class WebsiteVhostSyncController extends Controller
             'type' => 'success',
             'message' => 'Live vhost synced successfully.',
             'sync_result' => $syncResult,
+            'ssl_result' => $sslResult,
             'website' => $website->fresh(),
         ]);
     }

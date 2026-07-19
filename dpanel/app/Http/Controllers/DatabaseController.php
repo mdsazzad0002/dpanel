@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DatabaseRequest as DatabaseRequestModel;
 use App\Models\Website;
+use App\Services\ScriptExecutionGateway;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -432,32 +433,22 @@ class DatabaseController extends Controller
         }
 
         $scriptPath = base_path('scripts/database-request.sh');
-        if (! is_file($scriptPath)) {
-            return ['ran' => false, 'success' => false, 'output' => 'Database sync script not found: '.$scriptPath];
-        }
-
-        $parts = [
-            'bash',
-            escapeshellarg($scriptPath),
+        $result = app(ScriptExecutionGateway::class)->execute($scriptPath, [
             'create',
-            escapeshellarg((string) $payload['database_name']),
-            escapeshellarg((string) $payload['database_user']),
-            escapeshellarg((string) $payload['database_password']),
-            escapeshellarg((string) $payload['database_host']),
-            escapeshellarg((string) $payload['charset']),
-            escapeshellarg((string) $payload['collation']),
-        ];
-
-        $output = [];
-        $exitCode = 1;
-        @exec(implode(' ', $parts).' 2>&1', $output, $exitCode);
-        $message = trim(implode("\n", $output));
-        $success = $exitCode === 0;
+            (string) $payload['database_name'],
+            (string) $payload['database_user'],
+            (string) $payload['database_password'],
+            (string) $payload['database_host'],
+            (string) $payload['charset'],
+            (string) $payload['collation'],
+        ]);
+        $message = trim((string) $result['output']);
+        $success = (bool) $result['success'];
 
         if (! $success) {
             Log::warning('Database sync script failed', [
                 'script' => $scriptPath,
-                'exit_code' => $exitCode,
+                'exit_code' => (int) $result['exit_code'],
                 'output' => $message,
                 'payload' => [
                     'database_name' => (string) $payload['database_name'],
@@ -471,7 +462,7 @@ class DatabaseController extends Controller
         }
 
         return [
-            'ran' => true,
+            'ran' => (bool) $result['ran'],
             'success' => $success,
             'output' => $message !== '' ? $message : ($success ? 'Database sync completed.' : 'Database sync failed.'),
         ];

@@ -281,7 +281,7 @@ export function useFileManager(props) {
 
     function submitMove() {
         moveForm.current_path = props.currentPath;
-        moveForm.post(panelRoute('websites.filemanager.item.move', fileManagerRouteParams()), {
+        moveForm.patch(panelRoute('websites.filemanager.item.move', fileManagerRouteParams()), {
             onSuccess: () => {
                 moveForm.destination_path = props.currentPath;
                 selectedPaths.value = [];
@@ -444,7 +444,7 @@ export function useFileManager(props) {
 
     function submitPermissions() {
         permissionForm.current_path = props.currentPath;
-        permissionForm.post(panelRoute('websites.filemanager.permissions', fileManagerRouteParams()), {
+        permissionForm.patch(panelRoute('websites.filemanager.permissions', fileManagerRouteParams()), {
             onSuccess: () => {
                 closeModal();
             },
