@@ -167,6 +167,24 @@ class FilemanagerService
         }
     }
 
+    public function createDirectory(string $username, string $path): void
+    {
+        $username = $this->normalizeUsername($username);
+        $path = $this->normalizeAbsolutePath($path);
+        if ($path === '') {
+            throw new \InvalidArgumentException('Folder path is required.');
+        }
+
+        $result = $this->filemanagerApiRequest('create', [
+            'username' => $username,
+            'paths' => [$path],
+        ]);
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Failed to create folder through the filemanager API.');
+        }
+    }
+
     public function movePath(string $username, string $source, string $destination): void
     {
         $username = $this->normalizeUsername($username);
@@ -287,9 +305,9 @@ class FilemanagerService
             return $baseUrl;
         }
 
-        $scriptUrl = trim((string) config('serverpanel.execution_api_url', ''));
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
 
-        return preg_replace('#/api/v1/script/run/?$#', '/api/v1/filemanager', $scriptUrl) ?: '';
+        return $baseUrl !== '' ? rtrim($baseUrl, '/').'/api/v1/filemanager' : '';
     }
 
     private function normalizeAbsolutePath(string $path): string

@@ -109,6 +109,9 @@ const schemaEditorMode = ref('');
 const schemaEditorColumns = ref([]);
 const tableStructureColumns = computed(() => Array.isArray(tableDetails.value?.columns) ? tableDetails.value.columns : []);
 const topbarActionDisplay = computed(() => (schemaEditorMode.value === 'create' ? 'create' : topbarActiveAction.value));
+const permissions = computed(() => props.accessControl?.permissions || {});
+const canCreateUser = computed(() => Boolean(permissions.value.can_create_user));
+const canDrop = computed(() => Boolean(permissions.value.can_drop));
 
 const {
     dropConfirmOpen,
@@ -177,6 +180,10 @@ const handleAction = async ({ action, table }) => {
             action,
         });
     }
+};
+
+const handleSafeBulkTableAction = async ({ action, tables }) => {
+    await handleBulkTableAction({ action, tables });
 };
 
 const handleHistoryUpdated = (entries) => {
@@ -295,6 +302,11 @@ const handleOverviewSelect = async (tab) => {
     }
 
     if (tab === 'User accounts') {
+        if (!canCreateUser.value) {
+            pushToast('User/database account management requires root/global database access.', 'error');
+            return;
+        }
+
         pushToast('User accounts page coming soon.', 'info');
         return;
     }
@@ -336,6 +348,7 @@ const handleOverviewSelect = async (tab) => {
                 :tables-by-database="tablesByDatabase"
                 :filter-text="sidebarFilter"
                 :loading="loadingDatabases"
+                :can-drop="canDrop"
                 @select-database="handleSelectDatabase"
                 @select-table="handleSelectTable"
                 @filter-change="handleSidebarFilterChange"
@@ -354,6 +367,7 @@ const handleOverviewSelect = async (tab) => {
                 :theme="theme"
                 :dashboard-href="dashboardHref"
                 :logout-href="logoutHref"
+                :can-create-user="canCreateUser"
                 @toggle-theme="toggleTheme"
                 @overview-select="handleOverviewSelect"
                 @toolbar-action="handleToolbarAction"
@@ -439,11 +453,12 @@ const handleOverviewSelect = async (tab) => {
                             :loading="loadingDatabase || loadingDatabases"
                             :plain="true"
                             :overview-mode="overviewMode"
+                            :can-drop="canDrop"
                             @select-table="handleSelectTable"
                             @select-database="handleSelectDatabaseFromSummary"
                             @reset="resetView"
                             @action="handleAction"
-                            @bulk-action="handleBulkTableAction"
+                            @bulk-action="handleSafeBulkTableAction"
                         />
 
                         <!-- Table Browser -->
@@ -463,6 +478,7 @@ const handleOverviewSelect = async (tab) => {
                             :sort-direction="sortDirection"
                             :rename-busy="renameInProgress"
                             :plain="true"
+                            :can-drop="canDrop"
                             @paginate="handlePaginate"
                             @per-page-change="handlePerPageChange"
                             @sort-change="handleSortChange"

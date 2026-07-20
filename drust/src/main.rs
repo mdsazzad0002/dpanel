@@ -1,6 +1,7 @@
 mod admin;
 mod api;
 mod app;
+mod database;
 mod filemanager;
 mod health;
 mod laravel;

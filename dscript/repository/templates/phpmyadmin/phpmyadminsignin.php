@@ -11,7 +11,8 @@ function serverpanelRequestIsSecure(): bool
     return !empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off';
 }
 
-session_name('SignonSession');
+// Must match $cfg['Servers'][$i]['SignonSession'] in config.inc.php.
+session_name('phpMyAdmin');
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
@@ -148,6 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = (string) ($input['pma_password'] ?? '');
     $host = trim((string) ($input['pma_host'] ?? '127.0.0.1'));
     $database = trim((string) ($input['db'] ?? ''));
+    $allowRoot = (string) ($input['pma_allow_root'] ?? '') === '1';
 
     if (strcasecmp($host, 'localhost') === 0) {
         $host = '127.0.0.1';
@@ -165,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    if (strcasecmp($username, 'root') === 0) {
+    if (strcasecmp($username, 'root') === 0 && !$allowRoot) {
         if ($wantsJson) {
             jsonResponse([
                 'success' => false,

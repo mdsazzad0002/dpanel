@@ -129,6 +129,7 @@ fix-dpanel-root|Repair the local panel web-stack configuration|[domain] [options
 fix-panel-web-stack|Repair panel Apache/Nginx configuration through drust|<domain> [options]
 fix-web-stack|Repair Apache/Nginx base configuration through drust|[options]
 install-roundcube-dovecot-mysql|Install/check Roundcube and PHP MySQL integration|[--check-only] [--skip-update]
+configure-phpmyadmin-signon|Create an isolated phpMyAdmin sign-on instance without changing existing config|[--root PATH]
 issue-ssl|Issue a webroot certificate|<domain> <root-path> [include-www=0|1]
 php-config-apply|Apply php.ini settings|--version VERSION [settings]
 php-detect-config|Print effective PHP configuration|[--version VERSION]
@@ -149,7 +150,7 @@ dscript_script_path() {
     script_root="${DPANEL_RUNTIME_DIR}/scripts"
   fi
   case "$name" in
-    create-admin-user|create-demo-site|database-request|disable-root-login|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-web-stack|sync-vhost)
+    configure-phpmyadmin-signon|create-admin-user|create-demo-site|database-request|disable-root-login|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-web-stack|sync-vhost)
       printf '%s/%s.sh' "$script_root" "$name"
       ;;
     *) printf '%s' '' ;;

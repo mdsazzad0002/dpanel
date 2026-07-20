@@ -10,10 +10,13 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::common::{ensure_canonical_inside_home, validate_account, validate_user_path};
+use super::common::{
+    ensure_canonical_inside_home, ensure_directory_inside_home, validate_account,
+    validate_user_path,
+};
 
 pub fn move_user_path(username: &str, source: &str, destination: &str) -> Result<(), String> {
-    let (user_home, canonical_home, _) = validate_account(username)?;
+    let (user_home, canonical_home, group) = validate_account(username)?;
     let source_path = validate_user_path(username, source)?;
     let destination_path = validate_user_path(username, destination)?;
 
@@ -31,8 +34,14 @@ pub fn move_user_path(username: &str, source: &str, destination: &str) -> Result
     let destination_parent = destination_path
         .parent()
         .ok_or_else(|| "Destination parent is missing.".to_string())?;
-    let canonical_parent =
-        ensure_canonical_inside_home(&canonical_home, destination_parent, "Destination")?;
+    let canonical_parent = ensure_directory_inside_home(
+        username,
+        &group,
+        &user_home,
+        &canonical_home,
+        destination_parent,
+        "Destination",
+    )?;
     if !canonical_parent.is_dir() {
         return Err("Destination parent is not a folder.".into());
     }

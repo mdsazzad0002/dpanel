@@ -38,6 +38,10 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    canCreateUser: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const emit = defineEmits(['toggle-theme', 'overview-select', 'toolbar-action', 'navigate']);
@@ -71,7 +75,7 @@ const indicatorStyle = ref({});
 
 const topbarMenuItems = computed(() => {
     return props.headerMode === 'overview'
-        ? overviewTabs.map((tab) => ({
+        ? overviewTabs.filter((tab) => tab.label !== 'User accounts' || props.canCreateUser).map((tab) => ({
             label: tab.label,
             icon: tab.icon,
             active: tab.label === props.overviewActiveTab,

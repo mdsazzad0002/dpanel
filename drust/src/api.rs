@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::app;
 
 mod admin;
+mod database;
 mod filemanager;
 mod health;
 mod laravel;
@@ -75,6 +76,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(php::routes())
         .merge(ssl::routes())
         .merge(script::routes())
+        .merge(database::routes())
         .merge(laravel::routes())
         .with_state(Arc::new(state))
 }

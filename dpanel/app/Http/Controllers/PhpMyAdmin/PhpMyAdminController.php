@@ -31,6 +31,11 @@ class PhpMyAdminController extends Controller
             'accessControl' => [
                 'mode' => $allAccessRequested ? 'global' : 'scoped',
                 'databases' => $accessibleDatabases,
+                'permissions' => [
+                    'can_create_database' => $allAccessRequested,
+                    'can_create_user' => $allAccessRequested,
+                    'can_drop' => true,
+                ],
             ],
             'initialSelection' => [
                 'database' => $accessibleDatabase,
@@ -391,6 +396,13 @@ class PhpMyAdminController extends Controller
 
         $user = $request->user();
         $allAccessRequested = $request->string('access')->toString() === 'all' && $service->canAccessAllDatabases($user);
+        if (! $allAccessRequested && $this->containsRootOnlySql((string) $validated['sql'])) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Creating or dropping databases/users requires root/global database access.',
+            ], 403);
+        }
+
         $database = $this->resolveIdentifier($validated['database'] ?? '');
         $database = $database !== ''
             ? $database
@@ -527,6 +539,13 @@ class PhpMyAdminController extends Controller
         }
 
         return $value;
+    }
+
+    private function containsRootOnlySql(string $sql): bool
+    {
+        $normalized = strtolower(preg_replace('/\s+/', ' ', trim($sql)) ?? '');
+
+        return preg_match('/\b(create\s+(database|schema|user)|drop\s+(database|schema|user))\b/i', $normalized) === 1;
     }
 
     private function optionalIdentifier(mixed $value): string

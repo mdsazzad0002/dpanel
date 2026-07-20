@@ -15,7 +15,7 @@ use axum::{
 use tokio::io::AsyncWriteExt;
 
 use super::common::{
-    apply_owner_and_mode, ensure_canonical_inside_home, validate_account, validate_user_path,
+    apply_owner_and_mode, ensure_directory_inside_home, validate_account, validate_user_path,
 };
 
 pub fn install_uploaded_file(username: &str, target: &str, staged: &Path) -> Result<(), String> {
@@ -32,7 +32,14 @@ pub fn install_uploaded_file(username: &str, target: &str, staged: &Path) -> Res
     let parent = path
         .parent()
         .ok_or_else(|| "File parent is missing.".to_string())?;
-    ensure_canonical_inside_home(&canonical_home, parent, "Upload folder")?;
+    let parent = ensure_directory_inside_home(
+        username,
+        &group,
+        &user_home,
+        &canonical_home,
+        parent,
+        "Upload folder",
+    )?;
 
     if let Ok(metadata) = fs::symlink_metadata(&path) {
         if metadata.file_type().is_symlink() {

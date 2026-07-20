@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\DatabaseRequest as DatabaseRequestModel;
 use App\Models\Website;
-use App\Services\ScriptExecutionGateway;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -240,10 +239,75 @@ class DatabaseController extends Controller
             ->find($id);
         abort_if($requestItem === null, 404);
 
-        return redirect()->route('phpmyadmin.index', [
-            'token' => $token,
-            'database' => (string) $requestItem->database_name,
-        ]);
+        return $this->renderPhpMyAdminAutologin(
+            (string) $requestItem->database_user,
+            (string) $requestItem->database_password,
+            (string) ($requestItem->database_host ?: '127.0.0.1'),
+            (string) $requestItem->database_name,
+        );
+    }
+
+    /**
+     * Open phpMyAdmin with admin/root-level database credentials and preselected DB.
+     */
+    public function openPhpMyAdminRoot(Request $request, string $token, string $id)
+    {
+        $requestItem = DatabaseRequestModel::query()
+            ->visibleTo($request->user())
+            ->find($id);
+        abort_if($requestItem === null, 404);
+
+        $username = trim((string) config('app.phpmyadmin_admin_username', ''));
+        $password = (string) config('app.phpmyadmin_admin_password', '');
+        $host = trim((string) config('app.phpmyadmin_admin_host', '127.0.0.1'));
+
+        abort_if($username === '' || $password === '', 503, 'phpMyAdmin admin login is not configured.');
+
+        return $this->renderPhpMyAdminAutologin(
+            $username,
+            $password,
+            $host !== '' ? $host : '127.0.0.1',
+            (string) $requestItem->database_name,
+            true,
+        );
+    }
+
+    /**
+     * Open phpMyAdmin with admin/root-level database credentials.
+     */
+    public function openPhpMyAdminRootGlobal(Request $request, string $token)
+    {
+        $username = trim((string) config('app.phpmyadmin_admin_username', ''));
+        $password = (string) config('app.phpmyadmin_admin_password', '');
+        $host = trim((string) config('app.phpmyadmin_admin_host', '127.0.0.1'));
+
+        abort_if($username === '' || $password === '', 503, 'phpMyAdmin admin login is not configured.');
+
+        return $this->renderPhpMyAdminAutologin(
+            $username,
+            $password,
+            $host !== '' ? $host : '127.0.0.1',
+            '',
+            true,
+        );
+    }
+
+    private function renderPhpMyAdminAutologin(string $username, string $password, string $host, string $database, bool $allowRoot = false)
+    {
+        $helperUrl = trim((string) config('app.phpmyadmin_helper_url', ''));
+        abort_if($helperUrl === '', 503, 'phpMyAdmin sign-on is not configured.');
+
+        return response()
+            ->view('phpmyadmin.autologin', [
+                'helperUrl' => $helperUrl,
+                'username' => $username,
+                'password' => $password,
+                'host' => $host,
+                'database' => $database,
+                'allowRoot' => $allowRoot,
+            ])
+            ->header('Cache-Control', 'no-store, private')
+            ->header('Pragma', 'no-cache');
     }
 
     private function isWebtoolsSeparateMode(): bool
@@ -408,17 +472,12 @@ class DatabaseController extends Controller
      */
     private function buildCommand(array $payload): string
     {
-        $scriptPath = base_path('scripts/database-request.sh');
-
         return sprintf(
-            'bash %s create %s %s %s %s %s %s',
-            escapeshellarg($scriptPath),
-            escapeshellarg((string) $payload['database_name']),
-            escapeshellarg((string) $payload['database_user']),
-            escapeshellarg((string) $payload['database_password']),
-            escapeshellarg((string) $payload['database_host']),
-            escapeshellarg((string) $payload['charset']),
-            escapeshellarg((string) $payload['collation']),
+            'POST %s { action: create, database_name: %s, database_user: %s, database_host: %s }',
+            config('serverpanel.database_api_url', '/api/v1/database-request'),
+            (string) $payload['database_name'],
+            (string) $payload['database_user'],
+            (string) $payload['database_host'],
         );
     }
 
@@ -432,40 +491,69 @@ class DatabaseController extends Controller
             return ['ran' => false, 'success' => false, 'output' => 'Database sync skipped on Windows environment.'];
         }
 
-        $scriptPath = base_path('scripts/database-request.sh');
-        $result = app(ScriptExecutionGateway::class)->execute($scriptPath, [
-            'create',
-            (string) $payload['database_name'],
-            (string) $payload['database_user'],
-            (string) $payload['database_password'],
-            (string) $payload['database_host'],
-            (string) $payload['charset'],
-            (string) $payload['collation'],
-        ]);
-        $message = trim((string) $result['output']);
-        $success = (bool) $result['success'];
-
-        if (! $success) {
-            Log::warning('Database sync script failed', [
-                'script' => $scriptPath,
-                'exit_code' => (int) $result['exit_code'],
-                'output' => $message,
-                'payload' => [
-                    'database_name' => (string) $payload['database_name'],
-                    'database_user' => (string) $payload['database_user'],
-                    'database_host' => (string) $payload['database_host'],
-                    'charset' => (string) $payload['charset'],
-                    'collation' => (string) $payload['collation'],
-                    'domain' => (string) $payload['domain'],
-                ],
-            ]);
+        $apiUrl = trim((string) config('serverpanel.database_api_url', ''));
+        if ($apiUrl === '') {
+            return ['ran' => false, 'success' => false, 'output' => 'Database API is not configured. Set SERVERPANEL_DATABASE_API_URL.'];
         }
 
-        return [
-            'ran' => (bool) $result['ran'],
-            'success' => $success,
-            'output' => $message !== '' ? $message : ($success ? 'Database sync completed.' : 'Database sync failed.'),
-        ];
+        $token = trim((string) config('serverpanel.database_api_token', ''));
+
+        $request = Http::acceptJson()
+            ->asJson()
+            ->timeout((int) config('serverpanel.execution_api_timeout', 60));
+
+        if ($token !== '') {
+            $request = $request->withToken($token);
+        }
+
+        try {
+            $response = $request->post($apiUrl, [
+                'action' => 'create',
+                'database_name' => (string) $payload['database_name'],
+                'database_user' => (string) $payload['database_user'],
+                'database_password' => (string) $payload['database_password'],
+                'database_host' => (string) $payload['database_host'],
+                'charset' => (string) $payload['charset'],
+                'collation' => (string) $payload['collation'],
+            ]);
+
+            $json = $response->json();
+            $success = (bool) ($json['success'] ?? false);
+            $message = trim((string) ($json['message'] ?? ''));
+
+            if (! $success) {
+                Log::warning('Database API sync failed', [
+                    'url' => $apiUrl,
+                    'status' => $response->status(),
+                    'output' => $message,
+                    'payload' => [
+                        'database_name' => (string) $payload['database_name'],
+                        'database_user' => (string) $payload['database_user'],
+                        'database_host' => (string) $payload['database_host'],
+                        'charset' => (string) $payload['charset'],
+                        'collation' => (string) $payload['collation'],
+                        'domain' => (string) $payload['domain'],
+                    ],
+                ]);
+            }
+
+            return [
+                'ran' => true,
+                'success' => $success,
+                'output' => $message !== '' ? $message : ($success ? 'Database sync completed.' : 'Database sync failed.'),
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('Database API request failed', [
+                'url' => $apiUrl,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'ran' => true,
+                'success' => false,
+                'output' => $e->getMessage(),
+            ];
+        }
     }
 
     /**

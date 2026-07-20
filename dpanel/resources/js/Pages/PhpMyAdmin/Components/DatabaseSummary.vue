@@ -42,6 +42,10 @@ const props = defineProps({
         type: String,
         default: 'about',
     },
+    canDrop: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const emit = defineEmits(['select-table', 'select-database', 'reset', 'filter-change', 'action', 'bulk-action']);
@@ -150,14 +154,14 @@ const animateCounter = (key, target) => {
     }, 16);
 };
 
-const actions = [
+const actions = computed(() => [
     { key: 'browse', label: 'Browse', icon: 'bi-table' },
     { key: 'structure', label: 'Structure', icon: 'bi-diagram-3' },
     { key: 'search', label: 'Search', icon: 'bi-search' },
     { key: 'insert', label: 'Insert', icon: 'bi-plus-circle' },
     { key: 'empty', label: 'Empty', icon: 'bi-dash-circle' },
-    { key: 'drop', label: 'Drop', icon: 'bi-trash3' },
-];
+    ...(props.canDrop ? [{ key: 'drop', label: 'Drop', icon: 'bi-trash3' }] : []),
+]);
 
 watch(() => props.selectedDatabase, () => {
     animatedCounters.value = {};
@@ -390,7 +394,7 @@ watch(() => props.tables, () => {
                                 <option value="browse">Browse first</option>
                                 <option value="structure">Structure first</option>
                                 <option value="empty">Empty</option>
-                                <option value="drop">Drop</option>
+                                <option v-if="canDrop" value="drop">Drop</option>
                             </select>
                         </label>
                         <button

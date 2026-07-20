@@ -81,7 +81,7 @@ grant_for_host() {
     sql_host="$(escape_sql_string "${host}")"
     sql_exec "CREATE USER IF NOT EXISTS '${sql_user}'@'${sql_host}' IDENTIFIED BY '${sql_pass}';"
     sql_exec "ALTER USER '${sql_user}'@'${sql_host}' IDENTIFIED BY '${sql_pass}';"
-    sql_exec "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${sql_user}'@'${sql_host}';"
+    sql_exec "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER, EVENT ON \`${DB_NAME}\`.* TO '${sql_user}'@'${sql_host}';"
 }
 
 sql_exec "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET ${DB_CHARSET} COLLATE ${DB_COLLATION};"

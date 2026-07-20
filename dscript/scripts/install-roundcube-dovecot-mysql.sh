@@ -206,16 +206,26 @@ deploy_phpmyadmin_templates() {
         fi
     fi
 
-    render_template \
-        "${TEMPLATE_ROOT}/phpmyadmin/config.inc.php" \
-        "$config_target" \
-        blowfish_secret "$secret" \
-        panel_domain "$panel_domain" \
-        panel_port "$panel_port"
+    # Do not overwrite a panel/package-managed config. Create it only when
+    # phpMyAdmin has no config yet; operators can use the isolated sign-on
+    # installer for an additive deployment.
+    if [[ ! -f "$config_target" ]]; then
+        render_template \
+            "${TEMPLATE_ROOT}/phpmyadmin/config.inc.php" \
+            "$config_target" \
+            blowfish_secret "$secret" \
+            panel_domain "$panel_domain" \
+            panel_port "$panel_port" \
+            phpmyadmin_signon_url "https://${panel_domain}:${panel_port}/phpmyadminsignin.php"
+    else
+        log "Keeping existing phpMyAdmin config unchanged: ${config_target}"
+    fi
 
-    render_template \
-        "${TEMPLATE_ROOT}/phpmyadmin/phpmyadminsignin.php" \
-        "$helper_target"
+    if [[ ! -f "$helper_target" ]]; then
+        render_template \
+            "${TEMPLATE_ROOT}/phpmyadmin/phpmyadminsignin.php" \
+            "$helper_target"
+    fi
 }
 
 deploy_roundcube_templates() {

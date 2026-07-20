@@ -62,7 +62,7 @@ else
   mkdir -p "$downloaded_scripts" "$downloaded_templates"
   for script_name in \
     _drust-api create-admin-user create-demo-site database-request disable-root-login \
-    fix-dpanel-root fix-panel-web-stack fix-web-stack install-roundcube-dovecot-mysql \
+    configure-phpmyadmin-signon fix-dpanel-root fix-panel-web-stack fix-web-stack install-roundcube-dovecot-mysql \
     issue-ssl php-config-apply php-detect-config php-detect-extensions php-detect-versions \
     reset-web-stack sync-vhost; do
     download_file "$DSCRIPT_BASE_URL/scripts/${script_name}.sh" "$downloaded_scripts/${script_name}.sh"

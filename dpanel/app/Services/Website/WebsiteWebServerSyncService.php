@@ -107,8 +107,8 @@ class WebsiteWebServerSyncService
      */
     public function runSyncVhostScript(string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null, bool $noWww = false, string $clientMaxBodySize = '2G'): array
     {
-        $scriptUrl = trim((string) config('serverpanel.execution_api_url', ''));
-        $apiUrl = preg_replace('#/api/v1/script/run/?$#', '/api/v1/sync-vhost', $scriptUrl) ?: '';
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $apiUrl = $baseUrl !== '' ? rtrim($baseUrl, '/').'/api/v1/sync-vhost' : '';
         if ($apiUrl === '') {
             return [
                 'ran' => false,

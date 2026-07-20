@@ -550,8 +550,11 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Folder already exists.');
         }
 
-        if (! @mkdir($targetPath, 0755, true) && ! is_dir($targetPath)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create folder.');
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+        try {
+            $this->filemanagerService->createDirectory($siteOwner, $targetPath);
+        } catch (\Throwable $e) {
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create folder. '.$e->getMessage());
         }
 
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Folder created.');

@@ -415,6 +415,62 @@ archive:
 sudo env DSCRIPT_ARCHIVE_PATH=/tmp/dscript.zip /var/www/installer.sh
 ```
 
+### New server install checklist
+
+Use this flow when installing dPanel on a fresh device/server.
+
+1. Download and run the installer:
+
+   ```bash
+   curl -fsSL https://installer.likesoftbd.com/installer.sh -o installer.sh
+   chmod +x installer.sh
+   sudo ./installer.sh
+   ```
+
+2. For local/offline development, install from the checked-out source instead:
+
+   ```bash
+   cd /var/www
+   sudo env DSCRIPT_SOURCE_DIR=/var/www/dscript /var/www/installer.sh
+   ```
+
+3. Keep panel runtime API configuration minimal. dPanel should use one drust base
+   URL and derive execution, database, and filemanager endpoints automatically:
+
+   ```env
+   SERVERPANEL_EXECUTION_API_BASE_URL=http://127.0.0.1:9500
+   SERVERPANEL_EXECUTION_API_TOKEN=change-this-token
+   PHPMYADMIN_URL=http://installer.localhost/phpmyadmin/
+   ```
+
+4. After source changes or local development builds, restart drust:
+
+   ```bash
+   cd /var/www/drust
+   cargo build
+   sudo systemctl restart drust
+   sudo systemctl status drust --no-pager
+   ```
+
+5. Configure phpMyAdmin signon automatically:
+
+   ```bash
+   sudo cp /var/www/dscript/scripts/configure-phpmyadmin-signon.sh /opt/dpanel/runtime/scripts/configure-phpmyadmin-signon.sh
+   sudo /opt/dpanel/runtime/scripts/configure-phpmyadmin-signon.sh
+   ```
+
+6. Verify the important services:
+
+   ```bash
+   systemctl status nginx apache2 mariadb drust --no-pager
+   curl -fsS http://127.0.0.1:9500/health
+   ```
+
+The installer should keep first-time setup in `dscript`, runtime/system actions
+in `drust`, and panel UI/application behavior in `dpanel`. Filemanager folder
+creation and uploads should go through drust so ownership and permissions are
+fixed as root while paths remain scoped inside `/home/{site_user}`.
+
 ## 12. Source layout
 
 ```text

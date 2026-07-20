@@ -41,6 +41,9 @@ class HandleInertiaRequests extends Middleware
                 'token' => $panelToken,
                 'domain' => config('serverpanel.panel_domain'),
             ],
+            'phpmyadmin' => [
+                'url' => trim((string) config('app.phpmyadmin_url', '')),
+            ],
             'panelSearch' => fn () => app(PanelSearchController::class)->buildItems($request),
             'flash' => [
                 'success' => $flashSuccess,

@@ -76,15 +76,19 @@ const deleteRequest = (id) => {
     deleteForm.delete(panelRoute('databases.destroy', { id }));
 };
 
-const openPhpMyAdmin = async (item) => {
+const openPhpMyAdminUser = async (item) => {
+    window.location.href = panelRoute('databases.phpmyadmin.autologin', { id: item.id });
+};
+
+const openRootPhpMyAdmin = () => {
+    window.location.href = panelRoute('phpmyadmin.root-autologin');
+};
+
+const openDatabaseStudio = async (item) => {
     router.visit(panelRoute('phpmyadmin.index', { database: item.database_name }), {
         preserveScroll: true,
         preserveState: false,
     });
-};
-
-const openDatabaseStudio = async (item) => {
-    await openPhpMyAdmin(item);
 };
 
 const openAllDatabaseStudio = () => {
@@ -93,6 +97,7 @@ const openAllDatabaseStudio = () => {
         preserveState: false,
     });
 };
+
 </script>
 
 <template>
@@ -122,6 +127,14 @@ const openAllDatabaseStudio = () => {
                     @click="openAllDatabaseStudio"
                 >
                     All Database Access
+                </button>
+                <button
+                    v-if="canOpenAllDatabases"
+                    type="button"
+                    class="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200 dark:hover:bg-emerald-950/50"
+                    @click="openRootPhpMyAdmin"
+                >
+                    phpMyAdmin
                 </button>
                 <Link :href="panelRoute('databases.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Database
@@ -213,10 +226,17 @@ const openAllDatabaseStudio = () => {
                                     </Link>
                                     <button
                                         type="button"
-                                        class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
-                                        @click="openPhpMyAdmin(item)"
+                                        class="rounded-md border border-cyan-300 px-2 py-1 text-xs text-cyan-700 hover:bg-cyan-50 disabled:opacity-50 dark:border-cyan-700 dark:text-cyan-300 dark:hover:bg-cyan-900/20"
+                                        @click="openDatabaseStudio(item)"
                                     >
-                                        Database Studio
+                                        DB Studio Login
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
+                                        @click="openPhpMyAdminUser(item)"
+                                    >
+                                        phpMyAdmin
                                     </button>
                                     <button
                                         :disabled="deleteForm.processing"

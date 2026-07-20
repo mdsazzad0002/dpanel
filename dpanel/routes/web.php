@@ -377,10 +377,19 @@ Route::prefix('cpsess{token}')
         ->middleware('role:admin|reseller')
         ->name('phpmyadmin.import');
 
-    Route::redirect('/databases/{id}/phpmyadmin/autologin', '/phpmyadmin')
+    Route::get('/phpmyadmin/root-autologin', [DatabaseController::class, 'openPhpMyAdminRootGlobal'])
+        ->middleware('role:admin')
+        ->name('phpmyadmin.root-autologin');
+
+    Route::get('/databases/{id}/phpmyadmin/autologin', [DatabaseController::class, 'openPhpMyAdmin'])
         ->middleware('role:admin|reseller')
         ->where('id', '[^/]+')
         ->name('databases.phpmyadmin.autologin');
+
+    Route::get('/databases/{id}/phpmyadmin/root-autologin', [DatabaseController::class, 'openPhpMyAdminRoot'])
+        ->middleware('role:admin')
+        ->where('id', '[^/]+')
+        ->name('databases.phpmyadmin.root-autologin');
 
     Route::redirect('/databases/{id}/phpmyadmin/{path?}', '/phpmyadmin')
         ->middleware('role:admin|reseller')

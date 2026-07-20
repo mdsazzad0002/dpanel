@@ -34,6 +34,9 @@ sudo /var/www/dscript/dpanel module nginx update
 See the complete command, module, script, environment and recovery reference in
 [`dscript/guide.md`](dscript/guide.md).
 
+For a fresh device/server checklist, see
+[`dscript/guide.md#new-server-install-checklist`](dscript/guide.md#new-server-install-checklist).
+
 ## First Run
 
 The first install flow can:

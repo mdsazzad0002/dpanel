@@ -38,11 +38,8 @@ class SslLifecycleService
             return ['status' => 'disabled'];
         }
 
-        $apiUrl = preg_replace(
-            '#/api/v1/script/run/?$#',
-            '/api/v1/ssl/ensure',
-            trim((string) config('serverpanel.execution_api_url', '')),
-        ) ?: '';
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $apiUrl = $baseUrl !== '' ? rtrim($baseUrl, '/').'/api/v1/ssl/ensure' : '';
         if ($apiUrl === '') {
             throw new \RuntimeException('drust SSL API is not configured.');
         }

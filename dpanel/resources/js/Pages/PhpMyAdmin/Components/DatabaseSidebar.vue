@@ -30,6 +30,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    canDrop: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const emit = defineEmits(['select-database', 'select-table', 'filter-change', 'toggle-database', 'table-action']);
@@ -282,6 +286,7 @@ onBeforeUnmount(() => {
                 </button>
                 <div class="border-t border-slate-800"></div>
                 <button
+                    v-if="canDrop"
                     type="button"
                     class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-red-300 hover:bg-red-500/10"
                     @click="handleContextAction('drop')"

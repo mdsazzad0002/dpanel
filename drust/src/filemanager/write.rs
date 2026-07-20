@@ -10,7 +10,9 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::common::{apply_owner_and_mode, validate_account, validate_user_path};
+use super::common::{
+    apply_owner_and_mode, ensure_directory_inside_home, validate_account, validate_user_path,
+};
 
 pub fn write_user_file(
     username: &str,
@@ -18,7 +20,7 @@ pub fn write_user_file(
     content: &[u8],
     must_exist: bool,
 ) -> Result<(), String> {
-    let (_, _, group) = validate_account(username)?;
+    let (user_home, canonical_home, group) = validate_account(username)?;
     let path = validate_user_path(username, target)?;
     if must_exist && !path.is_file() {
         return Err(format!("File not found: {}", path.display()));
@@ -27,12 +29,18 @@ pub fn write_user_file(
     let parent = path
         .parent()
         .ok_or_else(|| "File parent is missing.".to_string())?;
-    fs::create_dir_all(parent)
-        .map_err(|e| format!("failed to create {}: {e}", parent.display()))?;
+    let parent = ensure_directory_inside_home(
+        username,
+        &group,
+        &user_home,
+        &canonical_home,
+        parent,
+        "File folder",
+    )?;
     fs::write(&path, content).map_err(|e| format!("failed to write {}: {e}", path.display()))?;
 
     apply_owner_and_mode(username, &group, &path, "0644")?;
-    let _ = apply_owner_and_mode(username, &group, parent, "0755");
+    let _ = apply_owner_and_mode(username, &group, &parent, "0755");
     info(&format!("file written: {}", path.display()));
     Ok(())
 }

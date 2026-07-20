@@ -993,8 +993,8 @@ class PhpManagementController extends Controller
             ];
         }
 
-        $scriptUrl = trim((string) config('serverpanel.execution_api_url', ''));
-        $apiUrl = preg_replace('#/api/v1/script/run/?$#', '/api/v1/php/config', $scriptUrl) ?: '';
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $apiUrl = $baseUrl !== '' ? rtrim($baseUrl, '/').'/api/v1/php/config' : '';
         if ($apiUrl === '') {
             return [
                 'applied' => false,
