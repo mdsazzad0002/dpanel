@@ -1,19 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LIKESOFT_BASE_DIR="${LIKESOFT_BASE_DIR:-/opt/likesoft}"
-LIKESOFT_RUNTIME_DIR="${LIKESOFT_RUNTIME_DIR:-${LIKESOFT_BASE_DIR}/runtime}"
-
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "${LIKESOFT_RUNTIME_DIR}/core.sh"
-# shellcheck disable=SC1091
-source "${LIKESOFT_RUNTIME_DIR}/package-manager.sh"
+source "${SCRIPT_DIR}/../_load.sh" 2>/dev/null || source "${DPANEL_RUNTIME_DIR:-/opt/dpanel/runtime}/core.sh"
 
 action="${1:-install}"
 shift || true
 
 run_disable_root() {
-  local user_script="${LIKESOFT_RUNTIME_DIR}/scripts/disable-root-login.sh"
+  local user_script="${DPANEL_RUNTIME_DIR}/scripts/disable-root-login.sh"
   if [[ ! -x "$user_script" ]]; then
     panel_die "Runtime script not found: ${user_script}"
   fi

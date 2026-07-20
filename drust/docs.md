@@ -293,7 +293,44 @@ Body:
 
 The path must remain inside `/home/{username}`. The daemon creates missing parent directories and applies account ownership, directory mode `0755`, and file mode `0644`.
 
-### 12. SSL ensure
+### 12. File manager upload
+
+```http
+POST /api/v1/filemanager/upload
+Content-Type: multipart/form-data
+```
+
+Multipart fields:
+
+- `username`: account owner
+- `path`: absolute target path inside `/home/{username}`
+- `upload`: binary file body
+
+Uploads are streamed to a staging file, installed atomically with account ownership
+and mode `0644`, and limited to 10 GiB by default. Set
+`DRUST_MAX_UPLOAD_SIZE_BYTES` on the daemon to change the API-side limit.
+
+### 13. File manager unzip
+
+```http
+POST /api/v1/filemanager/unzip
+```
+
+Body:
+
+```json
+{
+  "username": "example",
+  "path": "/home/example/public_html/archive.zip"
+}
+```
+
+The archive is extracted beside the zip file. Paths must remain inside the
+account home. Symbolic-link entries and unsafe paths are rejected. The default
+limits are 100,000 entries and 20 GiB expanded data; override them with
+`DRUST_MAX_ZIP_ENTRIES` and `DRUST_MAX_ZIP_EXPANDED_BYTES`.
+
+### 14. SSL ensure
 
 ```http
 POST /api/v1/ssl/ensure

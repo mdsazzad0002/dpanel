@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LIKESOFT_CORE_SOURCE="${BASH_SOURCE[0]}"
-LIKESOFT_BASE_DIR="${LIKESOFT_BASE_DIR:-/opt/likesoft}"
-LIKESOFT_RUNTIME_DIR="${LIKESOFT_RUNTIME_DIR:-${LIKESOFT_BASE_DIR}/runtime}"
-LIKESOFT_CACHE_DIR="${LIKESOFT_CACHE_DIR:-${LIKESOFT_BASE_DIR}/cache}"
-LIKESOFT_MODULE_DIR="${LIKESOFT_MODULE_DIR:-${LIKESOFT_BASE_DIR}/modules}"
-LIKESOFT_LOG_DIR="${LIKESOFT_LOG_DIR:-${LIKESOFT_BASE_DIR}/logs}"
-LIKESOFT_TEMPLATE_DIR="${LIKESOFT_TEMPLATE_DIR:-${LIKESOFT_BASE_DIR}/templates}"
-LIKESOFT_MANIFEST_DIR="${LIKESOFT_MANIFEST_DIR:-${LIKESOFT_BASE_DIR}/manifests}"
-LIKESOFT_SERVER_JSON="${LIKESOFT_SERVER_JSON:-${LIKESOFT_BASE_DIR}/server.json}"
-LIKESOFT_TOKEN_FILE="${LIKESOFT_TOKEN_FILE:-${LIKESOFT_BASE_DIR}/token}"
-LIKESOFT_LOCAL_MANIFEST="${LIKESOFT_LOCAL_MANIFEST:-${LIKESOFT_CACHE_DIR}/modules.installed.json}"
-LIKESOFT_LAUNCHER="${LIKESOFT_LAUNCHER:-/usr/local/bin/panel}"
-LIKESOFT_DUAL_LAUNCHER="${LIKESOFT_DUAL_LAUNCHER:-/usr/local/bin/dpanel}"
+DPANEL_CORE_SOURCE="${BASH_SOURCE[0]}"
+DPANEL_BASE_DIR="${DPANEL_BASE_DIR:-/opt/dpanel}"
+export DPANEL_BASE_DIR
+DPANEL_RUNTIME_DIR="${DPANEL_RUNTIME_DIR:-${DPANEL_BASE_DIR}/runtime}"
+DPANEL_CACHE_DIR="${DPANEL_CACHE_DIR:-${DPANEL_BASE_DIR}/cache}"
+DPANEL_MODULE_DIR="${DPANEL_MODULE_DIR:-${DPANEL_BASE_DIR}/modules}"
+DPANEL_LOG_DIR="${DPANEL_LOG_DIR:-${DPANEL_BASE_DIR}/logs}"
+DPANEL_TEMPLATE_DIR="${DPANEL_TEMPLATE_DIR:-${DPANEL_BASE_DIR}/templates}"
+DPANEL_MANIFEST_DIR="${DPANEL_MANIFEST_DIR:-${DPANEL_BASE_DIR}/manifests}"
+DPANEL_REPOSITORY_DIR="${DPANEL_REPOSITORY_DIR:-${DPANEL_BASE_DIR}/repository}"
+DPANEL_SERVER_JSON="${DPANEL_SERVER_JSON:-${DPANEL_BASE_DIR}/server.json}"
+DPANEL_TOKEN_FILE="${DPANEL_TOKEN_FILE:-${DPANEL_BASE_DIR}/token}"
+DPANEL_LOCAL_MANIFEST="${DPANEL_LOCAL_MANIFEST:-${DPANEL_CACHE_DIR}/modules.installed.json}"
+DPANEL_LAUNCHER="${DPANEL_LAUNCHER:-/usr/local/bin/panel}"
+DPANEL_DUAL_LAUNCHER="${DPANEL_DUAL_LAUNCHER:-/usr/local/bin/dpanel}"
 PANEL_APP_DIR="${PANEL_APP_DIR:-${SERVER_BASE_DIR:-/var/www/dpanel}}"
 PANEL_APP_ENV_FILE="${PANEL_APP_ENV_FILE:-}"
 PANEL_DB_NAME="${PANEL_DB_NAME:-dpanel}"
@@ -28,11 +30,11 @@ panel_log() {
   local level="$1"
   shift
   local message="[${level}] $*"
-  local logfile="${LIKESOFT_LOG_DIR}/install.log"
+  local logfile="${DPANEL_LOG_DIR}/install.log"
 
   printf '%s\n' "$message"
 
-  if mkdir -p "$LIKESOFT_LOG_DIR" 2>/dev/null && { [[ -w "$LIKESOFT_LOG_DIR" ]] || [[ -w "$logfile" ]] || [[ ! -e "$logfile" ]]; }; then
+  if mkdir -p "$DPANEL_LOG_DIR" 2>/dev/null && { [[ -w "$DPANEL_LOG_DIR" ]] || [[ -w "$logfile" ]] || [[ ! -e "$logfile" ]]; }; then
     touch "$logfile" 2>/dev/null || true
     printf '%s\n' "$message" >> "$logfile" 2>/dev/null || true
   fi
@@ -63,18 +65,19 @@ panel_require_root() {
 
 panel_ensure_dirs() {
   mkdir -p \
-    "$LIKESOFT_BASE_DIR" \
-    "$LIKESOFT_RUNTIME_DIR" \
-    "$LIKESOFT_CACHE_DIR" \
-    "$LIKESOFT_MODULE_DIR" \
-    "$LIKESOFT_LOG_DIR" \
-    "$LIKESOFT_TEMPLATE_DIR" \
-    "$LIKESOFT_MANIFEST_DIR"
+    "$DPANEL_BASE_DIR" \
+    "$DPANEL_RUNTIME_DIR" \
+    "$DPANEL_CACHE_DIR" \
+    "$DPANEL_MODULE_DIR" \
+    "$DPANEL_LOG_DIR" \
+    "$DPANEL_TEMPLATE_DIR" \
+    "$DPANEL_MANIFEST_DIR" \
+    "$DPANEL_REPOSITORY_DIR"
 
   touch \
-    "${LIKESOFT_LOG_DIR}/install.log" \
-    "${LIKESOFT_LOG_DIR}/update.log" \
-    "${LIKESOFT_LOG_DIR}/agent.log"
+    "${DPANEL_LOG_DIR}/install.log" \
+    "${DPANEL_LOG_DIR}/update.log" \
+    "${DPANEL_LOG_DIR}/agent.log"
 }
 
 panel_detect_os() {
@@ -121,7 +124,26 @@ panel_generate_uuid() {
 }
 
 panel_default_base_url() {
-  printf '%s' "${LIKESOFT_BASE_URL:-https://installer.likesoftbd.com}"
+  if [[ -n "${DPANEL_BASE_URL:-}" ]]; then
+    printf '%s' "$DPANEL_BASE_URL"
+    return 0
+  fi
+
+  if [[ -f "$DPANEL_SERVER_JSON" ]] && command -v python3 >/dev/null 2>&1; then
+    local configured
+    configured="$(python3 - "$DPANEL_SERVER_JSON" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1], encoding='utf-8') as handle:
+        print(json.load(handle).get('base_url', ''))
+except (OSError, ValueError):
+    print('')
+PY
+)"
+    [[ -n "$configured" ]] && { printf '%s' "$configured"; return 0; }
+  fi
+
+  printf '%s' "https://installer.likesoftbd.com/dscript"
 }
 
 panel_fetch() {
@@ -146,33 +168,97 @@ panel_fetch() {
 panel_copy_runtime_asset() {
   local src="$1"
   local dest="$2"
+
+  if [[ -e "$dest" && "$(readlink -f "$src")" == "$(readlink -f "$dest")" ]]; then
+    return 0
+  fi
+
   install -m 0755 "$src" "$dest"
 }
 
 panel_install_runtime_assets() {
-  panel_info_log "Installing runtime assets into ${LIKESOFT_RUNTIME_DIR}"
+  panel_info_log "Installing runtime assets into ${DPANEL_RUNTIME_DIR}"
+  mkdir -p "$DPANEL_RUNTIME_DIR"
 
-  local core_source="${LIKESOFT_DOWNLOADED_CORE:-$LIKESOFT_CORE_SOURCE}"
-  local package_source="${LIKESOFT_DOWNLOADED_PACKAGE_MANAGER:-${LIKESOFT_PACKAGE_MANAGER_SOURCE:-}}"
+  local core_source="${DPANEL_DOWNLOADED_CORE:-$DPANEL_CORE_SOURCE}"
+  local package_source="${DPANEL_DOWNLOADED_PACKAGE_MANAGER:-${DPANEL_PACKAGE_MANAGER_SOURCE:-}}"
+  local commands_source="${DPANEL_DOWNLOADED_COMMANDS:-}"
   local source_scripts_dir=""
-  local candidate_scripts_dir
-  candidate_scripts_dir="$(cd "$(dirname "$LIKESOFT_CORE_SOURCE")/../scripts" 2>/dev/null && pwd || true)"
-  if [[ -n "$candidate_scripts_dir" && -d "$candidate_scripts_dir" ]]; then
-    source_scripts_dir="$candidate_scripts_dir"
+  local source_templates_dir="${DPANEL_DOWNLOADED_TEMPLATES_DIR:-}"
+  local source_repository_dir="${DPANEL_DOWNLOADED_REPOSITORY_DIR:-}"
+  local candidate_path
+  if [[ -n "${DPANEL_DOWNLOADED_SCRIPTS_DIR:-}" && -d "$DPANEL_DOWNLOADED_SCRIPTS_DIR" ]]; then
+    source_scripts_dir="$DPANEL_DOWNLOADED_SCRIPTS_DIR"
+  else
+    for candidate_path in \
+      "$(dirname "$core_source")/scripts" \
+      "$(dirname "$core_source")/../scripts"; do
+      if [[ -d "$candidate_path" ]]; then
+        source_scripts_dir="$(cd "$candidate_path" && pwd)"
+        break
+      fi
+    done
   fi
 
   [[ -f "$core_source" ]] || panel_die "Missing core source file."
   [[ -n "$package_source" && -f "$package_source" ]] || panel_die "Missing package manager source file."
 
-  panel_copy_runtime_asset "$core_source" "${LIKESOFT_RUNTIME_DIR}/core.sh"
-  panel_copy_runtime_asset "$package_source" "${LIKESOFT_RUNTIME_DIR}/package-manager.sh"
+  if [[ -z "$commands_source" ]]; then
+    for candidate_path in \
+      "$(dirname "$core_source")/commands.sh" \
+      "$(dirname "$core_source")/../core/commands.sh"; do
+      if [[ -f "$candidate_path" ]]; then
+        commands_source="$candidate_path"
+        break
+      fi
+    done
+  fi
+  [[ -f "$commands_source" ]] || panel_die "Missing command router source file."
+
+  panel_copy_runtime_asset "$core_source" "${DPANEL_RUNTIME_DIR}/core.sh"
+  panel_copy_runtime_asset "$package_source" "${DPANEL_RUNTIME_DIR}/package-manager.sh"
+  panel_copy_runtime_asset "$commands_source" "${DPANEL_RUNTIME_DIR}/commands.sh"
 
   if [[ -n "$source_scripts_dir" ]]; then
-    mkdir -p "${LIKESOFT_RUNTIME_DIR}/scripts"
+    mkdir -p "${DPANEL_RUNTIME_DIR}/scripts"
     for script_path in "${source_scripts_dir}"/*.sh; do
       [[ -f "$script_path" ]] || continue
-      install -m 0755 "$script_path" "${LIKESOFT_RUNTIME_DIR}/scripts/$(basename "$script_path")"
+      panel_copy_runtime_asset "$script_path" "${DPANEL_RUNTIME_DIR}/scripts/$(basename "$script_path")"
     done
+  fi
+
+  if [[ -z "$source_templates_dir" ]]; then
+    for candidate_path in \
+      "$(dirname "$core_source")/templates" \
+      "$(dirname "$core_source")/../repository/templates"; do
+      if [[ -d "$candidate_path" ]]; then
+        source_templates_dir="$(cd "$candidate_path" && pwd)"
+        break
+      fi
+    done
+  fi
+  if [[ -n "$source_templates_dir" && -d "$source_templates_dir" ]]; then
+    mkdir -p "${DPANEL_RUNTIME_DIR}/templates"
+    if [[ "$(readlink -f "$source_templates_dir")" != "$(readlink -f "${DPANEL_RUNTIME_DIR}/templates")" ]]; then
+      cp -R "${source_templates_dir}/." "${DPANEL_RUNTIME_DIR}/templates/"
+    fi
+  fi
+
+  if [[ -z "$source_repository_dir" ]]; then
+    for candidate_path in \
+      "$(dirname "$core_source")/repository" \
+      "$(dirname "$core_source")/../repository"; do
+      if [[ -d "$candidate_path" ]]; then
+        source_repository_dir="$(cd "$candidate_path" && pwd)"
+        break
+      fi
+    done
+  fi
+  if [[ -n "$source_repository_dir" && -d "$source_repository_dir" ]]; then
+    mkdir -p "$DPANEL_REPOSITORY_DIR"
+    if [[ "$(readlink -f "$source_repository_dir")" != "$(readlink -f "$DPANEL_REPOSITORY_DIR")" ]]; then
+      cp -R "${source_repository_dir}/." "${DPANEL_REPOSITORY_DIR}/"
+    fi
   fi
 
   panel_write_launcher() {
@@ -192,31 +278,33 @@ EOF
     mv -f "$tmp_file" "$launcher_path"
   }
 
-  cat > "${LIKESOFT_RUNTIME_DIR}/launcher.sh" <<'EOF'
+  cat > "${DPANEL_RUNTIME_DIR}/launcher.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-LIKESOFT_BASE_DIR="${LIKESOFT_BASE_DIR:-/opt/likesoft}"
-LIKESOFT_RUNTIME_DIR="${LIKESOFT_RUNTIME_DIR:-${LIKESOFT_BASE_DIR}/runtime}"
+DPANEL_BASE_DIR="${DPANEL_BASE_DIR:-/opt/dpanel}"
+DPANEL_RUNTIME_DIR="${DPANEL_RUNTIME_DIR:-${DPANEL_BASE_DIR}/runtime}"
 
-if [[ ! -f "${LIKESOFT_RUNTIME_DIR}/core.sh" || ! -f "${LIKESOFT_RUNTIME_DIR}/package-manager.sh" ]]; then
+if [[ ! -f "${DPANEL_RUNTIME_DIR}/core.sh" || ! -f "${DPANEL_RUNTIME_DIR}/package-manager.sh" || ! -f "${DPANEL_RUNTIME_DIR}/commands.sh" ]]; then
   echo "Runtime core is missing. Re-run the installer." >&2
   exit 1
 fi
 
 # shellcheck disable=SC1091
-source "${LIKESOFT_RUNTIME_DIR}/core.sh"
+source "${DPANEL_RUNTIME_DIR}/core.sh"
 # shellcheck disable=SC1091
-source "${LIKESOFT_RUNTIME_DIR}/package-manager.sh"
+source "${DPANEL_RUNTIME_DIR}/package-manager.sh"
+# shellcheck disable=SC1091
+source "${DPANEL_RUNTIME_DIR}/commands.sh"
 
-panel_cli_dispatch "$@"
+dscript_cli "$@"
 EOF
-  chmod 0755 "${LIKESOFT_RUNTIME_DIR}/launcher.sh"
+  chmod 0755 "${DPANEL_RUNTIME_DIR}/launcher.sh"
 
-  panel_write_launcher "$LIKESOFT_LAUNCHER" "${LIKESOFT_RUNTIME_DIR}/launcher.sh"
+  panel_write_launcher "$DPANEL_LAUNCHER" "${DPANEL_RUNTIME_DIR}/launcher.sh"
 
-  if [[ "$LIKESOFT_DUAL_LAUNCHER" != "$LIKESOFT_LAUNCHER" ]]; then
-    panel_write_launcher "$LIKESOFT_DUAL_LAUNCHER" "${LIKESOFT_RUNTIME_DIR}/launcher.sh"
+  if [[ "$DPANEL_DUAL_LAUNCHER" != "$DPANEL_LAUNCHER" ]]; then
+    panel_write_launcher "$DPANEL_DUAL_LAUNCHER" "${DPANEL_RUNTIME_DIR}/launcher.sh"
   fi
 }
 
@@ -241,7 +329,7 @@ panel_register_server() {
   server_uuid="$(panel_generate_uuid)"
   token="$(panel_generate_token)"
 
-  cat > "$LIKESOFT_SERVER_JSON" <<EOF
+  cat > "$DPANEL_SERVER_JSON" <<EOF
 {
   "server_uuid": "$server_uuid",
   "installed_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
@@ -255,8 +343,8 @@ panel_register_server() {
 }
 EOF
 
-  printf '%s\n' "$token" > "$LIKESOFT_TOKEN_FILE"
-  chmod 0600 "$LIKESOFT_TOKEN_FILE"
+  printf '%s\n' "$token" > "$DPANEL_TOKEN_FILE"
+  chmod 0600 "$DPANEL_TOKEN_FILE"
   panel_info_log "Registered server: $server_uuid"
 }
 
@@ -266,7 +354,7 @@ panel_remote_manifest_url() {
 
 panel_manifest_version_for() {
   local module="$1"
-  local manifest="${2:-$LIKESOFT_CACHE_DIR/modules.manifest.json}"
+  local manifest="${2:-$DPANEL_CACHE_DIR/modules.manifest.json}"
 
   if [[ ! -f "$manifest" ]]; then
     printf '%s' ''
@@ -310,7 +398,7 @@ panel_remote_module_url() {
 
 panel_repository_root() {
   local core_dir
-  core_dir="$(cd "$(dirname "${LIKESOFT_CORE_SOURCE}")" && pwd)"
+  core_dir="$(cd "$(dirname "${DPANEL_CORE_SOURCE}")" && pwd)"
   printf '%s' "$(cd "${core_dir}/.." && pwd)"
 }
 
@@ -348,38 +436,47 @@ panel_module_cache_path() {
   local version="${3:-}"
 
   if [[ "$module" == "php" && "$action" == "install" && -n "$version" ]]; then
-    printf '%s/%s-%s.sh' "$LIKESOFT_MODULE_DIR" "$module" "$version"
+    printf '%s/%s-%s.sh' "$DPANEL_MODULE_DIR" "$module" "$version"
     return 0
   fi
 
-  printf '%s/%s.sh' "$LIKESOFT_MODULE_DIR" "$module"
+  printf '%s/%s.sh' "$DPANEL_MODULE_DIR" "$module"
 }
 
 panel_sync_manifest() {
-  local dest="$LIKESOFT_CACHE_DIR/modules.manifest.json"
+  local dest="$DPANEL_CACHE_DIR/modules.manifest.json"
+  mkdir -p "$DPANEL_CACHE_DIR"
+
+  if [[ "${DSCRIPT_REFRESH_REMOTE:-false}" != "true" && "${PANEL_BOOTSTRAP_MODE:-install}" != "update" \
+    && -f "${DPANEL_REPOSITORY_DIR}/manifests/modules.json" ]]; then
+    cp -f "${DPANEL_REPOSITORY_DIR}/manifests/modules.json" "$dest"
+    panel_info_log "Loaded local module manifest."
+    return 0
+  fi
+
   panel_fetch "$(panel_remote_manifest_url)" "$dest"
   panel_info_log "Synced remote manifest."
 }
 
 panel_installed_manifest_value() {
   local key="$1"
-  if [[ ! -f "$LIKESOFT_LOCAL_MANIFEST" ]]; then
+  if [[ ! -f "$DPANEL_LOCAL_MANIFEST" ]]; then
     return 0
   fi
 
   awk -v key="$key" -F= '
     $1 == key { print $2 }
-  ' "$LIKESOFT_LOCAL_MANIFEST" | tail -n 1
+  ' "$DPANEL_LOCAL_MANIFEST" | tail -n 1
 }
 
 panel_store_installed_manifest_value() {
   local key="$1"
   local value="$2"
 
-  touch "$LIKESOFT_LOCAL_MANIFEST"
-  grep -v "^${key}=" "$LIKESOFT_LOCAL_MANIFEST" > "${LIKESOFT_LOCAL_MANIFEST}.tmp" || true
-  mv "${LIKESOFT_LOCAL_MANIFEST}.tmp" "$LIKESOFT_LOCAL_MANIFEST"
-  printf '%s=%s\n' "$key" "$value" >> "$LIKESOFT_LOCAL_MANIFEST"
+  touch "$DPANEL_LOCAL_MANIFEST"
+  grep -v "^${key}=" "$DPANEL_LOCAL_MANIFEST" > "${DPANEL_LOCAL_MANIFEST}.tmp" || true
+  mv "${DPANEL_LOCAL_MANIFEST}.tmp" "$DPANEL_LOCAL_MANIFEST"
+  printf '%s=%s\n' "$key" "$value" >> "$DPANEL_LOCAL_MANIFEST"
 }
 
 panel_download_module() {
@@ -403,9 +500,15 @@ panel_download_module() {
 
 panel_run_module() {
   local module="$1"
-  local action="${2:-install}"
-  local version="${3:-}"
-  shift 3 || true
+  shift || true
+  local action="${1:-install}"
+  [[ $# -gt 0 ]] && shift
+  local version=""
+
+  if [[ "$module" == "php" && $# -gt 0 ]]; then
+    version="$1"
+    shift
+  fi
 
   panel_run_module_exact "$module" "$action" "$version" "$@"
 }
@@ -414,7 +517,9 @@ panel_run_module_exact() {
   local module="$1"
   local action="${2:-install}"
   local version="${3:-}"
-  shift 3 || true
+  [[ $# -gt 0 ]] && shift
+  [[ $# -gt 0 ]] && shift
+  [[ $# -gt 0 ]] && shift
 
   local script
   script="$(panel_local_module_script "$module" "$action" "$version")"
@@ -423,11 +528,15 @@ panel_run_module_exact() {
   fi
 
   if [[ "$module" == "php" && -n "$version" ]]; then
-    LIKESOFT_RUNTIME_DIR="$LIKESOFT_RUNTIME_DIR" LIKESOFT_BASE_DIR="$LIKESOFT_BASE_DIR" PHP_VERSION="$version" bash "$script" "$action" "$version" "$@"
+    DPANEL_RUNTIME_DIR="$DPANEL_RUNTIME_DIR" DPANEL_BASE_DIR="$DPANEL_BASE_DIR" PHP_VERSION="$version" bash "$script" "$action" "$version" "$@"
     return 0
   fi
 
-  LIKESOFT_RUNTIME_DIR="$LIKESOFT_RUNTIME_DIR" LIKESOFT_BASE_DIR="$LIKESOFT_BASE_DIR" bash "$script" "$action" "$@"
+  if [[ -n "$version" ]]; then
+    DPANEL_RUNTIME_DIR="$DPANEL_RUNTIME_DIR" DPANEL_BASE_DIR="$DPANEL_BASE_DIR" bash "$script" "$action" "$version" "$@"
+  else
+    DPANEL_RUNTIME_DIR="$DPANEL_RUNTIME_DIR" DPANEL_BASE_DIR="$DPANEL_BASE_DIR" bash "$script" "$action" "$@"
+  fi
 }
 
 panel_php_versions() {
@@ -524,8 +633,8 @@ panel_php_default_version() {
     return 0
   fi
 
-  if [[ -f "$LIKESOFT_SERVER_JSON" && -x "$(command -v python3 2>/dev/null || true)" ]]; then
-    configured="$(python3 - "$LIKESOFT_SERVER_JSON" <<'PY'
+  if [[ -f "$DPANEL_SERVER_JSON" && -x "$(command -v python3 2>/dev/null || true)" ]]; then
+    configured="$(python3 - "$DPANEL_SERVER_JSON" <<'PY'
 import json
 import sys
 
@@ -591,7 +700,7 @@ panel_set_php_default_version() {
   fi
 
   if [[ -x "$(command -v python3 2>/dev/null || true)" ]]; then
-    python3 - "$LIKESOFT_SERVER_JSON" "$version" <<'PY'
+    python3 - "$DPANEL_SERVER_JSON" "$version" <<'PY'
 import json
 import os
 import sys
@@ -728,7 +837,7 @@ panel_update_module_if_changed() {
 }
 
 panel_update_from_manifest() {
-  local manifest="$LIKESOFT_CACHE_DIR/modules.manifest.json"
+  local manifest="$DPANEL_CACHE_DIR/modules.manifest.json"
 
   if [[ ! -f "$manifest" ]]; then
     panel_sync_manifest
@@ -812,20 +921,20 @@ panel_site_create() {
   root_path="${6:-/home/${username}/public_html}"
   site_name="${domain//./-}"
 
-  mkdir -p "$LIKESOFT_TEMPLATE_DIR/generated/sites" "$LIKESOFT_TEMPLATE_DIR/generated/pools"
+  mkdir -p "$DPANEL_TEMPLATE_DIR/generated/sites" "$DPANEL_TEMPLATE_DIR/generated/pools"
 
   if [[ "$web_server" == "apache" ]]; then
     panel_render_template \
-      "${LIKESOFT_RUNTIME_DIR}/apache-site.conf.tpl" \
-      "${LIKESOFT_TEMPLATE_DIR}/generated/sites/${site_name}.conf" \
+      "${DPANEL_RUNTIME_DIR}/apache-site.conf.tpl" \
+      "${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.conf" \
       domain "$domain" \
       root "$root_path" \
       username "$username" \
       php_version "$php_version"
   else
     panel_render_template \
-      "${LIKESOFT_RUNTIME_DIR}/nginx-site.conf.tpl" \
-      "${LIKESOFT_TEMPLATE_DIR}/generated/sites/${site_name}.conf" \
+      "${DPANEL_RUNTIME_DIR}/nginx-site.conf.tpl" \
+      "${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.conf" \
       domain "$domain" \
       root "$root_path" \
       username "$username" \
@@ -833,16 +942,16 @@ panel_site_create() {
   fi
 
   panel_render_template \
-    "${LIKESOFT_RUNTIME_DIR}/php-pool.conf.tpl" \
-    "${LIKESOFT_TEMPLATE_DIR}/generated/pools/${username}.conf" \
+    "${DPANEL_RUNTIME_DIR}/php-pool.conf.tpl" \
+    "${DPANEL_TEMPLATE_DIR}/generated/pools/${username}.conf" \
     username "$username" \
     php_version "$php_version" \
     root "$root_path"
 
   if [[ "${ssl,,}" == "yes" || "${ssl,,}" == "true" ]]; then
     panel_render_template \
-      "${LIKESOFT_RUNTIME_DIR}/ssl-site.conf.tpl" \
-      "${LIKESOFT_TEMPLATE_DIR}/generated/sites/${site_name}.ssl.conf" \
+      "${DPANEL_RUNTIME_DIR}/ssl-site.conf.tpl" \
+      "${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.ssl.conf" \
       domain "$domain" \
       root "$root_path" \
       username "$username" \
@@ -850,7 +959,7 @@ panel_site_create() {
   fi
 
   panel_info_log "Site scaffold created for ${domain}"
-  panel_info_log "Config cached at ${LIKESOFT_TEMPLATE_DIR}/generated/sites/${site_name}.conf"
+  panel_info_log "Config cached at ${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.conf"
 }
 
 panel_resolve_app_env_file() {
@@ -868,10 +977,11 @@ panel_resolve_app_env_file() {
   fi
 
   paths+=(
-    "${LIKESOFT_BASE_DIR}/dpanel/.env"
-    "${LIKESOFT_BASE_DIR}/.env"
+    "${DPANEL_BASE_DIR}/dpanel/.env"
+    "${DPANEL_BASE_DIR}/.env"
     "/var/www/ServerPanel/.env"
     "/var/www/dpanel/.env"
+    "/opt/dpanel/dpanel/.env"
     "/opt/likesoft/dpanel/.env"
   )
 
@@ -955,14 +1065,14 @@ panel_run_runtime_script() {
   local script_name="$1"
   shift || true
 
-  local script_path="${LIKESOFT_RUNTIME_DIR}/scripts/${script_name}"
+  local script_path="${DPANEL_RUNTIME_DIR}/scripts/${script_name}"
   [[ -x "$script_path" ]] || panel_die "Missing runtime script: ${script_name}"
 
-  LIKESOFT_RUNTIME_DIR="$LIKESOFT_RUNTIME_DIR" LIKESOFT_BASE_DIR="$LIKESOFT_BASE_DIR" bash "$script_path" "$@"
+  DPANEL_RUNTIME_DIR="$DPANEL_RUNTIME_DIR" DPANEL_BASE_DIR="$DPANEL_BASE_DIR" bash "$script_path" "$@"
 }
 
 panel_write_runtime_templates() {
-  cat > "${LIKESOFT_RUNTIME_DIR}/nginx-site.conf.tpl" <<'EOF'
+  cat > "${DPANEL_RUNTIME_DIR}/nginx-site.conf.tpl" <<'EOF'
 server {
     listen 80;
     server_name {{domain}} www.{{domain}};
@@ -981,7 +1091,7 @@ server {
 }
 EOF
 
-  cat > "${LIKESOFT_RUNTIME_DIR}/apache-site.conf.tpl" <<'EOF'
+  cat > "${DPANEL_RUNTIME_DIR}/apache-site.conf.tpl" <<'EOF'
 <VirtualHost *:80>
     ServerName {{domain}}
     ServerAlias www.{{domain}}
@@ -994,7 +1104,7 @@ EOF
 </VirtualHost>
 EOF
 
-  cat > "${LIKESOFT_RUNTIME_DIR}/php-pool.conf.tpl" <<'EOF'
+  cat > "${DPANEL_RUNTIME_DIR}/php-pool.conf.tpl" <<'EOF'
 [{{username}}]
 user = {{username}}
 group = {{username}}
@@ -1005,7 +1115,7 @@ pm = ondemand
 pm.max_children = 10
 EOF
 
-  cat > "${LIKESOFT_RUNTIME_DIR}/ssl-site.conf.tpl" <<'EOF'
+  cat > "${DPANEL_RUNTIME_DIR}/ssl-site.conf.tpl" <<'EOF'
 # SSL placeholder for {{domain}}
 # Place the certbot or ACME generated directives here after issuance.
 EOF
@@ -1029,7 +1139,9 @@ panel_bootstrap() {
   panel_ensure_dirs
   panel_detect_os
   panel_install_cli_launcher
-  panel_register_server
+  if [[ ! -s "$DPANEL_SERVER_JSON" ]]; then
+    panel_register_server
+  fi
 
   case "${bootstrap_mode}" in
     install)
@@ -1047,9 +1159,19 @@ panel_bootstrap() {
           continue
         fi
         if [[ "$module" == "php" ]]; then
-          panel_php_manage_versions install all
-        else
-          panel_run_module "$module" install
+          if ! panel_php_manage_versions install all; then
+            if [[ "${DSCRIPT_CONTINUE_ON_ERROR:-false}" == "true" ]]; then
+              panel_error_log "Module failed and chain will continue: ${module}"
+              continue
+            fi
+            return 1
+          fi
+        elif ! panel_run_module "$module" install; then
+          if [[ "${DSCRIPT_CONTINUE_ON_ERROR:-false}" == "true" ]]; then
+            panel_error_log "Module failed and chain will continue: ${module}"
+            continue
+          fi
+          return 1
         fi
         panel_store_installed_manifest_value "$module" "$(panel_manifest_version_for "$module")"
         if [[ "$module" == "mariadb" ]]; then
@@ -1080,16 +1202,16 @@ panel_bootstrap() {
 }
 
 panel_info() {
-  if [[ -f "$LIKESOFT_SERVER_JSON" ]]; then
-    cat "$LIKESOFT_SERVER_JSON"
+  if [[ -f "$DPANEL_SERVER_JSON" ]]; then
+    cat "$DPANEL_SERVER_JSON"
   else
-    panel_warn_log "No server metadata found at ${LIKESOFT_SERVER_JSON}"
+    panel_warn_log "No server metadata found at ${DPANEL_SERVER_JSON}"
   fi
 
-  if [[ -f "$LIKESOFT_LOCAL_MANIFEST" ]]; then
+  if [[ -f "$DPANEL_LOCAL_MANIFEST" ]]; then
     echo
     echo "[installed-modules]"
-    cat "$LIKESOFT_LOCAL_MANIFEST"
+    cat "$DPANEL_LOCAL_MANIFEST"
   fi
 }
 

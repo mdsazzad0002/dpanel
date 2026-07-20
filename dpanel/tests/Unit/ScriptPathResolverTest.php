@@ -10,8 +10,8 @@ class ScriptPathResolverTest extends TestCase
 {
     public function test_resolves_repository_root_and_manifest_from_configured_path(): void
     {
-        $root = sys_get_temp_dir().'/installer-bootstrap-test-'.Str::lower((string) Str::uuid());
-        $repositoryRoot = $root.'/installer/bootstrap/dscript';
+        $root = sys_get_temp_dir().'/dscript-test-'.Str::lower((string) Str::uuid());
+        $repositoryRoot = $root.'/dscript';
 
         $this->makeDirectory($repositoryRoot.'/repository/modules/filemanager');
         file_put_contents($repositoryRoot.'/repository/modules/filemanager/filemanager.json', json_encode([
@@ -31,7 +31,7 @@ class ScriptPathResolverTest extends TestCase
     public function test_resolves_runtime_script_when_bootstrap_path_exists_but_does_not_contain_it(): void
     {
         $root = sys_get_temp_dir().'/script-resolver-test-'.Str::lower((string) Str::uuid());
-        $bootstrapRoot = $root.'/installer/bootstrap/dscript';
+        $bootstrapRoot = $root.'/legacy-dscript';
         $runtimeRoot = $root.'/dscript';
         $runtimeScript = $runtimeRoot.'/repository/modules/filemanager/install.sh';
 

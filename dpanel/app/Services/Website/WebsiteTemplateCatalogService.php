@@ -14,8 +14,6 @@ class WebsiteTemplateCatalogService
         $configured = trim((string) config('serverpanel.template_repository_dir', ''));
         $candidates = array_values(array_filter([
             $configured !== '' ? $configured : null,
-            dirname(base_path()).'/installer/bootstrap/dscript',
-            base_path('installer/bootstrap/dscript'),
             dirname(base_path()).'/dscript',
             base_path('dscript'),
             '/var/www/dscript',
@@ -32,7 +30,7 @@ class WebsiteTemplateCatalogService
             }
         }
 
-        return rtrim($this->normalizeAbsolutePath(dirname(base_path()).'/installer/bootstrap/dscript'), '/');
+        return rtrim($this->normalizeAbsolutePath(dirname(base_path()).'/dscript'), '/');
     }
 
     /**

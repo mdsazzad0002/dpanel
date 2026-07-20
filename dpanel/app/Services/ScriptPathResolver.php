@@ -17,8 +17,6 @@ class ScriptPathResolver
         }
 
         $fallbacks = array_filter([
-            dirname(base_path()).'/installer/bootstrap/dscript',
-            base_path('installer/bootstrap/dscript'),
             dirname(base_path()).'/dscript',
             base_path('dscript'),
             '/var/www/dscript',

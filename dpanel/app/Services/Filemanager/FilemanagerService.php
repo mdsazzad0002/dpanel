@@ -123,6 +123,50 @@ class FilemanagerService
         }
     }
 
+    public function uploadFile(string $username, string $path, string $sourcePath): void
+    {
+        $username = $this->normalizeUsername($username);
+        $path = $this->normalizeAbsolutePath($path);
+        if ($path === '' || ! is_file($sourcePath) || ! is_readable($sourcePath)) {
+            throw new \InvalidArgumentException('A readable upload file and target path are required.');
+        }
+
+        $baseUrl = $this->filemanagerApiBaseUrl();
+        if ($baseUrl === '') {
+            throw new \RuntimeException('Filemanager API is not configured.');
+        }
+
+        $stream = @fopen($sourcePath, 'rb');
+        if ($stream === false) {
+            throw new \RuntimeException('Failed to open the temporary upload file.');
+        }
+
+        try {
+            $request = Http::acceptJson()
+                ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600));
+            $token = trim((string) config('serverpanel.execution_api_token', ''));
+            if ($token !== '') {
+                $request = $request->withToken($token);
+            }
+
+            $response = $request
+                ->attach('upload', $stream, basename($path))
+                ->post(rtrim($baseUrl, '/').'/upload', [
+                    'username' => $username,
+                    'path' => $path,
+                ]);
+            $json = $response->json();
+            $message = is_array($json) ? trim((string) ($json['message'] ?? '')) : '';
+            if (! $response->successful() || ! (bool) ($json['success'] ?? false)) {
+                throw new \RuntimeException($message !== '' ? $message : trim((string) $response->body()));
+            }
+        } catch (\Throwable $e) {
+            throw new \RuntimeException($e->getMessage(), (int) $e->getCode(), $e);
+        } finally {
+            fclose($stream);
+        }
+    }
+
     public function movePath(string $username, string $source, string $destination): void
     {
         $username = $this->normalizeUsername($username);
@@ -161,6 +205,24 @@ class FilemanagerService
         }
     }
 
+    public function unzipFile(string $username, string $path): void
+    {
+        $username = $this->normalizeUsername($username);
+        $path = $this->normalizeAbsolutePath($path);
+        if ($path === '') {
+            throw new \InvalidArgumentException('Zip path is required.');
+        }
+
+        $result = $this->filemanagerApiRequest('unzip', [
+            'username' => $username,
+            'path' => $path,
+        ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Failed to extract zip through the filemanager API.');
+        }
+    }
+
     /**
      * @param  array<int, string>  $paths
      */
@@ -188,20 +250,18 @@ class FilemanagerService
      * @param  array<string, mixed>  $payload
      * @return array{success: bool, output: string}
      */
-    private function filemanagerApiRequest(string $operation, array $payload): array
+    private function filemanagerApiRequest(string $operation, array $payload, ?int $timeout = null): array
     {
-        $baseUrl = trim((string) config('serverpanel.filemanager_api_url', ''));
-        if ($baseUrl === '') {
-            $scriptUrl = trim((string) config('serverpanel.execution_api_url', ''));
-            $baseUrl = preg_replace('#/api/v1/script/run/?$#', '/api/v1/filemanager', $scriptUrl) ?: '';
-        }
+        $baseUrl = $this->filemanagerApiBaseUrl();
 
         if ($baseUrl === '') {
             return ['success' => false, 'output' => 'Filemanager API is not configured.'];
         }
 
         $token = trim((string) config('serverpanel.execution_api_token', ''));
-        $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
+        $request = Http::acceptJson()->asJson()->timeout(
+            $timeout ?? (int) config('serverpanel.execution_api_timeout', 60)
+        );
         if ($token !== '') {
             $request = $request->withToken($token);
         }
@@ -218,6 +278,18 @@ class FilemanagerService
         } catch (\Throwable $e) {
             return ['success' => false, 'output' => $e->getMessage()];
         }
+    }
+
+    private function filemanagerApiBaseUrl(): string
+    {
+        $baseUrl = trim((string) config('serverpanel.filemanager_api_url', ''));
+        if ($baseUrl !== '') {
+            return $baseUrl;
+        }
+
+        $scriptUrl = trim((string) config('serverpanel.execution_api_url', ''));
+
+        return preg_replace('#/api/v1/script/run/?$#', '/api/v1/filemanager', $scriptUrl) ?: '';
     }
 
     private function normalizeAbsolutePath(string $path): string

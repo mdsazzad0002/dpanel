@@ -4,6 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TEMPLATE_ROOT="${REPO_ROOT}/repository/templates"
+if [[ ! -d "$TEMPLATE_ROOT" && -d "${REPO_ROOT}/templates" ]]; then
+    TEMPLATE_ROOT="${REPO_ROOT}/templates"
+fi
 
 PACKAGE_NAME="dovecot-mysql"
 CHECK_ONLY=0

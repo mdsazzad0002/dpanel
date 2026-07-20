@@ -1,214 +1,437 @@
-# dscript guide
+# dscript 2.0 guide
 
-This repo provides the shell entrypoint used by `dpanel` for installer and maintenance tasks.
+Category-wise documentation is available under [`docs/README.md`](docs/README.md).
+Use that directory when you need a separate guide for installation, modules,
+vhosts, scripts, recovery or environment configuration.
 
-## Quick Start
+`dscript` is the shell toolkit for installing, updating, diagnosing and repairing
+dPanel servers. The public command is `dpanel`; `panel` is installed as a
+compatibility alias.
 
-From the project root:
+The standalone `/var/www/installer.sh` is only a downloader. It downloads
+`dscript/install.sh` and hands control to dscript. Installation decisions do not
+belong in the standalone installer.
 
-```bash
-./dpanel info
-./dpanel install
-./dpanel update
-./dpanel php versions
-```
-
-If `dpanel` is on your `PATH`, you can use:
-
-```bash
-dpanel info
-dpanel php versions
-```
-
-## Top-Level Commands
-
-### `install`
-
-Installs the full panel stack when no module is provided.
-
-Usage:
+## 1. Quick start
 
 ```bash
-dpanel install
-dpanel install <module>
+# Discover commands without changing the server
+/var/www/dscript/dpanel help
+/var/www/dscript/dpanel list
+/var/www/dscript/dpanel doctor
+
+# Preview a change
+/var/www/dscript/dpanel --dry-run chain install
+
+# Complete installation
+sudo /var/www/dscript/dpanel chain install
+
+# One independent operation
+sudo /var/www/dscript/dpanel module nginx update
 ```
 
-Examples:
+After a chain install, both commands are available:
 
 ```bash
-dpanel install
-dpanel install php
-dpanel install site:create example.com bdsoft yes nginx /home/bdsoft/public_html
+dpanel help
+panel help
 ```
 
-### `update`
+## 2. The two process types
 
-Updates the full panel stack when no module is provided.
+### 2.1 Chain process
 
-Usage:
+A chain runs a complete ordered workflow:
 
 ```bash
-dpanel update
-dpanel update <module>
+dpanel chain install [module,...]
+dpanel chain update
+dpanel chain verify
+dpanel chain repair
 ```
 
-Examples:
-
-```bash
-dpanel update
-dpanel update php
-```
-
-### `remove`
-
-Removes a module.
-
-Usage:
-
-```bash
-dpanel remove <module> [version]
-```
-
-Examples:
-
-```bash
-dpanel remove php 8.3
-```
-
-### `info`
-
-Prints server metadata and installed module state.
-
-Usage:
-
-```bash
-dpanel info
-```
-
-### `site:create`
-
-Scaffolds a site configuration.
-
-Usage:
-
-```bash
-dpanel site:create <domain> <username> [php_version] [ssl] [web_server] [root_path]
-```
-
-Example:
-
-```bash
-dpanel site:create example.com bdsoft 8.3 yes nginx /home/bdsoft/public_html
-```
-
-### `php`
-
-PHP management commands.
-
-Usage:
-
-```bash
-dpanel php <install|update|reinstall|default|versions|list|remove> [version|all]
-```
-
-Commands:
-
-```bash
-dpanel php versions
-dpanel php list
-dpanel php install
-dpanel php install 8.3
-dpanel php update
-dpanel php update 8.3
-dpanel php reinstall
-dpanel php reinstall 8.3
-dpanel php default 8.3
-dpanel php remove 8.3
-```
-
-Behavior:
-
-- `versions` shows the configured PHP versions together with current server install/default status.
-- `list` behaves the same as `versions`.
-- `install` without a version checks every PHP version listed in `repository/modules/php/php.json` and installs only the versions not already installed.
-- `reinstall` behaves like `install` but forces a fresh install pass for the selected version(s).
-- `update` without a version updates every PHP version listed there.
-- `default <version>` switches the system CLI default and records it in `server.json`.
-
-### `user:create`
-
-Creates an admin user.
-
-Usage:
-
-```bash
-dpanel user:create
-```
-
-### `ssh:disable-root`
-
-Disables root SSH login.
-
-Usage:
-
-```bash
-dpanel ssh:disable-root
-```
-
-### `filemanager`
-
-File manager helper commands.
-
-Usage:
-
-```bash
-dpanel filemanager <create|remove|exists|file-exists|user> <path>...
-```
-
-Examples:
-
-```bash
-dpanel filemanager create /var/www/example
-dpanel filemanager remove /var/www/example
-dpanel filemanager exists /var/www/example
-dpanel filemanager file-exists /var/www/example/.env
-dpanel filemanager user create bdsoft
-```
-
-## PHP Version Source
-
-The available PHP versions are loaded from:
-
-```bash
-repository/modules/php/php.json
-```
-
-Current versions:
+Default install order:
 
 ```text
-7.4
-8.0
-8.1
-8.2
-8.3
-8.4
-8.5
+apache -> nginx -> php -> mariadb -> supervisor -> firewall -> fail2ban
 ```
 
-## Useful Environment Variables
+Choose modules with either syntax:
 
-- `PANEL_BOOTSTRAP_MODE`: `install`, `update`, `info`, or `site:create`
-- `PANEL_MODULES`: comma-separated module list for bootstrap install
-- `PANEL_APP_DIR`: application path used for `.env` lookup
-- `PANEL_APP_ENV_FILE`: explicit `.env` file path
-- `PANEL_DB_NAME`: database name for bootstrap provisioning
-- `PANEL_DB_USER`: database user for bootstrap provisioning
-- `PANEL_DB_PASSWORD`: database password override
-- `PHP_VERSION`: preferred PHP version when a single version is needed
-- `LIKESOFT_BASE_URL`: remote base URL for downloading modules
+```bash
+sudo dpanel chain install apache,nginx,php,mariadb
+sudo dpanel chain install apache nginx php mariadb
+sudo env PANEL_MODULES="nginx,php,mariadb,redis" dpanel chain install
+```
 
-## Notes
+Normally the chain stops on the first failure. To attempt the remaining modules:
 
-- `install` and `update` without a module run the bootstrap flow.
-- The PHP shell commands are the preferred way to manage PHP versions now.
-- `php versions` is the safest way to inspect what the shell considers valid.
+```bash
+sudo dpanel --continue-on-error chain install
+```
+
+Use this option for diagnosis, not to hide a failed module. Review the log and run
+`dpanel doctor` afterward.
+
+### 2.2 Individual process
+
+An individual process changes one module only:
+
+```bash
+sudo dpanel module nginx install
+sudo dpanel module nginx update
+sudo dpanel module nginx remove
+sudo dpanel module nginx reinstall
+dpanel module nginx info
+```
+
+The short form is equivalent:
+
+```bash
+sudo dpanel nginx update
+```
+
+Legacy forms remain supported:
+
+```bash
+sudo dpanel install nginx
+sudo dpanel update nginx
+sudo dpanel remove nginx
+```
+
+## 3. Global options
+
+| Option | Purpose |
+|---|---|
+| `-h`, `--help` | Print top-level help |
+| `-V`, `--version` | Print dscript version |
+| `-n`, `--dry-run` | Preview a mutating top-level operation |
+| `-y`, `--yes` | Supply confirmation where supported |
+| `--continue-on-error` | Continue a chain after a failed module |
+| `-v`, `--verbose` | Enable verbose diagnostics for supporting scripts |
+
+`--dry-run` protects commands dispatched by dscript. Do not assume that directly
+executing an arbitrary file under `scripts/` supports dry-run.
+
+## 4. Module reference
+
+List all modules and recorded versions:
+
+```bash
+dpanel module list
+dpanel module <name> info
+```
+
+| Module | Purpose | Individual examples |
+|---|---|---|
+| `apache` | Apache backend web server | `dpanel apache install` |
+| `nginx` | Nginx frontend web server | `dpanel nginx update` |
+| `php` | Multi-version PHP/FPM | `dpanel php install 8.3` |
+| `mariadb` | MariaDB server | `dpanel mariadb install` |
+| `redis` | Redis service | `dpanel redis install` |
+| `supervisor` | Supervisor process manager | `dpanel supervisor update` |
+| `queue` | Queue runtime based on Supervisor | `dpanel queue install` |
+| `firewall` | UFW/firewalld baseline | `dpanel firewall install` |
+| `fail2ban` | Fail2ban and panel jail template | `dpanel fail2ban install` |
+| `ssl` | Certbot packages | `dpanel ssl install` |
+| `filemanager` | Safe file and system-user operations | See section 4.2 |
+| `admin-user` | Admin creation through drust | `dpanel admin-user install ...` |
+| `ssh-root-login` | Disable SSH root login through drust | `dpanel ssh-root-login install` |
+
+### 4.1 PHP
+
+```bash
+dpanel php versions
+sudo dpanel php install 8.3
+sudo dpanel php install all
+sudo dpanel php update 8.3
+sudo dpanel php update all
+sudo dpanel php reinstall 8.3
+sudo dpanel php remove 8.3
+sudo dpanel php default 8.3
+```
+
+Supported versions come from `repository/modules/php/php.json`, not from a list
+embedded in the CLI. On RPM systems the distribution package stream may limit
+simultaneous PHP versions.
+
+### 4.2 Filemanager
+
+```bash
+dpanel filemanager exists /home/example/public_html
+dpanel filemanager file-exists /home/example/public_html/.env
+sudo dpanel filemanager create /home/example/public_html /home/example/logs
+sudo dpanel filemanager remove /home/example/old
+sudo dpanel filemanager user create example --home /home/example --shell /bin/bash
+sudo dpanel filemanager user ensure example --site-directory public_html
+```
+
+Protected paths and invalid usernames are rejected by the module.
+
+## 5. Maintenance script reference
+
+Discover scripts through the CLI instead of guessing file paths:
+
+```bash
+dpanel script list
+dpanel script help sync-vhost
+dpanel script run php-detect-versions
+```
+
+Every maintained shell file has a stable CLI name:
+
+| Name | Usage |
+|---|---|
+| `create-admin-user` | `script run create-admin-user <username> [password] [email] [ssh-key] [shell] [disable-root]` |
+| `create-demo-site` | `script run create-demo-site <root> <domain> [php-version] [start-directory]` |
+| `database-request` | `script run database-request <action> <db> <user> <password> [host] [port] [charset] [collation]` |
+| `disable-root-login` | `script run disable-root-login` |
+| `fix-dpanel-root` | `script run fix-dpanel-root [domain] [options]` |
+| `fix-panel-web-stack` | `script run fix-panel-web-stack <domain> [ports] [options]` |
+| `fix-web-stack` | `script run fix-web-stack [apache-port] [nginx-port]` |
+| `install-roundcube-dovecot-mysql` | `script run install-roundcube-dovecot-mysql [--check-only] [--skip-update]` |
+| `issue-ssl` | `script run issue-ssl <domain> <root-path> [include-www=0|1]` |
+| `php-config-apply` | `script run php-config-apply --version VERSION [settings]` |
+| `php-detect-config` | `script run php-detect-config [--version VERSION]` |
+| `php-detect-extensions` | `script run php-detect-extensions [--version VERSION]` |
+| `php-detect-versions` | `script run php-detect-versions` |
+| `reset-web-stack` | `script run reset-web-stack --yes` |
+| `sync-vhost` | `script run sync-vhost <action> <domain> <root> [php] [old-domain] [options]` |
+
+### Drust-backed scripts
+
+`create-admin-user`, `disable-root-login`, `fix-web-stack`,
+`fix-panel-web-stack` and `sync-vhost` call the protected local drust API. They
+load `DRUST_API_TOKEN` from `/etc/drust/drust.env`, then fall back to
+`SERVERPANEL_EXECUTION_API_TOKEN` in the panel `.env`.
+
+Supported client variables:
+
+```text
+DRUST_API_URL             default http://127.0.0.1:9500
+DRUST_API_PORT            default 9500
+DRUST_API_TOKEN           bearer token
+DRUST_CONNECT_TIMEOUT     default 5 seconds
+DRUST_REQUEST_TIMEOUT     default 120 seconds
+```
+
+## 6. Website and SSL commands
+
+Generate cached website templates:
+
+```bash
+dpanel site:create <domain> <username> [php-version] [ssl] [web-server] [root]
+dpanel site:create example.com example 8.3 yes nginx /home/example/public_html
+```
+
+Synchronize a real vhost through drust:
+
+```bash
+sudo dpanel script run sync-vhost sync example.com /home/example/public_html 8.3
+sudo dpanel script run sync-vhost sync example.com /home/example/public_html 8.3 \
+  --alias www.example.com --client-max-body-size 128m
+```
+
+Issue a certificate after the vhost and document root exist:
+
+```bash
+sudo dpanel script run issue-ssl example.com /home/example/public_html 1
+```
+
+## 7. Database command
+
+The database helper validates identifiers, host, port, charset and collation
+before sending SQL to MariaDB/MySQL:
+
+```bash
+sudo dpanel script run database-request create appdb appuser 'secret' 127.0.0.1 3306
+sudo dpanel script run database-request update appdb appuser 'new-secret' 127.0.0.1 3306
+sudo dpanel script run database-request delete appdb appuser 'secret' 127.0.0.1 3306
+```
+
+Passwords should be passed through a protected environment or trusted process
+where possible because command-line arguments can be visible to other local users.
+
+## 8. Diagnostics and recovery
+
+Start with the read-only doctor:
+
+```bash
+dpanel doctor
+dpanel chain verify
+```
+
+It checks:
+
+- OS metadata;
+- Bash, downloader, package manager and systemd availability;
+- module manifest JSON;
+- syntax of every maintained shell file;
+- installed runtime availability.
+
+Safe repair mode creates missing dscript runtime directories and restores script
+executable bits. It does not reset web servers, delete sites or remove packages:
+
+```bash
+sudo dpanel doctor --fix
+sudo dpanel chain repair
+```
+
+Destructive recovery remains explicit:
+
+```bash
+sudo dpanel --dry-run script run reset-web-stack --yes
+sudo dpanel script run reset-web-stack --yes
+```
+
+`reset-web-stack` backs up Apache/Nginx configuration before resetting it.
+
+## 9. Logs and failure workflow
+
+```bash
+dpanel logs install
+dpanel logs update
+dpanel logs agent
+DSCRIPT_LOG_LINES=300 dpanel logs install
+```
+
+If a previously installed `/usr/local/bin/dpanel` does not know the new `script`
+or `runtime` commands, refresh the installed runtime from the checkout:
+
+```bash
+sudo /var/www/dscript/dpanel runtime refresh
+```
+
+When a command fails:
+
+1. Read the first `[ERROR]` and the command/line printed by the launcher.
+2. Run `dpanel doctor`.
+3. Inspect `dpanel logs install` or the service journal.
+4. Run `dpanel module <name> info`.
+5. Retry only that item with `dpanel module <name> <action>`.
+6. Use a specific maintenance repair script only when the diagnosis points to it.
+
+Service examples:
+
+```bash
+systemctl status nginx apache2 mariadb php8.3-fpm drust --no-pager
+journalctl -u drust -n 100 --no-pager
+nginx -t
+apache2ctl configtest
+```
+
+## 10. Environment variables
+
+### Paths and remote source
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PANEL_INSTALL_BASE_URL` | `https://installer.likesoftbd.com` | Installer website root |
+| `PANEL_DSCRIPT_BASE_URL` | `<site>/dscript` | Explicit dscript asset root |
+| `DPANEL_BASE_URL` | dscript asset root | Manifest/module download root |
+| `DPANEL_BASE_DIR` | `/opt/dpanel` | Preferred installed state root setting |
+| `DPANEL_BASE_DIR` | `/opt/dpanel` | Backward-compatible state root setting |
+| `DPANEL_RUNTIME_DIR` | `/opt/dpanel/runtime` | Runtime shell files |
+| `DPANEL_CACHE_DIR` | `/opt/dpanel/cache` | Manifest cache |
+| `DPANEL_MODULE_DIR` | `/opt/dpanel/modules` | Downloaded fallback module scripts |
+| `DPANEL_LOG_DIR` | `/opt/dpanel/logs` | Logs |
+| `PANEL_APP_DIR` | `/var/www/dpanel` | Laravel application path |
+| `PANEL_APP_ENV_FILE` | auto-detected | Explicit panel `.env` |
+
+### Chain behavior
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PANEL_MODULES` | standard seven-module chain | Comma-separated install list |
+| `SKIP_FIREWALL` | `false` | Skip firewall in a chain |
+| `SKIP_SSL` | `false` | Skip SSL in a chain |
+| `SKIP_TEST` | `false` | Skip completion test message |
+| `DSCRIPT_CONTINUE_ON_ERROR` | `false` | Continue failed install chain |
+| `DSCRIPT_REFRESH_REMOTE` | `false` | Force remote manifest refresh during install |
+| `PHP_VERSION` | detected/8.3 | Preferred PHP version |
+| `PANEL_DOMAIN` | `installer.likesoftbd.com` | Panel hostname |
+| `PANEL_PORT` | `2083` | Panel port |
+
+### Database
+
+| Variable | Default |
+|---|---|
+| `PANEL_DB_NAME` | `dpanel` |
+| `PANEL_DB_USER` | `dpanel` |
+| `PANEL_DB_PASSWORD` | generated when empty |
+| `PANEL_DB_HOST` | `127.0.0.1` |
+| `PANEL_DB_PORT` | `3306` |
+| `PANEL_DB_CHARSET` | `utf8mb4` |
+| `PANEL_DB_COLLATION` | `utf8mb4_unicode_ci` |
+
+## 11. Standalone installer
+
+Public installation:
+
+```bash
+curl -fsSL https://installer.likesoftbd.com/installer.sh -o installer.sh
+chmod +x installer.sh
+sudo ./installer.sh
+```
+
+Forward any dscript command:
+
+```bash
+sudo ./installer.sh chain install nginx,php,mariadb
+```
+
+Local/offline development can point the installer at a local dscript archive:
+
+```bash
+sudo env DSCRIPT_ARCHIVE_PATH=/tmp/dscript.zip /var/www/installer.sh
+```
+
+It can also install directly from a checkout without downloading or extracting:
+
+```bash
+sudo env DSCRIPT_SOURCE_DIR=/var/www/dscript /var/www/installer.sh
+sudo env DSCRIPT_SOURCE_DIR=/var/www/dscript /var/www/installer.sh nginx,php,mariadb
+```
+
+Source precedence is `DSCRIPT_SOURCE_DIR`, `DSCRIPT_ARCHIVE_PATH`,
+`DSCRIPT_ARCHIVE_URL`, then the default live `/dscript.zip`. With no source
+parameter, the installer always downloads and extracts the current live ZIP.
+
+The installer owns no server configuration; it downloads the dscript archive,
+extracts it into `/var/www/dscript`, assigns executable permissions to shell
+entrypoints, and delegates the chain to dscript.
+
+Build the archive served to clients with:
+
+```bash
+cd /var/www/dscript
+bash archive.sh /var/www/dscript.zip
+```
+
+The public server should expose that file as `/dscript.zip`. For a private/local
+archive:
+
+```bash
+sudo env DSCRIPT_ARCHIVE_PATH=/tmp/dscript.zip /var/www/installer.sh
+```
+
+## 12. Source layout
+
+```text
+dscript/
+├── dpanel                         user CLI
+├── install.sh                     remote dscript loader
+├── archive.sh                     build dscript.zip for installer.sh
+├── update.sh                      compatibility update entrypoint
+├── bootstrap/core.sh              implementation API and compatibility core
+├── core/commands.sh               help, parsing, chain/individual routing, doctor
+├── core/package-manager.sh        Debian/RPM package abstraction
+├── repository/manifests/          module versions
+├── repository/modules/            independent module scripts
+├── repository/templates/          managed configuration templates
+└── scripts/                        named maintenance scripts
+```
+
+Module `install.sh` files remain independently executable, while `remove.sh` and
+`update.sh` are compatibility wrappers. The recommended interface is always the
+`dpanel` command because it provides validation, logging, help and dry-run behavior.

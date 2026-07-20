@@ -45,6 +45,7 @@ return [
     'filemanager_api_url' => env('SERVERPANEL_FILEMANAGER_API_URL', ''),
     'execution_api_token' => env('SERVERPANEL_EXECUTION_API_TOKEN', ''),
     'execution_api_timeout' => (int) env('SERVERPANEL_EXECUTION_API_TIMEOUT', 60),
+    'execution_api_upload_timeout' => (int) env('SERVERPANEL_EXECUTION_API_UPLOAD_TIMEOUT', 3600),
     'php_versions' => [
         '7.4',
         '8.0',
@@ -59,7 +60,6 @@ return [
         'wordpress' => env('SERVERPANEL_WEBSITE_PHP_DEFAULT_WORDPRESS', '8.3'),
     ],
     'installer_search_paths' => array_values(array_filter(array_map('trim', explode(',', env('SERVERPANEL_INSTALLER_SEARCH_PATHS', implode(',', [
-        '/var/www/installer/bootstrap/dscript',
         '/var/www/dscript',
     ])))))),
     'ai' => [

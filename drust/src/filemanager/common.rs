@@ -1,0 +1,75 @@
+use std::fs;
+use std::path::{Component, Path, PathBuf};
+
+use crate::app::{ensure_root, run_status, user_group, valid_username};
+
+pub(super) fn validate_absolute_path(target: &str) -> Result<PathBuf, String> {
+    if !target.starts_with('/') {
+        return Err(format!("Path must be absolute: {target}"));
+    }
+    Ok(PathBuf::from(target))
+}
+
+pub(super) fn validate_account(username: &str) -> Result<(PathBuf, PathBuf, String), String> {
+    ensure_root()?;
+    if !valid_username(username) {
+        return Err(format!("Invalid username: {username}"));
+    }
+
+    let home = PathBuf::from(format!("/home/{username}"));
+    let canonical_home =
+        fs::canonicalize(&home).map_err(|e| format!("account home is unavailable: {e}"))?;
+    let group = user_group(username).unwrap_or_else(|_| username.to_string());
+
+    Ok((home, canonical_home, group))
+}
+
+pub(super) fn validate_user_path(username: &str, target: &str) -> Result<PathBuf, String> {
+    let path = validate_absolute_path(target)?;
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err("Parent path traversal is not allowed.".into());
+    }
+
+    let user_home = PathBuf::from(format!("/home/{username}"));
+    if path != user_home && !path.starts_with(&user_home) {
+        return Err(format!(
+            "Path is outside the account home: {}",
+            path.display()
+        ));
+    }
+
+    Ok(path)
+}
+
+pub(super) fn ensure_canonical_inside_home(
+    canonical_home: &Path,
+    path: &Path,
+    label: &str,
+) -> Result<PathBuf, String> {
+    let canonical = fs::canonicalize(path)
+        .map_err(|e| format!("{label} is unavailable: {}: {e}", path.display()))?;
+    if canonical != canonical_home && !canonical.starts_with(canonical_home) {
+        return Err(format!("{label} resolves outside the account home."));
+    }
+
+    Ok(canonical)
+}
+
+pub(super) fn apply_owner_and_mode(
+    username: &str,
+    group: &str,
+    path: &Path,
+    mode: &str,
+) -> Result<(), String> {
+    run_status(
+        "chown",
+        &[
+            &format!("{username}:{group}"),
+            path.to_string_lossy().as_ref(),
+        ],
+    )?;
+    run_status("chmod", &[mode, path.to_string_lossy().as_ref()])
+}

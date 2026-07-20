@@ -1,13 +1,18 @@
+mod admin;
 mod api;
 mod app;
-#[path = "filemanager.rs"]
 mod filemanager;
+mod health;
+mod laravel;
+mod php;
 mod php_config;
+mod script;
 mod scripts;
 mod ssl;
-#[path = "vhost.rs"]
 mod vhost;
+mod vhost_ops;
+mod web_stack;
 
 fn main() -> std::process::ExitCode {
-    app::run()
+    api::serve(std::env::args().skip(1).collect())
 }

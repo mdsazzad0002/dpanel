@@ -635,8 +635,12 @@ class WebsiteController extends Controller
     public function uploadFile(Request $request, string $token, string $id): RedirectResponse
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
-        $websiteUploadLimit = strtoupper((string) (Website::query()->whereKey($id)->value('client_max_body_size') ?? '2G'));
-        $uploadMaxKilobytes = $this->iniSizeToKilobytes($websiteUploadLimit, 2 * 1024 * 1024);
+        // This request is received by the main panel PHP runtime. The target
+        // website's vhost limit does not apply to the panel file manager.
+        $uploadMaxKilobytes = min(
+            $this->iniSizeToKilobytes((string) ini_get('upload_max_filesize'), 2 * 1024 * 1024),
+            $this->iniSizeToKilobytes((string) ini_get('post_max_size'), 2 * 1024 * 1024),
+        );
 
         $validated = $request->validate([
             'path' => ['nullable', 'string', 'max:1500'],
@@ -646,11 +650,6 @@ class WebsiteController extends Controller
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
         $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
         $currentPath = $this->sanitizeRelativePath((string) ($validated['path'] ?? ''));
-        $targetDir = $this->resolvePathInsideBase($basePath, $currentPath);
-
-        if (! is_dir($targetDir) && ! @mkdir($targetDir, 0755, true) && ! is_dir($targetDir)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('error', 'Failed to create target directory for upload.');
-        }
 
         $uploaded = $request->file('upload');
         if ($uploaded === null) {
@@ -663,8 +662,11 @@ class WebsiteController extends Controller
         }
 
         $targetPath = $this->resolvePathInsideBase($basePath, $this->sanitizeRelativePath(trim($currentPath.'/'.$filename, '/')));
-        if (@move_uploaded_file($uploaded->getPathname(), $targetPath) === false) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('error', 'Failed to move uploaded file.');
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+        try {
+            $this->filemanagerService->uploadFile($siteOwner, $targetPath, $uploaded->getPathname());
+        } catch (\Throwable $e) {
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('error', 'Failed to upload file. '.$e->getMessage());
         }
 
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('success', 'File uploaded successfully.');
@@ -933,6 +935,7 @@ class WebsiteController extends Controller
 
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
         $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
         $zipRelative = $this->sanitizeRelativePath((string) $validated['zip_path']);
         $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
         $zipPath = $this->resolvePathInsideBase($basePath, $zipRelative);
@@ -941,39 +944,10 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Valid zip file not found.');
         }
 
-        if (! class_exists(ZipArchive::class)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', $this->zipExtensionMissingMessage());
-        }
-
-        $extractTo = dirname($zipPath);
-        if (! is_dir($extractTo) || ! is_writable($extractTo)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Extract target directory is not writable.');
-        }
-
-        $zip = new ZipArchive;
         try {
-            $openResult = $zip->open($zipPath);
-            if ($openResult !== true) {
-                return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', $this->zipOpenErrorMessage($openResult));
-            }
-
-            for ($index = 0; $index < $zip->numFiles; $index++) {
-                $entryName = $zip->getNameIndex($index);
-                if (! is_string($entryName) || ! $this->isSafeZipEntryPath($entryName)) {
-                    return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Zip contains unsafe file paths and cannot be extracted.');
-                }
-            }
-
-            $ok = $zip->extractTo($extractTo);
-            if (! $ok) {
-                return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to extract zip file. Check file permissions and archive integrity.');
-            }
+            $this->filemanagerService->unzipFile($siteOwner, $zipPath);
         } catch (\Throwable $e) {
-            report($e);
-
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Zip extract failed due to server error.');
-        } finally {
-            $zip->close();
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to extract zip. '.$e->getMessage());
         }
 
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Zip extracted successfully.');
@@ -4241,60 +4215,6 @@ CONF;
         }
 
         return substr(sprintf('%o', $perms), -4);
-    }
-
-    protected function isSafeZipEntryPath(string $entryPath): bool
-    {
-        $entryPath = str_replace('\\', '/', trim($entryPath));
-        if ($entryPath === '') {
-            return false;
-        }
-
-        if (str_starts_with($entryPath, '/')) {
-            return false;
-        }
-
-        if (preg_match('/^[a-zA-Z]:\//', $entryPath) === 1) {
-            return false;
-        }
-
-        foreach (explode('/', $entryPath) as $segment) {
-            if ($segment === '' || $segment === '.') {
-                continue;
-            }
-
-            if ($segment === '..' || str_contains($segment, "\0")) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * @param  int|bool  $openResult
-     */
-    protected function zipOpenErrorMessage($openResult): string
-    {
-        if ($openResult === true) {
-            return 'Failed to open zip file.';
-        }
-
-        $map = [
-            ZipArchive::ER_EXISTS => 'Zip open failed: file already exists.',
-            ZipArchive::ER_INCONS => 'Zip open failed: archive is inconsistent.',
-            ZipArchive::ER_INVAL => 'Zip open failed: invalid argument.',
-            ZipArchive::ER_MEMORY => 'Zip open failed: memory allocation error.',
-            ZipArchive::ER_NOENT => 'Zip open failed: file not found.',
-            ZipArchive::ER_NOZIP => 'Zip open failed: invalid zip archive.',
-            ZipArchive::ER_OPEN => 'Zip open failed: cannot open file.',
-            ZipArchive::ER_READ => 'Zip open failed: read error.',
-            ZipArchive::ER_SEEK => 'Zip open failed: seek error.',
-        ];
-
-        $status = (int) $openResult;
-
-        return $map[$status] ?? ('Zip open failed with code '.$status.'.');
     }
 
     protected function zipExtensionMissingMessage(): string

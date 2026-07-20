@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LIKESOFT_PACKAGE_MANAGER_SOURCE="${BASH_SOURCE[0]}"
-LIKESOFT_BASE_DIR="${LIKESOFT_BASE_DIR:-/opt/likesoft}"
-LIKESOFT_RUNTIME_DIR="${LIKESOFT_RUNTIME_DIR:-${LIKESOFT_BASE_DIR}/runtime}"
+DPANEL_PACKAGE_MANAGER_SOURCE="${BASH_SOURCE[0]}"
+DPANEL_BASE_DIR="${DPANEL_BASE_DIR:-/opt/dpanel}"
+DPANEL_RUNTIME_DIR="${DPANEL_RUNTIME_DIR:-${DPANEL_BASE_DIR}/runtime}"
 
 pkg_require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -35,10 +35,10 @@ pkg_distro_family() {
 pkg_update_index() {
   case "$(pkg_distro_family)" in
     debian)
-      if [[ "${LIKESOFT_APT_UPDATED:-false}" != "true" ]]; then
+      if [[ "${DPANEL_APT_UPDATED:-false}" != "true" ]]; then
         export DEBIAN_FRONTEND=noninteractive
         apt-get update -y
-        export LIKESOFT_APT_UPDATED=true
+        export DPANEL_APT_UPDATED=true
       fi
       ;;
     rpm)

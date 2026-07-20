@@ -1,1 +1,0 @@
-/var/www/drust/target/release/drust: /var/www/drust/src/api.rs /var/www/drust/src/app.rs /var/www/drust/src/filemanager.rs /var/www/drust/src/main.rs /var/www/drust/src/php_config.rs /var/www/drust/src/scripts.rs /var/www/drust/src/ssl.rs /var/www/drust/src/vhost.rs

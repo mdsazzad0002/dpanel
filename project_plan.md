@@ -194,20 +194,16 @@ Installer entrypoint:
 /var/www/installer.sh
 ```
 
-Installer location:
-
-```text
-/var/www/installer
-```
-
 Installer responsibility:
 
 - Act as the external entrypoint for first-time installation
 - Start from the root-level `installer.sh` file
-- Download the bootstrap package as a zip archive
+- Download the complete `dscript.zip` package as a zip archive
 - Retrieve the archive with `wget`
 - Unzip the archive into a temporary working directory
-- Invoke the `dscript` files inside the extracted package to complete installation and configuration
+- Extract the package directly into `/var/www/dscript`
+- Assign executable permissions to shell entrypoints
+- Invoke `dscript/install.sh chain install`
 
 Installer flow:
 
@@ -218,7 +214,11 @@ Fetch zip with wget
   ->
 Unzip package
   ->
-Run dscript bootstrap files
+Extract dscript into /var/www/dscript
+  ->
+Assign permissions
+  ->
+Run dscript chain install
   ->
 Install missing prerequisites
   ->
@@ -231,55 +231,30 @@ Installer design rules:
 
 - Keep the installer outside the main `dscript` folder
 - Keep the installer structure simple
-- Use `dscript` only after the archive has been extracted
-- Let `installer.sh` maintain the bootstrap chain and delegate the actual setup steps to `dscript`
+- Let `installer.sh` extract the archive and delegate all setup steps to `dscript`
 - Do not mix normal runtime logic into the installer package
 - Keep the installer idempotent where possible
 
-Exact installer folder tree:
+Installer tree:
 
 ```text
 /var/www/
   installer.sh
-  installer/
-    bootstrap.zip
+  dscript/
+    install.sh
+    dpanel
+    core/
     bootstrap/
-      dscript/
-        init.sh
-        env.sh
-        install/
-          php.sh
-          packages.sh
-          services.sh
-          database.sh
-        config/
-          main.sh
-          php.sh
-          security.sh
-        recovery/
-          detect.sh
-          fix.sh
-          verify.sh
-        templates/
-          *.tpl
-        shared/
-          helpers.sh
-          logs.sh
-          paths.sh
+    repository/
+    scripts/
 ```
 
 Folder rules:
 
 - `installer.sh` stays at `/var/www/installer.sh`
-- The bootstrap archive is unpacked inside `/var/www/installer/bootstrap/`
-- The real setup logic lives under `/var/www/installer/bootstrap/dscript/`
-- `init.sh` should be the first file called inside `dscript`
-- `env.sh` should hold bootstrap-time environment loading
-- `install/` should handle first-time package and service installation
-- `config/` should handle first-time configuration generation
-- `recovery/` should handle error detection and repair flows
-- `templates/` should keep bootstrap templates only
-- `shared/` should keep reusable helper functions only
+- The archive is extracted into `/var/www/dscript/`
+- `dscript/install.sh` is the first installation command
+- `dscript/core/commands.sh` owns user-facing routing and diagnostics
 
 ---
 

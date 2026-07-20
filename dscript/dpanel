@@ -6,6 +6,7 @@ on_error() {
   local line_no="${1:-unknown}"
   local command="${2:-unknown}"
   printf '[ERROR] Command failed at line %s: %s (exit %s)\n' "$line_no" "$command" "$exit_code" >&2
+  printf '[HELP] Run "%s doctor" and inspect "%s/logs/install.log".\n' "${0##*/}" "${DPANEL_BASE_DIR:-/opt/dpanel}" >&2
 }
 
 trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
@@ -17,5 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 source "${SCRIPT_DIR}/bootstrap/core.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/core/package-manager.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/commands.sh"
 
-panel_cli_dispatch "$@"
+dscript_cli "$@"

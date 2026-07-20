@@ -2,7 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -x "${SCRIPT_DIR}/../target/debug/dscript" ]]; then
-  exec "${SCRIPT_DIR}/../target/debug/dscript" disable-root-login "$@"
-fi
-exec cargo run --quiet --manifest-path "${SCRIPT_DIR}/../Cargo.toml" -- disable-root-login "$@"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/_drust-api.sh"
+drust_api_post /api/v1/disable-root-login '{}'

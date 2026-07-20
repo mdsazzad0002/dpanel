@@ -12,30 +12,27 @@ Canonical paths:
 
 ## Installation
 
-1. Make sure both folders are present in `/var/www`.
-2. Install the panel from the script repository:
+Use the separate installer, which delegates all work to dscript:
 
 ```bash
-cd /var/www/dscript
-sudo env \
-  PANEL_INSTALL_BASE_URL="https://your-domain.example" \
-  SERVER_BASE_DIR="/var/www" \
-  PANEL_APP_DIR="/var/www/dpanel" \
-  PANEL_DOMAIN="panel.example.com" \
-  bash install.sh panel install
+sudo /var/www/installer.sh chain install
 ```
 
-3. If you want a secure production-style install, add modules as needed:
+`installer.sh` downloads `dscript.zip`, extracts it directly into
+`/var/www/dscript`, restores executable permissions, registers `dpanel` and
+`panel` under `/usr/local/bin`, and runs the dscript chain.
+There is no separate `/var/www/installer/` directory anymore.
+
+Or use dscript directly:
 
 ```bash
-sudo env \
-  PANEL_INSTALL_BASE_URL="https://your-domain.example" \
-  SERVER_BASE_DIR="/var/www" \
-  PANEL_APP_DIR="/var/www/dpanel" \
-  PANEL_DOMAIN="panel.example.com" \
-  PANEL_MODULES="apache,nginx,php,mariadb,supervisor,firewall,fail2ban,ssl,ssh-root-login" \
-  bash install.sh panel install
+sudo /var/www/dscript/dpanel chain install
+sudo /var/www/dscript/dpanel module nginx update
+/var/www/dscript/dpanel doctor
 ```
+
+See the complete command, module, script, environment and recovery reference in
+[`dscript/guide.md`](dscript/guide.md).
 
 ## First Run
 

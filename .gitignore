@@ -1,0 +1,61 @@
+# Git internals and local backups
+.git_backup/
+.git-worktree-backup/
+*.bundle
+
+# Operating-system and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.secret
+*.token
+
+# Archives and generated installers
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.deb
+*.rpm
+
+# PHP/Laravel dependencies and generated state
+dpanel/vendor/
+dpanel/node_modules/
+dpanel/public/build/
+dpanel/public/hot
+dpanel/storage/*.key
+dpanel/storage/logs/*.log
+dpanel/storage/framework/cache/data/*
+dpanel/storage/framework/sessions/*
+dpanel/storage/framework/views/*
+dpanel/bootstrap/cache/*.php
+
+# Rust build output
+drust/target/
+
+# dscript runtime, caches, logs and local test output
+dscript/.runtime/
+dscript/runtime/
+dscript/cache/
+dscript/logs/
+dscript/manifests/
+dscript/modules/
+*.log
+
+# Local development scratch files
+tmp/
+temp/
+.cache/
