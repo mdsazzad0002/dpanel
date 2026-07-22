@@ -14,6 +14,52 @@ The quick repair command is:
 /var/www/dscript/scripts/fix-permissions.sh --all
 ```
 
+## Quick Fix: Can Open Folder But Cannot Create, Edit, Or Delete
+
+Sometimes first-time setup lets you enter a website folder from the file manager,
+but create, edit, upload, unzip, or delete actions fail. That means the panel can
+read the directory, but the web/PHP user does not have write permission.
+
+Run this from terminal:
+
+```bash
+/var/www/dscript/scripts/fix-permissions.sh --all
+```
+
+Then refresh the panel and try the file manager action again.
+
+For one website only:
+
+```bash
+/var/www/dscript/scripts/fix-permissions.sh --path /home/example/public_html
+```
+
+Replace `example` with the real website user. You can find website roots with:
+
+```bash
+find /home -maxdepth 2 -type d -name public_html -print
+```
+
+If the script cannot call the API, restart `drust` and run it again:
+
+```bash
+sudo systemctl restart drust
+/var/www/dscript/scripts/fix-permissions.sh --all
+```
+
+Manual fallback for one website:
+
+```bash
+sudo chown -R example:www-data /home/example/public_html
+sudo find /home/example/public_html -type d -exec chmod 2775 {} +
+sudo find /home/example/public_html -type f -exec chmod 0664 {} +
+sudo setfacl -R -m u:example:rwx,u:www-data:rwx,g:www-data:rwx /home/example/public_html
+sudo setfacl -R -d -m u:example:rwx,u:www-data:rwx,g:www-data:rwx /home/example/public_html
+```
+
+Use the dPanel repair command first. The manual fallback is only for servers
+where the API service is not available yet.
+
 ## 1. Recommended First Install
 
 Start from a fresh Ubuntu/Debian server with sudo access.

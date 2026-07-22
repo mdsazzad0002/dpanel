@@ -11,7 +11,8 @@ PHP runtimes, SSL, databases, file management, and server automation.
   [`DEVELOPER.md`](DEVELOPER.md)
 
 If a first-time install works but websites show Laravel/PHP permission errors,
-run:
+or the file manager can open folders but cannot create, edit, upload, unzip, or
+delete files, run:
 
 ```bash
 /var/www/dscript/scripts/fix-permissions.sh --all
