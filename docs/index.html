@@ -4,111 +4,141 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="dPanel is a free ServerPanel hosting control panel for websites, PHP runtimes, SSL, databases, file management, and server automation.">
+  <meta property="og:title" content="dPanel - Free ServerPanel Hosting Control Panel">
+  <meta property="og:description" content="A practical Laravel, Rust, and shell powered hosting control panel stack.">
+  <meta property="og:type" content="website">
   <title>dPanel - Free ServerPanel Hosting Control Panel</title>
+  <link rel="icon" href="assets/sm_logo.png">
   <style>
     :root {
-      --bg: #f7f8fb;
-      --text: #121826;
-      --muted: #526070;
-      --line: #dbe2ea;
-      --panel: #ffffff;
+      --bg: #f6f8fb;
+      --surface: #ffffff;
+      --surface-2: #eef4f7;
+      --text: #101828;
+      --muted: #596779;
+      --line: #d8e1ea;
       --brand: #0f766e;
-      --brand-dark: #115e59;
-      --accent: #2563eb;
-      --shadow: 0 18px 50px rgba(18, 24, 38, 0.10);
+      --brand-2: #1d4ed8;
+      --ink: #0d1726;
+      --ok: #16a34a;
+      --warn: #d97706;
+      --shadow: 0 18px 55px rgba(16, 24, 40, 0.10);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
 
     body {
       margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: var(--text);
-      background: var(--bg);
+      background:
+        linear-gradient(180deg, #ffffff 0, var(--bg) 420px),
+        var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.6;
     }
 
-    a {
-      color: inherit;
-      text-decoration: none;
+    a { color: inherit; text-decoration: none; }
+
+    .wrap {
+      width: min(1160px, calc(100% - 32px));
+      margin: 0 auto;
     }
 
-    .shell {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.88);
+      border-bottom: 1px solid rgba(216, 225, 234, 0.9);
+      backdrop-filter: blur(14px);
     }
 
     .nav {
-      width: min(1120px, calc(100% - 32px));
-      margin: 0 auto;
-      padding: 22px 0;
+      min-height: 76px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      gap: 22px;
     }
 
     .brand {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      font-weight: 800;
-      letter-spacing: 0;
+      gap: 12px;
+      min-width: 0;
     }
 
-    .mark {
-      width: 34px;
-      height: 34px;
-      border-radius: 8px;
-      display: grid;
-      place-items: center;
-      background: var(--brand);
-      color: #fff;
-      font-weight: 900;
+    .brand img {
+      width: 148px;
+      height: auto;
+      display: block;
     }
 
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 18px;
+      justify-content: flex-end;
+      gap: 20px;
       color: var(--muted);
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 700;
+    }
+
+    .nav-links a:hover { color: var(--brand); }
+
+    .nav-cta {
+      min-height: 40px;
+      padding: 0 14px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--brand);
     }
 
     .hero {
-      width: min(1120px, calc(100% - 32px));
-      margin: 48px auto 0;
       display: grid;
-      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
-      gap: 36px;
+      grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+      gap: 42px;
       align-items: center;
+      padding: 76px 0 36px;
     }
 
-    .eyebrow {
-      color: var(--brand-dark);
-      font-size: 14px;
-      font-weight: 800;
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
+      color: var(--brand);
+      font-size: 13px;
+      font-weight: 900;
       text-transform: uppercase;
       letter-spacing: 0;
-      margin-bottom: 14px;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--ok);
+      box-shadow: 0 0 0 5px rgba(22, 163, 74, 0.12);
     }
 
     h1 {
       margin: 0;
-      font-size: clamp(42px, 7vw, 76px);
+      font-size: clamp(44px, 7vw, 78px);
       line-height: 0.98;
       letter-spacing: 0;
+      max-width: 760px;
     }
 
     .lead {
       margin: 24px 0 0;
+      max-width: 680px;
       color: var(--muted);
       font-size: 19px;
-      max-width: 650px;
     }
 
     .actions {
@@ -119,16 +149,18 @@
     }
 
     .button {
+      min-height: 48px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 46px;
+      gap: 8px;
       padding: 0 18px;
       border-radius: 8px;
-      font-weight: 800;
       border: 1px solid var(--line);
-      background: #fff;
+      background: var(--surface);
       color: var(--text);
+      font-weight: 850;
+      box-shadow: 0 1px 0 rgba(16, 24, 40, 0.03);
     }
 
     .button.primary {
@@ -137,23 +169,34 @@
       color: #fff;
     }
 
-    .terminal {
-      background: #101623;
+    .button:hover { transform: translateY(-1px); }
+
+    .hero-panel {
+      background: var(--ink);
       color: #dce7f7;
       border-radius: 8px;
-      box-shadow: var(--shadow);
       overflow: hidden;
+      box-shadow: var(--shadow);
       border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    .terminal-bar {
-      height: 42px;
+    .panel-head {
+      min-height: 48px;
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 0 14px;
-      background: #182132;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 0 16px;
+      background: #172234;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      color: #aebbd0;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .dots {
+      display: flex;
+      gap: 8px;
     }
 
     .dot {
@@ -163,13 +206,8 @@
       background: #ef4444;
     }
 
-    .dot:nth-child(2) {
-      background: #f59e0b;
-    }
-
-    .dot:nth-child(3) {
-      background: #22c55e;
-    }
+    .dot:nth-child(2) { background: #f59e0b; }
+    .dot:nth-child(3) { background: #22c55e; }
 
     pre {
       margin: 0;
@@ -178,16 +216,57 @@
       font: 14px/1.75 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     }
 
-    .section {
-      width: min(1120px, calc(100% - 32px));
-      margin: 72px auto 0;
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 22px;
     }
 
-    .section h2 {
-      margin: 0 0 20px;
-      font-size: 30px;
-      line-height: 1.15;
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 22px;
+      line-height: 1.1;
+    }
+
+    .stat span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .section {
+      padding: 58px 0;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.08;
       letter-spacing: 0;
+    }
+
+    .section-head p {
+      margin: 0;
+      max-width: 520px;
+      color: var(--muted);
     }
 
     .grid {
@@ -197,11 +276,24 @@
     }
 
     .card {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      min-height: 164px;
       padding: 22px;
-      min-height: 150px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: 0 1px 0 rgba(16, 24, 40, 0.03);
+    }
+
+    .icon {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 16px;
+      border-radius: 8px;
+      background: var(--surface-2);
+      color: var(--brand);
+      font-weight: 900;
     }
 
     .card strong {
@@ -215,135 +307,268 @@
       color: var(--muted);
     }
 
-    .install {
-      background: var(--panel);
+    .band {
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: #ffffff;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+      gap: 28px;
+      align-items: start;
+    }
+
+    .note {
+      border-left: 4px solid var(--warn);
+      background: #fffbeb;
+      padding: 18px 20px;
+      border-radius: 8px;
+      color: #6b4708;
+    }
+
+    .note strong {
+      display: block;
+      color: #3f2c07;
+      margin-bottom: 6px;
+    }
+
+    .install-card {
+      display: grid;
+      gap: 16px;
+      background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 24px;
+      padding: 22px;
+    }
+
+    .install-card p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .docs-list {
       display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
     }
 
-    .install code {
-      background: #eef3f8;
-      padding: 2px 6px;
-      border-radius: 6px;
-      color: #0f172a;
+    .doc-link {
+      display: block;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
     }
 
-    footer {
-      width: min(1120px, calc(100% - 32px));
-      margin: 72px auto 0;
-      padding: 28px 0 34px;
+    .doc-link strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .doc-link span {
+      display: block;
       color: var(--muted);
-      border-top: 1px solid var(--line);
+      font-size: 14px;
+    }
+
+    .footer {
+      margin-top: 36px;
+      background: #0f172a;
+      color: #cbd5e1;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(150px, 0.6fr));
+      gap: 24px;
+      padding: 42px 0;
+    }
+
+    .footer img {
+      width: 150px;
+      height: auto;
+      filter: brightness(0) invert(1);
+    }
+
+    .footer p {
+      max-width: 440px;
+      margin: 14px 0 0;
+      color: #94a3b8;
+    }
+
+    .footer h3 {
+      margin: 0 0 12px;
+      color: #fff;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .footer a {
+      display: block;
+      margin: 8px 0;
+      color: #cbd5e1;
+      font-size: 14px;
+    }
+
+    .footer-bottom {
+      border-top: 1px solid rgba(148, 163, 184, 0.22);
+      padding: 18px 0 26px;
       display: flex;
       justify-content: space-between;
       gap: 16px;
       flex-wrap: wrap;
+      color: #94a3b8;
       font-size: 14px;
     }
 
-    @media (max-width: 860px) {
-      .hero {
+    code.inline {
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: #eef3f8;
+      color: #0f172a;
+    }
+
+    @media (max-width: 900px) {
+      .hero,
+      .split,
+      .footer-grid {
         grid-template-columns: 1fr;
-        margin-top: 24px;
       }
 
-      .grid {
+      .grid,
+      .docs-list,
+      .stats {
         grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        align-items: start;
+        flex-direction: column;
       }
 
       .nav {
         align-items: flex-start;
         flex-direction: column;
+        padding: 16px 0;
+      }
+
+      .nav-links {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
       }
     }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <nav class="nav" aria-label="Primary navigation">
+  <header class="topbar">
+    <nav class="nav wrap" aria-label="Primary navigation">
       <a class="brand" href="#">
-        <span class="mark">d</span>
-        <span>dPanel</span>
+        <img src="assets/dpanel_logo.png" alt="dPanel">
       </a>
       <div class="nav-links">
         <a href="#features">Features</a>
         <a href="#install">Install</a>
-        <a href="https://github.com/mdsazzad0002/dpanel">GitHub</a>
+        <a href="#permissions">Permissions</a>
+        <a href="#docs">Docs</a>
+        <a class="nav-cta" href="https://github.com/mdsazzad0002/dpanel">GitHub</a>
       </div>
     </nav>
+  </header>
 
-    <main>
-      <section class="hero">
-        <div>
-          <div class="eyebrow">Free ServerPanel Hosting Control Panel</div>
-          <h1>dPanel</h1>
-          <p class="lead">
-            Manage websites, PHP runtimes, SSL, databases, file management, and
-            server automation from a practical Laravel, Rust, and shell powered stack.
-          </p>
-          <div class="actions">
-            <a class="button primary" href="https://github.com/mdsazzad0002/dpanel">View on GitHub</a>
-            <a class="button" href="#install">Install Guide</a>
-          </div>
+  <main>
+    <section class="hero wrap">
+      <div>
+        <div class="kicker"><span class="status-dot"></span> Free ServerPanel Hosting Control Panel</div>
+        <h1>Run websites, PHP, SSL, databases, and file management from one panel.</h1>
+        <p class="lead">
+          dPanel combines a Laravel control panel, a protected Rust execution API,
+          and repeatable server scripts to make hosting operations easier to install,
+          repair, and extend.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/mdsazzad0002/dpanel">View Repository</a>
+          <a class="button" href="#install">Install dPanel</a>
+          <a class="button" href="FIRST_INSTALL_AND_PERMISSIONS.md">Permission Guide</a>
         </div>
+        <div class="stats" aria-label="Project highlights">
+          <div class="stat"><strong>Laravel</strong><span>Panel and UI</span></div>
+          <div class="stat"><strong>Rust</strong><span>Execution API</span></div>
+          <div class="stat"><strong>Shell</strong><span>Install and repair</span></div>
+        </div>
+      </div>
 
-        <div class="terminal" aria-label="Installation command preview">
-          <div class="terminal-bar">
-            <span class="dot"></span>
-            <span class="dot"></span>
-            <span class="dot"></span>
-          </div>
-          <pre><code>sudo mkdir -p /var/www
+      <div class="hero-panel" aria-label="Installation command preview">
+        <div class="panel-head">
+          <span>fresh-server-install.sh</span>
+          <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+        </div>
+        <pre><code>sudo mkdir -p /var/www
 cd /var/www
 sudo git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
 sudo chown -R "$USER:$USER" /var/www/dpanel-source
 cd dpanel-source
 sudo ./installer.sh chain install</code></pre>
-        </div>
-      </section>
+      </div>
+    </section>
 
-      <section id="features" class="section">
-        <h2>Built for real hosting operations</h2>
-        <div class="grid">
-          <article class="card">
-            <strong>Website Management</strong>
-            <p>Create website roots, sync vhosts, manage PHP versions, and repair web-stack configuration.</p>
-          </article>
-          <article class="card">
-            <strong>Secure Execution API</strong>
-            <p>Privileged operations run through a protected local Rust API instead of raw web commands.</p>
-          </article>
-          <article class="card">
-            <strong>File Manager Ready</strong>
-            <p>Includes permission repair tooling for create, edit, upload, unzip, and delete workflows.</p>
-          </article>
-          <article class="card">
-            <strong>SSL And Domains</strong>
-            <p>Prepare domain hosting, issue certificates, and keep web server configs organized.</p>
-          </article>
-          <article class="card">
-            <strong>Databases</strong>
-            <p>Provision database access through the same controlled API boundary used by the panel.</p>
-          </article>
-          <article class="card">
-            <strong>Developer Friendly</strong>
-            <p>Documented architecture for Laravel, Vue, Rust, and shell contributors.</p>
-          </article>
-        </div>
-      </section>
+    <section id="features" class="section wrap">
+      <div class="section-head">
+        <h2>Designed for practical hosting work</h2>
+        <p>Each layer has a clear job, so developers can improve the panel without mixing UI code, privileged host actions, and installer recovery scripts.</p>
+      </div>
+      <div class="grid">
+        <article class="card">
+          <div class="icon">W</div>
+          <strong>Website Management</strong>
+          <p>Create website roots, sync virtual hosts, choose PHP versions, and repair stack config.</p>
+        </article>
+        <article class="card">
+          <div class="icon">A</div>
+          <strong>Protected Execution API</strong>
+          <p>Privileged operations run through localhost-only `drust` endpoints with bearer-token auth.</p>
+        </article>
+        <article class="card">
+          <div class="icon">F</div>
+          <strong>File Manager Ready</strong>
+          <p>Repair ownership and ACLs when create, edit, upload, unzip, or delete actions fail.</p>
+        </article>
+        <article class="card">
+          <div class="icon">S</div>
+          <strong>SSL And Domains</strong>
+          <p>Prepare hosted domains, issue certificates, and keep nginx/Apache config aligned.</p>
+        </article>
+        <article class="card">
+          <div class="icon">D</div>
+          <strong>Database Operations</strong>
+          <p>Provision database requests through the same controlled server-side API boundary.</p>
+        </article>
+        <article class="card">
+          <div class="icon">R</div>
+          <strong>Repair Tooling</strong>
+          <p>Repeatable commands help recover permissions, vhosts, web stack services, and runtime config.</p>
+        </article>
+      </div>
+    </section>
 
-      <section id="install" class="section">
-        <h2>First install</h2>
-        <div class="install">
-          <p>On a fresh server, <code>/var/www</code> is often owned by root. Use <code>sudo git clone</code>, then hand the cloned source back to your current user before running the installer.</p>
-          <div class="terminal">
-            <div class="terminal-bar">
-              <span class="dot"></span>
-              <span class="dot"></span>
-              <span class="dot"></span>
+    <section id="install" class="section band">
+      <div class="wrap split">
+        <div>
+          <div class="kicker"><span class="status-dot"></span> First install</div>
+          <h2>Fresh servers usually need sudo before cloning into `/var/www`.</h2>
+          <p class="lead">
+            On many servers, `/var/www` is owned by root. The recommended command
+            uses `sudo git clone`, then gives the cloned source back to your current user.
+          </p>
+        </div>
+        <div class="install-card">
+          <div class="hero-panel">
+            <div class="panel-head">
+              <span>install</span>
+              <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
             </div>
             <pre><code>sudo mkdir -p /var/www
 cd /var/www
@@ -352,23 +577,89 @@ sudo chown -R "$USER:$USER" /var/www/dpanel-source
 cd dpanel-source
 sudo ./installer.sh chain install</code></pre>
           </div>
-          <p>If the file manager opens folders but cannot create, edit, upload, unzip, or delete files, run:</p>
-          <div class="terminal">
-            <div class="terminal-bar">
-              <span class="dot"></span>
-              <span class="dot"></span>
-              <span class="dot"></span>
-            </div>
-            <pre><code>/var/www/dscript/scripts/fix-permissions.sh --all</code></pre>
-          </div>
+          <p>Alternative: clone in your home directory, then run the installer with sudo.</p>
         </div>
-      </section>
-    </main>
+      </div>
+    </section>
 
-    <footer>
+    <section id="permissions" class="section wrap">
+      <div class="section-head">
+        <h2>Permission repair is built in</h2>
+        <p>When the file manager can open a folder but cannot write, PHP and the website owner need shared write access.</p>
+      </div>
+      <div class="split">
+        <div class="note">
+          <strong>Common first-run symptom</strong>
+          The panel opens `/home/example/public_html`, but create, edit, upload,
+          unzip, or delete fails with a permission denied error.
+        </div>
+        <div class="hero-panel">
+          <div class="panel-head">
+            <span>repair-permissions</span>
+            <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+          </div>
+          <pre><code>/var/www/dscript/scripts/fix-permissions.sh --all
+
+# or repair one website
+/var/www/dscript/scripts/fix-permissions.sh --path /home/example/public_html</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="docs" class="section wrap">
+      <div class="section-head">
+        <h2>Guides for users and developers</h2>
+        <p>Start with installation, then move into architecture and API details when you are ready to extend the project.</p>
+      </div>
+      <div class="docs-list">
+        <a class="doc-link" href="FIRST_INSTALL_AND_PERMISSIONS.md">
+          <strong>First Install And Permissions</strong>
+          <span>Fresh server install, `/var/www` clone permissions, and file manager repair commands.</span>
+        </a>
+        <a class="doc-link" href="https://github.com/mdsazzad0002/dpanel/blob/main/DEVELOPER.md">
+          <strong>Developer Guide</strong>
+          <span>Architecture, local setup, API boundary, coding standards, and upgrade workflow.</span>
+        </a>
+        <a class="doc-link" href="https://github.com/mdsazzad0002/dpanel">
+          <strong>GitHub Repository</strong>
+          <span>Source code, issue tracking, and public project updates.</span>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-grid">
+      <div>
+        <img src="assets/dpanel_logo.png" alt="dPanel">
+        <p>
+          A free ServerPanel hosting control panel stack for developers and server
+          owners who want clear installation, repair, and automation workflows.
+        </p>
+      </div>
+      <div>
+        <h3>Product</h3>
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a href="#permissions">Permissions</a>
+      </div>
+      <div>
+        <h3>Docs</h3>
+        <a href="FIRST_INSTALL_AND_PERMISSIONS.md">First install</a>
+        <a href="https://github.com/mdsazzad0002/dpanel/blob/main/DEVELOPER.md">Developer guide</a>
+        <a href="https://github.com/mdsazzad0002/dpanel">Repository</a>
+      </div>
+      <div>
+        <h3>Stack</h3>
+        <a href="#features">Laravel panel</a>
+        <a href="#features">Rust API</a>
+        <a href="#features">Shell installer</a>
+      </div>
+    </div>
+    <div class="wrap footer-bottom">
       <span>dPanel by mdsazzad0002</span>
       <span>Free to use. See repository for license and documentation.</span>
-    </footer>
-  </div>
+    </div>
+  </footer>
 </body>
 </html>
