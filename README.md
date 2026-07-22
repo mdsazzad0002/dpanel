@@ -11,6 +11,8 @@ PHP runtimes, SSL, databases, file management, and server automation.
   [`DEVELOPER.md`](DEVELOPER.md)
 - Security policy:
   [`SECURITY.md`](SECURITY.md)
+- License policy:
+  [`LICENSE.md`](LICENSE.md)
 
 If a first-time install works but websites show Laravel/PHP permission errors,
 or the file manager can open folders but cannot create, edit, upload, unzip, or
@@ -160,3 +162,9 @@ Common variables used by the installer:
 - Script discovery now points to `/var/www/dscript`.
 - The panel app is expected at `/var/www/dpanel`.
 - For development, you can set a custom alias with `PANEL_SERVER_ALIAS`.
+
+## License
+
+dPanel is free to use under a custom source-available license. Public
+modification, redistribution, rebranding, resale, or derivative works are not
+allowed without written permission. See [`LICENSE.md`](LICENSE.md).
