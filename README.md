@@ -1,7 +1,8 @@
 # dPanel
 
-dPanel is a free ServerPanel hosting control panel stack for managing websites,
-PHP runtimes, SSL, databases, file management, and server automation.
+dPanel is a free-to-use, source-available ServerPanel hosting control panel
+stack for managing websites, PHP runtimes, SSL, databases, file management,
+and server automation.
 
 ## Start Here
 
