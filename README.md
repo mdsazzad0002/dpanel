@@ -9,6 +9,8 @@ PHP runtimes, SSL, databases, file management, and server automation.
   [`docs/FIRST_INSTALL_AND_PERMISSIONS.md`](docs/FIRST_INSTALL_AND_PERMISSIONS.md)
 - Developer architecture and contribution guide:
   [`DEVELOPER.md`](DEVELOPER.md)
+- Security policy:
+  [`SECURITY.md`](SECURITY.md)
 
 If a first-time install works but websites show Laravel/PHP permission errors,
 or the file manager can open folders but cannot create, edit, upload, unzip, or
