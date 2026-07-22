@@ -167,4 +167,7 @@ Common variables used by the installer:
 
 dPanel is free to use under a custom source-available license. Public
 modification, redistribution, rebranding, resale, or derivative works are not
-allowed without written permission. See [`LICENSE.md`](LICENSE.md).
+allowed without written permission. You may sell hosting, website management,
+server management, or related services operated through your own dPanel
+installation, but you may not sell dPanel itself as software. See
+[`LICENSE.md`](LICENSE.md).
