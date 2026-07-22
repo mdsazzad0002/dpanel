@@ -9,6 +9,8 @@ PHP runtimes, SSL, databases, file management, and server automation.
   [`docs/FIRST_INSTALL_AND_PERMISSIONS.md`](docs/FIRST_INSTALL_AND_PERMISSIONS.md)
 - Developer architecture and contribution guide:
   [`DEVELOPER.md`](DEVELOPER.md)
+- Contribution guide:
+  [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Security policy:
   [`SECURITY.md`](SECURITY.md)
 - License policy:
