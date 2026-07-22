@@ -149,22 +149,35 @@
     }
 
     .builder-note {
-      position: relative;
-      display: inline-block;
-      max-width: 620px;
-      margin: 18px 0 0;
-      padding: 13px 18px;
+      position: fixed;
+      top: 104px;
+      right: -18px;
+      z-index: 18;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      max-width: 360px;
+      padding: 12px 18px;
       color: #ffffff;
-      font-weight: 700;
-      transform: skew(-8deg);
-      transform-origin: left center;
+      font-size: 13px;
+      font-weight: 850;
+      line-height: 1.35;
+      transform: rotate(6deg) skew(-10deg);
+      transform-origin: right top;
       background: linear-gradient(135deg, var(--brand), var(--brand-2));
       box-shadow: 0 12px 30px rgba(15, 118, 110, 0.22);
     }
 
     .builder-note span {
       display: inline-block;
-      transform: skew(8deg);
+      transform: skew(10deg);
+    }
+
+    .builder-note svg {
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      transform: skew(10deg);
     }
 
     .button {
@@ -480,6 +493,12 @@
         flex-wrap: wrap;
       }
     }
+
+    @media (min-width: 1100px) {
+      .builder-note {
+        display: inline-flex;
+      }
+    }
   </style>
 </head>
 <body>
@@ -497,6 +516,12 @@
       </div>
     </nav>
   </header>
+  <a class="builder-note" href="https://github.com/mdsazzad0002/dpanel" aria-label="Start building with us on GitHub">
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.09 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2.17c-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.75 2.69 1.25 3.34.95.1-.74.4-1.25.73-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.16 1.18.92-.25 1.9-.38 2.87-.39.97.01 1.95.14 2.87.39 2.2-1.49 3.16-1.18 3.16-1.18.62 1.58.23 2.75.11 3.04.73.8 1.18 1.83 1.18 3.08 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.14v3.18c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/>
+    </svg>
+    <span>Start building with us on GitHub</span>
+  </a>
 
   <main>
     <section class="hero wrap">
@@ -513,12 +538,6 @@
           <a class="button" href="#install">Install dPanel</a>
           <a class="button" href="FIRST_INSTALL_AND_PERMISSIONS.md">Permission Guide</a>
         </div>
-        <p class="builder-note">
-          <span>
-            Start building with us. Install dPanel, read the developer guide, and
-            help improve a practical free hosting panel for real servers.
-          </span>
-        </p>
         <div class="stats" aria-label="Project highlights">
           <div class="stat"><strong>Laravel</strong><span>Panel and UI</span></div>
           <div class="stat"><strong>Rust</strong><span>Execution API</span></div>
