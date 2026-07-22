@@ -65,7 +65,21 @@ where the API service is not available yet.
 Start from a fresh Ubuntu/Debian server with sudo access.
 
 ```bash
+sudo mkdir -p /var/www
 cd /var/www
+sudo git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
+sudo chown -R "$USER:$USER" /var/www/dpanel-source
+cd dpanel-source
+sudo ./installer.sh chain install
+```
+
+If normal `git clone` fails inside `/var/www` with `Permission denied`, that is
+expected on many fresh servers because `/var/www` is owned by `root`.
+
+Alternative safe install flow:
+
+```bash
+cd ~
 git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
 cd dpanel-source
 sudo ./installer.sh chain install

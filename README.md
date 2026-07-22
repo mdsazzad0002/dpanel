@@ -35,7 +35,20 @@ Canonical paths:
 Clone this repository as `dpanel` and run the installer:
 
 ```bash
+sudo mkdir -p /var/www
 cd /var/www
+sudo git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
+sudo chown -R "$USER:$USER" /var/www/dpanel-source
+cd dpanel-source
+sudo ./installer.sh chain install
+```
+
+If your user cannot write inside `/var/www`, that is normal on a fresh server.
+Use the `sudo git clone` command above, or clone in your home directory and run
+the installer with sudo:
+
+```bash
+cd ~
 git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
 cd dpanel-source
 sudo ./installer.sh chain install
