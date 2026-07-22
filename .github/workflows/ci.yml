@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: drust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo fmt --check
+      - run: cargo test
+      - run: cargo build
+
+  docs:
+    name: Static docs check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: test -f docs/index.html
+      - run: test -f docs/FIRST_INSTALL_AND_PERMISSIONS.md
+      - run: test -f README.md
+      - run: test -f LICENSE
+      - run: test -f SECURITY.md
+      - run: test -f CONTRIBUTING.md
+

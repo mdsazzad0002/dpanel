@@ -15,6 +15,8 @@ PHP runtimes, SSL, databases, file management, and server automation.
   [`SECURITY.md`](SECURITY.md)
 - License policy:
   [`LICENSE.md`](LICENSE.md)
+- Roadmap and changelog:
+  [`ROADMAP.md`](ROADMAP.md), [`CHANGELOG.md`](CHANGELOG.md)
 
 If a first-time install works but websites show Laravel/PHP permission errors,
 or the file manager can open folders but cannot create, edit, upload, unzip, or
