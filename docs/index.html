@@ -149,14 +149,22 @@
     }
 
     .builder-note {
+      position: relative;
+      display: inline-block;
       max-width: 620px;
       margin: 18px 0 0;
-      padding: 14px 16px;
-      border-left: 4px solid var(--brand-2);
-      border-radius: 8px;
-      background: #eff6ff;
-      color: #1e3a8a;
+      padding: 13px 18px;
+      color: #ffffff;
       font-weight: 700;
+      transform: skew(-8deg);
+      transform-origin: left center;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      box-shadow: 0 12px 30px rgba(15, 118, 110, 0.22);
+    }
+
+    .builder-note span {
+      display: inline-block;
+      transform: skew(8deg);
     }
 
     .button {
@@ -506,8 +514,10 @@
           <a class="button" href="FIRST_INSTALL_AND_PERMISSIONS.md">Permission Guide</a>
         </div>
         <p class="builder-note">
-          Start building with us. Install dPanel, read the developer guide, and
-          help improve a practical free hosting panel for real servers.
+          <span>
+            Start building with us. Install dPanel, read the developer guide, and
+            help improve a practical free hosting panel for real servers.
+          </span>
         </p>
         <div class="stats" aria-label="Project highlights">
           <div class="stat"><strong>Laravel</strong><span>Panel and UI</span></div>
