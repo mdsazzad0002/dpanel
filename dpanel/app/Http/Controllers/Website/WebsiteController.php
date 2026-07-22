@@ -903,8 +903,20 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', $this->zipExtensionMissingMessage());
         }
 
+        $zipTempDir = storage_path('app/filemanager-zips');
+        if (! is_dir($zipTempDir) && ! @mkdir($zipTempDir, 0775, true) && ! is_dir($zipTempDir)) {
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to prepare temporary zip folder.');
+        }
+
+        $zipTempPath = tempnam($zipTempDir, 'zip-');
+        if ($zipTempPath === false) {
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create temporary zip file.');
+        }
+
         $zip = new ZipArchive;
-        if ($zip->open($zipPath, ZipArchive::CREATE) !== true) {
+        if ($zip->open($zipTempPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            @unlink($zipTempPath);
+
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create zip file.');
         }
 
@@ -922,7 +934,22 @@ class WebsiteController extends Controller
             }
         }
 
-        $zip->close();
+        if ($zip->close() !== true) {
+            @unlink($zipTempPath);
+
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to finalize zip file.');
+        }
+
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+        try {
+            $this->filemanagerService->uploadFile($siteOwner, $zipPath, $zipTempPath);
+        } catch (\Throwable $e) {
+            @unlink($zipTempPath);
+
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to save zip file. '.$e->getMessage());
+        }
+
+        @unlink($zipTempPath);
 
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Zip created successfully.');
     }

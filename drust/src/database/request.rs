@@ -91,21 +91,38 @@ fn normalize_host(host: &str) -> String {
 }
 
 fn validate_name(value: &str, label: &str) -> Result<(), String> {
-    if value.is_empty() || value.len() > 64 || !value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
-        return Err(format!("Invalid {label}. Use only letters, numbers, underscore (max 64)."));
+    if value.is_empty()
+        || value.len() > 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        return Err(format!(
+            "Invalid {label}. Use only letters, numbers, underscore (max 64)."
+        ));
     }
     Ok(())
 }
 
 fn validate_charset(value: &str) -> Result<(), String> {
-    if value.is_empty() || value.len() > 32 || !value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+    if value.is_empty()
+        || value.len() > 32
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
         return Err("Invalid charset value.".into());
     }
     Ok(())
 }
 
 fn validate_collation(value: &str) -> Result<(), String> {
-    if value.is_empty() || value.len() > 64 || !value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+    if value.is_empty()
+        || value.len() > 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
         return Err("Invalid collation value.".into());
     }
     Ok(())
@@ -164,7 +181,9 @@ impl DatabaseAdmin {
     }
 
     fn is_configured(&self) -> bool {
-        self.user.as_ref().is_some_and(|value| !value.trim().is_empty())
+        self.user
+            .as_ref()
+            .is_some_and(|value| !value.trim().is_empty())
     }
 }
 
@@ -177,19 +196,23 @@ fn env_first(names: &[&str]) -> Option<String> {
 }
 
 fn panel_env_value(key: &str) -> Option<String> {
-    let path = std::env::var("DRUST_PANEL_ENV_PATH").unwrap_or_else(|_| "/var/www/dpanel/.env".into());
+    let path =
+        std::env::var("DRUST_PANEL_ENV_PATH").unwrap_or_else(|_| "/var/www/dpanel/.env".into());
     let content = std::fs::read_to_string(path).ok()?;
-    content.lines().find_map(|line| {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            return None;
-        }
-        let (name, value) = line.split_once('=')?;
-        if name.trim() != key {
-            return None;
-        }
-        Some(unquote_env_value(value.trim()))
-    }).filter(|value| !value.is_empty())
+    content
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let (name, value) = line.split_once('=')?;
+            if name.trim() != key {
+                return None;
+            }
+            Some(unquote_env_value(value.trim()))
+        })
+        .filter(|value| !value.is_empty())
 }
 
 fn unquote_env_value(value: &str) -> String {
@@ -204,7 +227,13 @@ fn unquote_env_value(value: &str) -> String {
     }
 }
 
-fn sql_exec(cli: &str, admin: &DatabaseAdmin, host: &str, port: u16, sql: &str) -> Result<(), String> {
+fn sql_exec(
+    cli: &str,
+    admin: &DatabaseAdmin,
+    host: &str,
+    port: u16,
+    sql: &str,
+) -> Result<(), String> {
     let mut cmd = Command::new(cli);
     if admin.is_configured() {
         let admin_host = admin
@@ -235,7 +264,9 @@ fn sql_exec(cli: &str, admin: &DatabaseAdmin, host: &str, port: u16, sql: &str) 
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let hint = if !admin.is_configured() && (stderr.contains("Access denied") || stderr.contains("ERROR 1698")) {
+        let hint = if !admin.is_configured()
+            && (stderr.contains("Access denied") || stderr.contains("ERROR 1698"))
+        {
             " Configure DRUST_DATABASE_ADMIN_USER and DRUST_DATABASE_ADMIN_PASSWORD in /etc/drust/drust.env, then restart drust."
         } else {
             ""
@@ -249,7 +280,12 @@ fn escape_sql_string(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-fn grant_for_host(cli: &str, admin: &DatabaseAdmin, opts: &Options, target_host: &str) -> Result<String, String> {
+fn grant_for_host(
+    cli: &str,
+    admin: &DatabaseAdmin,
+    opts: &Options,
+    target_host: &str,
+) -> Result<String, String> {
     let user = escape_sql_string(&opts.db_user);
     let pass = escape_sql_string(&opts.db_password);
     let h = escape_sql_string(target_host);
@@ -260,18 +296,14 @@ fn grant_for_host(cli: &str, admin: &DatabaseAdmin, opts: &Options, target_host:
         admin,
         "127.0.0.1",
         opts.db_port,
-        &format!(
-            "CREATE USER IF NOT EXISTS '{user}'@'{h}' IDENTIFIED BY '{pass}';"
-        ),
+        &format!("CREATE USER IF NOT EXISTS '{user}'@'{h}' IDENTIFIED BY '{pass}';"),
     )?;
     sql_exec(
         cli,
         admin,
         "127.0.0.1",
         opts.db_port,
-        &format!(
-            "ALTER USER '{user}'@'{h}' IDENTIFIED BY '{pass}';"
-        ),
+        &format!("ALTER USER '{user}'@'{h}' IDENTIFIED BY '{pass}';"),
     )?;
     sql_exec(
         cli,

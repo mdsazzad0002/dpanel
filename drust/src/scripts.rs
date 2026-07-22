@@ -34,14 +34,21 @@ pub fn run_script(script_name: &str, args: &[String]) -> Result<String, String> 
             "{} failed with status {}{}",
             script_path.display(),
             output.status,
-            if combined.is_empty() { String::new() } else { format!(": {combined}") }
+            if combined.is_empty() {
+                String::new()
+            } else {
+                format!(": {combined}")
+            }
         ))
     }
 }
 
 fn scripts_dir() -> Result<PathBuf, String> {
     for key in ["DRUST_SCRIPTS_DIR", "DPANEL_SCRIPTS_DIR"] {
-        if let Some(path) = env::var_os(key).map(PathBuf::from).filter(|path| path.is_dir()) {
+        if let Some(path) = env::var_os(key)
+            .map(PathBuf::from)
+            .filter(|path| path.is_dir())
+        {
             return Ok(path);
         }
     }

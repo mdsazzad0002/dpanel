@@ -3,6 +3,7 @@ pub(crate) mod create;
 pub(crate) mod delete;
 pub(crate) mod exists;
 pub(crate) mod filemove;
+pub(crate) mod fix_permissions;
 pub(crate) mod remove;
 pub(crate) mod unzip;
 pub(crate) mod upload;

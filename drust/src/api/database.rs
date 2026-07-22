@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use axum::{
+    Router,
     extract::{Json, State},
     response::IntoResponse,
     routing::post,
-    Router,
 };
 use serde::Deserialize;
 
@@ -46,7 +46,9 @@ pub(crate) async fn handle(
         request.database_host.unwrap_or_else(|| "127.0.0.1".into()),
         request.database_port.unwrap_or(3306),
         request.charset.unwrap_or_else(|| "utf8mb4".into()),
-        request.collation.unwrap_or_else(|| "utf8mb4_unicode_ci".into()),
+        request
+            .collation
+            .unwrap_or_else(|| "utf8mb4_unicode_ci".into()),
     ) {
         Ok(output) => ApiResponse::ok(&output).into_response(),
         Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
