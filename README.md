@@ -1,18 +1,39 @@
-# dPanel + dScript Root Guide
+# dPanel
 
-This root folder contains the two main parts of the project:
+dPanel is a free ServerPanel hosting control panel stack for managing websites,
+PHP runtimes, SSL, databases, file management, and server automation.
+
+This repository contains the full installable ServerPanel stack:
 
 - `dpanel` - the Laravel panel application
+- `drust` - the Rust localhost execution API
 - `dscript` - installer, bootstrap, and server maintenance scripts
 
 Canonical paths:
 
 - Panel app: `/var/www/dpanel`
+- Execution API: `/var/www/drust`
 - Script repo: `/var/www/dscript`
+
+## Developer Documentation
+
+If you are opening this project for contributors or future maintainers, start
+with [`DEVELOPER.md`](DEVELOPER.md). It explains the full architecture,
+local development setup, API boundaries, permission model, upgrade workflow,
+security rules, and contribution checklist.
 
 ## Installation
 
-Use the separate installer, which delegates all work to dscript:
+Clone this repository as `dpanel` and run the installer:
+
+```bash
+cd /var/www
+git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
+cd dpanel-source
+sudo ./installer.sh chain install
+```
+
+On an installed server where this repository already lives at `/var/www`, use:
 
 ```bash
 sudo /var/www/installer.sh chain install
