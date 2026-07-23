@@ -14,6 +14,8 @@ dscript / dpanel - server installation and maintenance toolkit
 
 Usage:
   dpanel [global-options] <command> [arguments]
+  dpanel
+      Open the interactive menu.
 
 Processes:
   chain <install|update|verify|repair> [module,...]
@@ -42,12 +44,15 @@ Global options:
   -V, --version                  Show version
   -n, --dry-run                  Explain a mutating command without running it
   -y, --yes                      Answer yes where a script supports automation
-      --continue-on-error        Continue a chain after a module failure
   -v, --verbose                  Enable verbose diagnostics
 
 Examples:
+  dpanel
+  dpanel help
+  sudo dpanel default-install
   sudo dpanel chain install
   sudo dpanel chain install apache,nginx,php,mariadb
+  sudo dpanel chain update
   sudo dpanel module php install 8.3
   sudo dpanel nginx update
   dpanel script list
@@ -70,8 +75,6 @@ repair    Apply safe local repairs, then verify again.
 
 Module lists may be comma-separated or space-separated. Examples:
   sudo dpanel chain install apache,nginx,php
-  sudo dpanel --continue-on-error chain install apache nginx php mariadb
-
 Useful environment variables: PANEL_MODULES, SKIP_FIREWALL, SKIP_SSL,
 SKIP_TEST, PANEL_DOMAIN, PANEL_PORT and DPANEL_BASE_URL.
 EOF
@@ -455,7 +458,7 @@ dscript_cli() {
       -V|--version) printf 'dscript %s\n' "$DSCRIPT_VERSION"; return 0 ;;
       -n|--dry-run) DSCRIPT_DRY_RUN=true ;;
       -y|--yes) DSCRIPT_ASSUME_YES=true ;;
-      --continue-on-error) DSCRIPT_CONTINUE_ON_ERROR=true; export DSCRIPT_CONTINUE_ON_ERROR ;;
+      --continue-on-error) panel_die "--continue-on-error is disabled; chain stops on the first error." ;;
       -v|--verbose) DSCRIPT_VERBOSE=true; export DSCRIPT_VERBOSE ;;
       --) shift; break ;;
       *) break ;;

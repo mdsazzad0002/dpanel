@@ -1,16 +1,46 @@
 # Installer
 
-`/var/www/installer.sh` downloads the live `dscript.zip`, extracts it into
-`/var/www/dscript`, assigns permissions, registers `/usr/local/bin/dpanel` and
-`/usr/local/bin/panel`, and passes the requested chain to the extracted
-`dscript/install.sh`.
+`/var/www/installer.sh` downloads the live release archive, extracts it into
+`/var/www/dscript`, assigns permissions, registers `/usr/local/bin/dpanel`,
+and hands the request to `dscript/dpanel`.
+
+The standalone installer does not install modules by itself. All real install
+and update work is transferred to the dpanel CLI:
+
+```text
+installer.sh                  -> dscript/dpanel default-install
+installer.sh apache nginx     -> dscript/dpanel chain install apache nginx
+installer.sh update           -> dscript/dpanel chain update
+installer.sh chain update     -> dscript/dpanel chain update
+```
 
 ```bash
 curl -fsSL https://installer.likesoftbd.com/installer.sh -o installer.sh
 chmod 0755 installer.sh
 sudo ./installer.sh
 sudo ./installer.sh nginx php mariadb redis
+sudo ./installer.sh update
 ```
+
+The no-argument default install sequence is:
+
+```text
+apache -> nginx -> php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs
+```
+
+Every mutating interactive menu action shows a confirmation screen first:
+
+```text
+Pending action: <name>
+Will run:
+  <command>
+Configuration summary
+...
+Continue? Type yes to run:
+```
+
+Only the exact answer `yes` continues. Any other input cancels the action and
+returns to the menu.
 
 Source parameters are applied in this order: local directory, local ZIP, custom
 ZIP URL, then the default live ZIP.
@@ -31,7 +61,7 @@ sudo env DSCRIPT_DIR=/opt/serverpanel/dscript ./installer.sh
 sudo env DPANEL_BASE_DIR=/opt/dpanel ./installer.sh
 ```
 
-Archive must contain `dscript/install.sh`.
+Archive must contain `dscript/dpanel`.
 
 
 # NB if not found dpanel command
@@ -54,12 +84,11 @@ sudo dpanel chain install apache nginx php mariadb
 sudo dpanel chain update
 dpanel chain verify
 sudo dpanel chain repair
-sudo dpanel --continue-on-error chain install
 sudo dpanel --dry-run chain install
 ```
 
 Environment controls: `PANEL_MODULES`, `SKIP_FIREWALL`, `SKIP_SSL`,
-`SKIP_TEST`, `DSCRIPT_CONTINUE_ON_ERROR`.
+`SKIP_TEST`.
 
 ## Runtime
 
@@ -74,8 +103,8 @@ sudo /var/www/dscript/dpanel runtime refresh
 Runtime files are installed under `/opt/dpanel/runtime`. Modules and manifests
 are installed under `/opt/dpanel/repository`, so subsequent chain/module runs
 use local assets instead of downloading each existing file again. The installer
-automatically registers `/usr/local/bin/dpanel` and `/usr/local/bin/panel`;
-use `dpanel runtime refresh` to repair those launchers.
+automatically registers `/usr/local/bin/dpanel`;
+use `dpanel runtime refresh` to repair that launcher.
 
 
 
@@ -88,13 +117,13 @@ use `dpanel runtime refresh` to repair those launchers.
 -V, --version          version
 -n, --dry-run          preview mutation
 -y, --yes              automatic confirmation
---continue-on-error    continue chain after failure
 -v, --verbose          verbose diagnostics
 ```
 
 ## Primary commands
 
 ```bash
+dpanel
 dpanel help
 dpanel list
 dpanel info
@@ -107,6 +136,75 @@ dpanel script help <name>
 dpanel script run <name> [arguments]
 dpanel doctor [--fix]
 dpanel runtime refresh
+```
+
+## dpanel command map
+
+```text
+dpanel                                  Open interactive menu
+dpanel help                             Show help text
+dpanel default-install                  Install default stack with mail, ssl and node
+dpanel chain install [module,...]        Full install handover
+dpanel chain update                      System/runtime/module update handover
+dpanel chain verify                      Read-only verification
+dpanel chain repair                      Safe repair then verify
+dpanel install [module,...]              Alias for chain install or module install
+dpanel update [module]                   Alias for chain update or module update
+dpanel module list                       Show available modules
+dpanel module <name> install             Install one module
+dpanel module <name> update              Update one module
+dpanel module <name> remove              Remove one module
+dpanel php versions                      Show PHP versions
+dpanel php install [version|all]         Install PHP version(s)
+dpanel script list                       Show maintenance scripts
+dpanel script run <name> [args]          Run one maintenance script
+dpanel doctor [--fix]                    Diagnose or repair local runtime
+dpanel runtime refresh                   Rebuild the /usr/local/bin/dpanel launcher
+```
+
+## Interactive menu command hints
+
+The bare command opens the guided menu:
+
+```bash
+dpanel
+```
+
+Each menu item prints the direct command beside the option so the same task can
+be repeated without opening the menu next time.
+
+```text
+Default Install                         dpanel default-install
+Default Update                          dpanel chain update
+Apache/Nginx install                    dpanel module apache install && dpanel module nginx install
+Apache/Nginx update                     dpanel module apache update && dpanel module nginx update
+Apache/Nginx reinstall                  dpanel module apache reinstall && dpanel module nginx reinstall
+Restore base web stack                  dpanel script run fix-web-stack
+Restore panel web stack                 dpanel script run fix-panel-web-stack <domain> [--alias domain]
+Restore root panel config               dpanel script run fix-dpanel-root <domain>
+Install all PHP versions                dpanel php install all
+Update all PHP versions                 dpanel php update all
+Show PHP versions                       dpanel php versions
+Set default PHP                         dpanel php default <version>
+Repair one PHP version                  dpanel php reinstall <version>
+Install MariaDB                         dpanel module mariadb install
+Install Redis                           dpanel module redis install
+Install Supervisor                      dpanel module supervisor install
+Install firewall                        dpanel module firewall install
+Install Fail2ban                        dpanel module fail2ban install
+Install SSL/certbot                     dpanel module ssl install
+Generate website SSL                    dpanel script run issue-ssl <domain> <root> 0 [--alias domain]
+Generate website SSL with www           dpanel script run issue-ssl <domain> <root> 1 [--alias domain]
+Install Rust/Drust service              bash /var/www/drust/deploy/install-service.sh
+Restart Drust                           systemctl restart drust.service
+Show Drust status                       systemctl status drust.service --no-pager
+Show Drust logs                         journalctl -u drust.service -n 100 --no-pager
+Install Postfix                         apt/dnf/yum install postfix
+Install Dovecot                         apt/dnf/yum install dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql
+Install Node.js                         apt/dnf/yum install nodejs npm
+Create system user                      dpanel filemanager user ensure <user> --home <path> --shell <shell>
+Change root password                    passwd root
+Disable SSH root login                  dpanel script run disable-root-login
 ```
 
 ## Compatibility aliases
@@ -175,7 +273,6 @@ Panel variables: `PANEL_DB_NAME`, `PANEL_DB_USER`, `PANEL_DB_PASSWORD`,
 ```text
 /var/www/installer.sh
 /var/www/dscript/dpanel
-/var/www/dscript/install.sh
 /var/www/dscript/archive.sh
 /var/www/dscript/core/
 /var/www/dscript/bootstrap/
@@ -197,9 +294,8 @@ unzip -t /var/www/dscript.zip
 
 Publish as `https://installer.likesoftbd.com/dscript.zip`.
 
-Archive root must contain `dscript/install.sh`, `dscript/dpanel`,
-`dscript/core/`, `dscript/bootstrap/`, `dscript/repository/` and
-`dscript/scripts/`.
+Archive root must contain `dscript/dpanel`, `dscript/core/`,
+`dscript/bootstrap/`, `dscript/repository/` and `dscript/scripts/`.
 
 
 
@@ -234,6 +330,10 @@ dpanel module <name> info
 
 Available modules: apache, nginx, php, redis, mariadb, filemanager, ssl,
 firewall, fail2ban, queue, supervisor, admin-user and ssh-root-login.
+
+Postfix, Dovecot, Node.js and Rust/Drust are included in the default install
+flow from the `dpanel` entrypoint even though they are not regular repository
+modules yet.
 
 Generic actions:
 
@@ -344,9 +444,13 @@ or `SERVERPANEL_EXECUTION_API_TOKEN` in the panel `.env`.
 ```bash
 sudo dpanel module ssl install
 sudo dpanel script run issue-ssl example.com /home/example/public_html 1
-sudo dpanel script run install-roundcube-dovecot-mysql --check-only
-sudo dpanel script run install-roundcube-dovecot-mysql --skip-update
+sudo dpanel script run issue-ssl example.com /home/example/public_html 0 --alias www.example.com
+sudo apt-get install postfix dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql
+sudo systemctl restart postfix dovecot
 ```
+
+Roundcube is not part of the default stack. Mail service installation focuses on
+Postfix and Dovecot for the panel's own mail service integration.
 
 <!-- ======================= Environment ============================== -->
 
@@ -366,7 +470,6 @@ PANEL_MODULES
 SKIP_FIREWALL
 SKIP_SSL
 SKIP_TEST
-DSCRIPT_CONTINUE_ON_ERROR
 PHP_VERSION
 PANEL_DOMAIN
 PANEL_PORT

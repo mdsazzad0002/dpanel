@@ -5,17 +5,23 @@ Use that directory when you need a separate guide for installation, modules,
 vhosts, scripts, recovery or environment configuration.
 
 `dscript` is the shell toolkit for installing, updating, diagnosing and repairing
-dPanel servers. The public command is `dpanel`; `panel` is installed as a
-compatibility alias.
+dPanel servers. The public command is `dpanel`.
 
-The standalone `/var/www/installer.sh` is only a downloader. It downloads
-`dscript/install.sh` and hands control to dscript. Installation decisions do not
+The standalone `/var/www/installer.sh` is only a downloader and runtime
+preparer. It downloads the release archive, installs `/var/www/dscript/dpanel`,
+then hands control to dscript. Installation and system update decisions do not
 belong in the standalone installer.
+
+```text
+installer.sh              -> dpanel default-install
+installer.sh update       -> dpanel chain update
+```
 
 ## 1. Quick start
 
 ```bash
 # Discover commands without changing the server
+/var/www/dscript/dpanel
 /var/www/dscript/dpanel help
 /var/www/dscript/dpanel list
 /var/www/dscript/dpanel doctor
@@ -24,17 +30,16 @@ belong in the standalone installer.
 /var/www/dscript/dpanel --dry-run chain install
 
 # Complete installation
-sudo /var/www/dscript/dpanel chain install
+sudo /var/www/dscript/dpanel default-install
 
 # One independent operation
 sudo /var/www/dscript/dpanel module nginx update
 ```
 
-After a chain install, both commands are available:
+After a chain install, the public command is available:
 
 ```bash
 dpanel help
-panel help
 ```
 
 ## 2. The two process types
@@ -50,10 +55,16 @@ dpanel chain verify
 dpanel chain repair
 ```
 
-Default install order:
+Default chain module order:
 
 ```text
 apache -> nginx -> php -> mariadb -> supervisor -> firewall -> fail2ban
+```
+
+The top-level default install adds non-module services around that chain:
+
+```text
+apache -> nginx -> php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs
 ```
 
 Choose modules with either syntax:
@@ -64,14 +75,9 @@ sudo dpanel chain install apache nginx php mariadb
 sudo env PANEL_MODULES="nginx,php,mariadb,redis" dpanel chain install
 ```
 
-Normally the chain stops on the first failure. To attempt the remaining modules:
-
-```bash
-sudo dpanel --continue-on-error chain install
-```
-
-Use this option for diagnosis, not to hide a failed module. Review the log and run
-`dpanel doctor` afterward.
+The chain stops on the first failure. It does not continue to the next module
+after an error. Review the first `[ERROR]`, inspect the log, run
+`dpanel doctor`, then retry only the failed item.
 
 ### 2.2 Individual process
 
@@ -107,11 +113,47 @@ sudo dpanel remove nginx
 | `-V`, `--version` | Print dscript version |
 | `-n`, `--dry-run` | Preview a mutating top-level operation |
 | `-y`, `--yes` | Supply confirmation where supported |
-| `--continue-on-error` | Continue a chain after a failed module |
 | `-v`, `--verbose` | Enable verbose diagnostics for supporting scripts |
 
 `--dry-run` protects commands dispatched by dscript. Do not assume that directly
 executing an arbitrary file under `scripts/` supports dry-run.
+
+## 3.1 Interactive menu
+
+Run the bare command to open the guided menu:
+
+```bash
+dpanel
+```
+
+Run help explicitly when you need the command reference:
+
+```bash
+dpanel help
+```
+
+Menu items include the matching command beside the option. Mutating actions
+show a confirmation screen with `Will run:` and the current configuration
+summary, then require the exact answer `yes` before anything changes.
+
+Common menu command hints:
+
+```text
+Default Install                         dpanel default-install
+Default Update                          dpanel chain update
+Apache/Nginx install                    dpanel module apache install && dpanel module nginx install
+PHP install all                         dpanel php install all
+PHP set default                         dpanel php default <version>
+PHP repair one version                  dpanel php reinstall <version>
+Website SSL                             dpanel script run issue-ssl <domain> <root> 0 [--alias domain]
+Website SSL with www                    dpanel script run issue-ssl <domain> <root> 1 [--alias domain]
+Rust/Drust install                      bash /var/www/drust/deploy/install-service.sh
+Mail install                            install postfix + dovecot packages
+Node.js install                         install nodejs npm packages
+Create Linux user                       dpanel filemanager user ensure <user> --home <path> --shell <shell>
+Change root password                    passwd root
+Disable SSH root login                  dpanel script run disable-root-login
+```
 
 ## 4. Module reference
 
@@ -137,6 +179,10 @@ dpanel module <name> info
 | `filemanager` | Safe file and system-user operations | See section 4.2 |
 | `admin-user` | Admin creation through drust | `dpanel admin-user install ...` |
 | `ssh-root-login` | Disable SSH root login through drust | `dpanel ssh-root-login install` |
+
+Postfix, Dovecot, Node.js and the Rust/Drust service are installed by
+`dpanel default-install` from the entrypoint. They are shown in the interactive
+menu with direct package or service commands until they become regular modules.
 
 ### 4.1 PHP
 
@@ -189,7 +235,7 @@ Every maintained shell file has a stable CLI name:
 | `fix-dpanel-root` | `script run fix-dpanel-root [domain] [options]` |
 | `fix-panel-web-stack` | `script run fix-panel-web-stack <domain> [ports] [options]` |
 | `fix-web-stack` | `script run fix-web-stack [apache-port] [nginx-port]` |
-| `install-roundcube-dovecot-mysql` | `script run install-roundcube-dovecot-mysql [--check-only] [--skip-update]` |
+| `install-roundcube-dovecot-mysql` | Legacy Roundcube helper; not used by the default stack |
 | `issue-ssl` | `script run issue-ssl <domain> <root-path> [include-www=0|1]` |
 | `php-config-apply` | `script run php-config-apply --version VERSION [settings]` |
 | `php-detect-config` | `script run php-detect-config [--version VERSION]` |
@@ -236,7 +282,11 @@ Issue a certificate after the vhost and document root exist:
 
 ```bash
 sudo dpanel script run issue-ssl example.com /home/example/public_html 1
+sudo dpanel script run issue-ssl example.com /home/example/public_html 0 --alias www.example.com
 ```
+
+Default mail support installs Postfix and Dovecot only. Roundcube is not part of
+the default stack because the panel uses its own mail service integration.
 
 ## 7. Database command
 
@@ -342,15 +392,14 @@ apache2ctl configtest
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PANEL_MODULES` | standard seven-module chain | Comma-separated install list |
+| `PANEL_MODULES` | default module chain | Comma-separated install list |
 | `SKIP_FIREWALL` | `false` | Skip firewall in a chain |
 | `SKIP_SSL` | `false` | Skip SSL in a chain |
 | `SKIP_TEST` | `false` | Skip completion test message |
-| `DSCRIPT_CONTINUE_ON_ERROR` | `false` | Continue failed install chain |
 | `DSCRIPT_REFRESH_REMOTE` | `false` | Force remote manifest refresh during install |
 | `PHP_VERSION` | detected/8.3 | Preferred PHP version |
 | `PANEL_DOMAIN` | `installer.likesoftbd.com` | Panel hostname |
-| `PANEL_PORT` | `2083` | Panel port |
+| `PANEL_PORT` | `80` | Panel port |
 
 ### Database
 
@@ -377,6 +426,7 @@ sudo ./installer.sh
 Forward any dscript command:
 
 ```bash
+sudo ./installer.sh nginx,php,mariadb
 sudo ./installer.sh chain install nginx,php,mariadb
 ```
 
@@ -399,7 +449,9 @@ parameter, the installer always downloads and extracts the current live ZIP.
 
 The installer owns no server configuration; it downloads the dscript archive,
 extracts it into `/var/www/dscript`, assigns executable permissions to shell
-entrypoints, and delegates the chain to dscript.
+entrypoints, registers `dpanel`, and delegates the request to dscript. With no
+arguments it delegates to `dpanel default-install`; with `update` it delegates to
+`dpanel chain update`.
 
 Build the archive served to clients with:
 
@@ -476,9 +528,7 @@ fixed as root while paths remain scoped inside `/home/{site_user}`.
 ```text
 dscript/
 ├── dpanel                         user CLI
-├── install.sh                     remote dscript loader
 ├── archive.sh                     build dscript.zip for installer.sh
-├── update.sh                      compatibility update entrypoint
 ├── bootstrap/core.sh              implementation API and compatibility core
 ├── core/commands.sh               help, parsing, chain/individual routing, doctor
 ├── core/package-manager.sh        Debian/RPM package abstraction
@@ -488,6 +538,7 @@ dscript/
 └── scripts/                        named maintenance scripts
 ```
 
-Module `install.sh` files remain independently executable, while `remove.sh` and
-`update.sh` are compatibility wrappers. The recommended interface is always the
-`dpanel` command because it provides validation, logging, help and dry-run behavior.
+Module `install.sh` files remain independently executable, while module
+`remove.sh` and `update.sh` files are compatibility wrappers. The recommended
+interface is always the `dpanel` command because it provides validation,
+logging, help and dry-run behavior.

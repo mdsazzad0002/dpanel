@@ -1,4 +1,4 @@
-# ServerPanel / ServerInstall Master Plan
+# dPanel / ServerInstall Master Plan
 
 > **Purpose**
 > This document is the single source of truth for architecture, ownership boundaries, implementation phases, safety rules, and long-term roadmap for the hosting control panel system.
@@ -203,7 +203,7 @@ Installer responsibility:
 - Unzip the archive into a temporary working directory
 - Extract the package directly into `/var/www/dscript`
 - Assign executable permissions to shell entrypoints
-- Invoke `dscript/install.sh chain install`
+- Invoke `dscript/dpanel chain install`
 
 Installer flow:
 
@@ -241,7 +241,7 @@ Installer tree:
 /var/www/
   installer.sh
   dscript/
-    install.sh
+    dpanel
     dpanel
     core/
     bootstrap/
@@ -253,7 +253,7 @@ Folder rules:
 
 - `installer.sh` stays at `/var/www/installer.sh`
 - The archive is extracted into `/var/www/dscript/`
-- `dscript/install.sh` is the first installation command
+- `dscript/dpanel` is the first installation command
 - `dscript/core/commands.sh` owns user-facing routing and diagnostics
 
 ---

@@ -61,7 +61,7 @@ if [[ -z "$APP_URL" && -f "${PANEL_APP_DIR}/.env" ]]; then
 fi
 if [[ -z "$APP_URL" ]]; then
     scheme=http
-    [[ "$PANEL_PORT" == 443 || "$PANEL_PORT" == 2083 ]] && scheme=https
+    [[ "$PANEL_PORT" == 443 ]] && scheme=https
     APP_URL="${scheme}://${PANEL_DOMAIN}"
     [[ "$PANEL_PORT" != 80 && "$PANEL_PORT" != 443 ]] && APP_URL="${APP_URL}:${PANEL_PORT}"
 fi

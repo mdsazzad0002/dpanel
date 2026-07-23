@@ -194,7 +194,7 @@ deploy_phpmyadmin_templates() {
 
     secret="${PHPMYADMIN_BLOWFISH_SECRET:-$(generate_secret)}"
     panel_domain="${PANEL_DOMAIN:-cp.example.com}"
-    panel_port="${PANEL_PORT:-2083}"
+    panel_port="${PANEL_PORT:-80}"
     config_target="${PHPMYADMIN_CONFIG_TARGET:-}"
     helper_target="${root%/}/phpmyadminsignin.php"
 

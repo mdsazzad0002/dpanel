@@ -14,8 +14,8 @@ DPANEL_REPOSITORY_DIR="${DPANEL_REPOSITORY_DIR:-${DPANEL_BASE_DIR}/repository}"
 DPANEL_SERVER_JSON="${DPANEL_SERVER_JSON:-${DPANEL_BASE_DIR}/server.json}"
 DPANEL_TOKEN_FILE="${DPANEL_TOKEN_FILE:-${DPANEL_BASE_DIR}/token}"
 DPANEL_LOCAL_MANIFEST="${DPANEL_LOCAL_MANIFEST:-${DPANEL_CACHE_DIR}/modules.installed.json}"
-DPANEL_LAUNCHER="${DPANEL_LAUNCHER:-/usr/local/bin/panel}"
-DPANEL_DUAL_LAUNCHER="${DPANEL_DUAL_LAUNCHER:-/usr/local/bin/dpanel}"
+DPANEL_LAUNCHER="${DPANEL_LAUNCHER:-/usr/local/bin/dpanel}"
+DPANEL_DUAL_LAUNCHER="${DPANEL_DUAL_LAUNCHER:-}"
 PANEL_APP_DIR="${PANEL_APP_DIR:-${SERVER_BASE_DIR:-/var/www/dpanel}}"
 PANEL_APP_ENV_FILE="${PANEL_APP_ENV_FILE:-}"
 PANEL_DB_NAME="${PANEL_DB_NAME:-dpanel}"
@@ -301,10 +301,15 @@ dscript_cli "$@"
 EOF
   chmod 0755 "${DPANEL_RUNTIME_DIR}/launcher.sh"
 
-  panel_write_launcher "$DPANEL_LAUNCHER" "${DPANEL_RUNTIME_DIR}/launcher.sh"
+  local launcher_target="${DPANEL_RUNTIME_DIR}/launcher.sh"
+  if [[ -n "${DPANEL_DSCRIPT_ENTRYPOINT:-}" && -x "${DPANEL_DSCRIPT_ENTRYPOINT}" ]]; then
+    launcher_target="$DPANEL_DSCRIPT_ENTRYPOINT"
+  fi
 
-  if [[ "$DPANEL_DUAL_LAUNCHER" != "$DPANEL_LAUNCHER" ]]; then
-    panel_write_launcher "$DPANEL_DUAL_LAUNCHER" "${DPANEL_RUNTIME_DIR}/launcher.sh"
+  panel_write_launcher "$DPANEL_LAUNCHER" "$launcher_target"
+
+  if [[ -n "$DPANEL_DUAL_LAUNCHER" && "$DPANEL_DUAL_LAUNCHER" != "$DPANEL_LAUNCHER" ]]; then
+    panel_write_launcher "$DPANEL_DUAL_LAUNCHER" "$launcher_target"
   fi
 }
 
@@ -338,7 +343,7 @@ panel_register_server() {
   "distro": "${DISTRO:-unknown}",
   "version": "${VERSION:-unknown}",
   "panel_domain": "${PANEL_DOMAIN:-}",
-  "panel_port": "${PANEL_PORT:-2083}",
+  "panel_port": "${PANEL_PORT:-80}",
   "default_php_version": "$(panel_php_default_version)"
 }
 EOF
@@ -346,6 +351,25 @@ EOF
   printf '%s\n' "$token" > "$DPANEL_TOKEN_FILE"
   chmod 0600 "$DPANEL_TOKEN_FILE"
   panel_info_log "Registered server: $server_uuid"
+}
+
+panel_server_json_valid() {
+  [[ -s "$DPANEL_SERVER_JSON" ]] || return 1
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$DPANEL_SERVER_JSON" <<'PY' >/dev/null 2>&1
+import json
+import sys
+
+with open(sys.argv[1], 'r', encoding='utf-8') as handle:
+    data = json.load(handle)
+
+raise SystemExit(0 if isinstance(data, dict) else 1)
+PY
+    return $?
+  fi
+
+  return 0
 }
 
 panel_remote_manifest_url() {
@@ -638,10 +662,12 @@ panel_php_default_version() {
 import json
 import sys
 
-with open(sys.argv[1], 'r', encoding='utf-8') as handle:
-    data = json.load(handle)
-
-print(data.get('default_php_version', ''))
+try:
+    with open(sys.argv[1], 'r', encoding='utf-8') as handle:
+        data = json.load(handle)
+    print(data.get('default_php_version', ''))
+except (OSError, ValueError):
+    print('')
 PY
 )"
     if [[ -n "$configured" ]] && panel_php_version_supported "$configured"; then
@@ -1133,13 +1159,14 @@ panel_bootstrap() {
   local skip_test="${SKIP_TEST:-false}"
   local bootstrap_mode="${PANEL_BOOTSTRAP_MODE:-install}"
   local panel_domain="${PANEL_DOMAIN:-installer.likesoftbd.com}"
-  local panel_port="${PANEL_PORT:-2083}"
+  local panel_port="${PANEL_PORT:-80}"
 
   panel_require_root
   panel_ensure_dirs
   panel_detect_os
   panel_install_cli_launcher
-  if [[ ! -s "$DPANEL_SERVER_JSON" ]]; then
+  if ! panel_server_json_valid; then
+    panel_warn_log "Server metadata missing or invalid; regenerating ${DPANEL_SERVER_JSON}."
     panel_register_server
   fi
 
@@ -1160,17 +1187,11 @@ panel_bootstrap() {
         fi
         if [[ "$module" == "php" ]]; then
           if ! panel_php_manage_versions install all; then
-            if [[ "${DSCRIPT_CONTINUE_ON_ERROR:-false}" == "true" ]]; then
-              panel_error_log "Module failed and chain will continue: ${module}"
-              continue
-            fi
+            panel_error_log "Module failed; chain stopped: ${module}"
             return 1
           fi
         elif ! panel_run_module "$module" install; then
-          if [[ "${DSCRIPT_CONTINUE_ON_ERROR:-false}" == "true" ]]; then
-            panel_error_log "Module failed and chain will continue: ${module}"
-            continue
-          fi
+          panel_error_log "Module failed; chain stopped: ${module}"
           return 1
         fi
         panel_store_installed_manifest_value "$module" "$(panel_manifest_version_for "$module")"

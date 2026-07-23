@@ -468,15 +468,15 @@ class CommandJobController extends Controller
         $hasHealth = str_contains($text, 'health') || str_contains($text, 'check');
 
         if (($hasFresh && $hasInstall && $hasServer) || str_contains($text, 'fresh install') || str_contains($text, 'install server')) {
-            return $this->buildInstallerCommand('install.sh', 'fresh install this server');
+            return $this->buildInstallerCommand('dpanel', 'chain install');
         }
 
         if (($hasComplete && $hasInstall && $hasServer) || str_contains($text, 'complete install')) {
-            return $this->buildInstallerCommand('install.sh', 'complete install server');
+            return $this->buildInstallerCommand('dpanel', 'chain install');
         }
 
         if ($hasUpdate && $hasServer) {
-            return $this->buildInstallerCommand('update.sh');
+            return $this->buildInstallerCommand('dpanel', 'chain update');
         }
 
         if ($hasHealth && $hasServer) {
@@ -743,7 +743,7 @@ class CommandJobController extends Controller
 
     private function buildInstallerCommand(string $script, ?string $arg = null): string
     {
-        $argPart = $arg !== null ? ' '.escapeshellarg($arg) : '';
+        $argPart = $arg !== null ? ' '.$arg : '';
         $searchPaths = ScriptPathResolver::repositorySearchPaths();
 
         $paths = [];

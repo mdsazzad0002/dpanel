@@ -4,6 +4,7 @@ set -euo pipefail
 DOMAIN_RAW="${1:-}"
 ROOT_PATH_RAW="${2:-}"
 INCLUDE_WWW_RAW="${3:-0}"
+shift $(( $# >= 3 ? 3 : $# ))
 
 log() {
     printf '[issue-ssl] %s\n' "$*"
@@ -37,9 +38,27 @@ should_add_www_alias() {
 DOMAIN="$(normalize_domain "${DOMAIN_RAW}")"
 ROOT_PATH="$(echo "${ROOT_PATH_RAW}" | xargs)"
 INCLUDE_WWW="0"
+ALIASES=()
 if [[ "${INCLUDE_WWW_RAW}" == "1" ]]; then
     INCLUDE_WWW="1"
 fi
+
+while (($#)); do
+    case "$1" in
+        --alias)
+            [[ $# -ge 2 ]] || {
+                log "Missing value for --alias"
+                exit 64
+            }
+            ALIASES+=("$(normalize_domain "$2")")
+            shift 2
+            ;;
+        *)
+            log "Unknown option: $1"
+            exit 64
+            ;;
+    esac
+done
 
 if [[ -z "${DOMAIN}" || -z "${ROOT_PATH}" ]]; then
     log "Usage: $0 <domain> <root_path> [include_www=0|1]"
@@ -65,6 +84,9 @@ domain_args=(-d "${DOMAIN}")
 if should_add_www_alias "${DOMAIN}" "${INCLUDE_WWW}"; then
     domain_args+=(-d "www.${DOMAIN}")
 fi
+for alias_domain in "${ALIASES[@]}"; do
+    [[ -n "$alias_domain" ]] && domain_args+=(-d "$alias_domain")
+done
 
 cmd=(
     "${CERTBOT_PATH}"

@@ -49,7 +49,7 @@ cd /var/www
 sudo git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
 sudo chown -R "$USER:$USER" /var/www/dpanel-source
 cd dpanel-source
-sudo ./installer.sh chain install
+sudo ./installer.sh
 ```
 
 If your user cannot write inside `/var/www`, that is normal on a fresh server.
@@ -60,26 +60,49 @@ the installer with sudo:
 cd ~
 git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
 cd dpanel-source
-sudo ./installer.sh chain install
+sudo ./installer.sh
 ```
 
 On an installed server where this repository already lives at `/var/www`, use:
 
 ```bash
-sudo /var/www/installer.sh chain install
+sudo /var/www/installer.sh
 ```
 
 `installer.sh` downloads `dscript.zip`, extracts it directly into
-`/var/www/dscript`, restores executable permissions, registers `dpanel` and
-`panel` under `/usr/local/bin`, and runs the dscript chain.
+`/var/www/dscript`, restores executable permissions, registers `dpanel` under
+`/usr/local/bin`, and hands the request to `dscript/dpanel`.
 There is no separate `/var/www/installer/` directory anymore.
+
+With no arguments, the installer runs the default install handover:
+
+```text
+installer.sh -> /var/www/dscript/dpanel default-install
+```
+
+The default sequence is:
+
+```text
+apache -> nginx -> php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs
+```
+
+Every mutating interactive menu action shows the command it will run plus a
+configuration summary. It only continues when you type exactly `yes`.
 
 Or use dscript directly:
 
 ```bash
+sudo /var/www/dscript/dpanel default-install
 sudo /var/www/dscript/dpanel chain install
 sudo /var/www/dscript/dpanel module nginx update
 /var/www/dscript/dpanel doctor
+```
+
+Open the menu and command hints:
+
+```bash
+dpanel
+dpanel help
 ```
 
 See the complete command, module, script, environment and recovery reference in
@@ -109,7 +132,13 @@ sudo /var/www/dscript/scripts/fix-dpanel-root.sh panel.example.com
 
 ```bash
 cd /var/www/dscript
-sudo bash update.sh
+sudo bash dpanel chain update
+```
+
+Or refresh from the remote release first and then hand over to chain update:
+
+```bash
+sudo /var/www/installer.sh update
 ```
 
 ### Create or repair panel web stack

@@ -9,6 +9,10 @@ DB_HOST_RAW="${5:-127.0.0.1}"
 DB_PORT_RAW="${6:-3306}"
 DB_CHARSET="${7:-utf8mb4}"
 DB_COLLATION="${8:-utf8mb4_unicode_ci}"
+ALLOW_ADMIN_GRANTS="${PANEL_DB_ALLOW_ADMIN_GRANTS:-true}"
+DB_ADMIN_USER="${PANEL_DB_ADMIN_USER:-root}"
+DB_ADMIN_PASSWORD="${PANEL_DB_ADMIN_PASSWORD:-}"
+DB_ADMIN_HOST="${PANEL_DB_ADMIN_HOST:-}"
 
 fail() {
     echo "[database-request] $*" >&2
@@ -70,7 +74,22 @@ fi
 
 sql_exec() {
     local sql="$1"
-    "${DB_CLI}" --host="${DB_HOST}" --port="${DB_PORT}" -e "${sql}"
+    local args=()
+
+    if [[ -n "${DB_ADMIN_USER}" ]]; then
+        args+=(--user="${DB_ADMIN_USER}")
+    fi
+    if [[ -n "${DB_ADMIN_PASSWORD}" ]]; then
+        args+=(--password="${DB_ADMIN_PASSWORD}")
+    fi
+
+    if [[ -n "${DB_ADMIN_HOST}" ]]; then
+        args+=(--host="${DB_ADMIN_HOST}" --port="${DB_PORT}")
+    elif [[ "${DB_HOST}" != "127.0.0.1" && "${DB_HOST,,}" != "localhost" ]]; then
+        args+=(--host="${DB_HOST}" --port="${DB_PORT}")
+    fi
+
+    "${DB_CLI}" "${args[@]}" -e "${sql}"
 }
 
 grant_for_host() {
@@ -81,7 +100,17 @@ grant_for_host() {
     sql_host="$(escape_sql_string "${host}")"
     sql_exec "CREATE USER IF NOT EXISTS '${sql_user}'@'${sql_host}' IDENTIFIED BY '${sql_pass}';"
     sql_exec "ALTER USER '${sql_user}'@'${sql_host}' IDENTIFIED BY '${sql_pass}';"
-    sql_exec "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER, EVENT ON \`${DB_NAME}\`.* TO '${sql_user}'@'${sql_host}';"
+    # Panel database user needs full access to its own database for migrations,
+    # recovery and partially-installed module repair. This does not modify the
+    # database root account.
+    sql_exec "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${sql_user}'@'${sql_host}';"
+
+    # The panel also manages customer databases and database users. That requires
+    # global database/user administration rights. Root is left untouched; these
+    # privileges are granted only to the configured panel database user.
+    if [[ "${ALLOW_ADMIN_GRANTS,,}" == "true" ]]; then
+        sql_exec "GRANT ALL PRIVILEGES ON *.* TO '${sql_user}'@'${sql_host}' WITH GRANT OPTION;"
+    fi
 }
 
 sql_exec "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET ${DB_CHARSET} COLLATE ${DB_COLLATION};"

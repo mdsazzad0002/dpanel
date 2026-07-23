@@ -1,6 +1,45 @@
 #!/usr/bin/env bash
+#
+# dpanel is the single dscript entrypoint.
+#
+# What this file does:
+#   1. Detect the local dscript folder and remote dscript URL.
+#   2. Load bootstrap/core, package manager and command router.
+#   3. If local files are missing, download the required runtime files.
+#   4. Run all real install/update/module/script work through dscript_cli.
+#
+# The standalone installer.sh only prepares this file and then hands over to it.
+#
 set -Eeuo pipefail
 
+#
+# Configure the remote source used only when this dpanel file is downloaded
+# without the full dscript directory beside it.
+#
+SCRIPT_NAME="$(basename "$0")"
+DEFAULT_BASE_URL="https://installer.likesoftbd.com"
+BASE_URL="${PANEL_INSTALL_BASE_URL:-${DPANEL_BASE_URL:-$DEFAULT_BASE_URL}}"
+BASE_URL_SOURCE="default"
+if [[ -n "${PANEL_INSTALL_BASE_URL:-}" ]]; then
+  BASE_URL_SOURCE="PANEL_INSTALL_BASE_URL"
+elif [[ -n "${DPANEL_BASE_URL:-}" ]]; then
+  BASE_URL_SOURCE="DPANEL_BASE_URL"
+fi
+if [[ -n "${PANEL_DSCRIPT_BASE_URL:-}" ]]; then
+  DSCRIPT_BASE_URL="${PANEL_DSCRIPT_BASE_URL%/}"
+  DSCRIPT_BASE_URL_SOURCE="PANEL_DSCRIPT_BASE_URL"
+elif [[ "${BASE_URL%/}" == */dscript ]]; then
+  DSCRIPT_BASE_URL="${BASE_URL%/}"
+  DSCRIPT_BASE_URL_SOURCE="${BASE_URL_SOURCE}"
+else
+  DSCRIPT_BASE_URL="${BASE_URL%/}/dscript"
+  DSCRIPT_BASE_URL_SOURCE="${BASE_URL_SOURCE} + /dscript"
+fi
+TMP_DIR="$(mktemp -d)"
+
+#
+# Print a useful error message if any command fails.
+#
 on_error() {
   local exit_code="$?"
   local line_no="${1:-unknown}"
@@ -9,16 +48,653 @@ on_error() {
   printf '[HELP] Run "%s doctor" and inspect "%s/logs/install.log".\n' "${0##*/}" "${DPANEL_BASE_DIR:-/opt/dpanel}" >&2
 }
 
-trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
+#
+# Remove temporary downloaded bootstrap files after the command exits.
+#
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
 
+#
+# Download one required dscript file with curl or wget.
+#
+download_file() {
+  local url="$1"
+  local dest="$2"
+
+  mkdir -p "$(dirname "$dest")"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$dest"
+    return 0
+  fi
+
+  if command -v wget >/dev/null 2>&1; then
+    wget -qO "$dest" "$url"
+    return 0
+  fi
+
+  echo "curl or wget is required to run ${SCRIPT_NAME}" >&2
+  exit 1
+}
+
+install_system_packages() {
+  if [[ "${DSCRIPT_DRY_RUN:-false}" == "true" ]]; then
+    printf '[DRY-RUN] install packages:'
+    printf ' %s' "$@"
+    printf '\n'
+    return 0
+  fi
+
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y "$@"
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y "$@"
+  else
+    echo "No supported package manager found." >&2
+    return 1
+  fi
+}
+
+install_mail_services() {
+  install_system_packages postfix dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql
+}
+
+install_node_runtime() {
+  install_system_packages nodejs npm
+}
+
+restrict_user_to_ip() {
+  local username="$1"
+  local allowed_ip="$2"
+  local access_conf="/etc/security/access.conf"
+  local pam_sshd="/etc/pam.d/sshd"
+
+  if [[ "${DSCRIPT_DRY_RUN:-false}" == "true" ]]; then
+    printf '[DRY-RUN] restrict ssh user %s to source IP %s through pam_access\n' "$username" "$allowed_ip"
+    return 0
+  fi
+
+  [[ -f "$access_conf" ]] || touch "$access_conf"
+  sed -i "/^[+-][[:space:]]*:[[:space:]]*${username}[[:space:]]*:/d" "$access_conf"
+  {
+    printf '+ : %s : %s\n' "$username" "$allowed_ip"
+    printf '- : %s : ALL\n' "$username"
+  } >> "$access_conf"
+
+  if [[ -f "$pam_sshd" ]] && ! grep -Eq '^[[:space:]]*account[[:space:]]+required[[:space:]]+pam_access\.so' "$pam_sshd"; then
+    printf '\naccount required pam_access.so\n' >> "$pam_sshd"
+  fi
+
+  systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+}
+
+create_system_user_flow() {
+  local force_restrict="${1:-false}"
+  local username home shell allowed_ip restrict_ip
+
+  printf 'Username (or b to back): '
+  read -r username
+  [[ "$username" == "b" || "$username" == "B" || -z "$username" ]] && return 0
+  if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+    printf 'Invalid username.\n'
+    return 0
+  fi
+
+  printf 'Home path [/home/%s] (or b to back): ' "$username"
+  read -r home
+  [[ "$home" == "b" || "$home" == "B" ]] && return 0
+  home="${home:-/home/$username}"
+
+  printf 'Shell [/bin/bash] (or b to back): '
+  read -r shell
+  [[ "$shell" == "b" || "$shell" == "B" ]] && return 0
+  shell="${shell:-/bin/bash}"
+
+  if [[ "$force_restrict" == "true" ]]; then
+    restrict_ip="y"
+  else
+    printf 'Restrict this user to one source IP? [y/N]: '
+    read -r restrict_ip
+  fi
+  allowed_ip=""
+  if [[ "$restrict_ip" == "y" || "$restrict_ip" == "Y" ]]; then
+    printf 'Allowed source IP (or b to back): '
+    read -r allowed_ip
+    [[ "$allowed_ip" == "b" || "$allowed_ip" == "B" || -z "$allowed_ip" ]] && return 0
+    if [[ ! "$allowed_ip" =~ ^[0-9A-Fa-f:.]+$ ]]; then
+      printf 'Invalid IP address.\n'
+      return 0
+    fi
+  fi
+
+  if confirm_action "Create user ${username}" \
+    "filemanager user ensure ${username} --home ${home} --shell ${shell}" \
+    "${allowed_ip:+restrict ${username} SSH login to ${allowed_ip}}"; then
+    dscript_cli filemanager user ensure "$username" --home "$home" --shell "$shell"
+    if [[ -n "$allowed_ip" ]]; then
+      restrict_user_to_ip "$username" "$allowed_ip"
+    fi
+  fi
+}
+
+append_alias_args() {
+  local aliases_raw="$1"
+  local -n output_args="$2"
+  local alias_domain
+
+  aliases_raw="${aliases_raw//,/ }"
+  for alias_domain in $aliases_raw; do
+    [[ -n "$alias_domain" ]] && output_args+=(--alias "$alias_domain")
+  done
+}
+
+install_drust_service() {
+  if [[ "${DSCRIPT_DRY_RUN:-false}" == "true" ]]; then
+    printf '[DRY-RUN] install drust service: rustup build-essential pkg-config openssl ca-certificates certbot cargo build --release systemd enable/restart\n'
+    return 0
+  fi
+
+  bash /var/www/drust/deploy/install-service.sh
+}
+
+show_config_summary() {
+  printf '\nConfiguration summary\n'
+  printf '=====================\n'
+  printf 'Base URL:        %s (%s)\n' "$BASE_URL" "$BASE_URL_SOURCE"
+  printf 'Dscript URL:     %s (%s)\n' "$DSCRIPT_BASE_URL" "$DSCRIPT_BASE_URL_SOURCE"
+  printf 'Dscript dir:     %s\n' "$SCRIPT_DIR"
+  printf 'Panel app dir:   %s\n' "${PANEL_APP_DIR:-${SERVER_BASE_DIR:-/var/www/dpanel}}"
+  printf 'Dpanel base dir: %s\n' "${DPANEL_BASE_DIR:-/opt/dpanel}"
+  printf 'Modules env:     %s\n' "${PANEL_MODULES:-default sequence}"
+  printf 'Skip firewall:   %s\n' "${SKIP_FIREWALL:-false}"
+  printf 'Skip SSL:        %s\n' "${SKIP_SSL:-false}"
+  printf 'Dry run:         %s\n' "${DSCRIPT_DRY_RUN:-false}"
+}
+
+confirm_action() {
+  local title="$1"
+  shift
+  local answer
+
+  printf '\nPending action: %s\n' "$title"
+  if [[ $# -gt 0 ]]; then
+    printf 'Will run:\n'
+    printf '  %s\n' "$@"
+  fi
+  show_config_summary
+  printf '\nContinue? Type yes to run: '
+  read -r answer
+  [[ "$answer" == "yes" ]]
+}
+
+default_install_sequence() {
+  dscript_cli chain install apache nginx php mariadb supervisor
+  install_drust_service
+  dscript_cli chain install firewall fail2ban ssl
+  install_mail_services
+  install_node_runtime
+}
+
+run_interactive_menu() {
+  local choice web_choice php_choice ssl_choice mail_choice rust_choice security_choice user_choice panel_domain panel_aliases php_version ssl_domain ssl_root ssl_aliases include_www
+
+  while true; do
+    printf '\n'
+    printf 'dpanel interactive menu\n'
+    printf '=======================\n'
+    printf '1) Default Install (apache -> nginx -> php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs) | dpanel default-install\n'
+    printf '2) Default Update | dpanel chain update\n'
+    printf '3) Apache/Nginx menu | dpanel module apache install && dpanel module nginx install\n'
+    printf '4) PHP menu | dpanel php install all / dpanel php default <version>\n'
+    printf '5) mariadb install | dpanel module mariadb install\n'
+    printf '6) redis install | dpanel module redis install\n'
+    printf '7) supervisor install | dpanel module supervisor install\n'
+    printf '8) firewall install | dpanel module firewall install\n'
+    printf '9) fail2ban install | dpanel module fail2ban install\n'
+    printf '10) SSL menu | dpanel module ssl install / dpanel script run issue-ssl <domain> <root>\n'
+    printf '11) Rust/Drust menu | bash /var/www/drust/deploy/install-service.sh\n'
+    printf '12) Mail menu | apt install postfix dovecot-core / systemctl restart postfix dovecot\n'
+    printf '13) nodejs install | install packages: nodejs npm\n'
+    printf '14) User menu | dpanel filemanager user ensure <user> --home <path> --shell <shell>\n'
+    printf '15) Security menu | passwd root / dpanel script run disable-root-login\n'
+    printf '16) module list | dpanel module list\n'
+    printf '17) Maintenance scripts list | dpanel script list\n'
+    printf '18) Doctor check | dpanel doctor\n'
+    printf '19) Help | dpanel help\n'
+    printf '0) Exit\n'
+    printf 'Select option: '
+    read -r choice
+
+    case "$choice" in
+      1)
+        if confirm_action "Default Install" \
+          "chain install apache nginx php mariadb supervisor" \
+          "install rust/drust service" \
+          "chain install firewall fail2ban ssl" \
+          "install postfix dovecot" \
+          "install nodejs npm"; then
+          default_install_sequence
+        fi
+        ;;
+      2)
+        if confirm_action "Default Update" "chain update"; then
+          dscript_cli chain update
+        fi
+        ;;
+      3)
+        while true; do
+          printf '\n'
+          printf 'Apache/Nginx menu\n'
+          printf '=================\n'
+          printf '1) Install apache + nginx | dpanel module apache install && dpanel module nginx install\n'
+          printf '2) Update apache + nginx | dpanel module apache update && dpanel module nginx update\n'
+          printf '3) Reinstall apache + nginx | dpanel module apache reinstall && dpanel module nginx reinstall\n'
+          printf '4) Restore base apache/nginx web stack | dpanel script run fix-web-stack\n'
+          printf '5) Restore panel apache/nginx web stack | dpanel script run fix-panel-web-stack <domain> [--alias domain]\n'
+          printf '6) Restore root panel apache config | dpanel script run fix-dpanel-root <domain>\n'
+          printf '0) Back\n'
+          printf 'Select option: '
+          read -r web_choice
+
+          case "$web_choice" in
+            1)
+              if confirm_action "Install apache + nginx" "module apache install" "module nginx install"; then
+                dscript_cli module apache install
+                dscript_cli module nginx install
+              fi
+              ;;
+            2)
+              if confirm_action "Update apache + nginx" "module apache update" "module nginx update"; then
+                dscript_cli module apache update
+                dscript_cli module nginx update
+              fi
+              ;;
+            3)
+              if confirm_action "Reinstall apache + nginx" "module apache reinstall" "module nginx reinstall"; then
+                dscript_cli module apache reinstall
+                dscript_cli module nginx reinstall
+              fi
+              ;;
+            4)
+              if confirm_action "Restore base apache/nginx web stack" "script run fix-web-stack"; then
+                dscript_cli script run fix-web-stack
+              fi
+              ;;
+            5)
+              local panel_args=()
+              printf 'Panel URL/domain: '
+              read -r panel_domain
+              printf 'Aliases (comma/space separated, blank for none): '
+              read -r panel_aliases
+              append_alias_args "$panel_aliases" panel_args
+              if confirm_action "Restore panel apache/nginx web stack" "script run fix-panel-web-stack ${panel_domain} ${panel_args[*]}"; then
+                dscript_cli script run fix-panel-web-stack "$panel_domain" "${panel_args[@]}"
+              fi
+              ;;
+            6)
+              printf 'Panel URL/domain: '
+              read -r panel_domain
+              if confirm_action "Restore root panel apache config" "script run fix-dpanel-root ${panel_domain}"; then
+                dscript_cli script run fix-dpanel-root "$panel_domain"
+              fi
+              ;;
+            0) break ;;
+            *) printf 'Invalid option.\n' ;;
+          esac
+        done
+        ;;
+      4)
+        while true; do
+          printf '\n'
+          printf 'PHP menu\n'
+          printf '========\n'
+          printf '1) Install all supported PHP versions (7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5) | dpanel php install all\n'
+          printf '2) Update all PHP versions | dpanel php update all\n'
+          printf '3) Show installed PHP versions | dpanel php versions\n'
+          printf '4) PHP 8.3 set default | dpanel php default 8.3\n'
+          printf '5) PHP 8.4 set default | dpanel php default 8.4\n'
+          printf '6) Repair/reinstall specific PHP version | dpanel php reinstall <version>\n'
+          printf '0) Back\n'
+          printf 'Select option: '
+          read -r php_choice
+
+          case "$php_choice" in
+            1)
+              if confirm_action "Install all supported PHP versions" "php install all"; then
+                dscript_cli php install all
+              fi
+              ;;
+            2)
+              if confirm_action "Update all PHP versions" "php update all"; then
+                dscript_cli php update all
+              fi
+              ;;
+            3) dscript_cli php versions ;;
+            4)
+              if confirm_action "Set default PHP 8.3" "php default 8.3"; then
+                dscript_cli php default 8.3
+              fi
+              ;;
+            5)
+              if confirm_action "Set default PHP 8.4" "php default 8.4"; then
+                dscript_cli php default 8.4
+              fi
+              ;;
+            6)
+              printf 'PHP version to repair/reinstall (example: 8.3): '
+              read -r php_version
+              if [[ "$php_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+                if confirm_action "Repair/reinstall PHP ${php_version}" "php reinstall ${php_version}"; then
+                  dscript_cli php reinstall "$php_version"
+                fi
+              else
+                printf 'Invalid PHP version.\n'
+              fi
+              ;;
+            0) break ;;
+            *) printf 'Invalid option.\n' ;;
+          esac
+        done
+        ;;
+      5)
+        if confirm_action "Install mariadb" "module mariadb install"; then
+          dscript_cli module mariadb install
+        fi
+        ;;
+      6)
+        if confirm_action "Install redis" "module redis install"; then
+          dscript_cli module redis install
+        fi
+        ;;
+      7)
+        if confirm_action "Install supervisor" "module supervisor install"; then
+          dscript_cli module supervisor install
+        fi
+        ;;
+      8)
+        if confirm_action "Install firewall" "module firewall install"; then
+          dscript_cli module firewall install
+        fi
+        ;;
+      9)
+        if confirm_action "Install fail2ban" "module fail2ban install"; then
+          dscript_cli module fail2ban install
+        fi
+        ;;
+      10)
+        while true; do
+          printf '\n'
+          printf 'SSL menu\n'
+          printf '========\n'
+          printf '1) Install SSL module/certbot | dpanel module ssl install\n'
+          printf '2) Generate website SSL | dpanel script run issue-ssl <domain> <root> 0 [--alias domain]\n'
+          printf '3) Generate website SSL with www | dpanel script run issue-ssl <domain> <root> 1 [--alias domain]\n'
+          printf '0) Back\n'
+          printf 'Select option: '
+          read -r ssl_choice
+
+          case "$ssl_choice" in
+            1)
+              if confirm_action "Install SSL module/certbot" "module ssl install"; then
+                dscript_cli module ssl install
+              fi
+              ;;
+            2|3)
+              local ssl_args=()
+              printf 'Website URL/domain: '
+              read -r ssl_domain
+              printf 'Website root path: '
+              read -r ssl_root
+              printf 'Aliases (comma/space separated, blank for none): '
+              read -r ssl_aliases
+              include_www="0"
+              [[ "$ssl_choice" == "3" ]] && include_www="1"
+              append_alias_args "$ssl_aliases" ssl_args
+              if confirm_action "Generate website SSL" "script run issue-ssl ${ssl_domain} ${ssl_root} ${include_www} ${ssl_args[*]}"; then
+                dscript_cli script run issue-ssl "$ssl_domain" "$ssl_root" "$include_www" "${ssl_args[@]}"
+              fi
+              ;;
+            0) break ;;
+            *) printf 'Invalid option.\n' ;;
+          esac
+        done
+        ;;
+      11)
+        while true; do
+          printf '\n'
+          printf 'Rust/Drust menu\n'
+          printf '===============\n'
+          printf '1) Install rust toolchain + drust service | bash /var/www/drust/deploy/install-service.sh\n'
+          printf '2) Rebuild/reinstall drust service | bash /var/www/drust/deploy/install-service.sh\n'
+          printf '3) Restart drust service | systemctl restart drust.service\n'
+          printf '4) Status drust service | systemctl status drust.service --no-pager\n'
+          printf '5) Show drust logs | journalctl -u drust.service -n 100 --no-pager\n'
+          printf '0) Back\n'
+          printf 'Select option: '
+          read -r rust_choice
+
+          case "$rust_choice" in
+            1)
+              if confirm_action "Install rust toolchain + drust service" "bash /var/www/drust/deploy/install-service.sh"; then
+                install_drust_service
+              fi
+              ;;
+            2)
+              if confirm_action "Rebuild/reinstall drust service" "bash /var/www/drust/deploy/install-service.sh"; then
+                install_drust_service
+              fi
+              ;;
+            3)
+              if confirm_action "Restart drust service" "systemctl restart drust.service"; then
+                systemctl restart drust.service
+              fi
+              ;;
+            4) systemctl status drust.service --no-pager ;;
+            5) journalctl -u drust.service -n 100 --no-pager ;;
+            0) break ;;
+            *) printf 'Invalid option.\n' ;;
+          esac
+        done
+        ;;
+      12)
+        while true; do
+          printf '\n'
+          printf 'Mail menu\n'
+          printf '=========\n'
+          printf '1) Install postfix | apt/dnf/yum install postfix\n'
+          printf '2) Install dovecot | apt/dnf/yum install dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql\n'
+          printf '3) Restart postfix | systemctl restart postfix\n'
+          printf '4) Restart dovecot | systemctl restart dovecot\n'
+          printf '5) Status postfix | systemctl status postfix --no-pager\n'
+          printf '6) Status dovecot | systemctl status dovecot --no-pager\n'
+          printf '0) Back\n'
+          printf 'Select option: '
+          read -r mail_choice
+
+          case "$mail_choice" in
+            1)
+              if confirm_action "Install postfix" "install packages: postfix"; then
+                install_system_packages postfix
+              fi
+              ;;
+            2)
+              if confirm_action "Install dovecot" "install packages: dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql"; then
+                install_system_packages dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql
+              fi
+              ;;
+            3)
+              if confirm_action "Restart postfix" "systemctl restart postfix"; then
+                systemctl restart postfix
+              fi
+              ;;
+            4)
+              if confirm_action "Restart dovecot" "systemctl restart dovecot"; then
+                systemctl restart dovecot
+              fi
+              ;;
+            5) systemctl status postfix --no-pager ;;
+            6) systemctl status dovecot --no-pager ;;
+            0) break ;;
+            *) printf 'Invalid option.\n' ;;
+          esac
+        done
+        ;;
+      13)
+        if confirm_action "Install nodejs/npm" "install packages: nodejs npm"; then
+          install_node_runtime
+        fi
+        ;;
+      14)
+        while true; do
+          printf '\n'
+          printf 'User menu\n'
+          printf '=========\n'
+          printf '1) Create system user | dpanel filemanager user ensure <user> --home <path> --shell <shell>\n'
+          printf '2) Create system user with source IP restriction | dpanel filemanager user ensure <user> + pam_access\n'
+          printf '0) Back\n'
+          printf 'Select option: '
+          read -r user_choice
+
+          case "$user_choice" in
+            1) create_system_user_flow ;;
+            2)
+              create_system_user_flow true
+              ;;
+            0) break ;;
+            *) printf 'Invalid option.\n' ;;
+          esac
+        done
+        ;;
+      15)
+        while true; do
+          printf '\n'
+          printf 'Security menu\n'
+          printf '=============\n'
+          printf '1) Change root password | passwd root\n'
+          printf '2) Disable SSH root login | dpanel script run disable-root-login\n'
+          printf '0) Back\n'
+          printf 'Select option: '
+          read -r security_choice
+
+          case "$security_choice" in
+            1)
+              if confirm_action "Change root password" "passwd root"; then
+                passwd root
+              fi
+              ;;
+            2)
+              if confirm_action "Disable SSH root login" "script run disable-root-login"; then
+                dscript_cli script run disable-root-login
+              fi
+              ;;
+            0) break ;;
+            *) printf 'Invalid option.\n' ;;
+          esac
+        done
+        ;;
+      16) dscript_cli module list ;;
+      17) dscript_cli script list ;;
+      18) dscript_cli doctor ;;
+      19) dscript_cli help ;;
+      0) return 0 ;;
+      *) printf 'Invalid option.\n' ;;
+    esac
+  done
+}
+
+trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
+trap cleanup EXIT
+
+#
+# Locate this dpanel file so local release files can be loaded from the same
+# dscript directory.
+#
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
-# shellcheck disable=SC1091
-source "${SCRIPT_DIR}/bootstrap/core.sh"
-# shellcheck disable=SC1091
-source "${SCRIPT_DIR}/core/package-manager.sh"
-# shellcheck disable=SC1091
-source "${SCRIPT_DIR}/core/commands.sh"
+#
+# Default to temporary files. If the full dscript release is present, these
+# variables are replaced with local paths below.
+#
+bootstrap_core="$TMP_DIR/core.sh"
+package_manager="$TMP_DIR/package-manager.sh"
+commands="$TMP_DIR/commands.sh"
+downloaded_scripts="$TMP_DIR/scripts"
+downloaded_templates="$TMP_DIR/templates"
+downloaded_repository=""
 
-dscript_cli "$@"
+#
+# Prefer local release files. This is the normal path after installer.sh extracts
+# the release archive into /var/www/dscript.
+#
+if [[ -f "${SCRIPT_DIR}/bootstrap/core.sh" && -f "${SCRIPT_DIR}/core/package-manager.sh" && -f "${SCRIPT_DIR}/core/commands.sh" ]]; then
+  # A checkout or installed release can run directly without a network round-trip.
+  bootstrap_core="${SCRIPT_DIR}/bootstrap/core.sh"
+  package_manager="${SCRIPT_DIR}/core/package-manager.sh"
+  commands="${SCRIPT_DIR}/core/commands.sh"
+  downloaded_scripts="${SCRIPT_DIR}/scripts"
+  downloaded_templates="${SCRIPT_DIR}/repository/templates"
+  downloaded_repository="${SCRIPT_DIR}/repository"
+else
+  #
+  # Fallback path: this dpanel file was downloaded alone, so fetch the minimum
+  # runtime files needed to hand the command to dscript_cli.
+  #
+  download_file "$DSCRIPT_BASE_URL/bootstrap/core.sh" "$bootstrap_core"
+  download_file "$DSCRIPT_BASE_URL/core/package-manager.sh" "$package_manager"
+  download_file "$DSCRIPT_BASE_URL/core/commands.sh" "$commands"
+
+  mkdir -p "$downloaded_scripts" "$downloaded_templates"
+  for script_name in \
+    _drust-api create-admin-user create-demo-site database-request disable-root-login \
+    configure-phpmyadmin-signon fix-dpanel-root fix-panel-web-stack fix-web-stack install-roundcube-dovecot-mysql \
+    issue-ssl php-config-apply php-detect-config php-detect-extensions php-detect-versions \
+    reset-web-stack sync-vhost; do
+    download_file "$DSCRIPT_BASE_URL/scripts/${script_name}.sh" "$downloaded_scripts/${script_name}.sh"
+  done
+
+  for template_name in \
+    apache/site.conf fail2ban/jail.local nginx/laravel.conf php/pool.conf \
+    phpmyadmin/autologin.blade.php phpmyadmin/config.inc.php phpmyadmin/phpmyadminsignin.php \
+    roundcube/config.inc.php supervisor/panel-agent.conf webmail/autologin.blade.php; do
+    download_file "$DSCRIPT_BASE_URL/repository/templates/${template_name}" "$downloaded_templates/${template_name}"
+  done
+fi
+
+#
+# Export resolved paths so bootstrap/core.sh can install/update using the same
+# local or downloaded assets.
+#
+export DPANEL_BASE_URL="$DSCRIPT_BASE_URL"
+export DPANEL_DOWNLOADED_CORE="$bootstrap_core"
+export DPANEL_DOWNLOADED_PACKAGE_MANAGER="$package_manager"
+export DPANEL_DOWNLOADED_COMMANDS="$commands"
+export DPANEL_DOWNLOADED_SCRIPTS_DIR="$downloaded_scripts"
+export DPANEL_DOWNLOADED_TEMPLATES_DIR="$downloaded_templates"
+export DPANEL_DOWNLOADED_REPOSITORY_DIR="$downloaded_repository"
+export DPANEL_DSCRIPT_ENTRYPOINT="$SCRIPT_PATH"
+
+# shellcheck disable=SC1091
+source "$bootstrap_core"
+# shellcheck disable=SC1091
+source "$package_manager"
+# shellcheck disable=SC1091
+source "$commands"
+
+#
+# Final handover. From this point onward, all install, update, module and script
+# behavior is owned by dscript_cli in core/commands.sh.
+#
+if [[ "${PANEL_BOOTSTRAP_MODE:-}" != "" ]]; then
+  dscript_cli chain "$PANEL_BOOTSTRAP_MODE" "$@"
+elif [[ "${1:-}" == "default-install" ]]; then
+  default_install_sequence
+elif [[ $# -eq 0 ]]; then
+  run_interactive_menu
+else
+  dscript_cli "$@"
+fi

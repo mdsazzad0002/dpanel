@@ -70,7 +70,7 @@ cd /var/www
 sudo git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
 sudo chown -R "$USER:$USER" /var/www/dpanel-source
 cd dpanel-source
-sudo ./installer.sh chain install
+sudo ./installer.sh
 ```
 
 If normal `git clone` fails inside `/var/www` with `Permission denied`, that is
@@ -82,7 +82,7 @@ Alternative safe install flow:
 cd ~
 git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
 cd dpanel-source
-sudo ./installer.sh chain install
+sudo ./installer.sh
 ```
 
 After installation, check the stack:
@@ -97,8 +97,24 @@ sudo systemctl status apache2
 If the server already has this repository at `/var/www`, run:
 
 ```bash
-sudo /var/www/installer.sh chain install
+sudo /var/www/installer.sh
 ```
+
+With no arguments, `installer.sh` prepares `/var/www/dscript`, registers the
+`dpanel` command, then hands over to:
+
+```bash
+sudo /var/www/dscript/dpanel default-install
+```
+
+The default install sequence is:
+
+```text
+apache -> nginx -> php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs
+```
+
+Run `dpanel` to open the interactive menu. Every install/update action shows the
+exact command and waits for `yes` before it changes the server.
 
 ## 2. Why Permission Issues Happen
 
