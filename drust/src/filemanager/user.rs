@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -20,6 +21,7 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
     let action = args[0].clone();
     let username = args[1].clone();
     let mut home: Option<String> = None;
+    let mut password: Option<String> = None;
     let mut shell = "/bin/bash".to_string();
     let mut site_directory = "public_html".to_string();
     let mut iter = args.into_iter().skip(2);
@@ -36,6 +38,12 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
                     .next()
                     .ok_or_else(|| "Missing value for --shell".to_string())?;
             }
+            "--password" => {
+                password = Some(
+                    iter.next()
+                        .ok_or_else(|| "Missing value for --password".to_string())?,
+                );
+            }
             "--site-directory" => {
                 site_directory = iter
                     .next()
@@ -46,6 +54,10 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
     }
     match action.as_str() {
         "create" | "ensure" => create(&username, home.as_deref(), &shell, &site_directory),
+        "password" | "set-password" => {
+            let password = password.ok_or_else(|| "Missing password.".to_string())?;
+            set_password(&username, &password)
+        }
         _ => Err(format!("Unsupported filemanager user action: {action}")),
     }
 }
@@ -115,10 +127,47 @@ fn apply_directory_owner(username: &str, group: &str, path: &std::path::Path) {
     let _ = run_status("chmod", &["0755", path.to_string_lossy().as_ref()]);
 }
 
+fn set_password(username: &str, password: &str) -> Result<(), String> {
+    ensure_root()?;
+    if !valid_username(username) {
+        return Err(format!("Invalid username: {username}"));
+    }
+    if password.is_empty() {
+        return Err("Password cannot be empty.".into());
+    }
+    if !std::process::Command::new("id")
+        .args(["-u", username])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+    {
+        return Err(format!("User does not exist: {username}"));
+    }
+
+    let mut child = std::process::Command::new("chpasswd")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("failed to start chpasswd: {error}"))?;
+    if let Some(stdin) = child.stdin.as_mut() {
+        writeln!(stdin, "{username}:{password}")
+            .map_err(|error| format!("failed to write password: {error}"))?;
+    }
+    let status = child
+        .wait()
+        .map_err(|error| format!("failed waiting for chpasswd: {error}"))?;
+    if !status.success() {
+        return Err("Password configuration failed.".into());
+    }
+
+    info(&format!("password configured for {username}"));
+    Ok(())
+}
+
 #[derive(Deserialize)]
 pub(crate) struct Request {
     action: String,
     username: String,
+    password: Option<String>,
     home: Option<String>,
     shell: Option<String>,
     site_directory: Option<String>,
@@ -134,6 +183,9 @@ pub(crate) async fn handle(
     }
 
     let mut args = vec![request.action, request.username];
+    if let Some(password) = request.password {
+        args.extend(["--password".into(), password]);
+    }
     if let Some(home) = request.home {
         args.extend(["--home".into(), home]);
     }

@@ -351,17 +351,30 @@ class WebsiteController extends Controller
         return $redirectTarget()->with('success', $message !== '' ? $message : 'Vhost sync completed.');
     }
 
-    public function clearProjectCache(string $token, string $id): RedirectResponse
+    public function clearProjectCache(Request $request, string $token, string $id): RedirectResponse|JsonResponse
     {
+        $respond = function (bool $success, string $message, int $status = 200) use ($request, $id): RedirectResponse|JsonResponse {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => $success,
+                    'message' => $message,
+                ], $status);
+            }
+
+            return redirect()
+                ->route('websites.manage', $id)
+                ->with($success ? 'success' : 'error', $message);
+        };
+
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $rootPath = (string) ($website['root_path'] ?? '');
         if ($rootPath === '' || ! is_dir($rootPath)) {
-            return redirect()->route('websites.manage', $id)->with('error', 'Website root path is missing or inaccessible.');
+            return $respond(false, 'Website root path is missing or inaccessible.', 422);
         }
 
         $artisanPath = $this->resolveProjectArtisanPath($rootPath);
         if ($artisanPath === null) {
-            return redirect()->route('websites.manage', $id)->with('error', 'Laravel artisan file not found for this website.');
+            return $respond(false, 'Laravel artisan file not found for this website.', 422);
         }
 
         $projectPath = dirname($artisanPath);
@@ -369,7 +382,7 @@ class WebsiteController extends Controller
         $primary = $this->runProjectArtisanCommand($projectPath, 'optimize:clear', $siteOwner);
 
         if ($primary['success']) {
-            return redirect()->route('websites.manage', $id)->with('success', 'Project cache cleared successfully (optimize:clear).');
+            return $respond(true, 'Project cache cleared successfully (optimize:clear).');
         }
 
         $fallbackCommands = ['cache:clear', 'config:clear', 'route:clear', 'view:clear'];
@@ -379,11 +392,11 @@ class WebsiteController extends Controller
         $successCount = collect($fallbackResults)->filter(fn (array $result): bool => (bool) ($result['success'] ?? false))->count();
 
         if ($successCount === count($fallbackCommands)) {
-            return redirect()->route('websites.manage', $id)->with('success', 'Project cache cleared successfully (fallback commands).');
+            return $respond(true, 'Project cache cleared successfully (fallback commands).');
         }
 
         if ($successCount > 0) {
-            return redirect()->route('websites.manage', $id)->with('error', 'Project cache clear partially completed. Check file permissions and Laravel CLI access.');
+            return $respond(false, 'Project cache clear partially completed. Check file permissions and Laravel CLI access.', 422);
         }
 
         $errorDetails = trim((string) ($primary['output'] ?? ''));
@@ -392,7 +405,7 @@ class WebsiteController extends Controller
         }
         $suffix = $errorDetails !== '' ? " Error: {$errorDetails}" : '';
 
-        return redirect()->route('websites.manage', $id)->with('error', 'Project cache clear failed.'.$suffix);
+        return $respond(false, 'Project cache clear failed.'.$suffix, 422);
     }
 
     /**
@@ -493,6 +506,7 @@ class WebsiteController extends Controller
             'openUploadTab' => $request->boolean('open_upload', false),
             'openEditorModal' => $request->boolean('open_editor', false),
             'openEditorPage' => $request->boolean('editor_page', false),
+            'hasProjectArtisan' => $this->resolveProjectArtisanPath($directory) !== null,
             'directoryTree' => $directoryTree,
             'items' => $items,
             'selectedFile' => $selectedFile,
@@ -647,32 +661,48 @@ class WebsiteController extends Controller
 
         $validated = $request->validate([
             'path' => ['nullable', 'string', 'max:1500'],
-            'upload' => ['required', 'file', 'max:'.$uploadMaxKilobytes],
+            'upload' => ['nullable', 'file', 'max:'.$uploadMaxKilobytes],
+            'uploads' => ['nullable', 'array', 'max:100'],
+            'uploads.*' => ['file', 'max:'.$uploadMaxKilobytes],
         ]);
 
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
         $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
         $currentPath = $this->sanitizeRelativePath((string) ($validated['path'] ?? ''));
 
-        $uploaded = $request->file('upload');
-        if ($uploaded === null) {
+        $uploadedFiles = $request->file('uploads', []);
+        if (! is_array($uploadedFiles)) {
+            $uploadedFiles = [];
+        }
+        if ($request->hasFile('upload')) {
+            $uploadedFiles[] = $request->file('upload');
+        }
+        $uploadedFiles = array_values(array_filter($uploadedFiles));
+
+        if ($uploadedFiles === []) {
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('error', 'Upload file not found.');
         }
 
-        $filename = $this->sanitizeFilename((string) $uploaded->getClientOriginalName());
-        if ($filename === '') {
-            $filename = 'uploaded-file';
-        }
-
-        $targetPath = $this->resolvePathInsideBase($basePath, $this->sanitizeRelativePath(trim($currentPath.'/'.$filename, '/')));
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
         try {
-            $this->filemanagerService->uploadFile($siteOwner, $targetPath, $uploaded->getPathname());
+            foreach ($uploadedFiles as $index => $uploaded) {
+                $filename = $this->sanitizeFilename((string) $uploaded->getClientOriginalName());
+                if ($filename === '') {
+                    $filename = 'uploaded-file-'.($index + 1);
+                }
+
+                $targetPath = $this->resolvePathInsideBase($basePath, $this->sanitizeRelativePath(trim($currentPath.'/'.$filename, '/')));
+                $this->filemanagerService->uploadFile($siteOwner, $targetPath, $uploaded->getPathname());
+            }
         } catch (\Throwable $e) {
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('error', 'Failed to upload file. '.$e->getMessage());
         }
 
-        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('success', 'File uploaded successfully.');
+        $message = count($uploadedFiles) === 1
+            ? 'File uploaded successfully.'
+            : count($uploadedFiles).' files uploaded successfully.';
+
+        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('success', $message);
     }
 
     public function changePermissions(Request $request, string $token, string $id): RedirectResponse
@@ -696,14 +726,17 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Item not found.');
         }
 
-        $mode = octdec((string) $validated['permissions']);
         $recursive = (bool) ($validated['recursive'] ?? false);
-        $changed = $recursive && is_dir($itemPath)
-            ? $this->applyPermissionsRecursively($itemPath, $mode)
-            : @chmod($itemPath, $mode);
-
-        if (! $changed) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to change permissions.');
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+        try {
+            $this->filemanagerService->changePermissions(
+                $siteOwner,
+                $itemPath,
+                (string) $validated['permissions'],
+                $recursive && is_dir($itemPath)
+            );
+        } catch (\Throwable $e) {
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to change permissions. '.$e->getMessage());
         }
 
         $message = $recursive && is_dir($itemPath)
@@ -954,7 +987,7 @@ class WebsiteController extends Controller
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Zip created successfully.');
     }
 
-    public function unzipItem(Request $request, string $token, string $id): RedirectResponse
+    public function unzipItem(Request $request, string $token, string $id): RedirectResponse|JsonResponse
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
 
@@ -969,15 +1002,28 @@ class WebsiteController extends Controller
         $zipRelative = $this->sanitizeRelativePath((string) $validated['zip_path']);
         $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
         $zipPath = $this->resolvePathInsideBase($basePath, $zipRelative);
+        $destinationPath = $this->resolvePathInsideBase($basePath, $currentPath);
 
         if (! is_file($zipPath) || ! str_ends_with(strtolower($zipPath), '.zip')) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Valid zip file not found.'], 422);
+            }
+
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Valid zip file not found.');
         }
 
         try {
-            $this->filemanagerService->unzipFile($siteOwner, $zipPath);
+            $this->filemanagerService->unzipFile($siteOwner, $zipPath, $destinationPath);
         } catch (\Throwable $e) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Failed to extract zip. '.$e->getMessage()], 422);
+            }
+
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to extract zip. '.$e->getMessage());
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Zip extracted successfully.']);
         }
 
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Zip extracted successfully.');
@@ -1187,10 +1233,7 @@ class WebsiteController extends Controller
             ];
         }
 
-        $phpBinary = trim((string) PHP_BINARY);
-        if ($phpBinary === '') {
-            $phpBinary = 'php';
-        }
+        $phpBinary = $this->resolvePhpCliBinary();
 
         $snippet = sprintf(
             'cd %s && %s artisan %s',
@@ -1239,6 +1282,45 @@ class WebsiteController extends Controller
             'output' => trim(implode("\n", $directOutput)),
             'exit_code' => $directExitCode,
         ];
+    }
+
+    protected function resolvePhpCliBinary(): string
+    {
+        $candidates = [
+            defined('PHP_CLI_BINARY') ? (string) PHP_CLI_BINARY : '',
+            trim((string) PHP_BINARY),
+            PHP_BINDIR ? rtrim((string) PHP_BINDIR, '/').'/php' : '',
+            '/usr/bin/php',
+            '/usr/local/bin/php',
+            '/usr/bin/php8.4',
+            '/usr/bin/php8.3',
+            '/usr/bin/php8.2',
+            '/usr/bin/php8.1',
+            '/usr/bin/php8.0',
+        ];
+
+        foreach ($candidates as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate === '') {
+                continue;
+            }
+
+            $basename = basename($candidate);
+            if (str_starts_with($basename, 'php-fpm')) {
+                continue;
+            }
+
+            if (str_contains($candidate, '/')) {
+                if (is_executable($candidate)) {
+                    return $candidate;
+                }
+                continue;
+            }
+
+            return $candidate;
+        }
+
+        return 'php';
     }
 
     /**
@@ -4233,8 +4315,12 @@ CONF;
     {
         $filename = trim(str_replace(['\\', '/'], '-', $filename));
         $filename = preg_replace('/[^a-zA-Z0-9._-]/', '-', $filename) ?? '';
+        $filename = trim($filename, '-');
+        if ($filename === '.' || $filename === '..' || trim($filename, '.') === '') {
+            return '';
+        }
 
-        return trim($filename, '-.');
+        return $filename;
     }
 
     protected function formatPermissions(string $path): string

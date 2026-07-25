@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Website;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -73,16 +75,31 @@ class ApacheController extends Controller
         ]);
     }
 
-    public function runAction(Request $request): RedirectResponse
+    public function runAction(Request $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
-            'action' => ['required', 'in:test,start,stop,restart,reload,status,renew_ssl'],
+            'action' => ['required', 'in:test,start,restart,reload,status,renew_ssl'],
         ]);
 
         $apache = $this->apacheRuntimeInfo();
+        $action = (string) $validated['action'];
         [$command, $label] = $this->buildCommandForAction((string) $validated['action'], $apache);
         if ($command === '') {
-            return redirect()->route('apache.index')->with('error', 'Action is not supported on this server.');
+            return $this->actionResponse($request, false, 'Action is not supported on this server.', 'Unsupported action', 422);
+        }
+
+        if ((string) ($apache['os_family'] ?? '') !== 'Windows') {
+            $result = $this->runApacheActionViaApi($action);
+            $message = trim((string) ($result['output'] ?? ''));
+            if ($message === '') {
+                $message = $result['success'] ? 'Command completed.' : 'Command failed.';
+            }
+
+            if (! $result['success']) {
+                return $this->actionResponse($request, false, $label.":\n".$message, $label, 422);
+            }
+
+            return $this->actionResponse($request, true, $label." completed.\n".$message, $label);
         }
 
         $result = Process::timeout(180)->run($command);
@@ -90,18 +107,69 @@ class ApacheController extends Controller
         $message = $output !== '' ? $output : ($result->successful() ? 'Command completed.' : 'Command failed.');
 
         if (! $result->successful()) {
-            return redirect()->route('apache.index')->with('error', $label.":\n".$message);
+            return $this->actionResponse($request, false, $label.":\n".$message, $label, 422);
         }
 
-        return redirect()->route('apache.index')->with('success', $label." completed.\n".$message);
+        return $this->actionResponse($request, true, $label." completed.\n".$message, $label);
     }
 
-    public function syncSharedWebsites(): RedirectResponse
+    private function actionResponse(Request $request, bool $success, string $message, string $label, int $status = 200): RedirectResponse|JsonResponse
+    {
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => $success,
+                'message' => $message,
+                'label' => $label,
+            ], $status);
+        }
+
+        return redirect()
+            ->route('apache.index')
+            ->with($success ? 'success' : 'error', $message);
+    }
+
+    /**
+     * @return array{success: bool, output: string}
+     */
+    private function runApacheActionViaApi(string $action): array
+    {
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        if ($baseUrl === '') {
+            return ['success' => false, 'output' => 'Execution API is not configured.'];
+        }
+
+        $request = Http::acceptJson()
+            ->asJson()
+            ->timeout((int) config('serverpanel.execution_api_timeout', 60));
+        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($token !== '') {
+            $request = $request->withToken($token);
+        }
+
+        try {
+            $response = $request->post(rtrim($baseUrl, '/').'/api/v1/apache/action', [
+                'action' => $action,
+            ]);
+            $json = $response->json();
+            $json = is_array($json) ? $json : [];
+            $data = is_array($json['data'] ?? null) ? $json['data'] : [];
+            $output = trim((string) ($data['output'] ?? $json['message'] ?? $response->body()));
+
+            return [
+                'success' => $response->successful() && (bool) ($json['success'] ?? false),
+                'output' => $output,
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'output' => $e->getMessage()];
+        }
+    }
+
+    public function syncSharedWebsites(Request $request): RedirectResponse|JsonResponse
     {
         $apache = $this->apacheRuntimeInfo();
         $target = trim((string) ($apache['shared_vhost_file'] ?? ''));
         if ($target === '') {
-            return redirect()->route('apache.index')->with('error', 'Shared vhost file path is not configured.');
+            return $this->actionResponse($request, false, 'Shared vhost file path is not configured.', 'Shared VHost sync', 422);
         }
 
         $websites = Website::query()->orderBy('domain')->get();
@@ -127,28 +195,65 @@ class ApacheController extends Controller
             ...$entries,
         ]);
 
+        if ((string) ($apache['os_family'] ?? '') !== 'Windows') {
+            $result = $this->writeSharedVhostViaApi($target, $contents);
+            if (! $result['success']) {
+                return $this->actionResponse($request, false, 'Shared websites config failed: '.$result['output'], 'Shared VHost sync', 422);
+            }
+
+            $message = trim($result['output']) !== ''
+                ? "Shared websites Apache config generated successfully.\n".$result['output']
+                : 'Shared websites Apache config generated successfully.';
+
+            return $this->actionResponse($request, true, $message, 'Shared VHost sync');
+        }
+
         try {
             File::ensureDirectoryExists(dirname($target));
             File::put($target, $contents);
         } catch (\Throwable $e) {
-            return redirect()->route('apache.index')->with('error', 'Cannot write Apache config file: '.$e->getMessage());
+            return $this->actionResponse($request, false, 'Cannot write Apache config file: '.$e->getMessage(), 'Shared VHost sync', 422);
         }
 
-        $testCommand = $this->buildCommandForAction('test', $apache)[0];
-        if ($testCommand !== '') {
-            $testResult = Process::timeout(120)->run($testCommand);
-            if (! $testResult->successful()) {
-                $testOutput = trim($testResult->output()."\n".$testResult->errorOutput());
+        return $this->actionResponse($request, true, 'Shared websites Apache config generated successfully.', 'Shared VHost sync');
+    }
 
-                return redirect()
-                    ->route('apache.index')
-                    ->with('error', "Shared websites config generated, but Apache test failed:\n".$testOutput);
-            }
+    /**
+     * @return array{success: bool, output: string}
+     */
+    private function writeSharedVhostViaApi(string $path, string $content): array
+    {
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        if ($baseUrl === '') {
+            return ['success' => false, 'output' => 'Execution API is not configured.'];
         }
 
-        return redirect()
-            ->route('apache.index')
-            ->with('success', 'Shared websites Apache config generated successfully.');
+        $request = Http::acceptJson()
+            ->asJson()
+            ->timeout((int) config('serverpanel.execution_api_timeout', 60));
+        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($token !== '') {
+            $request = $request->withToken($token);
+        }
+
+        try {
+            $response = $request->post(rtrim($baseUrl, '/').'/api/v1/apache/shared-vhost', [
+                'path' => $path,
+                'content' => $content,
+                'reload' => true,
+            ]);
+            $json = $response->json();
+            $json = is_array($json) ? $json : [];
+            $data = is_array($json['data'] ?? null) ? $json['data'] : [];
+            $output = trim((string) ($data['output'] ?? $json['message'] ?? $response->body()));
+
+            return [
+                'success' => $response->successful() && (bool) ($json['success'] ?? false),
+                'output' => $output,
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'output' => $e->getMessage()];
+        }
     }
 
     /**

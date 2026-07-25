@@ -296,6 +296,10 @@ run_interactive_menu() {
           printf '4) Restore base apache/nginx web stack | dpanel script run fix-web-stack\n'
           printf '5) Restore panel apache/nginx web stack | dpanel script run fix-panel-web-stack <domain> [--alias domain]\n'
           printf '6) Restore root panel apache config | dpanel script run fix-dpanel-root <domain>\n'
+          printf '7) Start apache + nginx | dpanel module apache start && dpanel module nginx start\n'
+          printf '8) Stop apache + nginx | dpanel module apache stop && dpanel module nginx stop\n'
+          printf '9) Reload apache + nginx | dpanel module apache reload && dpanel module nginx reload\n'
+          printf '10) Apache/nginx status | dpanel module apache status && dpanel module nginx status\n'
           printf '0) Back\n'
           printf 'Select option: '
           read -r web_choice
@@ -341,6 +345,28 @@ run_interactive_menu() {
               if confirm_action "Restore root panel apache config" "script run fix-dpanel-root ${panel_domain}"; then
                 dscript_cli script run fix-dpanel-root "$panel_domain"
               fi
+              ;;
+            7)
+              if confirm_action "Start apache + nginx" "module apache start" "module nginx start"; then
+                dscript_cli module apache start
+                dscript_cli module nginx start
+              fi
+              ;;
+            8)
+              if confirm_action "Stop apache + nginx" "module apache stop" "module nginx stop"; then
+                dscript_cli module apache stop
+                dscript_cli module nginx stop
+              fi
+              ;;
+            9)
+              if confirm_action "Reload apache + nginx" "module apache reload" "module nginx reload"; then
+                dscript_cli module apache reload
+                dscript_cli module nginx reload
+              fi
+              ;;
+            10)
+              dscript_cli module apache status
+              dscript_cli module nginx status
               ;;
             0) break ;;
             *) printf 'Invalid option.\n' ;;
@@ -651,7 +677,7 @@ else
   mkdir -p "$downloaded_scripts" "$downloaded_templates"
   for script_name in \
     _drust-api create-admin-user create-demo-site database-request disable-root-login \
-    configure-phpmyadmin-signon fix-dpanel-root fix-panel-web-stack fix-web-stack install-roundcube-dovecot-mysql \
+    configure-phpmyadmin-signon set-system-user-password set-panel-domain fix-dpanel-root fix-panel-web-stack fix-web-stack install-roundcube-dovecot-mysql \
     issue-ssl php-config-apply php-detect-config php-detect-extensions php-detect-versions \
     reset-web-stack sync-vhost; do
     download_file "$DSCRIPT_BASE_URL/scripts/${script_name}.sh" "$downloaded_scripts/${script_name}.sh"

@@ -41,6 +41,11 @@ class DashboardController extends Controller
         $system = $this->systemSnapshot();
 
         return [
+            'hostname' => $this->serverHostname(),
+            'server_ip' => $this->serverIpAddress(),
+            'os' => $this->serverOsName(),
+            'uptime' => $this->serverUptime(),
+            'cpu_cores' => $this->cpuCoreCount(),
             'cpu_load_percent' => $system['cpu_load_percent'],
             'memory_used_mb' => $system['memory_used_mb'],
             'memory_total_mb' => $system['memory_total_mb'],
@@ -54,6 +59,7 @@ class DashboardController extends Controller
             'cron_jobs_active' => $cronJobs,
             'services' => [
                 'apache' => $this->serviceStatus('apache2'),
+                'nginx' => $this->serviceStatus('nginx'),
                 'mail' => $this->serviceStatus('postfix'),
                 'dovecot' => $this->serviceStatus('dovecot'),
                 'database' => $this->databaseServiceStatus(),
@@ -202,14 +208,40 @@ class DashboardController extends Controller
             return 'sqlite';
         }
 
-        if ($this->serviceStatus('mariadb') === 'running') {
+        if ($this->databaseServiceIsRunning(['mariadb', 'mysql', 'mysqld'])) {
             return 'mariadb';
         }
-        if ($this->serviceStatus('mysql') === 'running') {
-            return 'mysql';
+
+        try {
+            DB::connection()->getPdo();
+            if (str_contains(strtolower($default), 'mysql') || str_contains(strtolower($default), 'mariadb')) {
+                return 'mariadb';
+            }
+        } catch (\Throwable $e) {
+            // Fall through to configured driver label.
         }
 
         return $default;
+    }
+
+    /**
+     * @param array<int, string> $services
+     */
+    private function databaseServiceIsRunning(array $services): bool
+    {
+        foreach ($services as $service) {
+            if ($this->serviceStatus($service) === 'running') {
+                return true;
+            }
+        }
+
+        $process = @shell_exec('pgrep -x mariadbd >/dev/null 2>&1 || pgrep -x mysqld >/dev/null 2>&1; printf "%s" "$?"');
+        if (is_string($process) && trim($process) === '0') {
+            return true;
+        }
+
+        $socket = @shell_exec('test -S /run/mysqld/mysqld.sock || test -S /var/run/mysqld/mysqld.sock; printf "%s" "$?"');
+        return is_string($socket) && trim($socket) === '0';
     }
 
     private function serviceStatus(string $service): string
@@ -256,6 +288,87 @@ class DashboardController extends Controller
         }
 
         return max(0, (int) trim($out));
+    }
+
+    private function serverHostname(): string
+    {
+        $hostname = gethostname();
+        if (is_string($hostname) && trim($hostname) !== '') {
+            return trim($hostname);
+        }
+
+        $out = @shell_exec('hostname 2>/dev/null');
+        return is_string($out) && trim($out) !== '' ? trim($out) : 'unknown';
+    }
+
+    private function serverIpAddress(): string
+    {
+        $out = @shell_exec("hostname -I 2>/dev/null | awk '{print $1}'");
+        if (is_string($out) && filter_var(trim($out), FILTER_VALIDATE_IP)) {
+            return trim($out);
+        }
+
+        $out = @shell_exec("ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i==\"src\") {print $(i+1); exit}}'");
+        if (is_string($out) && filter_var(trim($out), FILTER_VALIDATE_IP)) {
+            return trim($out);
+        }
+
+        return (string) ($this->requestServerValue('SERVER_ADDR') ?: 'unknown');
+    }
+
+    private function serverOsName(): string
+    {
+        $release = @file_get_contents('/etc/os-release');
+        if (is_string($release) && preg_match('/^PRETTY_NAME=(.+)$/m', $release, $match) === 1) {
+            return trim((string) $match[1], " \t\n\r\0\x0B\"'");
+        }
+
+        return PHP_OS_FAMILY.' '.php_uname('r');
+    }
+
+    private function serverUptime(): string
+    {
+        $uptime = @file_get_contents('/proc/uptime');
+        if (is_string($uptime) && preg_match('/^([\d.]+)/', $uptime, $match) === 1) {
+            return $this->formatDuration((int) floor((float) $match[1]));
+        }
+
+        $out = @shell_exec('uptime -p 2>/dev/null');
+        return is_string($out) && trim($out) !== '' ? trim($out) : 'unknown';
+    }
+
+    private function cpuCoreCount(): int
+    {
+        $cores = (int) trim((string) @shell_exec('nproc 2>/dev/null'));
+        return $cores > 0 ? $cores : 1;
+    }
+
+    private function formatDuration(int $seconds): string
+    {
+        $days = intdiv($seconds, 86400);
+        $seconds %= 86400;
+        $hours = intdiv($seconds, 3600);
+        $seconds %= 3600;
+        $minutes = intdiv($seconds, 60);
+
+        $parts = [];
+        if ($days > 0) {
+            $parts[] = $days.'d';
+        }
+        if ($hours > 0) {
+            $parts[] = $hours.'h';
+        }
+        if ($minutes > 0 || $parts === []) {
+            $parts[] = $minutes.'m';
+        }
+
+        return implode(' ', $parts);
+    }
+
+    private function requestServerValue(string $key): string
+    {
+        $value = $_SERVER[$key] ?? '';
+        return is_string($value) ? trim($value) : '';
     }
 
     /**

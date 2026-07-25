@@ -26,6 +26,7 @@ const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]
 const actionMessage = ref('');
 const actionMessageType = ref('success');
 const actionLoading = ref(false);
+const cacheClearLoading = ref(false);
 
 const toNumber = (value) => {
     const parsed = Number(value);
@@ -111,7 +112,7 @@ const serviceColorClasses = {
 const quickActions = computed(() => [
     { label: 'Edit Website', icon: 'bi-pencil-square', href: panelRoute('websites.edit', { id: props.website.id }), color: 'slate', method: 'get' },
     { label: 'Sync VHost', icon: 'bi-arrow-repeat', action: 'syncVhost', color: 'blue' },
-    { label: 'Clear Cache', icon: 'bi-trash3', href: panelRoute('websites.project-cache.clear', { id: props.website.id }), color: 'red', method: 'post' },
+    { label: 'Clear Cache', icon: 'bi-trash3', action: 'clearCache', color: 'red' },
     { label: 'File Manager', icon: 'bi-folder2-open', href: panelRoute('websites.filemanager', { id: props.website.id }), color: 'emerald', method: 'get' },
     { label: 'Back to List', icon: 'bi-arrow-left', href: panelRoute('websites.list'), color: 'slate', method: 'get' },
 ]);
@@ -187,6 +188,42 @@ const syncVhost = async () => {
         actionMessage.value = String(error?.message || error?.errors?.vhost_sync || 'Live vhost sync failed.');
     } finally {
         actionLoading.value = false;
+    }
+};
+
+const clearProjectCache = async () => {
+    if (cacheClearLoading.value) {
+        return;
+    }
+
+    actionMessage.value = '';
+    cacheClearLoading.value = true;
+
+    try {
+        const response = await fetch(panelRoute('websites.project-cache.clear', { id: props.website.id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({}),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw data;
+        }
+
+        actionMessageType.value = 'success';
+        actionMessage.value = String(data.message || 'Project cache cleared successfully.');
+    } catch (error) {
+        actionMessageType.value = 'error';
+        actionMessage.value = String(error?.message || 'Project cache clear failed.');
+    } finally {
+        cacheClearLoading.value = false;
     }
 };
 </script>
@@ -346,18 +383,18 @@ const syncVhost = async () => {
                                     {{ action.label }}
                                 </Link>
                                 <button
-                                    v-for="action in quickActions.filter((item) => item.action === 'syncVhost')"
+                                    v-for="action in quickActions.filter((item) => item.action === 'syncVhost' || item.action === 'clearCache')"
                                     :key="action.label"
                                     type="button"
-                                    :disabled="actionLoading"
+                                    :disabled="action.action === 'syncVhost' ? actionLoading : cacheClearLoading"
                                     :class="[
                                         'flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60',
                                         quickActionColorClasses[action.color] || quickActionColorClasses.slate,
                                     ]"
-                                    @click="syncVhost"
+                                    @click="action.action === 'syncVhost' ? syncVhost() : clearProjectCache()"
                                 >
                                     <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
-                                    {{ action.label }}
+                                    {{ action.action === 'clearCache' && cacheClearLoading ? 'Clearing...' : action.label }}
                                 </button>
                             </div>
                         </div>

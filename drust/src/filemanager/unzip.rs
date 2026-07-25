@@ -14,8 +14,10 @@ use axum::{
 use serde::Deserialize;
 
 use super::common::{
-    apply_owner_and_mode, ensure_canonical_inside_home, validate_account, validate_user_path,
+    ensure_canonical_inside_home, ensure_directory_inside_home, validate_account,
+    validate_user_path,
 };
+use crate::app::run_status;
 
 const DEFAULT_MAX_ENTRIES: usize = 100_000;
 const DEFAULT_MAX_EXPANDED_BYTES: u64 = 20 * 1024 * 1024 * 1024;
@@ -24,10 +26,15 @@ const DEFAULT_MAX_EXPANDED_BYTES: u64 = 20 * 1024 * 1024 * 1024;
 pub(crate) struct Request {
     username: String,
     path: String,
+    destination: Option<String>,
 }
 
-pub fn unzip_user_archive(username: &str, archive: &str) -> Result<(), String> {
-    let (_, canonical_home, group) = validate_account(username)?;
+pub fn unzip_user_archive(
+    username: &str,
+    archive: &str,
+    destination: Option<&str>,
+) -> Result<(), String> {
+    let (user_home, canonical_home, group) = validate_account(username)?;
     let archive_path = validate_user_path(username, archive)?;
     if !archive_path.is_file() {
         return Err(format!("Zip archive not found: {}", archive_path.display()));
@@ -43,11 +50,25 @@ pub fn unzip_user_archive(username: &str, archive: &str) -> Result<(), String> {
 
     let canonical_archive =
         ensure_canonical_inside_home(&canonical_home, &archive_path, "Zip archive")?;
-    let extract_root = archive_path
-        .parent()
-        .ok_or_else(|| "Zip archive parent is missing.".to_string())?;
-    let canonical_root =
-        ensure_canonical_inside_home(&canonical_home, extract_root, "Extract folder")?;
+    let canonical_root = match destination.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(destination) => {
+            let destination_path = validate_user_path(username, destination)?;
+            ensure_directory_inside_home(
+                username,
+                &group,
+                &user_home,
+                &canonical_home,
+                &destination_path,
+                "Extract folder",
+            )?
+        }
+        None => {
+            let extract_root = archive_path
+                .parent()
+                .ok_or_else(|| "Zip archive parent is missing.".to_string())?;
+            ensure_canonical_inside_home(&canonical_home, extract_root, "Extract folder")?
+        }
+    };
     if !canonical_root.is_dir() {
         return Err("Extract target is not a folder.".into());
     }
@@ -70,19 +91,22 @@ pub fn unzip_user_archive(username: &str, archive: &str) -> Result<(), String> {
         if relative.as_os_str().is_empty() {
             continue;
         }
+        if is_symlink_entry(&entry) {
+            continue;
+        }
 
         if entry.is_dir() {
-            ensure_directory_tree(&canonical_root, &relative, username, &group)?;
+            ensure_directory_tree(&canonical_root, &relative)?;
             continue;
         }
 
         let parent_relative = relative.parent().unwrap_or_else(|| Path::new(""));
-        let parent = ensure_directory_tree(&canonical_root, parent_relative, username, &group)?;
+        let parent = ensure_directory_tree(&canonical_root, parent_relative)?;
         let target = canonical_root.join(&relative);
         if target == canonical_archive {
             return Err("Zip archive cannot overwrite itself during extraction.".into());
         }
-        reject_unsafe_existing_target(&target)?;
+        validate_replaceable_existing_target(&target)?;
 
         let temporary = parent.join(format!(
             ".dpanel-unzip-{}-{index}-{}",
@@ -108,7 +132,6 @@ pub fn unzip_user_archive(username: &str, archive: &str) -> Result<(), String> {
             output
                 .flush()
                 .map_err(|e| format!("failed to flush {}: {e}", relative.display()))?;
-            apply_owner_and_mode(username, &group, &temporary, "0644")?;
             fs::rename(&temporary, &target)
                 .map_err(|e| format!("failed to install {}: {e}", target.display()))?;
             Ok(())
@@ -119,6 +142,8 @@ pub fn unzip_user_archive(username: &str, archive: &str) -> Result<(), String> {
         }
         extract_result?;
     }
+
+    fix_extracted_tree(username, &group, &canonical_root)?;
 
     info(&format!(
         "zip extracted: {} -> {}",
@@ -146,12 +171,6 @@ fn validate_archive<R: io::Read + io::Seek>(
             .by_index(index)
             .map_err(|e| format!("failed to inspect zip entry #{index}: {e}"))?;
         safe_entry_path(&entry, index)?;
-        if is_symlink_entry(&entry) {
-            return Err(format!(
-                "Zip contains a symbolic link entry: {}",
-                entry.name()
-            ));
-        }
         declared_size = declared_size.saturating_add(entry.size());
         if declared_size > max_expanded_bytes {
             return Err("Zip expanded data exceeds the server limit.".into());
@@ -183,12 +202,7 @@ fn is_symlink_entry<R: io::Read>(entry: &zip::read::ZipFile<'_, R>) -> bool {
         .unwrap_or(false)
 }
 
-fn ensure_directory_tree(
-    root: &Path,
-    relative: &Path,
-    username: &str,
-    group: &str,
-) -> Result<PathBuf, String> {
+fn ensure_directory_tree(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     let mut current = root.to_path_buf();
     for component in relative.components() {
         let Component::Normal(name) = component else {
@@ -215,7 +229,6 @@ fn ensure_directory_tree(
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 fs::create_dir(&current)
                     .map_err(|e| format!("failed to create {}: {e}", current.display()))?;
-                apply_owner_and_mode(username, group, &current, "0755")?;
             }
             Err(e) => return Err(format!("failed to inspect {}: {e}", current.display())),
         }
@@ -223,7 +236,90 @@ fn ensure_directory_tree(
     Ok(current)
 }
 
-fn reject_unsafe_existing_target(target: &Path) -> Result<(), String> {
+fn fix_extracted_tree(username: &str, group: &str, root: &Path) -> Result<(), String> {
+    let root = root.to_string_lossy();
+    run_status(
+        "chown",
+        &["-R", &format!("{username}:{group}"), root.as_ref()],
+    )?;
+    run_status(
+        "find",
+        &[
+            root.as_ref(),
+            "-type",
+            "d",
+            "-exec",
+            "chmod",
+            "0755",
+            "{}",
+            "+",
+        ],
+    )?;
+    run_status(
+        "find",
+        &[
+            root.as_ref(),
+            "-type",
+            "f",
+            "-exec",
+            "chmod",
+            "0644",
+            "{}",
+            "+",
+        ],
+    )?;
+
+    fix_laravel_writable_dirs(root.as_ref())?;
+
+    Ok(())
+}
+
+fn fix_laravel_writable_dirs(root: &str) -> Result<(), String> {
+    let _ = run_status(
+        "find",
+        &[
+            root,
+            "-type",
+            "d",
+            "(",
+            "-name",
+            "storage",
+            "-o",
+            "-path",
+            "*/bootstrap/cache",
+            ")",
+            "-exec",
+            "chgrp",
+            "-R",
+            "www-data",
+            "{}",
+            "+",
+        ],
+    );
+    run_status(
+        "find",
+        &[
+            root,
+            "-type",
+            "d",
+            "(",
+            "-name",
+            "storage",
+            "-o",
+            "-path",
+            "*/bootstrap/cache",
+            ")",
+            "-exec",
+            "chmod",
+            "-R",
+            "0775",
+            "{}",
+            "+",
+        ],
+    )
+}
+
+fn validate_replaceable_existing_target(target: &Path) -> Result<(), String> {
     match fs::symlink_metadata(target) {
         Ok(metadata) if metadata.file_type().is_symlink() => Err(format!(
             "Refusing to replace symbolic link: {}",
@@ -304,9 +400,14 @@ pub(crate) async fn handle(
         return response.into_response();
     }
 
-    let result =
-        tokio::task::spawn_blocking(move || unzip_user_archive(&request.username, &request.path))
-            .await;
+    let result = tokio::task::spawn_blocking(move || {
+        unzip_user_archive(
+            &request.username,
+            &request.path,
+            request.destination.as_deref(),
+        )
+    })
+    .await;
     match result {
         Ok(result) => operation_response(result, "Zip extracted"),
         Err(error) => axum::response::IntoResponse::into_response(ApiResponse::error(&format!(

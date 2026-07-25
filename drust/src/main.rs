@@ -1,4 +1,5 @@
 mod admin;
+mod apache;
 mod api;
 mod app;
 mod database;

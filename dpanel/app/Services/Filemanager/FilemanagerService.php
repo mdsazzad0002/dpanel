@@ -223,7 +223,28 @@ class FilemanagerService
         }
     }
 
-    public function unzipFile(string $username, string $path): void
+    public function changePermissions(string $username, string $path, string $permissions, bool $recursive = false): void
+    {
+        $username = $this->normalizeUsername($username);
+        $path = $this->normalizeAbsolutePath($path);
+        $permissions = trim($permissions);
+        if ($path === '' || ! preg_match('/^[0-7]{3,4}$/', $permissions)) {
+            throw new \InvalidArgumentException('A valid path and permissions mode are required.');
+        }
+
+        $result = $this->filemanagerApiRequest('chmod', [
+            'username' => $username,
+            'path' => $path,
+            'mode' => $permissions,
+            'recursive' => $recursive,
+        ]);
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Failed to change permissions through the filemanager API.');
+        }
+    }
+
+    public function unzipFile(string $username, string $path, ?string $destination = null): void
     {
         $username = $this->normalizeUsername($username);
         $path = $this->normalizeAbsolutePath($path);
@@ -231,10 +252,20 @@ class FilemanagerService
             throw new \InvalidArgumentException('Zip path is required.');
         }
 
-        $result = $this->filemanagerApiRequest('unzip', [
+        $payload = [
             'username' => $username,
             'path' => $path,
-        ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
+        ];
+        $destination = $destination !== null ? $this->normalizeAbsolutePath($destination) : '';
+        if ($destination !== '') {
+            $payload['destination'] = $destination;
+        }
+
+        $result = $this->filemanagerApiRequest(
+            'unzip',
+            $payload,
+            (int) config('serverpanel.execution_api_upload_timeout', 3600)
+        );
         if (! $result['success']) {
             $output = trim((string) $result['output']);
             throw new \RuntimeException($output !== '' ? $output : 'Failed to extract zip through the filemanager API.');

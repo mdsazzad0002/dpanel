@@ -39,6 +39,33 @@ nginx_update() {
   panel_info_log "nginx updated."
 }
 
+nginx_start() {
+  pkg_enable_service nginx
+  systemctl start nginx
+  panel_info_log "nginx started."
+}
+
+nginx_stop() {
+  systemctl stop nginx
+  panel_info_log "nginx stopped."
+}
+
+nginx_reload() {
+  nginx -t
+  systemctl reload nginx
+  panel_info_log "nginx reloaded."
+}
+
+nginx_restart() {
+  nginx -t
+  systemctl reload-or-restart nginx
+  panel_info_log "nginx restarted."
+}
+
+nginx_status() {
+  systemctl status nginx --no-pager
+}
+
 case "$action" in
   install)
     nginx_install
@@ -48,6 +75,21 @@ case "$action" in
     ;;
   update)
     nginx_update
+    ;;
+  start)
+    nginx_start
+    ;;
+  stop)
+    nginx_stop
+    ;;
+  reload)
+    nginx_reload
+    ;;
+  restart)
+    nginx_restart
+    ;;
+  status)
+    nginx_status
     ;;
   *)
     panel_die "Unsupported nginx action: $action"

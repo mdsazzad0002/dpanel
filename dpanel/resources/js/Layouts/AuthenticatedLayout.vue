@@ -16,9 +16,14 @@ const isSearchOpen = ref(false);
 const searchInputRef = ref(null);
 const searchResultsRef = ref(null);
 const activeSearchIndex = ref(0);
+const searchResults = ref([]);
+const searchLoading = ref(false);
+const searchLoaded = ref(false);
 const sidebarNavRef = ref(null);
 const page = usePage();
 const SIDEBAR_SCROLL_KEY = 'layout.sidebar.scrollTop.v1';
+let searchDebounceTimer = null;
+let searchRequestSeq = 0;
 
 // Notification state
 const notifications = ref([
@@ -279,35 +284,10 @@ const getColor = (item) => colorClasses[item.color] || colorClasses.blue;
 
 const normalizeSearchText = (value) => String(value ?? '').toLowerCase().trim();
 
-const buildSearchText = (item) => normalizeSearchText([
-    item?.label ?? '',
-    item?.hint ?? '',
-    item?.group ?? '',
-    ...(Array.isArray(item?.keywords) ? item.keywords : []),
-].join(' '));
-
 const filteredSearchResults = computed(() => {
-    const needle = normalizeSearchText(searchQuery.value);
-    const items = panelSearchItems.value
-        .filter((item) => item && typeof item.href === 'string' && item.href.length > 0);
-
-    if (!needle) {
-        return items.slice(0, 12);
-    }
-
-    return items
-        .map((item) => ({
-            ...item,
-            __searchText: buildSearchText(item),
-        }))
-        .filter((item) => item.__searchText.includes(needle))
-        .sort((a, b) => {
-            const aStarts = a.__searchText.startsWith(needle) ? 0 : 1;
-            const bStarts = b.__searchText.startsWith(needle) ? 0 : 1;
-
-            if (aStarts !== bStarts) return aStarts - bStarts;
-            return a.__searchText.localeCompare(b.__searchText);
-        })
+    const source = searchLoaded.value ? searchResults.value : panelSearchItems.value;
+    return (Array.isArray(source) ? source : [])
+        .filter((item) => item && typeof item.href === 'string' && item.href.length > 0)
         .slice(0, 12);
 });
 
@@ -359,6 +339,47 @@ const openSearch = async () => {
 
 const closeSearch = () => {
     isSearchOpen.value = false;
+};
+
+const searchEndpoint = computed(() => (route().has('panel.search') ? route('panel.search', { token: panelToken.value }) : ''));
+
+const fetchSearchSuggestions = async () => {
+    const endpoint = searchEndpoint.value;
+    if (!endpoint || !isSearchOpen.value) return;
+
+    const seq = searchRequestSeq += 1;
+    const params = new URLSearchParams({
+        q: normalizeSearchText(searchQuery.value),
+        limit: '12',
+    });
+
+    searchLoading.value = true;
+    try {
+        const response = await window.axios.get(`${endpoint}?${params.toString()}`, {
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+        if (seq !== searchRequestSeq) return;
+
+        searchResults.value = Array.isArray(response?.data?.items) ? response.data.items : [];
+        searchLoaded.value = true;
+    } catch (error) {
+        if (seq !== searchRequestSeq) return;
+        searchResults.value = [];
+        searchLoaded.value = true;
+    } finally {
+        if (seq === searchRequestSeq) {
+            searchLoading.value = false;
+        }
+    }
+};
+
+const queueSearchSuggestions = (delay = 220) => {
+    window.clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = window.setTimeout(() => {
+        fetchSearchSuggestions();
+    }, delay);
 };
 
 const openSearchResult = (item) => {
@@ -452,6 +473,7 @@ onMounted(() => {
 onUnmounted(() => {
     document.removeEventListener('keydown', handleSearchKeydown);
     document.removeEventListener('click', closeNotifications);
+    window.clearTimeout(searchDebounceTimer);
 });
 
 watch(sidebarOpen, (isOpen) => {
@@ -469,6 +491,9 @@ watch(
 
 watch(searchQuery, () => {
     activeSearchIndex.value = 0;
+    if (isSearchOpen.value) {
+        queueSearchSuggestions();
+    }
 });
 
 watch(filteredSearchResults, async (results) => {
@@ -488,9 +513,12 @@ watch(filteredSearchResults, async (results) => {
 
 watch(isSearchOpen, async (open) => {
     if (!open) {
+        window.clearTimeout(searchDebounceTimer);
         return;
     }
 
+    searchLoaded.value = false;
+    queueSearchSuggestions(0);
     await nextTick();
     searchInputRef.value?.focus?.();
     searchInputRef.value?.select?.();
@@ -958,7 +986,11 @@ watch(isSearchOpen, async (open) => {
             </div>
 
             <div ref="searchResultsRef" class="max-h-[60vh] overflow-y-auto p-3">
-                <template v-if="filteredSearchResults.length">
+                <div v-if="searchLoading && !filteredSearchResults.length" class="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
+                    Searching...
+                </div>
+
+                <template v-else-if="filteredSearchResults.length">
                     <button
                         v-for="(item, index) in filteredSearchResults"
                         :key="`${item.group}-${item.label}-${item.href}`"
@@ -993,7 +1025,7 @@ watch(isSearchOpen, async (open) => {
                     </button>
                 </template>
 
-                <div v-else class="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
+                <div v-else-if="searchLoaded" class="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
                     No results found.
                 </div>
             </div>

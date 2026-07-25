@@ -18,15 +18,18 @@ defineProps({
             @drop.prevent="fm.handleUploadDrop"
         >
             <i class="bi bi-cloud-arrow-up text-3xl text-slate-400"></i>
-            <p class="mt-2 text-sm font-medium">Drag and drop file here</p>
+            <p class="mt-2 text-sm font-medium">Drag and drop files here</p>
             <p class="mt-1 text-xs text-slate-500">or choose from your computer</p>
-            <input id="file-upload-input" type="file" class="mt-3 w-full text-sm" @change="fm.handleUploadChange" />
-            <p v-if="fm.uploadForm.upload" class="mt-2 break-all text-xs text-slate-600 dark:text-slate-300">
-                Selected: {{ fm.uploadForm.upload.name }}
-            </p>
+            <input id="file-upload-input" type="file" multiple class="mt-3 w-full text-sm" @change="fm.handleUploadChange" />
+            <div v-if="fm.uploadForm.uploads?.length" class="mt-2 space-y-1 text-left text-xs text-slate-600 dark:text-slate-300">
+                <p>{{ fm.uploadForm.uploads.length }} file(s) selected</p>
+                <p class="max-h-20 overflow-auto break-all">
+                    {{ fm.uploadForm.uploads.map((file) => file.name).join(', ') }}
+                </p>
+            </div>
         </div>
-        <button type="button" :disabled="fm.uploadForm.processing || !fm.uploadForm.upload" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60" @click="fm.submitUpload">
-            {{ fm.uploadForm.processing ? 'Uploading...' : 'Upload File' }}
+        <button type="button" :disabled="fm.uploadForm.processing || !fm.uploadForm.uploads?.length" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60" @click="fm.submitUpload">
+            {{ fm.uploadForm.processing ? 'Uploading...' : 'Upload File(s)' }}
         </button>
         <div v-if="fm.uploadForm.processing || fm.uploadTaskComplete" class="space-y-1">
             <div class="flex items-center justify-between text-xs text-slate-500">

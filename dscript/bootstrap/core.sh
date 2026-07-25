@@ -353,6 +353,79 @@ EOF
   panel_info_log "Registered server: $server_uuid"
 }
 
+panel_is_interactive() {
+  [[ -t 0 && -t 1 ]]
+}
+
+panel_prompt_required() {
+  local variable_name="$1"
+  local prompt="$2"
+  local secret="${3:-false}"
+  local value="${!variable_name:-}"
+
+  if [[ -n "$value" ]]; then
+    printf -v "$variable_name" '%s' "$value"
+    return 0
+  fi
+
+  panel_is_interactive || panel_die "${variable_name} is required. Set it in the environment for non-interactive install."
+
+  while [[ -z "$value" ]]; do
+    if [[ "${secret,,}" == "true" ]]; then
+      read -rsp "${prompt}: " value
+      printf '\n'
+    else
+      read -rp "${prompt}: " value
+    fi
+    value="$(printf '%s' "$value" | xargs)"
+  done
+
+  printf -v "$variable_name" '%s' "$value"
+}
+
+panel_prompt_password_pair() {
+  local password="${PANEL_ADMIN_PASSWORD:-}"
+  local confirm=""
+
+  if [[ -n "$password" ]]; then
+    PANEL_ADMIN_PASSWORD="$password"
+    return 0
+  fi
+
+  panel_is_interactive || panel_die "PANEL_ADMIN_PASSWORD is required. Set it in the environment for non-interactive install."
+
+  while true; do
+    read -rsp "Admin password: " password
+    printf '\n'
+    read -rsp "Confirm admin password: " confirm
+    printf '\n'
+
+    if [[ -z "$password" ]]; then
+      panel_warn_log "Admin password cannot be empty."
+      continue
+    fi
+    if [[ "$password" != "$confirm" ]]; then
+      panel_warn_log "Passwords do not match."
+      continue
+    fi
+    break
+  done
+
+  PANEL_ADMIN_PASSWORD="$password"
+}
+
+panel_collect_first_install_config() {
+  [[ "${PANEL_BOOTSTRAP_MODE:-install}" == "install" ]] || return 0
+  [[ "${PANEL_SKIP_FIRST_INSTALL_PROMPTS:-false}" != "true" ]] || return 0
+
+  panel_prompt_required PANEL_DOMAIN "Panel domain"
+  panel_prompt_required PANEL_ADMIN_USERNAME "Admin username"
+  panel_prompt_required PANEL_ADMIN_EMAIL "Admin email"
+  panel_prompt_password_pair
+
+  export PANEL_DOMAIN PANEL_ADMIN_USERNAME PANEL_ADMIN_EMAIL PANEL_ADMIN_PASSWORD
+}
+
 panel_server_json_valid() {
   [[ -s "$DPANEL_SERVER_JSON" ]] || return 1
 
@@ -1158,7 +1231,8 @@ panel_bootstrap() {
   local skip_ssl="${SKIP_SSL:-false}"
   local skip_test="${SKIP_TEST:-false}"
   local bootstrap_mode="${PANEL_BOOTSTRAP_MODE:-install}"
-  local panel_domain="${PANEL_DOMAIN:-installer.dengrweb.com}"
+  panel_collect_first_install_config
+  local panel_domain="${PANEL_DOMAIN:-}"
   local panel_port="${PANEL_PORT:-80}"
 
   panel_require_root
@@ -1199,6 +1273,14 @@ panel_bootstrap() {
           panel_setup_application_database
         fi
       done
+      if [[ -x "/var/www/drust/deploy/install-service.sh" ]]; then
+        bash "/var/www/drust/deploy/install-service.sh"
+      else
+        panel_warn_log "drust installer not found; admin user creation may fail until drust is installed."
+      fi
+      if [[ -n "${PANEL_ADMIN_USERNAME:-}" && -n "${PANEL_ADMIN_PASSWORD:-}" && -n "${PANEL_ADMIN_EMAIL:-}" ]]; then
+        panel_run_runtime_script "create-admin-user.sh" "$PANEL_ADMIN_USERNAME" "$PANEL_ADMIN_PASSWORD" "$PANEL_ADMIN_EMAIL" "" "" "true"
+      fi
       ;;
     update)
       panel_sync_manifest

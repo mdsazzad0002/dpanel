@@ -321,16 +321,40 @@ Body:
 ```json
 {
   "username": "example",
-  "path": "/home/example/public_html/archive.zip"
+  "path": "/home/example/public_html/archive.zip",
+  "destination": "/home/example/public_html"
 }
 ```
 
-The archive is extracted beside the zip file. Paths must remain inside the
-account home. Symbolic-link entries and unsafe paths are rejected. The default
+The archive is extracted into `destination` when provided, otherwise beside the
+zip file. Paths must remain inside the account home. Symbolic-link entries and
+unsafe paths are skipped. Existing regular files are replaced, and extracted
+files/folders are owned by the account user. Dotfiles are preserved. The default
 limits are 100,000 entries and 20 GiB expanded data; override them with
 `DRUST_MAX_ZIP_ENTRIES` and `DRUST_MAX_ZIP_EXPANDED_BYTES`.
 
-### 14. SSL ensure
+### 14. File manager chmod
+
+```http
+POST /api/v1/filemanager/chmod
+```
+
+Body:
+
+```json
+{
+  "username": "example",
+  "path": "/home/example/public_html/storage",
+  "mode": "775",
+  "recursive": true
+}
+```
+
+The path must remain inside the account home. The target is also assigned to the
+account user/group. Recursive changes reject symbolic links instead of following
+them.
+
+### 15. SSL ensure
 
 ```http
 POST /api/v1/ssl/ensure

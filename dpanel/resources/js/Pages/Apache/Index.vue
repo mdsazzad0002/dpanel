@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
@@ -27,20 +27,82 @@ const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]
 const syncMessage = ref('');
 const syncMessageType = ref('success');
 const syncLoading = ref(false);
+const actionLoading = ref('');
+const actionMessage = ref('');
+const actionMessageType = ref('success');
+const sharedSyncLoading = ref(false);
 
-const actionForm = useForm({
-    action: 'test',
-});
+const syncSharedWebsites = async () => {
+    if (sharedSyncLoading.value) {
+        return;
+    }
 
-const syncForm = useForm({});
+    syncMessage.value = '';
+    sharedSyncLoading.value = true;
 
-const runAction = (action) => {
-    actionForm.action = action;
-    actionForm.post(panelRoute('apache.action'));
+    try {
+        const response = await fetch(panelRoute('apache.sync-shared-websites'), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw data;
+        }
+
+        syncMessageType.value = 'success';
+        syncMessage.value = String(data.message || 'Shared websites Apache config generated successfully.');
+        router.reload({
+            only: ['apache'],
+        });
+    } catch (error) {
+        syncMessageType.value = 'error';
+        syncMessage.value = String(error?.message || 'Shared websites config sync failed.');
+    } finally {
+        sharedSyncLoading.value = false;
+    }
 };
 
-const syncSharedWebsites = () => {
-    syncForm.post(panelRoute('apache.sync-shared-websites'));
+const runAction = async (action) => {
+    if (actionLoading.value) {
+        return;
+    }
+
+    actionMessage.value = '';
+    actionLoading.value = action;
+
+    try {
+        const response = await fetch(panelRoute('apache.action'), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({ action }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw data;
+        }
+
+        actionMessageType.value = 'success';
+        actionMessage.value = String(data.message || 'Apache action completed.');
+    } catch (error) {
+        actionMessageType.value = 'error';
+        actionMessage.value = String(error?.message || 'Apache action failed.');
+    } finally {
+        actionLoading.value = '';
+    }
 };
 
 const syncSelectedWebsiteVhost = async () => {
@@ -156,6 +218,11 @@ const boolTone = (flag) => (flag
                 : 'rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 whitespace-pre-line'">
                 {{ syncMessage }}
             </div>
+            <div v-if="actionMessage" :class="actionMessageType === 'success'
+                ? 'rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 whitespace-pre-line'
+                : 'rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 whitespace-pre-line'">
+                {{ actionMessage }}
+            </div>
 
             <section class="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-cyan-50 via-white to-indigo-50 p-5 dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
                 <div class="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-cyan-300/20 blur-xl dark:bg-cyan-900/30" />
@@ -231,13 +298,12 @@ const boolTone = (flag) => (flag
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Apache Actions</h2>
                 <div class="mt-3 flex flex-wrap gap-2">
-                    <button type="button" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700" :disabled="actionForm.processing" @click="runAction('test')">Test Config</button>
-                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="actionForm.processing" @click="runAction('reload')">Reload</button>
-                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="actionForm.processing" @click="runAction('restart')">Restart</button>
-                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="actionForm.processing" @click="runAction('start')">Start</button>
-                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="actionForm.processing" @click="runAction('stop')">Stop</button>
-                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="actionForm.processing" @click="runAction('status')">Status</button>
-                    <button type="button" class="rounded-md border border-amber-300 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400" :disabled="actionForm.processing" @click="runAction('renew_ssl')">Renew SSL</button>
+                    <button type="button" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60" :disabled="!!actionLoading" @click="runAction('test')">{{ actionLoading === 'test' ? 'Testing...' : 'Test Config' }}</button>
+                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!!actionLoading" @click="runAction('reload')">{{ actionLoading === 'reload' ? 'Reloading...' : 'Reload' }}</button>
+                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!!actionLoading" @click="runAction('restart')">{{ actionLoading === 'restart' ? 'Restarting...' : 'Restart' }}</button>
+                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!!actionLoading" @click="runAction('start')">{{ actionLoading === 'start' ? 'Starting...' : 'Start' }}</button>
+                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!!actionLoading" @click="runAction('status')">{{ actionLoading === 'status' ? 'Checking...' : 'Status' }}</button>
+                    <button type="button" class="rounded-md border border-amber-300 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:text-amber-400" :disabled="!!actionLoading" @click="runAction('renew_ssl')">{{ actionLoading === 'renew_ssl' ? 'Renewing...' : 'Renew SSL' }}</button>
                 </div>
             </section>
 
@@ -247,8 +313,8 @@ const boolTone = (flag) => (flag
                 <p class="mt-1 text-xs text-slate-500">Last generated: {{ apache.shared_vhost_last_modified || '-' }}</p>
                 <p class="mt-1 text-xs text-slate-500">{{ apache.include_hint }}</p>
                 <div class="mt-3">
-                    <button type="button" class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700" :disabled="syncForm.processing" @click="syncSharedWebsites">
-                        {{ syncForm.processing ? 'Syncing...' : 'Sync Shared Websites' }}
+                    <button type="button" class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60" :disabled="sharedSyncLoading" @click="syncSharedWebsites">
+                        {{ sharedSyncLoading ? 'Syncing...' : 'Sync Shared Websites' }}
                     </button>
                 </div>
             </section>

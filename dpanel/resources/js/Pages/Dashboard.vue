@@ -59,7 +59,7 @@ const getProgressTextColor = (value) => {
 
 const getStatusColor = (status) => {
     const s = String(status).toLowerCase();
-    if (s === 'running' || s === 'active' || s === 'online') return 'bg-emerald-500';
+    if (s === 'running' || s === 'active' || s === 'online' || s === 'mariadb' || s === 'mysql' || s === 'sqlite') return 'bg-emerald-500';
     if (s === 'stopped' || s === 'inactive' || s === 'offline') return 'bg-red-500';
     return 'bg-amber-500';
 };

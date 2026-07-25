@@ -86,6 +86,7 @@ defineProps({
                             class="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition-all duration-150 hover:-translate-y-0.5 hover:bg-slate-100 dark:hover:bg-slate-800"
                             :class="item.danger ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'"
                             :title="`${group.label}: ${item.label}`"
+                            :disabled="item.disabled"
                             @click="item.action()"
                         >
                             <i class="bi text-sm" :class="[item.icon, item.className]"></i>

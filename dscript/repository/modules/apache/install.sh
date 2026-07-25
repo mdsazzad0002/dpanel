@@ -50,6 +50,55 @@ apache_update() {
   panel_info_log "apache updated."
 }
 
+apache_service_name() {
+  case "$(pkg_distro_family)" in
+    debian) printf 'apache2' ;;
+    rpm) printf 'httpd' ;;
+    *) printf 'apache2' ;;
+  esac
+}
+
+apache_start() {
+  local service
+  service="$(apache_service_name)"
+  pkg_enable_service "$service"
+  systemctl start "$service"
+  panel_info_log "apache started."
+}
+
+apache_stop() {
+  local service
+  service="$(apache_service_name)"
+  systemctl stop "$service"
+  panel_info_log "apache stopped."
+}
+
+apache_reload() {
+  local service
+  service="$(apache_service_name)"
+  case "$(pkg_distro_family)" in
+    debian) apache2ctl -t ;;
+    rpm) httpd -t ;;
+  esac
+  systemctl reload "$service"
+  panel_info_log "apache reloaded."
+}
+
+apache_restart() {
+  local service
+  service="$(apache_service_name)"
+  case "$(pkg_distro_family)" in
+    debian) apache2ctl -t ;;
+    rpm) httpd -t ;;
+  esac
+  systemctl reload-or-restart "$service"
+  panel_info_log "apache restarted."
+}
+
+apache_status() {
+  systemctl status "$(apache_service_name)" --no-pager
+}
+
 case "$action" in
   install)
     apache_install
@@ -59,6 +108,21 @@ case "$action" in
     ;;
   update)
     apache_update
+    ;;
+  start)
+    apache_start
+    ;;
+  stop)
+    apache_stop
+    ;;
+  reload)
+    apache_reload
+    ;;
+  restart)
+    apache_restart
+    ;;
+  status)
+    apache_status
     ;;
   *)
     panel_die "Unsupported apache action: $action"

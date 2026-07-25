@@ -12,8 +12,11 @@ class PanelSearchController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        $query = trim((string) $request->query('q', ''));
+        $limit = max(1, min(20, (int) $request->query('limit', 12)));
+
         return response()->json([
-            'items' => $this->buildItems($request),
+            'items' => $this->filterItems($this->buildItems($request), $query, $limit),
         ]);
     }
 
@@ -347,5 +350,76 @@ class PanelSearchController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function filterItems(array $items, string $query, int $limit): array
+    {
+        $items = array_values(array_filter(
+            $items,
+            static fn (array $item): bool => is_string($item['href'] ?? null) && trim((string) $item['href']) !== ''
+        ));
+
+        $needle = $this->normalizeSearchText($query);
+        if ($needle === '') {
+            return array_slice($items, 0, $limit);
+        }
+
+        $ranked = [];
+        foreach ($items as $item) {
+            $haystack = $this->itemSearchText($item);
+            if (! str_contains($haystack, $needle)) {
+                continue;
+            }
+
+            $label = $this->normalizeSearchText((string) ($item['label'] ?? ''));
+            $group = $this->normalizeSearchText((string) ($item['group'] ?? ''));
+            $score = 100;
+            if ($label === $needle) {
+                $score = 0;
+            } elseif (str_starts_with($label, $needle)) {
+                $score = 10;
+            } elseif (str_contains($label, $needle)) {
+                $score = 20;
+            } elseif (str_starts_with($group, $needle)) {
+                $score = 35;
+            }
+
+            $ranked[] = [
+                'score' => $score,
+                'text' => $haystack,
+                'item' => $item,
+            ];
+        }
+
+        usort($ranked, static function (array $a, array $b): int {
+            return [$a['score'], $a['text']] <=> [$b['score'], $b['text']];
+        });
+
+        return array_map(
+            static fn (array $entry): array => $entry['item'],
+            array_slice($ranked, 0, $limit)
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function itemSearchText(array $item): string
+    {
+        return $this->normalizeSearchText(implode(' ', array_filter([
+            (string) ($item['label'] ?? ''),
+            (string) ($item['hint'] ?? ''),
+            (string) ($item['group'] ?? ''),
+            implode(' ', array_map('strval', (array) ($item['keywords'] ?? []))),
+        ])));
+    }
+
+    private function normalizeSearchText(string $value): string
+    {
+        return strtolower(trim(preg_replace('/\s+/', ' ', $value) ?? ''));
     }
 }

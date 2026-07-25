@@ -1,3 +1,4 @@
+pub(crate) mod chmod;
 mod common;
 pub(crate) mod create;
 pub(crate) mod delete;

@@ -14,6 +14,7 @@ const props = defineProps({
     openUploadTab: { type: Boolean, default: false },
     openEditorModal: { type: Boolean, default: false },
     openEditorPage: { type: Boolean, default: false },
+    hasProjectArtisan: { type: Boolean, default: false },
     directoryTree: { type: Array, default: () => [] },
     items: { type: Array, default: () => [] },
     selectedFile: { type: Object, default: null },

@@ -45,6 +45,8 @@ export function useFileManager(props) {
     const moveDragTargetPath = ref(null);
     const draggingItemPaths = ref([]);
     const originalEditorContent = ref(props.selectedFile?.content ?? '');
+    const unzipInProgress = ref(false);
+    const cacheClearInProgress = ref(false);
     const treeOpenState = ref({});
     const saveInProgress = ref(false);
     const INTERNAL_MOVE_MIME = 'application/x-serverpanel-item-paths';
@@ -343,7 +345,7 @@ export function useFileManager(props) {
         if (!files || files.length === 0) return;
 
         uploadForm.path = props.currentPath;
-        uploadForm.upload = files[0];
+        uploadForm.uploads = Array.from(files);
         submitUpload();
     }
 
@@ -360,13 +362,13 @@ export function useFileManager(props) {
         uploadDragActive.value = false;
         const files = event.dataTransfer?.files;
         if (!files || files.length === 0) return;
-        uploadForm.upload = files[0];
+        uploadForm.uploads = Array.from(files);
     }
 
     function handleUploadChange(event) {
         const files = event.target?.files;
         if (!files || files.length === 0) return;
-        uploadForm.upload = files[0];
+        uploadForm.uploads = Array.from(files);
     }
 
     function isEditableFile(filename) {
@@ -463,12 +465,35 @@ export function useFileManager(props) {
     }
 
     function submitUnzip() {
+        if (unzipInProgress.value || !unzipForm.zip_path) return;
+
         unzipForm.current_path = props.currentPath;
-        unzipForm.post(panelRoute('websites.filemanager.unzip', fileManagerRouteParams()), {
-            onSuccess: () => {
+        unzipInProgress.value = true;
+        window.axios
+            .post(panelRoute('websites.filemanager.unzip', fileManagerRouteParams()), {
+                zip_path: unzipForm.zip_path,
+                current_path: unzipForm.current_path,
+            }, {
+                headers: {
+                    Accept: 'application/json',
+                },
+            })
+            .then((response) => {
+                const message = response?.data?.message || 'Zip extracted successfully.';
+                pushToast(message, 'success');
                 closeModal();
-            },
-        });
+                router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ path: props.currentPath })), {}, {
+                    preserveScroll: true,
+                    replace: true,
+                });
+            })
+            .catch((error) => {
+                const message = error?.response?.data?.message || 'Failed to extract zip.';
+                pushToast(message, 'error');
+            })
+            .finally(() => {
+                unzipInProgress.value = false;
+            });
     }
 
     function submitUpload() {
@@ -480,12 +505,40 @@ export function useFileManager(props) {
                 uploadProgress.value = Math.round(event?.percentage || 0);
             },
             onSuccess: () => {
-                uploadForm.upload = null;
                 uploadTaskComplete.value = true;
                 uploadProgress.value = 100;
-                closeModal();
+                const count = Array.isArray(uploadForm.uploads) ? uploadForm.uploads.length : 0;
+                uploadForm.uploads = [];
+                pushToast(count > 1 ? `${count} files uploaded successfully.` : 'File uploaded successfully.', 'success');
+                router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ path: props.currentPath })), {}, {
+                    preserveScroll: true,
+                    preserveState: true,
+                    replace: true,
+                });
             },
         });
+    }
+
+    function clearProjectCache() {
+        if (cacheClearInProgress.value || !props.hasProjectArtisan) return;
+
+        cacheClearInProgress.value = true;
+        window.axios
+            .post(panelRoute('websites.project-cache.clear', { id: props.website.id }), {}, {
+                headers: {
+                    Accept: 'application/json',
+                },
+            })
+            .then((response) => {
+                pushToast(response?.data?.message || 'Project cache cleared successfully.', 'success');
+            })
+            .catch((error) => {
+                const message = error?.response?.data?.message || 'Failed to clear project cache.';
+                pushToast(message, 'error');
+            })
+            .finally(() => {
+                cacheClearInProgress.value = false;
+            });
     }
 
     function submitSaveFile() {
@@ -629,7 +682,7 @@ export function useFileManager(props) {
     const createFileForm = useForm({ path: props.currentPath, name: '' });
     const saveForm = useForm({ file_path: props.selectedFile?.path ?? '', content: props.selectedFile?.content ?? '' });
     const deleteForm = useForm({ item_paths: [], current_path: props.currentPath });
-    const uploadForm = useForm({ path: props.currentPath, upload: null });
+    const uploadForm = useForm({ path: props.currentPath, uploads: [] });
     const permissionForm = useForm({ item_path: '', current_path: props.currentPath, permissions: '644', recursive: false });
     const renameForm = useForm({ item_path: '', current_path: props.currentPath, new_name: '' });
     const zipForm = useForm({ current_path: props.currentPath, item_paths: [], zip_name: '' });
@@ -668,6 +721,7 @@ export function useFileManager(props) {
                 { label: 'Download', hint: 'Save locally', icon: 'bi-download', className: 'text-slate-500', action: () => downloadSelected(), visible: !!singleSelectedItem.value && singleSelectedItem.value.type === 'file' },
                 { label: 'Zip', hint: 'Compress selection', icon: 'bi-file-earmark-zip', className: 'text-amber-500', action: () => openZipForSelection(), visible: !!singleSelectedItem.value || selectedCount.value > 0 },
                 { label: 'Extract', hint: 'Unpack archive', icon: 'bi-file-earmark-arrow-up', className: 'text-green-500', action: () => openUnzipForSelection(), visible: isZipSelected.value },
+                { label: cacheClearInProgress.value ? 'Clearing...' : 'Clear Cache', hint: 'Run Laravel optimize:clear', icon: 'bi-lightning-charge', className: 'text-orange-500', action: () => clearProjectCache(), disabled: cacheClearInProgress.value, visible: !!props.hasProjectArtisan },
             ],
         },
         {
@@ -910,6 +964,8 @@ export function useFileManager(props) {
         uploadDragActive,
         uploadProgress,
         uploadTaskComplete,
+        unzipInProgress,
+        cacheClearInProgress,
         tableDragActive,
         tableDragDepth,
         droppedUploadHint,
@@ -1010,6 +1066,7 @@ export function useFileManager(props) {
         submitZip,
         submitUnzip,
         submitUpload,
+        clearProjectCache,
         submitSaveFile,
         pushToast,
         removeToast,

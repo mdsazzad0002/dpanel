@@ -22,6 +22,31 @@ sudo ./installer.sh nginx php mariadb redis
 sudo ./installer.sh update
 ```
 
+On first install, the default flow asks for:
+
+- Panel domain
+- Admin username
+- Admin email
+- Admin password
+
+For non-interactive installs, provide them through environment variables:
+
+```bash
+sudo env PANEL_DOMAIN=panel.example.com \
+  PANEL_ADMIN_USERNAME=admin \
+  PANEL_ADMIN_EMAIL=admin@example.com \
+  PANEL_ADMIN_PASSWORD='strong-password' \
+  ./installer.sh
+```
+
+Later changes can be made from the command line:
+
+```bash
+sudo dpanel panel:domain panel.example.com 80 --alias www.panel.example.com
+sudo dpanel panel:admin admin 'new-password' admin@example.com
+sudo dpanel user:password site_owner
+```
+
 The no-argument default install sequence is:
 
 ```text

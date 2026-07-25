@@ -31,6 +31,10 @@ pub fn routes() -> Router<Arc<ApiState>> {
             post(crate::filemanager::write::handle),
         )
         .route(
+            "/api/v1/filemanager/chmod",
+            post(crate::filemanager::chmod::handle),
+        )
+        .route(
             "/api/v1/filemanager/unzip",
             post(crate::filemanager::unzip::handle),
         )

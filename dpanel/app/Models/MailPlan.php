@@ -34,7 +34,7 @@ class MailPlan extends Model
 
     public function mailboxes(): HasMany
     {
-        return $this->hasMany(Mailbox::class);
+        return $this->hasMany(Mailbox::class, 'plan_id');
     }
 
     public function mailboxCount(): int

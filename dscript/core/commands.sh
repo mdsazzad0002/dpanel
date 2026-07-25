@@ -21,7 +21,7 @@ Processes:
   chain <install|update|verify|repair> [module,...]
       Run a complete process. Without a module list, PANEL_MODULES is used.
 
-  module <name> <install|update|remove|reinstall|info> [arguments]
+  module <name> <install|update|remove|reinstall|start|stop|restart|reload|status|info> [arguments]
       Run one module independently.
 
 Commands:
@@ -84,7 +84,7 @@ dscript_module_help() {
   local module="${1:-}"
   if [[ -z "$module" ]]; then
     cat <<'EOF'
-Usage: dpanel module <name> <install|update|remove|reinstall|info> [arguments]
+Usage: dpanel module <name> <install|update|remove|reinstall|start|stop|restart|reload|status|info> [arguments]
 
 Use `dpanel module list` to see available modules.
 Short form is also supported: `dpanel nginx update`.
@@ -117,7 +117,7 @@ EOF
       ;;
     *)
       printf 'Module: %s\n' "$module"
-      printf 'Usage: dpanel module %s <install|update|remove|reinstall|info> [arguments]\n' "$module"
+      printf 'Usage: dpanel module %s <install|update|remove|reinstall|start|stop|restart|reload|status|info> [arguments]\n' "$module"
       ;;
   esac
 }
@@ -128,6 +128,8 @@ create-admin-user|Create an administrator through the drust execution API|<usern
 create-demo-site|Write a starter site page|<root-path> <domain> [php-version] [start-directory]
 database-request|Create, update, delete or test a MariaDB database request|<action> <db> <user> <password> [host] [port] [charset] [collation]
 disable-root-login|Disable SSH root login through the drust execution API|
+set-system-user-password|Change a Linux/system user shell password through drust|<username> [password]
+set-panel-domain|Update panel domain metadata, .env and web-stack config|<domain> [port] [--alias domain] [--no-web-stack]
 fix-dpanel-root|Repair the local panel web-stack configuration|[domain] [options]
 fix-panel-web-stack|Repair panel Apache/Nginx configuration through drust|<domain> [options]
 fix-web-stack|Repair Apache/Nginx base configuration through drust|[options]
@@ -153,7 +155,7 @@ dscript_script_path() {
     script_root="${DPANEL_RUNTIME_DIR}/scripts"
   fi
   case "$name" in
-    configure-phpmyadmin-signon|create-admin-user|create-demo-site|database-request|disable-root-login|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-web-stack|sync-vhost)
+    configure-phpmyadmin-signon|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-web-stack|sync-vhost)
       printf '%s/%s.sh' "$script_root" "$name"
       ;;
     *) printf '%s' '' ;;
@@ -270,7 +272,7 @@ dscript_module_info() {
   for action in install update remove; do
     [[ -f "${root}/repository/modules/${module}/${action}.sh" ]] && actions+=("$action")
   done
-  [[ ${#actions[@]} -eq 0 ]] && actions=(install update remove)
+  [[ ${#actions[@]} -eq 0 ]] && actions=(install update remove start stop restart reload status)
 
   printf 'Module:            %s\n' "$module"
   printf 'Repository version: %s\n' "${remote:-unknown}"
@@ -298,8 +300,8 @@ dscript_run_module() {
   dscript_module_exists "$module" || panel_die "Unknown module: ${module}. Run 'dpanel module list'."
 
   case "$action" in
-    info|status) dscript_module_info "$module" ;;
-    install|update|remove|reinstall)
+    info) dscript_module_info "$module" ;;
+    install|update|remove|reinstall|start|stop|restart|reload|status)
       if [[ "$DSCRIPT_DRY_RUN" == "true" ]]; then
         printf '[DRY-RUN] module %s %s' "$module" "$action"
         if [[ $# -gt 0 ]]; then printf ' %q' "$@"; fi
@@ -315,7 +317,7 @@ dscript_run_module() {
         panel_run_module "$module" "$action" "$@"
       fi
       ;;
-    *) panel_die "Unsupported action '${action}' for ${module}. Use install, update, remove, reinstall or info." ;;
+    *) panel_die "Unsupported action '${action}' for ${module}. Use install, update, remove, reinstall, start, stop, restart, reload, status or info." ;;
   esac
 }
 
@@ -498,6 +500,9 @@ dscript_cli() {
     site:create) [[ "$DSCRIPT_DRY_RUN" == true ]] && printf '[DRY-RUN] site:create %q\n' "$*" || panel_site_create "$@" ;;
     filemanager) panel_cli_dispatch filemanager "$@" ;;
     user:create) dscript_run_script create-admin-user "$@" ;;
+    user:password) dscript_run_script set-system-user-password "$@" ;;
+    panel:domain) dscript_run_script set-panel-domain "$@" ;;
+    panel:admin) dscript_run_script create-admin-user "$@" ;;
     ssh:disable-root) dscript_run_script disable-root-login "$@" ;;
     *)
       if dscript_module_exists "$command"; then
