@@ -74,7 +74,7 @@ EOF
 #   bash installer.sh
 #   bash installer.sh apache nginx php mariadb
 #   bash installer.sh update
-#   PANEL_INSTALL_BASE_URL="https://installer.likesoftbd.com" bash installer.sh
+#   PANEL_INSTALL_BASE_URL="https://installer.dengrweb.com" bash installer.sh
 #   DSCRIPT_SOURCE_DIR="/var/www/dscript" bash installer.sh
 #
 # Default call:
@@ -87,7 +87,7 @@ EOF
 #
 # Configure installer paths and download URLs.
 #
-DEFAULT_BASE_URL="https://installer.likesoftbd.com"
+DEFAULT_BASE_URL="https://installer.dengrweb.com"
 BASE_URL="${PANEL_INSTALL_BASE_URL:-${DPANEL_BASE_URL:-$DEFAULT_BASE_URL}}"
 DSCRIPT_DIR="${DSCRIPT_DIR:-/var/www/dscript}"
 TMP_DIR="$(mktemp -d)"

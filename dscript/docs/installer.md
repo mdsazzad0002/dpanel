@@ -15,7 +15,7 @@ installer.sh chain update     -> dscript/dpanel chain update
 ```
 
 ```bash
-curl -fsSL https://installer.likesoftbd.com/installer.sh -o installer.sh
+curl -fsSL https://installer.dengrweb.com/installer.sh -o installer.sh
 chmod 0755 installer.sh
 sudo ./installer.sh
 sudo ./installer.sh nginx php mariadb redis
@@ -292,7 +292,7 @@ bash archive.sh /var/www/dscript.zip
 unzip -t /var/www/dscript.zip
 ```
 
-Publish as `https://installer.likesoftbd.com/dscript.zip`.
+Publish as `https://installer.dengrweb.com/dscript.zip`.
 
 Archive root must contain `dscript/dpanel`, `dscript/core/`,
 `dscript/bootstrap/`, `dscript/repository/` and `dscript/scripts/`.
@@ -399,7 +399,7 @@ systemctl status nginx apache2 --no-pager
 
 ```bash
 sudo dpanel script run fix-dpanel-root panel.example.com
-sudo dpanel script run fix-dpanel-root installer.likesoftbd.com \
+sudo dpanel script run fix-dpanel-root installer.dengrweb.com \
   --alias installer.localhost --alias panel.localhost
 sudo dpanel script run fix-panel-web-stack panel.example.com \
   --alias www.panel.example.com --alias panel.localhost \

@@ -376,7 +376,7 @@ apache2ctl configtest
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PANEL_INSTALL_BASE_URL` | `https://installer.likesoftbd.com` | Installer website root |
+| `PANEL_INSTALL_BASE_URL` | `https://installer.dengrweb.com` | Installer website root |
 | `PANEL_DSCRIPT_BASE_URL` | `<site>/dscript` | Explicit dscript asset root |
 | `DPANEL_BASE_URL` | dscript asset root | Manifest/module download root |
 | `DPANEL_BASE_DIR` | `/opt/dpanel` | Preferred installed state root setting |
@@ -398,7 +398,7 @@ apache2ctl configtest
 | `SKIP_TEST` | `false` | Skip completion test message |
 | `DSCRIPT_REFRESH_REMOTE` | `false` | Force remote manifest refresh during install |
 | `PHP_VERSION` | detected/8.3 | Preferred PHP version |
-| `PANEL_DOMAIN` | `installer.likesoftbd.com` | Panel hostname |
+| `PANEL_DOMAIN` | `installer.dengrweb.com` | Panel hostname |
 | `PANEL_PORT` | `80` | Panel port |
 
 ### Database
@@ -418,7 +418,7 @@ apache2ctl configtest
 Public installation:
 
 ```bash
-curl -fsSL https://installer.likesoftbd.com/installer.sh -o installer.sh
+curl -fsSL https://installer.dengrweb.com/installer.sh -o installer.sh
 chmod +x installer.sh
 sudo ./installer.sh
 ```
@@ -474,7 +474,7 @@ Use this flow when installing dPanel on a fresh device/server.
 1. Download and run the installer:
 
    ```bash
-   curl -fsSL https://installer.likesoftbd.com/installer.sh -o installer.sh
+   curl -fsSL https://installer.dengrweb.com/installer.sh -o installer.sh
    chmod +x installer.sh
    sudo ./installer.sh
    ```

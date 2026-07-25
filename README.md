@@ -63,6 +63,26 @@ Browser
 dscript remains available for installation, bootstrap, update, and recovery.
 ```
 
+## Installer Guide
+
+Run the installer from a fresh server with `curl`:
+
+```bash
+curl -fsSL https://installer.dengrweb.com/installer.sh -o installer.sh
+chmod +x installer.sh
+sudo ./installer.sh
+```
+
+For module-specific installs or updates:
+
+```bash
+sudo ./installer.sh nginx php mariadb
+sudo ./installer.sh update
+```
+
+Full install, command, module, and recovery details are in
+[`dscript/guide.md`](dscript/guide.md).
+
 ## Later Roadmap
 
 - Improve first-time install reliability on fresh Ubuntu/Debian servers.

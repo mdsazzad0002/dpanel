@@ -17,7 +17,7 @@ set -Eeuo pipefail
 # without the full dscript directory beside it.
 #
 SCRIPT_NAME="$(basename "$0")"
-DEFAULT_BASE_URL="https://installer.likesoftbd.com"
+DEFAULT_BASE_URL="https://installer.dengrweb.com"
 BASE_URL="${PANEL_INSTALL_BASE_URL:-${DPANEL_BASE_URL:-$DEFAULT_BASE_URL}}"
 BASE_URL_SOURCE="default"
 if [[ -n "${PANEL_INSTALL_BASE_URL:-}" ]]; then

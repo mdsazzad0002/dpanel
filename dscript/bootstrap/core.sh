@@ -143,7 +143,7 @@ PY
     [[ -n "$configured" ]] && { printf '%s' "$configured"; return 0; }
   fi
 
-  printf '%s' "https://installer.likesoftbd.com/dscript"
+  printf '%s' "https://installer.dengrweb.com/dscript"
 }
 
 panel_fetch() {
@@ -1158,7 +1158,7 @@ panel_bootstrap() {
   local skip_ssl="${SKIP_SSL:-false}"
   local skip_test="${SKIP_TEST:-false}"
   local bootstrap_mode="${PANEL_BOOTSTRAP_MODE:-install}"
-  local panel_domain="${PANEL_DOMAIN:-installer.likesoftbd.com}"
+  local panel_domain="${PANEL_DOMAIN:-installer.dengrweb.com}"
   local panel_port="${PANEL_PORT:-80}"
 
   panel_require_root
