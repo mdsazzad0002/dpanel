@@ -131,11 +131,7 @@ else
     cp -f "$DSCRIPT_ARCHIVE_PATH" "$ARCHIVE_PATH"
   else
     printf '[INFO] Downloading release archive from %s\n' "$archive_url"
-    if ! download "$archive_url" "$ARCHIVE_PATH"; then
-      legacy_url="${BASE_URL%/}/bootstrap.zip"
-      printf '[WARN] dscript.zip was unavailable; trying legacy %s\n' "$legacy_url" >&2
-      download "$legacy_url" "$ARCHIVE_PATH" || die "Unable to download a release archive."
-    fi
+    download "$archive_url" "$ARCHIVE_PATH" || die "Unable to download release archive: ${archive_url}"
   fi
 
   ensure_unzip

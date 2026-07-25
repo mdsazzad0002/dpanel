@@ -1,8 +1,8 @@
 # Installer
 
-`/var/www/installer.sh` downloads the live release archive, extracts it into
-`/var/www/dscript`, assigns permissions, registers `/usr/local/bin/dpanel`,
-and hands the request to `dscript/dpanel`.
+`/var/www/installer.sh` downloads the live `dscript.zip` release archive,
+extracts it into `/var/www/dscript`, assigns permissions, registers
+`/usr/local/bin/dpanel`, and hands the request to `dscript/dpanel`.
 
 The standalone installer does not install modules by itself. All real install
 and update work is transferred to the dpanel CLI:
@@ -292,7 +292,9 @@ bash archive.sh /var/www/dscript.zip
 unzip -t /var/www/dscript.zip
 ```
 
-Publish as `https://installer.dengrweb.com/dscript.zip`.
+Publish as `https://installer.dengrweb.com/dscript.zip`. The public server
+must also serve the matching `installer.sh`; otherwise users may still run an
+old installer that points to the previous domain or legacy archive names.
 
 Archive root must contain `dscript/dpanel`, `dscript/core/`,
 `dscript/bootstrap/`, `dscript/repository/` and `dscript/scripts/`.

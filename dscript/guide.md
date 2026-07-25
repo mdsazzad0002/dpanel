@@ -460,8 +460,8 @@ cd /var/www/dscript
 bash archive.sh /var/www/dscript.zip
 ```
 
-The public server should expose that file as `/dscript.zip`. For a private/local
-archive:
+The public server should expose that file as `/dscript.zip` and serve the
+matching `installer.sh` from the same release. For a private/local archive:
 
 ```bash
 sudo env DSCRIPT_ARCHIVE_PATH=/tmp/dscript.zip /var/www/installer.sh
