@@ -28,7 +28,7 @@ sudo /var/www/dscript/dpanel runtime refresh
 /usr/local/bin/dpanel script list
 ```
 
-## Migrate from the old `/opt/likesoft` runtime
+## Migrate from the old `/opt/dengrweb` runtime
 
 The current default is `/opt/dpanel`. Refresh explicitly from the checkout so
 the launcher, local module repository and runtime all move to the new location:

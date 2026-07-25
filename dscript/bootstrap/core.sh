@@ -1008,7 +1008,7 @@ panel_resolve_app_env_file() {
     "/var/www/ServerPanel/.env"
     "/var/www/dpanel/.env"
     "/opt/dpanel/dpanel/.env"
-    "/opt/likesoft/dpanel/.env"
+    "/opt/dengrweb/dpanel/.env"
   )
 
   for path in "${paths[@]}"; do

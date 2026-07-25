@@ -120,9 +120,9 @@ pub fn detect_app_root(explicit: Option<&str>) -> Result<PathBuf, String> {
 
     for candidate in [
         "/var/www/dpanel",
-        "/home/dpanel/likesoftbd_com/dpanel",
+        "/home/dpanel/dengrweb_com/dpanel",
         "/var/www/ServerPanel",
-        "/opt/likesoft/dpanel",
+        "/opt/dengrweb/dpanel",
     ] {
         let path = PathBuf::from(candidate);
         if path.join("public/index.php").exists() {

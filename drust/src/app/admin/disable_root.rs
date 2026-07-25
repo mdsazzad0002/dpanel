@@ -11,14 +11,14 @@ pub(crate) fn run() -> Result<(), String> {
     }
 
     let backup = format!(
-        "{}.likesoft.backup.{}",
+        "{}.dengrweb.backup.{}",
         config_path.display(),
         current_epoch()
     );
     fs::copy(config_path, &backup)
         .map_err(|error| format!("failed to backup ssh config: {error}"))?;
     let dropin_directory = Path::new("/etc/ssh/sshd_config.d");
-    let dropin_file = dropin_directory.join("99-likesoft-root-login.conf");
+    let dropin_file = dropin_directory.join("99-dengrweb-root-login.conf");
     fs::create_dir_all(dropin_directory)
         .map_err(|error| format!("failed to create {}: {error}", dropin_directory.display()))?;
     write_string(&dropin_file, "PermitRootLogin no\n")?;

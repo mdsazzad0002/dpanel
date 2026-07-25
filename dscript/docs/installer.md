@@ -222,7 +222,7 @@ dpanel filemanager ...
 
 ```bash
 sudo dpanel script run fix-dpanel-root panel.example.com
-sudo dpanel script run fix-panel-web-stack dpanel.likesoftbd.com --alias dpanel.localhost
+sudo dpanel script run fix-panel-web-stack installer.dengrweb.com --alias dpanel.localhost
 sudo dpanel script run fix-web-stack 8080 80
 sudo dpanel script run sync-vhost sync example.com /home/example/public_html 8.3
 sudo dpanel script run issue-ssl example.com /home/example/public_html 1

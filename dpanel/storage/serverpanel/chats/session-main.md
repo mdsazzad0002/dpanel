@@ -1179,7 +1179,7 @@ APP_NAME=Laravel
 APP_ENV=production
 APP_KEY=base64:2Uf4gqHzXKxvUi7QdMKJZhkDX6K8nADJw8TZsSeFY6M=
 APP_DEBUG=true
-APP_URL=https://server.likesoftbd.com
+APP_URL=https://server.dengrweb.com
 APP_LOCALE=en
 APP_FALLBACK_LOCALE=en
 APP_FAKER_LOCALE=en_US
@@ -1317,7 +1317,7 @@ APP_NAME=Laravel
 APP_ENV=production
 APP_KEY=base64:2Uf4gqHzXKxvUi7QdMKJZhkDX6K8nADJw8TZsSeFY6M=
 APP_DEBUG=true
-APP_URL=https://server.likesoftbd.com
+APP_URL=https://server.dengrweb.com
 APP_LOCALE=en
 APP_FALLBACK_LOCALE=en
 APP_FAKER_LOCALE=en_US
@@ -1519,4 +1519,3 @@ Session closed.
 
 ## 2026-04-28T14:16:08+00:00 | system | SYSTEM
 Session closed.
-
