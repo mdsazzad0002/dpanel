@@ -17,7 +17,7 @@ Read these files first:
 - `README.md` - project overview and install commands
 - `DEVELOPER.md` - architecture and development workflow
 - `SECURITY.md` - vulnerability reporting policy
-- `LICENSE.md` - custom free-use license
+- `LICENSE` - custom free-use license
 - `docs/FIRST_INSTALL_AND_PERMISSIONS.md` - first install and permission repair guide
 
 ## Contribution Rules
@@ -185,7 +185,7 @@ Relevant docs:
 - `README.md`
 - `DEVELOPER.md`
 - `SECURITY.md`
-- `LICENSE.md`
+- `LICENSE`
 - `docs/FIRST_INSTALL_AND_PERMISSIONS.md`
 - `drust/docs.md`
 

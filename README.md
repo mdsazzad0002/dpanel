@@ -1,201 +1,133 @@
 # dPanel
 
+![dPanel logo](docs/assets/dpanel_logo.png)
+
 dPanel is a free-to-use, source-available ServerPanel hosting control panel
 stack for managing websites, PHP runtimes, SSL, databases, file management,
-and server automation.
+mail, backups, monitoring, and server automation.
 
-## Start Here
+## Project Screenshots
 
-- New server install and permission repair:
-  [`docs/FIRST_INSTALL_AND_PERMISSIONS.md`](docs/FIRST_INSTALL_AND_PERMISSIONS.md)
-- Developer architecture and contribution guide:
-  [`DEVELOPER.md`](DEVELOPER.md)
-- Contribution guide:
-  [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- Security policy:
-  [`SECURITY.md`](SECURITY.md)
-- License policy:
-  [`LICENSE.md`](LICENSE.md)
-- Roadmap and changelog:
-  [`ROADMAP.md`](ROADMAP.md), [`CHANGELOG.md`](CHANGELOG.md)
+Add final screenshots under `docs/assets/screenshots/` and keep the same names
+below so this section becomes live automatically.
 
-If a first-time install works but websites show Laravel/PHP permission errors,
-or the file manager can open folders but cannot create, edit, upload, unzip, or
-delete files, run:
+| Dashboard | Websites | File Manager |
+| --- | --- | --- |
+| ![Dashboard screenshot](docs/assets/screenshots/dashboard.png) | ![Websites screenshot](docs/assets/screenshots/websites.png) | ![File manager screenshot](docs/assets/screenshots/file-manager.png) |
 
-```bash
-/var/www/dscript/scripts/fix-permissions.sh --all
-```
+| Databases | SSL Manager | Server Tasks |
+| --- | --- | --- |
+| ![Databases screenshot](docs/assets/screenshots/databases.png) | ![SSL manager screenshot](docs/assets/screenshots/ssl-manager.png) | ![Server tasks screenshot](docs/assets/screenshots/server-tasks.png) |
 
-This repository contains the full installable ServerPanel stack:
+## What Is Included
 
-- `dpanel` - the Laravel panel application
-- `drust` - the Rust localhost execution API
-- `dscript` - installer, bootstrap, and server maintenance scripts
+- `dpanel` - Laravel 12 + Vue/Inertia control panel application
+- `drust` - Rust localhost execution API for privileged server operations
+- `dscript` - installer, bootstrap, update, and recovery scripts
+- `phpmyadmin` - bundled phpMyAdmin integration assets
+- `docs` - public docs and first-run repair references
 
-Canonical paths:
+Core feature areas:
+
+- Website and domain management
+- PHP runtime and web-stack control
+- SSL certificate lifecycle
+- Database and database-user workflows
+- File manager with permission repair support
+- Mail domain and mailbox management
+- Backup scheduling and restore workflow groundwork
+- Server task history, command reports, and AI-assisted error suggestions
+- Monitoring, service status, and audit-log groundwork
+
+Canonical installed paths:
 
 - Panel app: `/var/www/dpanel`
 - Execution API: `/var/www/drust`
 - Script repo: `/var/www/dscript`
 
-## Installation
+## Final Destination
 
-Clone this repository as `dpanel` and run the installer:
+dPanel is being built as a practical self-hosted hosting control panel for
+operators, developers, agencies, and small hosting providers who need one place
+to manage websites, databases, SSL, files, backups, mail, and server repair
+tasks without losing control of the underlying Linux server.
 
-```bash
-sudo mkdir -p /var/www
-cd /var/www
-sudo git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
-sudo chown -R "$USER:$USER" /var/www/dpanel-source
-cd dpanel-source
-sudo ./installer.sh
-```
-
-If your user cannot write inside `/var/www`, that is normal on a fresh server.
-Use the `sudo git clone` command above, or clone in your home directory and run
-the installer with sudo:
-
-```bash
-cd ~
-git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
-cd dpanel-source
-sudo ./installer.sh
-```
-
-On an installed server where this repository already lives at `/var/www`, use:
-
-```bash
-sudo /var/www/installer.sh
-```
-
-`installer.sh` downloads `dscript.zip`, extracts it directly into
-`/var/www/dscript`, restores executable permissions, registers `dpanel` under
-`/usr/local/bin`, and hands the request to `dscript/dpanel`.
-There is no separate `/var/www/installer/` directory anymore.
-
-With no arguments, the installer runs the default install handover:
+The intended production shape is:
 
 ```text
-installer.sh -> /var/www/dscript/dpanel default-install
+Browser
+  -> dpanel: Laravel + Vue control panel
+  -> drust: protected localhost execution API
+  -> Linux services: nginx, Apache, PHP-FPM, MariaDB, Redis, certbot, filesystem
+
+dscript remains available for installation, bootstrap, update, and recovery.
 ```
 
-The default sequence is:
+## Later Roadmap
 
-```text
-apache -> nginx -> php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs
-```
+- Improve first-time install reliability on fresh Ubuntu/Debian servers.
+- Expand file manager permission diagnostics and repair coverage.
+- Add clearer UI states for API failures, task errors, and repair suggestions.
+- Harden website provisioning, vhost sync, and rollback flows.
+- Improve SSL issuance and renewal visibility.
+- Expand database user, privilege, DNS, and mail management helpers.
+- Improve backup scheduling, restore workflows, monitoring, and alerting.
+- Add stronger audit trails for privileged actions.
+- Add more automated checks for Laravel, Rust, docs, and scripts.
+- Add real architecture diagrams, release packaging notes, and screenshots.
 
-Every mutating interactive menu action shows the command it will run plus a
-configuration summary. It only continues when you type exactly `yes`.
+See the full roadmap in [`ROADMAP.md`](ROADMAP.md).
 
-Or use dscript directly:
+## Quick Connections
 
-```bash
-sudo /var/www/dscript/dpanel default-install
-sudo /var/www/dscript/dpanel chain install
-sudo /var/www/dscript/dpanel module nginx update
-/var/www/dscript/dpanel doctor
-```
+- Developer guide: [`DEVELOPER.md`](DEVELOPER.md)
+- Contribution guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Security policy: [`SECURITY.md`](SECURITY.md)
+- License policy: [`LICENSE`](LICENSE)
+- Changelog: [`CHANGELOG.md`](CHANGELOG.md)
+- First install and permission repair: [`docs/FIRST_INSTALL_AND_PERMISSIONS.md`](docs/FIRST_INSTALL_AND_PERMISSIONS.md)
+- Script command guide: [`dscript/guide.md`](dscript/guide.md)
 
-Open the menu and command hints:
+## Developer Notes
 
-```bash
-dpanel
-dpanel help
-```
+Keep responsibilities separated:
 
-See the complete command, module, script, environment and recovery reference in
-[`dscript/guide.md`](dscript/guide.md).
+- `dpanel` owns UI, database records, authorization, queues, and user workflows.
+- `drust` owns privileged localhost server operations.
+- `dscript` owns install, bootstrap, and recovery commands.
 
-For a fresh device/server checklist, see
-[`dscript/guide.md#new-server-install-checklist`](dscript/guide.md#new-server-install-checklist).
+Laravel should not directly run unsafe privileged shell commands for production
+server changes. Add host-level actions to `drust` and call them from `dpanel`
+through a service or queued job.
 
-## First Run
+## Contributor Notes
 
-The first install flow can:
+Before contributing, read [`CONTRIBUTING.md`](CONTRIBUTING.md),
+[`DEVELOPER.md`](DEVELOPER.md), [`SECURITY.md`](SECURITY.md), and
+[`LICENSE`](LICENSE).
 
-- create the panel runtime
-- write database credentials
-- configure web stack files
-- generate a starter website index file
+Do not submit secrets, `.env` files, private keys, database dumps, customer
+data, generated dependency folders, or proprietary code you do not have
+permission to contribute.
 
-If you need to repair the panel web stack after moving the app root, run:
+## Security
 
-```bash
-sudo /var/www/dscript/scripts/fix-dpanel-root.sh panel.example.com
-```
+Please do not open public issues for security vulnerabilities. Follow
+[`SECURITY.md`](SECURITY.md) and report privately with reproduction details.
 
-## Usage
+Security-sensitive areas include:
 
-### Update the installer/runtime
+- authentication and authorization
+- file manager path validation
+- `drust` API token handling
+- command execution
+- SSH keys and credentials
+- database provisioning
+- SSL private keys
+- permissions and ownership repair
 
-```bash
-cd /var/www/dscript
-sudo bash dpanel chain update
-```
-
-Or refresh from the remote release first and then hand over to chain update:
-
-```bash
-sudo /var/www/installer.sh update
-```
-
-### Create or repair panel web stack
-
-```bash
-sudo /var/www/dscript/scripts/fix-panel-web-stack.sh panel.example.com
-sudo /var/www/dscript/scripts/fix-panel-web-stack.sh installer.likesoftbd.com
-
-sudo /var/www/dscript/scripts/fix-panel-web-stack.sh installer.likesoftbd.com \
-  --alias installer.localhost \
-  --alias panel.localhost
-```
-
-### Reset Apache and all vhosts
-
-```bash
-sudo bash /var/www/dscript/scripts/reset-web-stack.sh --yes
-```
-
-This backs up `/etc/apache2` and `/etc/nginx`, removes enabled vhosts, writes fresh defaults, and restarts the services.
-
-### Sync a website vhost
-
-```bash
-sudo /var/www/dscript/scripts/sync-vhost.sh sync example.com /home/example/public_html 8.3
-sudo /var/www/dscript/scripts/sync-vhost.sh sync likesoftbd.com /var/www/html 8.3
-
-sudo /var/www/dscript/scripts/sync-vhost.sh sync likesoftbd.com /var/www/html 8.3 \
-  --alias localhost \
-  --alias init.localhost
-```
-
-### Create a demo site page
-
-The panel can generate a starter `index.html` inside the selected website root on first creation.
-
-## Environment Variables
-
-Common variables used by the installer:
-
-- `PANEL_INSTALL_BASE_URL`
-- `SERVER_BASE_DIR`
-- `PANEL_APP_DIR`
-- `PANEL_DOMAIN`
-- `PANEL_MODULES`
-- `PANEL_DB_NAME`
-- `PANEL_DB_USER`
-- `PANEL_DB_PASSWORD`
-- `PANEL_DB_HOST`
-- `PANEL_DB_PORT`
-- `PANEL_SERVER_ALIAS`
-
-## Notes
-
-- Script discovery now points to `/var/www/dscript`.
-- The panel app is expected at `/var/www/dpanel`.
-- For development, you can set a custom alias with `PANEL_SERVER_ALIAS`.
+`drust` must stay localhost-only, bearer-token protected, and unavailable from
+the public internet.
 
 ## License
 
@@ -204,4 +136,4 @@ modification, redistribution, rebranding, resale, or derivative works are not
 allowed without written permission. You may sell hosting, website management,
 server management, or related services operated through your own dPanel
 installation, but you may not sell dPanel itself as software. See
-[`LICENSE.md`](LICENSE.md).
+[`LICENSE`](LICENSE).
