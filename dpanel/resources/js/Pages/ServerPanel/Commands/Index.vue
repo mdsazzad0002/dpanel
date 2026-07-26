@@ -31,7 +31,7 @@ const adminUserForm = useForm({
     username: '',
     panel_email: '',
     panel_password: '',
-    shell: '/bin/bash',
+    shell: '/usr/sbin/nologin',
     disable_root: true,
 });
 const sending = ref(false);
@@ -47,7 +47,7 @@ const buildAdminUserCommand = () => {
     const username = String(adminUserForm.username || '').trim();
     const email = String(adminUserForm.panel_email || '').trim();
     const password = String(adminUserForm.panel_password || '');
-    const shell = String(adminUserForm.shell || '/bin/bash').trim() || '/bin/bash';
+    const shell = String(adminUserForm.shell || '/usr/sbin/nologin').trim() || '/usr/sbin/nologin';
 
     if (!username) {
         requestError.value = 'Username is required to build the admin user command.';
@@ -441,11 +441,11 @@ onBeforeUnmount(() => {
 
                 <form class="mt-3 space-y-2 rounded-lg border border-cyan-200 bg-cyan-50 p-3 dark:border-cyan-900/60 dark:bg-cyan-950/20" @submit.prevent="buildAdminUserCommand">
                     <p class="text-xs font-semibold uppercase tracking-wide text-cyan-800 dark:text-cyan-200">Admin User Helper</p>
-                    <p class="text-xs text-cyan-700 dark:text-cyan-300">Builds a `panel user:create` command with password, email, and root-login choice.</p>
+                    <p class="text-xs text-cyan-700 dark:text-cyan-300">Builds a `panel user:create` command for portal access. Shell defaults to `nologin`, so the account stays separated from interactive shell users unless you explicitly change it.</p>
                     <input v-model="adminUserForm.username" type="text" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm dark:border-cyan-900 dark:bg-slate-900" placeholder="Username" />
                     <input v-model="adminUserForm.panel_email" type="email" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm dark:border-cyan-900 dark:bg-slate-900" placeholder="Panel email" />
                     <input v-model="adminUserForm.panel_password" type="text" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm font-mono dark:border-cyan-900 dark:bg-slate-900" placeholder="Panel password" />
-                    <input v-model="adminUserForm.shell" type="text" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm font-mono dark:border-cyan-900 dark:bg-slate-900" placeholder="/bin/bash" />
+                    <input v-model="adminUserForm.shell" type="text" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm font-mono dark:border-cyan-900 dark:bg-slate-900" placeholder="/usr/sbin/nologin" />
                     <label class="flex items-center gap-2 text-xs text-cyan-900 dark:text-cyan-100">
                         <input v-model="adminUserForm.disable_root" type="checkbox" class="rounded border-cyan-300 dark:border-cyan-700" />
                         Disable SSH root login

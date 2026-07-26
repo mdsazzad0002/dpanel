@@ -22,7 +22,7 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
     let username = args[1].clone();
     let mut home: Option<String> = None;
     let mut password: Option<String> = None;
-    let mut shell = "/bin/bash".to_string();
+    let mut shell = "/usr/sbin/nologin".to_string();
     let mut site_directory = "public_html".to_string();
     let mut iter = args.into_iter().skip(2);
     while let Some(arg) = iter.next() {

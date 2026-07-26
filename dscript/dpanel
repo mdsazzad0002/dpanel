@@ -149,10 +149,10 @@ create_system_user_flow() {
   [[ "$home" == "b" || "$home" == "B" ]] && return 0
   home="${home:-/home/$username}"
 
-  printf 'Shell [/bin/bash] (or b to back): '
+  printf 'Shell [/usr/sbin/nologin] (or b to back): '
   read -r shell
   [[ "$shell" == "b" || "$shell" == "B" ]] && return 0
-  shell="${shell:-/bin/bash}"
+  shell="${shell:-/usr/sbin/nologin}"
 
   if [[ "$force_restrict" == "true" ]]; then
     restrict_ip="y"

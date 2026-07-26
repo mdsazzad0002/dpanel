@@ -146,24 +146,14 @@ const generatedInstallSnippet = computed(() => {
         `PANEL_DB_PORT=${shellEscape(dbPort || '3306')}`,
         dbPassword ? `PANEL_DB_PASSWORD=${shellEscape(dbPassword)}` : null,
         projectDir ? `PANEL_APP_DIR=${shellEscape(projectDir)}` : null,
+        adminUser ? `PANEL_ADMIN_USERNAME=${shellEscape(adminUser)}` : null,
+        panelPassword ? `PANEL_ADMIN_PASSWORD=${shellEscape(panelPassword)}` : null,
         panelEmail ? `PANEL_ADMIN_EMAIL=${shellEscape(panelEmail)}` : null,
         selectedPreset.value.include_firewall ? 'SKIP_FIREWALL=false' : 'SKIP_FIREWALL=true',
         selectedPreset.value.include_ssl ? 'SKIP_SSL=false' : 'SKIP_SSL=true',
         'bash dpanel chain install',
     ].filter(Boolean).join(' ');
-
-    if (firstRunWizard.preset !== 'secure' || !adminUser || !panelPassword) {
-        return installCommand;
-    }
-
-    return [
-        installCommand,
-        '&& sudo /usr/local/bin/dpanel user:create',
-        `--username ${shellEscape(adminUser)}`,
-        panelEmail ? `--panel-email ${shellEscape(panelEmail)}` : null,
-        `--panel-password ${shellEscape(panelPassword)}`,
-        firstRunWizard.disable_root ? '--disable-root' : '--keep-root',
-    ].filter(Boolean).join(' ');
+    return installCommand;
 });
 
 const applyPreset = (presetKey) => {
@@ -683,7 +673,7 @@ sudo systemctl restart php8.3-fpm</code></pre>
                                 </button>
                             </div>
                             <pre class="mt-4 overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-black/40 p-4 font-mono text-xs text-emerald-300">{{ generatedInstallSnippet }}</pre>
-                            <p class="mt-2 text-xs text-slate-400">{{ installCopyStatus || 'Secure preset installs ssh-root-login and runs panel user:create after bootstrap. Mail preset keeps mail-stack follow-up manual for now.' }}</p>
+                            <p class="mt-2 text-xs text-slate-400">{{ installCopyStatus || 'Secure preset installs ssh-root-login. Portal user creation is now a separate menu action after bootstrap.' }}</p>
                         </div>
                     </section>
 
@@ -708,7 +698,7 @@ ls -la
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>chmod +x dscript/dpanel
 sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" bash dscript/dpanel chain install</code></pre>
                         <p class="mt-3 text-sm text-slate-700 dark:text-slate-300">
-                            The install flow brings in the runtime, installs selected modules, provisions the database, and updates `.env` automatically.
+                            The install flow brings in the runtime, installs selected modules, provisions the database, and updates `.env` automatically. Portal user creation happens later from the menu, not inside chain install.
                         </p>
                     </section>
 
@@ -716,9 +706,6 @@ sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" bash dscript/dpane
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">3. Direct CLI Examples (No Menu)</h2>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code># Recommended baseline
 sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DOMAIN="panel.example.com" bash dscript/dpanel chain install
-
-# Secure preset
-sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DOMAIN="panel.example.com" PANEL_MODULES="apache,nginx,php,mariadb,supervisor,firewall,fail2ban,ssl,ssh-root-login" bash dscript/dpanel chain install
 
 # Custom DB credentials
 sudo env PANEL_INSTALL_BASE_URL="https://your-domain.example" SERVER_BASE_DIR="/var/www/serverpanel" PANEL_DB_NAME="serverpanel" PANEL_DB_USER="serverpanel" PANEL_DB_PASSWORD="StrongPassword123" bash dscript/dpanel chain install</code></pre>

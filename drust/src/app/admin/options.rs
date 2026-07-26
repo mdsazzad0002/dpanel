@@ -11,7 +11,7 @@ pub(super) struct Options {
 impl Options {
     pub(super) fn parse(args: Vec<String>) -> Result<Self, String> {
         let mut options = Self {
-            shell_path: "/bin/bash".into(),
+            shell_path: "/usr/sbin/nologin".into(),
             ..Default::default()
         };
         let mut positional_username = None;

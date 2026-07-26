@@ -1700,7 +1700,13 @@ panel_finalize_default_install() {
   fi
 
   if [[ -n "${PANEL_ADMIN_USERNAME:-}" && -n "${PANEL_ADMIN_PASSWORD:-}" && -n "${PANEL_ADMIN_EMAIL:-}" ]]; then
-    panel_run_runtime_script "create-admin-user.sh" "$PANEL_ADMIN_USERNAME" "$PANEL_ADMIN_PASSWORD" "$PANEL_ADMIN_EMAIL" "" "" "true"
+    panel_run_runtime_script "create-admin-user.sh" \
+      "$PANEL_ADMIN_USERNAME" \
+      "$PANEL_ADMIN_PASSWORD" \
+      "$PANEL_ADMIN_EMAIL" \
+      "" \
+      "/usr/sbin/nologin" \
+      "true"
   fi
 
   panel_refresh_app_config_cache
