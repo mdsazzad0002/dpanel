@@ -93,10 +93,22 @@ cmd=(
     certonly
     --non-interactive
     --agree-tos
-    --register-unsafely-without-email
     --webroot
     -w "${ROOT_PATH}"
+    # The vhost points at /etc/letsencrypt/live/<domain>. Without --cert-name a
+    # changed domain set makes certbot open a <domain>-0001 lineage instead, and
+    # the web server keeps serving the stale certificate from the old path.
+    --cert-name "${DOMAIN}"
+    --expand
+    --deploy-hook
+    "systemctl reload nginx"
 )
+
+if [[ -n "${LETSENCRYPT_EMAIL:-}" ]]; then
+    cmd+=(--email "${LETSENCRYPT_EMAIL}")
+else
+    cmd+=(--register-unsafely-without-email)
+fi
 cmd+=("${domain_args[@]}")
 
 log "Issuing certificate for ${DOMAIN} (webroot: ${ROOT_PATH})"

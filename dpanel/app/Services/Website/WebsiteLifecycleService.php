@@ -139,9 +139,7 @@ class WebsiteLifecycleService
         $installerBinary = '/usr/local/bin/serverinstaller-site';
 
         if (! is_file($installerBinary) || ! is_executable($installerBinary)) {
-            return back()->withErrors([
-                'error' => 'Website installer command is missing on this server.',
-            ]);
+            return $this->bootstrapFailure($request, 'Website installer command is missing on this server.');
         }
 
         try {
@@ -152,11 +150,9 @@ class WebsiteLifecycleService
             if ($exitCode !== 0) {
                 $message = trim(implode("\n", $output));
 
-                return back()->withErrors([
-                    'error' => $message !== ''
-                        ? 'Website installer command failed: '.$message
-                        : 'Website installer command failed.',
-                ]);
+                return $this->bootstrapFailure($request, $message !== ''
+                    ? 'Website installer command failed: '.$message
+                    : 'Website installer command failed.');
             }
 
             $callbacks['applyWebsiteFilesystemIsolation'](
@@ -211,7 +207,23 @@ class WebsiteLifecycleService
                 'ssl_notice' => $sslNotice,
             ];
         } catch (\Throwable $e) {
-            return back()->withErrors(['error' => $e->getMessage()]);
+            return $this->bootstrapFailure($request, $e->getMessage());
         }
+    }
+
+    /**
+     * Fail with JSON for XHR callers so the browser does not replay the
+     * PATCH/POST against the redirect target (which only answers GET).
+     */
+    protected function bootstrapFailure(Request $request, string $message): RedirectResponse|JsonResponse
+    {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => $message,
+                'errors' => ['error' => [$message]],
+            ], 422);
+        }
+
+        return back()->withErrors(['error' => $message]);
     }
 }

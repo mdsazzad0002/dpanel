@@ -36,7 +36,10 @@ panel_log() {
 
   if mkdir -p "$DPANEL_LOG_DIR" 2>/dev/null && { [[ -w "$DPANEL_LOG_DIR" ]] || [[ -w "$logfile" ]] || [[ ! -e "$logfile" ]]; }; then
     touch "$logfile" 2>/dev/null || true
-    printf '%s\n' "$message" >> "$logfile" 2>/dev/null || true
+    # Non-root CLI use (dpanel help, doctor) must not print a redirection error.
+    if [[ -w "$logfile" ]]; then
+      printf '%s\n' "$message" >> "$logfile" 2>/dev/null || true
+    fi
   fi
 }
 
@@ -78,6 +81,13 @@ panel_ensure_dirs() {
     "${DPANEL_LOG_DIR}/install.log" \
     "${DPANEL_LOG_DIR}/update.log" \
     "${DPANEL_LOG_DIR}/agent.log"
+
+  # Installer logs record host layout and module output; keep them root-only.
+  chmod 0750 "$DPANEL_LOG_DIR" 2>/dev/null || true
+  chmod 0640 \
+    "${DPANEL_LOG_DIR}/install.log" \
+    "${DPANEL_LOG_DIR}/update.log" \
+    "${DPANEL_LOG_DIR}/agent.log" 2>/dev/null || true
 }
 
 panel_detect_os() {
@@ -1430,7 +1440,9 @@ panel_setup_application_database() {
   fi
 
   panel_info_log "Provisioning application database ${db_name} and user ${db_user}."
-  panel_run_runtime_script "database-request.sh" create "$db_name" "$db_user" "$db_password" "$db_host" "$db_port" "$db_charset" "$db_collation"
+  # Password travels in the environment, never as an argument other local users
+  # could read from /proc while the installer runs.
+  DPANEL_DB_PASSWORD="$db_password" panel_run_runtime_script "database-request.sh" create "$db_name" "$db_user" "" "$db_host" "$db_port" "$db_charset" "$db_collation"
 
   panel_env_set "$env_file" DB_CONNECTION mysql
   panel_env_set "$env_file" DB_HOST "$db_host"
@@ -1524,6 +1536,64 @@ panel_prompt_module_action() {
   done
 }
 
+panel_total_memory_mb() {
+  awk '/^MemTotal:/ {printf "%d", $2 / 1024; found = 1} END {if (!found) print 0}' /proc/meminfo 2>/dev/null || printf '0'
+}
+
+panel_total_swap_mb() {
+  awk '/^SwapTotal:/ {printf "%d", $2 / 1024; found = 1} END {if (!found) print 0}' /proc/meminfo 2>/dev/null || printf '0'
+}
+
+# Composer, the Vite build and the Rust build are the memory peaks of an install.
+# On a 1 GB VPS they get OOM-killed without swap, which is the most common reason
+# a first install fails on cheap hosting.
+panel_ensure_swap() {
+  local swapfile="/swapfile" memory swap size_mb free_mb
+
+  memory="$(panel_total_memory_mb)"
+  swap="$(panel_total_swap_mb)"
+
+  [[ "$memory" =~ ^[0-9]+$ && "$swap" =~ ^[0-9]+$ ]] || return 0
+  (( memory > 0 )) || return 0
+  (( memory >= 2048 )) && return 0
+  (( swap >= 1024 )) && return 0
+
+  if [[ -e "$swapfile" ]]; then
+    panel_warn_log "${swapfile} already exists; leaving swap configuration unchanged."
+    return 0
+  fi
+
+  size_mb=2048
+  free_mb="$(df -Pm / 2>/dev/null | awk 'NR == 2 {print $4}')"
+  if [[ "$free_mb" =~ ^[0-9]+$ ]] && (( free_mb < size_mb + 1024 )); then
+    panel_warn_log "Not enough free disk space for a ${size_mb} MB swap file; continuing without swap."
+    return 0
+  fi
+
+  panel_info_log "Detected ${memory} MB RAM and ${swap} MB swap; creating a ${size_mb} MB swap file."
+  if ! fallocate -l "${size_mb}M" "$swapfile" 2>/dev/null; then
+    if ! dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=none 2>/dev/null; then
+      panel_warn_log "Unable to create ${swapfile}; continuing without swap."
+      rm -f "$swapfile"
+      return 0
+    fi
+  fi
+
+  chmod 600 "$swapfile"
+  if ! mkswap "$swapfile" >/dev/null 2>&1 || ! swapon "$swapfile" 2>/dev/null; then
+    # Containers usually forbid swapon; that is not a reason to stop the install.
+    panel_warn_log "Swap could not be enabled on this host; continuing without swap."
+    swapoff "$swapfile" >/dev/null 2>&1 || true
+    rm -f "$swapfile"
+    return 0
+  fi
+
+  if ! grep -q "^${swapfile}[[:space:]]" /etc/fstab 2>/dev/null; then
+    printf '%s none swap sw 0 0\n' "$swapfile" >> /etc/fstab
+  fi
+  panel_info_log "Swap enabled at ${swapfile}."
+}
+
 panel_install_app_dependencies() {
   local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
   local vendor_dir="${app_dir}/vendor"
@@ -1556,14 +1626,42 @@ panel_fix_app_permissions() {
   local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
   local storage_dir="${app_dir}/storage"
   local cache_dir="${app_dir}/bootstrap/cache"
+  local env_file="${app_dir}/.env"
 
   [[ -d "$app_dir" ]] || { panel_warn_log "Application directory not found; skipping app permission repair."; return 0; }
 
   panel_info_log "Repairing application permissions."
-  chown -R www-data:www-data "$app_dir" 2>/dev/null || true
-  chmod -R 775 "$storage_dir" "$cache_dir" 2>/dev/null || true
-  find "$storage_dir" "$cache_dir" -type d -exec chmod 2775 {} + 2>/dev/null || true
-  find "$storage_dir" "$cache_dir" -type f -exec chmod 664 {} + 2>/dev/null || true
+
+  # Application code stays root-owned: www-data only needs to read it, so a
+  # compromised PHP process cannot rewrite the panel itself. Capital X keeps the
+  # execute bit on directories and on binaries such as vendor/bin and node_modules/.bin.
+  #
+  # The restrictive mode is only applied when the ownership change worked. On a
+  # host without a www-data group, stripping other-read from files still owned by
+  # someone else would lock the web server out of the panel.
+  if chown -R root:www-data "$app_dir" 2>/dev/null; then
+    chmod -R u=rwX,g=rX,o= "$app_dir" 2>/dev/null || true
+  else
+    panel_warn_log "Could not apply root:www-data ownership to ${app_dir}; leaving its permissions unchanged."
+    return 0
+  fi
+
+  # Only these two trees are written at runtime.
+  if [[ -d "$storage_dir" || -d "$cache_dir" ]]; then
+    if chown -R www-data:www-data "$storage_dir" "$cache_dir" 2>/dev/null; then
+      chmod -R u=rwX,g=rwX,o= "$storage_dir" "$cache_dir" 2>/dev/null || true
+      find "$storage_dir" "$cache_dir" -type d -exec chmod g+s {} + 2>/dev/null || true
+    else
+      panel_warn_log "Could not apply www-data ownership to the runtime directories."
+    fi
+  fi
+
+  # .env holds the database password and the drust API token, and that token is a
+  # root-level capability on this host. It must never be readable by other users.
+  if [[ -f "$env_file" ]]; then
+    chown root:www-data "$env_file" 2>/dev/null || true
+    chmod 640 "$env_file" 2>/dev/null || true
+  fi
 }
 
 panel_install_frontend_assets() {
@@ -1579,7 +1677,18 @@ panel_install_frontend_assets() {
 
   panel_ensure_node20
 
-  (cd "$app_dir" && npm install)
+  # Node grows its heap until the kernel kills it. Capping the heap below the
+  # machine size makes the build spill to swap instead of dying on a small VPS.
+  local memory node_heap
+  memory="$(panel_total_memory_mb)"
+  if [[ "$memory" =~ ^[0-9]+$ ]] && (( memory > 0 && memory < 4096 )); then
+    node_heap=$(( memory / 2 ))
+    (( node_heap < 512 )) && node_heap=512
+    export NODE_OPTIONS="--max-old-space-size=${node_heap}"
+    panel_info_log "Limiting the frontend build heap to ${node_heap} MB for a ${memory} MB server."
+  fi
+
+  (cd "$app_dir" && npm install --no-audit --no-fund)
   (cd "$app_dir" && npm run build)
 }
 
@@ -1643,6 +1752,52 @@ panel_run_app_migrations() {
   (cd "$app_dir" && php artisan migrate --force)
 }
 
+# drust owns the vhost templates and the certificate handling, so an update that
+# does not rebuild the daemon leaves the server running the old generator.
+panel_refresh_drust_service() {
+  if [[ "$(id -u)" -ne 0 ]]; then
+    panel_warn_log "Skipping drust service installation because this session is not running as root."
+    return 0
+  fi
+
+  if [[ ! -x "/var/www/drust/deploy/install-service.sh" ]]; then
+    panel_warn_log "drust installer not found; admin user creation may fail until drust is installed."
+    return 0
+  fi
+
+  bash "/var/www/drust/deploy/install-service.sh"
+}
+
+# A site only moves to its own PHP-FPM pool safely once its files already belong
+# to that account, so ownership is repaired before the vhosts are regenerated.
+panel_fix_website_permissions() {
+  local script_path="${DPANEL_RUNTIME_DIR}/scripts/fix-permissions.sh"
+
+  [[ -x "$script_path" ]] || {
+    panel_warn_log "fix-permissions script not found; skipping website ownership repair."
+    return 0
+  }
+
+  panel_info_log "Repairing website ownership under /home."
+  if ! bash "$script_path" --all; then
+    panel_warn_log "Website ownership repair reported errors; run 'dpanel script run fix-permissions --all' after fixing them."
+  fi
+}
+
+# Website vhosts are written once at create time, so template fixes shipped with an
+# update stay dormant until each site is synced again. Doing it here means every
+# existing website on the server picks the new template up during the update.
+panel_resync_website_vhosts() {
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
+
+  [[ -x "${app_dir}/artisan" ]] || return 0
+
+  panel_info_log "Regenerating website vhosts from the current templates."
+  if ! (cd "$app_dir" && php artisan serverpanel:vhost-resync); then
+    panel_warn_log "Some website vhosts could not be regenerated; run 'php artisan serverpanel:vhost-resync' after fixing them."
+  fi
+}
+
 panel_refresh_app_config_cache() {
   local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
 
@@ -1680,8 +1835,8 @@ panel_finalize_default_install() {
     panel_env_set "$env_file" PHPMYADMIN_URL "http://${panel_domain}/phpmyadmin/"
   fi
 
+  panel_ensure_swap
   panel_install_app_dependencies
-  panel_fix_app_permissions
   panel_run_app_migrations
   panel_install_frontend_assets
 
@@ -1691,18 +1846,12 @@ panel_finalize_default_install() {
     panel_warn_log "phpMyAdmin signon helper not found; skipping phpMyAdmin setup."
   fi
 
-  if [[ "$(id -u)" -eq 0 && -x "/var/www/drust/deploy/install-service.sh" ]]; then
-    bash "/var/www/drust/deploy/install-service.sh"
-  elif [[ -x "/var/www/drust/deploy/install-service.sh" ]]; then
-    panel_warn_log "Skipping drust service installation because this session is not running as root."
-  else
-    panel_warn_log "drust installer not found; admin user creation may fail until drust is installed."
-  fi
+  panel_refresh_drust_service
 
   if [[ -n "${PANEL_ADMIN_USERNAME:-}" && -n "${PANEL_ADMIN_PASSWORD:-}" && -n "${PANEL_ADMIN_EMAIL:-}" ]]; then
-    panel_run_runtime_script "create-admin-user.sh" \
+    DPANEL_ADMIN_PASSWORD="$PANEL_ADMIN_PASSWORD" panel_run_runtime_script "create-admin-user.sh" \
       "$PANEL_ADMIN_USERNAME" \
-      "$PANEL_ADMIN_PASSWORD" \
+      "" \
       "$PANEL_ADMIN_EMAIL" \
       "" \
       "/usr/sbin/nologin" \
@@ -1710,6 +1859,9 @@ panel_finalize_default_install() {
   fi
 
   panel_refresh_app_config_cache
+  # Runs last: composer, migrations, npm and the config cache all create files as
+  # root, so repairing before them leaves root-owned files under storage/.
+  panel_fix_app_permissions
 }
 
 panel_write_runtime_templates() {
@@ -1771,7 +1923,7 @@ panel_install_cli_launcher() {
 }
 
 panel_bootstrap() {
-  local requested_modules="${PANEL_MODULES:-apache,nginx,php,mariadb,supervisor,firewall,fail2ban}"
+  local requested_modules="${PANEL_MODULES:-apache,nginx,php,mariadb,ssl,supervisor,firewall,fail2ban}"
   local skip_firewall="${SKIP_FIREWALL:-false}"
   local skip_ssl="${SKIP_SSL:-false}"
   local skip_test="${SKIP_TEST:-false}"
@@ -1844,6 +1996,13 @@ panel_bootstrap() {
           fi
         fi
       done
+      panel_ensure_swap
+      # An update must not stop halfway: a failed daemon rebuild still leaves the
+      # previous drust running, and the remaining repair steps are worth doing.
+      panel_refresh_drust_service || panel_warn_log "drust rebuild failed; keeping the running binary."
+      panel_fix_website_permissions
+      panel_resync_website_vhosts
+      panel_fix_app_permissions
       ;;
     info)
       panel_info

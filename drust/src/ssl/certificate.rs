@@ -90,15 +90,22 @@ pub(super) fn ensure(
             "--webroot",
             "-w",
             root_path,
+            // The vhost points at /etc/letsencrypt/live/<domain>. Pinning the lineage
+            // name keeps that path correct when the domain set changes, instead of
+            // certbot silently starting a <domain>-0001 lineage the vhost never reads.
+            "--cert-name",
+            &domain,
+            "--expand",
+            // Renewals happen outside the panel; without this nginx keeps serving the
+            // expired certificate until something reloads it.
+            "--deploy-hook",
+            "systemctl reload nginx",
             "-d",
             &domain,
         ];
         if include_www {
             args.push("-d");
             args.push(&www_domain);
-        }
-        if existed {
-            args.push("--force-renewal");
         }
         let output = Command::new("certbot")
             .args(&args)

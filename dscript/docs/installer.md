@@ -49,7 +49,7 @@ Later changes can be made from the command line:
 
 ```bash
 sudo dpanel panel:domain panel.example.com 80 --alias www.panel.example.com
-sudo dpanel panel:admin admin 'new-password' admin@example.com
+sudo DPANEL_ADMIN_PASSWORD='new-password' dpanel panel:admin admin '' admin@example.com
 sudo dpanel user:password site_owner
 ```
 
@@ -261,7 +261,7 @@ sudo dpanel script run create-demo-site /home/example/public_html example.com 8.
 dpanel script run php-detect-versions
 dpanel script run php-detect-config --version 8.3
 dpanel script run php-detect-extensions --version 8.3
-sudo dpanel script run database-request create appdb appuser 'secret'
+sudo DPANEL_DB_PASSWORD='secret' dpanel script run database-request create appdb appuser ''
 sudo dpanel script run reset-web-stack --yes
 ```
 
@@ -284,9 +284,9 @@ systemctl status mariadb redis-server supervisor --no-pager
 ## Database helper
 
 ```bash
-sudo dpanel script run database-request create appdb appuser 'secret'
-sudo dpanel script run database-request update appdb appuser 'new-secret'
-sudo dpanel script run database-request delete appdb appuser 'secret'
+sudo DPANEL_DB_PASSWORD='secret' dpanel script run database-request create appdb appuser ''
+sudo DPANEL_DB_PASSWORD='new-secret' dpanel script run database-request update appdb appuser ''
+sudo DPANEL_DB_PASSWORD='secret' dpanel script run database-request delete appdb appuser ''
 mysqladmin ping
 ```
 
@@ -482,8 +482,111 @@ sudo apt-get install postfix dovecot-core dovecot-imapd dovecot-lmtpd dovecot-my
 sudo systemctl restart postfix dovecot
 ```
 
+The `ssl` module is part of the default chain, so certbot is present after a
+default install. It also installs
+`/etc/letsencrypt/renewal-hooks/deploy/00-dpanel-reload-webstack.sh`, which
+reloads nginx and Apache after every renewal (for all certificates on the
+server, not only panel-issued ones), and enables `certbot.timer` when the
+distribution ships it. Use `SKIP_SSL=true` to leave it out.
+
+`dpanel chain update` rebuilds drust and then runs
+`php artisan serverpanel:vhost-resync`, so existing websites are regenerated
+from the current vhost templates. Run that command on its own to resync after a
+manual template change:
+
+```bash
+cd /var/www/dpanel && php artisan serverpanel:vhost-resync
+cd /var/www/dpanel && php artisan serverpanel:vhost-resync --domain=example.com
+```
+
 Roundcube is not part of the default stack. Mail service installation focuses on
 Postfix and Dovecot for the panel's own mail service integration.
+
+## Small servers (1-2 GB RAM, 1-2 cores)
+
+The stack is expected to run on cheap VPS hardware, so install and runtime both
+adapt to the machine instead of assuming a large server.
+
+Install:
+
+- if the host has under 2 GB RAM and under 1 GB swap, a 2 GB `/swapfile` is
+  created (`0600`, added to `/etc/fstab`) before composer, npm and the Rust
+  build run. These three steps are where a small server normally gets OOM-killed
+- containers that block `swapon` are detected: the file is removed and the
+  install continues with a warning
+- the frontend build heap is capped at half of RAM (minimum 512 MB)
+- the drust build drops to `CARGO_BUILD_JOBS=1` under 2 GB RAM, which is slower
+  but survives
+
+Runtime:
+
+| Component | Small-server behaviour |
+| --- | --- |
+| PHP-FPM site pools | `pm = ondemand`, so an idle site holds no worker; `pm.max_children` is the smaller of `RAM/512` and `2 x cores`, clamped to 2-10 |
+| MariaDB | under 4 GB RAM a profile is written with a 64-128 MB buffer pool, 50-80 connections and `performance_schema = 0`; it is removed again if the server is later upgraded past 4 GB |
+| nginx | serves static files directly instead of proxying them to Apache, and compresses at `gzip_comp_level 4` to stay cheap on CPU |
+
+Override the worker ceiling per host with `DRUST_SITE_POOL_MAX_CHILDREN` in
+`/etc/drust/drust.env`. On a 1 GB single-core box the defaults work out to two
+workers per site with zero cost while idle.
+
+## Website PHP isolation
+
+Every website whose root is under `/home/<account>` runs in its own PHP-FPM pool
+instead of the shared `www-data` pool. The vhost sync writes
+`/etc/php/<version>/fpm/pool.d/dpanel-<account>.conf` and points Apache at
+`/run/php/dpanel-<account>-php<version>.sock`:
+
+- the pool runs as `<account>:<account>`, so one site's PHP cannot read another
+  site's files or the panel's `.env`
+- `open_basedir`, `upload_tmp_dir`, `sys_temp_dir` and `session.save_path` stay
+  inside the account home
+- the socket is owned by `www-data` so nginx and Apache can reach it
+
+If the pool cannot be created or its socket does not appear, the sync logs a
+warning and keeps that site on the shared pool rather than leaving it broken.
+Set `DRUST_SITE_POOLS=0` in `/etc/drust/drust.env` to force every site back onto
+the shared pool.
+
+Ownership must match the account before a site moves to its own pool, so
+`dpanel chain update` runs `fix-permissions --all` before regenerating vhosts.
+Doing it by hand follows the same order:
+
+```bash
+sudo dpanel script run fix-permissions --all
+cd /var/www/dpanel && php artisan serverpanel:vhost-resync
+```
+
+## Passwords in commands
+
+Anything on a command line is readable from `/proc` by every local account, so
+the maintenance scripts take secrets from the environment:
+
+```bash
+sudo DPANEL_ADMIN_PASSWORD='secret' dpanel script run create-admin-user admin '' admin@example.com
+sudo DPANEL_DB_PASSWORD='secret' dpanel script run database-request create paneldb paneluser
+sudo DPANEL_USER_PASSWORD='secret' dpanel script run set-system-user-password siteuser
+```
+
+The old positional form still works and prints a warning. Requests to drust send
+the bearer token and the JSON body without placing either on a command line, and
+`database-request` talks to MariaDB through a `0600` defaults file with the SQL
+on stdin.
+
+## Panel file ownership
+
+Install and update finish by repairing `/var/www/dpanel`:
+
+| Path | Owner | Mode |
+| --- | --- | --- |
+| application code | `root:www-data` | dirs `750`, files `640` (executables keep `+x`) |
+| `storage`, `bootstrap/cache` | `www-data:www-data` | `2770` dirs, `660` files |
+| `.env` | `root:www-data` | `640` |
+
+The web user can read and run the panel but cannot modify its code, and `.env`
+is unreadable to other accounts on the server because it carries the database
+password and the drust API token. The repair step runs after composer,
+migrations and the asset build, so nothing is left root-owned under `storage/`.
 
 <!-- ======================= Environment ============================== -->
 
@@ -512,4 +615,8 @@ DRUST_API_PORT
 DRUST_API_TOKEN
 DRUST_CONNECT_TIMEOUT
 DRUST_REQUEST_TIMEOUT
+DRUST_SITE_POOLS=1
+DPANEL_ADMIN_PASSWORD
+DPANEL_DB_PASSWORD
+DPANEL_USER_PASSWORD
 ```

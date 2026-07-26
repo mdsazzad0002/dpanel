@@ -62,6 +62,9 @@ If `drust` is exposed publicly, rotate the API token immediately and restrict ne
 Before using dPanel on a public server:
 
 - keep `DRUST_API_TOKEN` and `SERVERPANEL_EXECUTION_API_TOKEN` synchronized and secret
+- keep `/var/www/dpanel/.env` at `root:www-data` mode `640`; it carries the drust token, which is a root capability on the host
+- keep websites on their own PHP-FPM pools (`DRUST_SITE_POOLS=1`, the default) so one site's PHP cannot read another site's files
+- pass secrets to maintenance scripts through `DPANEL_ADMIN_PASSWORD`, `DPANEL_DB_PASSWORD` or `DPANEL_USER_PASSWORD`, never as arguments other local users can read from `/proc`
 - confirm `drust` is reachable only from localhost
 - use HTTPS for public panel access
 - run the panel with least-privilege web server users

@@ -294,9 +294,9 @@ The database helper validates identifiers, host, port, charset and collation
 before sending SQL to MariaDB/MySQL:
 
 ```bash
-sudo dpanel script run database-request create appdb appuser 'secret' 127.0.0.1 3306
-sudo dpanel script run database-request update appdb appuser 'new-secret' 127.0.0.1 3306
-sudo dpanel script run database-request delete appdb appuser 'secret' 127.0.0.1 3306
+sudo DPANEL_DB_PASSWORD='secret' dpanel script run database-request create appdb appuser '' 127.0.0.1 3306
+sudo DPANEL_DB_PASSWORD='new-secret' dpanel script run database-request update appdb appuser '' 127.0.0.1 3306
+sudo DPANEL_DB_PASSWORD='secret' dpanel script run database-request delete appdb appuser '' 127.0.0.1 3306
 ```
 
 Passwords should be passed through a protected environment or trusted process

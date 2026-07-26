@@ -657,6 +657,10 @@ CONF;
 
     DirectoryIndex index.php index.html index.htm
 
+    <IfModule mod_setenvif.c>
+        SetEnvIf X-Forwarded-Proto "^https$" HTTPS=on
+    </IfModule>
+
     <FilesMatch \\.php$>
         SetHandler "proxy:unix:{$socketPath}|fcgi://localhost/"
     </FilesMatch>

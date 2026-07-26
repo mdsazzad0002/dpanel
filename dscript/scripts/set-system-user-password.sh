@@ -6,11 +6,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_drust-api.sh"
 
 usage() {
-  echo "Usage: $0 <username> [password]"
+  cat <<'EOF'
+Usage: set-system-user-password.sh <username> [password]
+
+Preferred form, so the password never reaches a command line:
+  DPANEL_USER_PASSWORD='secret' set-system-user-password.sh <username>
+EOF
 }
 
 username="${1:-}"
-password="${2:-}"
+# An argument password is visible in /proc to every local account while this
+# script runs; the environment variable is the supported path.
+password="${DPANEL_USER_PASSWORD:-${2:-}}"
+if [[ -z "${DPANEL_USER_PASSWORD:-}" && -n "${2:-}" ]]; then
+  echo "[WARN] Passing the password as an argument exposes it to other local users. Use DPANEL_USER_PASSWORD instead." >&2
+fi
 if [[ -z "$username" || "$username" == "-h" || "$username" == "--help" ]]; then
   usage
   [[ -n "$username" ]] && exit 0 || exit 64
@@ -46,12 +56,12 @@ if [[ -z "$password" ]]; then
 fi
 
 drust_require_python
-body="$(python3 - "$username" "$password" <<'PY'
-import json, sys
+body="$(DPANEL_USER_PASSWORD="$password" python3 - "$username" <<'PY'
+import json, os, sys
 print(json.dumps({
     "action": "password",
     "username": sys.argv[1],
-    "password": sys.argv[2],
+    "password": os.environ.get("DPANEL_USER_PASSWORD", ""),
 }))
 PY
 )"

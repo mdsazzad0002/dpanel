@@ -4,7 +4,13 @@ set -euo pipefail
 ACTION="${1:-}"
 DB_NAME="${2:-}"
 DB_USER="${3:-}"
-DB_PASSWORD="${4:-}"
+# A password given as an argument is readable through /proc by every local
+# account while this script runs. DPANEL_DB_PASSWORD is the supported path; the
+# positional form stays for older callers.
+DB_PASSWORD="${DPANEL_DB_PASSWORD:-${4:-}}"
+if [[ -z "${DPANEL_DB_PASSWORD:-}" && -n "${4:-}" ]]; then
+    echo "[database-request] WARNING: passing the password as an argument exposes it to other local users. Use DPANEL_DB_PASSWORD instead." >&2
+fi
 DB_HOST_RAW="${5:-127.0.0.1}"
 DB_PORT_RAW="${6:-3306}"
 DB_CHARSET="${7:-utf8mb4}"
@@ -72,16 +78,47 @@ if [[ -z "${DB_CLI}" ]]; then
     fail "No database CLI found (mariadb/mysql)."
 fi
 
+# Both the admin password and the statements carry secrets, so neither may reach
+# the client's command line: credentials go through a 0600 defaults file and the
+# SQL arrives on stdin.
+DB_DEFAULTS_FILE=""
+
+cleanup_defaults_file() {
+    if [[ -n "${DB_DEFAULTS_FILE}" ]]; then
+        rm -f "${DB_DEFAULTS_FILE}"
+    fi
+
+    # A failing EXIT trap would overwrite the script's real exit status.
+    return 0
+}
+trap cleanup_defaults_file EXIT
+
+ensure_defaults_file() {
+    [[ -n "${DB_DEFAULTS_FILE}" ]] && return 0
+
+    DB_DEFAULTS_FILE="$(mktemp)" || fail "Unable to create a temporary credentials file."
+    chmod 600 "${DB_DEFAULTS_FILE}"
+    {
+        printf '[client]\n'
+        if [[ -n "${DB_ADMIN_USER}" ]]; then
+            printf 'user=%s\n' "${DB_ADMIN_USER}"
+        fi
+        if [[ -n "${DB_ADMIN_PASSWORD}" ]]; then
+            printf 'password=%s\n' "${DB_ADMIN_PASSWORD}"
+        fi
+    } > "${DB_DEFAULTS_FILE}"
+
+    # An empty admin password must not make this function report failure under
+    # `set -e`, which would stop the installer before any SQL runs.
+    return 0
+}
+
 sql_exec() {
     local sql="$1"
     local args=()
 
-    if [[ -n "${DB_ADMIN_USER}" ]]; then
-        args+=(--user="${DB_ADMIN_USER}")
-    fi
-    if [[ -n "${DB_ADMIN_PASSWORD}" ]]; then
-        args+=(--password="${DB_ADMIN_PASSWORD}")
-    fi
+    ensure_defaults_file
+    args+=("--defaults-extra-file=${DB_DEFAULTS_FILE}")
 
     if [[ -n "${DB_ADMIN_HOST}" ]]; then
         args+=(--host="${DB_ADMIN_HOST}" --port="${DB_PORT}")
@@ -89,7 +126,7 @@ sql_exec() {
         args+=(--host="${DB_HOST}" --port="${DB_PORT}")
     fi
 
-    "${DB_CLI}" "${args[@]}" -e "${sql}"
+    printf '%s\n' "${sql}" | "${DB_CLI}" "${args[@]}"
 }
 
 grant_for_host() {

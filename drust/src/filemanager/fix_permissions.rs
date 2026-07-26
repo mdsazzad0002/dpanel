@@ -129,21 +129,49 @@ fn discover_public_html_targets() -> Result<Vec<Target>, String> {
             continue;
         }
 
-        let public_html = entry.path().join("public_html");
-        if !public_html.is_dir() {
-            continue;
+        let home = entry.path();
+        let public_html = home.join("public_html");
+        if public_html.is_dir() {
+            if let Ok(target) = resolve_target(Some(&username), public_html.to_str()) {
+                targets.push(target);
+            }
         }
 
-        if let Ok(target) = resolve_target(Some(&username), public_html.to_str()) {
-            targets.push(target);
+        // An account can host several websites, each in its own project folder
+        // (/home/<user>/<site>/public). Repairing only public_html would skip them.
+        for site in site_project_roots(&home) {
+            if let Ok(target) = resolve_target(Some(&username), site.to_str()) {
+                targets.push(target);
+            }
         }
     }
 
     if targets.is_empty() {
-        return Err("No /home/*/public_html projects found.".into());
+        return Err("No website roots found under /home.".into());
     }
 
     Ok(targets)
+}
+
+fn site_project_roots(home: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    let Ok(entries) = fs::read_dir(home) else {
+        return roots;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() || path.file_name().and_then(|name| name.to_str()) == Some("public_html")
+        {
+            continue;
+        }
+
+        if path.join("public").is_dir() || path.join("public_html").is_dir() {
+            roots.push(path);
+        }
+    }
+
+    roots
 }
 
 fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {

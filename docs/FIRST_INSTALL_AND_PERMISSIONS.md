@@ -28,6 +28,9 @@ Run this from terminal:
 
 Then refresh the panel and try the file manager action again.
 
+`--all` covers both layouts the panel creates: `/home/<user>/public_html` and
+per-site project folders such as `/home/<user>/<site>/public`.
+
 For one website only:
 
 ```bash

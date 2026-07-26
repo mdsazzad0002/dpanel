@@ -70,9 +70,20 @@ if [[ -f "${LARAVEL_ENV}" ]]; then
   if ! grep -q '^SERVERPANEL_FILEMANAGER_API_URL=' "${LARAVEL_ENV}"; then
     printf 'SERVERPANEL_FILEMANAGER_API_URL=http://127.0.0.1:%s/api/v1/filemanager\n' "${DRUST_API_PORT:-9500}" >> "${LARAVEL_ENV}"
   fi
+  # The file now carries a token that is a root capability on this host.
+  chown root:www-data "${LARAVEL_ENV}" 2>/dev/null || true
+  chmod 640 "${LARAVEL_ENV}" 2>/dev/null || true
   if [[ -x "${DRUST_ROOT}/../dpanel/artisan" ]]; then
     (cd "${DRUST_ROOT}/../dpanel" && php artisan config:clear >/dev/null 2>&1 || true)
   fi
+fi
+
+# Parallel codegen is what makes rustc peak; on a small VPS that peak is an
+# OOM kill. One job is slower but finishes on a 1 GB machine.
+MEMORY_MB="$(awk '/^MemTotal:/ {printf "%d", $2 / 1024; found = 1} END {if (!found) print 0}' /proc/meminfo 2>/dev/null || printf '0')"
+if [[ "${MEMORY_MB}" =~ ^[0-9]+$ ]] && (( MEMORY_MB > 0 && MEMORY_MB < 2048 )); then
+  echo "[drust] ${MEMORY_MB} MB RAM detected; building with a single job to avoid an out-of-memory kill."
+  export CARGO_BUILD_JOBS=1
 fi
 
 cargo build --release --manifest-path "${DRUST_ROOT}/Cargo.toml"

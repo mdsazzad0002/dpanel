@@ -68,7 +68,7 @@ dscript_chain_help() {
   cat <<'EOF'
 Usage: dpanel chain <install|update|verify|repair> [module,...]
 
-install   Install modules in order. Default: apache,nginx,php,mariadb,
+install   Install modules in order. Default: apache,nginx,php,mariadb,ssl,
           supervisor,firewall,fail2ban.
 update    Refresh the remote manifest and update changed modules.
 verify    Run read-only repository, dependency and runtime checks.
@@ -280,7 +280,11 @@ dscript_module_info() {
   printf 'Repository version: %s\n' "${remote:-unknown}"
   printf 'Installed version:  %s\n' "${installed:-not recorded}"
   printf 'Actions:            %s\n' "${actions[*]:-install}"
-  [[ "$module" == "php" ]] && printf 'Versions:           %s\n' "$(panel_php_versions | paste -sd, -)"
+  # An `if` rather than `&&`: for every non-php module the trailing test would
+  # make this function report failure to a `set -e` caller.
+  if [[ "$module" == "php" ]]; then
+    printf 'Versions:           %s\n' "$(panel_php_versions | paste -sd, -)"
+  fi
 }
 
 dscript_module_list() {
@@ -342,7 +346,7 @@ dscript_run_chain() {
         export PANEL_MODULES
       fi
       if [[ "$DSCRIPT_DRY_RUN" == "true" ]]; then
-        printf '[DRY-RUN] chain install: %s\n' "${PANEL_MODULES:-apache,nginx,php,mariadb,supervisor,firewall,fail2ban}"
+        printf '[DRY-RUN] chain install: %s\n' "${PANEL_MODULES:-apache,nginx,php,mariadb,ssl,supervisor,firewall,fail2ban}"
       else
         PANEL_BOOTSTRAP_MODE=install panel_bootstrap
       fi

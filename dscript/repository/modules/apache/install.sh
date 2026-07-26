@@ -7,17 +7,54 @@ source "${SCRIPT_DIR}/../_load.sh" 2>/dev/null || { source "${DPANEL_RUNTIME_DIR
 
 action="${1:-install}"
 
+# Apache only ever sees nginx on the loopback interface, so without mod_remoteip
+# every request is logged and handed to PHP as 127.0.0.1. Sites lose the real
+# visitor IP, which breaks rate limiting, geo and abuse handling in the apps.
+# The same file carries the backend hardening, since Apache error pages are
+# proxied to visitors unchanged.
+apache_configure_backend() {
+  local conf_path
+  case "$(pkg_distro_family)" in
+    debian) conf_path='/etc/apache2/conf-available/dpanel-backend.conf' ;;
+    rpm) conf_path='/etc/httpd/conf.d/dpanel-backend.conf' ;;
+    *) return 0 ;;
+  esac
+
+  mkdir -p "$(dirname "$conf_path")"
+  cat > "$conf_path" <<'CONF'
+# Managed by dpanel. Apache runs as the backend behind nginx on this host.
+
+# nginx terminates the connection, so the client IP arrives in a header.
+<IfModule mod_remoteip.c>
+    RemoteIPHeader X-Forwarded-For
+    RemoteIPTrustedProxy 127.0.0.1
+    RemoteIPTrustedProxy ::1
+</IfModule>
+
+# Backend error pages are proxied straight to visitors; keep the version out.
+ServerTokens Prod
+ServerSignature Off
+TraceEnable Off
+CONF
+
+  if [[ "$(pkg_distro_family)" == "debian" ]]; then
+    a2enconf dpanel-backend >/dev/null 2>&1 || true
+  fi
+}
+
 apache_install() {
   pkg_install_apache_stack
   pkg_configure_apache_backend_ports
 
   case "$(pkg_distro_family)" in
     debian)
-      a2enmod proxy proxy_fcgi setenvif rewrite headers >/dev/null 2>&1 || true
+      a2enmod proxy proxy_fcgi setenvif rewrite headers remoteip >/dev/null 2>&1 || true
+      apache_configure_backend
       pkg_enable_service apache2
       panel_info_log "apache installed as backend service."
       ;;
     rpm)
+      apache_configure_backend
       systemctl enable httpd >/dev/null 2>&1 || true
       panel_info_log "apache installed as backend service."
       ;;
@@ -27,10 +64,13 @@ apache_install() {
 apache_remove() {
   case "$(pkg_distro_family)" in
     debian)
+      a2disconf dpanel-backend >/dev/null 2>&1 || true
+      rm -f /etc/apache2/conf-available/dpanel-backend.conf
       pkg_remove apache2
       panel_info_log "apache removed."
       ;;
     rpm)
+      rm -f /etc/httpd/conf.d/dpanel-backend.conf
       pkg_remove httpd
       panel_info_log "apache removed."
       ;;

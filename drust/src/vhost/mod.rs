@@ -2,6 +2,7 @@ mod common;
 mod fix_panel_web_stack;
 mod fix_web_stack;
 mod options;
+mod site_pool;
 mod sync;
 
 pub(crate) fn run_fix_web_stack(

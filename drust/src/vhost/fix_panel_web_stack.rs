@@ -37,6 +37,10 @@ pub(super) fn run(options: Panel) -> Result<(), String> {
 
     DirectoryIndex index.php index.html index.htm
 
+    <IfModule mod_setenvif.c>
+        SetEnvIf X-Forwarded-Proto \"^https$\" HTTPS=on
+    </IfModule>
+
     <FilesMatch \\.php$>
         SetHandler \"proxy:unix:/run/php/php{php_version}-fpm.sock|fcgi://localhost/\"
     </FilesMatch>
@@ -68,6 +72,16 @@ server {{
     server_name {domain} {aliases};
     client_max_body_size {body_size};
 
+    root {app_root}/public;
+
+    location ~* \\.(?:css|js|mjs|map|jpg|jpeg|gif|png|webp|avif|svg|ico|ttf|otf|woff|woff2|eot|webmanifest)$ {{
+        try_files $uri @backend;
+        error_page 403 = @backend;
+        expires 30d;
+        access_log off;
+        add_header Cache-Control \"public, max-age=2592000\";
+    }}
+
     location / {{
         proxy_pass http://127.0.0.1:{backend_port};
         proxy_http_version 1.1;
@@ -75,6 +89,22 @@ server {{
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }}
+
+    location @backend {{
+        proxy_pass http://127.0.0.1:{backend_port};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
         proxy_connect_timeout 30s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
@@ -84,6 +114,7 @@ server {{
         frontend_port = options.frontend_port,
         domain = options.domain,
         aliases = aliases,
+        app_root = app_root.display(),
         body_size = options.client_max_body_size,
         backend_port = options.backend_port
     );
