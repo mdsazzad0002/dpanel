@@ -104,7 +104,7 @@ install_mail_services() {
 }
 
 install_node_runtime() {
-  install_system_packages nodejs npm
+  install_system_packages nodejs
 }
 
 restrict_user_to_ip() {
@@ -258,13 +258,16 @@ run_interactive_menu() {
     printf '10) SSL menu | dpanel module ssl install / dpanel script run issue-ssl <domain> <root>\n'
     printf '11) Rust/Drust menu | bash /var/www/drust/deploy/install-service.sh\n'
     printf '12) Mail menu | apt install postfix dovecot-core / systemctl restart postfix dovecot\n'
-    printf '13) nodejs install | install packages: nodejs npm\n'
+          printf '13) nodejs install | install package: nodejs\n'
     printf '14) User menu | dpanel filemanager user ensure <user> --home <path> --shell <shell>\n'
     printf '15) Security menu | passwd root / dpanel script run disable-root-login\n'
-    printf '16) module list | dpanel module list\n'
-    printf '17) Maintenance scripts list | dpanel script list\n'
-    printf '18) Doctor check | dpanel doctor\n'
-    printf '19) Help | dpanel help\n'
+    printf '16) Permission fix | dpanel repair:permissions --all\n'
+    printf '17) module list | dpanel module list\n'
+    printf '18) Maintenance scripts list | dpanel script list\n'
+    printf '19) Runtime refresh | dpanel runtime refresh\n'
+    printf '20) Link refresh | dpanel link\n'
+    printf '21) Doctor check | dpanel doctor\n'
+    printf '22) Help | dpanel help\n'
     printf '0) Exit\n'
     printf 'Select option: '
     read -r choice
@@ -276,7 +279,7 @@ run_interactive_menu() {
           "install rust/drust service" \
           "chain install firewall fail2ban ssl" \
           "install postfix dovecot" \
-          "install nodejs npm"; then
+          "install nodejs"; then
           default_install_sequence
         fi
         ;;
@@ -381,9 +384,8 @@ run_interactive_menu() {
           printf '1) Install all supported PHP versions (7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5) | dpanel php install all\n'
           printf '2) Update all PHP versions | dpanel php update all\n'
           printf '3) Show installed PHP versions | dpanel php versions\n'
-          printf '4) PHP 8.3 set default | dpanel php default 8.3\n'
-          printf '5) PHP 8.4 set default | dpanel php default 8.4\n'
-          printf '6) Repair/reinstall specific PHP version | dpanel php reinstall <version>\n'
+          printf '4) Set default PHP version | choose 8.1 / 8.2 / 8.3 / 8.4 (default: 8.3)\n'
+          printf '5) Repair/reinstall specific PHP version | dpanel php reinstall <version>\n'
           printf '0) Back\n'
           printf 'Select option: '
           read -r php_choice
@@ -401,16 +403,19 @@ run_interactive_menu() {
               ;;
             3) dscript_cli php versions ;;
             4)
-              if confirm_action "Set default PHP 8.3" "php default 8.3"; then
-                dscript_cli php default 8.3
+              local php_default_choice
+              printf 'Default PHP version [8.3]: '
+              read -r php_default_choice
+              php_default_choice="${php_default_choice:-8.3}"
+              if [[ "$php_default_choice" =~ ^8\.[1-4]$ ]]; then
+                if confirm_action "Set default PHP ${php_default_choice}" "php default ${php_default_choice}"; then
+                  dscript_cli php default "$php_default_choice"
+                fi
+              else
+                printf 'Invalid PHP version.\n'
               fi
               ;;
             5)
-              if confirm_action "Set default PHP 8.4" "php default 8.4"; then
-                dscript_cli php default 8.4
-              fi
-              ;;
-            6)
               printf 'PHP version to repair/reinstall (example: 8.3): '
               read -r php_version
               if [[ "$php_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
@@ -570,7 +575,7 @@ run_interactive_menu() {
         done
         ;;
       13)
-        if confirm_action "Install nodejs/npm" "install packages: nodejs npm"; then
+        if confirm_action "Install nodejs" "install package: nodejs"; then
           install_node_runtime
         fi
         ;;
@@ -622,10 +627,50 @@ run_interactive_menu() {
           esac
         done
         ;;
-      16) dscript_cli module list ;;
-      17) dscript_cli script list ;;
-      18) dscript_cli doctor ;;
-      19) dscript_cli help ;;
+      16)
+        local permission_fix_scope permission_fix_path permission_fix_user
+        if find /home -maxdepth 2 -type d -name public_html -print -quit 2>/dev/null | grep -q .; then
+          printf 'Permission fix scope [all/user/path] (default: all): '
+          read -r permission_fix_scope
+          permission_fix_scope="${permission_fix_scope:-all}"
+        else
+          printf 'No /home/*/public_html projects found.\n'
+          printf 'Permission fix scope [user/path] (default: path): '
+          read -r permission_fix_scope
+          permission_fix_scope="${permission_fix_scope:-path}"
+        fi
+
+        case "$permission_fix_scope" in
+          all)
+            if confirm_action "Permission fix for all projects" "repair:permissions --all"; then
+              dscript_cli repair:permissions --all
+            fi
+            ;;
+          user)
+            printf 'Username: '
+            read -r permission_fix_user
+            if [[ -n "$permission_fix_user" ]] && confirm_action "Permission fix for ${permission_fix_user}" "repair:permissions --user ${permission_fix_user}"; then
+              dscript_cli repair:permissions --user "$permission_fix_user"
+            fi
+            ;;
+          path)
+            printf 'Project path: '
+            read -r permission_fix_path
+            if [[ -n "$permission_fix_path" ]] && confirm_action "Permission fix for ${permission_fix_path}" "repair:permissions --path ${permission_fix_path}"; then
+              dscript_cli repair:permissions --path "$permission_fix_path"
+            fi
+            ;;
+          *)
+            printf 'Invalid option.\n'
+            ;;
+        esac
+        ;;
+      17) dscript_cli module list ;;
+      18) dscript_cli script list ;;
+      19) dscript_cli runtime refresh ;;
+      20) dscript_cli link ;;
+      21) dscript_cli doctor ;;
+      22) dscript_cli help ;;
       0) return 0 ;;
       *) printf 'Invalid option.\n' ;;
     esac

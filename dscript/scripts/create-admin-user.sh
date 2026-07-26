@@ -23,4 +23,7 @@ print(json.dumps({
 }))
 PY
 )"
-drust_api_post /api/v1/create-admin-user "$body"
+if ! drust_api_post /api/v1/create-admin-user "$body"; then
+  echo "[WARN] Admin user creation skipped because the drust API returned an error." >&2
+  exit 0
+fi

@@ -176,6 +176,22 @@ panel_copy_runtime_asset() {
   install -m 0755 "$src" "$dest"
 }
 
+panel_fix_runtime_exec_bits() {
+  local root="${1:-}"
+  [[ -n "$root" && -d "$root" ]] || return 0
+
+  find "$root" -type d -exec chmod 0755 {} +
+  find "$root" -type f \( -name '*.sh' -o -name dpanel -o -name launcher.sh \) -exec chmod 0755 {} +
+}
+
+panel_resolve_tempdir_for_user() {
+  local username="${1:-default}"
+  local tempdir="${PANEL_APP_DIR:-/var/www/dpanel}/storage/app/tmp/${username}"
+  mkdir -p "$tempdir"
+  chmod 0775 "$tempdir" 2>/dev/null || true
+  printf '%s' "$tempdir"
+}
+
 panel_install_runtime_assets() {
   panel_info_log "Installing runtime assets into ${DPANEL_RUNTIME_DIR}"
   mkdir -p "$DPANEL_RUNTIME_DIR"
@@ -261,6 +277,9 @@ panel_install_runtime_assets() {
     fi
   fi
 
+  panel_fix_runtime_exec_bits "$DPANEL_RUNTIME_DIR"
+  panel_fix_runtime_exec_bits "$DPANEL_REPOSITORY_DIR"
+
   panel_write_launcher() {
     local launcher_path="$1"
     local target_path="$2"
@@ -344,7 +363,10 @@ panel_register_server() {
   "version": "${VERSION:-unknown}",
   "panel_domain": "${PANEL_DOMAIN:-}",
   "panel_port": "${PANEL_PORT:-80}",
-  "default_php_version": "$(panel_php_default_version)"
+  "default_php_version": "$(panel_php_default_version)",
+  "admin_username": "${PANEL_ADMIN_USERNAME:-}",
+  "admin_email": "${PANEL_ADMIN_EMAIL:-}",
+  "admin_password": "${PANEL_ADMIN_PASSWORD:-}"
 }
 EOF
 
@@ -362,6 +384,8 @@ panel_prompt_required() {
   local prompt="$2"
   local secret="${3:-false}"
   local value="${!variable_name:-}"
+  local current_value=""
+  local response=""
 
   if [[ -n "$value" ]]; then
     printf -v "$variable_name" '%s' "$value"
@@ -369,6 +393,44 @@ panel_prompt_required() {
   fi
 
   panel_is_interactive || panel_die "${variable_name} is required. Set it in the environment for non-interactive install."
+
+  current_value=""
+  if [[ -f "$DPANEL_SERVER_JSON" ]] && command -v python3 >/dev/null 2>&1; then
+    current_value="$(python3 - "$DPANEL_SERVER_JSON" "$variable_name" <<'PY' 2>/dev/null
+import json
+import sys
+path, variable_name = sys.argv[1], sys.argv[2]
+try:
+    with open(path, 'r', encoding='utf-8') as handle:
+        data = json.load(handle)
+    value = data.get(variable_name, '')
+except (OSError, ValueError):
+    value = ''
+if variable_name == 'PANEL_ADMIN_PASSWORD':
+    print('')
+else:
+    print(value)
+PY
+)"
+  fi
+
+  if [[ -n "$current_value" ]]; then
+    while true; do
+      if [[ "${secret,,}" == "true" ]]; then
+        read -rp "Use previous value for ${prompt}? [Y/n]: " response
+      else
+        read -rp "Use previous value '${current_value}' for ${prompt}? [Y/n]: " response
+      fi
+      response="$(printf '%s' "$response" | tr '[:upper:]' '[:lower:]' | xargs)"
+      if [[ -z "$response" || "$response" == "y" || "$response" == "yes" ]]; then
+        printf -v "$variable_name" '%s' "$current_value"
+        return 0
+      fi
+      if [[ "$response" == "n" || "$response" == "no" ]]; then
+        break
+      fi
+    done
+  fi
 
   while [[ -z "$value" ]]; do
     if [[ "${secret,,}" == "true" ]]; then
@@ -386,6 +448,8 @@ panel_prompt_required() {
 panel_prompt_password_pair() {
   local password="${PANEL_ADMIN_PASSWORD:-}"
   local confirm=""
+  local current_password=""
+  local response=""
 
   if [[ -n "$password" ]]; then
     PANEL_ADMIN_PASSWORD="$password"
@@ -393,6 +457,34 @@ panel_prompt_password_pair() {
   fi
 
   panel_is_interactive || panel_die "PANEL_ADMIN_PASSWORD is required. Set it in the environment for non-interactive install."
+
+  if [[ -f "$DPANEL_SERVER_JSON" ]] && command -v python3 >/dev/null 2>&1; then
+    current_password="$(python3 - "$DPANEL_SERVER_JSON" <<'PY' 2>/dev/null
+import json
+import sys
+try:
+    with open(sys.argv[1], 'r', encoding='utf-8') as handle:
+        data = json.load(handle)
+    print(data.get('admin_password', ''))
+except (OSError, ValueError):
+    print('')
+PY
+)"
+  fi
+
+  if [[ -n "$current_password" ]]; then
+    while true; do
+      read -rp "Use previous admin password? [Y/n]: " response
+      response="$(printf '%s' "$response" | tr '[:upper:]' '[:lower:]' | xargs)"
+      if [[ -z "$response" || "$response" == "y" || "$response" == "yes" ]]; then
+        PANEL_ADMIN_PASSWORD="$current_password"
+        return 0
+      fi
+      if [[ "$response" == "n" || "$response" == "no" ]]; then
+        break
+      fi
+    done
+  fi
 
   while true; do
     read -rsp "Admin password: " password
@@ -414,9 +506,139 @@ panel_prompt_password_pair() {
   PANEL_ADMIN_PASSWORD="$password"
 }
 
+panel_prompt_panel_reconfigure() {
+  local domain="${PANEL_DOMAIN:-}"
+  local username="${PANEL_ADMIN_USERNAME:-}"
+  local email="${PANEL_ADMIN_EMAIL:-}"
+  local has_values="false"
+  local answer=""
+
+  [[ -n "$domain" || -n "$username" || -n "$email" || -n "${PANEL_ADMIN_PASSWORD:-}" ]] && has_values="true"
+  [[ "$has_values" == "true" ]] || return 0
+
+  while true; do
+    printf 'Panel already configured:\n'
+    printf '  Domain:   %s\n' "${domain:-<empty>}"
+    printf '  User:     %s\n' "${username:-<empty>}"
+    printf '  Email:    %s\n' "${email:-<empty>}"
+    printf 'Do you want panel reconfig? [y/N]: '
+    read -r answer
+    answer="$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]' | xargs)"
+    case "$answer" in
+      ''|n|no) return 1 ;;
+      y|yes) return 0 ;;
+      *) panel_warn_log "Please answer yes or no." ;;
+    esac
+  done
+}
+
+panel_load_existing_panel_env() {
+  local env_file=""
+  local panel_url=""
+  local session_domain=""
+
+  env_file="$(panel_resolve_app_env_file)"
+  [[ -n "$env_file" && -f "$env_file" ]] || return 0
+
+  if [[ -z "${PANEL_DOMAIN:-}" ]]; then
+    if command -v python3 >/dev/null 2>&1; then
+      panel_url="$(python3 - "$env_file" <<'PY'
+import sys
+path = sys.argv[1]
+value = ""
+session_domain = ""
+try:
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith("APP_URL="):
+                value = line.split("=", 1)[1].strip().strip('"').strip("'")
+            if line.startswith("SESSION_DOMAIN="):
+                session_domain = line.split("=", 1)[1].strip().strip('"').strip("'")
+except OSError:
+    pass
+if value:
+    print(value)
+elif session_domain:
+    print(session_domain)
+else:
+    print("")
+PY
+)"
+      if [[ -n "$panel_url" ]]; then
+        panel_url="${panel_url#http://}"
+        panel_url="${panel_url#https://}"
+        panel_url="${panel_url%%/*}"
+        panel_url="${panel_url%%:*}"
+        PANEL_DOMAIN="$panel_url"
+      fi
+    fi
+  fi
+}
+
 panel_collect_first_install_config() {
   [[ "${PANEL_BOOTSTRAP_MODE:-install}" == "install" ]] || return 0
-  [[ "${PANEL_SKIP_FIRST_INSTALL_PROMPTS:-false}" != "true" ]] || return 0
+
+  local skip_prompts="${PANEL_SKIP_FIRST_INSTALL_PROMPTS:-false}"
+  local reconfig_checked="${PANEL_PANEL_RECONFIG_CHECKED:-false}"
+
+  panel_load_existing_panel_env
+
+  if [[ "$reconfig_checked" != "true" ]]; then
+    export PANEL_PANEL_RECONFIG_CHECKED=true
+    local existing_domain existing_username existing_email existing_password
+    existing_domain=""
+    existing_username=""
+    existing_email=""
+    existing_password=""
+
+    if [[ -f "$DPANEL_SERVER_JSON" ]] && command -v python3 >/dev/null 2>&1; then
+      read -r existing_domain existing_username existing_email existing_password < <(python3 - "$DPANEL_SERVER_JSON" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], 'r', encoding='utf-8') as handle:
+        data = json.load(handle)
+    print(
+        data.get('panel_domain', ''),
+        data.get('admin_username', ''),
+        data.get('admin_email', ''),
+        data.get('admin_password', ''),
+    )
+except (OSError, ValueError):
+    print('', '', '', '')
+PY
+)
+    fi
+
+    if [[ -z "${PANEL_DOMAIN:-}" && -n "$existing_domain" ]]; then
+      PANEL_DOMAIN="$existing_domain"
+    fi
+    if [[ -z "${PANEL_ADMIN_USERNAME:-}" && -n "$existing_username" ]]; then
+      PANEL_ADMIN_USERNAME="$existing_username"
+    fi
+    if [[ -z "${PANEL_ADMIN_EMAIL:-}" && -n "$existing_email" ]]; then
+      PANEL_ADMIN_EMAIL="$existing_email"
+    fi
+    if [[ -z "${PANEL_ADMIN_PASSWORD:-}" && -n "$existing_password" ]]; then
+      PANEL_ADMIN_PASSWORD="$existing_password"
+    fi
+
+    if [[ "${skip_prompts}" != "true" ]] && [[ -n "${PANEL_DOMAIN:-}" || -n "${PANEL_ADMIN_USERNAME:-}" || -n "${PANEL_ADMIN_EMAIL:-}" || -n "${PANEL_ADMIN_PASSWORD:-}" ]]; then
+      if ! panel_prompt_panel_reconfigure; then
+        export PANEL_DOMAIN PANEL_ADMIN_USERNAME PANEL_ADMIN_EMAIL PANEL_ADMIN_PASSWORD
+        return 0
+      fi
+      PANEL_DOMAIN=""
+      PANEL_ADMIN_USERNAME=""
+      PANEL_ADMIN_EMAIL=""
+      PANEL_ADMIN_PASSWORD=""
+    fi
+  fi
+
+  if [[ "${skip_prompts}" == "true" ]]; then
+    export PANEL_DOMAIN PANEL_ADMIN_USERNAME PANEL_ADMIN_EMAIL PANEL_ADMIN_PASSWORD
+    return 0
+  fi
 
   panel_prompt_required PANEL_DOMAIN "Panel domain"
   panel_prompt_required PANEL_ADMIN_USERNAME "Admin username"
@@ -1045,7 +1267,8 @@ panel_site_create() {
     "${DPANEL_TEMPLATE_DIR}/generated/pools/${username}.conf" \
     username "$username" \
     php_version "$php_version" \
-    root "$root_path"
+    root "$root_path" \
+    tmpdir "$(panel_resolve_tempdir_for_user "$username")"
 
   if [[ "${ssl,,}" == "yes" || "${ssl,,}" == "true" ]]; then
     panel_render_template \
@@ -1095,6 +1318,74 @@ panel_resolve_app_env_file() {
   printf '%s' ''
 }
 
+panel_resolve_app_env_example_file() {
+  local candidate=""
+  local path
+  local paths=()
+
+  if [[ -n "${PANEL_APP_DIR:-}" ]]; then
+    paths+=("${PANEL_APP_DIR}/.env.example" "${PANEL_APP_DIR}/dpanel/.env.example")
+  fi
+
+  paths+=(
+    "${DPANEL_BASE_DIR}/dpanel/.env.example"
+    "/var/www/dpanel/.env.example"
+    "/opt/dpanel/dpanel/.env.example"
+    "/opt/dengrweb/dpanel/.env.example"
+  )
+
+  for path in "${paths[@]}"; do
+    candidate="$(printf '%s' "$path" | xargs)"
+    if [[ -n "$candidate" && -f "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  printf '%s' ''
+}
+
+panel_ensure_app_env_file() {
+  local env_file="${1:-}"
+  local panel_domain="${2:-${PANEL_DOMAIN:-localhost}}"
+  local panel_port="${3:-${PANEL_PORT:-80}}"
+  local app_url scheme env_example
+
+  [[ -n "$env_file" ]] || return 1
+
+  if [[ -f "$env_file" ]]; then
+    printf '%s' "$env_file"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$env_file")"
+
+  env_example="$(panel_resolve_app_env_example_file)"
+  if [[ -n "$env_example" ]]; then
+    cp -f "$env_example" "$env_file"
+  else
+    cat > "$env_file" <<'EOF'
+APP_NAME=dPanel
+APP_ENV=production
+APP_DEBUG=false
+EOF
+  fi
+
+  scheme="http"
+  [[ "$panel_port" == "443" ]] && scheme="https"
+  app_url="${scheme}://${panel_domain}"
+  if [[ "$panel_port" != "80" && "$panel_port" != "443" ]]; then
+    app_url="${app_url}:${panel_port}"
+  fi
+
+  panel_env_set "$env_file" APP_URL "$app_url"
+  panel_env_set "$env_file" SESSION_DOMAIN "$panel_domain"
+  panel_env_set "$env_file" SESSION_SECURE_COOKIE "true"
+  chmod 0644 "$env_file" 2>/dev/null || true
+  printf '[INFO] Created missing application .env: %s\n' "$env_file" >&2
+  printf '%s' "$env_file"
+}
+
 panel_env_set() {
   local file="$1"
   local key="$2"
@@ -1123,8 +1414,7 @@ panel_setup_application_database() {
 
   env_file="$(panel_resolve_app_env_file)"
   if [[ -z "$env_file" ]]; then
-    panel_warn_log "Application .env not found; skipping database provisioning."
-    return 0
+    env_file="$(panel_ensure_app_env_file "${PANEL_APP_DIR:-/var/www/dpanel}/.env")"
   fi
 
   db_name="${PANEL_DB_NAME:-dpanel}"
@@ -1170,6 +1460,252 @@ panel_run_runtime_script() {
   DPANEL_RUNTIME_DIR="$DPANEL_RUNTIME_DIR" DPANEL_BASE_DIR="$DPANEL_BASE_DIR" bash "$script_path" "$@"
 }
 
+panel_module_state_label() {
+  local module="$1"
+  local installed
+  installed="$(panel_installed_manifest_value "$module" 2>/dev/null || true)"
+  if [[ -n "$installed" && "$installed" != "no" ]]; then
+    printf 'installed (%s)' "$installed"
+  else
+    printf 'not installed'
+  fi
+}
+
+panel_prompt_module_action() {
+  local module="$1"
+  local desired_action="${2:-install}"
+  local state_label answer default_action prompt
+
+  state_label="$(panel_module_state_label "$module")"
+  default_action="$desired_action"
+
+  if [[ "$desired_action" == "install" ]]; then
+    if [[ "$state_label" == installed* ]]; then
+      default_action="skip"
+    fi
+  elif [[ "$desired_action" == "update" ]]; then
+    if [[ "$state_label" == "not installed" ]]; then
+      default_action="install"
+    fi
+  fi
+
+  if [[ "$default_action" == "skip" ]]; then
+    prompt="Module ${module} is ${state_label}. Already OK. Continue with no action? [y/N/skip]"
+  elif [[ "$default_action" == "install" ]]; then
+    prompt="Module ${module} is ${state_label}. Install it now? [Y/n/skip]"
+  else
+    prompt="Module ${module} is ${state_label}. Update it now? [Y/n/skip]"
+  fi
+
+  while true; do
+    read -rp "${prompt} " answer
+    answer="$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]' | xargs)"
+    case "$answer" in
+      '')
+        if [[ "$default_action" == "skip" ]]; then
+          printf '%s' 'skip'
+        else
+          printf '%s' "$default_action"
+        fi
+        return 0
+        ;;
+      y|yes)
+        if [[ "$default_action" == "skip" ]]; then
+          printf '%s' 'skip'
+        else
+          printf '%s' "$default_action"
+        fi
+        return 0
+        ;;
+      n|no|skip|s) printf '%s' 'skip'; return 0 ;;
+      install|update|remove|reinstall) printf '%s' "$answer"; return 0 ;;
+      *) panel_warn_log "Please answer yes, no, skip, install, update, remove or reinstall." ;;
+    esac
+  done
+}
+
+panel_install_app_dependencies() {
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
+  local vendor_dir="${app_dir}/vendor"
+
+  [[ -d "$app_dir" ]] || { panel_warn_log "Application directory not found; skipping app dependency install."; return 0; }
+
+  if [[ -f "${vendor_dir}/autoload.php" ]]; then
+    panel_info_log "Application dependencies already present."
+  else
+    panel_info_log "Installing PHP application dependencies with composer."
+    if ! command -v composer >/dev/null 2>&1; then
+      panel_warn_log "composer is missing; attempting package install."
+      if command -v apt-get >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq composer
+      elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y composer
+      elif command -v yum >/dev/null 2>&1; then
+        yum install -y composer
+      else
+        panel_die "composer is required but no supported package manager was found."
+      fi
+    fi
+
+    (cd "$app_dir" && composer install --no-interaction --prefer-dist --optimize-autoloader)
+  fi
+}
+
+panel_fix_app_permissions() {
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
+  local storage_dir="${app_dir}/storage"
+  local cache_dir="${app_dir}/bootstrap/cache"
+
+  [[ -d "$app_dir" ]] || { panel_warn_log "Application directory not found; skipping app permission repair."; return 0; }
+
+  panel_info_log "Repairing application permissions."
+  chown -R www-data:www-data "$app_dir" 2>/dev/null || true
+  chmod -R 775 "$storage_dir" "$cache_dir" 2>/dev/null || true
+  find "$storage_dir" "$cache_dir" -type d -exec chmod 2775 {} + 2>/dev/null || true
+  find "$storage_dir" "$cache_dir" -type f -exec chmod 664 {} + 2>/dev/null || true
+}
+
+panel_install_frontend_assets() {
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
+
+  [[ -d "$app_dir" ]] || { panel_warn_log "Application directory not found; skipping frontend build."; return 0; }
+  [[ -f "${app_dir}/package.json" ]] || { panel_warn_log "package.json not found; skipping frontend build."; return 0; }
+
+  panel_info_log "Installing frontend dependencies and building assets."
+  if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+    panel_warn_log "npm is missing; attempting package install."
+  fi
+
+  panel_ensure_node20
+
+  (cd "$app_dir" && npm install)
+  (cd "$app_dir" && npm run build)
+}
+
+panel_ensure_node20() {
+  local major version
+  local arch node_version node_url node_dir tarball
+
+  if ! command -v node >/dev/null 2>&1; then
+    major=0
+  else
+    version="$(node -v 2>/dev/null | sed 's/^v//')"
+    major="${version%%.*}"
+  fi
+
+  if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 20 )); then
+    return 0
+  fi
+
+  panel_warn_log "Node.js ${version:-missing} is too old for Vite; installing Node.js 20+."
+
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64|amd64) node_arch="linux-x64" ;;
+    aarch64|arm64) node_arch="linux-arm64" ;;
+    armv7l) node_arch="linux-armv7l" ;;
+    *)
+      panel_die "Unsupported CPU architecture for bundled Node.js download: ${arch}"
+      ;;
+  esac
+
+  node_version="v20.19.0"
+  node_url="https://nodejs.org/dist/${node_version}/node-${node_version}-${node_arch}.tar.xz"
+  node_dir="${DPANEL_BASE_DIR:-/opt/dpanel}/node-${node_version}"
+  tarball="${node_dir}.tar.xz"
+
+  mkdir -p "$DPANEL_BASE_DIR"
+  if [[ ! -x "${node_dir}/bin/node" ]]; then
+    rm -rf "$node_dir" "$tarball"
+    panel_info_log "Downloading Node.js ${node_version} (${node_arch})."
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL "$node_url" -o "$tarball"
+    elif command -v wget >/dev/null 2>&1; then
+      wget -qO "$tarball" "$node_url"
+    else
+      panel_die "curl or wget is required to download Node.js ${node_version}."
+    fi
+    tar -xJf "$tarball" -C "$DPANEL_BASE_DIR"
+    mv -f "${DPANEL_BASE_DIR}/node-${node_version}-${node_arch}" "$node_dir"
+  fi
+
+  export PATH="${node_dir}/bin:${PATH}"
+  hash -r 2>/dev/null || true
+}
+
+panel_run_app_migrations() {
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
+
+  [[ -x "${app_dir}/artisan" ]] || { panel_warn_log "artisan not found; skipping database migration."; return 0; }
+
+  panel_info_log "Running Laravel migrations."
+  (cd "$app_dir" && php artisan migrate --force)
+}
+
+panel_refresh_app_config_cache() {
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
+
+  [[ -x "${app_dir}/artisan" ]] || return 0
+  (cd "$app_dir" && php artisan optimize:clear >/dev/null 2>&1 || true)
+  (cd "$app_dir" && php artisan config:cache >/dev/null 2>&1 || true)
+}
+
+panel_finalize_default_install() {
+  panel_collect_first_install_config
+
+  local env_file="${PANEL_APP_ENV_FILE:-}"
+  if [[ -z "$env_file" ]]; then
+    env_file="$(panel_resolve_app_env_file)"
+  fi
+  if [[ -z "$env_file" ]]; then
+    env_file="$(panel_ensure_app_env_file "${PANEL_APP_DIR:-/var/www/dpanel}/.env")"
+  else
+    env_file="$(panel_ensure_app_env_file "$env_file")"
+  fi
+
+  local panel_domain="${PANEL_DOMAIN:-}"
+  local panel_port="${PANEL_PORT:-80}"
+  local drust_token="${DRUST_API_TOKEN:-}"
+
+  if [[ -n "$drust_token" ]]; then
+    panel_env_set "$env_file" SERVERPANEL_EXECUTION_API_BASE_URL "http://127.0.0.1:9500"
+    panel_env_set "$env_file" SERVERPANEL_EXECUTION_API_TOKEN "$drust_token"
+  fi
+
+  if [[ -n "$panel_domain" ]]; then
+    panel_env_set "$env_file" APP_URL "http://${panel_domain}"
+    panel_env_set "$env_file" SESSION_DOMAIN "$panel_domain"
+    panel_env_set "$env_file" SESSION_SECURE_COOKIE "true"
+    panel_env_set "$env_file" PHPMYADMIN_URL "http://${panel_domain}/phpmyadmin/"
+  fi
+
+  panel_install_app_dependencies
+  panel_fix_app_permissions
+  panel_run_app_migrations
+  panel_install_frontend_assets
+
+  if [[ -x "${DPANEL_RUNTIME_DIR}/scripts/configure-phpmyadmin-signon.sh" ]]; then
+    panel_run_runtime_script "configure-phpmyadmin-signon.sh"
+  else
+    panel_warn_log "phpMyAdmin signon helper not found; skipping phpMyAdmin setup."
+  fi
+
+  if [[ "$(id -u)" -eq 0 && -x "/var/www/drust/deploy/install-service.sh" ]]; then
+    bash "/var/www/drust/deploy/install-service.sh"
+  elif [[ -x "/var/www/drust/deploy/install-service.sh" ]]; then
+    panel_warn_log "Skipping drust service installation because this session is not running as root."
+  else
+    panel_warn_log "drust installer not found; admin user creation may fail until drust is installed."
+  fi
+
+  if [[ -n "${PANEL_ADMIN_USERNAME:-}" && -n "${PANEL_ADMIN_PASSWORD:-}" && -n "${PANEL_ADMIN_EMAIL:-}" ]]; then
+    panel_run_runtime_script "create-admin-user.sh" "$PANEL_ADMIN_USERNAME" "$PANEL_ADMIN_PASSWORD" "$PANEL_ADMIN_EMAIL" "" "" "true"
+  fi
+
+  panel_refresh_app_config_cache
+}
+
 panel_write_runtime_templates() {
   cat > "${DPANEL_RUNTIME_DIR}/nginx-site.conf.tpl" <<'EOF'
 server {
@@ -1210,6 +1746,9 @@ group = {{username}}
 listen = /run/php/panel-{{username}}.sock
 listen.owner = www-data
 listen.group = www-data
+env[TMPDIR] = {{tmpdir}}
+env[TEMP] = {{tmpdir}}
+env[TMP] = {{tmpdir}}
 pm = ondemand
 pm.max_children = 10
 EOF
@@ -1231,7 +1770,6 @@ panel_bootstrap() {
   local skip_ssl="${SKIP_SSL:-false}"
   local skip_test="${SKIP_TEST:-false}"
   local bootstrap_mode="${PANEL_BOOTSTRAP_MODE:-install}"
-  panel_collect_first_install_config
   local panel_domain="${PANEL_DOMAIN:-}"
   local panel_port="${PANEL_PORT:-80}"
 
@@ -1251,6 +1789,12 @@ panel_bootstrap() {
       for module in "${module_list[@]}"; do
         module="$(printf '%s' "$module" | xargs)"
         [[ -z "$module" ]] && continue
+        local module_action
+        module_action="$(panel_prompt_module_action "$module" install)"
+        if [[ "$module_action" == "skip" ]]; then
+          panel_info_log "Skipping module ${module}."
+          continue
+        fi
         if [[ "$module" == "firewall" && "${skip_firewall,,}" == "true" ]]; then
           panel_info_log "Skipping firewall module."
           continue
@@ -1260,11 +1804,11 @@ panel_bootstrap() {
           continue
         fi
         if [[ "$module" == "php" ]]; then
-          if ! panel_php_manage_versions install all; then
+          if ! panel_php_manage_versions "$module_action" all; then
             panel_error_log "Module failed; chain stopped: ${module}"
             return 1
           fi
-        elif ! panel_run_module "$module" install; then
+        elif ! panel_run_module "$module" "$module_action"; then
           panel_error_log "Module failed; chain stopped: ${module}"
           return 1
         fi
@@ -1273,18 +1817,27 @@ panel_bootstrap() {
           panel_setup_application_database
         fi
       done
-      if [[ -x "/var/www/drust/deploy/install-service.sh" ]]; then
-        bash "/var/www/drust/deploy/install-service.sh"
-      else
-        panel_warn_log "drust installer not found; admin user creation may fail until drust is installed."
-      fi
-      if [[ -n "${PANEL_ADMIN_USERNAME:-}" && -n "${PANEL_ADMIN_PASSWORD:-}" && -n "${PANEL_ADMIN_EMAIL:-}" ]]; then
-        panel_run_runtime_script "create-admin-user.sh" "$PANEL_ADMIN_USERNAME" "$PANEL_ADMIN_PASSWORD" "$PANEL_ADMIN_EMAIL" "" "" "true"
-      fi
+      panel_finalize_default_install
       ;;
     update)
       panel_sync_manifest
-      panel_update_from_manifest
+      local module
+      for module in $(dscript_manifest_modules); do
+        local module_action
+        module_action="$(panel_prompt_module_action "$module" update)"
+        [[ "$module_action" == "skip" ]] && { panel_info_log "Skipping module ${module}."; continue; }
+        if [[ "$module" == "php" ]]; then
+          if ! panel_php_manage_versions "$module_action" all; then
+            panel_error_log "Module failed; chain stopped: ${module}"
+            return 1
+          fi
+        else
+          if ! panel_run_module "$module" "$module_action"; then
+            panel_error_log "Module failed; chain stopped: ${module}"
+            return 1
+          fi
+        fi
+      done
       ;;
     info)
       panel_info

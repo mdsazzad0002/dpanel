@@ -113,6 +113,16 @@ The default install sequence is:
 apache -> nginx -> php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs
 ```
 
+During the first interactive install, dPanel now prompts for:
+
+- Panel domain
+- Admin username
+- Admin email
+- Admin password
+
+If you are running unattended, set `PANEL_SKIP_FIRST_INSTALL_PROMPTS=true`
+and provide the values through environment variables instead.
+
 Run `dpanel` to open the interactive menu. Every install/update action shows the
 exact command and waits for `yes` before it changes the server.
 

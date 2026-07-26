@@ -26,13 +26,15 @@ drust_api_post() {
   command -v curl >/dev/null 2>&1 || drust_api_die "curl is required to call drust."
   [[ -n "${DRUST_API_TOKEN:-}" ]] || drust_api_die "DRUST_API_TOKEN is missing. Set it or install /etc/drust/drust.env."
 
-  curl --fail-with-body --silent --show-error \
+  if ! curl --fail-with-body --silent --show-error \
     --connect-timeout "${DRUST_CONNECT_TIMEOUT:-5}" \
     --max-time "${DRUST_REQUEST_TIMEOUT:-120}" \
     -H "Authorization: Bearer ${DRUST_API_TOKEN}" \
     -H 'Content-Type: application/json' \
     --data "$body" \
-    "${DRUST_API_URL%/}${endpoint}"
+    "${DRUST_API_URL%/}${endpoint}"; then
+    return 1
+  fi
   printf '\n'
 }
 

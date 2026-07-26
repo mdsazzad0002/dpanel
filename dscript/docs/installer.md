@@ -29,6 +29,12 @@ On first install, the default flow asks for:
 - Admin email
 - Admin password
 
+If you are automating the install and do not want prompts, set:
+
+```bash
+PANEL_SKIP_FIRST_INSTALL_PROMPTS=true
+```
+
 For non-interactive installs, provide them through environment variables:
 
 ```bash

@@ -37,6 +37,7 @@ Commands:
   list                           List modules and maintenance scripts
   logs [install|update|agent]    Show a runtime log
   runtime refresh                Refresh installed runtime and launcher
+  link                           Alias for runtime refresh
   help [command|module|script]   Show detailed help
 
 Global options:
@@ -130,6 +131,7 @@ database-request|Create, update, delete or test a MariaDB database request|<acti
 disable-root-login|Disable SSH root login through the drust execution API|
 set-system-user-password|Change a Linux/system user shell password through drust|<username> [password]
 set-panel-domain|Update panel domain metadata, .env and web-stack config|<domain> [port] [--alias domain] [--no-web-stack]
+fix-permissions|Repair file ownership and writable paths through drust|[--all] [--user USERNAME] [--path PATH]
 fix-dpanel-root|Repair the local panel web-stack configuration|[domain] [options]
 fix-panel-web-stack|Repair panel Apache/Nginx configuration through drust|<domain> [options]
 fix-web-stack|Repair Apache/Nginx base configuration through drust|[options]
@@ -155,7 +157,7 @@ dscript_script_path() {
     script_root="${DPANEL_RUNTIME_DIR}/scripts"
   fi
   case "$name" in
-    configure-phpmyadmin-signon|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-web-stack|sync-vhost)
+    configure-phpmyadmin-signon|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-web-stack|sync-vhost)
       printf '%s/%s.sh' "$script_root" "$name"
       ;;
     *) printf '%s' '' ;;
@@ -488,6 +490,9 @@ dscript_cli() {
       [[ "${1:-}" == "refresh" ]] || panel_die "Usage: dpanel runtime refresh"
       dscript_runtime_refresh
       ;;
+    link)
+      dscript_runtime_refresh
+      ;;
     info) panel_info ;;
     install)
       if [[ $# -gt 0 ]] && dscript_module_exists "$1"; then local m="$1"; shift; dscript_run_module "$m" install "$@"; else dscript_run_chain install "$@"; fi
@@ -503,6 +508,7 @@ dscript_cli() {
     user:password) dscript_run_script set-system-user-password "$@" ;;
     panel:domain) dscript_run_script set-panel-domain "$@" ;;
     panel:admin) dscript_run_script create-admin-user "$@" ;;
+    repair:permissions) dscript_run_script fix-permissions "$@" ;;
     ssh:disable-root) dscript_run_script disable-root-login "$@" ;;
     *)
       if dscript_module_exists "$command"; then

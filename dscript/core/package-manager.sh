@@ -177,34 +177,72 @@ pkg_restart_service() {
   systemctl restart "$service"
 }
 
-pkg_install_php_stack() {
+pkg_ensure_php_repo() {
   local version="${1:-8.3}"
+  local package="php${version}-cli"
+  local package_fpm="php${version}-fpm"
+
+  if pkg_package_available "$package" || pkg_package_available "$package_fpm"; then
+    return 0
+  fi
 
   case "$(pkg_distro_family)" in
     debian)
-      pkg_install \
-        "php${version}-cli" \
-        "php${version}-common" \
-        "php${version}-curl" \
-        "php${version}-fpm" \
-        "php${version}-mbstring" \
-        "php${version}-mysql" \
-        "php${version}-xml" \
-        "php${version}-zip"
-      ;;
-    rpm)
-      pkg_install \
-        php \
-        php-cli \
-        php-common \
-        php-fpm \
-        php-mbstring \
-        php-mysqlnd \
-        php-xml \
-        php-zip \
-        php-curl
+      export DEBIAN_FRONTEND=noninteractive
+      pkg_install software-properties-common ca-certificates curl gnupg lsb-release >/dev/null 2>&1 || true
+      if command -v add-apt-repository >/dev/null 2>&1; then
+        add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || true
+        export DPANEL_APT_UPDATED=false
+        apt-get update -y >/dev/null 2>&1 || true
+      fi
       ;;
   esac
+}
+
+pkg_install_php_stack() {
+  local version="${1:-8.3}"
+  local -a packages=()
+
+  pkg_ensure_php_repo "$version"
+
+  case "$(pkg_distro_family)" in
+    debian)
+      if pkg_package_available "php${version}-cli"; then
+        packages+=("php${version}-cli")
+      fi
+      if pkg_package_available "php${version}-common"; then
+        packages+=("php${version}-common")
+      fi
+      if pkg_package_available "php${version}-curl"; then
+        packages+=("php${version}-curl")
+      fi
+      if pkg_package_available "php${version}-fpm"; then
+        packages+=("php${version}-fpm")
+      fi
+      if pkg_package_available "php${version}-mbstring"; then
+        packages+=("php${version}-mbstring")
+      fi
+      if pkg_package_available "php${version}-mysql"; then
+        packages+=("php${version}-mysql")
+      fi
+      if pkg_package_available "php${version}-xml"; then
+        packages+=("php${version}-xml")
+      fi
+      if pkg_package_available "php${version}-zip"; then
+        packages+=("php${version}-zip")
+      fi
+      ;;
+    rpm)
+      packages=(php php-cli php-common php-fpm php-mbstring php-mysqlnd php-xml php-zip php-curl)
+      ;;
+  esac
+
+  if [[ ${#packages[@]} -eq 0 ]]; then
+    echo "[WARN] No PHP ${version} packages are available for $(pkg_distro_family); skipping PHP install." >&2
+    return 0
+  fi
+
+  pkg_install "${packages[@]}"
 }
 
 pkg_php_fpm_service() {

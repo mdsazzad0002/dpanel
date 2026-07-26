@@ -844,6 +844,10 @@ class WordpressInstallService
                 continue;
             }
 
+            if (! is_writable($candidate)) {
+                @chmod($candidate, 0775);
+            }
+
             if (is_writable($candidate)) {
                 return $candidate;
             }

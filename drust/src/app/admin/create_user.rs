@@ -81,7 +81,15 @@ pub(super) fn create(options: Options) -> Result<(), String> {
         let _ = run_status("passwd", &["-u", &options.username]);
     }
     if options.disable_root {
-        disable_root::run()?;
+        match disable_root::run() {
+            Ok(()) => {}
+            Err(error) => {
+                warn(&format!(
+                    "Skipped SSH hardening after creating {}: {}",
+                    options.username, error
+                ));
+            }
+        }
     }
 
     println!("Admin user setup completed for {}", options.username);

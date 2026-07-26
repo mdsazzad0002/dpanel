@@ -936,13 +936,17 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', $this->zipExtensionMissingMessage());
         }
 
-        $zipTempDir = storage_path('app/filemanager-zips');
+        $zipTempDir = $this->resolveTemporaryDirectory().'/filemanager-zips';
         if (! is_dir($zipTempDir) && ! @mkdir($zipTempDir, 0775, true) && ! is_dir($zipTempDir)) {
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to prepare temporary zip folder.');
         }
 
-        $zipTempPath = tempnam($zipTempDir, 'zip-');
-        if ($zipTempPath === false) {
+        if (! is_writable($zipTempDir)) {
+            @chmod($zipTempDir, 0775);
+        }
+
+        $zipTempPath = $this->buildTemporaryFilePath($zipTempDir, 'zip-', '.zip');
+        if (@touch($zipTempPath) === false) {
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create temporary zip file.');
         }
 
@@ -3456,6 +3460,7 @@ CONF;
             sys_get_temp_dir(),
             storage_path('app/tmp'),
             storage_path('framework/tmp'),
+            storage_path('app'),
         ];
 
         foreach ($candidates as $candidate) {
@@ -3464,8 +3469,12 @@ CONF;
                 continue;
             }
 
-            if (! is_dir($candidate) && ! @mkdir($candidate, 0755, true) && ! is_dir($candidate)) {
+            if (! is_dir($candidate) && ! @mkdir($candidate, 0775, true) && ! is_dir($candidate)) {
                 continue;
+            }
+
+            if (! is_writable($candidate)) {
+                @chmod($candidate, 0775);
             }
 
             if (is_writable($candidate)) {

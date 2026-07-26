@@ -26,10 +26,18 @@ fail2ban_config_path() {
 }
 
 fail2ban_install() {
-  pkg_install_fail2ban_stack
+  if ! pkg_install_fail2ban_stack; then
+    panel_warn_log "fail2ban package installation failed; continuing without fail2ban."
+    return 0
+  fi
 
   mkdir -p /etc/fail2ban/jail.d
-  cp "${DPANEL_TEMPLATE_DIR}/fail2ban/jail.local" "$(fail2ban_config_path)"
+  if cp "${DPANEL_TEMPLATE_DIR}/fail2ban/jail.local" "$(fail2ban_config_path)" 2>/dev/null; then
+    :
+  else
+    panel_warn_log "fail2ban config template could not be installed; continuing without fail2ban."
+    return 0
+  fi
 
   pkg_enable_service fail2ban
   systemctl restart fail2ban >/dev/null 2>&1 || systemctl start fail2ban >/dev/null 2>&1 || true
