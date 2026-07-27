@@ -47,6 +47,46 @@ pkg_update_index() {
   esac
 }
 
+pkg_apt_wait_for_lock() {
+  local attempts="${1:-30}"
+  local delay="${2:-2}"
+  local i=0
+  local lock_files=(/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock)
+
+  while (( i < attempts )); do
+    if ! fuser "${lock_files[@]}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$delay"
+    ((i++))
+  done
+
+  return 1
+}
+
+pkg_apt_install_retry() {
+  local attempts=5
+  local delay=3
+  local try=1
+
+  while (( try <= attempts )); do
+    if apt-get install -y "$@"; then
+      return 0
+    fi
+
+    if (( try == attempts )); then
+      return 1
+    fi
+
+    if ! pkg_apt_wait_for_lock 20 2; then
+      return 1
+    fi
+
+    sleep "$delay"
+    ((try++))
+  done
+}
+
 pkg_install() {
   pkg_require_root
   pkg_update_index
@@ -54,7 +94,7 @@ pkg_install() {
   case "$(pkg_distro_family)" in
     debian)
       export DEBIAN_FRONTEND=noninteractive
-      apt-get install -y "$@"
+      pkg_apt_install_retry "$@"
       ;;
     rpm)
       dnf install -y "$@"

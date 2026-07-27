@@ -633,6 +633,11 @@ PY
       PANEL_ADMIN_PASSWORD="$existing_password"
     fi
 
+    if [[ -n "${PANEL_ADMIN_USERNAME:-}" && -n "${PANEL_ADMIN_EMAIL:-}" && -n "${PANEL_ADMIN_PASSWORD:-}" ]]; then
+      export PANEL_DOMAIN PANEL_ADMIN_USERNAME PANEL_ADMIN_EMAIL PANEL_ADMIN_PASSWORD
+      return 0
+    fi
+
     if [[ "${skip_prompts}" != "true" ]] && [[ -n "${PANEL_DOMAIN:-}" || -n "${PANEL_ADMIN_USERNAME:-}" || -n "${PANEL_ADMIN_EMAIL:-}" || -n "${PANEL_ADMIN_PASSWORD:-}" ]]; then
       if ! panel_prompt_panel_reconfigure; then
         export PANEL_DOMAIN PANEL_ADMIN_USERNAME PANEL_ADMIN_EMAIL PANEL_ADMIN_PASSWORD
@@ -1487,6 +1492,7 @@ panel_prompt_module_action() {
   local module="$1"
   local desired_action="${2:-install}"
   local state_label answer default_action prompt
+  local sensitive_modules="ssl ssh-root-login admin-user"
 
   state_label="$(panel_module_state_label "$module")"
   default_action="$desired_action"
@@ -1499,6 +1505,11 @@ panel_prompt_module_action() {
     if [[ "$state_label" == "not installed" ]]; then
       default_action="install"
     fi
+  fi
+
+  if [[ "$desired_action" == "install" ]] && [[ " ${sensitive_modules} " != *" ${module} "* ]]; then
+    printf '%s' "$default_action"
+    return 0
   fi
 
   if [[ "$default_action" == "skip" ]]; then
@@ -1848,14 +1859,23 @@ panel_finalize_default_install() {
 
   panel_refresh_drust_service
 
-  if [[ -n "${PANEL_ADMIN_USERNAME:-}" && -n "${PANEL_ADMIN_PASSWORD:-}" && -n "${PANEL_ADMIN_EMAIL:-}" ]]; then
-    DPANEL_ADMIN_PASSWORD="$PANEL_ADMIN_PASSWORD" panel_run_runtime_script "create-admin-user.sh" \
-      "$PANEL_ADMIN_USERNAME" \
-      "" \
-      "$PANEL_ADMIN_EMAIL" \
-      "" \
-      "/usr/sbin/nologin" \
-      "true"
+  local admin_username="${PANEL_ADMIN_USERNAME:-}"
+  local admin_password="${PANEL_ADMIN_PASSWORD:-}"
+  local admin_email="${PANEL_ADMIN_EMAIL:-}"
+
+  if [[ -n "$admin_username" || -n "$admin_password" || -n "$admin_email" ]]; then
+    if [[ -z "$admin_username" || -z "$admin_password" || -z "$admin_email" ]]; then
+      panel_die "Admin user creation requires PANEL_ADMIN_USERNAME, PANEL_ADMIN_PASSWORD and PANEL_ADMIN_EMAIL."
+    fi
+  fi
+
+  if [[ -n "$admin_username" && -n "$admin_password" && -n "$admin_email" ]]; then
+    panel_run_runtime_script "create-first-laravel-user.sh" \
+      "$admin_username" \
+      "$admin_email" \
+      "$admin_password"
+  elif ! panel_is_interactive; then
+    panel_die "Admin user creation is required for non-interactive installs. Set PANEL_ADMIN_USERNAME, PANEL_ADMIN_PASSWORD and PANEL_ADMIN_EMAIL."
   fi
 
   panel_refresh_app_config_cache

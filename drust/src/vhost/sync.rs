@@ -81,12 +81,16 @@ pub(super) fn run(options: Sync) -> Result<(), String> {
     let has_tls = Path::new(&certificate).is_file() && Path::new(&private_key).is_file();
     let proxy_block = format!(
         "\
+        set $serverpanel_forwarded_proto $scheme;
+        if ($http_x_forwarded_proto != \"\") {{
+            set $serverpanel_forwarded_proto $http_x_forwarded_proto;
+        }}
         proxy_pass http://127.0.0.1:{apache_port};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $serverpanel_forwarded_proto;
         proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Forwarded-Port $server_port;",
         apache_port = options.apache_backend_port
