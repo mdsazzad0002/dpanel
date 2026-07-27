@@ -179,6 +179,7 @@ class UserManagementController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
+            'email_verified_at' => now(),
             'reseller_id' => $resellerId,
             'disk_space_mb_limit' => $validated['disk_space_mb_limit'] ?? null,
             'mail_accounts_limit' => $validated['mail_accounts_limit'] ?? null,

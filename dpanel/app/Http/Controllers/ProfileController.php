@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,7 +28,7 @@ class ProfileController extends Controller
         $user = $request->user();
 
         return Inertia::render('Profile/Edit', [
-            'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
+            'mustVerifyEmail' => false,
             'status' => session('status'),
             'twoFactor' => [
                 'enabled' => (bool) $user->two_factor_enabled,
@@ -160,17 +159,23 @@ class ProfileController extends Controller
             $user->two_factor_secret = $this->twoFactor->generateSecret();
         }
 
-        if (! $enabled && $method === 'google_auth_app') {
-            $user->two_factor_secret = '';
-        }
-
         if ($method === 'email') {
             $user->email_verified_at = now();
         }
 
         $user->two_factor_enabled = $enabled;
         $user->two_factor_method = $method;
-        $user->two_factor_telegram_chat_id = '';
+
+        if (! $enabled) {
+            // Disable should leave no stale 2FA state behind.
+            $user->two_factor_method = null;
+            $user->two_factor_secret = null;
+            $user->two_factor_telegram_chat_id = null;
+            $user->two_factor_telegram_start_token = null;
+            $request->session()->forget('two_factor.challenge');
+        } else {
+            $user->two_factor_telegram_chat_id = '';
+        }
 
         if ($enabled && $method === 'google_auth_app') {
             $user->email_verified_at = now();

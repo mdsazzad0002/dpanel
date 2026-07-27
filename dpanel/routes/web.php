@@ -115,11 +115,9 @@ Route::prefix('cpsess{token}')
     ->middleware(['panel.session', 'auth'])
     ->group(function (): void {
         Route::get('/dashboard', [DashboardController::class, 'index'])
-            ->middleware('verified')
             ->name('dashboard');
 
         Route::get('/search', [PanelSearchController::class, 'index'])
-            ->middleware('verified')
             ->name('panel.search');
 
         Route::middleware('auth')->group(function () {
