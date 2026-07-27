@@ -88,7 +88,14 @@ fn ensure_pool(owner: &str, php_version: &str) -> Result<PathBuf, String> {
         run_status("chmod", &["0700", directory])?;
     }
 
-    let contents = pool_contents(owner, &socket, &home, &tmp_dir, &session_dir, max_children());
+    let contents = pool_contents(
+        owner,
+        &socket,
+        &home,
+        &tmp_dir,
+        &session_dir,
+        max_children(),
+    );
     let previous = fs::read_to_string(&pool_file).ok();
     let unchanged = previous.as_deref() == Some(contents.as_str());
 
@@ -148,9 +155,7 @@ fn children_for(total_memory_mb: Option<u64>, cpus: usize) -> u32 {
 
 fn total_memory_mb() -> Option<u64> {
     let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
-    let line = meminfo
-        .lines()
-        .find(|line| line.starts_with("MemTotal:"))?;
+    let line = meminfo.lines().find(|line| line.starts_with("MemTotal:"))?;
     let kb = line.split_whitespace().nth(1)?.parse::<u64>().ok()?;
     Some(kb / 1024)
 }
