@@ -552,7 +552,7 @@
         </div>
         <pre><code>sudo mkdir -p /var/www
 cd /var/www
-sudo git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
+sudo git clone --depth 1 https://github.com/mdsazzad0002/dpanel.git dpanel-source
 sudo chown -R "$USER:$USER" /var/www/dpanel-source
 cd dpanel-source
 sudo ./installer.sh</code></pre>
@@ -605,7 +605,8 @@ sudo ./installer.sh</code></pre>
           <h2>Fresh servers usually need sudo before cloning into `/var/www`.</h2>
           <p class="lead">
             On many servers, `/var/www` is owned by root. The recommended command
-            uses `sudo git clone`, then gives the cloned source back to your current user.
+            uses `sudo git clone --depth 1`, then gives the cloned source back to
+            your current user.
           </p>
         </div>
         <div class="install-card">
@@ -616,12 +617,12 @@ sudo ./installer.sh</code></pre>
             </div>
             <pre><code>sudo mkdir -p /var/www
 cd /var/www
-sudo git clone https://github.com/mdsazzad0002/dpanel.git dpanel-source
+sudo git clone --depth 1 https://github.com/mdsazzad0002/dpanel.git dpanel-source
 sudo chown -R "$USER:$USER" /var/www/dpanel-source
 cd dpanel-source
 sudo ./installer.sh</code></pre>
           </div>
-          <p>Alternative: clone in your home directory, then run the installer with sudo.</p>
+          <p>Alternative: clone in your home directory, or omit `--depth 1` if you want the full git history from the start.</p>
         </div>
       </div>
     </section>

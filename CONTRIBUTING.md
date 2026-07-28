@@ -1,6 +1,7 @@
 # Contributing To dPanel
 
-Thank you for your interest in improving dPanel.
+Thank you for wanting to help improve dPanel. Whether you are fixing a bug,
+trying an alpha build, or just sharing an idea, your input matters.
 
 dPanel is a free-to-use ServerPanel hosting control panel stack made from:
 
@@ -8,7 +9,8 @@ dPanel is a free-to-use ServerPanel hosting control panel stack made from:
 - `drust` - Rust localhost execution API
 - `dscript` - shell installer and repair tooling
 
-Please read this guide before submitting issues, fixes, or feature ideas.
+Please read this guide before submitting issues, fixes, alpha-test feedback, or
+feature ideas.
 
 ## Before You Start
 
@@ -25,6 +27,10 @@ Read these files first:
 By contributing, you agree that your contribution may be used, modified, and distributed by the dPanel maintainer as part of this project under the current license or a future project license.
 
 Do not contribute code or content you do not have permission to submit.
+
+If you are alpha testing, it is perfectly fine to send rough feedback. A short
+note about what you tried, what surprised you, and where you got stuck is often
+more useful than a polished report.
 
 Do not include:
 
@@ -224,6 +230,14 @@ For feature requests, include:
 - expected result
 - why it belongs in dPanel
 - whether it needs `dpanel`, `drust`, `dscript`, or all layers
+
+For alpha feedback, include:
+
+- what build or branch you tried
+- the first thing you attempted to do
+- what felt smooth
+- what felt confusing or unfinished
+- any screenshots or logs that help show the experience
 
 ## License Reminder
 
