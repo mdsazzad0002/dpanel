@@ -19,6 +19,7 @@ ALLOW_ADMIN_GRANTS="${PANEL_DB_ALLOW_ADMIN_GRANTS:-true}"
 DB_ADMIN_USER="${PANEL_DB_ADMIN_USER:-root}"
 DB_ADMIN_PASSWORD="${PANEL_DB_ADMIN_PASSWORD:-}"
 DB_ADMIN_HOST="${PANEL_DB_ADMIN_HOST:-}"
+DB_PRIVILEGES="${PANEL_DB_PRIVILEGES:-SELECT,INSERT,UPDATE,DELETE,CREATE,ALTER,INDEX,DROP,TRIGGER,REFERENCES,CREATE TEMPORARY TABLES,LOCK TABLES,EXECUTE}"
 
 fail() {
     echo "[database-request] $*" >&2
@@ -140,7 +141,7 @@ grant_for_host() {
     # Panel database user needs full access to its own database for migrations,
     # recovery and partially-installed module repair. This does not modify the
     # database root account.
-    sql_exec "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${sql_user}'@'${sql_host}';"
+    sql_exec "GRANT ${DB_PRIVILEGES} ON \`${DB_NAME}\`.* TO '${sql_user}'@'${sql_host}';"
 
     # The panel also manages customer databases and database users. That requires
     # global database/user administration rights. Root is left untouched; these
