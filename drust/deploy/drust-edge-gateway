@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DRUST_BIN="/var/www/drust/target/release/drust"
+if [[ ! -x "$DRUST_BIN" ]]; then
+  DRUST_BIN="/var/www/drust/target/debug/drust"
+fi
+
+exec "$DRUST_BIN" edge-gateway

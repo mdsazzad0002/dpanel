@@ -125,8 +125,8 @@ Body:
 
 ```json
 {
-  "apache_backend_port": 8080,
-  "nginx_frontend_port": 80
+  "backend_port": 8080,
+  "frontend_port": 80
 }
 ```
 

@@ -9,7 +9,6 @@ pub use filesystem::{backup_file, read_to_string, write_string};
 pub use process::{ensure_root, run_output, run_status};
 pub use system::{
     detect_app_root, distro_family, ensure_comment_listen, ensure_listen_line, parse_port,
-    remove_legacy_panel_vhosts, restart_services_for_web_stack,
 };
 pub use user::{random_hex, user_group, valid_username};
 

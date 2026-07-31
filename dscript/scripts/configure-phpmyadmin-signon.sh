@@ -139,7 +139,8 @@ else
 fi
 install -m 644 "${TEMPLATE_ROOT}/phpmyadminsignin.php" "${TARGET_ROOT}/phpmyadminsignin.php"
 
-if [[ "${PHPMYADMIN_CONFIGURE_WEB_SERVER:-true}" == true ]] && command -v a2enconf >/dev/null 2>&1 && [[ -d /etc/apache2/conf-available ]]; then
+APACHE_CONF=""
+if [[ "${PHPMYADMIN_CONFIGURE_WEB_SERVER:-true}" == true ]]; then
     APACHE_CONF=/etc/apache2/conf-available/dpanel-phpmyadmin.conf
     cat > "$APACHE_CONF" <<EOF
 Alias ${PUBLIC_PATH} ${TARGET_ROOT}
@@ -151,8 +152,6 @@ Alias ${PUBLIC_PATH} ${TARGET_ROOT}
 </Directory>
 EOF
     a2enconf dpanel-phpmyadmin >/dev/null
-    apache2ctl configtest >/dev/null
-    systemctl reload apache2
 fi
 
 upsert_env "${PANEL_APP_DIR}/.env" PHPMYADMIN_URL "${PUBLIC_URL}/"

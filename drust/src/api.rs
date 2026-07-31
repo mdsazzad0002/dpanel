@@ -6,7 +6,6 @@ use std::sync::Arc;
 use crate::app;
 
 mod admin;
-mod apache;
 mod database;
 mod filemanager;
 mod health;
@@ -15,7 +14,6 @@ mod php;
 mod script;
 mod ssl;
 mod vhost_ops;
-mod web_stack;
 
 #[derive(Clone)]
 pub struct ApiState {
@@ -70,8 +68,6 @@ impl IntoResponse for ApiResponse {
 pub fn build_router(state: ApiState) -> Router {
     Router::new()
         .merge(health::routes())
-        .merge(apache::routes())
-        .merge(web_stack::routes())
         .merge(vhost_ops::routes())
         .merge(admin::routes())
         .merge(filemanager::routes())

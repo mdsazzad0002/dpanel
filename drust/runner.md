@@ -106,3 +106,26 @@ cargo run -- serve --port 9500 --token development-only-token
 ```
 
 Do not use the development command for production. Use the systemd installer so the daemon has the required root permissions and automatic restart behavior.
+
+## Demo edge gateway server
+
+To try the new edge gateway path with a tiny sample snapshot:
+
+```bash
+cd /var/www/drust
+cargo run -- demo-server 127.0.0.1:8088
+```
+
+This demo mode wires:
+
+- host-based site matching
+- static file dispatch
+- proxy route dispatch
+- cache headers and compression
+- TLS scaffold config shape
+
+If you have a cert/key pair, you can expose HTTPS too:
+
+```bash
+cargo run -- demo-server --http 127.0.0.1:8088 --https 127.0.0.1:8443 --cert /etc/drust/tls/demo.local.crt --key /etc/drust/tls/demo.local.key
+```

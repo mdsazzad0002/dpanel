@@ -52,10 +52,9 @@ Examples:
   dpanel help
   sudo dpanel default-install
   sudo dpanel chain install
-  sudo dpanel chain install apache,nginx,php,mariadb
+  sudo dpanel chain install php,mariadb
   sudo dpanel chain update
   sudo dpanel module php install 8.3
-  sudo dpanel nginx update
   dpanel script list
   sudo dpanel script run reset-web-stack --yes
   dpanel doctor
@@ -68,14 +67,14 @@ dscript_chain_help() {
   cat <<'EOF'
 Usage: dpanel chain <install|update|verify|repair> [module,...]
 
-install   Install modules in order. Default: apache,nginx,php,mariadb,ssl,
+install   Install modules in order. Default: php,mariadb,ssl,supervisor,firewall,fail2ban.
           supervisor,firewall,fail2ban.
 update    Refresh the remote manifest and update changed modules.
 verify    Run read-only repository, dependency and runtime checks.
 repair    Apply safe local repairs, then verify again.
 
 Module lists may be comma-separated or space-separated. Examples:
-  sudo dpanel chain install apache,nginx,php
+  sudo dpanel chain install php
 Useful environment variables: PANEL_MODULES, SKIP_FIREWALL, SKIP_SSL,
 SKIP_TEST, PANEL_DOMAIN, PANEL_PORT and DPANEL_BASE_URL.
 EOF
@@ -88,7 +87,6 @@ dscript_module_help() {
 Usage: dpanel module <name> <install|update|remove|reinstall|start|stop|restart|reload|status|info> [arguments]
 
 Use `dpanel module list` to see available modules.
-Short form is also supported: `dpanel nginx update`.
 EOF
     return 0
   fi
@@ -133,8 +131,8 @@ set-system-user-password|Change a Linux/system user shell password through drust
 set-panel-domain|Update panel domain metadata, .env and web-stack config|<domain> [port] [--alias domain] [--no-web-stack]
 fix-permissions|Repair file ownership and writable paths through drust|[--all] [--user USERNAME] [--path PATH]
 fix-dpanel-root|Repair the local panel web-stack configuration|[domain] [options]
-fix-panel-web-stack|Repair panel Apache/Nginx configuration through drust|<domain> [options]
-fix-web-stack|Repair Apache/Nginx base configuration through drust|[options]
+fix-panel-web-stack|Repair panel web configuration through drust|<domain> [options]
+fix-web-stack|Repair base web configuration through drust|[options]
 install-roundcube-dovecot-mysql|Install/check Roundcube and PHP MySQL integration|[--check-only] [--skip-update]
 configure-phpmyadmin-signon|Create an isolated phpMyAdmin sign-on instance without changing existing config|[--root PATH]
 issue-ssl|Issue a webroot certificate|<domain> <root-path> [include-www=0|1]
@@ -142,7 +140,7 @@ php-config-apply|Apply php.ini settings|--version VERSION [settings]
 php-detect-config|Print effective PHP configuration|[--version VERSION]
 php-detect-extensions|Print loaded PHP extensions|[--version VERSION]
 php-detect-versions|Detect installed PHP versions|
-reset-web-stack|Back up and reset Apache/Nginx configuration|--yes
+reset-web-stack|Back up and reset legacy web configuration|--yes
 sync-vhost|Create/update/remove a vhost through drust|<action> <domain> <root-path> [php-version] [options]
 EOF
 }
@@ -251,7 +249,7 @@ PY
   if [[ -n "$discovered" ]]; then
     printf '%s\n' "$discovered"
   else
-    printf '%s\n' apache nginx php redis mariadb filemanager ssl firewall fail2ban queue supervisor admin-user ssh-root-login
+    printf '%s\n' php redis mariadb filemanager ssl firewall fail2ban queue supervisor admin-user ssh-root-login
   fi
 }
 
@@ -346,7 +344,7 @@ dscript_run_chain() {
         export PANEL_MODULES
       fi
       if [[ "$DSCRIPT_DRY_RUN" == "true" ]]; then
-        printf '[DRY-RUN] chain install: %s\n' "${PANEL_MODULES:-apache,nginx,php,mariadb,ssl,supervisor,firewall,fail2ban}"
+        printf '[DRY-RUN] chain install: %s\n' "${PANEL_MODULES:-php,mariadb,ssl,supervisor,firewall,fail2ban}"
       else
         PANEL_BOOTSTRAP_MODE=install panel_bootstrap
       fi

@@ -43,6 +43,9 @@ if ! command -v certbot >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y certbot
 fi
 install -d -m 0750 /etc/drust
+if [[ ! -f /etc/drust/edge-gateway.env ]]; then
+  install -m 0600 "${DRUST_ROOT}/deploy/edge-gateway.env.example" /etc/drust/edge-gateway.env
+fi
 if [[ ! -f /etc/drust/drust.env ]]; then
   install -m 0600 "${DRUST_ROOT}/deploy/drust.env.example" /etc/drust/drust.env
   token="$(openssl rand -hex 32)"
@@ -88,7 +91,9 @@ fi
 
 cargo build --release --manifest-path "${DRUST_ROOT}/Cargo.toml"
 install -m 0755 "${DRUST_ROOT}/deploy/drust-start" /usr/local/bin/drust-start
+install -m 0755 "${DRUST_ROOT}/deploy/drust-edge-gateway" /usr/local/bin/drust-edge-gateway
 install -m 0644 "${DRUST_ROOT}/deploy/drust.service" /etc/systemd/system/drust.service
+install -m 0644 "${DRUST_ROOT}/deploy/edge-gateway.service" /etc/systemd/system/edge-gateway.service
 systemctl daemon-reload
 systemctl enable drust.service
 systemctl restart drust.service

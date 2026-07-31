@@ -1,6 +1,5 @@
-use std::{fs, path::PathBuf, process::Command};
-
-use super::process::{program_exists, run_status};
+use std::fs;
+use std::path::PathBuf;
 
 fn os_release_value(key: &str) -> Option<String> {
     let data = fs::read_to_string("/etc/os-release").ok()?;
@@ -22,58 +21,6 @@ pub fn distro_family() -> String {
         }
         _ => "unknown".to_string(),
     }
-}
-
-fn apache_service_name() -> Option<&'static str> {
-    if Command::new("systemctl")
-        .args(["cat", "apache2.service"])
-        .status()
-        .ok()
-        .is_some_and(|status| status.success())
-    {
-        Some("apache2")
-    } else if Command::new("systemctl")
-        .args(["cat", "httpd.service"])
-        .status()
-        .ok()
-        .is_some_and(|status| status.success())
-    {
-        Some("httpd")
-    } else {
-        None
-    }
-}
-
-fn nginx_service_available() -> bool {
-    Command::new("systemctl")
-        .args(["cat", "nginx.service"])
-        .status()
-        .ok()
-        .is_some_and(|status| status.success())
-        || program_exists("nginx")
-}
-
-pub fn restart_services_for_web_stack() -> Result<(), String> {
-    match apache_service_name() {
-        Some("apache2") => {
-            run_status("apache2ctl", &["-t"])?;
-            let _ = run_status("systemctl", &["enable", "apache2"]);
-            run_status("systemctl", &["restart", "apache2"])?;
-        }
-        Some("httpd") => {
-            run_status("httpd", &["-t"])?;
-            let _ = run_status("systemctl", &["enable", "httpd"]);
-            run_status("systemctl", &["restart", "httpd"])?;
-        }
-        _ => {}
-    }
-
-    if nginx_service_available() {
-        run_status("nginx", &["-t"])?;
-        let _ = run_status("systemctl", &["enable", "nginx"]);
-        run_status("systemctl", &["restart", "nginx"])?;
-    }
-    Ok(())
 }
 
 pub fn ensure_listen_line(content: &str, port: u16) -> String {
@@ -134,16 +81,4 @@ pub fn detect_app_root(explicit: Option<&str>) -> Result<PathBuf, String> {
         "Unable to detect panel app root. Set PANEL_APP_DIR to the Laravel project directory."
             .into(),
     )
-}
-
-pub fn remove_legacy_panel_vhosts() {
-    for path in [
-        "/etc/apache2/sites-available/dpanel.conf",
-        "/etc/apache2/sites-enabled/dpanel.conf",
-        "/etc/nginx/sites-available/dpanel.conf",
-        "/etc/nginx/sites-enabled/dpanel.conf",
-    ] {
-        let _ = fs::remove_file(path);
-    }
-    let _ = run_status("a2dissite", &["dpanel.conf"]);
 }

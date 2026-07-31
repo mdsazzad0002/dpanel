@@ -96,10 +96,10 @@ pub(super) fn ensure(
             "--cert-name",
             &domain,
             "--expand",
-            // Renewals happen outside the panel; without this nginx keeps serving the
-            // expired certificate until something reloads it.
+            // Renewals happen outside the panel; the deployment hook keeps the
+            // active TLS service in sync after certbot updates the lineage.
             "--deploy-hook",
-            "systemctl reload nginx",
+            "systemctl reload drust",
             "-d",
             &domain,
         ];

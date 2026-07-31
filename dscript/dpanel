@@ -232,7 +232,7 @@ confirm_action() {
 }
 
 default_install_sequence() {
-  dscript_cli chain install apache nginx php mariadb supervisor
+  dscript_cli chain install php mariadb supervisor
   install_drust_service
   dscript_cli chain install firewall fail2ban ssl
   install_mail_services
@@ -246,9 +246,9 @@ run_interactive_menu() {
     printf '\n'
     printf 'dpanel interactive menu\n'
     printf '=======================\n'
-    printf '1) Default Install (apache -> nginx -> php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs) | dpanel default-install\n'
+    printf '1) Default Install (php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs) | dpanel default-install\n'
     printf '2) Default Update | dpanel chain update\n'
-    printf '3) Apache/Nginx menu | dpanel module apache install && dpanel module nginx install\n'
+    printf '3) Web stack menu | dpanel script run sync-vhost <action> <domain> <root-path> [php-version]\n'
     printf '4) PHP menu | dpanel php install all / dpanel php default <version>\n'
     printf '5) mariadb install | dpanel module mariadb install\n'
     printf '6) redis install | dpanel module redis install\n'
@@ -275,7 +275,7 @@ run_interactive_menu() {
     case "$choice" in
       1)
         if confirm_action "Default Install" \
-          "chain install apache nginx php mariadb supervisor" \
+          "chain install php mariadb supervisor" \
           "install rust/drust service" \
           "chain install firewall fail2ban ssl" \
           "install postfix dovecot" \
@@ -291,85 +291,52 @@ run_interactive_menu() {
       3)
         while true; do
           printf '\n'
-          printf 'Apache/Nginx menu\n'
+          printf 'Web stack menu\n'
           printf '=================\n'
-          printf '1) Install apache + nginx | dpanel module apache install && dpanel module nginx install\n'
-          printf '2) Update apache + nginx | dpanel module apache update && dpanel module nginx update\n'
-          printf '3) Reinstall apache + nginx | dpanel module apache reinstall && dpanel module nginx reinstall\n'
-          printf '4) Restore base apache/nginx web stack | dpanel script run fix-web-stack\n'
-          printf '5) Restore panel apache/nginx web stack | dpanel script run fix-panel-web-stack <domain> [--alias domain]\n'
-          printf '6) Restore root panel apache config | dpanel script run fix-dpanel-root <domain>\n'
-          printf '7) Start apache + nginx | dpanel module apache start && dpanel module nginx start\n'
-          printf '8) Stop apache + nginx | dpanel module apache stop && dpanel module nginx stop\n'
-          printf '9) Reload apache + nginx | dpanel module apache reload && dpanel module nginx reload\n'
-          printf '10) Apache/nginx status | dpanel module apache status && dpanel module nginx status\n'
+          printf '1) Sync website vhost | dpanel script run sync-vhost sync <domain> <root> [php-version]\n'
+          printf '2) Repair panel vhost | dpanel script run fix-panel-web-stack <domain> [--alias domain]\n'
+          printf '3) Repair root panel domain | dpanel script run fix-dpanel-root <domain>\n'
+          printf '4) Repair base web stack | dpanel script run fix-web-stack\n'
+          printf '0) Back\n'
           printf '0) Back\n'
           printf 'Select option: '
           read -r web_choice
 
           case "$web_choice" in
             1)
-              if confirm_action "Install apache + nginx" "module apache install" "module nginx install"; then
-                dscript_cli module apache install
-                dscript_cli module nginx install
+              printf 'Domain: '
+              read -r panel_domain
+              printf 'Root path: '
+              read -r panel_root
+              printf 'PHP version [8.3]: '
+              read -r php_version
+              php_version="${php_version:-8.3}"
+              if confirm_action "Sync website vhost" "script run sync-vhost sync ${panel_domain} ${panel_root} ${php_version}"; then
+                dscript_cli script run sync-vhost sync "$panel_domain" "$panel_root" "$php_version"
               fi
               ;;
             2)
-              if confirm_action "Update apache + nginx" "module apache update" "module nginx update"; then
-                dscript_cli module apache update
-                dscript_cli module nginx update
-              fi
-              ;;
-            3)
-              if confirm_action "Reinstall apache + nginx" "module apache reinstall" "module nginx reinstall"; then
-                dscript_cli module apache reinstall
-                dscript_cli module nginx reinstall
-              fi
-              ;;
-            4)
-              if confirm_action "Restore base apache/nginx web stack" "script run fix-web-stack"; then
-                dscript_cli script run fix-web-stack
-              fi
-              ;;
-            5)
-              local panel_args=()
               printf 'Panel URL/domain: '
               read -r panel_domain
               printf 'Aliases (comma/space separated, blank for none): '
               read -r panel_aliases
+              local panel_args=()
               append_alias_args "$panel_aliases" panel_args
-              if confirm_action "Restore panel apache/nginx web stack" "script run fix-panel-web-stack ${panel_domain} ${panel_args[*]}"; then
+              if confirm_action "Repair panel vhost" "script run fix-panel-web-stack ${panel_domain} ${panel_args[*]}"; then
                 dscript_cli script run fix-panel-web-stack "$panel_domain" "${panel_args[@]}"
               fi
               ;;
-            6)
+            3)
               printf 'Panel URL/domain: '
               read -r panel_domain
-              if confirm_action "Restore root panel apache config" "script run fix-dpanel-root ${panel_domain}"; then
+              if confirm_action "Repair root panel domain" "script run fix-dpanel-root ${panel_domain}"; then
                 dscript_cli script run fix-dpanel-root "$panel_domain"
               fi
               ;;
-            7)
-              if confirm_action "Start apache + nginx" "module apache start" "module nginx start"; then
-                dscript_cli module apache start
-                dscript_cli module nginx start
+            4)
+              if confirm_action "Repair base web stack" "script run fix-web-stack"; then
+                dscript_cli script run fix-web-stack
               fi
-              ;;
-            8)
-              if confirm_action "Stop apache + nginx" "module apache stop" "module nginx stop"; then
-                dscript_cli module apache stop
-                dscript_cli module nginx stop
-              fi
-              ;;
-            9)
-              if confirm_action "Reload apache + nginx" "module apache reload" "module nginx reload"; then
-                dscript_cli module apache reload
-                dscript_cli module nginx reload
-              fi
-              ;;
-            10)
-              dscript_cli module apache status
-              dscript_cli module nginx status
               ;;
             0) break ;;
             *) printf 'Invalid option.\n' ;;
@@ -584,15 +551,32 @@ run_interactive_menu() {
           printf '\n'
           printf 'User menu\n'
           printf '=========\n'
-          printf '1) Create system user | dpanel filemanager user ensure <user> --home <path> --shell <shell>\n'
-          printf '2) Create system user with source IP restriction | dpanel filemanager user ensure <user> + pam_access\n'
+          printf '1) Create portal user | dpanel script run create-first-laravel-user <name> <email> [password]\n'
+          printf '2) Create system user | dpanel filemanager user ensure <user> --home <path> --shell <shell>\n'
+          printf '3) Create system user with source IP restriction | dpanel filemanager user ensure <user> + pam_access\n'
           printf '0) Back\n'
           printf 'Select option: '
           read -r user_choice
 
           case "$user_choice" in
-            1) create_system_user_flow ;;
-            2)
+            1)
+              local portal_name portal_email portal_password
+              printf 'Portal user name: '
+              read -r portal_name
+              printf 'Portal user email: '
+              read -r portal_email
+              printf 'Portal user password (blank to auto-generate): '
+              read -r portal_password
+              if [[ -n "$portal_name" && -n "$portal_email" ]] && confirm_action "Create portal user ${portal_email}" "script run create-first-laravel-user ${portal_name} ${portal_email}"; then
+                if [[ -n "$portal_password" ]]; then
+                  dscript_cli script run create-first-laravel-user "$portal_name" "$portal_email" "$portal_password"
+                else
+                  dscript_cli script run create-first-laravel-user "$portal_name" "$portal_email"
+                fi
+              fi
+              ;;
+            2) create_system_user_flow ;;
+            3)
               create_system_user_flow true
               ;;
             0) break ;;
@@ -729,7 +713,7 @@ else
   done
 
   for template_name in \
-    apache/site.conf fail2ban/jail.local nginx/laravel.conf php/pool.conf \
+    fail2ban/jail.local php/pool.conf \
     phpmyadmin/autologin.blade.php phpmyadmin/config.inc.php phpmyadmin/phpmyadminsignin.php \
     roundcube/config.inc.php supervisor/panel-agent.conf webmail/autologin.blade.php; do
     download_file "$DSCRIPT_BASE_URL/repository/templates/${template_name}" "$downloaded_templates/${template_name}"

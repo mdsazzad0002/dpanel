@@ -101,7 +101,6 @@ cmd=(
     --cert-name "${DOMAIN}"
     --expand
     --deploy-hook
-    "systemctl reload nginx"
 )
 
 if [[ -n "${LETSENCRYPT_EMAIL:-}" ]]; then

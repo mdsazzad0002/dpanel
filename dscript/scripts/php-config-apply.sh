@@ -105,7 +105,6 @@ if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
 fi
 
 targets=(
-    "/etc/php/${VERSION}/apache2/php.ini"
     "/etc/php/${VERSION}/fpm/php.ini"
     "/etc/php/${VERSION}/cli/php.ini"
 )
@@ -135,8 +134,6 @@ if systemctl cat "php${VERSION}-fpm.service" >/dev/null 2>&1; then
     systemctl restart "php${VERSION}-fpm"
 fi
 
-if systemctl cat apache2.service >/dev/null 2>&1; then
-    systemctl restart apache2
 fi
 
 echo "[php-config-apply] Applied PHP ${VERSION} config and restarted related services."

@@ -362,6 +362,7 @@ panel_register_server() {
   local server_uuid token
   server_uuid="$(panel_generate_uuid)"
   token="$(panel_generate_token)"
+  local edge_gateway_env="/etc/drust/edge-gateway.env"
 
   cat > "$DPANEL_SERVER_JSON" <<EOF
 {
@@ -376,9 +377,21 @@ panel_register_server() {
   "default_php_version": "$(panel_php_default_version)",
   "admin_username": "${PANEL_ADMIN_USERNAME:-}",
   "admin_email": "${PANEL_ADMIN_EMAIL:-}",
-  "admin_password": "${PANEL_ADMIN_PASSWORD:-}"
+  "admin_password": "${PANEL_ADMIN_PASSWORD:-}",
+  "edge_gateway_bind": "${DRUST_EDGE_GATEWAY_BIND:-127.0.0.1:9500}",
+  "edge_gateway_http_bind": "${DRUST_EDGE_GATEWAY_HTTP_BIND:-127.0.0.1:8080}",
+  "edge_gateway_root": "${DRUST_DEFAULT_SITE_ROOT:-/var/www/html}"
 }
 EOF
+
+  install -d -m 0750 /etc/drust
+  cat > "$edge_gateway_env" <<EOF
+DRUST_EDGE_GATEWAY_BIND=${DRUST_EDGE_GATEWAY_BIND:-127.0.0.1:9500}
+DRUST_EDGE_GATEWAY_HTTP_BIND=${DRUST_EDGE_GATEWAY_HTTP_BIND:-127.0.0.1:8080}
+DRUST_PANEL_DOMAIN=${PANEL_DOMAIN:-}
+DRUST_DEFAULT_SITE_ROOT=${DRUST_DEFAULT_SITE_ROOT:-/var/www/html}
+EOF
+  chmod 0600 "$edge_gateway_env"
 
   printf '%s\n' "$token" > "$DPANEL_TOKEN_FILE"
   chmod 0600 "$DPANEL_TOKEN_FILE"
@@ -595,27 +608,19 @@ panel_collect_first_install_config() {
 
   if [[ "$reconfig_checked" != "true" ]]; then
     export PANEL_PANEL_RECONFIG_CHECKED=true
-    local existing_domain existing_username existing_email existing_password
+    local existing_domain
     existing_domain=""
-    existing_username=""
-    existing_email=""
-    existing_password=""
 
     if [[ -f "$DPANEL_SERVER_JSON" ]] && command -v python3 >/dev/null 2>&1; then
-      read -r existing_domain existing_username existing_email existing_password < <(python3 - "$DPANEL_SERVER_JSON" <<'PY'
+      read -r existing_domain < <(python3 - "$DPANEL_SERVER_JSON" <<'PY'
 import json
 import sys
 try:
     with open(sys.argv[1], 'r', encoding='utf-8') as handle:
         data = json.load(handle)
-    print(
-        data.get('panel_domain', ''),
-        data.get('admin_username', ''),
-        data.get('admin_email', ''),
-        data.get('admin_password', ''),
-    )
+    print(data.get('panel_domain', ''))
 except (OSError, ValueError):
-    print('', '', '', '')
+    print('')
 PY
 )
     fi
@@ -623,44 +628,24 @@ PY
     if [[ -z "${PANEL_DOMAIN:-}" && -n "$existing_domain" ]]; then
       PANEL_DOMAIN="$existing_domain"
     fi
-    if [[ -z "${PANEL_ADMIN_USERNAME:-}" && -n "$existing_username" ]]; then
-      PANEL_ADMIN_USERNAME="$existing_username"
-    fi
-    if [[ -z "${PANEL_ADMIN_EMAIL:-}" && -n "$existing_email" ]]; then
-      PANEL_ADMIN_EMAIL="$existing_email"
-    fi
-    if [[ -z "${PANEL_ADMIN_PASSWORD:-}" && -n "$existing_password" ]]; then
-      PANEL_ADMIN_PASSWORD="$existing_password"
-    fi
 
-    if [[ -n "${PANEL_ADMIN_USERNAME:-}" && -n "${PANEL_ADMIN_EMAIL:-}" && -n "${PANEL_ADMIN_PASSWORD:-}" ]]; then
-      export PANEL_DOMAIN PANEL_ADMIN_USERNAME PANEL_ADMIN_EMAIL PANEL_ADMIN_PASSWORD
-      return 0
-    fi
-
-    if [[ "${skip_prompts}" != "true" ]] && [[ -n "${PANEL_DOMAIN:-}" || -n "${PANEL_ADMIN_USERNAME:-}" || -n "${PANEL_ADMIN_EMAIL:-}" || -n "${PANEL_ADMIN_PASSWORD:-}" ]]; then
+    if [[ "${skip_prompts}" != "true" ]] && [[ -n "${PANEL_DOMAIN:-}" ]]; then
       if ! panel_prompt_panel_reconfigure; then
-        export PANEL_DOMAIN PANEL_ADMIN_USERNAME PANEL_ADMIN_EMAIL PANEL_ADMIN_PASSWORD
+        export PANEL_DOMAIN
         return 0
       fi
       PANEL_DOMAIN=""
-      PANEL_ADMIN_USERNAME=""
-      PANEL_ADMIN_EMAIL=""
-      PANEL_ADMIN_PASSWORD=""
     fi
   fi
 
   if [[ "${skip_prompts}" == "true" ]]; then
-    export PANEL_DOMAIN PANEL_ADMIN_USERNAME PANEL_ADMIN_EMAIL PANEL_ADMIN_PASSWORD
+    export PANEL_DOMAIN
     return 0
   fi
 
   panel_prompt_required PANEL_DOMAIN "Panel domain"
-  panel_prompt_required PANEL_ADMIN_USERNAME "Admin username"
-  panel_prompt_required PANEL_ADMIN_EMAIL "Admin email"
-  panel_prompt_password_pair
 
-  export PANEL_DOMAIN PANEL_ADMIN_USERNAME PANEL_ADMIN_EMAIL PANEL_ADMIN_PASSWORD
+  export PANEL_DOMAIN
 }
 
 panel_server_json_valid() {
@@ -1234,7 +1219,6 @@ panel_site_create() {
   local username="${2:-}"
   local php_version="${3:-${PHP_VERSION:-8.3}}"
   local ssl="${4:-}"
-  local web_server="${5:-nginx}"
   local root_path=""
   local site_name=""
 
@@ -1250,18 +1234,13 @@ panel_site_create() {
     read -rp "Enable SSL? (yes/no): " ssl
   fi
 
-  if [[ -z "$web_server" ]]; then
-    read -rp "Web server (apache/nginx): " web_server
-  fi
-
   root_path="${6:-/home/${username}/public_html}"
   site_name="${domain//./-}"
 
   mkdir -p "$DPANEL_TEMPLATE_DIR/generated/sites" "$DPANEL_TEMPLATE_DIR/generated/pools"
 
-  if [[ "$web_server" == "apache" ]]; then
+  if false; then
     panel_render_template \
-      "${DPANEL_RUNTIME_DIR}/apache-site.conf.tpl" \
       "${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.conf" \
       domain "$domain" \
       root "$root_path" \
@@ -1269,7 +1248,6 @@ panel_site_create() {
       php_version "$php_version"
   else
     panel_render_template \
-      "${DPANEL_RUNTIME_DIR}/nginx-site.conf.tpl" \
       "${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.conf" \
       domain "$domain" \
       root "$root_path" \
@@ -1864,24 +1842,21 @@ panel_finalize_default_install() {
   local admin_email="${PANEL_ADMIN_EMAIL:-}"
 
   if [[ -n "$admin_username" || -n "$admin_password" || -n "$admin_email" ]]; then
-    if [[ -z "$admin_username" || -z "$admin_password" || -z "$admin_email" ]]; then
-      panel_die "Admin user creation requires PANEL_ADMIN_USERNAME, PANEL_ADMIN_PASSWORD and PANEL_ADMIN_EMAIL."
-    fi
-  fi
-
-  if [[ -n "$admin_username" && -n "$admin_password" && -n "$admin_email" ]]; then
-    panel_run_runtime_script "create-first-laravel-user.sh" \
-      "$admin_username" \
-      "$admin_email" \
-      "$admin_password"
-  elif ! panel_is_interactive; then
-    panel_die "Admin user creation is required for non-interactive installs. Set PANEL_ADMIN_USERNAME, PANEL_ADMIN_PASSWORD and PANEL_ADMIN_EMAIL."
+    panel_warn_log "Admin user env vars are ignored during bootstrap. Create the first user after install from the menu."
   fi
 
   panel_refresh_app_config_cache
   # Runs last: composer, migrations, npm and the config cache all create files as
   # root, so repairing before them leaves root-owned files under storage/.
   panel_fix_app_permissions
+
+  if [[ -n "${PANEL_DOMAIN:-}" ]]; then
+    local site_owner root_path
+    site_owner="$(printf '%s' "$PANEL_DOMAIN" | cut -d. -f1 | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-32)"
+    [[ -n "$site_owner" ]] || site_owner="panel"
+    root_path="${SERVER_BASE_DIR:-/var/www/serverpanel}"
+    panel_site_create "$PANEL_DOMAIN" "$site_owner" "${PANEL_PHP_VERSION:-$(panel_php_default_version)}" "no" "nginx" "${root_path}/${site_owner}/public_html"
+  fi
 }
 
 panel_write_runtime_templates() {
@@ -1943,7 +1918,7 @@ panel_install_cli_launcher() {
 }
 
 panel_bootstrap() {
-  local requested_modules="${PANEL_MODULES:-apache,nginx,php,mariadb,ssl,supervisor,firewall,fail2ban}"
+  local requested_modules="${PANEL_MODULES:-php,mariadb,ssl,supervisor,firewall,fail2ban}"
   local skip_firewall="${SKIP_FIREWALL:-false}"
   local skip_ssl="${SKIP_SSL:-false}"
   local skip_test="${SKIP_TEST:-false}"

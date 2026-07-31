@@ -44,7 +44,7 @@ pub fn apply(values: PhpConfigValues<'_>) -> Result<Vec<String>, String> {
     );
 
     let mut written = Vec::new();
-    for sapi in ["fpm", "cli", "apache2"] {
+    for sapi in ["fpm", "cli"] {
         let directory = format!("/etc/php/{}/{sapi}/conf.d", values.version);
         if !Path::new(&directory).is_dir() {
             continue;
