@@ -26,7 +26,6 @@ const panelRoute = (name, params = {}) => (
 const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '');
 const syncMessage = ref('');
 const syncMessageType = ref('success');
-const syncLoading = ref(false);
 const actionLoading = ref('');
 const actionMessage = ref('');
 const actionMessageType = ref('success');
@@ -102,41 +101,6 @@ const runAction = async (action) => {
         actionMessage.value = String(error?.message || 'Apache action failed.');
     } finally {
         actionLoading.value = '';
-    }
-};
-
-const syncSelectedWebsiteVhost = async () => {
-    if (!selectedWebsite?.id || syncLoading.value) {
-        return;
-    }
-
-    syncMessage.value = '';
-    syncLoading.value = true;
-
-    try {
-        const response = await fetch(panelRoute('websites.vhost.sync', { id: selectedWebsite.id }), {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': csrfToken.value,
-            },
-            body: JSON.stringify({}),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw data;
-        }
-
-        syncMessageType.value = String(data.type || 'success');
-        syncMessage.value = String(data.message || 'Live vhost synced successfully.');
-    } catch (error) {
-        syncMessageType.value = 'error';
-        syncMessage.value = String(error?.message || error?.errors?.vhost_sync || 'Live vhost sync failed.');
-    } finally {
-        syncLoading.value = false;
     }
 };
 
@@ -347,15 +311,6 @@ const boolTone = (flag) => (flag
                         >
                             Open Website Manage
                         </Link>
-                        <button
-                            v-if="selectedWebsite?.id"
-                            type="button"
-                            :disabled="syncLoading"
-                            class="rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
-                            @click="syncSelectedWebsiteVhost"
-                        >
-                            Sync Selected VHost
-                        </button>
                     </div>
                 </div>
                 <p class="mt-2 text-xs text-slate-500">

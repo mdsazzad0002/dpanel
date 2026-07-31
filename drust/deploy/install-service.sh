@@ -70,9 +70,17 @@ if [[ -f "${LARAVEL_ENV}" ]]; then
   else
     printf '\nSERVERPANEL_EXECUTION_API_TOKEN=%s\n' "${DRUST_API_TOKEN}" >> "${LARAVEL_ENV}"
   fi
-  if ! grep -q '^SERVERPANEL_FILEMANAGER_API_URL=' "${LARAVEL_ENV}"; then
-    printf 'SERVERPANEL_FILEMANAGER_API_URL=http://127.0.0.1:%s/api/v1/filemanager\n' "${DRUST_API_PORT:-9500}" >> "${LARAVEL_ENV}"
-  fi
+  DRUST_LIVE_API_URL="http://127.0.0.1:${DRUST_API_PORT:-9600}"
+  for key_value in \
+    "SERVERPANEL_EXECUTION_API_BASE_URL=${DRUST_LIVE_API_URL}" \
+    "SERVERPANEL_FILEMANAGER_API_URL=${DRUST_LIVE_API_URL}/api/v1/filemanager"; do
+    key="${key_value%%=*}"
+    if grep -q "^${key}=" "${LARAVEL_ENV}"; then
+      sed -i "s#^${key}=.*#${key_value}#" "${LARAVEL_ENV}"
+    else
+      printf '%s\n' "${key_value}" >> "${LARAVEL_ENV}"
+    fi
+  done
   # The file now carries a token that is a root capability on this host.
   chown root:www-data "${LARAVEL_ENV}" 2>/dev/null || true
   chmod 640 "${LARAVEL_ENV}" 2>/dev/null || true
@@ -92,9 +100,12 @@ fi
 cargo build --release --manifest-path "${DRUST_ROOT}/Cargo.toml"
 install -m 0755 "${DRUST_ROOT}/deploy/drust-start" /usr/local/bin/drust-start
 install -m 0755 "${DRUST_ROOT}/deploy/drust-edge-gateway" /usr/local/bin/drust-edge-gateway
+install -m 0755 "${DRUST_ROOT}/deploy/serverinstaller-site" /usr/local/bin/serverinstaller-site
 install -m 0644 "${DRUST_ROOT}/deploy/drust.service" /etc/systemd/system/drust.service
 install -m 0644 "${DRUST_ROOT}/deploy/edge-gateway.service" /etc/systemd/system/edge-gateway.service
 systemctl daemon-reload
 systemctl enable drust.service
+systemctl enable edge-gateway.service
 systemctl restart drust.service
+systemctl restart edge-gateway.service
 systemctl --no-pager --full status drust.service

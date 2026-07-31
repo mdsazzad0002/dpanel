@@ -19,7 +19,7 @@ fn main() -> std::process::ExitCode {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.first().map(String::as_str) == Some("edge-gateway") {
         let bind = std::env::var("DRUST_EDGE_GATEWAY_BIND")
-            .unwrap_or_else(|_| "127.0.0.1:9500".to_string());
+            .unwrap_or_else(|_| "127.0.0.1:9600".to_string());
         return match edge_gateway::serve_gateway(&bind) {
             Ok(()) => std::process::ExitCode::from(0),
             Err(error) => {
@@ -78,6 +78,8 @@ fn main() -> std::process::ExitCode {
             edge_gateway::serve_demo_with_tls(
                 edge_gateway::sample_snapshot(),
                 edge_gateway::sample_dispatch_context(),
+                edge_gateway::SnapshotCacheConfig::fast(),
+                edge_gateway::DbSnapshotConfig::new(),
                 &http_bind,
                 tls,
             )
@@ -85,6 +87,8 @@ fn main() -> std::process::ExitCode {
             edge_gateway::serve_demo_with_tls(
                 edge_gateway::sample_snapshot(),
                 edge_gateway::sample_dispatch_context(),
+                edge_gateway::SnapshotCacheConfig::fast(),
+                edge_gateway::DbSnapshotConfig::new(),
                 &http_bind,
                 edge_gateway::scaffold_tls_listener_config(&https_bind, &http_bind),
             )

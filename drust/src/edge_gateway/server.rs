@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::{Duration, Instant}};
 
 use axum::{
     body::Body,
     extract::State,
-    http::Request,
+    http::{HeaderValue, Request, StatusCode},
     response::Response,
     routing::{any, post},
     Json, Router,
@@ -13,30 +13,149 @@ use axum::{
 use serde::Serialize;
 use tokio::sync::RwLock;
 use tower_http::compression::CompressionLayer;
-use tracing::info;
+use tracing::{info, warn};
+use hyper_util::rt::TokioIo;
+use hyper_util::service::TowerToHyperService;
 
 use super::{
-    build_client, build_tls_config, dispatch, health_check_upstream, scaffold_tls_listener_config,
+    build_client, build_tls_config, dispatch, health_check_upstream, load_runtime_snapshot,
+    scaffold_tls_listener_config,
     CachePolicy, DispatchContext, ProxyConfig, RouteAction, RouteConfig, RuntimeSnapshot, SiteConfig,
-    StaticFileConfig, TlsIdentity, TlsListenerConfig, TlsStore, TlsConfig, UpstreamConfig,
+    DbSnapshotConfig, SnapshotCacheConfig, StaticFileConfig, TlsIdentity, TlsListenerConfig, TlsStore,
+    TlsConfig, UpstreamConfig,
 };
 
 #[derive(Clone)]
 pub struct DemoServerState {
     pub snapshot: Arc<RwLock<RuntimeSnapshot>>,
+    pub cache: Arc<RwLock<CachedSnapshot>>,
+    pub cache_config: SnapshotCacheConfig,
+    pub source_config: DbSnapshotConfig,
     pub dispatch: DispatchContext,
     pub proxy_client: Arc<reqwest::Client>,
 }
 
+#[derive(Clone)]
+pub struct CachedSnapshot {
+    pub loaded_at: Instant,
+    pub snapshot: RuntimeSnapshot,
+}
+
 pub fn serve_gateway(bind: &str) -> Result<(), String> {
-    let snapshot = sample_snapshot();
+    let panel_domain = std::env::var("DRUST_PANEL_DOMAIN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "dpanel.localhost".to_string());
+    let snapshot = sample_panel_snapshot(&panel_domain);
     let dispatch = sample_dispatch_context();
-    serve_demo_with_tls(snapshot, dispatch, bind, scaffold_tls_listener_config(bind, bind))
+    let cache_config = SnapshotCacheConfig::fast();
+    let source_config = DbSnapshotConfig::new();
+    let http_bind = std::env::var("DRUST_HTTP_BIND").unwrap_or_else(|_| bind.to_string());
+    let https_bind = std::env::var("DRUST_HTTPS_BIND").unwrap_or_else(|_| "0.0.0.0:443".to_string());
+    let tls = scaffold_tls_listener_config(&https_bind, &http_bind);
+    serve_gateway_with_tls(
+        snapshot,
+        dispatch,
+        cache_config,
+        source_config,
+        &http_bind,
+        tls,
+        None,
+    )
+}
+
+pub fn serve_gateway_with_tls(
+    snapshot: RuntimeSnapshot,
+    dispatch: DispatchContext,
+    cache_config: SnapshotCacheConfig,
+    source_config: DbSnapshotConfig,
+    http_bind: &str,
+    tls_config: TlsListenerConfig,
+    redirect_to: Option<String>,
+) -> Result<(), String> {
+    let state = make_demo_state(snapshot, dispatch, cache_config, source_config)?;
+    let runtime = tokio::runtime::Runtime::new().map_err(|error| format!("runtime build failed: {error}"))?;
+    runtime.block_on(async move {
+        let app_router = build_demo_router(state);
+        let https_router = app_router.clone();
+
+        let http_listener = tokio::net::TcpListener::bind(http_bind)
+            .await
+            .map_err(|error| format!("http bind failed: {error}"))?;
+        info!(bind = http_bind, "HTTP listener ready");
+
+        let http_task = tokio::spawn(async move {
+            let router = if redirect_to.is_some() {
+                build_http_redirect_router(redirect_to)
+            } else {
+                app_router.clone()
+            };
+            axum::serve(http_listener, router)
+                .await
+                .map_err(|error| format!("http server failed: {error}"))
+        });
+
+        let https_task = if tls_config.store.identities.is_empty() {
+            info!(bind = %tls_config.bind, "HTTPS listener skipped because no TLS identities are configured");
+            None
+        } else {
+            Some(tokio::spawn(run_https_listener(https_router, tls_config)))
+        };
+
+        if let Some(task) = https_task {
+            tokio::select! {
+                result = http_task => {
+                    result.map_err(|error| format!("http join failed: {error}"))??;
+                }
+                result = task => {
+                    result.map_err(|error| format!("https join failed: {error}"))??;
+                }
+            }
+        } else {
+            http_task
+                .await
+                .map_err(|error| format!("http join failed: {error}"))??;
+        }
+        Ok(())
+    })
+}
+
+fn build_http_redirect_router(redirect_to: Option<String>) -> Router {
+    Router::new().fallback(any(move |request: Request<Body>| {
+        let redirect_to = redirect_to.clone();
+        async move {
+            let location_base = redirect_to.unwrap_or_else(|| "https://127.0.0.1".to_string());
+            let host = request
+                .headers()
+                .get("host")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("");
+            let path_and_query = request
+                .uri()
+                .path_and_query()
+                .map(|value| value.as_str())
+                .unwrap_or("/");
+            let location = if location_base.starts_with("http://") || location_base.starts_with("https://") {
+                format!("{location_base}{path_and_query}")
+            } else if host.is_empty() {
+                format!("https://{location_base}{path_and_query}")
+            } else {
+                format!("https://{host}{path_and_query}")
+            };
+            let mut response = Response::new(Body::empty());
+            *response.status_mut() = StatusCode::MOVED_PERMANENTLY;
+            if let Ok(value) = HeaderValue::from_str(&location) {
+                response.headers_mut().insert(axum::http::header::LOCATION, value);
+            }
+            response
+        }
+    }))
 }
 
 pub fn build_demo_router(state: DemoServerState) -> Router {
     Router::new()
-        .route("/{*path}", any(handle_request))
+        .fallback(any(handle_request))
         .route("/__admin/reload", post(handle_reload))
         .route("/__admin/health", any(handle_health))
         .route("/__admin/upstreams/health", any(handle_upstreams_health))
@@ -55,14 +174,18 @@ pub async fn handle_request(
         .unwrap_or("-");
     let path = request.uri().path().to_string();
     info!(host = host, path = %path, "incoming request");
-    let snapshot = state.snapshot.read().await.clone();
+    let snapshot = get_cached_snapshot(&state).await;
     dispatch(&snapshot, &state.dispatch, request, &state.proxy_client).await
 }
 
 pub async fn handle_reload(State(state): State<Arc<DemoServerState>>) -> Json<ReloadResponse> {
-    let next = sample_snapshot();
+    let next = match load_runtime_snapshot(&state.source_config) {
+        Ok(snapshot) => snapshot,
+        Err(_) => sample_snapshot(),
+    };
     let version = next.version;
     *state.snapshot.write().await = next;
+    refresh_cache(&state).await;
     Json(ReloadResponse {
         success: true,
         message: "snapshot reloaded".to_string(),
@@ -71,7 +194,7 @@ pub async fn handle_reload(State(state): State<Arc<DemoServerState>>) -> Json<Re
 }
 
 pub async fn handle_health(State(state): State<Arc<DemoServerState>>) -> Json<HealthResponse> {
-    let snapshot = state.snapshot.read().await;
+    let snapshot = get_cached_snapshot(&state).await;
     Json(HealthResponse {
         status: "ok".to_string(),
         version: snapshot.version,
@@ -82,7 +205,7 @@ pub async fn handle_health(State(state): State<Arc<DemoServerState>>) -> Json<He
 pub async fn handle_upstreams_health(
     State(state): State<Arc<DemoServerState>>,
 ) -> Json<UpstreamsHealthResponse> {
-    let snapshot = state.snapshot.read().await.clone();
+    let snapshot = get_cached_snapshot(&state).await;
     let mut results = Vec::new();
     for site in snapshot.sites.iter() {
         for route in site.routes.iter() {
@@ -102,10 +225,21 @@ pub async fn handle_upstreams_health(
     Json(UpstreamsHealthResponse { results })
 }
 
-pub fn make_demo_state(snapshot: RuntimeSnapshot, dispatch: DispatchContext) -> Result<DemoServerState, String> {
+pub fn make_demo_state(
+    snapshot: RuntimeSnapshot,
+    dispatch: DispatchContext,
+    cache_config: SnapshotCacheConfig,
+    source_config: DbSnapshotConfig,
+) -> Result<DemoServerState, String> {
     let client = build_client(&ProxyConfig::default())?;
     Ok(DemoServerState {
         snapshot: Arc::new(RwLock::new(snapshot)),
+        cache: Arc::new(RwLock::new(CachedSnapshot {
+            loaded_at: Instant::now(),
+            snapshot: RuntimeSnapshot::empty(),
+        })),
+        cache_config,
+        source_config,
         dispatch,
         proxy_client: Arc::new(client),
     })
@@ -113,16 +247,18 @@ pub fn make_demo_state(snapshot: RuntimeSnapshot, dispatch: DispatchContext) -> 
 
 pub fn serve_demo(snapshot: RuntimeSnapshot, dispatch: DispatchContext, bind: &str) -> Result<(), String> {
     let tls = scaffold_tls_listener_config("0.0.0.0:8443", bind);
-    serve_demo_with_tls(snapshot, dispatch, bind, tls)
+    serve_demo_with_tls(snapshot, dispatch, SnapshotCacheConfig::fast(), DbSnapshotConfig::new(), bind, tls)
 }
 
 pub fn serve_demo_with_tls(
     snapshot: RuntimeSnapshot,
     dispatch: DispatchContext,
+    cache_config: SnapshotCacheConfig,
+    source_config: DbSnapshotConfig,
     http_bind: &str,
     tls_config: TlsListenerConfig,
 ) -> Result<(), String> {
-    let state = make_demo_state(snapshot, dispatch)?;
+    let state = make_demo_state(snapshot, dispatch, cache_config, source_config)?;
     let runtime = tokio::runtime::Runtime::new().map_err(|error| format!("runtime build failed: {error}"))?;
     runtime.block_on(async move {
         let router = build_demo_router(state);
@@ -165,6 +301,38 @@ pub fn serve_demo_with_tls(
     })
 }
 
+async fn get_cached_snapshot(state: &Arc<DemoServerState>) -> RuntimeSnapshot {
+    let now = Instant::now();
+    {
+        let cache = state.cache.read().await;
+        if now.duration_since(cache.loaded_at) <= state.cache_config.ttl {
+            info!(version = cache.snapshot.version, ttl_secs = state.cache_config.ttl.as_secs(), "snapshot cache hit");
+            return cache.snapshot.clone();
+        }
+    }
+
+    warn!(ttl_secs = state.cache_config.ttl.as_secs(), "snapshot cache miss; refreshing from live database");
+    refresh_cache(state).await;
+    let snapshot = state.cache.read().await.snapshot.clone();
+    info!(version = snapshot.version, "snapshot cache refreshed from live database");
+    snapshot
+}
+
+async fn refresh_cache(state: &Arc<DemoServerState>) {
+    let snapshot = match load_runtime_snapshot(&state.source_config) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            warn!(error = %error, "live database snapshot load failed; falling back to in-memory snapshot");
+            state.snapshot.read().await.clone()
+        }
+    };
+    *state.snapshot.write().await = snapshot.clone();
+    *state.cache.write().await = CachedSnapshot {
+        loaded_at: Instant::now(),
+        snapshot,
+    };
+}
+
 async fn run_https_listener(router: Router, tls_config: TlsListenerConfig) -> Result<(), String> {
     let server_config = build_tls_config(&tls_config.store)?;
     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
@@ -189,9 +357,15 @@ async fn run_https_listener(router: Router, tls_config: TlsListenerConfig) -> Re
         let router = router.clone();
         tokio::spawn(async move {
             match acceptor.accept(stream).await {
-                Ok(_tls_stream) => {
+                Ok(tls_stream) => {
                     tracing::info!(peer = %peer, "TLS connection accepted");
-                    let _ = router;
+                    let io = TokioIo::new(tls_stream);
+                    if let Err(error) = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(io, TowerToHyperService::new(router.clone().into_service()))
+                        .await
+                    {
+                        tracing::error!(peer = %peer, error = %error, "HTTPS connection failed");
+                    }
                 }
                 Err(error) => {
                     tracing::error!(peer = %peer, error = %error, "TLS handshake failed");
@@ -228,11 +402,23 @@ pub struct UpstreamHealth {
 }
 
 pub fn sample_snapshot() -> RuntimeSnapshot {
+    sample_panel_snapshot("demo.local")
+}
+
+pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
+    let primary_domain = {
+        let value = panel_domain.trim().to_lowercase();
+        if value.is_empty() { "demo.local".to_string() } else { value }
+    };
+    let www_domain = format!("www.{primary_domain}");
     RuntimeSnapshot {
         version: 1,
         sites: Arc::from([SiteConfig {
-            hostnames: Arc::from(["demo.local".to_string(), "www.demo.local".to_string()]),
-            document_root: Some(PathBuf::from("/var/www/demo/public")),
+            id: "demo".to_string(),
+            hostnames: Arc::from([primary_domain.clone(), www_domain.clone()]),
+            document_root: Some(PathBuf::from(format!("/var/www/{primary_domain}/public"))),
+            php_version: None,
+            enable_ssl: false,
             spa_fallback: true,
             routes: Arc::from([
                 RouteConfig {
@@ -248,9 +434,9 @@ pub fn sample_snapshot() -> RuntimeSnapshot {
             ]),
         }]),
         tls: Arc::from([TlsConfig {
-            hostnames: Arc::from(["demo.local".to_string(), "www.demo.local".to_string()]),
-            cert_path: PathBuf::from("/etc/drust/tls/demo.local.crt"),
-            key_path: PathBuf::from("/etc/drust/tls/demo.local.key"),
+            hostnames: Arc::from([primary_domain, www_domain]),
+            cert_path: PathBuf::from(format!("/etc/drust/tls/{panel_domain}.crt")),
+            key_path: PathBuf::from(format!("/etc/drust/tls/{panel_domain}.key")),
         }]),
         cache: CachePolicy {
             enabled: true,
@@ -284,5 +470,12 @@ pub fn sample_tls_store(cert_path: PathBuf, key_path: PathBuf) -> TlsStore {
 pub fn serve_sample(bind: &str) -> Result<(), String> {
     let snapshot = sample_snapshot();
     let dispatch = sample_dispatch_context();
-    serve_demo_with_tls(snapshot, dispatch, bind, scaffold_tls_listener_config("127.0.0.1:8443", bind))
+    serve_demo_with_tls(
+        snapshot,
+        dispatch,
+        SnapshotCacheConfig::fast(),
+        DbSnapshotConfig::new(),
+        bind,
+        scaffold_tls_listener_config("127.0.0.1:8443", bind),
+    )
 }

@@ -6,4 +6,8 @@ if [[ ! -x "$DRUST_BIN" ]]; then
   DRUST_BIN="/var/www/drust/target/debug/drust"
 fi
 
+if [[ -z "${DRUST_EDGE_GATEWAY_BIND:-}" ]]; then
+  export DRUST_EDGE_GATEWAY_BIND="0.0.0.0:80"
+fi
+
 exec "$DRUST_BIN" edge-gateway

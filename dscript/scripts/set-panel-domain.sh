@@ -56,7 +56,8 @@ if [[ "$port" != "80" && "$port" != "443" ]]; then
 fi
 
 set_env() {
-  local file="$1" key="$2" value="$3" tmp="${file}.tmp"
+  local file="$1" key="$2" value="$3"
+  local tmp="${file}.tmp"
   [[ -f "$file" ]] || touch "$file"
   awk -v key="$key" -v value="$value" '
     BEGIN { found = 0 }
@@ -77,6 +78,11 @@ if [[ -f "$env_file" ]]; then
   set_env "$env_file" PANEL_DOMAIN "$domain"
   set_env "$env_file" PANEL_PORT "$port"
   set_env "$env_file" APP_URL "$app_url"
+  if [[ "$port" == "443" ]]; then
+    set_env "$env_file" SESSION_SECURE_COOKIE "true"
+  else
+    set_env "$env_file" SESSION_SECURE_COOKIE "false"
+  fi
   if [[ -x "$(dirname "$env_file")/artisan" ]]; then
     (cd "$(dirname "$env_file")" && php artisan config:clear >/dev/null 2>&1 || true)
   fi

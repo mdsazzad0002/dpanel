@@ -12,8 +12,11 @@ pub struct RuntimeSnapshot {
 
 #[derive(Clone, Debug)]
 pub struct SiteConfig {
+    pub id: String,
     pub hostnames: Arc<[String]>,
     pub document_root: Option<PathBuf>,
+    pub php_version: Option<String>,
+    pub enable_ssl: bool,
     pub spa_fallback: bool,
     pub routes: Arc<[RouteConfig]>,
 }
@@ -75,6 +78,21 @@ impl RuntimeSnapshot {
                 ttl: Duration::from_secs(0),
                 stale_while_revalidate: Duration::from_secs(0),
             },
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SnapshotCacheConfig {
+    pub ttl: Duration,
+    pub source_path: Option<PathBuf>,
+}
+
+impl SnapshotCacheConfig {
+    pub fn fast() -> Self {
+        Self {
+            ttl: Duration::from_secs(2),
+            source_path: None,
         }
     }
 }

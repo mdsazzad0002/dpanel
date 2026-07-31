@@ -117,7 +117,6 @@ class DatabaseController extends Controller
 
         $prepared = $this->preparePayload($request->all(), $request->user());
         $validated = $this->normalizePayload($this->validatePayload($prepared));
-        $command = $this->buildCommand($validated);
         $syncResult = $this->syncDatabaseToServer($validated);
         $status = $syncResult['success'] ? 'active' : ($syncResult['ran'] ? 'failed' : 'pending');
 
@@ -130,7 +129,6 @@ class DatabaseController extends Controller
             'database_host' => $validated['database_host'],
             'charset' => $validated['charset'],
             'collation' => $validated['collation'],
-            'command' => $command,
             'status' => $status,
             'assigned_user_id' => $request->user()?->id,
         ]);
@@ -194,7 +192,6 @@ class DatabaseController extends Controller
             'domain' => $validated['domain'],
             'charset' => $validated['charset'],
             'collation' => $validated['collation'],
-            'command' => $this->buildCommand($validated),
             'status' => $status,
             'assigned_user_id' => $request->user()?->id,
         ]);
@@ -469,20 +466,6 @@ class DatabaseController extends Controller
 
     /**
      * @param array<string, mixed> $payload
-     */
-    private function buildCommand(array $payload): string
-    {
-        return sprintf(
-            'POST %s { action: create, database_name: %s, database_user: %s, database_host: %s }',
-            config('serverpanel.database_api_url', '/api/v1/database-request'),
-            (string) $payload['database_name'],
-            (string) $payload['database_user'],
-            (string) $payload['database_host'],
-        );
-    }
-
-    /**
-     * @param array<string, mixed> $payload
      * @return array{ran: bool, success: bool, output: string}
      */
     private function syncDatabaseToServer(array $payload): array
@@ -593,7 +576,6 @@ class DatabaseController extends Controller
             'database_host' => (string) $request->database_host,
             'charset' => (string) $request->charset,
             'collation' => (string) $request->collation,
-            'command' => (string) ($request->command ?? ''),
             'status' => (string) ($request->status ?? 'pending'),
             'assigned_user_id' => $request->assigned_user_id ? (int) $request->assigned_user_id : null,
             'assigned_user_name' => $request->assignedUser?->name,
@@ -654,7 +636,6 @@ class DatabaseController extends Controller
                         'database_host' => (string) ($item['database_host'] ?? 'localhost'),
                         'charset' => (string) ($item['charset'] ?? 'utf8mb4'),
                         'collation' => (string) ($item['collation'] ?? 'utf8mb4_unicode_ci'),
-                        'command' => (string) ($item['command'] ?? ''),
                         'status' => (string) ($item['status'] ?? 'pending'),
                         'created_at' => $this->normalizeLegacyDatetime((string) ($item['created_at'] ?? '')),
                         'updated_at' => $this->normalizeLegacyDatetime((string) ($item['updated_at'] ?? '')),

@@ -251,9 +251,9 @@ Browser
 Typical website flow:
 
 ```text
-1. Create or sync vhost
+
 2. Ensure webroot and file permissions
-3. Install or reload nginx/apache
+
 4. Issue SSL certificate
 5. Reload web server after SSL issuance
 6. Verify site and logs
@@ -265,7 +265,7 @@ Website route map:
 Create site
   -> dpanel site:create
   -> drust vhost sync
-  -> nginx/apache config render
+
   -> file permissions and document root check
   -> SSL issue when enabled
   -> reload web server

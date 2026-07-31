@@ -41,7 +41,6 @@ const panelRoute = (name, params = {}) => (
 const csrfToken = computed(() => String(page.props.csrfToken || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''));
 const syncMessage = ref('');
 const syncMessageType = ref('success');
-const syncLoading = ref(false);
 const bodySize = ref(String(props.website.client_max_body_size || '2G'));
 const bodySizeLoading = ref(false);
 
@@ -73,42 +72,6 @@ const nginxVhostTone = computed(() => (
         ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
         : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
 ));
-
-const syncVhost = async () => {
-    if (syncLoading.value) {
-        return;
-    }
-
-    syncLoading.value = true;
-    syncMessage.value = '';
-
-    try {
-        const response = await fetch(panelRoute('websites.vhost.sync', { id: props.website.id }), {
-            method: 'POST',
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': csrfToken.value,
-            },
-            body: JSON.stringify({}),
-        });
-
-        const payload = await response.json().catch(() => ({}));
-
-        if (!response.ok || payload?.type === 'error' || payload?.errors) {
-            throw new Error(payload?.message || 'VHost sync failed.');
-        }
-
-        syncMessageType.value = 'success';
-        syncMessage.value = payload?.message || 'VHost synced successfully.';
-    } catch (error) {
-        syncMessageType.value = 'error';
-        syncMessage.value = error?.message || 'VHost sync failed.';
-    } finally {
-        syncLoading.value = false;
-    }
-};
 
 const updateBodySize = async () => {
     if (bodySizeLoading.value) return;
@@ -148,15 +111,6 @@ const updateBodySize = async () => {
         </template>
 
             <div class="mb-4 flex justify-end gap-2">
-                <button
-                    type="button"
-                    :disabled="syncLoading"
-                    @click="syncVhost"
-                    class="rounded-md border border-violet-300 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
-                >
-                    <span v-if="syncLoading">Syncing...</span>
-                    <span v-else><i class="fa fa-sync"></i> Sync VHost</span>
-                </button>
                 <Link :href="panelRoute('websites.ssl', { id: website.id })" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
                     <i class="bi bi-shield-check mr-2"></i> Open SSL Manager
                 </Link>

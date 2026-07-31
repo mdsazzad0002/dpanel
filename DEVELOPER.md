@@ -98,7 +98,7 @@ Runtime panel actions should usually go through `dpanel -> drust`. Use `dscript`
 - Rust toolchain with Cargo
 - MariaDB/MySQL
 - Redis for queues
-- nginx/Apache/PHP-FPM for full server integration testing
+integration testing
 
 ### Laravel App
 

@@ -9,8 +9,9 @@ use axum::http::Request;
 use std::time::Duration;
 
 use super::{
-    load_static_asset, normalize_request_path, proxy_request, resolve_route, resolve_site,
-    resolve_static_path, RouteAction, RuntimeSnapshot, StaticAsset, StaticFileConfig,
+    execute_php_front_controller, load_static_asset, normalize_request_path, proxy_request,
+    resolve_route, resolve_site, resolve_static_path, RouteAction, RuntimeSnapshot, StaticAsset,
+    StaticFileConfig,
 };
 
 #[derive(Clone, Debug)]
@@ -32,28 +33,103 @@ pub async fn dispatch(
     let path = normalize_request_path(request.uri().path());
 
     let Some(site) = resolve_site(snapshot, host) else {
-        return simple_response(StatusCode::NOT_FOUND, "unknown host");
+        return annotated_response(
+            not_found_response(
+                "Site not found",
+                "We could not find a site that matches this domain.",
+                host,
+                &path,
+            ),
+            "",
+            "",
+        );
     };
+    if let Some(preview) = parse_panel_preview_path(&path) {
+        return handle_panel_preview(
+            snapshot,
+            ctx,
+            site,
+            preview,
+            request,
+            proxy_client,
+        )
+        .await;
+    }
     let Some(route) = resolve_route(site, &path) else {
-        return simple_response(StatusCode::NOT_FOUND, "route not found");
+        return annotated_response(
+            not_found_response(
+                "Route not found",
+                "The site exists, but this request path does not match any configured route.",
+                host,
+                &path,
+            ),
+            site.hostnames.first().map(String::as_str).unwrap_or(""),
+            "",
+        );
     };
     let site_match = site.hostnames.first().map(String::as_str).unwrap_or("");
     let route_match = route.path_prefix.as_str();
 
     match &route.action {
         RouteAction::Static => {
-            let config = if let Some(config) = ctx.static_files.as_ref() {
-                config.clone()
-            } else if let Some(document_root) = site.document_root.as_ref() {
+            let config = if let Some(document_root) = site.document_root.as_ref() {
                 StaticFileConfig {
                     document_root: document_root.clone(),
                     index_file: "index.html".to_string(),
                     spa_fallback: site.spa_fallback,
                     cache_ttl: snapshot.cache.ttl,
                 }
+            } else if let Some(config) = ctx.static_files.as_ref() {
+                config.clone()
             } else {
                 return simple_response(StatusCode::INTERNAL_SERVER_ERROR, "static root missing");
             };
+
+            if is_blocked_htaccess_path(&path) {
+                return annotated_response(
+                    simple_response(StatusCode::FORBIDDEN, "forbidden"),
+                    site_match,
+                    route_match,
+                );
+            }
+
+            let exact_static_path = if is_php_path(&path) {
+                None
+            } else {
+                resolve_static_path(
+                    &config.document_root,
+                    &path,
+                    &config.index_file,
+                    false,
+                )
+            };
+            if let Some(path_on_disk) = exact_static_path {
+                let asset = match load_static_asset(&path_on_disk) {
+                    Ok(asset) => asset,
+                    Err(error) => return simple_response(StatusCode::INTERNAL_SERVER_ERROR, &error),
+                };
+                return annotated_response(
+                    static_response(asset, config.cache_ttl),
+                    site_match,
+                    route_match,
+                );
+            }
+
+            if config.document_root.join("index.php").is_file() {
+                let response = execute_php_front_controller(
+                    request,
+                    &config.document_root,
+                    site.php_version.as_deref(),
+                )
+                .await
+                .unwrap_or_else(|error| {
+                    simple_response(
+                        StatusCode::BAD_GATEWAY,
+                        &format!("PHP application unavailable: {error}"),
+                    )
+                });
+                return annotated_response(response, site_match, route_match);
+            }
 
             let Some(path_on_disk) = resolve_static_path(
                 &config.document_root,
@@ -61,7 +137,23 @@ pub async fn dispatch(
                 &config.index_file,
                 config.spa_fallback,
             ) else {
-                return simple_response(StatusCode::NOT_FOUND, "file not found");
+                if path == "/" {
+                    return annotated_response(
+                        site_root_error_response(site_match, &config.document_root),
+                        site_match,
+                        route_match,
+                    );
+                }
+                return annotated_response(
+                    not_found_response(
+                        "Page not found",
+                        "The site matched, but this specific file or page is missing.",
+                        host,
+                        &path,
+                    ),
+                    site_match,
+                    route_match,
+                );
             };
 
             let asset = match load_static_asset(&path_on_disk) {
@@ -85,6 +177,114 @@ pub async fn dispatch(
             return annotated_response(redirect_response(*code, location), site_match, route_match);
         }
     }
+}
+
+struct PanelPreview<'a> {
+    session_prefix: &'a str,
+    website_id: &'a str,
+    relative_path: &'a str,
+}
+
+fn parse_panel_preview_path(path: &str) -> Option<PanelPreview<'_>> {
+    let mut segments = path.trim_start_matches('/').split('/');
+    let session_prefix = segments.next()?;
+    if session_prefix.len() != 70
+        || !session_prefix.starts_with("cpsess")
+        || !session_prefix[6..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        || segments.next()? != "websites"
+    {
+        return None;
+    }
+    let website_id = segments.next()?;
+    if website_id.is_empty() || segments.next()? != "preview" {
+        return None;
+    }
+    Some(PanelPreview {
+        session_prefix,
+        website_id,
+        relative_path: path
+            .split_once(&format!("/preview/"))
+            .map(|(_, relative)| relative)
+            .unwrap_or(""),
+    })
+}
+
+async fn handle_panel_preview(
+    snapshot: &RuntimeSnapshot,
+    ctx: &DispatchContext,
+    panel_site: &super::SiteConfig,
+    preview: PanelPreview<'_>,
+    request: Request<Body>,
+    proxy_client: &reqwest::Client,
+) -> Response {
+    let Some(target_site) = snapshot.sites.iter().find(|site| site.id == preview.website_id) else {
+        return simple_response(StatusCode::NOT_FOUND, "Preview website not found");
+    };
+    let Some(panel_root) = panel_site.document_root.as_ref() else {
+        return simple_response(StatusCode::INTERNAL_SERVER_ERROR, "Panel root missing");
+    };
+
+    let original_method = request.method().clone();
+    let original_headers = request.headers().clone();
+    let original_query = request.uri().query().map(str::to_string);
+    let (mut parts, _) = request.into_parts();
+    let authorization_path = format!(
+        "/{}/websites/{}/manage",
+        preview.session_prefix, preview.website_id
+    );
+    parts.uri = match authorization_path.parse() {
+        Ok(uri) => uri,
+        Err(_) => return simple_response(StatusCode::BAD_REQUEST, "Invalid preview path"),
+    };
+    let authorization = execute_php_front_controller(
+        Request::from_parts(parts, Body::empty()),
+        panel_root,
+        panel_site.php_version.as_deref(),
+    )
+    .await
+    .unwrap_or_else(|error| {
+        simple_response(
+            StatusCode::BAD_GATEWAY,
+            &format!("Preview authorization unavailable: {error}"),
+        )
+    });
+    if !authorization.status().is_success() {
+        return authorization;
+    }
+
+    let Some(domain) = target_site.hostnames.first() else {
+        return simple_response(StatusCode::NOT_FOUND, "Preview domain missing");
+    };
+    let mut target_path = if preview.relative_path.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", preview.relative_path)
+    };
+    if let Some(query) = original_query {
+        target_path.push('?');
+        target_path.push_str(&query);
+    }
+
+    let mut builder = Request::builder().method(original_method).uri(target_path);
+    for (name, value) in &original_headers {
+        if name == header::HOST
+            || (name == header::COOKIE
+                && !panel_site
+                    .hostnames
+                    .iter()
+                    .any(|panel_domain| panel_domain.eq_ignore_ascii_case(domain)))
+        {
+            continue;
+        }
+        builder = builder.header(name, value);
+    }
+    builder = builder.header(header::HOST, domain);
+    let target_request = match builder.body(Body::empty()) {
+        Ok(request) => request,
+        Err(_) => return simple_response(StatusCode::BAD_REQUEST, "Invalid preview request"),
+    };
+
+    Box::pin(dispatch(snapshot, ctx, target_request, proxy_client)).await
 }
 
 fn annotated_response(mut response: Response, site_match: &str, route_match: &str) -> Response {
@@ -157,6 +357,87 @@ fn simple_response(status: StatusCode, message: &str) -> Response {
     response
 }
 
+fn is_php_path(path: &str) -> bool {
+    path.rsplit('/').next().is_some_and(|name| {
+        name.rsplit_once('.')
+            .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("php"))
+    })
+}
+
+fn is_blocked_htaccess_path(path: &str) -> bool {
+    if path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .any(|segment| segment.starts_with('.'))
+    {
+        return true;
+    }
+    let extension = path
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.rsplit_once('.'))
+        .map(|(_, extension)| extension.to_ascii_lowercase());
+    matches!(
+        extension.as_deref(),
+        Some("sh" | "bash" | "env" | "ini" | "conf" | "sql" | "sqlite" | "yml" | "yaml" | "json" | "md")
+    )
+}
+
+fn not_found_response(title: &str, message: &str, host: &str, path: &str) -> Response {
+    let body = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{title} · Drust</title><style>\
+        :root{{color-scheme:dark;--bg1:#07111f;--bg2:#0f1d33;--card:#0f172a;--card2:#111c30;--text:#e5eefb;--muted:#9fb1cb;--accent:#6ee7ff;--accent2:#8b5cf6;--border:rgba(255,255,255,.10)}}\
+        *{{box-sizing:border-box}} body{{margin:0;min-height:100vh;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;color:var(--text);background:radial-gradient(circle at top left,#17345c 0,#07111f 40%,#050b14 100%);display:grid;place-items:center;padding:24px}}\
+        .wrap{{width:min(760px,100%);position:relative}} .glow{{position:absolute;inset:-80px auto auto -80px;width:180px;height:180px;border-radius:50%;background:rgba(110,231,255,.14);filter:blur(18px)}}\
+        .card{{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:24px;background:linear-gradient(180deg,rgba(17,28,48,.92),rgba(9,15,28,.96));box-shadow:0 24px 80px rgba(0,0,0,.42);padding:34px}}\
+        .badge{{display:inline-flex;align-items:center;gap:10px;padding:8px 14px;border-radius:999px;background:rgba(110,231,255,.09);border:1px solid rgba(110,231,255,.22);color:var(--accent);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}}\
+        h1{{margin:18px 0 10px;font-size:clamp(32px,5vw,56px);line-height:1.02;letter-spacing:-.04em}} p{{margin:0;color:var(--muted);font-size:18px;line-height:1.65;max-width:62ch}}\
+        .meta{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:24px 0}} .item{{padding:16px 18px;border-radius:18px;background:rgba(255,255,255,.03);border:1px solid var(--border)}}\
+        .label{{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px}} .value{{font-size:15px;word-break:break-word;color:#f8fbff}}\
+        .actions{{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}} a,button{{appearance:none;border:none;cursor:pointer;text-decoration:none;font:inherit}}\
+        .primary{{background:linear-gradient(135deg,var(--accent),#7dd3fc);color:#04111c;font-weight:800;padding:12px 18px;border-radius:14px}}\
+        .secondary{{background:transparent;color:var(--text);border:1px solid var(--border);padding:12px 18px;border-radius:14px}}\
+        .footer{{margin-top:22px;font-size:13px;color:#7f92ae}} code{{padding:.18rem .42rem;border-radius:8px;background:rgba(255,255,255,.06);color:#dbeafe}}\
+        @media (max-width:640px){{.card{{padding:24px}} .meta{{grid-template-columns:1fr}} h1{{font-size:34px}} p{{font-size:16px}}}}\
+        </style></head><body><main class=\"wrap\"><div class=\"glow\"></div><section class=\"card\"><div class=\"badge\">HTTP 404 · Not Found</div><h1>{title}</h1><p>{message}</p><div class=\"meta\"><div class=\"item\"><span class=\"label\">Host</span><span class=\"value\">{host_value}</span></div><div class=\"item\"><span class=\"label\">Path</span><span class=\"value\">{path_value}</span></div></div><div class=\"actions\"><a class=\"primary\" href=\"/\">Go to home</a><a class=\"secondary\" href=\"javascript:history.back()\">Go back</a></div><div class=\"footer\">If this should exist, check the site entry, route rules, and whether the gateway snapshot has been reloaded.</div></section></main></body></html>",
+        title = escape_html(title),
+        message = escape_html(message),
+        host_value = escape_html(if host.is_empty() { "-" } else { host }),
+        path_value = escape_html(if path.is_empty() { "/" } else { path }),
+    );
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = StatusCode::NOT_FOUND;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    response
+}
+
+fn escape_html(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+fn site_root_error_response(site_domain: &str, document_root: &std::path::Path) -> Response {
+    let body = format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Website root not ready</title></head><body><main><h1>Website root not ready</h1><p>The domain is configured, but no <code>index.html</code> or <code>index.php</code> front controller was found in its document root.</p><dl><dt>Domain</dt><dd>{site_domain}</dd><dt>Document root</dt><dd>{document_root}</dd></dl></main></body></html>",
+        site_domain = escape_html(site_domain),
+        document_root = escape_html(&document_root.display().to_string()),
+    );
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    response
+}
+
 fn format_http_date(_value: std::time::SystemTime) -> String {
     "Thu, 01 Jan 1970 00:00:00 GMT".to_string()
 }
@@ -171,5 +452,15 @@ mod tests {
     fn build_simple_response() {
         let response = simple_response(StatusCode::NOT_FOUND, "missing");
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn parses_secure_panel_preview_path() {
+        let token = "a".repeat(64);
+        let path = format!("/cpsess{token}/websites/site-1/preview/assets/app.css");
+        let preview = parse_panel_preview_path(&path).unwrap();
+        assert_eq!(preview.website_id, "site-1");
+        assert_eq!(preview.relative_path, "assets/app.css");
+        assert!(parse_panel_preview_path("/websites/site-1/preview").is_none());
     }
 }

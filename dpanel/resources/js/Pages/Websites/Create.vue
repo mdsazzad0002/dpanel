@@ -257,37 +257,8 @@ const submit = async () => {
             },
         });
         const data = response?.data || {};
-        const website = data?.website || {};
-        const websiteId = String(website?.id || '').trim();
-
-        if (websiteId) {
-            try {
-                const syncResponse = await fetch(panelRoute('websites.vhost.sync', { id: websiteId }), {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        Accept: 'application/json',
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'X-CSRF-TOKEN': csrfToken.value,
-                    },
-                    body: JSON.stringify({}),
-                });
-                const syncData = await syncResponse.json().catch(() => ({}));
-                if (!syncResponse.ok) {
-                    throw { response: { data: syncData } };
-                }
-                submitMessageType.value = String(syncData.type || data.type || 'success');
-                submitMessage.value = `${String(data.message || 'Website created successfully.')} ${String(syncData.message || 'Live vhost synced successfully.').trim()}`.trim();
-            } catch (syncError) {
-                const syncData = syncError?.response?.data || {};
-                submitMessageType.value = 'error';
-                submitMessage.value = `${String(data.message || 'Website created successfully.')} ${String(syncData.message || 'Live vhost sync failed.').trim()}`.trim();
-            }
-        } else {
-            submitMessageType.value = String(data.type || 'success');
-            submitMessage.value = String(data.message || 'Website created successfully.');
-        }
+        submitMessageType.value = String(data.type || 'success');
+        submitMessage.value = String(data.message || 'Website created and activated successfully.');
 
         form.reset();
     } catch (error) {

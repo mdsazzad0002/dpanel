@@ -42,6 +42,7 @@ return [
     'report_base_path' => env('SERVERPANEL_REPORT_BASE_PATH', 'serverpanel/reports'),
     'template_repository_dir' => env('SERVERPANEL_TEMPLATE_REPOSITORY_DIR', ''),
     'execution_api_base_url' => rtrim((string) env('SERVERPANEL_EXECUTION_API_BASE_URL', env('SERVERPANEL_API_BASE_URL', 'http://127.0.0.1:9500')), '/'),
+    'edge_gateway_url' => rtrim((string) env('SERVERPANEL_EDGE_GATEWAY_URL', 'http://127.0.0.1'), '/'),
     'execution_api_url' => env('SERVERPANEL_EXECUTION_API_URL', rtrim((string) env('SERVERPANEL_EXECUTION_API_BASE_URL', env('SERVERPANEL_API_BASE_URL', 'http://127.0.0.1:9500')), '/').'/api/v1/script/run'),
     'database_api_url' => env('SERVERPANEL_DATABASE_API_URL', rtrim((string) env('SERVERPANEL_EXECUTION_API_BASE_URL', env('SERVERPANEL_API_BASE_URL', 'http://127.0.0.1:9500')), '/').'/api/v1/database-request'),
     'database_api_token' => env('SERVERPANEL_DATABASE_API_TOKEN', env('SERVERPANEL_EXECUTION_API_TOKEN', '')),

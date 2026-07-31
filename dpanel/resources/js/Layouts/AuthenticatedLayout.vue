@@ -171,7 +171,6 @@ const menuItems = computed(() => [
         ],
     },
     { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], color: 'indigo' },
-    { label: 'Apache + Nginx Setup', hint: 'Web server stack and vHost controls', icon: 'AP', iconClass: 'bi bi-hdd-network', routeName: 'apache.index', roles: ['admin', 'reseller'], color: 'rose' },
     { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], color: 'red' },
     { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'], color: 'teal' },
     { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN', iconClass: 'bi bi-activity', routeName: 'monitoring.index', roles: ['admin', 'reseller'], color: 'orange' },
@@ -957,7 +956,7 @@ watch(isSearchOpen, async (open) => {
             </main>
 
             <footer class="border-t border-slate-200 px-4 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:px-6">
-                Server Panel v1.0 - Websites, Mail, Apache + Nginx and more
+                Server Panel v1.0 - Websites, Mail, Databases and more
             </footer>
         </div>
 

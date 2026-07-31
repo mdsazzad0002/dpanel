@@ -3,7 +3,13 @@
 namespace App\Http\Controllers\Website;
 
 use App\Http\Requests\Website\WordpressInstallRequest;
+use App\Models\Website;
+use App\Services\Filemanager\FilemanagerService;
+use App\Services\Ssl\SslLifecycleService;
+use App\Services\Website\WebsiteCreateEditService;
 use App\Services\Website\WebsiteResolverService;
+use App\Services\Website\WebsiteTemplateCatalogService;
+use App\Services\Website\WebsiteWebServerSyncService;
 use App\Services\Website\WordpressInstallService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -14,15 +20,30 @@ class WordpressController extends WebsiteController
 {
     public function __construct(
         WebsiteResolverService $websiteResolver,
-        protected WordpressInstallService $wordpressInstallService,
+        WebsiteTemplateCatalogService $templateCatalog,
+        WebsiteCreateEditService $websiteCreateEdit,
+        SslLifecycleService $sslLifecycleService,
+        WebsiteWebServerSyncService $websiteWebServerSyncService,
+        FilemanagerService $filemanagerService,
+        WordpressInstallService $wordpressInstallService,
     ) {
-        parent::__construct($websiteResolver);
+        parent::__construct(
+            $websiteResolver,
+            $templateCatalog,
+            $websiteCreateEdit,
+            $sslLifecycleService,
+            $websiteWebServerSyncService,
+            $filemanagerService,
+            $wordpressInstallService,
+        );
     }
 
     public function wordpressManager(string $token, string $id): Response
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
-        $rootInspection = $this->wordpressInstallService->inspectRootDirectory((string) ($website['root_path'] ?? ''));
+        $rootInspection = $this->wordpressInstallService->inspectRootDirectory(
+            $this->wordpressInstallService->resolveInstallationRoot($website),
+        );
 
         return Inertia::render('Websites/WordPressInstaller', [
             'website' => $website,
@@ -88,13 +109,7 @@ class WordpressController extends WebsiteController
         })->values()->all();
         $this->writeRequests($updated);
 
-        $domain = (string) ($updatedWebsite['domain'] ?? '');
-        $rootPath = (string) ($updatedWebsite['root_path'] ?? '');
-        $phpVersion = (string) ($updatedWebsite['php_version'] ?? '8.0');
-        if ($domain !== '' && $rootPath !== '') {
-            $this->relocateApacheDefaultPage();
-            $this->syncLiveWebVhost($domain, $rootPath, $phpVersion);
-        }
+        $this->websiteWebServerSyncService->syncWebsite(Website::query()->findOrFail($id));
 
         return $succeed((string) ($result['message'] ?? 'WordPress installed successfully.'), [
             'website' => $this->findAuthorizedWebsiteOrFail($id),

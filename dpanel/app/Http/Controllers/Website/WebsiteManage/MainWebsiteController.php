@@ -9,9 +9,9 @@ use App\Models\Website;
 use App\Services\Filemanager\FilemanagerService;
 use App\Services\PathService;
 use App\Services\Php\PhpService;
-use App\Services\ScriptPathResolver;
 use App\Services\Website\WebsiteService;
 use App\Services\Website\WebsiteTrashService;
+use App\Services\Website\WebsiteWebServerSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -28,6 +28,7 @@ class MainWebsiteController extends Controller
         protected WebsiteService $websiteService,
         protected PathService $paths,
         protected WebsiteTrashService $websiteTrashService,
+        protected WebsiteWebServerSyncService $webServerSyncService,
     ) {
     }
 
@@ -217,15 +218,17 @@ class MainWebsiteController extends Controller
             'filemanager_show_hidden' => false,
             'assigned_user_id' => null,
             'assigned_reseller_id' => ($request->user()?->hasRole('reseller') ? (int) $request->user()->id : null),
-            'status' => 'pending',
+            'status' => 'live',
             'type' => (string) $validated['domain_type'],
         ]);
+        $activation = $this->webServerSyncService->syncWebsite($website);
         $message = 'Website created successfully.';
 
         return response()->json([
             'type' => 'success',
             'message' => $message.' Demo site files created successfully.',
             'demo_files' => $demoFiles,
+            'gateway_activation' => $activation,
             'website' => $website->fresh(),
         ]);
     }
@@ -290,27 +293,6 @@ class MainWebsiteController extends Controller
                     'archive' => $e->getMessage(),
                 ],
             ], 422);
-        }
-
-        if ($domain !== '') {
-            $scriptPath = ScriptPathResolver::resolveScriptPath('sync-vhost');
-            if (is_string($scriptPath) && $scriptPath !== '') {
-                $result = ScriptPathResolver::runSystemScriptAsRootWithOutput($scriptPath, ['remove', $domain]);
-                if ($result['success']) {
-                    $cleanupMessages[] = 'Live vhost removed.';
-                } else {
-                    $message = trim((string) $result['output']);
-                    $cleanupMessages[] = 'Live vhost removal failed: '.($message !== '' ? $message : 'unknown error');
-
-                    return response()->json([
-                        'type' => 'error',
-                        'message' => 'Website vhost cleanup failed.',
-                        'errors' => [
-                            'vhost' => $message !== '' ? $message : 'Unable to remove live vhost.',
-                        ],
-                    ], 422);
-                }
-            }
         }
 
         try {

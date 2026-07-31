@@ -108,6 +108,7 @@ fn guess_content_type(path: &Path) -> String {
         "jpg" | "jpeg" => "image/jpeg".into(),
         "gif" => "image/gif".into(),
         "webp" => "image/webp".into(),
+        "ico" => "image/x-icon".into(),
         _ => "application/octet-stream".into(),
     }
 }

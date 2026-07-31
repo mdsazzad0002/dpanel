@@ -18,7 +18,6 @@ class DatabaseRequest extends Model
         'database_host',
         'charset',
         'collation',
-        'command',
         'status',
         'assigned_user_id',
     ];

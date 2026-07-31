@@ -13,9 +13,9 @@ class WebsiteWebServerSyncService
     ) {}
 
     /**
-     * Sync Apache/Nginx vhost files and reload Apache if available.
+     * Reload the Rust edge-gateway snapshot and verify the database-backed host.
      *
-     * @return array{vhost: array{ran: bool, success: bool, output: string}, apache: array{ran: bool, success: bool, output: string}}
+     * @return array{vhost: array{ran: bool, success: bool, output: string}, apache: array{ran: bool, success: bool, output: string}, verification: array{valid: bool, status: int, site_match: string}}
      */
     public function syncWebsite(Website $website, ?string $oldDomain = null): array
     {
@@ -39,36 +39,59 @@ class WebsiteWebServerSyncService
             throw new \InvalidArgumentException('Website document root is required for vhost sync.');
         }
 
-        $vhostResult = $this->runSyncVhostScript(
-            $domain,
-            $documentRoot,
-            $phpVersion,
-            $oldDomain,
-            (string) ($website->type ?? '') === 'sub',
-            (string) ($website->client_max_body_size ?? '2G'),
-        );
-        if (! $vhostResult['success']) {
-            throw new \RuntimeException($vhostResult['output'] !== '' ? $vhostResult['output'] : 'Website vhost sync failed.');
+        $gatewayUrl = rtrim((string) config('serverpanel.edge_gateway_url', 'http://127.0.0.1'), '/');
+        try {
+            $reload = Http::acceptJson()->timeout(10)->post($gatewayUrl.'/__admin/reload');
+        } catch (\Throwable $e) {
+            throw new \RuntimeException('Rust edge gateway reload failed: '.$e->getMessage(), previous: $e);
+        }
+        if (! $reload->successful() || ! (bool) ($reload->json('success') ?? false)) {
+            throw new \RuntimeException('Rust edge gateway rejected the database snapshot reload.');
         }
 
-        $verification = $this->verifySyncedVhostFiles(
-            $domain,
-            $documentRoot,
-            (string) ($website->client_max_body_size ?? '2G'),
-        );
-        if (! $verification['valid']) {
-            $errors = array_filter(array_merge(
-                $verification['apache']['errors'] ?? [],
-                $verification['nginx']['errors'] ?? [],
-            ));
+        $probe = null;
+        $siteMatch = '';
+        $probeError = null;
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            try {
+                $probe = Http::withHeaders(['Host' => $domain])
+                    ->withoutRedirecting()
+                    ->timeout(10)
+                    ->get($gatewayUrl.'/');
+                $siteMatch = trim((string) $probe->header('x-site-match'));
+                if (strcasecmp($siteMatch, $domain) === 0) {
+                    break;
+                }
+            } catch (\Throwable $e) {
+                $probeError = $e;
+            }
 
-            throw new \RuntimeException($errors !== [] ? implode(' | ', $errors) : 'Website vhost sync completed, but verification failed.');
+            if ($attempt < 3) {
+                usleep(150_000);
+            }
         }
 
-        $apacheResult = [
+        if ($probe === null && $probeError !== null) {
+            throw new \RuntimeException('Rust edge gateway host verification failed: '.$probeError->getMessage(), previous: $probeError);
+        }
+        if ($probe === null || strcasecmp($siteMatch, $domain) !== 0) {
+            throw new \RuntimeException("Rust edge gateway did not activate {$domain} after reload.");
+        }
+
+        $vhostResult = [
             'ran' => true,
             'success' => true,
-            'output' => 'Handled by the drust sync-vhost API.',
+            'output' => 'Rust edge gateway snapshot reloaded from the live database.',
+        ];
+        $apacheResult = [
+            'ran' => false,
+            'success' => true,
+            'output' => 'Apache/Nginx vhost files are not used in Rust edge-gateway mode.',
+        ];
+        $verification = [
+            'valid' => true,
+            'status' => $probe->status(),
+            'site_match' => $siteMatch,
         ];
 
         return [

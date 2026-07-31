@@ -4,6 +4,7 @@ namespace App\Services\Website;
 
 use App\Models\DatabaseRequest;
 use App\Models\User;
+use App\Services\Filemanager\FilemanagerService;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
 use Illuminate\Support\Facades\Cache;
@@ -14,6 +15,7 @@ class WordpressInstallService
 {
     public function __construct(
         private readonly WebsiteResolverService $resolver,
+        private readonly FilemanagerService $filemanagerService,
     ) {
     }
 
@@ -191,6 +193,21 @@ class WordpressInstallService
         return ($this->inspectRootDirectory($rootPath)['detected_app'] ?? 'missing') === 'wordpress';
     }
 
+    /** @param array<string, mixed> $website */
+    public function resolveInstallationRoot(array $website): string
+    {
+        $rootPath = rtrim(str_replace('\\', '/', trim((string) ($website['root_path'] ?? ''))), '/');
+        $startDirectory = trim(str_replace('\\', '/', (string) ($website['start_directory'] ?? '')), '/');
+        if ($rootPath === '' || $startDirectory === '' || $startDirectory === '.') {
+            return $rootPath;
+        }
+        if (str_contains($startDirectory, '..') || preg_match('/^[A-Za-z0-9._\/-]+$/', $startDirectory) !== 1) {
+            throw new \InvalidArgumentException('Invalid website start directory.');
+        }
+
+        return $rootPath.'/'.$startDirectory;
+    }
+
     /**
      * @param array<string, mixed> $website
      * @param array<string, mixed> $input
@@ -199,7 +216,7 @@ class WordpressInstallService
     public function install(array $website, array $input, ?User $actor = null): array
     {
         $domain = $this->resolver->normalizeDomain((string) ($website['domain'] ?? ''));
-        $rootPath = (string) ($website['root_path'] ?? '');
+        $rootPath = $this->resolveInstallationRoot($website);
         $projectRoot = (string) ($website['project_root'] ?? $this->resolver->deriveProjectRootPath($rootPath, $domain));
         $phpVersion = (string) ($website['php_version'] ?? '8.0');
         $wordpressVersion = $this->normalizeWordPressVersion((string) ($input['wordpress_version'] ?? 'latest'));
@@ -219,7 +236,7 @@ class WordpressInstallService
             }
 
             if (! $this->hasWordPressFiles($rootPath)) {
-                $installerResult = $this->installWordPressApplication($rootPath, $wordpressVersion);
+                $installerResult = $this->installWordPressApplication($rootPath, $wordpressVersion, $siteOwner);
                 if (! $installerResult['installed']) {
                     $message = trim((string) ($installerResult['message'] ?? ''));
 
@@ -234,7 +251,7 @@ class WordpressInstallService
                 return $this->fail(trim((string) ($databaseProvisionResult['output'] ?? '')) ?: 'WordPress database provisioning failed.');
             }
 
-            $configResult = $this->writeWordPressConfig($rootPath, $databaseConfig, $databaseConfig['table_prefix']);
+            $configResult = $this->writeWordPressConfig($rootPath, $databaseConfig, $databaseConfig['table_prefix'], $siteOwner);
             if (! $configResult['success']) {
                 return $this->fail(trim((string) ($configResult['message'] ?? '')) ?: 'WordPress wp-config.php update failed.');
             }
@@ -244,7 +261,7 @@ class WordpressInstallService
 
         $runtimeStatus = strtolower((string) ($website['status'] ?? '')) === 'disabled'
             ? 'disabled'
-            : 'pending';
+            : 'live';
 
         $databaseRequest = $this->syncDatabaseRequest(
             $domain,
@@ -408,29 +425,9 @@ class WordpressInstallService
 
     /**
      * @param array<string, string> $databaseConfig
-     */
-    private function buildWordPressDatabaseCommand(array $databaseConfig): string
-    {
-        $scriptPath = $this->runtimeDatabaseScriptPath();
-
-        return sprintf(
-            'bash %s create %s %s %s %s %s %s %s',
-            escapeshellarg($scriptPath),
-            escapeshellarg((string) ($databaseConfig['database_name'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_user'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_password'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_host'] ?? '127.0.0.1')),
-            escapeshellarg((string) ($databaseConfig['database_port'] ?? '3306')),
-            escapeshellarg((string) ($databaseConfig['charset'] ?? 'utf8mb4')),
-            escapeshellarg((string) ($databaseConfig['collation'] ?? 'utf8mb4_unicode_ci')),
-        );
-    }
-
-    /**
-     * @param array<string, string> $databaseConfig
      * @return array{success: bool, message: string}
      */
-    private function writeWordPressConfig(string $rootPath, array $databaseConfig, string $tablePrefix): array
+    private function writeWordPressConfig(string $rootPath, array $databaseConfig, string $tablePrefix, string $siteOwner): array
     {
         $normalizedRootPath = rtrim(str_replace('\\', '/', trim($rootPath)), '/');
         if ($normalizedRootPath === '') {
@@ -461,12 +458,22 @@ class WordpressInstallService
 
         $updated = str_replace(array_keys($replacements), array_values($replacements), $contents);
 
-        $updated = preg_replace(
-            "/define\\(\\s*'DB_HOST'\\s*,\\s*'[^']*'\\s*\\);/",
-            "define('DB_HOST', '".addslashes((string) ($databaseConfig['database_host'] ?? '127.0.0.1'))."');",
-            $updated,
-            1
-        ) ?? $updated;
+        $databaseConstants = [
+            'DB_NAME' => (string) ($databaseConfig['database_name'] ?? ''),
+            'DB_USER' => (string) ($databaseConfig['database_user'] ?? ''),
+            'DB_PASSWORD' => (string) ($databaseConfig['database_password'] ?? ''),
+            'DB_HOST' => (string) ($databaseConfig['database_host'] ?? '127.0.0.1'),
+        ];
+
+        foreach ($databaseConstants as $constant => $value) {
+            $escapedValue = addslashes($value);
+            $updated = preg_replace_callback(
+                "/define\\(\\s*(['\"])".preg_quote($constant, '/')."\\1\\s*,\\s*(['\"])(.*?)\\2\\s*\\);/",
+                static fn (): string => "define('{$constant}', '{$escapedValue}');",
+                $updated,
+                1
+            ) ?? $updated;
+        }
 
         $updated = preg_replace(
             '/\$table_prefix\s*=\s*\'[^\']*\';/',
@@ -496,11 +503,12 @@ class WordpressInstallService
             ) ?? $updated;
         }
 
-        $written = @file_put_contents($configPath, $updated);
-        if ($written === false) {
+        try {
+            $this->filemanagerService->writeTextFile($siteOwner, $configPath, $updated);
+        } catch (\Throwable $e) {
             return [
                 'success' => false,
-                'message' => 'WordPress config failed: unable to write wp-config.php.',
+                'message' => 'WordPress config failed: '.$e->getMessage(),
             ];
         }
 
@@ -513,7 +521,7 @@ class WordpressInstallService
     /**
      * @return array{attempted: bool, installed: bool, message: string}
      */
-    private function installWordPressApplication(string $rootPath, string $wordpressVersion = 'latest'): array
+    private function installWordPressApplication(string $rootPath, string $wordpressVersion, string $siteOwner): array
     {
         $rootPath = trim(str_replace('\\', '/', $rootPath));
         $wordpressVersion = $this->normalizeWordPressVersion($wordpressVersion);
@@ -526,11 +534,19 @@ class WordpressInstallService
             ];
         }
 
-        if (! is_dir($rootPath) && ! @mkdir($rootPath, 0755, true) && ! is_dir($rootPath)) {
+        try {
+            $this->filemanagerService->installWordPress($siteOwner, $rootPath, $wordpressVersion);
+
+            return [
+                'attempted' => true,
+                'installed' => true,
+                'message' => 'WordPress '.$versionLabel.' installed successfully by Rust.',
+            ];
+        } catch (\Throwable $e) {
             return [
                 'attempted' => true,
                 'installed' => false,
-                'message' => 'WordPress install failed: cannot create website root directory.',
+                'message' => 'WordPress install failed: '.$e->getMessage(),
             ];
         }
 
@@ -642,13 +658,29 @@ class WordpressInstallService
                 ];
             }
 
-            $copyResult = $this->copyDirectoryContentsRecursive($sourceDir, $rootPath);
-            if (! $copyResult['success']) {
+            $deploymentArchive = $this->buildTemporaryFilePath($tempDir, 'wp_deploy_', '.zip');
+            $archiveResult = $this->createFlatDeploymentArchive($sourceDir, $deploymentArchive);
+            if (! $archiveResult['success']) {
                 return [
                     'attempted' => true,
                     'installed' => false,
-                    'message' => 'WordPress install failed: '.$copyResult['message'],
+                    'message' => 'WordPress install failed: '.$archiveResult['message'],
                 ];
+            }
+
+            $remoteArchive = rtrim($rootPath, '/').'/.serverpanel-wordpress-deploy.zip';
+            try {
+                $this->filemanagerService->uploadFile($siteOwner, $remoteArchive, $deploymentArchive);
+                $this->filemanagerService->unzipFile($siteOwner, $remoteArchive, $rootPath);
+            } finally {
+                @unlink($deploymentArchive);
+                if (is_file($remoteArchive)) {
+                    try {
+                        $this->filemanagerService->deletePath($siteOwner, $remoteArchive);
+                    } catch (\Throwable $e) {
+                        // The archive cleanup must not hide a successful extraction.
+                    }
+                }
             }
 
             return [
@@ -697,7 +729,6 @@ class WordpressInstallService
             'database_host' => $databaseConfig['database_host'],
             'charset' => $databaseConfig['charset'],
             'collation' => $databaseConfig['collation'],
-            'command' => $this->buildWordPressDatabaseCommand($databaseConfig),
             'status' => 'active',
             'assigned_user_id' => is_numeric($assignedUserId) && (int) $assignedUserId > 0
                 ? (int) $assignedUserId
@@ -749,7 +780,7 @@ class WordpressInstallService
     /**
      * @return array{success: bool, message: string, files: int}
      */
-    private function copyDirectoryContentsRecursive(string $sourceDirectory, string $targetDirectory): array
+    private function createFlatDeploymentArchive(string $sourceDirectory, string $archivePath): array
     {
         if (! is_dir($sourceDirectory)) {
             return [
@@ -759,10 +790,11 @@ class WordpressInstallService
             ];
         }
 
-        if (! is_dir($targetDirectory) && ! @mkdir($targetDirectory, 0755, true) && ! is_dir($targetDirectory)) {
+        $archive = new ZipArchive();
+        if ($archive->open($archivePath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             return [
                 'success' => false,
-                'message' => 'Cannot create target directory.',
+                'message' => 'Cannot create the Rust deployment archive.',
                 'files' => 0,
             ];
         }
@@ -774,31 +806,34 @@ class WordpressInstallService
         );
 
         foreach ($iterator as $item) {
-            $targetPath = $targetDirectory.'/'.substr($item->getPathname(), strlen($sourceDirectory) + 1);
+            $relativePath = str_replace('\\', '/', substr($item->getPathname(), strlen($sourceDirectory) + 1));
             if ($item->isDir()) {
-                if (! is_dir($targetPath) && ! @mkdir($targetPath, 0755, true) && ! is_dir($targetPath)) {
-                    return [
-                        'success' => false,
-                        'message' => 'Cannot create directory during copy.',
-                        'files' => $count,
-                    ];
-                }
+                $archive->addEmptyDir($relativePath);
                 continue;
             }
 
-            if (! @copy($item->getPathname(), $targetPath)) {
+            if (! $archive->addFile($item->getPathname(), $relativePath)) {
+                $archive->close();
                 return [
                     'success' => false,
-                    'message' => 'Cannot copy file during WordPress extraction.',
+                    'message' => 'Cannot add a WordPress file to the Rust deployment archive.',
                     'files' => $count,
                 ];
             }
             $count++;
         }
 
+        if (! $archive->close()) {
+            return [
+                'success' => false,
+                'message' => 'Cannot finalize the Rust deployment archive.',
+                'files' => $count,
+            ];
+        }
+
         return [
             'success' => true,
-            'message' => 'Files copied.',
+            'message' => 'Rust deployment archive prepared.',
             'files' => $count,
         ];
     }

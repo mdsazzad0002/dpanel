@@ -16,6 +16,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    rootInspection: {
+        type: Object,
+        default: () => ({}),
+    },
 });
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
@@ -78,13 +82,13 @@ const statusClass = computed(() => {
 
 const sslEnabled = computed(() => Boolean(props.website?.enable_ssl));
 const scheme = computed(() => (sslEnabled.value ? 'https' : 'http'));
-const webServerHref = computed(() => panelRoute('websites.web-server', { id: props.website.id }));
+const detectedApp = computed(() => String(props.rootInspection?.detected_app || '').toLowerCase());
+const canClearCache = computed(() => ['wordpress', 'laravel'].includes(detectedApp.value));
 
 const serviceLinks = computed(() => [
     { label: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress' },
     { label: 'SSL Manager', icon: 'bi-shield-lock', color: 'emerald', href: panelRoute('websites.ssl', { id: props.website.id }), description: 'Issue and check SSL certificates' },
     { label: 'Usage Details', icon: 'bi-graph-up', color: 'violet', href: panelRoute('websites.usage', { id: props.website.id }), description: 'Detailed usage history' },
-    { label: 'Apache + Nginx', icon: 'bi-hdd-network', color: 'cyan', href: webServerHref.value, description: 'Web server configuration' },
     { label: 'Redis Cache', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
     { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
     { label: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Scheduled tasks' },
@@ -99,7 +103,6 @@ const serviceColorClasses = {
     blue: 'bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400',
     emerald: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400',
     violet: 'bg-violet-500/10 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400',
-    cyan: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/15 dark:text-cyan-400',
     amber: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400',
     indigo: 'bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400',
     rose: 'bg-rose-500/10 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400',
@@ -111,8 +114,7 @@ const serviceColorClasses = {
 
 const quickActions = computed(() => [
     { label: 'Edit Website', icon: 'bi-pencil-square', href: panelRoute('websites.edit', { id: props.website.id }), color: 'slate', method: 'get' },
-    { label: 'Sync VHost', icon: 'bi-arrow-repeat', action: 'syncVhost', color: 'blue' },
-    { label: 'Clear Cache', icon: 'bi-trash3', action: 'clearCache', color: 'red' },
+    ...(canClearCache.value ? [{ label: `Clear ${detectedApp.value === 'wordpress' ? 'WordPress' : 'Laravel'} Cache`, icon: 'bi-trash3', action: 'clearCache', color: 'red' }] : []),
     { label: 'File Manager', icon: 'bi-folder2-open', href: panelRoute('websites.filemanager', { id: props.website.id }), color: 'emerald', method: 'get' },
     { label: 'Back to List', icon: 'bi-arrow-left', href: panelRoute('websites.list'), color: 'slate', method: 'get' },
 ]);
@@ -152,42 +154,6 @@ const managementPreviewUrl = computed(() => {
 const copyToClipboard = (text) => {
     if (navigator.clipboard) {
         navigator.clipboard.writeText(text);
-    }
-};
-
-const syncVhost = async () => {
-    if (actionLoading.value) {
-        return;
-    }
-
-    actionMessage.value = '';
-    actionLoading.value = true;
-
-    try {
-        const response = await fetch(panelRoute('websites.vhost.sync', { id: props.website.id }), {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': csrfToken.value,
-            },
-            body: JSON.stringify({}),
-        });
-
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw data;
-        }
-
-        actionMessageType.value = String(data.type || 'success');
-        actionMessage.value = String(data.message || 'Live vhost synced successfully.');
-    } catch (error) {
-        actionMessageType.value = 'error';
-        actionMessage.value = String(error?.message || error?.errors?.vhost_sync || 'Live vhost sync failed.');
-    } finally {
-        actionLoading.value = false;
     }
 };
 
@@ -383,15 +349,15 @@ const clearProjectCache = async () => {
                                     {{ action.label }}
                                 </Link>
                                 <button
-                                    v-for="action in quickActions.filter((item) => item.action === 'syncVhost' || item.action === 'clearCache')"
+                                    v-for="action in quickActions.filter((item) => item.action === 'clearCache')"
                                     :key="action.label"
                                     type="button"
-                                    :disabled="action.action === 'syncVhost' ? actionLoading : cacheClearLoading"
+                                    :disabled="cacheClearLoading"
                                     :class="[
                                         'flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60',
                                         quickActionColorClasses[action.color] || quickActionColorClasses.slate,
                                     ]"
-                                    @click="action.action === 'syncVhost' ? syncVhost() : clearProjectCache()"
+                                    @click="clearProjectCache()"
                                 >
                                     <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
                                     {{ action.action === 'clearCache' && cacheClearLoading ? 'Clearing...' : action.label }}

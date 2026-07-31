@@ -272,6 +272,22 @@ class FilemanagerService
         }
     }
 
+    public function installWordPress(string $username, string $path, string $version = 'latest'): void
+    {
+        $username = $this->normalizeUsername($username);
+        $path = $this->normalizeAbsolutePath($path);
+        $result = $this->filemanagerApiRequest('wordpress-install', [
+            'username' => $username,
+            'path' => $path,
+            'version' => trim($version) !== '' ? trim($version) : 'latest',
+        ], 300);
+
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Rust WordPress installation failed.');
+        }
+    }
+
     /**
      * @param  array<int, string>  $paths
      */

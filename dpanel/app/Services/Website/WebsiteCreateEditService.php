@@ -54,7 +54,6 @@ class WebsiteCreateEditService
             'enable_ssl' => $validated['enable_ssl'],
             'assigned_user_id' => null,
             'assigned_reseller_id' => $defaultResellerId,
-            'command' => (string) ($bootstrap['command'] ?? ''),
             'status' => $runtimeStatus,
             'created_at' => now()->toIso8601String(),
         ];
@@ -96,7 +95,6 @@ class WebsiteCreateEditService
             $item['php_version'] = $validated['php_version'];
             $item['wordpress_db_prefix'] = (string) ($item['wordpress_db_prefix'] ?? '');
             $item['enable_ssl'] = $validated['enable_ssl'];
-            $item['command'] = (string) ($bootstrap['command'] ?? '');
             $item['status'] = $deps['detectRuntimeStatus']([
                 'domain' => $validated['domain'],
                 'root_path' => $validated['root_path'],

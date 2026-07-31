@@ -15,6 +15,7 @@ use App\Services\Website\WebsiteCreateEditService;
 use App\Services\Website\WebsiteResolverService;
 use App\Services\Website\WebsiteTemplateCatalogService;
 use App\Services\Website\WebsiteWebServerSyncService;
+use App\Services\Website\WordpressInstallService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -39,6 +40,7 @@ class WebsiteController extends Controller
         protected SslLifecycleService $sslLifecycleService,
         protected WebsiteWebServerSyncService $websiteWebServerSyncService,
         protected FilemanagerService $filemanagerService,
+        protected WordpressInstallService $wordpressInstallService,
     ) {}
 
     private const HOME_BASE = '/home';
@@ -173,11 +175,9 @@ class WebsiteController extends Controller
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $metrics = $this->safeBuildDynamicMetrics($website);
+        $rootInspection = $this->inspectWebsiteApplication($website);
 
         $runtimeStatus = $this->detectRuntimeStatus($website);
-        $websiteDomain = (string) ($website['domain'] ?? '');
-        $hasApacheVhost = $this->apacheVhostExists($websiteDomain);
-        $hasNginxVhost = $this->nginxVhostExists($websiteDomain);
 
         $activities = [
             [
@@ -196,20 +196,13 @@ class WebsiteController extends Controller
                 'label' => 'Root Path',
                 'value' => (string) ($website['root_path'] ?? '-'),
             ],
-            [
-                'label' => 'Apache VHost',
-                'value' => $hasApacheVhost ? 'configured' : ($hasNginxVhost ? 'not configured (nginx configured)' : 'not configured'),
-            ],
-            [
-                'label' => 'Nginx VHost',
-                'value' => $hasNginxVhost ? 'configured' : ($hasApacheVhost ? 'not configured (apache configured)' : 'not configured'),
-            ],
         ];
 
         return Inertia::render('Websites/Manage', [
             'website' => $website,
             'metrics' => $metrics,
             'activities' => $activities,
+            'rootInspection' => $rootInspection,
         ]);
     }
 
@@ -297,60 +290,6 @@ class WebsiteController extends Controller
         ]);
     }
 
-    public function syncVhost(Request $request, string $token, string $id): RedirectResponse
-    {
-        $redirectTarget = function () use ($request, $id): RedirectResponse {
-            if ((string) $request->input('return_to', '') === 'apache') {
-                return redirect()->route('apache.index', ['website_id' => $id]);
-            }
-            if ((string) $request->input('return_to', '') === 'website_service') {
-                return redirect()->route('websites.web-server', $id);
-            }
-
-            return redirect()->route('websites.manage', $id);
-        };
-
-        $requests = collect($this->readRequests());
-        $website = $this->findAuthorizedWebsiteOrFail($id);
-        $domain = (string) ($website['domain'] ?? '');
-        $rootPath = (string) ($website['root_path'] ?? '');
-        $phpVersion = (string) ($website['php_version'] ?? '8.0');
-        if ($domain === '' || $rootPath === '') {
-            return $redirectTarget()->with('error', 'Domain or root path is missing for vhost sync.');
-        }
-        if (! is_dir($rootPath)) {
-            return $redirectTarget()->with('error', "Root path does not exist: {$rootPath}");
-        }
-
-        $syncReport = $this->syncLiveWebVhostWithReport($domain, $rootPath, $phpVersion);
-
-        $runtimeStatus = $this->detectRuntimeStatus([
-            'domain' => $domain,
-            'root_path' => $rootPath,
-            'status' => (string) ($website['status'] ?? 'pending'),
-        ]);
-
-        $updated = $requests->map(function (array $item) use ($id, $runtimeStatus): array {
-            if ((string) ($item['id'] ?? '') !== $id) {
-                return $item;
-            }
-
-            $item['status'] = $runtimeStatus;
-            $item['updated_at'] = now()->toIso8601String();
-
-            return $item;
-        })->values()->all();
-
-        $this->writeRequests($updated);
-
-        $message = implode(' | ', $syncReport['messages']);
-        if (! $syncReport['generated']) {
-            return $redirectTarget()->with('error', $message !== '' ? $message : 'Vhost sync failed.');
-        }
-
-        return $redirectTarget()->with('success', $message !== '' ? $message : 'Vhost sync completed.');
-    }
-
     public function clearProjectCache(Request $request, string $token, string $id): RedirectResponse|JsonResponse
     {
         $respond = function (bool $success, string $message, int $status = 200) use ($request, $id): RedirectResponse|JsonResponse {
@@ -367,6 +306,27 @@ class WebsiteController extends Controller
         };
 
         $website = $this->findAuthorizedWebsiteOrFail($id);
+        $rootInspection = $this->inspectWebsiteApplication($website);
+        $detectedApp = strtolower((string) ($rootInspection['detected_app'] ?? ''));
+        if (! in_array($detectedApp, ['wordpress', 'laravel'], true)) {
+            return $respond(false, 'Cache clear is only available for detected WordPress or Laravel websites.', 422);
+        }
+
+        if ($detectedApp === 'wordpress') {
+            $cachePath = rtrim((string) ($rootInspection['root_path'] ?? ''), '/').'/wp-content/cache';
+            $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath((string) ($website['root_path'] ?? '')));
+            try {
+                if (is_dir($cachePath)) {
+                    $this->filemanagerService->deletePath($siteOwner, $cachePath);
+                }
+                $this->filemanagerService->createDirectory($siteOwner, $cachePath);
+
+                return $respond(true, 'WordPress cache cleared successfully.');
+            } catch (\Throwable $e) {
+                return $respond(false, 'WordPress cache clear failed: '.$e->getMessage(), 422);
+            }
+        }
+
         $rootPath = (string) ($website['root_path'] ?? '');
         if ($rootPath === '' || ! is_dir($rootPath)) {
             return $respond(false, 'Website root path is missing or inaccessible.', 422);
@@ -408,6 +368,32 @@ class WebsiteController extends Controller
         return $respond(false, 'Project cache clear failed.'.$suffix, 422);
     }
 
+    /** @param array<string, mixed> $website */
+    private function inspectWebsiteApplication(array $website): array
+    {
+        $installationRoot = $this->wordpressInstallService->resolveInstallationRoot($website);
+        $candidates = array_values(array_unique(array_filter([
+            $installationRoot,
+            (string) ($website['project_root'] ?? ''),
+            (string) ($website['root_path'] ?? ''),
+        ])));
+        $fallback = null;
+
+        foreach ($candidates as $candidate) {
+            $inspection = $this->wordpressInstallService->inspectRootDirectory($candidate);
+            $inspection['root_path'] = $candidate;
+            $fallback ??= $inspection;
+            if (in_array((string) ($inspection['detected_app'] ?? ''), ['wordpress', 'laravel'], true)) {
+                return $inspection;
+            }
+        }
+
+        return $fallback ?? [
+            'detected_app' => 'missing',
+            'root_path' => $installationRoot,
+        ];
+    }
+
     /**
      * Update website request.
      */
@@ -427,7 +413,7 @@ class WebsiteController extends Controller
                 $this->applyWebsiteFilesystemIsolation($siteOwner, $projectRoot, $rootPath);
             },
             'ensureWebsiteFoldersExist' => function (Request $request, string $rootPath, string $projectRoot, string $context): RedirectResponse|JsonResponse|null {
-                return $this->ensureWebsiteFoldersExist($request, $rootPath, $projectRoot, $context);
+                return $this->filemanagerService->ensureWebsiteFoldersExist($request, $rootPath, $projectRoot, $context);
             },
             'installSelectedApplication' => fn (string $installer, string $rootPath, string $domain, string $phpVersion, string $wordpressVersion = 'latest'): array => $this->installSelectedApplication($installer, $rootPath, $domain, $phpVersion, $wordpressVersion),
             'initializeWebsiteStarterFiles' => function (string $rootPath, string $domain, ?string $phpVersion = null): void {
@@ -1466,15 +1452,6 @@ class WebsiteController extends Controller
                 $item = $this->normalizeWebsiteRecord($item);
                 $domain = (string) ($item['domain'] ?? '');
 
-                if (empty($item['command'])) {
-                    $item['command'] = $this->buildCommand([
-                        'domain' => $domain,
-                        'root_path' => (string) ($item['root_path'] ?? ''),
-                        'php_version' => (string) ($item['php_version'] ?? ''),
-                        'enable_ssl' => (bool) ($item['enable_ssl'] ?? false),
-                    ]);
-                }
-
                 $assignedUserId = (int) ($item['assigned_user_id'] ?? 0);
                 $assignedResellerId = (int) ($item['assigned_reseller_id'] ?? 0);
                 $assignedUser = $assignedUserId > 0 ? $usersById->get($assignedUserId) : null;
@@ -1535,205 +1512,54 @@ class WebsiteController extends Controller
             return;
         }
 
-        $entries = @scandir($rootPath);
-        if (! is_array($entries)) {
+        $indexPhpPath = rtrim($rootPath, '/').'/index.php';
+        $indexHtmlPath = rtrim($rootPath, '/').'/index.html';
+        $existingPhp = is_file($indexPhpPath) ? (string) @file_get_contents($indexPhpPath) : '';
+        $existingHtml = is_file($indexHtmlPath) ? (string) @file_get_contents($indexHtmlPath) : '';
+        $managedStarter = str_contains($existingPhp, '@serverpanel-starter')
+            || str_contains($existingPhp, 'Starter page generated by ServerPanel')
+            || str_contains($existingPhp, 'Managed by <strong>ServerPanel</strong>')
+            || str_contains($existingHtml, 'Starter page generated by ServerPanel');
+
+        $entries = array_values(array_filter(
+            (array) @scandir($rootPath),
+            fn (string $entry): bool => $entry !== '.' && $entry !== '..',
+        ));
+        if ($entries !== [] && ! $managedStarter) {
             return;
         }
 
-        $existing = array_values(array_filter($entries, fn (string $entry): bool => $entry !== '.' && $entry !== '..'));
-        if (count($existing) > 0) {
+        $template = @file_get_contents(resource_path('stubs/website/index.php'));
+        if (! is_string($template) || ! str_contains($template, '@serverpanel-starter')) {
             return;
         }
 
-        $normalizedDomain = $this->normalizeDomain($domain);
-        $selectedPhpVersion = trim((string) $phpVersion);
-        if ($selectedPhpVersion === '' || preg_match('/^\d+\.\d+$/', $selectedPhpVersion) !== 1) {
-            $selectedPhpVersion = 'auto';
+        $siteOwner = $this->extractSiteOwnerFromRootPath($rootPath);
+        try {
+            $this->filemanagerService->writeTextFile($siteOwner, $indexPhpPath, $template);
+        } catch (\Throwable $e) {
+            @file_put_contents($indexPhpPath, $template, LOCK_EX);
         }
 
-        $indexPhp = <<<PHP
-<?php
-\$domain = '{$normalizedDomain}';
-\$configuredPhpVersion = '{$selectedPhpVersion}';
-\$runtimePhpVersion = PHP_VERSION;
-\$generatedAt = date('Y-m-d H:i:s');
-?>
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title><?php echo htmlspecialchars(\$domain, ENT_QUOTES, 'UTF-8'); ?> | Ready</title>
-    <style>
-        :root {
-            color-scheme: light;
-            --bg-1: #0f172a;
-            --bg-2: #1e293b;
-            --card: #ffffff;
-            --accent: #0ea5e9;
-            --text: #0f172a;
-            --muted: #64748b;
-            --ring: rgba(14, 165, 233, 0.22);
-        }
-        * { box-sizing: border-box; }
-        body {
-            margin: 0;
-            min-height: 100vh;
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            color: var(--text);
-            background: radial-gradient(circle at top right, #1d4ed8 0%, #0f172a 38%, #020617 100%);
-            display: grid;
-            place-items: center;
-            padding: 28px;
-        }
-        .card {
-            width: min(780px, 100%);
-            background: var(--card);
-            border-radius: 18px;
-            box-shadow: 0 18px 45px rgba(2, 6, 23, 0.35);
-            overflow: hidden;
-        }
-        .hero {
-            padding: 28px 30px;
-            background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 65%, #1d4ed8 100%);
-            color: #fff;
-        }
-        .hero h1 {
-            margin: 0;
-            font-size: 28px;
-            line-height: 1.2;
-            letter-spacing: 0.2px;
-        }
-        .hero p {
-            margin: 10px 0 0;
-            opacity: 0.95;
-            font-size: 14px;
-        }
-        .body {
-            padding: 24px 30px 30px;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
-        }
-        .meta {
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 14px;
-            background: #f8fafc;
-            box-shadow: inset 0 0 0 1px var(--ring);
-        }
-        .label {
-            display: block;
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.09em;
-            color: var(--muted);
-        }
-        .value {
-            display: block;
-            margin-top: 6px;
-            font-size: 17px;
-            font-weight: 700;
-            color: var(--text);
-            word-break: break-word;
-        }
-        .footer {
-            margin-top: 18px;
-            border-top: 1px dashed #cbd5e1;
-            padding-top: 12px;
-            color: var(--muted);
-            font-size: 13px;
-        }
-        code {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-            background: #e2e8f0;
-            border-radius: 6px;
-            padding: 2px 6px;
-            color: #0f172a;
-        }
-    </style>
-</head>
-<body>
-    <article class="card">
-        <header class="hero">
-            <h1><?php echo htmlspecialchars(\$domain, ENT_QUOTES, 'UTF-8'); ?></h1>
-            <p>Your new website is live and ready for deployment.</p>
-        </header>
-        <section class="body">
-            <div class="grid">
-                <div class="meta">
-                    <span class="label">Configured PHP</span>
-                    <span class="value"><?php echo htmlspecialchars(\$configuredPhpVersion, ENT_QUOTES, 'UTF-8'); ?></span>
-                </div>
-                <div class="meta">
-                    <span class="label">Runtime PHP</span>
-                    <span class="value"><?php echo htmlspecialchars(\$runtimePhpVersion, ENT_QUOTES, 'UTF-8'); ?></span>
-                </div>
-                <div class="meta">
-                    <span class="label">Generated At</span>
-                    <span class="value"><?php echo htmlspecialchars(\$generatedAt, ENT_QUOTES, 'UTF-8'); ?></span>
-                </div>
-            </div>
-            <p class="footer">
-                Managed by <strong>ServerPanel</strong>. Start building from
-                <code><?php echo htmlspecialchars(rtrim((string) dirname(__FILE__), '/'), ENT_QUOTES, 'UTF-8'); ?></code>.
-            </p>
-        </section>
-    </article>
-</body>
-</html>
-
-PHP;
-
-        $indexHtml = <<<HTML
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>{$normalizedDomain} | Ready</title>
-    <style>
-        body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif;background:#0f172a;color:#0f172a;padding:24px}
-        .card{width:min(720px,100%);background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 18px 40px rgba(2,6,23,.32)}
-        .head{padding:24px;background:linear-gradient(135deg,#0ea5e9,#2563eb);color:#fff}
-        .head h1{margin:0;font-size:26px}
-        .body{padding:22px}
-        .meta{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-        .item{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px}
-        .label{font-size:11px;text-transform:uppercase;color:#64748b;font-weight:700;letter-spacing:.08em}
-        .value{margin-top:6px;font-size:16px;font-weight:700}
-    </style>
-</head>
-<body>
-    <article class="card">
-        <header class="head"><h1>{$normalizedDomain}</h1><p>Starter page generated by ServerPanel</p></header>
-        <section class="body">
-            <div class="meta">
-                <div class="item"><div class="label">Configured PHP</div><div class="value">{$selectedPhpVersion}</div></div>
-                <div class="item"><div class="label">Status</div><div class="value">Ready</div></div>
-            </div>
-        </section>
-    </article>
-</body>
-</html>
-
-HTML;
-
-        @file_put_contents(rtrim($rootPath, '/').'/index.php', $indexPhp);
-        @file_put_contents(rtrim($rootPath, '/').'/index.html', $indexHtml);
-
-        $extraDir = rtrim($rootPath, '/').'/extra';
-        if (! is_dir($extraDir)) {
-            @mkdir($extraDir, 0755, true);
+        if ($existingHtml === '' || str_contains($existingHtml, 'Starter page generated by ServerPanel')) {
+            try {
+                if (is_file($indexHtmlPath)) {
+                    $this->filemanagerService->deletePath($siteOwner, $indexHtmlPath);
+                }
+            } catch (\Throwable $e) {
+                @unlink($indexHtmlPath);
+            }
         }
 
-        @file_put_contents(
-            $extraDir.'/first-site-note.txt',
-            "This folder was created on first website creation.\nDomain: {$normalizedDomain}\nConfigured PHP: {$selectedPhpVersion}\nCreated at: ".now()->toDateTimeString()."\n"
-        );
+        $legacyNote = rtrim($rootPath, '/').'/extra/first-site-note.txt';
+        if (is_file($legacyNote) && str_contains((string) @file_get_contents($legacyNote), 'first website creation')) {
+            try {
+                $this->filemanagerService->deletePath($siteOwner, $legacyNote);
+            } catch (\Throwable $e) {
+                @unlink($legacyNote);
+            }
+            @rmdir(dirname($legacyNote));
+        }
     }
 
     /**
@@ -3598,9 +3424,11 @@ CONF;
      */
     protected function persistRequestsToDatabase(array $requests): void
     {
+        $websiteColumns = array_flip(DB::getSchemaBuilder()->getColumnListing('websites'));
+
         $rows = collect($requests)
             ->filter(fn ($row): bool => is_array($row))
-            ->map(function (array $row): array {
+            ->map(function (array $row) use ($websiteColumns): array {
                 $id = trim((string) ($row['id'] ?? ''));
                 if ($id === '') {
                     $id = (string) str()->uuid();
@@ -3620,7 +3448,7 @@ CONF;
                 $createdAt = $this->normalizeDatabaseDatetime((string) ($row['created_at'] ?? ''));
                 $updatedAt = $this->normalizeDatabaseDatetime((string) ($row['updated_at'] ?? ''), $createdAt);
 
-                return [
+                return array_intersect_key([
                     'id' => $id,
                     'domain' => $domain,
                     'start_directory' => $startDirectory,
@@ -3633,11 +3461,10 @@ CONF;
                     'filemanager_show_hidden' => (bool) ($row['filemanager_show_hidden'] ?? false),
                     'assigned_user_id' => isset($row['assigned_user_id']) && $row['assigned_user_id'] !== '' ? (int) $row['assigned_user_id'] : null,
                     'assigned_reseller_id' => isset($row['assigned_reseller_id']) && $row['assigned_reseller_id'] !== '' ? (int) $row['assigned_reseller_id'] : null,
-                    'command' => isset($row['command']) ? (string) $row['command'] : null,
                     'status' => (string) ($row['status'] ?? 'pending'),
                     'created_at' => $createdAt,
                     'updated_at' => $updatedAt,
-                ];
+                ], $websiteColumns);
             })
             ->filter(fn (array $row): bool => trim($row['domain']) !== '')
             ->reverse()
@@ -3645,7 +3472,7 @@ CONF;
             ->reverse()
             ->values();
 
-        DB::transaction(function () use ($rows): void {
+        DB::transaction(function () use ($rows, $websiteColumns): void {
             if ($rows->isEmpty()) {
                 Website::query()->delete();
 
@@ -3655,7 +3482,7 @@ CONF;
             Website::query()->upsert(
                 $rows->all(),
                 ['id'],
-                [
+                array_values(array_filter([
                     'domain',
                     'start_directory',
                     'root_path',
@@ -3666,11 +3493,10 @@ CONF;
                     'filemanager_show_hidden',
                     'assigned_user_id',
                     'assigned_reseller_id',
-                    'command',
                     'status',
                     'created_at',
                     'updated_at',
-                ],
+                ], fn (string $column): bool => isset($websiteColumns[$column]))),
             );
 
             $ids = $rows->pluck('id')->all();
@@ -3720,7 +3546,6 @@ CONF;
             'filemanager_show_hidden' => (bool) ($website->filemanager_show_hidden ?? false),
             'assigned_user_id' => $website->assigned_user_id,
             'assigned_reseller_id' => $website->assigned_reseller_id,
-            'command' => $website->command,
             'status' => $status,
             'created_at' => $website->created_at?->toIso8601String(),
             'updated_at' => $website->updated_at?->toIso8601String(),
@@ -3797,13 +3622,17 @@ CONF;
 
         $rootPath = (string) ($website['root_path'] ?? '');
         $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
+        $startDirectory = $this->normalizeStartDirectoryAlias((string) ($website['start_directory'] ?? ''));
+        $documentRoot = $startDirectory !== ''
+            ? rtrim($rootPath, '/').'/'.trim($startDirectory, '/')
+            : $rootPath;
 
         $hasRoot = $rootPath !== '' && is_dir($rootPath);
         $hasApacheVhost = $this->apacheVhostExists($domain);
         $hasNginxVhost = $this->nginxVhostExists($domain);
         $hasEntryFile = $hasRoot && (
-            is_file(rtrim($rootPath, '/').'/index.php')
-            || is_file(rtrim($rootPath, '/').'/index.html')
+            is_file(rtrim($documentRoot, '/').'/index.php')
+            || is_file(rtrim($documentRoot, '/').'/index.html')
         );
 
         if ($hasApacheVhost || $hasNginxVhost) {

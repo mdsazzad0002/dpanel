@@ -41,13 +41,6 @@ use App\Http\Controllers\Website\WebsiteManage\WebsitePreviewController;
         ->where('path', '.*')
         ->name('websites.preview');
 
-use App\Http\Controllers\Website\WebsiteManage\WebsiteVhostSyncController;
-    Route::post('/websites/{id}/vhost/sync', [WebsiteVhostSyncController::class, 'sync'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.vhost.sync');
-
-
-
     Route::get('/websites/parent-domains/search', [WebsiteController::class, 'searchParentDomains'])
         ->middleware('role:admin|reseller')
         ->name('websites.parent-domains.search');

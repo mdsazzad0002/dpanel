@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+APP_ENV="${PANEL_APP_ENV_FILE:-/var/www/dpanel/.env}"
+action="${1:-}"
+[[ "$action" == "create" ]] || {
+  printf 'Usage: serverinstaller-site create --domain=DOMAIN --root=PATH --php=VERSION [--ssl]\n' >&2
+  exit 64
+}
+shift
+
+domain=""
+root_path=""
+php_version="8.3"
+while (($#)); do
+  case "$1" in
+    --domain=*) domain="${1#*=}" ;;
+    --domain) domain="${2:-}"; shift ;;
+    --root=*) root_path="${1#*=}" ;;
+    --root) root_path="${2:-}"; shift ;;
+    --php=*) php_version="${1#*=}" ;;
+    --php) php_version="${2:-}"; shift ;;
+    --ssl) ;;
+    *) printf 'Unknown website installer option: %s\n' "$1" >&2; exit 64 ;;
+  esac
+  shift
+done
+
+[[ -n "$domain" && -n "$root_path" ]] || {
+  printf 'Website domain and root path are required.\n' >&2
+  exit 64
+}
+[[ -r "$APP_ENV" ]] || {
+  printf 'Panel environment is not readable: %s\n' "$APP_ENV" >&2
+  exit 1
+}
+
+env_value() {
+  awk -F= -v key="$1" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "$APP_ENV"
+}
+
+api_url="$(env_value SERVERPANEL_EXECUTION_API_BASE_URL)"
+api_token="$(env_value SERVERPANEL_EXECUTION_API_TOKEN)"
+api_url="${api_url:-http://127.0.0.1:9600}"
+[[ -n "$api_token" ]] || {
+  printf 'SERVERPANEL_EXECUTION_API_TOKEN is missing.\n' >&2
+  exit 1
+}
+
+body_file="$(mktemp)"
+trap 'rm -f "$body_file"' EXIT
+chmod 0600 "$body_file"
+python3 - "$body_file" "$root_path" "$domain" "$php_version" <<'PY'
+import json
+import sys
+
+path, root_path, domain, php_version = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump({
+        "root_path": root_path,
+        "domain": domain,
+        "php_version": php_version,
+        "no_demo": True,
+        "no_db": True,
+        "no_vhost": True,
+    }, handle)
+PY
+
+printf 'header = "Authorization: Bearer %s"\n' "$api_token" | curl \
+  --config - \
+  --fail-with-body \
+  --silent \
+  --show-error \
+  --connect-timeout 5 \
+  --max-time 120 \
+  -H 'Content-Type: application/json' \
+  --data-binary "@${body_file}" \
+  "${api_url%/}/api/v1/laravel-install"
+printf '\n'

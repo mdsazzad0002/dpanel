@@ -153,7 +153,7 @@ pub fn unzip_user_archive(
     Ok(())
 }
 
-fn validate_archive<R: io::Read + io::Seek>(
+pub(super) fn validate_archive<R: io::Read + io::Seek>(
     zip: &mut zip::ZipArchive<R>,
     max_entries: usize,
     max_expanded_bytes: u64,
@@ -179,7 +179,7 @@ fn validate_archive<R: io::Read + io::Seek>(
     Ok(())
 }
 
-fn safe_entry_path<R: io::Read>(
+pub(super) fn safe_entry_path<R: io::Read>(
     entry: &zip::read::ZipFile<'_, R>,
     index: usize,
 ) -> Result<PathBuf, String> {
@@ -195,14 +195,14 @@ fn safe_entry_path<R: io::Read>(
     Ok(path.to_path_buf())
 }
 
-fn is_symlink_entry<R: io::Read>(entry: &zip::read::ZipFile<'_, R>) -> bool {
+pub(super) fn is_symlink_entry<R: io::Read>(entry: &zip::read::ZipFile<'_, R>) -> bool {
     entry
         .unix_mode()
         .map(|mode| mode & 0o170000 == 0o120000)
         .unwrap_or(false)
 }
 
-fn ensure_directory_tree(root: &Path, relative: &Path) -> Result<PathBuf, String> {
+pub(super) fn ensure_directory_tree(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     let mut current = root.to_path_buf();
     for component in relative.components() {
         let Component::Normal(name) = component else {
@@ -236,7 +236,7 @@ fn ensure_directory_tree(root: &Path, relative: &Path) -> Result<PathBuf, String
     Ok(current)
 }
 
-fn fix_extracted_tree(username: &str, group: &str, root: &Path) -> Result<(), String> {
+pub(super) fn fix_extracted_tree(username: &str, group: &str, root: &Path) -> Result<(), String> {
     let root = root.to_string_lossy();
     run_status(
         "chown",
@@ -319,7 +319,7 @@ fn fix_laravel_writable_dirs(root: &str) -> Result<(), String> {
     )
 }
 
-fn validate_replaceable_existing_target(target: &Path) -> Result<(), String> {
+pub(super) fn validate_replaceable_existing_target(target: &Path) -> Result<(), String> {
     match fs::symlink_metadata(target) {
         Ok(metadata) if metadata.file_type().is_symlink() => Err(format!(
             "Refusing to replace symbolic link: {}",

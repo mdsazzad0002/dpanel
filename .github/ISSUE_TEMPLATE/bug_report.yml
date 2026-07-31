@@ -57,7 +57,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      placeholder: "Ubuntu 24.04, PHP 8.3, nginx/apache, commit hash"
+      placeholder: "Ubuntu 24.04, PHP 8.3, commit hash"
   - type: textarea
     id: logs
     attributes:

@@ -30,7 +30,6 @@ class Website extends Model
         'filemanager_show_hidden',
         'assigned_user_id',
         'assigned_reseller_id',
-        'command',
         'status',
         'type',
     ];

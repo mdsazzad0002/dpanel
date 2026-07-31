@@ -102,7 +102,6 @@ class WebsiteVisibilityTest extends TestCase
             'enable_ssl' => false,
             'assigned_user_id' => null,
             'assigned_reseller_id' => null,
-            'command' => null,
             'status' => 'pending',
         ], $overrides));
     }

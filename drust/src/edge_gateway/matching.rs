@@ -45,8 +45,11 @@ mod tests {
         let snapshot = RuntimeSnapshot {
             version: 1,
             sites: Arc::from([SiteConfig {
+                id: "site-1".to_string(),
                 hostnames: Arc::from(["example.com".to_string(), "www.example.com".to_string()]),
                 document_root: Some(PathBuf::from("/var/www/example/public")),
+                php_version: None,
+                enable_ssl: false,
                 spa_fallback: true,
                 routes: Arc::from([RouteConfig {
                     path_prefix: "/".to_string(),
@@ -69,8 +72,11 @@ mod tests {
     #[test]
     fn route_resolution_prefers_longest_prefix() {
         let site = SiteConfig {
+            id: "site-1".to_string(),
             hostnames: Arc::from(["example.com".to_string()]),
             document_root: None,
+            php_version: None,
+            enable_ssl: false,
             spa_fallback: false,
             routes: Arc::from([
                 RouteConfig {

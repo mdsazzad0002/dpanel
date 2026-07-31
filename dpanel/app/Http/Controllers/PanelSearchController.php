@@ -137,14 +137,6 @@ class PanelSearchController extends Controller
             'roles' => ['admin', 'reseller'],
         ]);
         $this->appendRouteItem($items, $actor, $token, [
-            'label' => 'Apache + Nginx Setup',
-            'hint' => 'Web server stack and vHost controls',
-            'group' => 'Server Stack',
-            'routeName' => 'apache.index',
-            'iconClass' => 'bi bi-hdd-network',
-            'roles' => ['admin', 'reseller'],
-        ]);
-        $this->appendRouteItem($items, $actor, $token, [
             'label' => 'Security',
             'hint' => 'Firewall, SSH and hardening',
             'group' => 'Server Stack',

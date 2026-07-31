@@ -135,6 +135,7 @@ fix-panel-web-stack|Repair panel web configuration through drust|<domain> [optio
 fix-web-stack|Repair base web configuration through drust|[options]
 install-roundcube-dovecot-mysql|Install/check Roundcube and PHP MySQL integration|[--check-only] [--skip-update]
 configure-phpmyadmin-signon|Create an isolated phpMyAdmin sign-on instance without changing existing config|[--root PATH]
+reconcile-system-records|Review/update reserved panel domain, aliases and system user|[--domain DOMAIN] [--alias DOMAIN]
 issue-ssl|Issue a webroot certificate|<domain> <root-path> [include-www=0|1]
 php-config-apply|Apply php.ini settings|--version VERSION [settings]
 php-detect-config|Print effective PHP configuration|[--version VERSION]
@@ -155,7 +156,7 @@ dscript_script_path() {
     script_root="${DPANEL_RUNTIME_DIR}/scripts"
   fi
   case "$name" in
-    configure-phpmyadmin-signon|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-web-stack|sync-vhost)
+    configure-phpmyadmin-signon|reconcile-system-records|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-web-stack|sync-vhost)
       printf '%s/%s.sh' "$script_root" "$name"
       ;;
     *) printf '%s' '' ;;

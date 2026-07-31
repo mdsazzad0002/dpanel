@@ -1373,7 +1373,7 @@ EOF
 
   panel_env_set "$env_file" APP_URL "$app_url"
   panel_env_set "$env_file" SESSION_DOMAIN "$panel_domain"
-  panel_env_set "$env_file" SESSION_SECURE_COOKIE "true"
+  panel_env_set "$env_file" SESSION_SECURE_COOKIE "$([[ "$panel_port" == "443" ]] && printf true || printf false)"
   chmod 0644 "$env_file" 2>/dev/null || true
   printf '[INFO] Created missing application .env: %s\n' "$env_file" >&2
   printf '%s' "$env_file"
@@ -1387,6 +1387,10 @@ panel_env_set() {
 
   [[ -f "$file" ]] || touch "$file"
 
+  if ! : > "$tmp" 2>/dev/null; then
+    tmp="$(mktemp "${TMPDIR:-/tmp}/panel-env.XXXXXX")"
+  fi
+
   awk -v key="$key" -v value="$value" '
     BEGIN { found = 0 }
     $0 ~ "^" key "=" {
@@ -1399,7 +1403,10 @@ panel_env_set() {
       if (!found) print key "=" value
     }
   ' "$file" > "$tmp"
-  mv "$tmp" "$file"
+  if ! mv "$tmp" "$file" 2>/dev/null; then
+    cat "$tmp" > "$file"
+    rm -f "$tmp"
+  fi
 }
 
 panel_setup_application_database() {
@@ -1795,6 +1802,32 @@ panel_refresh_app_config_cache() {
   (cd "$app_dir" && php artisan config:cache >/dev/null 2>&1 || true)
 }
 
+panel_reconcile_system_records() {
+  local args=()
+
+  [[ -x "${DPANEL_RUNTIME_DIR}/scripts/reconcile-system-records.sh" ]] || {
+    panel_warn_log "System record reconciler not found; reserved user/domain records were not checked."
+    return 0
+  }
+
+  [[ -n "${PANEL_DOMAIN:-}" ]] && args+=(--domain "$PANEL_DOMAIN")
+  if [[ "${PANEL_SKIP_FIRST_INSTALL_PROMPTS:-false}" == "true" || ! -t 0 ]]; then
+    args+=(--non-interactive)
+  fi
+
+  panel_info_log "Reviewing existing websites, aliases, and reserved system user/domain records."
+  panel_run_runtime_script "reconcile-system-records.sh" "${args[@]}"
+}
+
+panel_refresh_phpmyadmin_sso() {
+  if [[ -x "${DPANEL_RUNTIME_DIR}/scripts/configure-phpmyadmin-signon.sh" ]]; then
+    panel_info_log "Refreshing phpMyAdmin sign-on for the active panel domain."
+    panel_run_runtime_script "configure-phpmyadmin-signon.sh"
+  else
+    panel_warn_log "phpMyAdmin signon helper not found; phpMyAdmin routing was not refreshed."
+  fi
+}
+
 panel_finalize_default_install() {
   panel_collect_first_install_config
 
@@ -1813,14 +1846,14 @@ panel_finalize_default_install() {
   local drust_token="${DRUST_API_TOKEN:-}"
 
   if [[ -n "$drust_token" ]]; then
-    panel_env_set "$env_file" SERVERPANEL_EXECUTION_API_BASE_URL "http://127.0.0.1:9500"
+    panel_env_set "$env_file" SERVERPANEL_EXECUTION_API_BASE_URL "http://127.0.0.1:9600"
     panel_env_set "$env_file" SERVERPANEL_EXECUTION_API_TOKEN "$drust_token"
   fi
 
   if [[ -n "$panel_domain" ]]; then
     panel_env_set "$env_file" APP_URL "http://${panel_domain}"
     panel_env_set "$env_file" SESSION_DOMAIN "$panel_domain"
-    panel_env_set "$env_file" SESSION_SECURE_COOKIE "true"
+    panel_env_set "$env_file" SESSION_SECURE_COOKIE "$([[ "$panel_port" == "443" ]] && printf true || printf false)"
     panel_env_set "$env_file" PHPMYADMIN_URL "http://${panel_domain}/phpmyadmin/"
   fi
 
@@ -1829,11 +1862,8 @@ panel_finalize_default_install() {
   panel_run_app_migrations
   panel_install_frontend_assets
 
-  if [[ -x "${DPANEL_RUNTIME_DIR}/scripts/configure-phpmyadmin-signon.sh" ]]; then
-    panel_run_runtime_script "configure-phpmyadmin-signon.sh"
-  else
-    panel_warn_log "phpMyAdmin signon helper not found; skipping phpMyAdmin setup."
-  fi
+  panel_reconcile_system_records
+  panel_refresh_phpmyadmin_sso
 
   panel_refresh_drust_service
 
@@ -1995,6 +2025,9 @@ panel_bootstrap() {
       # An update must not stop halfway: a failed daemon rebuild still leaves the
       # previous drust running, and the remaining repair steps are worth doing.
       panel_refresh_drust_service || panel_warn_log "drust rebuild failed; keeping the running binary."
+      panel_load_existing_panel_env
+      panel_reconcile_system_records
+      panel_refresh_phpmyadmin_sso
       panel_fix_website_permissions
       panel_resync_website_vhosts
       panel_fix_app_permissions
