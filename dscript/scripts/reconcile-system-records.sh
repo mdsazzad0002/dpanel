@@ -5,7 +5,7 @@ APP_DIR="${PANEL_APP_DIR:-/var/www/dpanel}"
 NON_INTERACTIVE=false
 PANEL_DOMAIN_INPUT="${PANEL_DOMAIN:-}"
 PANEL_ROOT_INPUT="${PANEL_ROOT:-$APP_DIR}"
-SYSTEM_USER_NAME="${PANEL_SYSTEM_USER_NAME:-System Administrator}"
+SYSTEM_USER_NAME="${PANEL_SYSTEM_USER_NAME:-dpanel}"
 SYSTEM_USER_EMAIL="${PANEL_SYSTEM_USER_EMAIL:-system@dpanel.localhost}"
 SYSTEM_USER_PASSWORD="${PANEL_SYSTEM_USER_PASSWORD:-}"
 ALIASES=()
@@ -106,8 +106,6 @@ if [[ "$configure_website" == true ]]; then
     PANEL_DOMAIN_INPUT="$(normalize_domain "${answer:-$PANEL_DOMAIN_INPUT}")"
     read -rp "Aliases (comma/space separated, blank for none): " aliases_raw
     read -ra ALIASES <<< "${aliases_raw//,/ }"
-    read -rp "Panel project root [${PANEL_ROOT_INPUT}]: " answer
-    PANEL_ROOT_INPUT="${answer:-$PANEL_ROOT_INPUT}"
     ALIASES_PROVIDED=true
   elif [[ "$ALIASES_PROVIDED" != true ]]; then
     existing_aliases="$(artisan_eval 'echo App\Models\Website::query()->where("type", "alis")->where("assigned_user_id", 1)->orderBy("domain")->pluck("domain")->implode(",");' | tail -n 1)"
@@ -157,7 +155,7 @@ $values = fn (string $name, string $type) => [
     "assigned_reseller_id" => null, "status" => "live", "type" => $type,
 ];
 DB::transaction(function () use ($domain, $root, $aliases, $values) {
-    Website::query()->updateOrCreate(["id" => "1"], $values($domain, "main"));
+Website::query()->updateOrCreate(["id" => "1"], $values($domain, "primary"));
     $keep = [];
     foreach ($aliases as $alias) {
         $id = "1-alias-".substr(hash("sha256", $alias), 0, 24);
@@ -174,15 +172,15 @@ fi
 printf '\nExisting panel users\n'
 printf '====================\n'
 artisan_eval '
-App\Models\User::query()->orderBy("id")->get(["id","name","email"])
-    ->each(fn ($u) => printf("%-6s %-30s %s\n", $u->id, $u->name, $u->email));
+$user = App\Models\User::query()->find(1);
+if ($user) {
+    printf("%-6s %-30s %s\n", $user->id, $user->name, $user->email);
+}
 '
 
 system_user_email="$(artisan_eval 'echo (string) optional(App\Models\User::query()->find(1))->email;' | tail -n 1)"
-system_user_name="$(artisan_eval 'echo (string) optional(App\Models\User::query()->find(1))->name;' | tail -n 1)"
 if [[ -n "$system_user_email" ]]; then
   [[ "$SYSTEM_USER_EMAIL" == "system@dpanel.localhost" ]] && SYSTEM_USER_EMAIL="$system_user_email"
-  [[ "$SYSTEM_USER_NAME" == "System Administrator" && -n "$system_user_name" ]] && SYSTEM_USER_NAME="$system_user_name"
 fi
 configure_user=false
 if [[ -n "$system_user_email" ]]; then
@@ -193,8 +191,6 @@ fi
 
 if [[ "$configure_user" == true ]]; then
   if [[ "$NON_INTERACTIVE" != true && -t 0 ]]; then
-    read -rp "System user name [${SYSTEM_USER_NAME}]: " answer
-    SYSTEM_USER_NAME="${answer:-$SYSTEM_USER_NAME}"
     read -rp "System user email [${SYSTEM_USER_EMAIL}]: " answer
     SYSTEM_USER_EMAIL="${answer:-$SYSTEM_USER_EMAIL}"
     read -rsp "Password (blank keeps existing or generates for a new user): " SYSTEM_USER_PASSWORD

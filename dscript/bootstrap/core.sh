@@ -541,9 +541,9 @@ panel_prompt_panel_reconfigure() {
 
   while true; do
     printf 'Panel already configured:\n'
-    printf '  Domain:   %s\n' "${domain:-<empty>}"
-    printf '  User:     %s\n' "${username:-<empty>}"
-    printf '  Email:    %s\n' "${email:-<empty>}"
+    [[ -n "$domain" ]] && printf '  Domain:   %s\n' "$domain"
+    [[ -n "$username" ]] && printf '  User:     %s\n' "$username"
+    [[ -n "$email" ]] && printf '  Email:    %s\n' "$email"
     printf 'Do you want panel reconfig? [y/N]: '
     read -r answer
     answer="$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]' | xargs)"
