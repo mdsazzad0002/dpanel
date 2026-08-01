@@ -7,5 +7,5 @@ if [[ ! -x "$DRUST_BIN" ]]; then
 fi
 
 exec "$DRUST_BIN" \
-  --port "${DRUST_API_PORT:-9600}" \
+  --port "${DRUST_API_PORT:-9500}" \
   --token "${DRUST_API_TOKEN}"

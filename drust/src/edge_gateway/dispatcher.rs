@@ -6,6 +6,7 @@ use axum::{
     response::Response,
 };
 use axum::http::Request;
+use std::path::Path;
 use std::time::Duration;
 
 use super::{
@@ -55,6 +56,21 @@ pub async fn dispatch(
         )
         .await;
     }
+    if site.scope == "system" && is_system_phpmyadmin_path(&path) {
+        let mut response = handle_system_phpmyadmin(
+            request,
+            &path,
+            site.php_version.as_deref(),
+            site.hostnames.first().map(String::as_str).unwrap_or(""),
+            snapshot.cache.ttl,
+        )
+        .await;
+        // Keep phpMyAdmin responses uncompressed. Its sign-on/logout flow
+        // includes empty redirects that must not be transformed by the
+        // global compression layer.
+        response.headers_mut().remove(header::CONTENT_ENCODING);
+        return response;
+    }
     let Some(route) = resolve_route(site, &path) else {
         return annotated_response(
             not_found_response(
@@ -91,6 +107,25 @@ pub async fn dispatch(
                     site_match,
                     route_match,
                 );
+            }
+
+            // Prefer a PHP front controller for directory requests. This
+            // prevents a leftover starter index.html from shadowing a real
+            // application index.php in the same document root.
+            if (path == "/" || path.ends_with('/')) && config.document_root.join("index.php").is_file() {
+                let response = execute_php_front_controller(
+                    request,
+                    &config.document_root,
+                    site.php_version.as_deref(),
+                )
+                .await
+                .unwrap_or_else(|error| {
+                    simple_response(
+                        StatusCode::BAD_GATEWAY,
+                        &format!("PHP application unavailable: {error}"),
+                    )
+                });
+                return annotated_response(response, site_match, route_match);
             }
 
             let exact_static_path = if is_php_path(&path) {
@@ -177,6 +212,84 @@ pub async fn dispatch(
             return annotated_response(redirect_response(*code, location), site_match, route_match);
         }
     }
+}
+
+fn is_system_phpmyadmin_path(path: &str) -> bool {
+    path == "/phpmyadmin" || path.starts_with("/phpmyadmin/")
+}
+
+async fn handle_system_phpmyadmin(
+    request: Request<Body>,
+    path: &str,
+    php_version: Option<&str>,
+    site_match: &str,
+    cache_ttl: Duration,
+) -> Response {
+    // System paths are intentionally fixed. The hostname is database-driven,
+    // while the service path remains stable across panel domain migrations.
+    let root = Path::new("/var/www/phpmyadmin");
+    let relative = path.strip_prefix("/phpmyadmin").unwrap_or("/");
+    let relative = if relative.is_empty() { "/" } else { relative };
+    let local_path = normalize_request_path(relative);
+
+    // phpMyAdmin's logout route normally emits a compressed 302 to the
+    // sign-on helper. Serve the helper directly to avoid browser-specific
+    // corrupt-content handling on the first logout request.
+    if local_path == "/index.php" && request.uri().query() == Some("route=/logout") {
+        let response = simple_response(
+            StatusCode::OK,
+            r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>phpMyAdmin Logged Out</title></head><body><p>Logged out from phpMyAdmin.</p><p>Start login again from ServerPanel.</p><p>You will be redirected to the panel in <span id="countdown">10</span> seconds.</p><script>let seconds=10;const countdown=document.getElementById('countdown');const timer=setInterval(()=>{seconds-=1;countdown.textContent=String(seconds);if(seconds<=0){clearInterval(timer);window.location.href='/';}},1000);</script></body></html>"#,
+        );
+        return annotated_response(response, site_match, "/phpmyadmin");
+    }
+
+    // Directory requests must execute index.php, never expose it as a
+    // downloadable static asset.
+    if (local_path == "/" || local_path.ends_with('/')) {
+        if root.join("index.php").is_file() {
+            let (mut parts, body) = request.into_parts();
+            let query = parts.uri.query().map(|value| format!("?{value}")).unwrap_or_default();
+            let Ok(uri) = format!("/{query}").parse() else {
+                return simple_response(StatusCode::BAD_REQUEST, "Invalid phpMyAdmin path");
+            };
+            parts.uri = uri;
+            let response = execute_php_front_controller(
+                Request::from_parts(parts, body),
+                root,
+                php_version,
+            )
+            .await
+            .unwrap_or_else(|error| simple_response(StatusCode::BAD_GATEWAY, &format!("phpMyAdmin unavailable: {error}")));
+            return annotated_response(response, site_match, "/phpmyadmin");
+        }
+    }
+    let path_on_disk = if is_php_path(&local_path) {
+        None
+    } else {
+        resolve_static_path(root, &local_path, "index.php", false)
+    };
+
+    if let Some(path_on_disk) = path_on_disk {
+        return annotated_response(
+            match load_static_asset(&path_on_disk) {
+                Ok(asset) => static_response(asset, cache_ttl),
+                Err(error) => simple_response(StatusCode::INTERNAL_SERVER_ERROR, &error),
+            },
+            site_match,
+            "/phpmyadmin",
+        );
+    }
+
+    let (mut parts, body) = request.into_parts();
+    let query = parts.uri.query().map(|value| format!("?{value}")).unwrap_or_default();
+    let Ok(uri) = format!("{local_path}{query}").parse() else {
+        return simple_response(StatusCode::BAD_REQUEST, "Invalid phpMyAdmin path");
+    };
+    parts.uri = uri;
+    let response = execute_php_front_controller(Request::from_parts(parts, body), root, php_version)
+        .await
+        .unwrap_or_else(|error| simple_response(StatusCode::BAD_GATEWAY, &format!("phpMyAdmin unavailable: {error}")));
+    annotated_response(response, site_match, "/phpmyadmin")
 }
 
 struct PanelPreview<'a> {

@@ -19,6 +19,10 @@ class Website extends Model
     protected $fillable = [
         'id',
         'domain',
+        'hostname',
+        'scope',
+        'parent_id',
+        'config_source_id',
         'start_directory',
         'root_path',
         'project_root',
@@ -32,6 +36,7 @@ class Website extends Model
         'assigned_reseller_id',
         'status',
         'type',
+        'ssl_mode',
     ];
 
     protected $casts = [
@@ -40,6 +45,11 @@ class Website extends Model
         'assigned_user_id' => 'integer',
         'assigned_reseller_id' => 'integer',
     ];
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
 
     public function assignedUser(): BelongsTo
     {

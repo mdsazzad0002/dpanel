@@ -14,7 +14,7 @@ jobs:
       run:
         working-directory: drust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo fmt --check
       - run: cargo test
@@ -24,11 +24,10 @@ jobs:
     name: Static docs check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: test -f docs/index.html
       - run: test -f docs/FIRST_INSTALL_AND_PERMISSIONS.md
       - run: test -f README.md
       - run: test -f LICENSE
       - run: test -f SECURITY.md
       - run: test -f CONTRIBUTING.md
-

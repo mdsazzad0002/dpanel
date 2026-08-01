@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Website;
 use App\Http\Controllers\Controller;
 use App\Models\CronJob;
 use App\Models\DatabaseRequest;
+use App\Models\Domain;
+use App\Models\SslCertificate;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Filemanager\FilemanagerService;
@@ -14,7 +16,6 @@ use App\Services\Ssl\SslLifecycleService;
 use App\Services\Website\WebsiteCreateEditService;
 use App\Services\Website\WebsiteResolverService;
 use App\Services\Website\WebsiteTemplateCatalogService;
-use App\Services\Website\WebsiteWebServerSyncService;
 use App\Services\Website\WordpressInstallService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -38,7 +39,6 @@ class WebsiteController extends Controller
         protected WebsiteTemplateCatalogService $templateCatalog,
         protected WebsiteCreateEditService $websiteCreateEdit,
         protected SslLifecycleService $sslLifecycleService,
-        protected WebsiteWebServerSyncService $websiteWebServerSyncService,
         protected FilemanagerService $filemanagerService,
         protected WordpressInstallService $wordpressInstallService,
     ) {}
@@ -96,6 +96,7 @@ class WebsiteController extends Controller
                 $startDirectory = (string) ($item['start_directory'] ?? 'public');
 
                 return [
+                    'id' => (string) ($item['id'] ?? ''),
                     'domain' => $domain,
                     'root_path' => $rootPath,
                     'start_directory' => $startDirectory,
@@ -175,9 +176,29 @@ class WebsiteController extends Controller
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $metrics = $this->safeBuildDynamicMetrics($website);
-        $rootInspection = $this->inspectWebsiteApplication($website);
+        $websiteRootPath = (string) ($website['root_path'] ?? '');
+        $websiteSiteOwner = (string) ($website['site_owner'] ?? '');
+        $aliasWebsites = Website::query()
+            ->visibleTo(request()->user())
+            ->whereIn('type', ['alis', 'alias'])
+            ->where(function ($query) use ($websiteRootPath, $websiteSiteOwner): void {
+                if ($websiteRootPath !== '') {
+                    $query->where('root_path', $websiteRootPath);
+                }
 
-        $runtimeStatus = $this->detectRuntimeStatus($website);
+                if ($websiteSiteOwner !== '') {
+                    $query->orWhere('site_owner', $websiteSiteOwner);
+                }
+            })
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn (Website $alias): array => $this->websiteModelToArray($alias))
+            ->values()
+            ->all();
+
+        $runtimeStatus = strtolower(trim((string) ($website['status'] ?? 'pending'))) === 'live'
+            ? 'live'
+            : $this->detectRuntimeStatus($website);
 
         $activities = [
             [
@@ -198,10 +219,17 @@ class WebsiteController extends Controller
             ],
         ];
 
+        $autoRenewNotice = $this->autoRenewWebsiteSslIfNeeded($website);
+        $sslStatus = $this->inspectWebsiteSslStatus($website);
+        $rootInspection = $this->inspectWebsiteApplication($website);
+
         return Inertia::render('Websites/Manage', [
             'website' => $website,
             'metrics' => $metrics,
             'activities' => $activities,
+            'aliasWebsites' => $aliasWebsites,
+            'sslStatus' => $sslStatus,
+            'autoRenewNotice' => $autoRenewNotice,
             'rootInspection' => $rootInspection,
         ]);
     }
@@ -234,7 +262,6 @@ class WebsiteController extends Controller
 
         try {
             $website->save();
-            $this->websiteWebServerSyncService->syncWebsite($website->fresh());
         } catch (\Throwable $e) {
             return $request->expectsJson()
                 ? response()->json(['message' => 'Web server configuration update failed.', 'error' => $e->getMessage()], 422)
@@ -246,19 +273,14 @@ class WebsiteController extends Controller
             : back()->with('success', 'Web server configuration updated.');
     }
 
-    public function sslManager(string $token, string $id): Response
+    public function sslManager(string $token, string $id): RedirectResponse
     {
-        $website = $this->findAuthorizedWebsiteOrFail($id);
-        $autoRenewNotice = $this->autoRenewWebsiteSslIfNeeded($website);
+        $this->findAuthorizedWebsiteOrFail($id);
 
-        return Inertia::render('Websites/SslManager', [
-            'website' => $website,
-            'sslStatus' => $this->inspectWebsiteSslStatus($website),
-            'autoRenewNotice' => $autoRenewNotice,
-        ]);
+        return redirect()->route('websites.manage', ['token' => $token, 'id' => $id]);
     }
 
-    public function issueSsl(string $token, string $id): RedirectResponse
+    public function issueSsl(Request $request, string $token, string $id): RedirectResponse|JsonResponse
     {
         $this->findAuthorizedWebsiteOrFail($id);
         $website = Website::query()->findOrFail($id);
@@ -266,14 +288,49 @@ class WebsiteController extends Controller
 
         try {
             $result = $this->sslLifecycleService->ensureForWebsite($website->fresh());
-            $this->websiteWebServerSyncService->syncWebsite($website->fresh());
         } catch (\Throwable $e) {
-            return redirect()->route('websites.ssl', $id)->with('error', 'SSL issue failed. '.$e->getMessage());
+            $message = 'SSL issue failed. '.$e->getMessage();
+
+            return $request->expectsJson()
+                ? response()->json(['type' => 'error', 'message' => $message], 422)
+                : back()->with('error', $message);
         }
 
         $action = ! empty($result['renewed']) ? 'renewed' : (! empty($result['issued']) ? 'issued' : 'verified');
+        $message = "SSL certificate {$action} successfully.";
 
-        return redirect()->route('websites.ssl', $id)->with('success', "SSL certificate {$action} successfully.");
+        return $request->expectsJson()
+            ? response()->json(['type' => 'success', 'message' => $message])
+            : back()->with('success', $message);
+    }
+
+    public function updateSslStatus(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->findAuthorizedWebsiteOrFail($id);
+        $validated = $request->validate(['enabled' => ['required', 'boolean']]);
+        $website = Website::query()->findOrFail($id);
+        $originalStatus = (bool) $website->enable_ssl;
+        $enabled = (bool) $validated['enabled'];
+
+        try {
+            $website->forceFill(['enable_ssl' => $enabled])->save();
+            if (! $enabled) {
+                $this->sslLifecycleService->ensureForWebsite($website->fresh());
+            }
+        } catch (\Throwable $e) {
+            $website->forceFill(['enable_ssl' => $originalStatus])->save();
+
+            return response()->json([
+                'type' => 'error',
+                'message' => 'SSL status update failed. '.$e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'type' => 'success',
+            'enabled' => $enabled,
+            'message' => $enabled ? 'SSL enabled successfully.' : 'SSL disabled successfully.',
+        ]);
     }
 
     public function Usage(string $token, string $id): Response
@@ -327,7 +384,7 @@ class WebsiteController extends Controller
             }
         }
 
-        $rootPath = (string) ($website['root_path'] ?? '');
+        $rootPath = (string) ($rootInspection['root_path'] ?? $website['root_path'] ?? '');
         if ($rootPath === '' || ! is_dir($rootPath)) {
             return $respond(false, 'Website root path is missing or inaccessible.', 422);
         }
@@ -421,9 +478,6 @@ class WebsiteController extends Controller
             },
             'relocateApacheDefaultPage' => function (): void {
                 $this->relocateApacheDefaultPage();
-            },
-            'syncLiveWebVhost' => function (string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null): void {
-                $this->syncLiveWebVhost($domain, $rootPath, $phpVersion, $oldDomain);
             },
             'runIssueSslScript' => fn (string $domain, string $rootPath, bool $includeWwwAlias): array => $this->runIssueSslScript($domain, $rootPath, $includeWwwAlias),
             'shouldAddWwwAlias' => fn (string $domain): bool => $this->shouldAddWwwAlias($domain),
@@ -1075,10 +1129,6 @@ class WebsiteController extends Controller
             return redirect()->route('websites.list')->with('error', 'Website request not found.');
         }
 
-        if (is_array($existingRequest)) {
-            $this->removeLiveWebVhost((string) ($existingRequest['domain'] ?? ''));
-        }
-
         $this->writeRequests($filtered->all());
 
         return redirect()->route('websites.list')->with('success', 'Website request deleted successfully.');
@@ -1111,6 +1161,23 @@ class WebsiteController extends Controller
         return redirect()->route('websites.list')->with('success', $validated['status'] === 'disabled'
             ? 'Website disabled successfully.'
             : 'Website enabled successfully.');
+    }
+
+    public function refreshRuntimeStatus(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+        $status = $this->detectRuntimeStatus($website);
+
+        Website::query()->whereKey($id)->update([
+            'status' => $status,
+            'updated_at' => now(),
+        ]);
+
+        return response()->json([
+            'type' => $status === 'live' ? 'success' : 'warning',
+            'status' => $status,
+            'message' => "Website check complete: status is {$status}.",
+        ]);
     }
 
     /**
@@ -1353,67 +1420,6 @@ class WebsiteController extends Controller
         ];
     }
 
-    /**
-     * @return array{ran: bool, success: bool, output: string}
-     */
-    protected function runSyncVhostScript(string $action, string $domain, ?string $rootPath = null, ?string $phpVersion = null, ?string $oldDomain = null): array
-    {
-        $scriptCandidates = [
-            base_path('scripts/sync-vhost.sh'),
-            '/usr/local/bin/serverpanel-sync-vhost.sh',
-        ];
-
-        $scriptPath = $this->resolveScriptPath($scriptCandidates);
-        if ($scriptPath === '') {
-            return ['ran' => false, 'success' => false, 'output' => 'sync-vhost script not found'];
-        }
-
-        $result = app(ScriptExecutionGateway::class)->execute($scriptPath, array_values(array_filter([
-            $action,
-            $this->normalizeDomain($domain),
-            $rootPath,
-            $phpVersion,
-            $oldDomain !== null ? $this->normalizeDomain($oldDomain) : null,
-        ], static fn ($value) => $value !== null && $value !== '')), [
-            'PANEL_PORT' => $this->panelPort(),
-            'APACHE_BACKEND_PORT' => $this->apacheBackendPort(),
-            'NGINX_PRIMARY_PORT' => $this->nginxPrimaryPort(),
-            'PHPMYADMIN_PORT' => $this->phpMyAdminPort(),
-            'REDIS_SERVICE' => $this->redisServiceUnit(),
-        ], true);
-        $message = trim((string) ($result['output'] ?? ''));
-        $success = in_array((int) ($result['exit_code'] ?? 1), [0, 3], true);
-
-        if ((int) ($result['exit_code'] ?? 1) === 3) {
-            Log::warning('Vhost sync script completed with recoverable errors', [
-                'action' => $action,
-                'domain' => $domain,
-                'root_path' => $rootPath,
-                'php_version' => $phpVersion,
-                'old_domain' => $oldDomain,
-                'script' => $scriptPath,
-                'exit_code' => (int) ($result['exit_code'] ?? 1),
-                'output' => $message,
-            ]);
-        } elseif (! $success) {
-            Log::warning('Vhost sync script failed', [
-                'action' => $action,
-                'domain' => $domain,
-                'root_path' => $rootPath,
-                'php_version' => $phpVersion,
-                'old_domain' => $oldDomain,
-                'script' => $scriptPath,
-                'exit_code' => (int) ($result['exit_code'] ?? 1),
-                'output' => $message,
-            ]);
-        }
-
-        return [
-            'ran' => (bool) ($result['ran'] ?? true),
-            'success' => $success,
-            'output' => $message,
-        ];
-    }
 
     /**
      * @return Collection<int, array<string, mixed>>
@@ -1450,6 +1456,15 @@ class WebsiteController extends Controller
         return $requests
             ->map(function (array $item) use ($usersById): array {
                 $item = $this->normalizeWebsiteRecord($item);
+                $runtimeStatus = $this->detectRuntimeStatus($item);
+                if ($runtimeStatus !== '') {
+                    $item['status'] = $runtimeStatus;
+                    if (! empty($item['id'])) {
+                        Website::query()->whereKey((string) $item['id'])
+                            ->where('status', '!=', $runtimeStatus)
+                            ->update(['status' => $runtimeStatus, 'updated_at' => now()]);
+                    }
+                }
                 $domain = (string) ($item['domain'] ?? '');
 
                 $assignedUserId = (int) ($item['assigned_user_id'] ?? 0);
@@ -2173,105 +2188,6 @@ class WebsiteController extends Controller
             '<!doctype html><html><head><meta charset="utf-8"><title>ServerPanel</title></head><body><h1>ServerPanel</h1><p>Default Apache page moved to /var/www/html/extra/.</p></body></html>'
         );
         @file_put_contents($marker, now()->toDateTimeString());
-    }
-
-    protected function syncLiveWebVhost(string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null): void
-    {
-        $scriptResult = $this->runSyncVhostScript('sync', $domain, $rootPath, $phpVersion, $oldDomain);
-        if ($scriptResult['ran'] && $scriptResult['success']) {
-            return;
-        }
-
-        $this->syncLiveApacheVhost($domain, $rootPath, $phpVersion, $oldDomain);
-        $this->syncLiveNginxVhost($domain, $rootPath, $phpVersion, $oldDomain);
-    }
-
-    /**
-     * @return array{generated: bool, messages: array<int, string>}
-     */
-    protected function syncLiveWebVhostWithReport(string $domain, string $rootPath, string $phpVersion): array
-    {
-        $messages = [];
-        $generated = false;
-        $normalizedDomain = $this->normalizeDomain($domain);
-        $isRoot = function_exists('posix_geteuid') && posix_geteuid() === 0;
-        $scriptResult = $this->runSyncVhostScript('sync', $normalizedDomain, $rootPath, $phpVersion);
-        if ($scriptResult['ran'] && $scriptResult['success']) {
-            $apacheConf = $this->existingApacheVhostPath($normalizedDomain);
-            $nginxConf = $this->existingNginxVhostPath($normalizedDomain);
-            $nginxEnabled = $this->existingNginxEnabledVhostPath($normalizedDomain);
-
-            if (is_file($apacheConf)) {
-                $generated = true;
-                $messages[] = "Apache vhost synced: {$apacheConf}";
-            }
-            if (is_file($nginxConf) && (is_link($nginxEnabled) || is_file($nginxEnabled))) {
-                $generated = true;
-                $messages[] = "Nginx vhost synced: {$nginxConf}";
-            }
-            if ($scriptResult['output'] !== '') {
-                $messages[] = $scriptResult['output'];
-            }
-
-            return [
-                'generated' => $generated,
-                'messages' => $messages,
-            ];
-        }
-        if ($scriptResult['ran'] && ! $scriptResult['success'] && $scriptResult['output'] !== '') {
-            $messages[] = 'Vhost script failed: '.$scriptResult['output'];
-        }
-
-        if ($this->canManageApacheVhosts()) {
-            $this->syncLiveApacheVhost($normalizedDomain, $rootPath, $phpVersion);
-            $apacheConf = $this->existingApacheVhostPath($normalizedDomain);
-            if (is_file($apacheConf)) {
-                $generated = true;
-                $messages[] = "Apache vhost synced: {$apacheConf}";
-            } else {
-                $messages[] = "Apache sync attempted but file not found: {$apacheConf}";
-            }
-        } elseif (! is_dir('/etc/apache2/sites-available')) {
-            $messages[] = 'Apache vhost skipped: /etc/apache2/sites-available not found.';
-        } elseif (! $isRoot) {
-            $messages[] = 'Apache vhost skipped: process is not running as root.';
-        } else {
-            $messages[] = 'Apache vhost skipped: insufficient permissions.';
-        }
-
-        if ($this->canManageNginxVhosts()) {
-            $this->syncLiveNginxVhost($normalizedDomain, $rootPath, $phpVersion);
-            $nginxConf = $this->existingNginxVhostPath($normalizedDomain);
-            $nginxEnabled = $this->existingNginxEnabledVhostPath($normalizedDomain);
-            if (is_file($nginxConf) && (is_link($nginxEnabled) || is_file($nginxEnabled))) {
-                $generated = true;
-                $messages[] = "Nginx vhost synced: {$nginxConf}";
-            } else {
-                $messages[] = "Nginx sync attempted but config/link missing: {$nginxConf}";
-            }
-        } elseif (! is_dir('/etc/nginx/sites-available') || ! is_dir('/etc/nginx/sites-enabled')) {
-            $messages[] = 'Nginx vhost skipped: /etc/nginx/sites-available or sites-enabled not found.';
-        } elseif (! $isRoot) {
-            $messages[] = 'Nginx vhost skipped: process is not running as root.';
-        } else {
-            $messages[] = 'Nginx vhost skipped: insufficient permissions.';
-        }
-
-        return [
-            'generated' => $generated,
-            'messages' => $messages,
-        ];
-    }
-
-    protected function removeLiveWebVhost(string $domain): void
-    {
-        $scriptResult = $this->runSyncVhostScript('remove', $domain);
-        if ($scriptResult['ran'] && $scriptResult['success']) {
-            return;
-        }
-
-        $this->removeLiveApacheVhost($domain);
-        $this->removeLiveNginxVhost($domain);
     }
 
     protected function syncLiveApacheVhost(string $domain, string $rootPath, string $phpVersion, ?string $oldDomain = null): void
@@ -3065,13 +2981,6 @@ CONF;
                 : 'SSL auto-renew failed.';
         }
 
-        $this->syncLiveWebVhost(
-            $domain,
-            $rootPath,
-            (string) ($website['php_version'] ?? '8.0'),
-            (string) ($website['domain'] ?? ''),
-        );
-
         return 'SSL auto-renew completed successfully.';
     }
 
@@ -3520,11 +3429,14 @@ CONF;
             ? $this->extractSiteOwnerFromRootPath($projectRoot !== '' ? $projectRoot : $rootPath)
             : ($website->site_owner !== null ? (string) $website->site_owner : null);
         $storedStatus = (string) ($website->status ?? 'pending');
-        $status = $this->detectRuntimeStatus([
-            'domain' => $domain,
-            'root_path' => $rootPath,
-            'status' => $storedStatus,
-        ]);
+        $isAlias = in_array(strtolower((string) ($website->type ?? '')), ['alis', 'alias'], true);
+        $status = $isAlias
+            ? 'live'
+            : $this->detectRuntimeStatus([
+                'domain' => $domain,
+                'root_path' => $rootPath,
+                'status' => $storedStatus,
+            ]);
         if ($website->exists && $status !== $storedStatus) {
             try {
                 $website->forceFill(['status' => $status])->saveQuietly();
@@ -3536,6 +3448,8 @@ CONF;
         return [
             'id' => (string) $website->id,
             'domain' => $domain,
+            'type' => (string) ($website->type ?? 'primary'),
+            'parent_id' => $website->parent_id !== null ? (string) $website->parent_id : null,
             'start_directory' => $this->normalizeStartDirectoryAlias((string) ($website->start_directory ?? 'public')),
             'root_path' => $rootPath,
             'project_root' => $projectRoot,
@@ -3543,6 +3457,7 @@ CONF;
             'php_version' => (string) ($website->php_version ?? ''),
             'wordpress_db_prefix' => $this->normalizeWordPressDatabasePrefix((string) ($website->wordpress_db_prefix ?? ''), $domain),
             'enable_ssl' => (bool) ($website->enable_ssl ?? false),
+            'ssl_status' => $this->resolveWebsiteSslStatus($domain),
             'filemanager_show_hidden' => (bool) ($website->filemanager_show_hidden ?? false),
             'assigned_user_id' => $website->assigned_user_id,
             'assigned_reseller_id' => $website->assigned_reseller_id,
@@ -3550,6 +3465,26 @@ CONF;
             'created_at' => $website->created_at?->toIso8601String(),
             'updated_at' => $website->updated_at?->toIso8601String(),
         ];
+    }
+
+    protected function resolveWebsiteSslStatus(string $domain): string
+    {
+        $domain = strtolower(trim($domain));
+        if ($domain === '') {
+            return 'unknown';
+        }
+
+        $certificateStatus = (string) (SslCertificate::query()->where('domain', $domain)->value('status') ?? '');
+        if ($certificateStatus !== '') {
+            return $certificateStatus;
+        }
+
+        $domainStatus = (string) (Domain::query()->where('name', $domain)->value('ssl_status') ?? '');
+        if ($domainStatus !== '') {
+            return $domainStatus;
+        }
+
+        return 'unknown';
     }
 
     protected function normalizeDatabaseDatetime(string $value, ?string $fallback = null): string
@@ -3620,32 +3555,28 @@ CONF;
             return 'disabled';
         }
 
-        $rootPath = (string) ($website['root_path'] ?? '');
         $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
-        $startDirectory = $this->normalizeStartDirectoryAlias((string) ($website['start_directory'] ?? ''));
-        $documentRoot = $startDirectory !== ''
-            ? rtrim($rootPath, '/').'/'.trim($startDirectory, '/')
-            : $rootPath;
+        return $domain !== '' ? 'live' : 'pending';
+    }
 
-        $hasRoot = $rootPath !== '' && is_dir($rootPath);
-        $hasApacheVhost = $this->apacheVhostExists($domain);
-        $hasNginxVhost = $this->nginxVhostExists($domain);
-        $hasEntryFile = $hasRoot && (
-            is_file(rtrim($documentRoot, '/').'/index.php')
-            || is_file(rtrim($documentRoot, '/').'/index.html')
-        );
-
-        if ($hasApacheVhost || $hasNginxVhost) {
-            return 'live';
-        }
-        if ($hasRoot && $hasEntryFile) {
-            return 'live';
-        }
-        if ($hasRoot) {
-            return 'partial';
+    protected function rustGatewayHostMatches(string $domain): bool
+    {
+        if ($domain === '') {
+            return false;
         }
 
-        return (string) ($website['status'] ?? 'pending');
+        try {
+            $gatewayUrl = rtrim((string) config('serverpanel.edge_gateway_url', 'http://127.0.0.1'), '/');
+            $response = Http::withHeaders(['Host' => $domain])
+                ->withoutRedirecting()
+                ->timeout(2)
+                ->get($gatewayUrl.'/');
+
+            return $response->successful()
+                && strcasecmp(trim((string) $response->header('x-site-match')), $domain) === 0;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     protected function apacheVhostExists(string $domain): bool

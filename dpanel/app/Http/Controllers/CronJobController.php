@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\CronJob;
 use App\Models\Website;
+use App\Services\Cron\CronSystemService;
+use App\Support\BackupSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -11,9 +13,16 @@ use Inertia\Response;
 
 class CronJobController extends Controller
 {
-    public function index(string $id): Response
+    public function __construct(
+        private readonly CronSystemService $cronSystem,
+        private readonly BackupSettings $backupSettings,
+    )
     {
-        $website = $this->findWebsite($id);
+    }
+
+    public function index(Request $request, string $token, string $id): Response
+    {
+        $website = $this->findWebsite($id, $request);
         abort_if($website === null, 404);
 
         $jobs = CronJob::query()
@@ -43,14 +52,14 @@ class CronJobController extends Controller
         ]);
     }
 
-    public function store(Request $request, string $id): RedirectResponse
+    public function store(Request $request, string $token, string $id): RedirectResponse
     {
-        $website = $this->findWebsite($id);
+        $website = $this->findWebsite($id, $request);
         abort_if($website === null, 404);
 
         $validated = $this->validatePayload($request);
 
-        CronJob::query()->create([
+        $job = CronJob::query()->create([
             'id' => (string) str()->uuid(),
             'website_id' => $id,
             'domain' => (string) ($website->domain ?? ''),
@@ -61,12 +70,20 @@ class CronJobController extends Controller
             'description' => trim((string) ($validated['description'] ?? '')),
         ]);
 
-        return redirect()->route('websites.cronjobs.index', $id)->with('success', 'Cron job created.');
+        try {
+            $this->cronSystem->sync($job, $website);
+        } catch (\Throwable $e) {
+            $job->delete();
+
+            return back()->withInput()->with('error', 'Cron job was not created: '.$e->getMessage());
+        }
+
+        return redirect()->route('websites.cronjobs.index', ['token' => $token, 'id' => $id])->with('success', 'Cron job created in database and system scheduler.');
     }
 
-    public function update(Request $request, string $id, string $jobId): RedirectResponse
+    public function update(Request $request, string $token, string $id, string $jobId): RedirectResponse
     {
-        $website = $this->findWebsite($id);
+        $website = $this->findWebsite($id, $request);
         abort_if($website === null, 404);
 
         $validated = $this->validatePayload($request);
@@ -77,9 +94,10 @@ class CronJobController extends Controller
             ->first();
 
         if ($job === null) {
-            return redirect()->route('websites.cronjobs.index', $id)->with('error', 'Cron job not found.');
+            return redirect()->route('websites.cronjobs.index', ['token' => $token, 'id' => $id])->with('error', 'Cron job not found.');
         }
 
+        $original = $job->only(['name', 'expression', 'command', 'status', 'description']);
         $job->update([
             'name' => trim((string) $validated['name']),
             'expression' => trim((string) $validated['expression']),
@@ -88,24 +106,53 @@ class CronJobController extends Controller
             'description' => trim((string) ($validated['description'] ?? '')),
         ]);
 
-        return redirect()->route('websites.cronjobs.index', $id)->with('success', 'Cron job updated.');
-    }
+        try {
+            $this->cronSystem->sync($job->fresh(), $website);
+        } catch (\Throwable $e) {
+            $job->update($original);
+            try {
+                $this->cronSystem->sync($job->fresh(), $website);
+            } catch (\Throwable) {
+                // Preserve the original database state even if system rollback also fails.
+            }
 
-    public function destroy(string $id, string $jobId): RedirectResponse
-    {
-        $website = $this->findWebsite($id);
-        abort_if($website === null, 404);
-
-        $deleted = CronJob::query()
-            ->where('id', $jobId)
-            ->where('website_id', $id)
-            ->delete();
-
-        if (! $deleted) {
-            return redirect()->route('websites.cronjobs.index', $id)->with('error', 'Cron job not found.');
+            return back()->withInput()->with('error', 'Cron job update failed: '.$e->getMessage());
         }
 
-        return redirect()->route('websites.cronjobs.index', $id)->with('success', 'Cron job deleted.');
+        if ((string) $job->id === 'trash-backups-prune') {
+            $this->syncTrashRetentionSettings($job->fresh());
+        }
+
+        return redirect()->route('websites.cronjobs.index', ['token' => $token, 'id' => $id])->with('success', 'Cron job updated in database and system scheduler.');
+    }
+
+    public function destroy(Request $request, string $token, string $id, string $jobId): RedirectResponse
+    {
+        $website = $this->findWebsite($id, $request);
+        abort_if($website === null, 404);
+
+        $job = CronJob::query()
+            ->where('id', $jobId)
+            ->where('website_id', $id)
+            ->first();
+
+        if ($job === null) {
+            return redirect()->route('websites.cronjobs.index', ['token' => $token, 'id' => $id])->with('error', 'Cron job not found.');
+        }
+
+        try {
+            $this->cronSystem->delete((string) $job->id);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Cron job was not deleted: '.$e->getMessage());
+        }
+        $job->delete();
+        if ((string) $job->id === 'trash-backups-prune') {
+            $settings = $this->backupSettings->read();
+            $settings['trash_retention_enabled'] = false;
+            $this->backupSettings->write($settings);
+        }
+
+        return redirect()->route('websites.cronjobs.index', ['token' => $token, 'id' => $id])->with('success', 'Cron job deleted from database and system scheduler.');
     }
 
     /**
@@ -122,9 +169,22 @@ class CronJobController extends Controller
         ]);
     }
 
-    private function findWebsite(string $id): ?Website
+    private function findWebsite(string $id, Request $request): ?Website
     {
-        return Website::query()->find($id);
+        return Website::query()->visibleTo($request->user())->find($id);
+    }
+
+    private function syncTrashRetentionSettings(CronJob $job): void
+    {
+        $settings = $this->backupSettings->read();
+        $parts = preg_split('/\s+/', trim((string) $job->expression)) ?: [];
+        if (count($parts) === 5 && ctype_digit($parts[0]) && ctype_digit($parts[1])) {
+            $settings['trash_retention_time'] = sprintf('%02d:%02d', (int) $parts[1], (int) $parts[0]);
+        }
+        if (preg_match('/--days=(\d+)/', (string) $job->command, $matches) === 1) {
+            $settings['trash_retention_days'] = max(1, (int) $matches[1]);
+        }
+        $settings['trash_retention_enabled'] = (string) $job->status === 'active';
+        $this->backupSettings->write($settings);
     }
 }
-

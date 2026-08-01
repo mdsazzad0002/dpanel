@@ -101,6 +101,7 @@ cmd=(
     --cert-name "${DOMAIN}"
     --expand
     --deploy-hook
+    "systemctl restart edge-gateway.service"
 )
 
 if [[ -n "${LETSENCRYPT_EMAIL:-}" ]]; then

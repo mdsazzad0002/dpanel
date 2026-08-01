@@ -27,6 +27,7 @@ const form = useForm({
     domain: '',
     subdomain_prefix: '',
     parent_domain: '',
+    parent_id: '',
     start_directory: 'public',
     root_path: '',
     php_version: props.defaultPhpVersion || '',
@@ -166,7 +167,7 @@ const validateBeforeSubmit = () => {
             : 'Domain is required.';
     }
 
-    if (!suggestedRootPath.value) {
+    if (!props.aliasMode && !suggestedRootPath.value) {
         errors.root_path = 'Resolved root path is required.';
     }
 
@@ -178,7 +179,7 @@ const validateBeforeSubmit = () => {
 };
 
 watch([finalDomain, () => form.domain_type, normalizedParentDomain], () => {
-    form.root_path = deriveRootPath();
+    form.root_path = props.aliasMode ? '' : deriveRootPath();
 }, { immediate: true });
 
 watch(
@@ -257,6 +258,11 @@ const submit = async () => {
             },
         });
         const data = response?.data || {};
+        const createdWebsiteId = String(data?.website?.id || '').trim();
+        if (data?.type === 'success' && createdWebsiteId) {
+            window.location.assign(panelRoute('websites.manage', { id: createdWebsiteId }));
+            return;
+        }
         submitMessageType.value = String(data.type || 'success');
         submitMessage.value = String(data.message || 'Website created and activated successfully.');
 
@@ -297,11 +303,12 @@ const fetchParentDomains = async (search = '') => {
         const items = Array.isArray(response?.data?.data) ? response.data.data : [];
         parentDomainOptions.value = items
             .map((item) => ({
+                id: String(item?.id || '').trim(),
                 domain: String(item?.domain || '').trim().toLowerCase(),
                 root_path: String(item?.root_path || '').trim(),
                 start_directory: String(item?.start_directory || '').trim(),
             }))
-            .filter((item) => item.domain.length > 0)
+            .filter((item) => item.domain.length > 0 && item.id.length > 0)
             .slice(0, 10);
     } catch (error) {
         parentDomainOptions.value = [];
@@ -321,7 +328,8 @@ const closeParentDomainSearch = () => {
     }, 120);
 };
 
-const selectParentDomain = (domain, rootPath, startDirectory) => {
+const selectParentDomain = (id, domain, rootPath, startDirectory) => {
+    form.parent_id = id;
     parentDomainSearch.value = domain;
     form.parent_domain = domain;
     selectedParentRootPath.value = rootPath || '';
@@ -372,22 +380,21 @@ onBeforeUnmount(() => {
                     <select v-model="form.domain_type" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option value="main">Main domain</option>
                         <option value="sub">Subdomain</option>
-                        <option value="alis">Alis Domain</option>
                     </select>
                 </div>
                 <div v-else>
                     <label class="mb-1 block text-sm">Domain Type</label>
                     <div class="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                        Alis Domain
+                        Alias Domain
                     </div>
                 </div>
                 <div v-if="form.domain_type !== 'main'">
-                    <label class="mb-1 block text-sm">{{ form.domain_type === 'sub' ? 'Parent Domain' : 'Aliased Target Domain' }}</label>
+                    <label class="mb-1 block text-sm">{{ form.domain_type === 'sub' ? 'Parent Domain' : 'Alias Target Domain' }}</label>
                     <div class="relative">
                         <input
                             v-model="parentDomainSearch"
                             type="text"
-                            :placeholder="form.domain_type === 'sub' ? 'Search parent domain...' : 'Search target domain...'"
+                            :placeholder="form.domain_type === 'sub' ? 'Search parent domain...' : 'Search target website...'"
                             class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                             @focus="openParentDomainSearch"
                             @blur="closeParentDomainSearch"
@@ -401,7 +408,7 @@ onBeforeUnmount(() => {
                                 :key="item.domain"
                                 type="button"
                                 class="block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-                                @mousedown.prevent="selectParentDomain(item.domain, item.root_path, item.start_directory)"
+                                @mousedown.prevent="selectParentDomain(item.id, item.domain, item.root_path, item.start_directory)"
                             >
                                 {{ item.domain }}
                             </button>
@@ -412,7 +419,7 @@ onBeforeUnmount(() => {
                     </div>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                         <span v-if="form.domain_type === 'sub'">Searchable AJAX list (max 10). Choose the parent domain that the subdomain will be attached to.</span>
-                        <span v-else>Searchable AJAX list (max 10). This is the domain the alias will point to.</span>
+                        <span v-else>Searchable AJAX list (max 10). The alias will use the selected website's document root.</span>
                     </p>
                     <p v-if="form.errors.parent_domain" class="mt-1 text-xs text-red-600">{{ form.errors.parent_domain }}</p>
                 </div>
@@ -434,8 +441,8 @@ onBeforeUnmount(() => {
                     </p>
                     <p v-if="form.errors.subdomain_prefix" class="mt-1 text-xs text-red-600">{{ form.errors.subdomain_prefix }}</p>
                 </div>
-                <div v-else>
-                    <label class="mb-1 block text-sm">Domain</label>
+                <div v-else-if="!props.aliasMode">
+                    <label class="mb-1 block text-sm">{{ form.domain_type === 'alis' ? 'Alias Domain' : 'Domain' }}</label>
                     <input
                         v-model="form.domain"
                         type="text"
@@ -467,21 +474,12 @@ onBeforeUnmount(() => {
                         Stored as metadata only. It does not change the actual website path.
                     </p>
                 </div>
-                <div v-else>
-                    <label class="mb-1 block text-sm">Aliased Start Directory</label>
-                    <div class="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                        {{ selectedParentStartDirectory || 'public' }}
-                    </div>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Alias websites inherit start directory from the selected parent website.
-                    </p>
-                </div>
-                <div>
+                <div v-if="!props.aliasMode">
                     <label class="mb-1 block text-sm">Resolved Root Path</label>
                     <input :value="suggestedRootPath || `${normalizedBaseDir}/<auto>/public_html`" readonly type="text" class="w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.root_path" class="mt-1 text-xs text-red-600">{{ form.errors.root_path }}</p>
                 </div>
-                <div>
+                <div v-if="!props.aliasMode">
                     <label class="mb-1 block text-sm">PHP Version </label>
                     <select v-model="form.php_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option v-for="version in availablePhpVersions" :key="version" :value="version">
@@ -490,7 +488,7 @@ onBeforeUnmount(() => {
                     </select>
                     <p v-if="form.errors.php_version" class="mt-1 text-xs text-red-600">{{ form.errors.php_version }}</p>
                 </div>
-                <div class="flex items-center gap-2 pt-7">
+                <div v-if="!props.aliasMode" class="flex items-center gap-2 pt-7">
                     <input id="enable_ssl" v-model="form.enable_ssl" type="checkbox" class="rounded border-slate-300" />
                     <label for="enable_ssl" class="text-sm">Enable SSL</label>
                 </div>

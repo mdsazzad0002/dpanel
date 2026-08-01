@@ -52,6 +52,9 @@ class BackupSettings
                 'schedule_enabled' => $this->asBool($decoded['schedule_enabled'] ?? $defaults['schedule_enabled']),
                 'schedule_time' => $this->normalizeTime((string) ($decoded['schedule_time'] ?? $defaults['schedule_time'])),
                 'retention_days' => max(1, (int) ($decoded['retention_days'] ?? $defaults['retention_days'])),
+                'trash_retention_enabled' => $this->asBool($decoded['trash_retention_enabled'] ?? $defaults['trash_retention_enabled']),
+                'trash_retention_days' => max(1, (int) ($decoded['trash_retention_days'] ?? $defaults['trash_retention_days'])),
+                'trash_retention_time' => $this->normalizeTime((string) ($decoded['trash_retention_time'] ?? $defaults['trash_retention_time'])),
                 'remote_upload_enabled' => $this->asBool($decoded['remote_upload_enabled'] ?? $defaults['remote_upload_enabled']),
                 'remote_host' => trim((string) ($decoded['remote_host'] ?? $defaults['remote_host'])),
                 'remote_port' => max(1, (int) ($decoded['remote_port'] ?? $defaults['remote_port'])),
@@ -72,10 +75,14 @@ class BackupSettings
      */
     public function write(array $state): void
     {
+        $state = array_replace($this->read(), $state);
         $normalized = [
             'schedule_enabled' => $this->asBool($state['schedule_enabled'] ?? true),
             'schedule_time' => $this->normalizeTime((string) ($state['schedule_time'] ?? '02:30')),
             'retention_days' => max(1, (int) ($state['retention_days'] ?? 7)),
+            'trash_retention_enabled' => $this->asBool($state['trash_retention_enabled'] ?? true),
+            'trash_retention_days' => max(1, (int) ($state['trash_retention_days'] ?? 15)),
+            'trash_retention_time' => $this->normalizeTime((string) ($state['trash_retention_time'] ?? '03:30')),
             'remote_upload_enabled' => $this->asBool($state['remote_upload_enabled'] ?? false),
             'remote_host' => trim((string) ($state['remote_host'] ?? '')),
             'remote_port' => max(1, (int) ($state['remote_port'] ?? 22)),
@@ -110,6 +117,9 @@ class BackupSettings
             'schedule_enabled' => $this->envBool('BACKUP_SCHEDULE_ENABLED', true),
             'schedule_time' => $this->normalizeTime((string) env('BACKUP_TIME', '02:30')),
             'retention_days' => max(1, (int) env('BACKUP_RETENTION_DAYS', 7)),
+            'trash_retention_enabled' => $this->envBool('TRASH_BACKUP_RETENTION_ENABLED', true),
+            'trash_retention_days' => max(1, (int) env('TRASH_BACKUP_RETENTION_DAYS', 15)),
+            'trash_retention_time' => $this->normalizeTime((string) env('TRASH_BACKUP_RETENTION_TIME', '03:30')),
             'remote_upload_enabled' => $this->envBool('BACKUP_REMOTE_UPLOAD_ENABLED', false),
             'remote_host' => trim((string) env('BACKUP_REMOTE_HOST', '')),
             'remote_port' => max(1, (int) env('BACKUP_REMOTE_PORT', 22)),

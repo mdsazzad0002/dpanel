@@ -80,7 +80,8 @@ class PanelSession extends Model
                 self::query()
                     ->where('user_id', $userId)
                     ->where('id', '!=', $session->id)
-                    ->delete();
+                    ->whereNull('revoked_at')
+                    ->update(['revoked_at' => now()]);
 
                 $session->fill([
                     'cookie_hash' => $cookieHash,
@@ -97,7 +98,8 @@ class PanelSession extends Model
 
             self::query()
                 ->where('user_id', $userId)
-                ->delete();
+                ->whereNull('revoked_at')
+                ->update(['revoked_at' => now()]);
 
             $session = self::create([
                 'user_id' => $userId,

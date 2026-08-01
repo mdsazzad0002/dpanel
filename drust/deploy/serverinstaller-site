@@ -41,7 +41,7 @@ env_value() {
 
 api_url="$(env_value SERVERPANEL_EXECUTION_API_BASE_URL)"
 api_token="$(env_value SERVERPANEL_EXECUTION_API_TOKEN)"
-api_url="${api_url:-http://127.0.0.1:9600}"
+api_url="${api_url:-http://127.0.0.1:9500}"
 [[ -n "$api_token" ]] || {
   printf 'SERVERPANEL_EXECUTION_API_TOKEN is missing.\n' >&2
   exit 1

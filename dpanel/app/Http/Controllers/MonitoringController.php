@@ -39,8 +39,8 @@ class MonitoringController extends Controller
             'database_requests_total' => $this->safeCountDatabaseRequests(),
             'cron_jobs_total' => $this->safeCountCronJobs(),
             'services' => [
-                'apache' => $this->serviceStatus('apache2'),
-                'nginx' => $this->serviceStatus('nginx'),
+                'edge' => $this->serviceStatus('edge-gateway'),
+                'api_service' => $this->serviceStatus('drust'),
                 'mariadb' => $this->serviceStatus('mariadb'),
                 'mysql' => $this->serviceStatus('mysql'),
                 'redis' => $this->redisServiceStatus(),

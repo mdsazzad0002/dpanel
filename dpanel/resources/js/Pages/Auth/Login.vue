@@ -6,6 +6,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import axios from 'axios';
 
 defineProps({
     canResetPassword: {
@@ -22,14 +23,28 @@ const form = useForm({
     remember: false,
 });
 
-const submit = () => {
+const submit = async () => {
     if (form.processing) {
         return;
     }
 
-    form.post(route('login'), {
-        onFinish: () => form.reset('password'),
-    });
+    form.clearErrors();
+    form.processing = true;
+    try {
+        const response = await axios.post('/login', form.data(), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        window.location.assign(response.data.redirect);
+    } catch (error) {
+        const data = error?.response?.data || {};
+        Object.entries(data.errors || {}).forEach(([key, messages]) => {
+            form.setError(key, Array.isArray(messages) ? messages[0] : messages);
+        });
+    } finally {
+        form.processing = false;
+        form.reset('password');
+    }
 };
 </script>
 

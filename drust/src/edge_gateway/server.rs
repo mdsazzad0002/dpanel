@@ -12,7 +12,6 @@ use axum::{
 };
 use serde::Serialize;
 use tokio::sync::RwLock;
-use tower_http::compression::CompressionLayer;
 use tracing::{info, warn};
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
@@ -47,13 +46,17 @@ pub fn serve_gateway(bind: &str) -> Result<(), String> {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "dpanel.localhost".to_string());
-    let snapshot = sample_panel_snapshot(&panel_domain);
     let dispatch = sample_dispatch_context();
     let cache_config = SnapshotCacheConfig::fast();
     let source_config = DbSnapshotConfig::new();
+    let snapshot = load_runtime_snapshot(&source_config)
+        .unwrap_or_else(|error| {
+            warn!(error = %error, "live database snapshot load failed at gateway startup; using panel fallback");
+            sample_panel_snapshot(&panel_domain)
+        });
     let http_bind = std::env::var("DRUST_HTTP_BIND").unwrap_or_else(|_| bind.to_string());
     let https_bind = std::env::var("DRUST_HTTPS_BIND").unwrap_or_else(|_| "0.0.0.0:443".to_string());
-    let tls = scaffold_tls_listener_config(&https_bind, &http_bind);
+    let tls = TlsListenerConfig::new(&https_bind, &http_bind, tls_store_from_snapshot(&snapshot));
     serve_gateway_with_tls(
         snapshot,
         dispatch,
@@ -63,6 +66,22 @@ pub fn serve_gateway(bind: &str) -> Result<(), String> {
         tls,
         None,
     )
+}
+
+fn tls_store_from_snapshot(snapshot: &RuntimeSnapshot) -> TlsStore {
+    let identities = snapshot
+        .tls
+        .iter()
+        .filter(|config| config.cert_path.is_file() && config.key_path.is_file())
+        .map(|config| TlsIdentity {
+            hostnames: config.hostnames.clone(),
+            cert_path: config.cert_path.clone(),
+            key_path: config.key_path.clone(),
+        })
+        .collect::<Vec<_>>();
+    TlsStore {
+        identities: identities.into(),
+    }
 }
 
 pub fn serve_gateway_with_tls(
@@ -159,7 +178,6 @@ pub fn build_demo_router(state: DemoServerState) -> Router {
         .route("/__admin/reload", post(handle_reload))
         .route("/__admin/health", any(handle_health))
         .route("/__admin/upstreams/health", any(handle_upstreams_health))
-        .layer(CompressionLayer::new())
         .with_state(Arc::new(state))
 }
 
@@ -415,6 +433,7 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
         version: 1,
         sites: Arc::from([SiteConfig {
             id: "demo".to_string(),
+            scope: "system".to_string(),
             hostnames: Arc::from([primary_domain.clone(), www_domain.clone()]),
             document_root: Some(PathBuf::from(format!("/var/www/{primary_domain}/public"))),
             php_version: None,

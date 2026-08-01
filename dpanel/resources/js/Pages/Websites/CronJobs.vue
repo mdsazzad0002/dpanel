@@ -15,6 +15,7 @@ const panelRoute = (name, params = {}) => (
 );
 const editingId = ref('');
 const deleteForm = useForm({});
+const statusForm = useForm({});
 
 const form = useForm({
     name: '',
@@ -55,6 +56,19 @@ const resetForm = () => {
 const deleteItem = (id) => {
     if (!confirm('Delete this cron job?')) return;
     deleteForm.delete(panelRoute('websites.cronjobs.destroy', { id: props.website.id, jobId: id }));
+};
+
+const toggleItem = (item) => {
+    statusForm.transform(() => ({
+        name: item.name,
+        expression: item.expression,
+        command: item.command,
+        status: item.status === 'active' ? 'disabled' : 'active',
+        description: item.description || '',
+    })).patch(panelRoute('websites.cronjobs.update', { id: props.website.id, jobId: item.id }), {
+        preserveScroll: true,
+        onFinish: () => statusForm.transform((data) => data),
+    });
 };
 </script>
 
@@ -164,6 +178,9 @@ const deleteItem = (id) => {
                             <td class="px-4 py-3 text-xs text-slate-500">{{ job.created_at ? new Date(job.created_at).toLocaleString() : '-' }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
+                                    <button type="button" :disabled="statusForm.processing" class="rounded-md border border-amber-300 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50" @click="toggleItem(job)">
+                                        {{ job.status === 'active' ? 'Disable' : 'Enable' }}
+                                    </button>
                                     <button type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editItem(job)">
                                         Edit
                                     </button>

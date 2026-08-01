@@ -56,6 +56,8 @@ pub async fn execute_php_front_controller(
         .env("REMOTE_ADDR", "127.0.0.1")
         .env("HTTP_HOST", host)
         .env("CONTENT_LENGTH", body.len().to_string())
+        .env("PHP_VALUE", "zlib.output_compression=0")
+        .env("PHP_ADMIN_VALUE", "zlib.output_compression=0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -68,7 +70,9 @@ pub async fn execute_php_front_controller(
         command.env("CONTENT_TYPE", content_type);
     }
     for (name, value) in &parts.headers {
-        if matches!(name.as_str(), "host" | "content-type" | "content-length") {
+        // Let the gateway own compression. Forwarding browser encodings to
+        // PHP-FPM can produce compressed empty redirects that Firefox rejects.
+        if matches!(name.as_str(), "host" | "content-type" | "content-length" | "accept-encoding") {
             continue;
         }
         if let Ok(value) = value.to_str() {
@@ -155,7 +159,8 @@ fn parse_cgi_response(output: &[u8]) -> Result<Response<Body>, String> {
         })
         .ok_or_else(|| "invalid FastCGI response: headers missing".to_string())?;
     let header_block = String::from_utf8_lossy(&output[..split.0]);
-    let mut response = Response::new(Body::from(output[split.0 + split.1..].to_vec()));
+    let body_bytes = &output[split.0 + split.1..];
+    let mut response = Response::new(Body::from(body_bytes.to_vec()));
 
     for line in header_block.lines() {
         let Some((name, value)) = line.trim_end_matches('\r').split_once(':') else {
@@ -173,6 +178,13 @@ fn parse_cgi_response(output: &[u8]) -> Result<Response<Body>, String> {
         let value = HeaderValue::from_str(value)
             .map_err(|error| format!("invalid PHP response header value: {error}"))?;
         response.headers_mut().append(name, value);
+    }
+
+    // Some PHP handlers emit gzip metadata on an empty redirect response.
+    // Browsers treat that as a corrupt compressed payload.
+    if body_bytes.is_empty() {
+        response.headers_mut().remove(header::CONTENT_ENCODING);
+        response.headers_mut().remove(header::CONTENT_LENGTH);
     }
 
     Ok(response)

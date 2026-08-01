@@ -12,9 +12,9 @@ use Inertia\Response;
 
 class RedisCacheController extends Controller
 {
-    public function index(string $id): Response
+    public function index(Request $request, string $token, string $id): Response
     {
-        $website = $this->findWebsiteById($id);
+        $website = $this->findWebsiteById($id, $request);
         abort_if($website === null, 404);
 
         $prefix = $this->buildWebsiteRedisPrefix($website);
@@ -33,9 +33,9 @@ class RedisCacheController extends Controller
         ]);
     }
 
-    public function clearWebsiteCache(string $id): RedirectResponse
+    public function clearWebsiteCache(Request $request, string $token, string $id): RedirectResponse
     {
-        $website = $this->findWebsiteById($id);
+        $website = $this->findWebsiteById($id, $request);
         if ($website === null) {
             return redirect()->route('websites.list')->with('error', 'Website not found.');
         }
@@ -45,7 +45,7 @@ class RedisCacheController extends Controller
         $deleted = $this->deleteRedisKeys($keys);
 
         return redirect()
-            ->route('websites.redis-cache.index', $id)
+            ->route('websites.redis-cache.index', ['token' => $token, 'id' => $id])
             ->with('success', "Redis cache cleared for {$website->domain}. Deleted keys: {$deleted}");
     }
 
@@ -115,14 +115,14 @@ class RedisCacheController extends Controller
         return "sp_{$domain}_{$id}_";
     }
 
-    private function findWebsiteById(string $id): ?Website
+    private function findWebsiteById(string $id, Request $request): ?Website
     {
         try {
             if (! DB::getSchemaBuilder()->hasTable('websites')) {
                 return null;
             }
 
-            return Website::query()->find($id);
+            return Website::query()->visibleTo($request->user())->find($id);
         } catch (\Throwable $e) {
             return null;
         }

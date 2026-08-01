@@ -128,7 +128,6 @@ const menuItems = computed(() => [
         color: 'emerald',
         children: [
             { label: 'Create Website', hint: 'Add a new website', icon: 'CW', iconClass: 'bi bi-plus-square', routeName: 'websites.create', roles: ['admin', 'reseller'] },
-            { label: 'Create Alias Website', hint: 'Add a new alias website', icon: 'CA', iconClass: 'bi bi-link-45deg', routeName: 'websites.alias.create', roles: ['admin', 'reseller'] },
             { label: 'List Websites', hint: 'View all websites', icon: 'LW', iconClass: 'bi bi-list-ul', routeName: 'websites.list', roles: ['admin', 'reseller'] },
         ],
     },
@@ -173,6 +172,7 @@ const menuItems = computed(() => [
     { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], color: 'indigo' },
     { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], color: 'red' },
     { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'], color: 'teal' },
+    { label: 'Trash Backup', hint: 'Deleted website archives', icon: 'TB', iconClass: 'bi bi-trash3', routeName: 'trash-backups.index', roles: ['admin', 'reseller', 'general', 'general_user'], color: 'orange' },
     { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN', iconClass: 'bi bi-activity', routeName: 'monitoring.index', roles: ['admin', 'reseller'], color: 'orange' },
     {
         id: 'user-management',

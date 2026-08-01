@@ -114,8 +114,6 @@ if [[ -f "${TARGET_ROOT}/templates/server/databases/index.twig" ]]; then
         $needle = "{% if is_create_database_shown %}";
         $replacement = "{% if is_create_database_shown and has_create_database_privileges %}";
         $updated = str_replace($needle, $replacement, $content);
-        $updated = preg_replace("/\\s*{%\\s*else\\s*%}\\s*<span class=\"text-danger\">\\{\\{ get_icon\\('s_error', 'No privileges to create databases'\\|trans\\) \\}\\}<\\/span>/", "", (string) $updated, 1);
-
         if (! is_string($updated) || $updated === $content) {
             fwrite(STDERR, "Unable to update create database visibility\n");
             exit(1);

@@ -11,12 +11,13 @@ use App\Http\Controllers\Auth\TwoFactorChallengeController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
 
+// Login must remain explicitly user-driven. An existing panel session/token
+// must not silently redirect the login screen to the dashboard.
+Route::get('login', [AuthenticatedSessionController::class, 'create'])
+    ->name('login');
+Route::post('login', [AuthenticatedSessionController::class, 'store']);
+
 Route::middleware('guest')->group(function () {
-    Route::get('login', [AuthenticatedSessionController::class, 'create'])
-        ->name('login');
-
-    Route::post('login', [AuthenticatedSessionController::class, 'store']);
-
     Route::get('two-factor-challenge', [TwoFactorChallengeController::class, 'create'])
         ->name('two-factor.challenge');
     Route::post('two-factor-challenge/method', [TwoFactorChallengeController::class, 'selectMethod'])

@@ -6,6 +6,7 @@ use App\Models\PanelSession;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\URL;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -40,17 +41,28 @@ class EnsurePanelSessionIsValid
             URL::defaults(['token' => $token]);
         }
 
-        if ($token !== '' && Auth::check()) {
-            PanelSession::syncSingleSession(
-                userId: (int) Auth::id(),
-                token: $token,
-                cookieToken: $cookieToken,
-                ipAddress: (string) $request->ip(),
-                userAgent: (string) $request->userAgent(),
-                expiresAt: now()->addYear(),
-                lastSeenAt: now(),
-            );
+        $activeSession = $token !== '' && $cookieToken !== ''
+            ? PanelSession::query()
+                ->where('user_id', Auth::id())
+                ->where('token_hash', hash('sha256', $token))
+                ->where('cookie_hash', hash('sha256', $cookieToken))
+                ->whereNull('revoked_at')
+                ->where('expires_at', '>', now())
+                ->first()
+            : null;
+
+        if (! $activeSession) {
+            Auth::guard('web')->logout();
+            $request->session()->forget('panel_session_token');
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()
+                ->route('login')
+                ->withCookie(Cookie::forget($cookieName));
         }
+
+        $activeSession->forceFill(['last_seen_at' => now()])->save();
 
         $response = $next($request);
 

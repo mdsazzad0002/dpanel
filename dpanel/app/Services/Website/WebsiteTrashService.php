@@ -125,7 +125,7 @@ class WebsiteTrashService
     private function addPathToZip(ZipArchive $zip, string $sourcePath, string $zipRoot): void
     {
         $sourcePath = $this->normalizeAbsolutePath($sourcePath);
-        if ($sourcePath === '' || ! file_exists($sourcePath)) {
+        if ($sourcePath === '' || ! file_exists($sourcePath) || ! is_readable($sourcePath)) {
             return;
         }
 
@@ -153,16 +153,20 @@ class WebsiteTrashService
         }
 
         $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($sourcePath, FilesystemIterator::SKIP_DOTS),
+            new RecursiveDirectoryIterator($sourcePath, FilesystemIterator::SKIP_DOTS | FilesystemIterator::CURRENT_AS_PATHNAME),
             RecursiveIteratorIterator::SELF_FIRST
         );
 
-        foreach ($iterator as $item) {
-            $itemPath = $this->normalizeAbsolutePath($item->getPathname());
+        foreach ($iterator as $itemPath) {
+            $itemPath = $this->normalizeAbsolutePath((string) $itemPath);
+            if ($itemPath === '' || ! file_exists($itemPath) || ! is_readable($itemPath)) {
+                continue;
+            }
+
             $relative = ltrim(substr($itemPath, strlen(rtrim($sourcePath, '/'))), '/');
             $archivePath = ($zipRoot !== '' ? $zipRoot.'/' : '').str_replace('\\', '/', $relative);
 
-            if ($item->isDir()) {
+            if (is_dir($itemPath)) {
                 $zip->addEmptyDir($archivePath);
                 continue;
             }

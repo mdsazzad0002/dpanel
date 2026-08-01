@@ -58,8 +58,8 @@ class DashboardController extends Controller
             'database_requests_total' => $databaseRequests,
             'cron_jobs_active' => $cronJobs,
             'services' => [
-                'apache' => $this->serviceStatus('apache2'),
-                'nginx' => $this->serviceStatus('nginx'),
+                'drust_gateway' => $this->serviceStatus('edge-gateway'),
+                'drust_api' => $this->serviceStatus('drust'),
                 'mail' => $this->serviceStatus('postfix'),
                 'dovecot' => $this->serviceStatus('dovecot'),
                 'database' => $this->databaseServiceStatus(),

@@ -169,13 +169,6 @@ class WebsiteLifecycleService
                 (string) $validated['php_version'],
             );
             $callbacks['relocateApacheDefaultPage']();
-            $callbacks['syncLiveWebVhost'](
-                $validated['domain'],
-                $validated['root_path'],
-                (string) $validated['php_version'],
-                $existingRequest['domain'] ?? null,
-            );
-
             $sslNotice = null;
             if (! empty($validated['enable_ssl'])) {
                 $sslResult = $callbacks['runIssueSslScript'](
@@ -190,13 +183,6 @@ class WebsiteLifecycleService
                     $sslNotice = trim($sslResult['output']) !== ''
                         ? 'SSL auto-generate failed: '.trim($sslResult['output'])
                         : 'SSL auto-generate failed.';
-                } else {
-                    $callbacks['syncLiveWebVhost'](
-                        $validated['domain'],
-                        $validated['root_path'],
-                        (string) $validated['php_version'],
-                        $existingRequest['domain'] ?? null,
-                    );
                 }
             }
 

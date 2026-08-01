@@ -7,9 +7,11 @@ use crate::app;
 
 mod admin;
 mod database;
+mod cron;
 mod filemanager;
 mod health;
 mod laravel;
+mod website;
 mod php;
 mod script;
 mod ssl;
@@ -69,12 +71,14 @@ pub fn build_router(state: ApiState) -> Router {
     Router::new()
         .merge(health::routes())
         .merge(vhost_ops::routes())
+        .merge(website::routes())
         .merge(admin::routes())
         .merge(filemanager::routes())
         .merge(php::routes())
         .merge(ssl::routes())
         .merge(script::routes())
         .merge(database::routes())
+        .merge(cron::routes())
         .merge(laravel::routes())
         .with_state(Arc::new(state))
 }

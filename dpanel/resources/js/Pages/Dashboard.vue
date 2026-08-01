@@ -67,8 +67,8 @@ const getStatusColor = (status) => {
 const services = computed(() => {
     const svc = dashboardStats.value.services || {};
     return [
-        { name: 'Apache', status: svc.apache, icon: 'bi-hdd-network' },
-        { name: 'Nginx', status: svc.nginx, icon: 'bi-globe' },
+        { name: 'Drust Gateway', status: svc.drust_gateway, icon: 'bi-lightning-charge' },
+        { name: 'Drust API', status: svc.drust_api, icon: 'bi-cpu' },
         { name: 'MySQL', status: svc.database, icon: 'bi-database' },
         { name: 'Redis', status: svc.redis, icon: 'bi-memory' },
         { name: 'Postfix', status: svc.mail, icon: 'bi-envelope' },

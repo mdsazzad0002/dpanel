@@ -9,7 +9,6 @@ use App\Services\Ssl\SslLifecycleService;
 use App\Services\Website\WebsiteCreateEditService;
 use App\Services\Website\WebsiteResolverService;
 use App\Services\Website\WebsiteTemplateCatalogService;
-use App\Services\Website\WebsiteWebServerSyncService;
 use App\Services\Website\WordpressInstallService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -23,7 +22,6 @@ class WordpressController extends WebsiteController
         WebsiteTemplateCatalogService $templateCatalog,
         WebsiteCreateEditService $websiteCreateEdit,
         SslLifecycleService $sslLifecycleService,
-        WebsiteWebServerSyncService $websiteWebServerSyncService,
         FilemanagerService $filemanagerService,
         WordpressInstallService $wordpressInstallService,
     ) {
@@ -32,7 +30,6 @@ class WordpressController extends WebsiteController
             $templateCatalog,
             $websiteCreateEdit,
             $sslLifecycleService,
-            $websiteWebServerSyncService,
             $filemanagerService,
             $wordpressInstallService,
         );
@@ -108,8 +105,6 @@ class WordpressController extends WebsiteController
             return $item;
         })->values()->all();
         $this->writeRequests($updated);
-
-        $this->websiteWebServerSyncService->syncWebsite(Website::query()->findOrFail($id));
 
         return $succeed((string) ($result['message'] ?? 'WordPress installed successfully.'), [
             'website' => $this->findAuthorizedWebsiteOrFail($id),

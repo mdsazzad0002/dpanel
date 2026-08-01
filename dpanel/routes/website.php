@@ -51,12 +51,18 @@ use App\Http\Controllers\Website\WebsiteManage\WebsitePreviewController;
     Route::patch('/websites/{id}', [WebsiteController::class, 'update'])
         ->middleware('role:admin|reseller')
         ->name('websites.update');
+    Route::patch('/websites/{id}/alias', [MainWebsiteController::class, 'updateAlias'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.alias.update');
     Route::delete('/websites/{id}', [MainWebsiteController::class, 'destroy'])
         ->middleware('role:admin|reseller')
         ->name('websites.destroy');
     Route::patch('/websites/{id}/status', [WebsiteController::class, 'updateStatus'])
         ->middleware('role:admin|reseller')
         ->name('websites.status.update');
+    Route::post('/websites/{id}/status/check', [WebsiteController::class, 'refreshRuntimeStatus'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.status.check');
     Route::get('/websites/{id}/manage', [WebsiteOperationsController::class, 'manage'])
         ->middleware('role:admin|reseller')
         ->name('websites.manage');
@@ -72,6 +78,9 @@ use App\Http\Controllers\Website\WebsiteManage\WebsitePreviewController;
     Route::post('/websites/{id}/ssl/issue', [WebsiteOperationsController::class, 'issueSsl'])
         ->middleware('role:admin|reseller')
         ->name('websites.ssl.issue');
+    Route::patch('/websites/{id}/ssl/status', [WebsiteOperationsController::class, 'updateSslStatus'])
+        ->middleware('role:admin|reseller')
+        ->name('websites.ssl.status.update');
     Route::get('/websites/{id}/usage', [WebsiteOperationsController::class, 'Usage'])
         ->middleware('role:admin|reseller')
         ->name('websites.usage');

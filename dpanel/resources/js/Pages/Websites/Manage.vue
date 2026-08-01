@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     website: {
@@ -15,6 +15,18 @@ const props = defineProps({
     activities: {
         type: Array,
         default: () => [],
+    },
+    aliasWebsites: {
+        type: Array,
+        default: () => [],
+    },
+    sslStatus: {
+        type: Object,
+        default: () => ({}),
+    },
+    autoRenewNotice: {
+        type: String,
+        default: '',
     },
     rootInspection: {
         type: Object,
@@ -30,7 +42,26 @@ const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]
 const actionMessage = ref('');
 const actionMessageType = ref('success');
 const actionLoading = ref(false);
+const statusCheckLoading = ref(false);
+const sslActionLoading = ref(false);
 const cacheClearLoading = ref(false);
+const aliasSubmitting = ref(false);
+const aliasActionLoading = ref('');
+const aliasEditingId = ref('');
+const aliasEditForm = useForm({
+    domain: '',
+});
+const toasts = ref([]);
+let toastSeq = 0;
+const aliasForm = useForm({
+    domain_type: 'alis',
+    domain: '',
+    parent_id: '',
+    start_directory: '',
+    root_path: '',
+    php_version: '',
+    enable_ssl: false,
+});
 
 const toNumber = (value) => {
     const parsed = Number(value);
@@ -53,6 +84,12 @@ const formatDate = (value) => {
     return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+const formatCertificateDate = (value) => {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
+};
+
 const statusValue = computed(() => String(props.website?.status ?? 'unknown').toLowerCase());
 const statusLabel = computed(() => {
     const value = statusValue.value;
@@ -63,9 +100,15 @@ const statusLabel = computed(() => {
 const statusDot = computed(() => {
     if (statusValue.value === 'live') return 'bg-emerald-500';
     if (statusValue.value === 'disabled') return 'bg-red-500';
-    if (statusValue.value === 'partial') return 'bg-amber-500';
     return 'bg-slate-400';
 });
+
+const statusDotFor = (status) => {
+    const value = String(status ?? '').toLowerCase();
+    if (value === 'live') return 'bg-emerald-500';
+    if (value === 'disabled') return 'bg-red-500';
+    return 'bg-slate-400';
+};
 
 const statusClass = computed(() => {
     if (statusValue.value === 'live') {
@@ -74,30 +117,76 @@ const statusClass = computed(() => {
     if (statusValue.value === 'disabled') {
         return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
     }
-    if (statusValue.value === 'partial') {
-        return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
-    }
     return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 });
 
+const statusClassFor = (status) => {
+    const value = String(status ?? '').toLowerCase();
+    if (value === 'live') {
+        return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
+    }
+    if (value === 'disabled') {
+        return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
+    }
+    return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+};
+
+const sslStatusLabel = (status) => {
+    const value = String(status ?? '').toLowerCase();
+    if (value === 'valid') return 'SSL Active';
+    if (value === 'issued') return 'SSL Active';
+    if (value === 'renewed') return 'SSL Active';
+    if (value === 'failed') return 'SSL Failed';
+    if (value === 'disabled') return 'SSL Off';
+    return 'SSL Unknown';
+};
+
+const sslStatusClass = (status) => {
+    const value = String(status ?? '').toLowerCase();
+    if (value === 'valid' || value === 'issued' || value === 'renewed') {
+        return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
+    }
+    if (value === 'failed') {
+        return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
+    }
+    if (value === 'disabled') {
+        return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
+    }
+    return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+};
+
 const sslEnabled = computed(() => Boolean(props.website?.enable_ssl));
+const websiteSslStatus = computed(() => String(props.sslStatus?.status || 'unknown').toLowerCase());
+const websiteSslLabel = computed(() => {
+    const value = websiteSslStatus.value;
+    return value ? value.charAt(0).toUpperCase() + value.slice(1) : 'Unknown';
+});
+const websiteSslClass = computed(() => {
+    if (websiteSslStatus.value === 'valid') return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300';
+    if (['expired', 'invalid', 'failed'].includes(websiteSslStatus.value)) return 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300';
+    if (websiteSslStatus.value === 'unreachable') return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300';
+    return 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
+});
+const sslDaysRemaining = computed(() => {
+    const value = Number(props.sslStatus?.days_remaining);
+    return Number.isFinite(value) ? value : null;
+});
 const scheme = computed(() => (sslEnabled.value ? 'https' : 'http'));
 const detectedApp = computed(() => String(props.rootInspection?.detected_app || '').toLowerCase());
 const canClearCache = computed(() => ['wordpress', 'laravel'].includes(detectedApp.value));
+const isSystemWebsite = computed(() => String(props.website.id) === '1');
 
 const serviceLinks = computed(() => [
     { label: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress' },
-    { label: 'SSL Manager', icon: 'bi-shield-lock', color: 'emerald', href: panelRoute('websites.ssl', { id: props.website.id }), description: 'Issue and check SSL certificates' },
     { label: 'Usage Details', icon: 'bi-graph-up', color: 'violet', href: panelRoute('websites.usage', { id: props.website.id }), description: 'Detailed usage history' },
     { label: 'Redis Cache', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
     { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
     { label: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Scheduled tasks' },
     { label: 'Email Accounts', icon: 'bi-envelope', color: 'pink', href: panelRoute('emails.list'), description: 'Mailbox services' },
-    { label: 'Databases', icon: 'bi-database', color: 'orange', href: panelRoute('databases.list'), description: 'Database management' },
+    { label: 'Databases', icon: 'bi-database', color: 'orange', href: panelRoute('databases.list', { website: props.website.domain }), description: `Databases for ${props.website.domain}` },
     { label: 'DNS Records', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.records'), description: 'DNS entries' },
     { label: 'PHP Manager', icon: 'bi-braces', color: 'indigo', href: panelRoute('php.manager'), description: 'PHP versions & modules' },
-    { label: 'Security', icon: 'bi-shield-check', color: 'red', href: panelRoute('security.manager'), description: 'Firewall & SSH' },
-]);
+].filter((item) => !isSystemWebsite.value || !['WordPress Installer', 'File Manager'].includes(item.label)));
 
 const serviceColorClasses = {
     blue: 'bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400',
@@ -114,10 +203,12 @@ const serviceColorClasses = {
 
 const quickActions = computed(() => [
     { label: 'Edit Website', icon: 'bi-pencil-square', href: panelRoute('websites.edit', { id: props.website.id }), color: 'slate', method: 'get' },
-    ...(canClearCache.value ? [{ label: `Clear ${detectedApp.value === 'wordpress' ? 'WordPress' : 'Laravel'} Cache`, icon: 'bi-trash3', action: 'clearCache', color: 'red' }] : []),
+    ...(canClearCache.value
+        ? [{ label: `Clear ${detectedApp.value === 'wordpress' ? 'WordPress' : 'Laravel'} Cache`, icon: 'bi-trash3', action: 'clearCache', color: 'red' }]
+        : [{ label: 'Check Website Status', icon: 'bi-arrow-repeat', action: 'checkStatus', color: 'blue' }]),
     { label: 'File Manager', icon: 'bi-folder2-open', href: panelRoute('websites.filemanager', { id: props.website.id }), color: 'emerald', method: 'get' },
     { label: 'Back to List', icon: 'bi-arrow-left', href: panelRoute('websites.list'), color: 'slate', method: 'get' },
-]);
+].filter((item) => !isSystemWebsite.value || ['Back to List'].includes(item.label)));
 
 const quickActionColorClasses = {
     slate: 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-700',
@@ -157,6 +248,170 @@ const copyToClipboard = (text) => {
     }
 };
 
+const removeToast = (id) => {
+    toasts.value = toasts.value.filter((toast) => toast.id !== id);
+};
+
+const startAliasEdit = (alias) => {
+    aliasEditingId.value = String(alias?.id || '');
+    aliasEditForm.domain = String(alias?.domain || '');
+};
+
+const cancelAliasEdit = () => {
+    aliasEditingId.value = '';
+    aliasEditForm.reset();
+};
+
+const saveAliasEdit = async (alias) => {
+    const aliasId = String(alias?.id || '').trim();
+    if (!aliasId || aliasActionLoading.value) return;
+
+    aliasActionLoading.value = `edit:${aliasId}`;
+
+    try {
+        const response = await window.axios.patch(panelRoute('websites.alias.update', { id: aliasId }), {
+            domain: String(aliasEditForm.domain || '').trim(),
+        }, {
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        const responseType = String(response?.data?.type || 'success');
+        pushToast(String(response?.data?.message || 'Alias updated successfully.'), responseType === 'warning' ? 'error' : 'success');
+        aliasEditingId.value = '';
+        router.reload({ only: ['aliasWebsites', 'metrics', 'activities'], preserveScroll: true });
+    } catch (error) {
+        const data = error?.response?.data || {};
+        pushToast(String(data?.message || 'Alias update failed.'), 'error');
+    } finally {
+        aliasActionLoading.value = '';
+    }
+};
+
+const pushToast = (message, type = 'error') => {
+    if (!message) return;
+
+    const id = `${Date.now()}-${toastSeq += 1}`;
+    toasts.value.push({
+        id,
+        message: String(message),
+        type,
+    });
+
+    window.setTimeout(() => {
+        removeToast(id);
+    }, 3500);
+};
+
+const aliasParentDomain = computed(() => String(props.website?.domain || '').trim().toLowerCase());
+const aliasParentId = computed(() => String(props.website?.id || '').trim());
+
+const submitAlias = () => {
+    aliasForm.clearErrors();
+    aliasForm.parent_id = aliasParentId.value;
+    aliasForm.start_directory = String(props.website?.start_directory || 'public').trim() || 'public';
+    aliasForm.root_path = String(props.website?.root_path || '').trim();
+    aliasForm.php_version = String(props.website?.php_version || '').trim();
+    aliasForm.enable_ssl = Boolean(props.website?.enable_ssl);
+    aliasSubmitting.value = true;
+
+    window.axios.post(panelRoute('websites.store'), aliasForm.data(), {
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    })
+        .then(() => {
+            pushToast('Alias website created successfully.', 'success');
+            aliasForm.reset('domain');
+            aliasForm.parent_id = '';
+            router.reload({ only: ['aliasWebsites', 'metrics', 'activities'], preserveScroll: true });
+        })
+        .catch((error) => {
+            const data = error?.response?.data || {};
+            const errors = data?.errors || {};
+            pushToast(data?.message || 'Alias website creation failed.', 'error');
+            Object.entries(errors).forEach(([key, messages]) => {
+                aliasForm.setError(key, Array.isArray(messages) ? String(messages[0] || '') : String(messages || ''));
+            });
+        })
+        .finally(() => {
+            aliasSubmitting.value = false;
+        });
+};
+
+const runAliasAction = async (alias, action) => {
+    const aliasId = String(alias?.id || '').trim();
+    if (!aliasId || aliasActionLoading.value) return;
+
+    aliasActionLoading.value = `${action}:${aliasId}`;
+
+    try {
+        const endpoint = panelRoute('websites.ssl.issue', { id: aliasId });
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({}),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw data;
+        }
+
+        actionMessageType.value = String(data.type || 'success');
+        actionMessage.value = String(data.message || 'Action completed successfully.');
+        pushToast(actionMessage.value, actionMessageType.value === 'success' ? 'success' : 'error');
+    } catch (error) {
+        actionMessageType.value = 'error';
+        actionMessage.value = String(error?.message || 'Alias action failed.');
+        pushToast(actionMessage.value, 'error');
+    } finally {
+        aliasActionLoading.value = '';
+    }
+};
+
+const removeAlias = async (alias) => {
+    const aliasId = String(alias?.id || '').trim();
+    if (!aliasId || aliasActionLoading.value) return;
+
+    if (!window.confirm(`Remove alias ${String(alias?.domain || aliasId)}?`)) {
+        return;
+    }
+
+    aliasActionLoading.value = `remove:${aliasId}`;
+
+    try {
+        router.delete(panelRoute('websites.destroy', { id: aliasId }), {
+            preserveScroll: true,
+            onSuccess: () => {
+                pushToast('Alias removed successfully.', 'success');
+                router.reload({ only: ['aliasWebsites', 'metrics', 'activities'], preserveScroll: true });
+            },
+            onError: () => {
+                pushToast('Alias remove failed.', 'error');
+            },
+            onFinish: () => {
+                aliasActionLoading.value = '';
+            },
+        });
+    } catch (error) {
+        aliasActionLoading.value = '';
+        pushToast(error?.message || 'Alias remove failed.', 'error');
+    }
+};
+
 const clearProjectCache = async () => {
     if (cacheClearLoading.value) {
         return;
@@ -185,51 +440,194 @@ const clearProjectCache = async () => {
 
         actionMessageType.value = 'success';
         actionMessage.value = String(data.message || 'Project cache cleared successfully.');
+        pushToast(actionMessage.value, 'success');
     } catch (error) {
         actionMessageType.value = 'error';
         actionMessage.value = String(error?.message || 'Project cache clear failed.');
+        pushToast(actionMessage.value, 'error');
     } finally {
         cacheClearLoading.value = false;
+    }
+};
+
+const checkWebsiteStatus = async () => {
+    if (statusCheckLoading.value) {
+        return;
+    }
+
+    actionMessage.value = '';
+    statusCheckLoading.value = true;
+
+    try {
+        const response = await fetch(panelRoute('websites.status.check', { id: props.website.id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({}),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw data;
+        }
+
+        actionMessageType.value = data.status === 'live' ? 'success' : 'error';
+        actionMessage.value = String(data.message || 'Website status checked.');
+        pushToast(actionMessage.value, actionMessageType.value === 'success' ? 'success' : 'error');
+        router.reload({ only: ['website', 'activities'], preserveScroll: true });
+    } catch (error) {
+        actionMessageType.value = 'error';
+        actionMessage.value = String(error?.message || 'Website status check failed.');
+        pushToast(actionMessage.value, 'error');
+    } finally {
+        statusCheckLoading.value = false;
+    }
+};
+
+const refreshSslStatus = () => {
+    if (sslActionLoading.value) return;
+    sslActionLoading.value = true;
+    router.reload({
+        only: ['website', 'sslStatus', 'autoRenewNotice'],
+        preserveScroll: true,
+        onSuccess: () => pushToast('SSL status refreshed.', 'success'),
+        onError: () => pushToast('SSL status refresh failed.', 'error'),
+        onFinish: () => { sslActionLoading.value = false; },
+    });
+};
+
+const issueWebsiteSsl = async () => {
+    if (sslActionLoading.value) return;
+    sslActionLoading.value = true;
+
+    try {
+        const response = await fetch(panelRoute('websites.ssl.issue', { id: props.website.id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'SSL issue failed.');
+        pushToast(data.message || 'SSL certificate issued successfully.', 'success');
+        router.reload({ only: ['website', 'sslStatus', 'autoRenewNotice'], preserveScroll: true });
+    } catch (error) {
+        pushToast(error?.message || 'SSL issue failed.', 'error');
+    } finally {
+        sslActionLoading.value = false;
     }
 };
 </script>
 
 <template>
+
     <Head title="Manage Website" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Website Management</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Tools and configuration for {{ website.domain }}.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Tools and configuration for {{ website.domain }}.
+                </p>
             </div>
         </template>
 
         <div class="space-y-6">
+            <div class="fixed bottom-4 right-4 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3">
+                <TransitionGroup
+                    enter-active-class="transition duration-200 ease-out"
+                    enter-from-class="translate-y-[-8px] opacity-0"
+                    enter-to-class="translate-y-0 opacity-100"
+                    leave-active-class="transition duration-150 ease-in"
+                    leave-from-class="translate-y-0 opacity-100"
+                    leave-to-class="translate-y-[-8px] opacity-0"
+                >
+                    <div
+                        v-for="toast in toasts"
+                        :key="toast.id"
+                        class="pointer-events-auto flex items-start gap-3 rounded-2xl border bg-white px-4 py-3 shadow-lg dark:bg-slate-900"
+                        :class="toast.type === 'success'
+                            ? 'border-emerald-200 text-emerald-700 dark:border-emerald-800 dark:text-emerald-400'
+                            : 'border-red-200 text-red-700 dark:border-red-800 dark:text-red-400'"
+                    >
+                        <div
+                            class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
+                            :class="toast.type === 'success' ? 'bg-emerald-500/10' : 'bg-red-500/10'"
+                        >
+                            <svg v-if="toast.type === 'success'" viewBox="0 0 24 24" class="h-4 w-4 fill-current">
+                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                            </svg>
+                            <svg v-else viewBox="0 0 24 24" class="h-4 w-4 fill-current">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                            </svg>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm font-medium leading-5 text-slate-900 dark:text-slate-100">
+                                {{ toast.message }}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            class="rounded-lg p-1 text-slate-400 transition hover:text-slate-700 dark:hover:text-slate-200"
+                            @click="removeToast(toast.id)"
+                            aria-label="Dismiss notification"
+                        >
+                            <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current">
+                                <path d="M18.3 5.71 12 12.01l-6.3-6.3-1.41 1.41 6.3 6.3-6.3 6.29 1.41 1.41 6.3-6.3 6.29 6.3 1.41-1.41-6.3-6.29 6.3-6.3z" />
+                            </svg>
+                        </button>
+                    </div>
+                </TransitionGroup>
+            </div>
             <!-- Flash Messages -->
-            <div v-if="page.props.flash?.success" class="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">
-                <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 fill-current"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg>
+            <div v-if="page.props.flash?.success"
+                class="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">
+                <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 fill-current">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                </svg>
                 {{ page.props.flash.success }}
             </div>
-            <div v-if="page.props.flash?.error" class="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400">
-                <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 fill-current"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" /></svg>
+            <div v-if="page.props.flash?.error"
+                class="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400">
+                <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 fill-current">
+                    <path
+                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                </svg>
                 {{ page.props.flash.error }}
             </div>
-            <div v-if="actionMessage" :class="actionMessageType === 'success'
-                ? 'flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400'
-                : 'flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400'">
+            <div v-if="actionMessage"
+                :class="actionMessageType === 'success'
+                    ? 'flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400'
+                    : 'flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400'">
                 <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 fill-current">
-                    <path v-if="actionMessageType !== 'success'" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                    <path v-else d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.2-4.6-4.6 1.4-1.4L11 13.4l5.2-5.2 1.4 1.4-6.6 6.6z" />
+                    <path v-if="actionMessageType !== 'success'"
+                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                    <path v-else
+                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.2-4.6-4.6 1.4-1.4L11 13.4l5.2-5.2 1.4 1.4-6.6 6.6z" />
                 </svg>
                 <span>{{ actionMessage }}</span>
             </div>
 
             <!-- Hero Section -->
-            <section class="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+            <section
+                class="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
                 <!-- Background decorations -->
-                <div class="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full bg-gradient-to-br from-blue-400/10 to-indigo-400/10 blur-3xl dark:from-blue-500/5 dark:to-indigo-500/5"></div>
-                <div class="pointer-events-none absolute -left-16 bottom-0 h-40 w-40 rounded-full bg-gradient-to-tr from-cyan-400/10 to-blue-400/10 blur-3xl dark:from-cyan-500/5 dark:to-blue-500/5"></div>
+                <div
+                    class="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full bg-gradient-to-br from-blue-400/10 to-indigo-400/10 blur-3xl dark:from-blue-500/5 dark:to-indigo-500/5">
+                </div>
+                <div
+                    class="pointer-events-none absolute -left-16 bottom-0 h-40 w-40 rounded-full bg-gradient-to-tr from-cyan-400/10 to-blue-400/10 blur-3xl dark:from-cyan-500/5 dark:to-blue-500/5">
+                </div>
 
                 <div class="relative p-6 lg:p-8">
                     <div class="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
@@ -237,93 +635,103 @@ const clearProjectCache = async () => {
                         <div class="space-y-5">
                             <!-- Status Badges -->
                             <div class="flex flex-wrap items-center gap-2">
-                                <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium" :class="statusClass">
+                                <span
+                                    class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium"
+                                    :class="statusClass">
                                     <span class="h-1.5 w-1.5 rounded-full" :class="statusDot"></span>
                                     {{ statusLabel }}
                                 </span>
-                                <span class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400">
-                                    <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" /></svg>
+                                <span
+                                    class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400">
+                                    <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current">
+                                        <path
+                                            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                                    </svg>
                                     PHP {{ website.php_version || '-' }}
                                 </span>
-                                <span v-if="sslEnabled" class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">
-                                    <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
+                                <span v-if="sslEnabled"
+                                    class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">
+                                    <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current">
+                                        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" />
+                                    </svg>
                                     SSL
                                 </span>
                             </div>
 
                             <!-- Domain -->
                             <div>
-                                <h2 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">{{ website.domain || '-' }}</h2>
+                                <h2 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">{{
+                                    website.domain || '-' }}</h2>
                                 <p class="mt-1.5 flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
-                                    <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current opacity-50"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" /></svg>
-                                    <span class="font-medium text-slate-700 dark:text-slate-300">{{ website.root_path || '-' }}</span>
+                                    <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current opacity-50">
+                                        <path
+                                            d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                                    </svg>
+                                    <span class="font-medium text-slate-700 dark:text-slate-300">{{ website.root_path ||
+                                        '-'
+                                    }}</span>
                                 </p>
                             </div>
 
                             <!-- URL Cards -->
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <!-- Panel Preview -->
-                                <div class="group rounded-xl border border-slate-200 bg-slate-50/50 p-3 transition dark:border-slate-700/80 dark:bg-slate-800/30">
+                                <div
+                                    class="group rounded-xl border border-slate-200 bg-slate-50/50 p-3 transition dark:border-slate-700/80 dark:bg-slate-800/30">
                                     <div class="flex items-center justify-between">
-                                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Panel Preview</p>
-                                        <a
-                                            v-if="managementPreviewUrl"
-                                            :href="managementPreviewUrl"
-                                            class="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                                        >
+                                        <p
+                                            class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                                            Panel Preview</p>
+                                        <a v-if="managementPreviewUrl" :href="managementPreviewUrl"
+                                            class="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
                                             Open
-                                            <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" /></svg>
+                                            <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current">
+                                                <path
+                                                    d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
+                                            </svg>
                                         </a>
                                     </div>
                                     <div class="mt-2 flex items-center gap-2">
-                                        <input
-                                            :value="managementPreviewUrl"
-                                            type="text"
-                                            readonly
-                                            class="min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400"
-                                        />
-                                        <button
-                                            v-if="managementPreviewUrl"
-                                            type="button"
+                                        <input :value="managementPreviewUrl" type="text" readonly
+                                            class="min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400" />
+                                        <button v-if="managementPreviewUrl" type="button"
                                             class="shrink-0 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-400 transition hover:text-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-500 dark:hover:text-blue-400"
-                                            @click="copyToClipboard(managementPreviewUrl)"
-                                            title="Copy URL"
-                                        >
-                                            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" /></svg>
+                                            @click="copyToClipboard(managementPreviewUrl)" title="Copy URL">
+                                            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current">
+                                                <path
+                                                    d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+                                            </svg>
                                         </button>
                                     </div>
                                 </div>
 
                                 <!-- Live Website -->
-                                <div class="group rounded-xl border border-slate-200 bg-slate-50/50 p-3 transition dark:border-slate-700/80 dark:bg-slate-800/30">
+                                <div
+                                    class="group rounded-xl border border-slate-200 bg-slate-50/50 p-3 transition dark:border-slate-700/80 dark:bg-slate-800/30">
                                     <div class="flex items-center justify-between">
-                                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Live Website</p>
-                                        <a
-                                            v-if="liveSiteUrl"
-                                            :href="liveSiteUrl"
-                                            target="_blank"
+                                        <p
+                                            class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                                            Live Website</p>
+                                        <a v-if="liveSiteUrl" :href="liveSiteUrl" target="_blank"
                                             rel="noopener noreferrer"
-                                            class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-                                        >
+                                            class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300">
                                             Open
-                                            <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" /></svg>
+                                            <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current">
+                                                <path
+                                                    d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
+                                            </svg>
                                         </a>
                                     </div>
                                     <div class="mt-2 flex items-center gap-2">
-                                        <input
-                                            :value="liveSiteUrl"
-                                            type="text"
-                                            readonly
-                                            class="min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400"
-                                        />
-                                        <button
-                                            v-if="liveSiteUrl"
-                                            type="button"
+                                        <input :value="liveSiteUrl" type="text" readonly
+                                            class="min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400" />
+                                        <button v-if="liveSiteUrl" type="button"
                                             class="shrink-0 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-400 transition hover:text-emerald-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-500 dark:hover:text-emerald-400"
-                                            @click="copyToClipboard(liveSiteUrl)"
-                                            title="Copy URL"
-                                        >
-                                            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" /></svg>
+                                            @click="copyToClipboard(liveSiteUrl)" title="Copy URL">
+                                            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current">
+                                                <path
+                                                    d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+                                            </svg>
                                         </button>
                                     </div>
                                 </div>
@@ -332,35 +740,41 @@ const clearProjectCache = async () => {
 
                         <!-- Right: Quick Actions -->
                         <div>
-                            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Quick Actions</p>
+                            <p
+                                class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                                Quick Actions</p>
                             <div class="mt-3 space-y-2">
-                                <Link
-                                    v-for="action in quickActions.filter((item) => !item.action)"
-                                    :key="action.label"
-                                    :href="action.href"
-                                    :method="action.method"
-                                    as="button"
-                                    :class="[
+                                <Link v-for="action in quickActions.filter((item) => !item.action)" :key="action.label"
+                                    :href="action.href" :method="action.method" as="button" :class="[
                                         'flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150',
                                         quickActionColorClasses[action.color] || quickActionColorClasses.slate,
-                                    ]"
-                                >
-                                    <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
+                                    ]">
+                                    <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70">
+                                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                                    </svg>
                                     {{ action.label }}
                                 </Link>
-                                <button
-                                    v-for="action in quickActions.filter((item) => item.action === 'clearCache')"
-                                    :key="action.label"
-                                    type="button"
-                                    :disabled="cacheClearLoading"
-                                    :class="[
+                                <button v-for="action in quickActions.filter((item) => item.action === 'clearCache')"
+                                    :key="action.label" type="button" :disabled="cacheClearLoading" :class="[
                                         'flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60',
                                         quickActionColorClasses[action.color] || quickActionColorClasses.slate,
-                                    ]"
-                                    @click="clearProjectCache()"
-                                >
-                                    <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
-                                    {{ action.action === 'clearCache' && cacheClearLoading ? 'Clearing...' : action.label }}
+                                    ]" @click="clearProjectCache()">
+                                    <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70">
+                                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                                    </svg>
+                                    {{ action.action === 'clearCache' && cacheClearLoading ? 'Clearing...' :
+                                        action.label }}
+                                </button>
+                                <button v-for="action in quickActions.filter((item) => item.action === 'checkStatus')"
+                                    :key="action.label" type="button" :disabled="statusCheckLoading" :class="[
+                                        'flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60',
+                                        quickActionColorClasses[action.color] || quickActionColorClasses.slate,
+                                    ]" @click="checkWebsiteStatus()">
+                                    <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70">
+                                        <path
+                                            d="M12 4a8 8 0 1 0 7.45 5H17l3.5-3.5L24 9h-2.55A10 10 0 1 1 12 2v2zm1 4h-2v5l4.25 2.52 1-1.72L13 11.9V8z" />
+                                    </svg>
+                                    {{ statusCheckLoading ? 'Checking...' : action.label }}
                                 </button>
                             </div>
                         </div>
@@ -369,89 +783,324 @@ const clearProjectCache = async () => {
             </section>
 
             <!-- Metrics Cards -->
-            <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div
-                    v-for="metric in metrics"
-                    :key="metric.label"
-                    class="group rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-slate-800/80 dark:bg-slate-900/50"
-                >
-                    <div class="flex items-start justify-between">
-                        <div>
-                            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ metric.label }}</p>
-                            <p class="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{{ metric.value }}</p>
-                            <p v-if="metric.sub" class="mt-1 text-[11px] text-slate-400 dark:text-slate-500">{{ metric.sub }}</p>
-                        </div>
-                        <div :class="['flex h-10 w-10 items-center justify-center rounded-xl transition', metricColorClasses[metric.color]]">
-                            <svg viewBox="0 0 24 24" class="h-5 w-5 fill-current opacity-80"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" /></svg>
-                        </div>
-                    </div>
-                </div>
-            </section>
+
+
+
 
             <!-- Services + Activity -->
-            <section class="grid gap-4 xl:grid-cols-3">
-                <!-- Services Grid -->
-                <div class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm xl:col-span-2 dark:border-slate-800/80 dark:bg-slate-900/50">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Services</h2>
-                        <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ serviceLinks.length }} tools</span>
+            <section class="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
+                <div class="min-w-0 space-y-4">
+
+                    <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div v-for="metric in metrics" :key="metric.label"
+                            class="group rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-slate-800/80 dark:bg-slate-900/50">
+                            <div class="flex items-start justify-between">
+                                <div>
+                                    <p
+                                        class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                                        {{ metric.label }}</p>
+                                    <p class="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{{
+                                        metric.value }}</p>
+                                    <p v-if="metric.sub" class="mt-1 text-[11px] text-slate-400 dark:text-slate-500">{{
+                                        metric.sub }}</p>
+                                </div>
+                                <div
+                                    :class="['flex h-10 w-10 items-center justify-center rounded-xl transition', metricColorClasses[metric.color]]">
+                                    <svg viewBox="0 0 24 24" class="h-5 w-5 fill-current opacity-80">
+                                        <path
+                                            d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+
+                    <!-- SSL Management -->
+                    <section class="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+                            <div>
+                                <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">SSL Certificate</h2>
+                                <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Issue, renew and inspect the certificate without leaving Manage.</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold" :class="websiteSslClass">
+                                    {{ websiteSslLabel }}
+                                </span>
+                                <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                                    :class="sslEnabled
+                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400'
+                                        : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'">
+                                    {{ sslEnabled ? 'SSL Enabled' : 'SSL Disabled' }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="p-5">
+                            <div v-if="autoRenewNotice" class="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-300">
+                                {{ autoRenewNotice }}
+                            </div>
+                            <p class="text-sm text-slate-600 dark:text-slate-300">{{ sslStatus.message || 'No certificate status available.' }}</p>
+                            <p class="mt-1 text-[11px] text-slate-400">Checked: {{ formatCertificateDate(sslStatus.checked_at) }}</p>
+
+                            <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                                    <p class="text-[11px] font-medium text-slate-400">Subject</p>
+                                    <p class="mt-1 break-all text-xs font-semibold text-slate-700 dark:text-slate-200">{{ sslStatus.subject_cn || sslStatus.domain || website.domain || '-' }}</p>
+                                </div>
+                                <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                                    <p class="text-[11px] font-medium text-slate-400">Issuer</p>
+                                    <p class="mt-1 break-all text-xs font-semibold text-slate-700 dark:text-slate-200">{{ sslStatus.issuer_cn || '-' }}</p>
+                                </div>
+                                <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                                    <p class="text-[11px] font-medium text-slate-400">Valid Until</p>
+                                    <p class="mt-1 text-xs font-semibold text-slate-700 dark:text-slate-200">{{ formatCertificateDate(sslStatus.valid_to) }}</p>
+                                </div>
+                                <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                                    <p class="text-[11px] font-medium text-slate-400">Days Remaining</p>
+                                    <p class="mt-1 text-xs font-semibold text-slate-700 dark:text-slate-200">{{ sslDaysRemaining === null ? '-' : sslDaysRemaining }}</p>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <button type="button" :disabled="sslActionLoading"
+                                    class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                                    @click="refreshSslStatus">
+                                    {{ sslActionLoading ? 'Checking...' : 'Check SSL Now' }}
+                                </button>
+                                <button type="button" :disabled="sslActionLoading"
+                                    class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
+                                    @click="issueWebsiteSsl">
+                                    {{ sslActionLoading ? 'Processing...' : 'Issue / Renew SSL' }}
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Services Grid -->
+                    <div
+                        class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                        <div class="flex items-center justify-between">
+                            <h2
+                                class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                Services</h2>
+                            <span
+                                class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{
+                                    serviceLinks.length }} tools</span>
+                        </div>
+                        <div class="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                            <Link v-for="service in serviceLinks" :key="service.label" :href="service.href"
+                                class="group flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:shadow-lg">
+                                <div
+                                    :class="['flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition', serviceColorClasses[service.color]]">
+                                    <i :class="['bi text-base', service.icon]"></i>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p
+                                        class="truncate text-[13px] font-semibold text-slate-800 group-hover:text-slate-950 dark:text-slate-200 dark:group-hover:text-white">
+                                        {{ service.label }}</p>
+                                    <p class="mt-0.5 truncate text-[11px] text-slate-400 dark:text-slate-500">{{
+                                        service.description
+                                    }}</p>
+                                </div>
+                                <svg viewBox="0 0 24 24"
+                                    class="h-4 w-4 shrink-0 fill-current text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-400">
+                                    <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+                                </svg>
+                            </Link>
+                        </div>
                     </div>
-                    <div class="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-                        <Link
-                            v-for="service in serviceLinks"
-                            :key="service.label"
-                            :href="service.href"
-                            class="group flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:shadow-lg"
-                        >
-                            <div :class="['flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition', serviceColorClasses[service.color]]">
-                                <i :class="['bi text-base', service.icon]"></i>
+
+
+                </div>
+
+                <div class="min-w-0 space-y-4">
+
+                    <section
+                        class="w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50 ">
+                        <div
+                            class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+                            <div>
+                                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Alias Websites</h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Add alias domains for {{
+                                    website.domain }}
+                                    without leaving this screen.</p>
                             </div>
-                            <div class="min-w-0 flex-1">
-                                <p class="truncate text-[13px] font-semibold text-slate-800 group-hover:text-slate-950 dark:text-slate-200 dark:group-hover:text-white">{{ service.label }}</p>
-                                <p class="mt-0.5 truncate text-[11px] text-slate-400 dark:text-slate-500">{{ service.description }}</p>
+                        </div>
+                        <form
+                            class="grid gap-3 border-b border-slate-200 px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto] dark:border-slate-800"
+                            @submit.prevent="submitAlias">
+                            <div>
+                                <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Alias
+                                    domain</label>
+                                <input v-model.trim="aliasForm.domain" type="text" placeholder="alias.example.com"
+                                    class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-cyan-500 dark:focus:ring-cyan-500/20" />
+                                <p v-if="aliasForm.errors.domain" class="mt-1 text-xs text-red-600">{{
+                                    aliasForm.errors.domain
+                                }}</p>
                             </div>
-                            <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-400"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" /></svg>
-                        </Link>
+                            <div class="flex items-end">
+                                <button type="submit" :disabled="aliasSubmitting || !aliasParentDomain"
+                                    class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto">
+                                    {{ aliasSubmitting ? 'Creating...' : 'Create Alias' }}
+                                </button>
+                            </div>
+                        </form>
+                        <div v-if="aliasWebsites.length" class="space-y-3 p-5">
+                            <div v-for="(alias, index) in aliasWebsites" :key="alias.id"
+                                class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/60 sm:flex-row sm:items-center sm:justify-between">
+                                <div class="flex items-start gap-3">
+                                    <span class="text-xs font-semibold text-slate-400">{{ index + 1 }}</span>
+                                    <div class="min-w-0 flex-1">
+                                        <span class="block truncate text-sm font-medium text-slate-800 dark:text-slate-100">{{
+                                            alias.domain || '-' }}</span>
+                                        <div v-if="aliasEditingId !== alias.id" class="mt-1">
+                                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                                                :class="sslStatusClass(alias.ssl_status)">
+                                                <span class="h-1.5 w-1.5 rounded-full"
+                                                    :class="String(alias.ssl_status || '').toLowerCase() === 'valid' || String(alias.ssl_status || '').toLowerCase() === 'issued' || String(alias.ssl_status || '').toLowerCase() === 'renewed' ? 'bg-emerald-500' : String(alias.ssl_status || '').toLowerCase() === 'failed' ? 'bg-red-500' : String(alias.ssl_status || '').toLowerCase() === 'disabled' ? 'bg-amber-500' : 'bg-slate-400'"></span>
+                                                {{ sslStatusLabel(alias.ssl_status) }}
+                                            </span>
+                                        </div>
+                                        <div v-else class="mt-1">
+                                            <label class="sr-only" :for="`alias-domain-${alias.id}`">Alias domain</label>
+                                            <input
+                                                :id="`alias-domain-${alias.id}`"
+                                                v-model.trim="aliasEditForm.domain"
+                                                type="text"
+                                                class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-cyan-500 dark:focus:ring-cyan-500/20"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap gap-2 sm:justify-end">
+                                    <button
+                                        v-if="aliasEditingId !== alias.id"
+                                        type="button"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                                        aria-label="Edit alias"
+                                        title="Edit"
+                                        @click="startAliasEdit(alias)"
+                                    >
+                                        <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current">
+                                            <path d="M3 17.25V21h3.75L17.8 9.95l-3.75-3.75L3 17.25zm18-11.5a1 1 0 0 0 0-1.4l-1.6-1.6a1 1 0 0 0-1.4 0l-1.4 1.4 3.75 3.75 1.65-1.55z" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        v-else
+                                        type="button"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20"
+                                        :disabled="aliasActionLoading === `edit:${alias.id}`"
+                                        aria-label="Save alias"
+                                        title="Save"
+                                        @click="saveAliasEdit(alias)"
+                                    >
+                                        <svg v-if="aliasActionLoading !== `edit:${alias.id}`" viewBox="0 0 24 24" class="h-4 w-4 fill-current">
+                                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zM12 19a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z" />
+                                        </svg>
+                                        <svg v-else viewBox="0 0 24 24" class="h-4 w-4 animate-spin fill-current">
+                                            <path d="M12 4a8 8 0 1 0 7.45 5H17l3.5-3.5L24 9h-2.55A10 10 0 1 1 12 2v2zm1 4h-2v5l4.25 2.52 1-1.72L13 11.9V8z" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        v-if="aliasEditingId === alias.id"
+                                        type="button"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                                        aria-label="Cancel edit"
+                                        title="Cancel"
+                                        @click="cancelAliasEdit()"
+                                    >
+                                        <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current">
+                                            <path d="M12 10.586 6.707 5.293 5.293 6.707 10.586 12l-5.293 5.293 1.414 1.414L12 13.414l5.293 5.293 1.414-1.414L13.414 12l5.293-5.293-1.414-1.414L12 10.586z" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        :disabled="aliasActionLoading === `ssl:${alias.id}`"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20"
+                                        aria-label="Sync SSL"
+                                        title="SSL Sync"
+                                        @click="runAliasAction(alias, 'ssl')"
+                                    >
+                                        <svg v-if="aliasActionLoading !== `ssl:${alias.id}`" viewBox="0 0 24 24" class="h-4 w-4 fill-current">
+                                            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 7a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm-1 5h2v5h-2v-5z" />
+                                        </svg>
+                                        <svg v-else viewBox="0 0 24 24" class="h-4 w-4 animate-spin fill-current">
+                                            <path d="M12 4a8 8 0 1 0 7.45 5H17l3.5-3.5L24 9h-2.55A10 10 0 1 1 12 2v2zm1 4h-2v5l4.25 2.52 1-1.72L13 11.9V8z" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        :disabled="aliasActionLoading === `remove:${alias.id}`"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+                                        aria-label="Remove alias"
+                                        title="Remove"
+                                        @click="removeAlias(alias)"
+                                    >
+                                        <svg v-if="aliasActionLoading !== `remove:${alias.id}`" viewBox="0 0 24 24" class="h-4 w-4 fill-current">
+                                            <path d="M9 3.75V5H4.5v2H19V5H14.5V3.75A1.75 1.75 0 0 0 12.75 2h-1.5A1.75 1.75 0 0 0 9.5 3.75V5h-1V3.75A1.75 1.75 0 0 0 6.75 2h-.5A1.75 1.75 0 0 0 4.5 3.75V5H3v2h18V5h-1.5V3.75A1.75 1.75 0 0 0 17.75 2h-.5A1.75 1.75 0 0 0 15.5 3.75V5h-1V3.75A1.75 1.75 0 0 0 12.75 2h-1.5A1.75 1.75 0 0 0 9.5 3.75zM5 9l1 11h12l1-11H5zm4 2h2v7H9v-7zm4 0h2v7h-2v-7z" />
+                                        </svg>
+                                        <svg v-else viewBox="0 0 24 24" class="h-4 w-4 animate-spin fill-current">
+                                            <path d="M12 2v4l3-3-3-1z" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="px-5 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
+                            No alias websites yet.
+                        </div>
+                    </section>
+                    <!-- Activity Timeline -->
+                    <div
+                        class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Activity
+                        </h2>
+                        <div class="mt-4 space-y-0">
+                            <div v-if="activities.length === 0" class="flex flex-col items-center py-6 text-center">
+                                <div
+                                    class="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800">
+                                    <svg viewBox="0 0 24 24" class="h-6 w-6 text-slate-400 dark:text-slate-500"
+                                        fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                <p class="mt-3 text-sm font-medium text-slate-500 dark:text-slate-400">No activity yet
+                                </p>
+                            </div>
+                            <div v-for="(item, index) in activities" :key="item.label"
+                                class="relative flex gap-3 pb-4 last:pb-0">
+                                <!-- Timeline line -->
+                                <div class="relative flex flex-col items-center">
+                                    <div
+                                        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400">
+                                        <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current">
+                                            <circle cx="12" cy="12" r="4" />
+                                        </svg>
+                                    </div>
+                                    <div v-if="index < activities.length - 1"
+                                        class="mt-1 h-full w-px bg-slate-200 dark:bg-slate-700"></div>
+                                </div>
+                                <div class="min-w-0 flex-1 pt-0.5">
+                                    <p
+                                        class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                                        {{ item.label }}</p>
+                                    <p
+                                        class="mt-0.5 truncate text-[13px] font-medium text-slate-700 dark:text-slate-300">
+                                        {{
+                                            item.label === 'Request Created' || item.label === 'Request Updated'
+                                                ? formatDate(item.value)
+                                                : (item.value || '-')
+                                        }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Activity Timeline -->
-                <div class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
-                    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Activity</h2>
-                    <div class="mt-4 space-y-0">
-                        <div v-if="activities.length === 0" class="flex flex-col items-center py-6 text-center">
-                            <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800">
-                                <svg viewBox="0 0 24 24" class="h-6 w-6 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            </div>
-                            <p class="mt-3 text-sm font-medium text-slate-500 dark:text-slate-400">No activity yet</p>
-                        </div>
-                        <div
-                            v-for="(item, index) in activities"
-                            :key="item.label"
-                            class="relative flex gap-3 pb-4 last:pb-0"
-                        >
-                            <!-- Timeline line -->
-                            <div class="relative flex flex-col items-center">
-                                <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400">
-                                    <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><circle cx="12" cy="12" r="4" /></svg>
-                                </div>
-                                <div v-if="index < activities.length - 1" class="mt-1 h-full w-px bg-slate-200 dark:bg-slate-700"></div>
-                            </div>
-                            <div class="min-w-0 flex-1 pt-0.5">
-                                <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ item.label }}</p>
-                                <p class="mt-0.5 truncate text-[13px] font-medium text-slate-700 dark:text-slate-300">
-                                    {{
-                                        item.label === 'Request Created' || item.label === 'Request Updated'
-                                            ? formatDate(item.value)
-                                            : (item.value || '-')
-                                    }}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </section>
         </div>
     </AuthenticatedLayout>

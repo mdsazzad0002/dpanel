@@ -13,6 +13,9 @@ const statusForm = useForm({ status: '' });
 const search = ref('');
 const statusFilter = ref('all');
 const currentPage = ref(1);
+const sslLoadingId = ref('');
+const toasts = ref([]);
+let toastSequence = 0;
 const perPage = 20;
 
 const props = defineProps({
@@ -22,11 +25,16 @@ const props = defineProps({
     },
 });
 
-const filteredWebsites = computed(() => {
+const normalizedRequests = computed(() => (Array.isArray(props.websiteRequests) ? props.websiteRequests : []).map((item) => ({
+    ...item,
+    parent_id: item.parent_id ? String(item.parent_id) : null,
+})));
+
+const aliasTypes = ['alis', 'alias'];
+
+const groupedWebsites = computed(() => {
     const needle = search.value.trim().toLowerCase();
-    return props.websiteRequests.filter((item) => {
-        const status = String(item.status ?? '').toLowerCase();
-        if (statusFilter.value !== 'all' && status !== statusFilter.value) return false;
+    const matchesSearch = (item) => {
         if (!needle) return true;
         const haystack = [
             item.domain, item.root_path, item.php_version, item.status,
@@ -34,23 +42,50 @@ const filteredWebsites = computed(() => {
             item.assigned_user_name, item.enable_ssl ? 'yes' : 'no',
         ].map((v) => String(v ?? '').toLowerCase()).join(' ');
         return haystack.includes(needle);
+    };
+
+    const roots = normalizedRequests.value.filter((item) => !aliasTypes.includes(String(item.type ?? '').toLowerCase()));
+    const aliases = normalizedRequests.value.filter((item) => aliasTypes.includes(String(item.type ?? '').toLowerCase()));
+
+    const aliasByParent = new Map();
+    aliases.forEach((alias) => {
+        const key = String(alias.parent_id || alias.id || '');
+        if (!key) return;
+        if (!aliasByParent.has(key)) aliasByParent.set(key, []);
+        aliasByParent.get(key).push(alias);
     });
+
+    return roots
+        .map((item) => ({
+            ...item,
+            aliases: (aliasByParent.get(String(item.id)) || []).filter(matchesSearch),
+        }))
+        .filter((item) => {
+            const itemMatches = matchesSearch(item);
+            return itemMatches || item.aliases.length > 0 || !needle;
+        })
+        .filter((item) => {
+            const status = String(item.status ?? '').toLowerCase();
+            if (statusFilter.value !== 'all' && status !== statusFilter.value) return false;
+            if (item.aliases.length > 0) return true;
+            return matchesSearch(item);
+        });
 });
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredWebsites.value.length / perPage)));
+const totalPages = computed(() => Math.max(1, Math.ceil(groupedWebsites.value.length / perPage)));
 const paginatedWebsites = computed(() => {
     const start = (currentPage.value - 1) * perPage;
-    return filteredWebsites.value.slice(start, start + perPage);
+    return groupedWebsites.value.slice(start, start + perPage);
 });
-const pageStart = computed(() => filteredWebsites.value.length === 0 ? 0 : (currentPage.value - 1) * perPage + 1);
-const pageEnd = computed(() => Math.min(currentPage.value * perPage, filteredWebsites.value.length));
+const pageStart = computed(() => groupedWebsites.value.length === 0 ? 0 : (currentPage.value - 1) * perPage + 1);
+const pageEnd = computed(() => Math.min(currentPage.value * perPage, groupedWebsites.value.length));
 
 const stats = computed(() => {
-    const all = props.websiteRequests;
+    const all = Array.isArray(props.websiteRequests) ? props.websiteRequests : [];
     return {
-        total: all.length,
-        live: all.filter((w) => String(w.status ?? '').toLowerCase() === 'live').length,
-        disabled: all.filter((w) => String(w.status ?? '').toLowerCase() === 'disabled').length,
+        total: all.filter((w) => !aliasTypes.includes(String(w.type ?? '').toLowerCase())).length,
+        live: all.filter((w) => !aliasTypes.includes(String(w.type ?? '').toLowerCase()) && String(w.status ?? '').toLowerCase() === 'live').length,
+        disabled: all.filter((w) => !aliasTypes.includes(String(w.type ?? '').toLowerCase()) && String(w.status ?? '').toLowerCase() === 'disabled').length,
     };
 });
 
@@ -85,11 +120,77 @@ const toggleStatus = (item) => {
     statusForm.patch(panelRoute('websites.status.update', { id: item.id }), { preserveScroll: true });
 };
 
+const pushToast = (message, type = 'success') => {
+    const id = ++toastSequence;
+    toasts.value.push({ id, message, type });
+    window.setTimeout(() => {
+        toasts.value = toasts.value.filter((toast) => toast.id !== id);
+    }, 4500);
+};
+
+const issueAliasSsl = async (alias) => {
+    const id = String(alias?.id || '');
+    if (!id || sslLoadingId.value) return;
+    sslLoadingId.value = id;
+
+    try {
+        const response = await fetch(panelRoute('websites.ssl.issue', { id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'SSL issue failed.');
+        alias.enable_ssl = true;
+        alias.ssl_status = 'issued';
+        pushToast(data.message || 'SSL certificate issued successfully.');
+    } catch (error) {
+        pushToast(error?.message || 'SSL issue failed.', 'error');
+    } finally {
+        sslLoadingId.value = '';
+    }
+};
+
+const toggleAliasSsl = async (alias) => {
+    const id = String(alias?.id || '');
+    if (!id || sslLoadingId.value) return;
+    sslLoadingId.value = id;
+    const enabled = !Boolean(alias.enable_ssl);
+
+    try {
+        const response = await fetch(panelRoute('websites.ssl.status.update', { id }), {
+            method: 'PATCH',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            },
+            body: JSON.stringify({ enabled }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'SSL status update failed.');
+        alias.enable_ssl = enabled;
+        alias.ssl_status = enabled ? 'unknown' : 'disabled';
+        pushToast(data.message || `SSL ${enabled ? 'enabled' : 'disabled'} successfully.`);
+    } catch (error) {
+        pushToast(error?.message || 'SSL status update failed.', 'error');
+    } finally {
+        sslLoadingId.value = '';
+    }
+};
+
 const statusDot = (status) => {
     const v = String(status || '').toLowerCase();
     if (v === 'live') return 'bg-emerald-500';
     if (v === 'disabled') return 'bg-red-500';
-    if (v === 'partial') return 'bg-amber-500';
     return 'bg-slate-400';
 };
 
@@ -97,7 +198,6 @@ const statusClass = (status) => {
     const v = String(status || '').toLowerCase();
     if (v === 'live') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
     if (v === 'disabled') return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
-    if (v === 'partial') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
     return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 };
 
@@ -118,6 +218,19 @@ const copyUrl = (url) => {
     <Head title="Websites" />
 
     <AuthenticatedLayout>
+        <div class="fixed bottom-5 right-5 z-[100] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2">
+            <div
+                v-for="toast in toasts"
+                :key="toast.id"
+                class="rounded-xl border px-4 py-3 text-sm font-medium shadow-lg"
+                :class="toast.type === 'error'
+                    ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'"
+            >
+                {{ toast.message }}
+            </div>
+        </div>
+
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Websites</h1>
@@ -187,7 +300,6 @@ const copyUrl = (url) => {
                     >
                         <option value="all">All Status</option>
                         <option value="live">Live</option>
-                        <option value="partial">Partial</option>
                         <option value="disabled">Disabled</option>
                     </select>
                     <Link
@@ -283,6 +395,7 @@ const copyUrl = (url) => {
                                 Manage
                             </Link>
                             <Link
+                                v-if="String(item.id) !== '1'"
                                 :href="panelRoute('websites.filemanager', { id: item.id })"
                                 class="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:border-emerald-700"
                             >
@@ -290,6 +403,7 @@ const copyUrl = (url) => {
                                 Files
                             </Link>
                             <Link
+                                v-if="String(item.id) !== '1'"
                                 :href="panelRoute('websites.edit', { id: item.id })"
                                 class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600"
                             >
@@ -297,6 +411,7 @@ const copyUrl = (url) => {
                                 Edit
                             </Link>
                             <button
+                                v-if="String(item.id) !== '1'"
                                 type="button"
                                 :disabled="statusForm.processing"
                                 class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition disabled:opacity-50"
@@ -308,6 +423,7 @@ const copyUrl = (url) => {
                                 {{ String(item.status || '').toLowerCase() === 'disabled' ? 'Enable' : 'Disable' }}
                             </button>
                             <button
+                                v-if="String(item.id) !== '1'"
                                 :disabled="deleteForm.processing"
                                 class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
                                 @click="deleteRequest(item.id)"
@@ -317,13 +433,79 @@ const copyUrl = (url) => {
                             </button>
                         </div>
                     </div>
+
+                    <div v-if="item.aliases?.length" class="mt-4 border-t border-slate-200/80 pt-4 dark:border-slate-800/80">
+                        <div class="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                            <span class="h-px w-6 bg-slate-200 dark:bg-slate-700"></span>
+                            Alias Children
+                        </div>
+                        <div
+                            v-for="alias in item.aliases"
+                            :key="alias.id"
+                            class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 pl-6 dark:border-slate-700 dark:bg-slate-800/40 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-300">A</span>
+                                    <Link
+                                        :href="panelRoute('websites.edit', { id: alias.id })"
+                                        class="truncate text-[14px] font-semibold text-slate-900 transition hover:text-blue-600 dark:text-slate-100 dark:hover:text-blue-400"
+                                    >
+                                        {{ alias.domain }}
+                                    </Link>
+                                    <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="statusClass(alias.status)">
+                                        <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(alias.status)"></span>
+                                        {{ alias.status }}
+                                    </span>
+                                    <span v-if="alias.enable_ssl" class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">
+                                        <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
+                                        SSL
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    :disabled="Boolean(sslLoadingId)"
+                                    class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition disabled:opacity-50"
+                                    :class="alias.enable_ssl
+                                        ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'
+                                        : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400'"
+                                    @click="toggleAliasSsl(alias)"
+                                >
+                                    {{ sslLoadingId === String(alias.id) ? 'Updating...' : (alias.enable_ssl ? 'Disable SSL' : 'Enable SSL') }}
+                                </button>
+                                <button
+                                    type="button"
+                                    :disabled="Boolean(sslLoadingId)"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
+                                    @click="issueAliasSsl(alias)"
+                                >
+                                    {{ sslLoadingId === String(alias.id) ? 'Issuing...' : 'Issue SSL' }}
+                                </button>
+                                <Link
+                                    :href="panelRoute('websites.edit', { id: alias.id })"
+                                    class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600"
+                                >
+                                    Edit
+                                </Link>
+                                <button
+                                    :disabled="deleteForm.processing"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
+                                    @click="deleteRequest(alias.id)"
+                                >
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <!-- Pagination -->
-            <div v-if="filteredWebsites.length > perPage" class="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+            <div v-if="groupedWebsites.length > perPage" class="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
                 <p class="text-xs text-slate-500 dark:text-slate-400">
-                    Showing <span class="font-medium text-slate-700 dark:text-slate-300">{{ pageStart }}</span> to <span class="font-medium text-slate-700 dark:text-slate-300">{{ pageEnd }}</span> of <span class="font-medium text-slate-700 dark:text-slate-300">{{ filteredWebsites.length }}</span> websites
+                    Showing <span class="font-medium text-slate-700 dark:text-slate-300">{{ pageStart }}</span> to <span class="font-medium text-slate-700 dark:text-slate-300">{{ pageEnd }}</span> of <span class="font-medium text-slate-700 dark:text-slate-300">{{ groupedWebsites.length }}</span> websites
                 </p>
                 <div class="flex items-center gap-2">
                     <button

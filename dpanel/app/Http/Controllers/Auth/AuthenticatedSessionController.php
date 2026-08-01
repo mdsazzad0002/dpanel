@@ -7,6 +7,7 @@ use App\Http\Requests\Auth\LoginRequest;
 use App\Models\PanelSession;
 use App\Services\TwoFactorService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cookie;
@@ -31,7 +32,7 @@ class AuthenticatedSessionController extends Controller
     /**
      * Handle an incoming authentication request.
      */
-    public function store(LoginRequest $request, TwoFactorService $twoFactor): RedirectResponse
+    public function store(LoginRequest $request, TwoFactorService $twoFactor): RedirectResponse|JsonResponse
     {
         $user = $request->authenticate();
         $request->session()->regenerate();
@@ -76,7 +77,20 @@ class AuthenticatedSessionController extends Controller
 
         Auth::login($user, $request->boolean('remember'));
         $request->session()->regenerate();
-        $panelCookie = $this->issuePanelSessionProof($request);
+        // An explicit login always rotates the URL token, even when an older
+        // authenticated session is still present.
+        $panelCookie = $this->issuePanelSessionProof($request, bin2hex(random_bytes(32)));
+
+        if ($request->expectsJson() || $request->ajax()) {
+            $token = (string) $request->session()->get('panel_session_token', '');
+            return response()
+                ->json([
+                    'success' => true,
+                    'token' => $token,
+                    'redirect' => route('dashboard', ['token' => $token], absolute: false),
+                ])
+                ->withCookie($panelCookie);
+        }
 
         return redirect()->intended(route('dashboard', absolute: false))
             ->withCookie($panelCookie);
@@ -87,8 +101,8 @@ class AuthenticatedSessionController extends Controller
         $token ??= (string) $request->session()->get('panel_session_token', '');
         if ($token === '') {
             $token = bin2hex(random_bytes(32));
-            $request->session()->put('panel_session_token', $token);
         }
+        $request->session()->put('panel_session_token', $token);
 
         URL::defaults(['token' => $token]);
 

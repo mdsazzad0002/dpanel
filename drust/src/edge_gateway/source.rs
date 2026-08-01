@@ -46,7 +46,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         .arg("--skip-column-names")
         .arg(database.clone())
         .arg("-e")
-        .arg("SELECT id,domain,root_path,project_root,start_directory,php_version,enable_ssl,status,type FROM websites ORDER BY updated_at DESC");
+        .arg("SELECT id,domain,scope,root_path,project_root,start_directory,php_version,enable_ssl,status,type FROM websites ORDER BY updated_at DESC");
     if !password.is_empty() {
         cmd.env("MYSQL_PWD", password);
     }
@@ -59,25 +59,27 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
     let mut tls = Vec::new();
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let cols: Vec<&str> = line.split('\t').collect();
-        if cols.len() < 9 {
+        if cols.len() < 10 {
             continue;
         }
         let domain = normalize_domain(cols[1]);
         if domain.is_empty() {
             continue;
         }
-        let root_path = cols[2].trim();
-        let project_root = cols[3].trim();
-        let start_directory = cols[4].trim();
-        let php_version = normalize_php_version(cols[5]);
-        let enable_ssl = cols[6].trim() == "1";
-        let status = cols[7].trim();
+        let scope = normalize_scope(cols[2]);
+        let root_path = cols[3].trim();
+        let project_root = cols[4].trim();
+        let start_directory = cols[5].trim();
+        let php_version = normalize_php_version(cols[6]);
+        let enable_ssl = cols[7].trim() == "1";
+        let status = cols[8].trim();
         if !matches_status(status) {
             continue;
         }
         let document_root = resolve_document_root(root_path, project_root, start_directory, &domain);
         sites.push(SiteConfig {
             id: cols[0].trim().to_string(),
+            scope,
             hostnames: std::sync::Arc::from([domain.clone(), format!("www.{domain}")]),
             document_root,
             php_version,
@@ -90,12 +92,19 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         });
         if enable_ssl {
             tls.push(super::TlsConfig {
-                hostnames: std::sync::Arc::from([domain.clone(), format!("www.{domain}")]),
+                // The configured certificate may not include the www alias.
+                // Register only the guaranteed hostname so one single-name
+                // certificate cannot prevent the entire TLS listener starting.
+                hostnames: std::sync::Arc::from([domain.clone()]),
                 cert_path: default_cert_path(&domain),
                 key_path: default_key_path(&domain),
             });
         }
 
+    }
+
+    if sites.is_empty() {
+        return Err("database snapshot returned no active websites".to_string());
     }
 
     Ok(RuntimeSnapshot {
@@ -133,6 +142,13 @@ fn find_mysql_client() -> &'static str {
     }
 }
 
+fn normalize_scope(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "system" => "system".to_string(),
+        _ => "user".to_string(),
+    }
+}
+
 fn normalize_domain(domain: &str) -> String {
     domain.trim().trim_end_matches('.').to_lowercase()
 }
@@ -142,10 +158,18 @@ fn default_document_root(domain: &str) -> PathBuf {
 }
 
 fn default_cert_path(domain: &str) -> PathBuf {
+    let certbot_path = PathBuf::from(format!("/etc/letsencrypt/live/{domain}/fullchain.pem"));
+    if certbot_path.is_file() {
+        return certbot_path;
+    }
     PathBuf::from(format!("/etc/drust/tls/{domain}.crt"))
 }
 
 fn default_key_path(domain: &str) -> PathBuf {
+    let certbot_path = PathBuf::from(format!("/etc/letsencrypt/live/{domain}/privkey.pem"));
+    if certbot_path.is_file() {
+        return certbot_path;
+    }
     PathBuf::from(format!("/etc/drust/tls/{domain}.key"))
 }
 

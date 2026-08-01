@@ -378,16 +378,16 @@ panel_register_server() {
   "admin_username": "${PANEL_ADMIN_USERNAME:-}",
   "admin_email": "${PANEL_ADMIN_EMAIL:-}",
   "admin_password": "${PANEL_ADMIN_PASSWORD:-}",
-  "edge_gateway_bind": "${DRUST_EDGE_GATEWAY_BIND:-127.0.0.1:9500}",
-  "edge_gateway_http_bind": "${DRUST_EDGE_GATEWAY_HTTP_BIND:-127.0.0.1:8080}",
+  "edge_gateway_bind": "${DRUST_HTTP_BIND:-0.0.0.0:80}",
+  "edge_gateway_https_bind": "${DRUST_HTTPS_BIND:-0.0.0.0:443}",
   "edge_gateway_root": "${DRUST_DEFAULT_SITE_ROOT:-/var/www/html}"
 }
 EOF
 
   install -d -m 0750 /etc/drust
   cat > "$edge_gateway_env" <<EOF
-DRUST_EDGE_GATEWAY_BIND=${DRUST_EDGE_GATEWAY_BIND:-127.0.0.1:9500}
-DRUST_EDGE_GATEWAY_HTTP_BIND=${DRUST_EDGE_GATEWAY_HTTP_BIND:-127.0.0.1:8080}
+DRUST_HTTP_BIND=${DRUST_HTTP_BIND:-0.0.0.0:80}
+DRUST_HTTPS_BIND=${DRUST_HTTPS_BIND:-0.0.0.0:443}
 DRUST_PANEL_DOMAIN=${PANEL_DOMAIN:-}
 DRUST_DEFAULT_SITE_ROOT=${DRUST_DEFAULT_SITE_ROOT:-/var/www/html}
 EOF
@@ -1239,21 +1239,13 @@ panel_site_create() {
 
   mkdir -p "$DPANEL_TEMPLATE_DIR/generated/sites" "$DPANEL_TEMPLATE_DIR/generated/pools"
 
-  if false; then
-    panel_render_template \
-      "${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.conf" \
-      domain "$domain" \
-      root "$root_path" \
-      username "$username" \
-      php_version "$php_version"
-  else
-    panel_render_template \
-      "${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.conf" \
-      domain "$domain" \
-      root "$root_path" \
-      username "$username" \
-      php_version "$php_version"
-  fi
+  panel_render_template \
+    "${DPANEL_RUNTIME_DIR}/nginx-site.conf.tpl" \
+    "${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.conf" \
+    domain "$domain" \
+    root "$root_path" \
+    username "$username" \
+    php_version "$php_version"
 
   panel_render_template \
     "${DPANEL_RUNTIME_DIR}/php-pool.conf.tpl" \
@@ -1846,7 +1838,7 @@ panel_finalize_default_install() {
   local drust_token="${DRUST_API_TOKEN:-}"
 
   if [[ -n "$drust_token" ]]; then
-    panel_env_set "$env_file" SERVERPANEL_EXECUTION_API_BASE_URL "http://127.0.0.1:9600"
+    panel_env_set "$env_file" SERVERPANEL_EXECUTION_API_BASE_URL "http://127.0.0.1:9500"
     panel_env_set "$env_file" SERVERPANEL_EXECUTION_API_TOKEN "$drust_token"
   fi
 

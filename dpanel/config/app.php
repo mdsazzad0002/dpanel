@@ -85,7 +85,8 @@ return [
     'webtools_separate_ports' => false,
     'phpmyadmin_port' => env('PHPMYADMIN_PORT', env('PANEL_PORT')),
     'phpmyadmin_url' => env('PHPMYADMIN_URL', ''),
-    'phpmyadmin_helper_url' => env('PHPMYADMIN_HELPER_URL', env('PHPMYADMIN_URL') ? rtrim((string) env('PHPMYADMIN_URL'), '/').'/phpmyadminsignin.php' : ''),
+    // Keep sign-on same-origin so panel hostname migrations preserve cookies.
+    'phpmyadmin_helper_url' => env('PHPMYADMIN_HELPER_URL', '/phpmyadmin/phpmyadminsignin.php'),
     'phpmyadmin_admin_username' => env('PHPMYADMIN_ADMIN_USERNAME', env('DB_USERNAME', '')),
     'phpmyadmin_admin_password' => env('PHPMYADMIN_ADMIN_PASSWORD', env('DB_PASSWORD', '')),
     'phpmyadmin_admin_host' => env('PHPMYADMIN_ADMIN_HOST', env('DB_HOST', '127.0.0.1')),

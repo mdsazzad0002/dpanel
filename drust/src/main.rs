@@ -2,6 +2,7 @@ mod admin;
 mod api;
 mod app;
 mod database;
+mod cron;
 mod filemanager;
 mod health;
 mod laravel;
@@ -18,8 +19,11 @@ fn main() -> std::process::ExitCode {
     tracing_subscriber::fmt::init();
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.first().map(String::as_str) == Some("edge-gateway") {
-        let bind = std::env::var("DRUST_EDGE_GATEWAY_BIND")
-            .unwrap_or_else(|_| "127.0.0.1:9600".to_string());
+        // DRUST_HTTP_BIND is the canonical public listener. Keep the old
+        // variable as a fallback for existing installations during upgrades.
+        let bind = std::env::var("DRUST_HTTP_BIND")
+            .or_else(|_| std::env::var("DRUST_EDGE_GATEWAY_BIND"))
+            .unwrap_or_else(|_| "0.0.0.0:80".to_string());
         return match edge_gateway::serve_gateway(&bind) {
             Ok(()) => std::process::ExitCode::from(0),
             Err(error) => {

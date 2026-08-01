@@ -14,6 +14,14 @@ const liveSnapshot = ref({ ...(props.snapshot || {}) });
 const refreshError = ref('');
 let refreshTimer = null;
 
+const serviceLabels = {
+    edge: 'Edge',
+    api_service: 'API Service',
+};
+
+const serviceLabel = (service) => serviceLabels[service]
+    || String(service).replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+
 const refreshSnapshot = async () => {
     try {
         const response = await fetch(route('monitoring.snapshot'), {
@@ -111,7 +119,7 @@ onBeforeUnmount(() => {
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Services</h2>
                     <div class="mt-3 space-y-2">
                         <div v-for="(status, service) in liveSnapshot.services || {}" :key="service" class="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
-                            <span class="text-sm font-medium uppercase">{{ service }}</span>
+                            <span class="text-sm font-medium">{{ serviceLabel(service) }}</span>
                             <span :class="status === 'running' ? 'text-emerald-600' : 'text-amber-600'" class="text-xs font-semibold">{{ status }}</span>
                         </div>
                     </div>

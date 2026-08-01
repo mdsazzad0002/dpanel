@@ -70,7 +70,7 @@ if [[ -f "${LARAVEL_ENV}" ]]; then
   else
     printf '\nSERVERPANEL_EXECUTION_API_TOKEN=%s\n' "${DRUST_API_TOKEN}" >> "${LARAVEL_ENV}"
   fi
-  DRUST_LIVE_API_URL="http://127.0.0.1:${DRUST_API_PORT:-9600}"
+  DRUST_LIVE_API_URL="http://127.0.0.1:${DRUST_API_PORT:-9500}"
   for key_value in \
     "SERVERPANEL_EXECUTION_API_BASE_URL=${DRUST_LIVE_API_URL}" \
     "SERVERPANEL_FILEMANAGER_API_URL=${DRUST_LIVE_API_URL}/api/v1/filemanager"; do

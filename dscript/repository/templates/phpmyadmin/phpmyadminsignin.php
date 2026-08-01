@@ -84,7 +84,9 @@ function clearSignonSession(): void
 
 $action = (string) ($_GET['action'] ?? '');
 $selfUrl = strtok((string) ($_SERVER['REQUEST_URI'] ?? ''), '?');
-$target = rtrim(dirname($selfUrl), '/') . '/index.php';
+// The gateway may expose the helper with a local CGI URI; the public target
+// must remain inside the fixed phpMyAdmin system path.
+$target = '/phpmyadmin/index.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action !== 'redirect') {
     clearSignonSession();
@@ -119,6 +121,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action !== 'redirect') {
     <body>
         <p>Logged out from phpMyAdmin.</p>
         <p>Start login again from ServerPanel.</p>
+        <p>You will be redirected to the panel in <span id="countdown">5</span> seconds.</p>
+        <script>
+            let seconds = 5;
+            const countdown = document.getElementById('countdown');
+            const timer = setInterval(() => {
+                seconds -= 1;
+                countdown.textContent = String(seconds);
+                if (seconds <= 0) {
+                    clearInterval(timer);
+                    window.location.href = '/';
+                }
+            }, 1000);
+        </script>
     </body>
     </html>
     <?php

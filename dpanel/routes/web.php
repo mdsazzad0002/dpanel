@@ -23,6 +23,7 @@ use App\Http\Controllers\ServerPanelController;
 use App\Http\Controllers\ServerTaskController;
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\UserManagementController;
+use App\Http\Controllers\WebsiteTrashBackupController;
 
 use App\Models\PanelSession;
 use Illuminate\Foundation\Application;
@@ -31,48 +32,20 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/', function () {
-    if (Auth::check()) {
-        $token = (string) session('panel_session_token', '');
-
-        if ($token !== '') {
-            return redirect()->route('dashboard', ['token' => $token]);
-        }
-
-        $urlToken = bin2hex(random_bytes(32));
-        $cookieToken = bin2hex(random_bytes(32));
-        $lifetime = max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120)));
-        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
-
-        PanelSession::create([
-            'user_id' => Auth::id(),
-            'token_hash' => hash('sha256', $urlToken),
-            'cookie_hash' => hash('sha256', $cookieToken),
-            'ip_address' => (string) request()->ip(),
-            'user_agent_hash' => hash('sha256', (string) request()->userAgent()),
-            'expires_at' => now()->addMinutes($lifetime),
-            'last_seen_at' => now(),
+    if (Auth::check() && session('panel_session_token')) {
+        return redirect()->route('dashboard', [
+            'token' => session('panel_session_token'),
         ]);
-
-        session()->put('panel_session_token', $urlToken);
-
-        $panelCookie = cookie(
-            name: $cookieName,
-            value: $cookieToken,
-            minutes: $lifetime,
-            path: (string) config('session.path', '/'),
-            domain: config('session.domain'),
-            secure: (bool) config('session.secure'),
-            httpOnly: true,
-            raw: false,
-            sameSite: 'Lax'
-        );
-
-        return redirect()->route('dashboard', ['token' => $urlToken])
-            ->withCookie($panelCookie);
     }
 
     return redirect()->route('login');
 });
+
+Route::get('/cpsess{token}/login', function () {
+    // Viewing the login screen must not revoke the current token. Rotation
+    // happens only after the user explicitly submits the login form.
+    return redirect()->route('login');
+})->where('token', '[0-9a-fA-F]{64}');
 
 Route::get('/init', function () {
     return Inertia::render('Welcome', [
@@ -262,9 +235,6 @@ Route::prefix('cpsess{token}')
     Route::post('/apache/action', [ApacheController::class, 'runAction'])
         ->middleware('role:admin|reseller')
         ->name('apache.action');
-    Route::post('/apache/sync-shared-websites', [ApacheController::class, 'syncSharedWebsites'])
-        ->middleware('role:admin|reseller')
-        ->name('apache.sync-shared-websites');
     Route::get('/backups', [BackupController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('backups.index');
@@ -283,6 +253,16 @@ Route::prefix('cpsess{token}')
         ->middleware('role:admin|reseller')
         ->where('run', '[0-9]{8}_[0-9]{6}')
         ->name('backups.destroy');
+    Route::get('/trash-backups', [WebsiteTrashBackupController::class, 'index'])
+        ->middleware('role:admin|reseller|general|general_user')
+        ->name('trash-backups.index');
+    Route::patch('/trash-backups/retention', [WebsiteTrashBackupController::class, 'updateRetention'])
+        ->middleware('role:admin|reseller')
+        ->name('trash-backups.retention.update');
+    Route::get('/trash-backups/{id}/download', [WebsiteTrashBackupController::class, 'download'])
+        ->middleware('role:admin|reseller|general|general_user')
+        ->whereUuid('id')
+        ->name('trash-backups.download');
     Route::get('/monitoring', [MonitoringController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('monitoring.index');

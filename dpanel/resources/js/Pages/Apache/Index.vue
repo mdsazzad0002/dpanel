@@ -24,50 +24,9 @@ const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
 const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '');
-const syncMessage = ref('');
-const syncMessageType = ref('success');
 const actionLoading = ref('');
 const actionMessage = ref('');
 const actionMessageType = ref('success');
-const sharedSyncLoading = ref(false);
-
-const syncSharedWebsites = async () => {
-    if (sharedSyncLoading.value) {
-        return;
-    }
-
-    syncMessage.value = '';
-    sharedSyncLoading.value = true;
-
-    try {
-        const response = await fetch(panelRoute('apache.sync-shared-websites'), {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': csrfToken.value,
-            },
-            body: JSON.stringify({}),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw data;
-        }
-
-        syncMessageType.value = 'success';
-        syncMessage.value = String(data.message || 'Shared websites Apache config generated successfully.');
-        router.reload({
-            only: ['apache'],
-        });
-    } catch (error) {
-        syncMessageType.value = 'error';
-        syncMessage.value = String(error?.message || 'Shared websites config sync failed.');
-    } finally {
-        sharedSyncLoading.value = false;
-    }
-};
 
 const runAction = async (action) => {
     if (actionLoading.value) {
@@ -166,7 +125,7 @@ const boolTone = (flag) => (flag
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Apache + Nginx Setup</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Service controls, config validation, and shared website vhost generation for both web servers.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Service controls and configuration validation for both web servers.</p>
             </div>
         </template>
 
@@ -176,11 +135,6 @@ const boolTone = (flag) => (flag
             </div>
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 whitespace-pre-line">
                 {{ page.props.flash.error }}
-            </div>
-            <div v-if="syncMessage" :class="syncMessageType === 'success'
-                ? 'rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 whitespace-pre-line'
-                : 'rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 whitespace-pre-line'">
-                {{ syncMessage }}
             </div>
             <div v-if="actionMessage" :class="actionMessageType === 'success'
                 ? 'rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 whitespace-pre-line'
@@ -268,18 +222,6 @@ const boolTone = (flag) => (flag
                     <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!!actionLoading" @click="runAction('start')">{{ actionLoading === 'start' ? 'Starting...' : 'Start' }}</button>
                     <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" :disabled="!!actionLoading" @click="runAction('status')">{{ actionLoading === 'status' ? 'Checking...' : 'Status' }}</button>
                     <button type="button" class="rounded-md border border-amber-300 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:text-amber-400" :disabled="!!actionLoading" @click="runAction('renew_ssl')">{{ actionLoading === 'renew_ssl' ? 'Renewing...' : 'Renew SSL' }}</button>
-                </div>
-            </section>
-
-            <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Shared Websites Config</h2>
-                <p class="mt-2 break-all text-xs text-slate-500">Target file: {{ apache.shared_vhost_file || '-' }}</p>
-                <p class="mt-1 text-xs text-slate-500">Last generated: {{ apache.shared_vhost_last_modified || '-' }}</p>
-                <p class="mt-1 text-xs text-slate-500">{{ apache.include_hint }}</p>
-                <div class="mt-3">
-                    <button type="button" class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60" :disabled="sharedSyncLoading" @click="syncSharedWebsites">
-                        {{ sharedSyncLoading ? 'Syncing...' : 'Sync Shared Websites' }}
-                    </button>
                 </div>
             </section>
 
