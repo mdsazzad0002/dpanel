@@ -168,7 +168,6 @@ class WebsiteLifecycleService
                 $validated['domain'],
                 (string) $validated['php_version'],
             );
-            $callbacks['relocateApacheDefaultPage']();
             $sslNotice = null;
             if (! empty($validated['enable_ssl'])) {
                 $sslResult = $callbacks['runIssueSslScript'](

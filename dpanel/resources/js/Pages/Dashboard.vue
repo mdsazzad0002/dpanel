@@ -80,7 +80,7 @@ const quickActions = [
     { label: 'New Website', icon: 'bi-globe', route: 'websites.create', color: 'from-blue-500 to-blue-600' },
     { label: 'New Email', icon: 'bi-envelope-plus', route: 'emails.create', color: 'from-violet-500 to-violet-600' },
     { label: 'New Database', icon: 'bi-database-add', route: 'databases.create', color: 'from-amber-500 to-amber-600' },
-    { label: 'DNS Records', icon: 'bi-diagram-3', route: 'dns.records', color: 'from-cyan-500 to-cyan-600' },
+    { label: 'DNS Zones', icon: 'bi-diagram-3', route: 'dns.zones', color: 'from-cyan-500 to-cyan-600' },
     { label: 'Monitoring', icon: 'bi-activity', route: 'monitoring.index', color: 'from-emerald-500 to-emerald-600' },
     { label: 'Security', icon: 'bi-shield-lock', route: 'security.manager', color: 'from-red-500 to-red-600' },
 ];

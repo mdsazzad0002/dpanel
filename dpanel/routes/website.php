@@ -34,13 +34,6 @@ use App\Http\Controllers\Website\WebsiteManage\AlisWebsiteController;
 
 
 
-// WEbsite Preview ==========================================================
-use App\Http\Controllers\Website\WebsiteManage\WebsitePreviewController;
-    Route::get('/websites/{id}/preview/{path?}', [WebsitePreviewController::class, 'preview'])
-        ->middleware('role:admin|reseller')
-        ->where('path', '.*')
-        ->name('websites.preview');
-
     Route::get('/websites/parent-domains/search', [WebsiteController::class, 'searchParentDomains'])
         ->middleware('role:admin|reseller')
         ->name('websites.parent-domains.search');
@@ -66,12 +59,6 @@ use App\Http\Controllers\Website\WebsiteManage\WebsitePreviewController;
     Route::get('/websites/{id}/manage', [WebsiteOperationsController::class, 'manage'])
         ->middleware('role:admin|reseller')
         ->name('websites.manage');
-    Route::get('/websites/{id}/web-server', [WebsiteOperationsController::class, 'webServerManager'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.web-server');
-    Route::patch('/websites/{id}/web-server', [WebsiteOperationsController::class, 'updateWebServer'])
-        ->middleware('role:admin|reseller')
-        ->name('websites.web-server.update');
     Route::get('/websites/{id}/ssl', [WebsiteOperationsController::class, 'sslManager'])
         ->middleware('role:admin|reseller')
         ->name('websites.ssl');

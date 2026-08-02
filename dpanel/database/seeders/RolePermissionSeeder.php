@@ -25,7 +25,6 @@ class RolePermissionSeeder extends Seeder
             'view_dashboard',
             'manage_websites',
             'manage_email',
-            'manage_apache',
             'manage_subscriptions',
             'manage_users',
         ];

@@ -17,7 +17,6 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
 
-        // Nginx terminates TLS and proxies to Apache over plain HTTP on localhost.
         // Without this the panel builds http:// asset/redirect URLs on an https page.
         $middleware->trustProxies(
             at: ['127.0.0.1', '::1'],

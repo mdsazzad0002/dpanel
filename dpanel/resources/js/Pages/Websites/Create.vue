@@ -32,6 +32,7 @@ const form = useForm({
     root_path: '',
     php_version: props.defaultPhpVersion || '',
     enable_ssl: true,
+    manage_dns: false,
 });
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
@@ -264,9 +265,17 @@ const submit = async () => {
             return;
         }
         submitMessageType.value = String(data.type || 'success');
-        submitMessage.value = String(data.message || 'Website created and activated successfully.');
+        const dns = data?.dns || {};
+        const dnsNote = dns.skipped === 'external-nameservers'
+            ? ' DNS was skipped because this domain is not using your nameservers.'
+            : dns.managed
+                ? ' DNS was auto-managed by dPanel.'
+                : '';
+        submitMessage.value = String(data.message || 'Website created and activated successfully.') + dnsNote;
 
         form.reset();
+        form.enable_ssl = true;
+        form.manage_dns = false;
     } catch (error) {
         const data = error?.response?.data || {};
         const errors = data?.errors || {};
@@ -491,6 +500,15 @@ onBeforeUnmount(() => {
                 <div v-if="!props.aliasMode" class="flex items-center gap-2 pt-7">
                     <input id="enable_ssl" v-model="form.enable_ssl" type="checkbox" class="rounded border-slate-300" />
                     <label for="enable_ssl" class="text-sm">Enable SSL</label>
+                </div>
+                <div v-if="!props.aliasMode" class="flex items-start gap-2 pt-2 md:col-span-2">
+                    <input id="manage_dns" v-model="form.manage_dns" type="checkbox" class="mt-1 rounded border-slate-300" />
+                    <label for="manage_dns" class="text-sm leading-6">
+                        <span class="font-medium">Manage DNS with dPanel</span>
+                        <span class="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                            Automatically create and manage DNS records only when this domain uses your dPanel nameservers.
+                        </span>
+                    </label>
                 </div>
                 <div class="md:col-span-2">
                     <button type="submit" :disabled="submitting" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">

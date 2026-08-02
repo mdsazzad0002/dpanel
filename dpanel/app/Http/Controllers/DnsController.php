@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Mailbox;
 use App\Models\Website;
+use App\Services\Dns\DnsRegistryService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,27 +18,26 @@ class DnsController extends Controller
 {
     private const NAMESERVER_TABLE = 'serverpanel_dns_nameservers';
 
-    public function nameservers(): Response
+    public function nameservers(DnsRegistryService $dnsRegistry): Response
     {
         $this->ensureDnsTables();
 
         return Inertia::render('DnsNameservers', [
-            'nameservers' => $this->pdns()->table(self::NAMESERVER_TABLE)
-                ->orderByDesc('created_at')
-                ->get()
-                ->map(fn ($row) => [
-                    'id' => (string) $row->id,
-                    'domain' => (string) $row->domain,
-                    'hostname' => (string) $row->hostname,
-                    'ipv4' => $row->ipv4 ? (string) $row->ipv4 : null,
-                    'ipv6' => $row->ipv6 ? (string) $row->ipv6 : null,
-                    'ttl' => (int) $row->ttl,
-                    'status' => (string) $row->status,
-                    'created_at' => $row->created_at,
-                    'updated_at' => $row->updated_at,
-                ])
-                ->values()
-                ->all(),
+            'dnsEngine' => $dnsRegistry->engine(),
+            'dnsProviderLabel' => $dnsRegistry->providerLabel(),
+            'authoritativeMode' => $dnsRegistry->authoritativeMode(),
+            'dynamicUpdatesAllowed' => $dnsRegistry->allowDynamicUpdates(),
+            'nameservers' => $this->pdns()->table(self::NAMESERVER_TABLE)->orderByDesc('created_at')->get()->map(fn ($row) => [
+                'id' => (string) $row->id,
+                'domain' => (string) $row->domain,
+                'hostname' => (string) $row->hostname,
+                'ipv4' => $row->ipv4 ? (string) $row->ipv4 : null,
+                'ipv6' => $row->ipv6 ? (string) $row->ipv6 : null,
+                'ttl' => (int) $row->ttl,
+                'status' => (string) $row->status,
+                'created_at' => $row->created_at,
+                'updated_at' => $row->updated_at,
+            ])->values()->all(),
             'websiteDomains' => $this->readWebsiteDomains(),
         ]);
     }
@@ -191,7 +191,7 @@ class DnsController extends Controller
         return redirect()->route('dns.nameservers')->with('success', 'Nameserver deleted.');
     }
 
-    public function zones(): Response
+    public function zones(DnsRegistryService $dnsRegistry): Response
     {
         $this->ensureDnsTables();
         $domains = $this->pdns()->table('domains')->orderByDesc('id')->get();
@@ -219,14 +219,43 @@ class DnsController extends Controller
             ];
         })->values()->all();
 
+        $recordsByZone = $this->pdns()->table('records as r')
+            ->join('domains as d', 'd.id', '=', 'r.domain_id')
+            ->where('r.type', '!=', 'SOA')
+            ->orderBy('d.name')
+            ->orderBy('r.name')
+            ->orderBy('r.type')
+            ->select(['r.id', 'r.name', 'r.type', 'r.content', 'r.ttl', 'r.prio', 'r.disabled', 'd.name as zone_domain'])
+            ->get()
+            ->groupBy('zone_domain')
+            ->map(function ($items, $zoneDomain) {
+                return $items->map(function ($row) use ($zoneDomain) {
+                    return [
+                        'id' => (string) $row->id,
+                        'zone_domain' => (string) $zoneDomain,
+                        'type' => (string) $row->type,
+                        'name' => $this->toUiRecordName((string) $row->name, (string) $zoneDomain),
+                        'content' => (string) $row->content,
+                        'ttl' => (int) $row->ttl,
+                        'priority' => $row->prio !== null ? (int) $row->prio : null,
+                        'status' => ((int) $row->disabled) === 1 ? 'disabled' : 'active',
+                        'created_at' => $row->id,
+                    ];
+                })->values()->all();
+            })
+            ->all();
+
         return Inertia::render('DnsZones', [
+            'dnsEngine' => $dnsRegistry->engine(),
+            'dnsProviderLabel' => $dnsRegistry->providerLabel(),
+            'authoritativeMode' => $dnsRegistry->authoritativeMode(),
+            'dynamicUpdatesAllowed' => $dnsRegistry->allowDynamicUpdates(),
             'zones' => $zones,
+            'recordsByZone' => $recordsByZone,
+            'zoneDomains' => collect($zones)->pluck('domain')->values()->all(),
             'websiteDomains' => $this->readWebsiteDomains(),
-            'cloudflareGuide' => $this->buildCloudflareGuide(),
-            'mailGuide' => $this->buildMailDnsGuide(),
         ]);
     }
-
     public function storeZone(Request $request): RedirectResponse
     {
         $this->ensureDnsTables();
@@ -334,33 +363,7 @@ class DnsController extends Controller
 
     public function records(): Response
     {
-        $this->ensureDnsTables();
-        $records = $this->pdns()->table('records as r')
-            ->join('domains as d', 'd.id', '=', 'r.domain_id')
-            ->where('r.type', '!=', 'SOA')
-            ->orderByDesc('r.id')
-            ->select(['r.id', 'r.name', 'r.type', 'r.content', 'r.ttl', 'r.prio', 'r.disabled', 'd.name as zone_domain'])
-            ->get()
-            ->map(fn ($row) => [
-                'id' => (string) $row->id,
-                'zone_domain' => (string) $row->zone_domain,
-                'type' => (string) $row->type,
-                'name' => $this->toUiRecordName((string) $row->name, (string) $row->zone_domain),
-                'content' => (string) $row->content,
-                'ttl' => (int) $row->ttl,
-                'priority' => $row->prio !== null ? (int) $row->prio : null,
-                'status' => ((int) $row->disabled) === 1 ? 'disabled' : 'active',
-                'created_at' => $row->id,
-            ])
-            ->values()
-            ->all();
-
-        $zones = $this->pdns()->table('domains')->orderBy('name')->pluck('name')->values()->all();
-
-        return Inertia::render('DnsRecords', [
-            'records' => $records,
-            'zoneDomains' => $zones,
-        ]);
+        return redirect()->route('dns.zones');
     }
 
     public function storeRecord(Request $request): RedirectResponse
@@ -379,7 +382,7 @@ class DnsController extends Controller
         $zoneDomain = $this->normalizeDomain($validated['zone_domain']);
         $zone = $this->findDomainByName($zoneDomain);
         if (! $zone) {
-            return redirect()->route('dns.records')->with('error', 'Zone not found.');
+            return redirect()->route('dns.zones')->with('error', 'Zone not found.');
         }
 
         $name = $this->toFqdnRecordName($validated['name'], $zoneDomain);
@@ -394,7 +397,7 @@ class DnsController extends Controller
             'auth' => 1,
         ]);
 
-        return redirect()->route('dns.records')->with('success', 'DNS record created.');
+        return redirect()->route('dns.zones')->with('success', 'DNS record created.');
     }
 
     public function updateRecord(Request $request, string $id): RedirectResponse
@@ -413,13 +416,13 @@ class DnsController extends Controller
         $recordId = (int) $id;
         $record = $this->pdns()->table('records')->where('id', $recordId)->first();
         if (! $record) {
-            return redirect()->route('dns.records')->with('error', 'DNS record not found.');
+            return redirect()->route('dns.zones')->with('error', 'DNS record not found.');
         }
 
         $zoneDomain = $this->normalizeDomain($validated['zone_domain']);
         $zone = $this->findDomainByName($zoneDomain);
         if (! $zone) {
-            return redirect()->route('dns.records')->with('error', 'Zone not found.');
+            return redirect()->route('dns.zones')->with('error', 'Zone not found.');
         }
 
         $name = $this->toFqdnRecordName($validated['name'], $zoneDomain);
@@ -434,7 +437,7 @@ class DnsController extends Controller
             'auth' => 1,
         ]);
 
-        return redirect()->route('dns.records')->with('success', 'DNS record updated.');
+        return redirect()->route('dns.zones')->with('success', 'DNS record updated.');
     }
 
     public function destroyRecord(string $id): RedirectResponse
@@ -442,7 +445,7 @@ class DnsController extends Controller
         $this->ensureDnsTables();
         $this->pdns()->table('records')->where('id', (int) $id)->delete();
 
-        return redirect()->route('dns.records')->with('success', 'DNS record deleted.');
+        return redirect()->route('dns.zones')->with('success', 'DNS record deleted.');
     }
 
     public function syncCloudflare(Request $request): RedirectResponse

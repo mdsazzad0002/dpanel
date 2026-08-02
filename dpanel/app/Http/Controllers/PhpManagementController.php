@@ -63,108 +63,30 @@ class PhpManagementController extends Controller
 
     public function manager(Request $request): Response|JsonResponse
     {
+        $versions = $this->detectServerPhpVersionsViaScript();
+
         if ($request->expectsJson()) {
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'items' => [
-                        [
-                            'title' => 'PHP Versions',
-                            'description' => 'Set the active version list and default runtime version.',
-                            'route' => route('php.versions'),
-                            'accent' => 'blue',
-                        ],
-                        [
-                            'title' => 'PHP Config',
-                            'description' => 'Edit php.ini style runtime values per PHP version.',
-                            'route' => route('php.config'),
-                            'accent' => 'emerald',
-                        ],
-                        [
-                            'title' => 'PHP Extensions',
-                            'description' => 'Enable or disable PHP modules for each version.',
-                            'route' => route('php.extensions'),
-                            'accent' => 'amber',
-                        ],
-                    ],
+                    'versions' => $versions,
+                    'api_available' => count($versions) > 0,
+                    'items' => [],
                 ],
             ]);
         }
 
-        return Inertia::render('PhpManager');
-    }
-
-    public function versions(): Response
-    {
-        $state = $this->readState();
-        $selectedVersion = self::normalizePhpVersionSelection(
-            (string) request()->query('version', $state['default_version']),
-            $state['versions']
-        );
-
-        return Inertia::render('PhpVersions', [
-            'installedVersions' => $state['versions'],
-            'defaultVersion' => $selectedVersion,
+        return Inertia::render('PhpManager', [
+            'versions' => $versions,
+            'apiAvailable' => count($versions) > 0,
         ]);
     }
 
-    public function checkInstalledVersions(): JsonResponse
+    public function versions(): RedirectResponse
     {
-        return response()->json([
-            'installed_versions' => $this->readState()['versions'],
+        return redirect()->route('php.manager', [
+            'token' => request()->route('token'),
         ]);
-    }
-
-    public function updateVersions(Request $request): RedirectResponse
-    {
-        $validated = $request->validate([
-            'installed_versions' => ['nullable', 'array'],
-            'installed_versions.*' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
-            'current_version' => ['nullable', 'string', 'regex:/^\d+\.\d+$/'],
-        ]);
-
-        $versions = collect($validated['installed_versions'] ?? [])
-            ->map(fn ($version) => trim((string) $version))
-            ->filter()
-            ->map(fn (string $version): string => self::normalizePhpVersionSelection($version, []))
-            ->filter(fn (string $version): bool => preg_match('/^\d+\.\d+$/', $version) === 1)
-            ->unique()
-            ->sort(fn ($a, $b) => version_compare($b, $a))
-            ->values()
-            ->all();
-
-        $currentVersion = self::normalizePhpVersionSelection((string) ($validated['current_version'] ?? ''), $versions);
-        if ($currentVersion === '' || ! in_array($currentVersion, $versions, true)) {
-            $currentVersion = $versions[0] ?? '';
-        }
-
-        $state = $this->readState();
-        $state['versions'] = $versions;
-        $state['default_version'] = $currentVersion;
-        $state['extensions'] = $this->normalizeExtensions($state['extensions'] ?? [], $versions);
-        $state['config'] = $this->normalizeConfig($state['config'] ?? [], $versions);
-
-        $this->writeState($state);
-
-        return redirect()->route('php.versions', ['version' => $currentVersion])->with('success', 'PHP versions updated successfully.');
-    }
-
-    public function refreshVersionsFromServer(Request $request): RedirectResponse|JsonResponse
-    {
-        $state = $this->readState();
-        $currentVersion = $state['default_version'] ?? '';
-
-        $this->writeState($state);
-
-        if ($request->expectsJson()) {
-            return response()->json([
-                'success' => true,
-                'message' => 'PHP versions loaded from template successfully.',
-                'data' => $this->buildManagerPayload($state, $currentVersion),
-            ]);
-        }
-
-        return redirect()->route('php.versions', ['version' => $currentVersion])->with('success', 'PHP versions loaded from template successfully.');
     }
 
     public function extensions(Request $request): Response
@@ -199,10 +121,47 @@ class PhpManagementController extends Controller
         ]);
     }
 
+    public function extensionDetails(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
+        ]);
+        $version = (string) $validated['version'];
+        $versions = $this->detectServerPhpVersionsViaScript();
+
+        if (! in_array($version, $versions, true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The Rust API did not report this PHP version.',
+            ], 422);
+        }
+
+        $availableExtensions = $this->detectExtensionsForVersion($version);
+        $rawState = $this->readRawState();
+        $extensionStates = is_array($rawState['extensions'][$version] ?? null)
+            ? $rawState['extensions'][$version]
+            : [];
+
+        foreach ($availableExtensions as $extension) {
+            if (! array_key_exists($extension, $extensionStates)) {
+                $extensionStates[$extension] = true;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'version' => $version,
+                'availableExtensions' => $availableExtensions,
+                'extensionStates' => $extensionStates,
+            ],
+        ]);
+    }
+
     public function updateExtensions(Request $request): RedirectResponse|JsonResponse
     {
-        $state = $this->readState();
-        $versions = $state['versions'];
+        $state = $this->readRawState();
+        $versions = $this->detectServerPhpVersionsViaScript();
 
         $validated = $request->validate([
             'version' => ['required', 'string'],
@@ -238,7 +197,7 @@ class PhpManagementController extends Controller
             ->mapWithKeys(fn ($extension) => [$extension => in_array($extension, $enabledExtensions, true)])
             ->all();
 
-        $this->writeState($state);
+        $this->writeRawState($state);
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -299,22 +258,32 @@ class PhpManagementController extends Controller
         return redirect()->route('php.extensions', ['version' => $version])->with('success', "Extensions synced from server for PHP {$version}.");
     }
 
-    public function config(Request $request): Response
+    public function config(Request $request): RedirectResponse
     {
-        $state = $this->readState();
-        $versions = $state['versions'];
-        $selectedVersion = self::normalizePhpVersionSelection(
-            (string) $request->query('version', $state['default_version']),
-            $versions
-        );
-        if (! in_array($selectedVersion, $versions, true)) {
-            $selectedVersion = $state['default_version'];
+        return redirect()->route('php.manager', [
+            'token' => $request->route('token'),
+        ]);
+    }
+
+    public function configDetails(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
+        ]);
+        $version = (string) $validated['version'];
+
+        if (! in_array($version, $this->detectServerPhpVersionsViaScript(), true)) {
+            return response()->json(['success' => false, 'message' => 'The Rust API did not report this PHP version.'], 422);
         }
 
-        return Inertia::render('PhpConfig', [
-            'versions' => $versions,
-            'selectedVersion' => $selectedVersion,
-            'configValues' => $state['config'][$selectedVersion] ?? self::DEFAULT_CONFIG,
+        $state = $this->readState();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'version' => $version,
+                'configValues' => $state['config'][$version] ?? self::DEFAULT_CONFIG,
+            ],
         ]);
     }
 
@@ -680,7 +649,7 @@ class PhpManagementController extends Controller
     /**
      * @return array<int, string>
      */
-    private function detectExtensionsForVersion(string $token, string $version): array
+    private function detectExtensionsForVersion(string $version): array
     {
         $scriptExtensions = $this->detectExtensionsForVersionViaScript($version);
         if (count($scriptExtensions) > 0) {
@@ -865,7 +834,15 @@ class PhpManagementController extends Controller
 
         return collect(preg_split('/\r\n|\r|\n/', $result['output']) ?: [])
             ->map(fn ($line) => trim((string) $line))
-            ->filter(fn ($line) => preg_match('/^\d+\.\d+$/', $line) === 1)
+            ->filter(function ($line): bool {
+                if (preg_match('/^(\d+)\.\d+$/', $line, $matches) !== 1) {
+                    return false;
+                }
+
+                $major = (int) $matches[1];
+
+                return $major >= 5 && $major <= 20;
+            })
             ->unique()
             ->sort(fn ($a, $b) => version_compare((string) $b, (string) $a))
             ->values()

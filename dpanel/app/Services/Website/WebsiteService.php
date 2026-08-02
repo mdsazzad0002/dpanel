@@ -110,21 +110,6 @@ class WebsiteService
         return ($isAbsolute ? '/' : '').implode('/', $segments);
     }
 
-    public function resolvePreviewRootPath(Website $website): string
-    {
-        $rootPath = $this->normalizeAbsolutePath((string) ($website->root_path ?? ''));
-        if ($rootPath === '') {
-            return '';
-        }
-
-        $startDirectory = $this->normalizeRelativeDirectory((string) ($website->start_directory ?? ''), '');
-        if ($startDirectory === '') {
-            return $rootPath;
-        }
-
-        return $this->joinPaths($rootPath, $startDirectory);
-    }
-
     public function resolveWebsiteDocumentRoot(string $rootPath, ?string $startDirectory = null): string
     {
         $normalizedRootPath = $this->normalizeAbsolutePath($rootPath);
@@ -138,52 +123,6 @@ class WebsiteService
         }
 
         return $this->joinPaths($normalizedRootPath, $normalizedStartDirectory);
-    }
-
-    public function resolvePreviewFile(string $path): string|false
-    {
-        $normalized = $this->normalizeAbsolutePath($path);
-        if ($normalized === '') {
-            return false;
-        }
-
-        $real = realpath($normalized);
-        if ($real !== false && is_file($real)) {
-            return $real;
-        }
-
-        if (is_dir($normalized)) {
-            foreach (['index.html', 'index.php'] as $fileName) {
-                $candidate = realpath($normalized.DIRECTORY_SEPARATOR.$fileName);
-                if ($candidate !== false && is_file($candidate)) {
-                    return $candidate;
-                }
-            }
-        }
-
-        if (! is_dir($normalized)) {
-            $directory = dirname($normalized);
-            foreach (['index.html', 'index.php'] as $fileName) {
-                $candidate = realpath($directory.DIRECTORY_SEPARATOR.$fileName);
-                if ($candidate !== false && is_file($candidate)) {
-                    return $candidate;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    public function pathIsInside(string $file, string $directory): bool
-    {
-        $file = $this->normalizeAbsolutePath($file);
-        $directory = rtrim($this->normalizeAbsolutePath($directory), '/');
-
-        if ($file === '' || $directory === '') {
-            return false;
-        }
-
-        return $file === $directory || str_starts_with($file, $directory.'/');
     }
 
 }

@@ -51,7 +51,6 @@ class ScriptPathResolver
         $scriptName = match ($group) {
             'filemanager' => 'repository/modules/filemanager/filemanager.json',
             'filemanager-install' => 'repository/modules/filemanager/install.sh',
-            'sync-vhost' => 'scripts/sync-vhost.sh',
             'fix-web-stack' => 'scripts/fix-web-stack.sh',
             'fix-panel-web-stack' => 'scripts/fix-panel-web-stack.sh',
             'issue-ssl' => 'scripts/issue-ssl.sh',

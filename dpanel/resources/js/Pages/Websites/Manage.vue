@@ -184,7 +184,7 @@ const serviceLinks = computed(() => [
     { label: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Scheduled tasks' },
     { label: 'Email Accounts', icon: 'bi-envelope', color: 'pink', href: panelRoute('emails.list'), description: 'Mailbox services' },
     { label: 'Databases', icon: 'bi-database', color: 'orange', href: panelRoute('databases.list', { website: props.website.domain }), description: `Databases for ${props.website.domain}` },
-    { label: 'DNS Records', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.records'), description: 'DNS entries' },
+    { label: 'DNS Zones', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.zones'), description: 'DNS entries' },
     { label: 'PHP Manager', icon: 'bi-braces', color: 'indigo', href: panelRoute('php.manager'), description: 'PHP versions & modules' },
 ].filter((item) => !isSystemWebsite.value || !['WordPress Installer', 'File Manager'].includes(item.label)));
 
@@ -235,11 +235,6 @@ const liveSiteUrl = computed(() => {
     const domain = String(props.website?.domain || '').trim();
     if (!domain) return '';
     return `${scheme.value}://${domain}`;
-});
-
-const managementPreviewUrl = computed(() => {
-    if (!props.website?.id) return '';
-    return panelRoute('websites.preview', { id: props.website.id });
 });
 
 const copyToClipboard = (text) => {
@@ -674,37 +669,7 @@ const issueWebsiteSsl = async () => {
                             </div>
 
                             <!-- URL Cards -->
-                            <div class="grid gap-3 sm:grid-cols-2">
-                                <!-- Panel Preview -->
-                                <div
-                                    class="group rounded-xl border border-slate-200 bg-slate-50/50 p-3 transition dark:border-slate-700/80 dark:bg-slate-800/30">
-                                    <div class="flex items-center justify-between">
-                                        <p
-                                            class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                                            Panel Preview</p>
-                                        <a v-if="managementPreviewUrl" :href="managementPreviewUrl"
-                                            class="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
-                                            Open
-                                            <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current">
-                                                <path
-                                                    d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
-                                            </svg>
-                                        </a>
-                                    </div>
-                                    <div class="mt-2 flex items-center gap-2">
-                                        <input :value="managementPreviewUrl" type="text" readonly
-                                            class="min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400" />
-                                        <button v-if="managementPreviewUrl" type="button"
-                                            class="shrink-0 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-400 transition hover:text-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-500 dark:hover:text-blue-400"
-                                            @click="copyToClipboard(managementPreviewUrl)" title="Copy URL">
-                                            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current">
-                                                <path
-                                                    d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
-                                            </svg>
-                                        </button>
-                                    </div>
-                                </div>
-
+                            <div class="grid gap-3">
                                 <!-- Live Website -->
                                 <div
                                     class="group rounded-xl border border-slate-200 bg-slate-50/50 p-3 transition dark:border-slate-700/80 dark:bg-slate-800/30">

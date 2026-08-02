@@ -31,6 +31,7 @@ class Website extends Model
         'client_max_body_size',
         'wordpress_db_prefix',
         'enable_ssl',
+        'manage_dns',
         'filemanager_show_hidden',
         'assigned_user_id',
         'assigned_reseller_id',
@@ -41,6 +42,7 @@ class Website extends Model
 
     protected $casts = [
         'enable_ssl' => 'boolean',
+        'manage_dns' => 'boolean',
         'filemanager_show_hidden' => 'boolean',
         'assigned_user_id' => 'integer',
         'assigned_reseller_id' => 'integer',

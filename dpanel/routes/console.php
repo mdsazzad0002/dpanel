@@ -19,3 +19,7 @@ if ((bool) ($backupSettings['schedule_enabled'] ?? true)) {
 Schedule::command('serverpanel:ssl-reconcile')
     ->twiceDaily(3, 15)
     ->withoutOverlapping();
+
+Schedule::command('dns:reconcile-websites')
+    ->hourly()
+    ->withoutOverlapping();

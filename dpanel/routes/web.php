@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\ApacheController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\DashboardController;
@@ -229,12 +228,6 @@ Route::prefix('cpsess{token}')
         ->middleware('role:admin')
         ->name('mail-plans.destroy');
 
-    Route::get('/apache', [ApacheController::class, 'index'])
-        ->middleware('role:admin|reseller')
-        ->name('apache.index');
-    Route::post('/apache/action', [ApacheController::class, 'runAction'])
-        ->middleware('role:admin|reseller')
-        ->name('apache.action');
     Route::get('/backups', [BackupController::class, 'index'])
         ->middleware('role:admin|reseller')
         ->name('backups.index');
@@ -416,9 +409,6 @@ Route::prefix('cpsess{token}')
         ->middleware('role:admin|reseller')
         ->name('dns.cloudflare.sync');
 
-    Route::get('/dns/records', [DnsController::class, 'records'])
-        ->middleware('role:admin|reseller')
-        ->name('dns.records');
     Route::post('/dns/records', [DnsController::class, 'storeRecord'])
         ->middleware('role:admin|reseller')
         ->name('dns.records.store');
@@ -435,19 +425,12 @@ Route::prefix('cpsess{token}')
     Route::get('/php/manager', [PhpManagementController::class, 'manager'])
         ->middleware('role:admin|reseller')
         ->name('php.manager');
-    Route::patch('/php/versions', [PhpManagementController::class, 'updateVersions'])
-        ->middleware('role:admin|reseller')
-        ->name('php.versions.update');
-    Route::get('/php/versions/check-installed', [PhpManagementController::class, 'checkInstalledVersions'])
-        ->middleware('role:admin|reseller')
-        ->name('php.versions.check-installed');
-    Route::post('/php/versions/refresh', [PhpManagementController::class, 'refreshVersionsFromServer'])
-        ->middleware('role:admin|reseller')
-        ->name('php.versions.refresh');
-
     Route::get('/php/extensions', [PhpManagementController::class, 'extensions'])
         ->middleware('role:admin|reseller')
         ->name('php.extensions');
+    Route::get('/php/extensions/details', [PhpManagementController::class, 'extensionDetails'])
+        ->middleware('role:admin|reseller')
+        ->name('php.extensions.details');
     Route::patch('/php/extensions', [PhpManagementController::class, 'updateExtensions'])
         ->middleware('role:admin|reseller')
         ->name('php.extensions.update');
@@ -458,35 +441,38 @@ Route::prefix('cpsess{token}')
     Route::get('/php/config', [PhpManagementController::class, 'config'])
         ->middleware('role:admin|reseller')
         ->name('php.config');
+    Route::get('/php/config/details', [PhpManagementController::class, 'configDetails'])
+        ->middleware('role:admin|reseller')
+        ->name('php.config.details');
     Route::patch('/php/config', [PhpManagementController::class, 'updateConfig'])
         ->middleware('role:admin|reseller')
         ->name('php.config.update');
 
-    Route::redirect('/php/settings', '/php/config')
+    Route::get('/php/settings', [PhpManagementController::class, 'config'])
         ->middleware('role:admin|reseller')
         ->name('php.settings');
 
     Route::get('/security', [SecurityController::class, 'manager'])
         ->middleware('role:admin|reseller')
         ->name('security.manager');
-    Route::post('/security/sync', [SecurityController::class, 'syncFromServer'])
+    Route::get('/security/ports', [SecurityController::class, 'ports'])
         ->middleware('role:admin|reseller')
-        ->name('security.sync');
-    Route::patch('/security/firewall', [SecurityController::class, 'updateFirewall'])
+        ->name('security.ports');
+    Route::get('/security/firewall-settings', [SecurityController::class, 'firewall'])
         ->middleware('role:admin|reseller')
-        ->name('security.firewall.update');
-    Route::patch('/security/ssh', [SecurityController::class, 'updateSsh'])
+        ->name('security.firewall');
+    Route::get('/security/ssh-settings', [SecurityController::class, 'ssh'])
         ->middleware('role:admin|reseller')
-        ->name('security.ssh.update');
-    Route::patch('/security/two-factor', [SecurityController::class, 'updateTwoFactor'])
+        ->name('security.ssh');
+    Route::get('/security/live', [SecurityController::class, 'live'])
         ->middleware('role:admin|reseller')
-        ->name('security.two-factor.update');
-    Route::patch('/security/telegram', [SecurityController::class, 'updateTelegram'])
+        ->name('security.live');
+    Route::get('/security/ssh-guide', [SecurityController::class, 'sshGuide'])
         ->middleware('role:admin|reseller')
-        ->name('security.telegram.update');
-    Route::post('/security/telegram/test', [SecurityController::class, 'testTelegram'])
+        ->name('security.ssh.guide');
+    Route::get('/security/firewall-guide', [SecurityController::class, 'firewallGuide'])
         ->middleware('role:admin|reseller')
-        ->name('security.telegram.test');
+        ->name('security.firewall.guide');
 
     Route::get('/admin', [AdminController::class, 'index'])
         ->middleware('role:admin')

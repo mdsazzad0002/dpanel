@@ -166,7 +166,6 @@ const menuItems = computed(() => [
         children: [
             { label: 'Nameservers', hint: 'Manage NS records', icon: 'NS', iconClass: 'bi bi-signpost-split', routeName: 'dns.nameservers', roles: ['admin', 'reseller'] },
             { label: 'DNS Zones', hint: 'Manage DNS zones', icon: 'DZ', iconClass: 'bi bi-bounding-box-circles', routeName: 'dns.zones', roles: ['admin', 'reseller'] },
-            { label: 'DNS Records', hint: 'A, CNAME, MX, TXT records', icon: 'DR', iconClass: 'bi bi-journal-code', routeName: 'dns.records', roles: ['admin', 'reseller'] },
         ],
     },
     { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], color: 'indigo' },

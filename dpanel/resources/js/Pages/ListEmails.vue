@@ -69,8 +69,8 @@ const deleteMailbox = (id) => {
                         <Link :href="panelRoute('dns.zones')" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
                             DNS Zones
                         </Link>
-                        <Link :href="panelRoute('dns.records')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                            DNS Records
+                        <Link :href="panelRoute('dns.zones')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                            DNS Zones
                         </Link>
                     </div>
                 </div>

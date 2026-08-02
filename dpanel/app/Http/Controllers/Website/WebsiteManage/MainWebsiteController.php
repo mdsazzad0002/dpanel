@@ -10,6 +10,7 @@ use App\Models\SslCertificate;
 use App\Models\Website;
 use App\Models\WebsiteTrashBackup;
 use App\Services\Cron\CronSystemService;
+use App\Services\Dns\WebsiteDnsProvisionService;
 use App\Services\Filemanager\FilemanagerService;
 use App\Services\PathService;
 use App\Services\Php\PhpService;
@@ -35,6 +36,7 @@ class MainWebsiteController extends Controller
         protected WebsiteTrashService $websiteTrashService,
         protected SslLifecycleService $sslLifecycleService,
         protected CronSystemService $cronSystemService,
+        protected WebsiteDnsProvisionService $websiteDnsProvisionService,
     ) {
     }
 
@@ -115,6 +117,7 @@ class MainWebsiteController extends Controller
             'php_version' => [$domainType === 'alis' ? 'nullable' : 'required', 'string', 'max:10'],
             'domain_type' => ['required', 'string', 'in:main,alis,sub'],
             'enable_ssl' => ['boolean'],
+            'manage_dns' => ['boolean'],
         ]);
 
         if ($validator->fails()) {
@@ -239,6 +242,7 @@ class MainWebsiteController extends Controller
             'site_owner' => $siteOwner,
             'php_version' => $phpVersion,
             'enable_ssl' => $parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false),
+            'manage_dns' => (bool) ($validated['manage_dns'] ?? false),
             'filemanager_show_hidden' => false,
             'assigned_user_id' => null,
             'assigned_reseller_id' => ($request->user()?->hasRole('reseller') ? (int) $request->user()->id : null),
@@ -270,6 +274,20 @@ class MainWebsiteController extends Controller
                 ], 422);
             }
         }
+
+        $dnsResult = ['managed' => false, 'created' => false, 'reactivated' => false, 'skipped' => 'not-requested', 'nameservers' => []];
+        try {
+            $dnsResult = $this->websiteDnsProvisionService->syncWebsite($website->fresh(), (bool) $website->manage_dns);
+            if (($dnsResult['skipped'] ?? null) === 'external-nameservers') {
+                $website->forceFill(['manage_dns' => false])->saveQuietly();
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Website DNS provisioning failed', [
+                'website_id' => $website->id,
+                'domain' => $website->domain,
+                'error' => $e->getMessage(),
+            ]);
+        }
         $message = 'Website created successfully.';
 
         return response()->json([
@@ -278,6 +296,7 @@ class MainWebsiteController extends Controller
             'demo_files' => $demoFiles,
             'gateway_activation' => $activation,
             'ssl' => $sslResult,
+            'dns' => $dnsResult,
             'website' => $website->fresh(),
         ]);
     }

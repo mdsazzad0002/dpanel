@@ -70,16 +70,14 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Web Server Ports
+    | Application Service Configuration
     |--------------------------------------------------------------------------
     |
-    | Nginx is used as the public frontend and Apache can run as the backend
-    | application server. These values keep vhost generation and scripts aligned.
+    | Runtime service settings used by the panel and its managed applications.
     |
     */
 
     'panel_port' => env('PANEL_PORT'),
-    'apache_backend_port' => env('APACHE_BACKEND_PORT', 8080),
     'nginx_primary_port' => env('NGINX_PRIMARY_PORT', 80),
     'redis_service' => env('REDIS_SERVICE', 'auto'),
     'webtools_separate_ports' => false,
