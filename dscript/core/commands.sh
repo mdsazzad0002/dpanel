@@ -31,6 +31,7 @@ Commands:
   php <action> [version|all]    Manage PHP versions
   site:create <args>            Create a website configuration scaffold
   filemanager <action> <args>   Run file-manager operations
+  ssh <action> [value]          Install and manage SSH safely
   script <list|help|run> [...]  List or run maintenance shell scripts
   doctor [--fix]                Diagnose dscript and its host dependencies
   info                           Show server and installed-module information
@@ -112,6 +113,22 @@ Filemanager module:
   dpanel filemanager file-exists <path>...
   dpanel filemanager user create <username> [--home PATH] [--shell PATH]
   dpanel filemanager user ensure <username> [options]
+EOF
+      ;;
+    ssh|ssh-manager)
+      cat <<'EOF'
+Simple SSH management:
+  sudo dpanel ssh install
+  sudo dpanel ssh status
+  sudo dpanel ssh enable | disable
+  sudo dpanel ssh port <port>
+  sudo dpanel ssh deny-global [port]
+  sudo dpanel ssh allow-global [port]
+  sudo dpanel ssh allow-ip <ip> [port]
+  sudo dpanel ssh remove-ip <ip> [port]
+  sudo dpanel ssh list-access
+  sudo dpanel ssh root-login <disable|keys-only|enable>
+  sudo dpanel ssh password-auth <enable|disable>
 EOF
       ;;
     *)
@@ -250,7 +267,7 @@ PY
   if [[ -n "$discovered" ]]; then
     printf '%s\n' "$discovered"
   else
-    printf '%s\n' php redis mariadb filemanager ssl firewall fail2ban queue supervisor admin-user ssh-root-login
+  printf '%s\n' php redis mariadb filemanager ssl firewall fail2ban queue supervisor admin-user ssh-root-login ssh-manager
   fi
 }
 
@@ -449,7 +466,7 @@ dscript_help() {
     chain|install|update) dscript_chain_help ;;
     module) dscript_module_help "${2:-}" ;;
     script) dscript_script_help "${2:-}" ;;
-    php|filemanager) dscript_module_help "$topic" ;;
+    php|filemanager|ssh) dscript_module_help "$topic" ;;
     doctor) printf '%s\n' "Usage: dpanel doctor [--fix]" "Runs dependency, manifest, syntax and runtime checks." ;;
     *)
       if dscript_module_exists "$topic"; then dscript_module_help "$topic"; else panel_die "No help topic: ${topic}"; fi
@@ -507,6 +524,11 @@ dscript_cli() {
     php) local a="${1:-versions}"; shift || true; dscript_run_module php "$a" "$@" ;;
     site:create) [[ "$DSCRIPT_DRY_RUN" == true ]] && printf '[DRY-RUN] site:create %q\n' "$*" || panel_site_create "$@" ;;
     filemanager) panel_cli_dispatch filemanager "$@" ;;
+    ssh)
+      local ssh_action="${1:-help}"
+      shift || true
+      dscript_run_module ssh-manager install "$ssh_action" "$@"
+      ;;
     user:create) dscript_run_script create-admin-user "$@" ;;
     user:password) dscript_run_script set-system-user-password "$@" ;;
     panel:domain) dscript_run_script set-panel-domain "$@" ;;

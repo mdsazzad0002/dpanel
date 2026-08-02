@@ -32,15 +32,9 @@ pub(crate) fn run(opts: Options) -> Result<String, String> {
     let host = normalize_host(&opts.db_host);
     let admin = DatabaseAdmin::from_env();
 
-    grant_for_host(&db_cli, &admin, &opts, &host)?;
-    if host == "127.0.0.1" {
-        grant_for_host(&db_cli, &admin, &opts, "localhost")?;
-    }
-    if host == "localhost" {
-        grant_for_host(&db_cli, &admin, &opts, "127.0.0.1")?;
-    }
-
-    // Connect locally for CREATE DATABASE
+    // Create the schema before assigning its user. Keeping this first makes
+    // the resulting grants immediately visible and avoids provisioning a user
+    // whose target database was never created.
     sql_exec(
         &db_cli,
         &admin,
@@ -51,6 +45,14 @@ pub(crate) fn run(opts: Options) -> Result<String, String> {
             opts.db_name, opts.charset, opts.collation
         ),
     )?;
+
+    grant_for_host(&db_cli, &admin, &opts, &host)?;
+    if host == "127.0.0.1" {
+        grant_for_host(&db_cli, &admin, &opts, "localhost")?;
+    }
+    if host == "localhost" {
+        grant_for_host(&db_cli, &admin, &opts, "127.0.0.1")?;
+    }
 
     sql_exec(
         &db_cli,
@@ -310,10 +312,24 @@ fn grant_for_host(
         admin,
         "127.0.0.1",
         opts.db_port,
-        &format!(
-            "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER, EVENT ON `{}`.* TO '{user}'@'{h}';",
-            opts.db_name
-        ),
+        &database_grant_sql(&opts.db_name, &user, &h),
     )?;
     Ok(format!("{user}@{h}"))
+}
+
+fn database_grant_sql(database: &str, user: &str, host: &str) -> String {
+    format!("GRANT ALL PRIVILEGES ON `{database}`.* TO '{user}'@'{host}';")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_database_users_receive_all_database_scoped_privileges() {
+        assert_eq!(
+            database_grant_sql("site_db", "site_user", "localhost"),
+            "GRANT ALL PRIVILEGES ON `site_db`.* TO 'site_user'@'localhost';"
+        );
+    }
 }

@@ -1,352 +1,32 @@
-# dPanel
+# dPanel Production Manual
 
-![dPanel logo](docs/assets/dpanel_logo.png)
+dPanel is a Laravel/Vue hosting panel backed by local Rust services:
 
-dPanel is a free-to-use, source-available ServerPanel hosting control panel
-stack for managing websites, PHP runtimes, SSL, databases, file management,
-mail, backups, monitoring, and server automation.
+- `dpanel`: UI, authentication, authorization, records, and queues.
+- `drust.service`: bearer-token protected privileged localhost API.
+- `edge-gateway.service`: public Rust HTTP/TLS website gateway.
+- `dscript`: installation, update, and recovery commands.
 
-At a glance, the project is split into three responsibilities:
+This README is the single production and developer manual. The current stack
+does not use Apache, nginx, or generated vhost files.
 
-1. `dpanel` handles the web UI and user-facing panel workflows.
-2. `drust` handles privileged localhost server actions.
-3. `dscript` handles installation, bootstrap, repair, and server automation
-   outside the main web app.
-
-## Project Screenshots
-
-Add final screenshots under `docs/assets/screenshots/` and keep the same names
-below so this section becomes live automatically.
-
-| Dashboard | Websites | File Manager |
-| --- | --- | --- |
-| ![Dashboard screenshot](docs/assets/screenshots/dashboard.png) | ![Websites screenshot](docs/assets/screenshots/websites.png) | ![File manager screenshot](docs/assets/screenshots/file-manager.png) |
-
-| Databases | SSL Manager | Server Tasks |
-| --- | --- | --- |
-| ![Databases screenshot](docs/assets/screenshots/databases.png) | ![SSL manager screenshot](docs/assets/screenshots/ssl-manager.png) | ![Server tasks screenshot](docs/assets/screenshots/server-tasks.png) |
-
-## What Is Included
-```text
-├── dPanel - Laravel 12 + Vue/Inertia control panel application
-│   ├── Manage SSL
-│   ├── Domain create
-│   ├── Website management
-│   ├── Database workflows
-│   ├── File manager
-│   ├── Server task history
-│   ├── Service status and logs
-│   ├── Backup and restore workflows
-│   └── Queue and authorization workflows
-├── drust - Rust localhost execution API for privileged server operations
-│   ├── Protected server actions
-│   ├── Vhost sync
-│   ├── Permission repair
-│   ├── Website config regeneration
-│   ├── System-user operations
-│   └── Execution bridge for unsafe host-level tasks
-├── dscript - installer, bootstrap, update, and recovery scripts
-│   ├── Installer bootstrap
-│   ├── Chain install/update
-│   ├── Recovery and repair
-│   ├── Module and script runtime
-│   ├── Web stack install/update
-│   ├── SSL and vhost maintenance
-│   ├── Database helper scripts
-│   └── Public CLI entrypoint (`dpanel`)
-├── phpMyAdmin - bundled phpMyAdmin integration assets
-└── docs - screenshots, logos, and visual assets for the project
-```
-
-
-
-## Architecture Details
-
-### 1. Panel Layer
-
-`dpanel` is the user-facing application. It is responsible for:
-
-- login and authorization
-- dashboard and server status screens
-- website and domain management
-- SSL actions for websites
-- database management views and task history
-- file manager views and permission repair entrypoints
-- server task logs and command history
-- backup, restore, and operational workflows
-
-### 2. Execution Layer
-
-`drust` is the protected local execution API. It is responsible for:
-
-- website vhost creation and sync
-- permission repair on server-side paths
-- protected host operations that should not be exposed directly to the browser
-- system-user related operations
-- web-stack regeneration when the panel or site config needs repair
-
-### 3. Bootstrap Layer
-
-`dscript` is the installer and recovery layer. It is responsible for:
-
-- first install bootstrap
-- chain install and update flows
-- repair and recovery flows
-- runtime launcher refresh
-- module install/update/remove/reinstall
-- shell-based maintenance commands
-
-### 4. Supporting Assets
-
-- `phpMyAdmin` provides bundled integration assets for database administration.
-- `docs` provides operator guides, recovery notes, and command references.
-
-## Feature Breakdown
-
-### Website
-
-The website area includes:
-
-- domain creation
-- website scaffold generation
-- vhost sync
-- vhost reload
-- SSL certificate issuance
-- SSL renewal support
-- document root and permissions handling
-
-Common website commands:
-
-```text
-dpanel site:create <domain> <username> [php-version] [ssl] [web-server] [root]
-dpanel script run sync-vhost sync <domain> <root> <php-version>
-dpanel script run issue-ssl <domain> <root> <include-www>
-dpanel module nginx reload
-dpanel module apache reload
-```
-
-### Database
-
-The database area includes:
-
-- database creation
-- database user creation
-- privilege management
-- connection test workflows
-- phpMyAdmin sign-on integration
-- database credential handling for applications
-
-Common database commands:
-
-```text
-dpanel script run database-request create <db> <user> <password> [host] [port]
-dpanel script run database-request update <db> <user> <password> [host] [port]
-dpanel script run database-request delete <db> <user> <password> [host] [port]
-dpanel script run configure-phpmyadmin-signon
-```
-
-### File Manager
-
-The file manager area includes:
-
-- folder creation
-- folder removal
-- file existence checks
-- directory existence checks
-- system-user creation and validation
-- home directory and shell assignment
-- permission-sensitive path handling
-
-Common file manager commands:
-
-```text
-dpanel filemanager create <path>...
-dpanel filemanager remove <path>...
-dpanel filemanager exists <path>...
-dpanel filemanager file-exists <path>...
-dpanel filemanager user create <username> [--home PATH] [--shell PATH]
-dpanel filemanager user ensure <username> [options]
-```
-
-### Server and Runtime
-
-The server/runtime area includes:
-
-- nginx and apache install/update/reload
-- PHP install/update/reinstall/default selection
-- MariaDB install/update
-- Redis and Supervisor support
-- firewall and fail2ban setup
-- SSL tooling installation
-- runtime refresh for the public launcher
-
-Common server commands:
-
-```text
-dpanel module nginx install
-dpanel module nginx update
-dpanel module nginx reload
-dpanel module php install 8.3
-dpanel module mariadb install
-dpanel module supervisor install
-dpanel module firewall install
-dpanel module fail2ban install
-dpanel module ssl install
-dpanel runtime refresh
-```
-
-### Repair and Recovery
-
-The repair area includes:
-
-- `dpanel doctor`
-- `dpanel chain repair`
-- logs inspection
-- runtime refresh
-- permission repair
-- web-stack reset support
-
-Common repair commands:
-
-```text
-dpanel doctor
-dpanel doctor --fix
-dpanel chain verify
-dpanel chain repair
-dpanel logs install
-dpanel logs update
-dpanel script run fix-web-stack
-dpanel script run fix-panel-web-stack <domain>
-```
-
-Common routes and commands:
-
-```text
-dpanel default-install
-dpanel chain install
-dpanel chain update
-dpanel chain verify
-dpanel chain repair
-dpanel module nginx install
-dpanel module nginx reload
-dpanel module ssl install
-dpanel script run sync-vhost sync <domain> <root> <php-version>
-dpanel script run issue-ssl <domain> <root> <include-www>
-dpanel site:create <domain> <username> [php-version] [ssl] [web-server] [root]
-dpanel filemanager user ensure <username> --home <path> --shell <shell>
-dpanel script run database-request create <db> <user> <password> [host] [port]
-dpanel script run configure-phpmyadmin-signon
-```
-
-How requests move through the system:
+## Request Flow
 
 ```text
 Browser
-  -> dpanel UI request
-  -> drust for protected server operations
-  -> dscript for bootstrap / install / repair workflows
-  -> Linux services and filesystem changes
+  -> edge-gateway.service (:80/:443)
+  -> active website matched from the DPanel database
+  -> static file, PHP-FPM, DPanel, or phpMyAdmin dispatch
+
+DPanel
+  -> drust.service (127.0.0.1:9500)
+  -> privileged filesystem, user, database, SSL, PHP, and script operations
 ```
 
-Typical website flow:
+There is no website preview URL. Websites open through their configured live
+hostname.
 
-```text
-
-2. Ensure webroot and file permissions
-
-4. Issue SSL certificate
-5. Reload web server after SSL issuance
-6. Verify site and logs
-```
-
-Website route map:
-
-```text
-Create site
-  -> dpanel site:create
-  -> drust vhost sync
-
-  -> file permissions and document root check
-  -> SSL issue when enabled
-  -> reload web server
-```
-
-Typical database flow:
-
-```text
-1. Create database and user
-2. Grant privileges
-3. Configure app credentials
-4. Optionally configure phpMyAdmin signon
-5. Test connection from the panel or app
-```
-
-Database route map:
-
-```text
-Database request
-  -> dpanel script run database-request
-  -> MariaDB/MySQL create/update/delete action
-  -> optional phpMyAdmin sign-on configuration
-  -> application credential update
-```
-
-### Operating Modes
-
-The project is designed to support these modes:
-
-1. Fresh server installation.
-2. Existing server upgrade.
-3. Module-by-module maintenance.
-4. Website provisioning and SSL setup.
-5. Database provisioning and credential support.
-6. Emergency repair after partial failure.
-7. Runtime refresh when the launcher becomes stale.
-
-### Failure Behavior
-
-- A normal chain step stops on the first real failure.
-- Some repair/update steps may warn and continue when the remaining work is still useful.
-- `ssl` install can succeed even if certbot package installation is incomplete, but issuance later still depends on certbot.
-- `issue-ssl` fails if the webroot, domain, or certbot prerequisites are missing.
-- `sync-vhost` must succeed before SSL issuance for a new site.
-
-Canonical installed paths:
-
-- Panel app: `/var/www/dpanel`
-- Execution API: `/var/www/drust`
-- Script repo: `/var/www/dscript`
-- Docs and overview: `/var/www/README.md`
-
-Common operator entrypoints:
-
-- Public panel UI: browser -> `/var/www/dpanel`
-- CLI installer: `sudo ./installer.sh`
-- Direct CLI control: `dpanel ...`
-- Repair and diagnosis: `dpanel doctor`, `dpanel chain repair`
-- Main project guide: `/var/www/README.md`
-
-## Final Destination
-
-dPanel is being built as a practical self-hosted hosting control panel for
-operators, developers, agencies, and small hosting providers who need one place
-to manage websites, databases, SSL, files, backups, mail, and server repair
-tasks without losing control of the underlying Linux server.
-
-The intended production shape is:
-
-```text
-Browser
-  -> dpanel: Laravel + Vue control panel
-  -> drust: protected localhost execution API
-  -> Linux services: nginx, Apache, PHP-FPM, MariaDB, Redis, certbot, filesystem
-
-dscript remains available for installation, bootstrap, update, and recovery.
-```
-
-## Installer Guide
-
-Run the installer from a fresh server with `curl`:
+## Installation
 
 ```bash
 curl -fsSL https://installer.dengrweb.com/installer.sh -o installer.sh
@@ -354,101 +34,310 @@ chmod +x installer.sh
 sudo ./installer.sh
 ```
 
-If you are cloning the repository manually, the recommended lightweight
-download is:
+Install or refresh the Rust services:
 
 ```bash
-git clone --depth 1 https://github.com/mdsazzad0002/dpanel.git
+sudo /var/www/drust/deploy/install-service.sh
+sudo systemctl status drust.service edge-gateway.service
 ```
 
-For module-specific installs or updates:
+## Installed Paths
+
+```text
+/var/www/dpanel       Laravel/Vue panel
+/var/www/drust        Rust API and edge gateway
+/var/www/dscript      installer and recovery runtime
+/var/www/phpmyadmin   bundled phpMyAdmin
+/etc/drust/drust.env
+/etc/drust/edge-gateway.env
+```
+
+## Configuration
+
+`/etc/drust/drust.env`:
+
+```dotenv
+DRUST_API_PORT=9500
+DRUST_API_TOKEN=replace-with-a-long-random-token
+DRUST_MAX_UPLOAD_SIZE_BYTES=10737418240
+DRUST_MAX_ZIP_ENTRIES=100000
+DRUST_MAX_ZIP_EXPANDED_BYTES=21474836480
+DRUST_SCRIPTS_DIR=/opt/dpanel/runtime/scripts
+DRUST_DATABASE_ADMIN_USER=
+DRUST_DATABASE_ADMIN_PASSWORD=
+DRUST_DATABASE_ADMIN_HOST=127.0.0.1
+DRUST_DATABASE_ADMIN_PORT=3306
+```
+
+`/etc/drust/edge-gateway.env`:
+
+```dotenv
+DRUST_HTTP_BIND=0.0.0.0:80
+DRUST_HTTPS_BIND=0.0.0.0:443
+DRUST_PANEL_DOMAIN=panel.example.com
+DRUST_DEFAULT_SITE_ROOT=/var/www/html
+DRUST_SITE_POOLS=1
+DRUST_SITE_POOL_MAX_CHILDREN=4
+```
+
+Apply configuration:
 
 ```bash
-sudo ./installer.sh nginx php mariadb
-sudo ./installer.sh update
+sudo systemctl restart drust.service edge-gateway.service
 ```
 
-Full install, command, module, workflow, and recovery details are documented in
-this README.
+## Website and PHP Execution
 
-## Later Roadmap
+The edge gateway reads active website records containing hostname, scope,
+`site_owner`, document root, PHP version, SSL state, and status.
 
-- Improve first-time install reliability on fresh Ubuntu/Debian servers.
-- Expand file manager permission diagnostics and repair coverage.
-- Add clearer UI states for API failures, task errors, and repair suggestions.
-- Harden website provisioning, vhost sync, and rollback flows.
-- Improve SSL issuance and renewal visibility.
-- Expand database user, privilege, DNS, and mail management helpers.
-- Improve backup scheduling, restore workflows, monitoring, and alerting.
-- Add stronger audit trails for privileged actions.
-- Add more automated checks for Laravel, Rust, docs, and scripts.
-- Add real architecture diagrams, release packaging notes, and screenshots.
+User-scope PHP websites normally execute through:
 
-See the full roadmap in [`ROADMAP.md`](ROADMAP.md).
+```text
+/run/php/dpanel-<site_owner>-php<version>.sock
+```
 
-## Quick Connections
+If the socket is absent, the gateway validates the Linux user, creates an
+ondemand PHP-FPM pool, tests the configuration, reloads PHP-FPM, and waits for
+the socket. Invalid owners or provisioning failures fall back to the shared
+PHP-FPM socket without failing the request.
 
-- Developer guide: [`DEVELOPER.md`](DEVELOPER.md)
-- Contribution guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- Security policy: [`SECURITY.md`](SECURITY.md)
-- License policy: [`LICENSE`](LICENSE)
-- Changelog: [`CHANGELOG.md`](CHANGELOG.md)
-- First install and permission repair: [`docs/FIRST_INSTALL_AND_PERMISSIONS.md`](docs/FIRST_INSTALL_AND_PERMISSIONS.md)
-- Main project guide: [`README.md`](README.md)
+System-scope websites, DPanel, and phpMyAdmin always use the shared `www-data`
+PHP-FPM pool.
 
-## Developer Notes
+Website roots normally live at `/home/<site-user>/public_html`. Files should be
+owned by the site account. Shared PHP fallback requires ACL/group permission for
+`www-data`.
 
-Keep responsibilities separated:
+## Database Provisioning
 
-- `dpanel` owns UI, database records, authorization, queues, and user workflows.
-- `drust` owns privileged localhost server operations.
-- `dscript` owns install, bootstrap, and recovery commands.
+Database creation:
 
-Laravel should not directly run unsafe privileged shell commands for production
-server changes. Add host-level actions to `drust` and call them from `dpanel`
-through a service or queued job.
+1. Creates the database when absent.
+2. Creates or updates its user and password.
+3. Grants `ALL PRIVILEGES` on that database only.
+4. Synchronizes `user@127.0.0.1` and `user@localhost` for local hosts.
+5. Flushes privileges.
 
-## Contributor Notes
+The user can create/drop its assigned database and manage all its objects, but
+does not receive global server-admin privileges.
 
-If you want to help shape dPanel, you are very welcome here.
+```http
+POST http://127.0.0.1:9500/api/v1/database-request
+Authorization: Bearer <DRUST_API_TOKEN>
+Content-Type: application/json
+```
 
-Before contributing, read [`CONTRIBUTING.md`](CONTRIBUTING.md),
-[`DEVELOPER.md`](DEVELOPER.md), [`SECURITY.md`](SECURITY.md), and
-[`LICENSE`](LICENSE). Those pages explain the project boundaries, safe ways to
-test changes, and the best way to share feedback.
+```json
+{
+  "action": "create",
+  "database_name": "example_db",
+  "database_user": "example_user",
+  "database_password": "strong-secret",
+  "database_host": "127.0.0.1",
+  "database_port": 3306,
+  "charset": "utf8mb4",
+  "collation": "utf8mb4_unicode_ci"
+}
+```
 
-Alpha testers are especially helpful. If you try an early build, please report
-what you were trying to do, what worked, what felt confusing, and anything that
-blocked you. Even small notes help us make the next release better.
+Allowed actions: `create`, `upsert`.
 
-Please do not submit secrets, `.env` files, private keys, database dumps,
-customer data, generated dependency folders, or proprietary code you do not
-have permission to contribute.
+## Drust API
 
-## Security
+Protected endpoints require `Authorization: Bearer <DRUST_API_TOKEN>`.
 
-Please do not open public issues for security vulnerabilities. Follow
-[`SECURITY.md`](SECURITY.md) and report privately with reproduction details.
+```text
+GET  /health
+GET  /api/v1/health-checker
+POST /api/v1/create-admin-user
+POST /api/v1/disable-root-login
+POST /api/v1/database-request
+POST /api/v1/filemanager/user
+POST /api/v1/filemanager/create
+POST /api/v1/filemanager/write
+POST /api/v1/filemanager/upload
+POST /api/v1/filemanager/unzip
+POST /api/v1/filemanager/move
+POST /api/v1/filemanager/delete
+POST /api/v1/filemanager/fix-permissions
+POST /api/v1/ssl/ensure
+POST /api/v1/php/config
+POST /api/v1/script/run
+```
 
-Security-sensitive areas include:
+Keep the API bound to localhost; never expose it publicly.
 
-- authentication and authorization
-- file manager path validation
-- `drust` API token handling
-- command execution
-- SSH keys and credentials
-- database provisioning
-- SSL private keys
-- permissions and ownership repair
+## File Manager Safety
 
-`drust` must stay localhost-only, bearer-token protected, and unavailable from
-the public internet.
+User file operations stay inside `/home/<username>`. Drust validates the Linux
+user and path, rejects traversal and unsafe symlinks, applies account ownership,
+preserves dotfiles, and enforces upload/archive limits.
 
-## License
+## Command Cookbook
 
-dPanel is free to use under a custom source-available license. Public
-modification, redistribution, rebranding, resale, or derivative works are not
-allowed without written permission. You may sell hosting, website management,
-server management, or related services operated through your own dPanel
-installation, but you may not sell dPanel itself as software. See
-[`LICENSE`](LICENSE).
+### Developer: test and build Drust
+
+```bash
+cd /var/www/drust
+CARGO_TARGET_DIR="/tmp/drust-${USER}-target" cargo test
+CARGO_TARGET_DIR="/tmp/drust-${USER}-target" cargo build --release
+```
+
+The separate target avoids permission conflicts with the root-owned production
+build. Building alone does not restart production. To build, install launchers and
+units, align the API token, and restart both Rust services:
+
+```bash
+sudo /var/www/drust/deploy/install-service.sh
+```
+
+Restart only the component changed:
+
+```bash
+sudo systemctl restart drust.service          # privileged API change
+sudo systemctl restart edge-gateway.service   # HTTP/PHP/TLS gateway change
+```
+
+### Developer: build DPanel
+
+```bash
+cd /var/www/dpanel
+npm run build
+sudo -u www-data php artisan optimize:clear
+```
+
+After adding a migration:
+
+```bash
+cd /var/www/dpanel
+sudo -u www-data php artisan migrate --force
+```
+
+### Installer: refresh and repair
+
+```bash
+sudo dpanel runtime refresh
+sudo dpanel doctor
+sudo dpanel doctor --fix
+sudo dpanel chain verify
+sudo dpanel chain repair
+```
+
+Preview an installer action without changing the server:
+
+```bash
+sudo dpanel --dry-run chain update
+```
+
+### Targeted fixes
+
+Repair all website filesystem ownership/ACLs:
+
+```bash
+sudo dpanel script run fix-permissions --all
+```
+
+Repair only one website account or path:
+
+```bash
+sudo dpanel script run fix-permissions --user <site-user>
+sudo dpanel script run fix-permissions --user <site-user> --path /home/<site-user>/public_html
+```
+
+Validate and restart one PHP-FPM version:
+
+```bash
+sudo php-fpm8.3 -t
+sudo systemctl reload-or-restart php8.3-fpm
+```
+
+Reapply one database/user configuration and its database-scoped privileges:
+
+```bash
+sudo dpanel script run database-request upsert <db> <user> '<password>' 127.0.0.1 3306 utf8mb4 utf8mb4_unicode_ci
+```
+
+Check services and recent logs:
+
+```bash
+sudo systemctl status drust.service edge-gateway.service
+sudo journalctl -u drust.service -n 100 --no-pager
+sudo journalctl -u edge-gateway.service -n 100 --no-pager
+```
+
+Quick decision map:
+
+| Changed area | Run |
+| --- | --- |
+| Rust source | `sudo /var/www/drust/deploy/install-service.sh` |
+| Vue/CSS | `cd /var/www/dpanel && npm run build` |
+| Laravel config/routes | `cd /var/www/dpanel && sudo -u www-data php artisan optimize:clear` |
+| Laravel migration | `cd /var/www/dpanel && sudo -u www-data php artisan migrate --force` |
+| Installer/runtime scripts | `sudo dpanel runtime refresh` |
+| Website permissions | `sudo dpanel script run fix-permissions --all` |
+
+Test a hostname without changing DNS:
+
+```bash
+curl -H 'Host: example.com' http://127.0.0.1/
+```
+
+Verify database grants:
+
+```sql
+SHOW GRANTS FOR 'example_user'@'127.0.0.1';
+SHOW GRANTS FOR 'example_user'@'localhost';
+```
+
+## Troubleshooting
+
+Gateway/PHP:
+
+```bash
+systemctl is-active edge-gateway.service
+journalctl -u edge-gateway.service -n 100 --no-pager
+ls -la /run/php
+systemctl status php8.3-fpm
+```
+
+Drust API:
+
+```bash
+systemctl is-active drust.service
+journalctl -u drust.service -n 100 --no-pager
+curl http://127.0.0.1:9500/health
+```
+
+Filesystem permissions:
+
+```bash
+namei -l /home/<site-user>/public_html
+getfacl /home/<site-user>/public_html
+```
+
+Database permissions:
+
+```bash
+sudo mariadb -e "SHOW GRANTS FOR 'example_user'@'127.0.0.1';"
+sudo mariadb -e "SHOW GRANTS FOR 'example_user'@'localhost';"
+```
+
+## Development Rules
+
+- DPanel owns UI, authorization, records, and workflows.
+- Drust owns privileged host operations.
+- Edge gateway owns public HTTP/TLS dispatch.
+- Dscript owns installation and recovery.
+- Prefer a validated Drust endpoint over privileged shell execution in Laravel.
+- Validate usernames, identifiers, paths, and versions before use.
+- Never log tokens, passwords, private keys, or customer data.
+- Run relevant Rust, PHP, Laravel, and frontend checks before deployment.
+
+## Policy Files
+
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [License](LICENSE)
+
+These policy files intentionally remain separate from the production manual.

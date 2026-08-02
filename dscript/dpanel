@@ -234,7 +234,7 @@ confirm_action() {
 default_install_sequence() {
   dscript_cli chain install php mariadb supervisor
   install_drust_service
-  dscript_cli chain install firewall fail2ban ssl
+  dscript_cli chain install firewall dns fail2ban ssl
   install_mail_services
   install_node_runtime
 }
@@ -246,7 +246,7 @@ run_interactive_menu() {
     printf '\n'
     printf 'dpanel interactive menu\n'
     printf '=======================\n'
-    printf '1) Default Install (php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs) | dpanel default-install\n'
+    printf '1) Default Install (php -> mariadb -> supervisor -> rust/drust -> firewall -> dns -> fail2ban -> ssl -> postfix -> dovecot -> nodejs) | dpanel default-install\n'
     printf '2) Default Update | dpanel chain update\n'
     printf '3) Web stack menu | dpanel script run sync-vhost <action> <domain> <root-path> [php-version]\n'
     printf '4) PHP menu | dpanel php install all / dpanel php default <version>\n'
@@ -254,20 +254,21 @@ run_interactive_menu() {
     printf '6) redis install | dpanel module redis install\n'
     printf '7) supervisor install | dpanel module supervisor install\n'
     printf '8) firewall install | dpanel module firewall install\n'
-    printf '9) fail2ban install | dpanel module fail2ban install\n'
-    printf '10) SSL menu | dpanel module ssl install / dpanel script run issue-ssl <domain> <root>\n'
-    printf '11) Rust/Drust menu | bash /var/www/drust/deploy/install-service.sh\n'
-    printf '12) Mail menu | apt install postfix dovecot-core / systemctl restart postfix dovecot\n'
-          printf '13) nodejs install | install package: nodejs\n'
-    printf '14) User menu | dpanel filemanager user ensure <user> --home <path> --shell <shell>\n'
-    printf '15) Security menu | passwd root / dpanel script run disable-root-login\n'
-    printf '16) Permission fix | dpanel repair:permissions --all\n'
-    printf '17) module list | dpanel module list\n'
-    printf '18) Maintenance scripts list | dpanel script list\n'
-    printf '19) Runtime refresh | dpanel runtime refresh\n'
-    printf '20) Link refresh | dpanel link\n'
-    printf '21) Doctor check | dpanel doctor\n'
-    printf '22) Help | dpanel help\n'
+    printf '9) DNS/53 install | dpanel module dns install\n'
+    printf '10) fail2ban install | dpanel module fail2ban install\n'
+    printf '11) SSL menu | dpanel module ssl install / dpanel script run issue-ssl <domain> <root>\n'
+    printf '12) Rust/Drust menu | bash /var/www/drust/deploy/install-service.sh\n'
+    printf '13) Mail menu | apt install postfix dovecot-core / systemctl restart postfix dovecot\n'
+    printf '14) nodejs install | install package: nodejs\n'
+    printf '15) User menu | dpanel filemanager user ensure <user> --home <path> --shell <shell>\n'
+    printf '16) Security menu | passwd root / dpanel script run disable-root-login\n'
+    printf '17) Permission fix | dpanel repair:permissions --all\n'
+    printf '18) module list | dpanel module list\n'
+    printf '19) Maintenance scripts list | dpanel script list\n'
+    printf '20) Runtime refresh | dpanel runtime refresh\n'
+    printf '21) Link refresh | dpanel link\n'
+    printf '22) Doctor check | dpanel doctor\n'
+    printf '23) Help | dpanel help\n'
     printf '0) Exit\n'
     printf 'Select option: '
     read -r choice

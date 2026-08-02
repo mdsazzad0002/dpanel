@@ -434,6 +434,7 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
         sites: Arc::from([SiteConfig {
             id: "demo".to_string(),
             scope: "system".to_string(),
+            site_owner: None,
             hostnames: Arc::from([primary_domain.clone(), www_domain.clone()]),
             document_root: Some(PathBuf::from(format!("/var/www/{primary_domain}/public"))),
             php_version: None,

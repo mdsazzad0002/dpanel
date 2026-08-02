@@ -124,6 +124,21 @@ This demo mode wires:
 - cache headers and compression
 - TLS scaffold config shape
 
+## Production edge gateway
+
+Production uses the database-backed command and systemd unit rather than the
+sample snapshot:
+
+```bash
+sudo /var/www/drust/deploy/install-service.sh
+sudo systemctl status edge-gateway.service
+```
+
+The service reads `/etc/drust/edge-gateway.env`. User-scope PHP websites use a
+dedicated FPM pool when possible; pools are provisioned on demand. System-scope
+sites always use the shared `www-data` pool, and user-pool provisioning failures
+also fall back to that shared pool without failing the request.
+
 If you have a cert/key pair, you can expose HTTPS too:
 
 ```bash

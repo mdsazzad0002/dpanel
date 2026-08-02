@@ -1,22 +1,26 @@
 use std::{
+    fs,
     path::{Path, PathBuf},
     process::Stdio,
+    sync::{Mutex, OnceLock},
+    thread,
     time::Duration,
 };
 
 use axum::{
     body::Body,
-    http::{header, HeaderName, HeaderValue, Request, Response, StatusCode},
+    http::{HeaderName, HeaderValue, Request, Response, StatusCode, header},
 };
 use tokio::{io::AsyncWriteExt, process::Command, time::timeout};
+use tracing::warn;
 
 pub async fn execute_php_front_controller(
     request: Request<Body>,
     document_root: &Path,
     php_version: Option<&str>,
+    site_owner: Option<&str>,
 ) -> Result<Response<Body>, String> {
-    let socket = resolve_fpm_socket(document_root, php_version)
-        .ok_or_else(|| format!("PHP-FPM socket not found for PHP {}", php_version.unwrap_or("default")))?;
+    let socket = resolve_fpm_socket(php_version, site_owner).await?;
     let (parts, body) = request.into_parts();
     let body = axum::body::to_bytes(body, 64 * 1024 * 1024)
         .await
@@ -72,7 +76,10 @@ pub async fn execute_php_front_controller(
     for (name, value) in &parts.headers {
         // Let the gateway own compression. Forwarding browser encodings to
         // PHP-FPM can produce compressed empty redirects that Firefox rejects.
-        if matches!(name.as_str(), "host" | "content-type" | "content-length" | "accept-encoding") {
+        if matches!(
+            name.as_str(),
+            "host" | "content-type" | "content-length" | "accept-encoding"
+        ) {
             continue;
         }
         if let Ok(value) = value.to_str() {
@@ -106,7 +113,24 @@ pub async fn execute_php_front_controller(
     parse_cgi_response(&output.stdout)
 }
 
-fn resolve_php_script(document_root: &Path, request_path: &str) -> Result<(PathBuf, String), String> {
+fn normalize_site_owner(value: &str) -> Option<String> {
+    let owner = value.trim().to_ascii_lowercase();
+    if owner.is_empty()
+        || owner.eq_ignore_ascii_case("null")
+        || !owner
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+    {
+        None
+    } else {
+        Some(owner)
+    }
+}
+
+fn resolve_php_script(
+    document_root: &Path,
+    request_path: &str,
+) -> Result<(PathBuf, String), String> {
     let canonical_root = std::fs::canonicalize(document_root)
         .map_err(|error| format!("PHP document root is unavailable: {error}"))?;
     let requested_name = request_path.trim_start_matches('/');
@@ -130,20 +154,217 @@ fn resolve_php_script(document_root: &Path, request_path: &str) -> Result<(PathB
 
     let script = canonical_root.join("index.php");
     if !script.is_file() {
-        return Err(format!("PHP front controller missing: {}", script.display()));
+        return Err(format!(
+            "PHP front controller missing: {}",
+            script.display()
+        ));
     }
     Ok((script, "/index.php".into()))
 }
 
-fn resolve_fpm_socket(document_root: &Path, php_version: Option<&str>) -> Option<PathBuf> {
+async fn resolve_fpm_socket(
+    php_version: Option<&str>,
+    site_owner: Option<&str>,
+) -> Result<PathBuf, String> {
     let version = php_version.unwrap_or("8.3");
-    let _document_root = document_root;
+    let site_pools_enabled = std::env::var("DRUST_SITE_POOLS")
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "off" | "no"
+            )
+        })
+        .unwrap_or(true);
+
+    if site_pools_enabled {
+        if let Some(raw_owner) = site_owner {
+            if let Some(owner) = normalize_site_owner(raw_owner) {
+                let socket = PathBuf::from(format!("/run/php/dpanel-{owner}-php{version}.sock"));
+                if socket.exists() {
+                    return Ok(socket);
+                }
+                let owner_for_worker = owner.clone();
+                let version_for_worker = version.to_string();
+                let socket_for_worker = socket.clone();
+                let provision_result = tokio::task::spawn_blocking(move || {
+                    ensure_user_fpm_pool(&owner_for_worker, &version_for_worker, &socket_for_worker)
+                })
+                .await
+                .map_err(|error| format!("PHP-FPM pool provision worker failed: {error}"))
+                .and_then(|result| result);
+                match provision_result {
+                    Ok(()) if socket.exists() => return Ok(socket),
+                    Ok(()) => warn!(
+                        site_owner = %owner,
+                        php_version = %version,
+                        "user PHP-FPM socket is still missing; falling back to shared pool"
+                    ),
+                    Err(error) => warn!(
+                        site_owner = %owner,
+                        php_version = %version,
+                        error = %error,
+                        "user PHP-FPM pool unavailable; falling back to shared pool"
+                    ),
+                }
+            } else {
+                warn!(
+                    site_owner = %raw_owner,
+                    "invalid site owner; falling back to shared PHP-FPM pool"
+                );
+            }
+        }
+    }
+
+    resolve_shared_fpm_socket(version)
+}
+
+fn resolve_shared_fpm_socket(version: &str) -> Result<PathBuf, String> {
     let candidates = [
         PathBuf::from(format!("/run/php/php{version}-fpm.sock")),
         PathBuf::from("/run/php/php8.3-fpm.sock"),
         PathBuf::from("/run/php/php8.2-fpm.sock"),
     ];
-    candidates.into_iter().find(|path| path.exists())
+    candidates
+        .into_iter()
+        .find(|path| path.exists())
+        .ok_or_else(|| format!("PHP-FPM socket not found for PHP {version}"))
+}
+
+fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(), String> {
+    static PROVISION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _guard = PROVISION_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| "PHP-FPM provision lock is poisoned".to_string())?;
+
+    if socket.exists() {
+        return Ok(());
+    }
+    validate_php_version(version)?;
+    validate_system_user(owner)?;
+
+    let pool_directory = PathBuf::from(format!("/etc/php/{version}/fpm/pool.d"));
+    if !pool_directory.is_dir() {
+        return Err(format!(
+            "PHP-FPM pool directory is unavailable: {}",
+            pool_directory.display()
+        ));
+    }
+    let pool_path = pool_directory.join(format!("dpanel-{owner}.conf"));
+    let mut created = false;
+    if !pool_path.exists() {
+        let max_children = site_pool_max_children();
+        let content = format!(
+            "; Managed dynamically by drust edge gateway.\n\
+             [{owner}]\n\
+             user = {owner}\n\
+             group = {owner}\n\
+             listen = {}\n\
+             listen.owner = www-data\n\
+             listen.group = www-data\n\
+             listen.mode = 0660\n\
+             pm = ondemand\n\
+             pm.max_children = {max_children}\n\
+             pm.process_idle_timeout = 10s\n\
+             pm.max_requests = 500\n\
+             security.limit_extensions = .php\n",
+            socket.display()
+        );
+        fs::write(&pool_path, content).map_err(|error| {
+            format!(
+                "cannot create PHP-FPM pool {}: {error}",
+                pool_path.display()
+            )
+        })?;
+        created = true;
+    }
+
+    if let Err(error) = test_fpm_configuration(version) {
+        if created {
+            let _ = fs::remove_file(&pool_path);
+        }
+        return Err(format!(
+            "PHP-FPM configuration test failed after provisioning {}: {error}",
+            pool_path.display()
+        ));
+    }
+    reload_fpm_service(version)?;
+
+    for _ in 0..40 {
+        if socket.exists() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    Err(format!(
+        "PHP-FPM pool was provisioned but its socket did not start: {}",
+        socket.display()
+    ))
+}
+
+fn validate_php_version(version: &str) -> Result<(), String> {
+    let Some((major, minor)) = version.split_once('.') else {
+        return Err(format!("invalid PHP version: {version}"));
+    };
+    if major.is_empty()
+        || minor.is_empty()
+        || !major.bytes().all(|byte| byte.is_ascii_digit())
+        || !minor.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(format!("invalid PHP version: {version}"));
+    }
+    Ok(())
+}
+
+fn validate_system_user(owner: &str) -> Result<(), String> {
+    let status = std::process::Command::new("id")
+        .args(["-u", owner])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|error| format!("cannot validate site owner {owner}: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("site owner does not exist: {owner}"))
+    }
+}
+
+fn site_pool_max_children() -> u16 {
+    std::env::var("DRUST_SITE_POOL_MAX_CHILDREN")
+        .ok()
+        .and_then(|value| value.trim().parse::<u16>().ok())
+        .map(|value| value.clamp(1, 50))
+        .unwrap_or(4)
+}
+
+fn test_fpm_configuration(version: &str) -> Result<(), String> {
+    let binary = format!("/usr/sbin/php-fpm{version}");
+    let output = std::process::Command::new(&binary)
+        .arg("-t")
+        .output()
+        .map_err(|error| format!("cannot run {binary}: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+fn reload_fpm_service(version: &str) -> Result<(), String> {
+    let service = format!("php{version}-fpm");
+    let output = std::process::Command::new("systemctl")
+        .args(["reload-or-restart", &service])
+        .output()
+        .map_err(|error| format!("cannot reload {service}: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "cannot reload {service}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
 }
 
 fn parse_cgi_response(output: &[u8]) -> Result<Response<Body>, String> {
@@ -202,6 +423,23 @@ mod tests {
         .unwrap();
         assert_eq!(response.status(), StatusCode::FOUND);
         assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/login");
-        assert_eq!(response.headers().get_all(header::SET_COOKIE).iter().count(), 2);
+        assert_eq!(
+            response
+                .headers()
+                .get_all(header::SET_COOKIE)
+                .iter()
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn accepts_safe_site_owner_names() {
+        assert_eq!(
+            normalize_site_owner(" Account_User "),
+            Some("account_user".into())
+        );
+        assert_eq!(normalize_site_owner("../www-data"), None);
+        assert_eq!(normalize_site_owner("bad/name"), None);
     }
 }

@@ -373,7 +373,35 @@ Body:
 
 The daemon validates the real certificate hostname and expiry with OpenSSL. It invokes Certbot only when the certificate is missing, invalid, or inside the renewal window, then validates the resulting certificate again.
 
-### 13. Run script
+### 16. Database request
+
+```http
+POST /api/v1/database-request
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{
+  "action": "create",
+  "database_name": "example_db",
+  "database_user": "example_user",
+  "database_password": "use-a-strong-secret",
+  "database_host": "127.0.0.1",
+  "database_port": 3306,
+  "charset": "utf8mb4",
+  "collation": "utf8mb4_unicode_ci"
+}
+```
+
+Allowed actions are `create` and `upsert`. Both are idempotent: the database is
+created first when absent, the user account/password is synchronized, and the
+user receives `ALL PRIVILEGES` on that database only. Local requests synchronize
+both `user@127.0.0.1` and `user@localhost`. They do not grant global privileges.
+
+### 17. Run script
 
 ```http
 POST /api/v1/script/run
@@ -417,7 +445,7 @@ Expected output:
 }
 ```
 
-### 12. Laravel install
+### 18. Laravel install
 
 ```http
 POST /api/v1/laravel-install

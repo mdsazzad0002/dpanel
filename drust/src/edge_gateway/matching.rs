@@ -47,6 +47,7 @@ mod tests {
             sites: Arc::from([SiteConfig {
                 id: "site-1".to_string(),
                 scope: "user".to_string(),
+                site_owner: Some("example".to_string()),
                 hostnames: Arc::from(["example.com".to_string(), "www.example.com".to_string()]),
                 document_root: Some(PathBuf::from("/var/www/example/public")),
                 php_version: None,
@@ -75,6 +76,7 @@ mod tests {
         let site = SiteConfig {
             id: "site-1".to_string(),
             scope: "user".to_string(),
+            site_owner: Some("example".to_string()),
             hostnames: Arc::from(["example.com".to_string()]),
             document_root: None,
             php_version: None,

@@ -10,6 +10,7 @@ mod php;
 mod php_config;
 mod edge_gateway;
 mod script;
+mod security;
 mod scripts;
 mod ssl;
 mod vhost;

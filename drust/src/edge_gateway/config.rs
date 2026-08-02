@@ -16,6 +16,7 @@ pub struct SiteConfig {
     /// Resource ownership scope. System services share the panel runtime
     /// and may be registered without belonging to a hosting user.
     pub scope: String,
+    pub site_owner: Option<String>,
     pub hostnames: Arc<[String]>,
     pub document_root: Option<PathBuf>,
     pub php_version: Option<String>,

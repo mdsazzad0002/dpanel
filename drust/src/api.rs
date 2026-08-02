@@ -14,6 +14,7 @@ mod laravel;
 mod website;
 mod php;
 mod script;
+mod security;
 mod ssl;
 mod vhost_ops;
 
@@ -77,6 +78,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(php::routes())
         .merge(ssl::routes())
         .merge(script::routes())
+        .merge(security::routes())
         .merge(database::routes())
         .merge(cron::routes())
         .merge(laravel::routes())

@@ -5,9 +5,11 @@
   "filemanager": "1.0.0",
   "ssl": "1.1.0",
   "firewall": "1.0.0",
+  "dns": "1.0.0",
   "fail2ban": "1.0.0",
   "queue": "1.0.0",
   "supervisor": "1.0.0",
   "admin-user": "1.0.0",
-  "ssh-root-login": "1.0.0"
+  "ssh-root-login": "1.0.0",
+  "ssh-manager": "1.0.0"
 }

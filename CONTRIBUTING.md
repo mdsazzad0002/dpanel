@@ -17,7 +17,6 @@ feature ideas.
 Read these files first:
 
 - `README.md` - project overview and install commands
-- `DEVELOPER.md` - architecture and development workflow
 - `SECURITY.md` - vulnerability reporting policy
 - `LICENSE` - custom free-use license
 - `docs/FIRST_INSTALL_AND_PERMISSIONS.md` - first install and permission repair guide
@@ -189,10 +188,8 @@ Update docs when changing:
 Relevant docs:
 
 - `README.md`
-- `DEVELOPER.md`
 - `SECURITY.md`
 - `LICENSE`
-- `docs/FIRST_INSTALL_AND_PERMISSIONS.md`
 - `drust/docs.md`
 
 ## Commit And Pull Request Tips

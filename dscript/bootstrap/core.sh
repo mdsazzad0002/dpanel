@@ -1237,15 +1237,7 @@ panel_site_create() {
   root_path="${6:-/home/${username}/public_html}"
   site_name="${domain//./-}"
 
-  mkdir -p "$DPANEL_TEMPLATE_DIR/generated/sites" "$DPANEL_TEMPLATE_DIR/generated/pools"
-
-  panel_render_template \
-    "${DPANEL_RUNTIME_DIR}/nginx-site.conf.tpl" \
-    "${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.conf" \
-    domain "$domain" \
-    root "$root_path" \
-    username "$username" \
-    php_version "$php_version"
+  mkdir -p "$DPANEL_TEMPLATE_DIR/generated/pools"
 
   panel_render_template \
     "${DPANEL_RUNTIME_DIR}/php-pool.conf.tpl" \
@@ -1258,7 +1250,7 @@ panel_site_create() {
   if [[ "${ssl,,}" == "yes" || "${ssl,,}" == "true" ]]; then
     panel_render_template \
       "${DPANEL_RUNTIME_DIR}/ssl-site.conf.tpl" \
-      "${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.ssl.conf" \
+      "${DPANEL_TEMPLATE_DIR}/generated/pools/${site_name}.ssl.conf" \
       domain "$domain" \
       root "$root_path" \
       username "$username" \
@@ -1266,7 +1258,6 @@ panel_site_create() {
   fi
 
   panel_info_log "Site scaffold created for ${domain}"
-  panel_info_log "Config cached at ${DPANEL_TEMPLATE_DIR}/generated/sites/${site_name}.conf"
 }
 
 panel_resolve_app_env_file() {
@@ -1882,25 +1873,6 @@ panel_finalize_default_install() {
 }
 
 panel_write_runtime_templates() {
-  cat > "${DPANEL_RUNTIME_DIR}/nginx-site.conf.tpl" <<'EOF'
-server {
-    listen 80;
-    server_name {{domain}} www.{{domain}};
-
-    root {{root}};
-    index index.php index.html;
-
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
-
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php{{php_version}}-fpm.sock;
-    }
-}
-EOF
-
   cat > "${DPANEL_RUNTIME_DIR}/apache-site.conf.tpl" <<'EOF'
 <VirtualHost *:80>
     ServerName {{domain}}
@@ -2121,6 +2093,14 @@ panel_cli_dispatch() {
       ;;
     ssh:disable-root)
       panel_run_runtime_script "disable-root-login.sh" "$@"
+      ;;
+    ssh)
+      if [[ $# -lt 1 ]]; then
+        panel_die "Usage: dpanel ssh <install|status|enable|disable|port|allow-ip|remove-ip|deny-global|allow-global|list-access|root-login|password-auth> [value]"
+      fi
+      local ssh_command="$1"
+      shift || true
+      panel_run_module_exact "ssh-manager" install "" "$ssh_command" "$@"
       ;;
     filemanager)
       if [[ $# -lt 1 ]]; then

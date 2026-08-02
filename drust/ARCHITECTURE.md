@@ -1,7 +1,39 @@
-# drust Edge Gateway Plan
+# drust Edge Gateway Architecture
 
-This document defines the implementation path for evolving `drust` into a full
-Rust-based edge gateway for HTTP serving, reverse proxying, TLS, caching, and reloadable config.
+`drust edge-gateway` is the production HTTP/TLS entry point for database-backed
+websites. It serves static content, executes PHP through PHP-FPM, proxies configured
+upstreams, selects TLS certificates with SNI, and refreshes its runtime snapshot
+from the DPanel database.
+
+## Current Runtime
+
+- Production command: `drust edge-gateway`
+- systemd unit: `edge-gateway.service`
+- website source: active rows from DPanel's `websites` table
+- snapshot cache: short-lived, refreshed from the live database
+- hostname matching: configured domain plus its `www` alias
+- static dispatch: safe normalized paths, index resolution, SPA fallback, ETag
+- PHP dispatch: front-controller and direct `.php` requests through PHP-FPM
+- TLS: SNI identities loaded from configured certificate paths
+- system paths: panel and phpMyAdmin remain on the shared `www-data` PHP pool
+
+### PHP ownership policy
+
+For a user-scope website with a valid `site_owner`, the gateway selects:
+
+```text
+/run/php/dpanel-<site_owner>-php<version>.sock
+```
+
+If the socket is missing, the root-owned gateway creates an ondemand PHP-FPM
+pool, validates the FPM configuration, reloads the matching service, and waits
+briefly for the socket. If the Linux user is missing or provisioning fails, the
+same request falls back to the shared `/run/php/php<version>-fpm.sock`; it is not
+failed solely because a user pool is unavailable. `scope=system` never selects
+a user pool.
+
+The website preview URL/proxy feature is not part of the runtime. Websites are
+accessed through their configured live hostname.
 
 The target is not just a web server. The target is a host service that can:
 
@@ -21,6 +53,12 @@ The target is not just a web server. The target is a host service that can:
 3. Separate control-plane writes from data-plane reads.
 4. Make reloads atomic instead of restarting the process.
 5. Prefer explicit policy objects over hidden behavior.
+
+## Historical Roadmap
+
+The phases below describe the original implementation sequence. Items listed
+in **Current Runtime** above are already implemented; remaining items are future
+hardening or expansion work.
 
 ## Phase 1: Runtime Skeleton
 

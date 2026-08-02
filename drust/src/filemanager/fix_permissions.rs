@@ -176,7 +176,8 @@ fn site_project_roots(home: &Path) -> Vec<PathBuf> {
 
 fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
     let path = root_path.to_string_lossy();
-    let owner = format!("{username}:{WEB_GROUP}");
+    let site_group = user_group(username)?;
+    let owner = format!("{username}:{site_group}");
 
     run_status("chown", &["-R", &owner, path.as_ref()])?;
     run_status("chmod", &["-R", "u+rwX,g+rwX,o-rwx", path.as_ref()])?;
@@ -200,7 +201,7 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
             &[
                 "-R",
                 "-m",
-                &format!("u:{username}:rwx,u:{WEB_GROUP}:rwx,g:{WEB_GROUP}:rwx"),
+                &format!("u:{username}:rwx,g:{site_group}:rwx"),
                 path.as_ref(),
             ],
         )?;
@@ -210,7 +211,7 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
                 "-R",
                 "-d",
                 "-m",
-                &format!("u:{username}:rwx,u:{WEB_GROUP}:rwx,g:{WEB_GROUP}:rwx"),
+                &format!("u:{username}:rwx,g:{site_group}:rwx"),
                 path.as_ref(),
             ],
         )?;

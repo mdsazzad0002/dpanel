@@ -46,7 +46,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         .arg("--skip-column-names")
         .arg(database.clone())
         .arg("-e")
-        .arg("SELECT id,domain,scope,root_path,project_root,start_directory,php_version,enable_ssl,status,type FROM websites ORDER BY updated_at DESC");
+        .arg("SELECT id,domain,scope,site_owner,root_path,project_root,start_directory,php_version,enable_ssl,status,type FROM websites ORDER BY updated_at DESC");
     if !password.is_empty() {
         cmd.env("MYSQL_PWD", password);
     }
@@ -59,7 +59,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
     let mut tls = Vec::new();
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let cols: Vec<&str> = line.split('\t').collect();
-        if cols.len() < 10 {
+        if cols.len() < 11 {
             continue;
         }
         let domain = normalize_domain(cols[1]);
@@ -67,12 +67,13 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
             continue;
         }
         let scope = normalize_scope(cols[2]);
-        let root_path = cols[3].trim();
-        let project_root = cols[4].trim();
-        let start_directory = cols[5].trim();
-        let php_version = normalize_php_version(cols[6]);
-        let enable_ssl = cols[7].trim() == "1";
-        let status = cols[8].trim();
+        let site_owner = normalize_site_owner(cols[3]);
+        let root_path = cols[4].trim();
+        let project_root = cols[5].trim();
+        let start_directory = cols[6].trim();
+        let php_version = normalize_php_version(cols[7]);
+        let enable_ssl = cols[8].trim() == "1";
+        let status = cols[9].trim();
         if !matches_status(status) {
             continue;
         }
@@ -80,6 +81,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         sites.push(SiteConfig {
             id: cols[0].trim().to_string(),
             scope,
+            site_owner,
             hostnames: std::sync::Arc::from([domain.clone(), format!("www.{domain}")]),
             document_root,
             php_version,
@@ -147,6 +149,15 @@ fn normalize_scope(value: &str) -> String {
         "system" => "system".to_string(),
         _ => "user".to_string(),
     }
+}
+
+fn normalize_site_owner(value: &str) -> Option<String> {
+    let owner = value.trim().to_ascii_lowercase();
+    if owner.is_empty() || owner.eq_ignore_ascii_case("null") {
+        return None;
+    }
+
+    Some(owner)
 }
 
 fn normalize_domain(domain: &str) -> String {

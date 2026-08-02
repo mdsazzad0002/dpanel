@@ -1,18 +1,18 @@
 #![allow(dead_code)]
 
+use axum::http::Request;
 use axum::{
     body::Body,
-    http::{header, HeaderValue, StatusCode},
+    http::{HeaderValue, StatusCode, header},
     response::Response,
 };
-use axum::http::Request;
 use std::path::Path;
 use std::time::Duration;
 
 use super::{
-    execute_php_front_controller, load_static_asset, normalize_request_path, proxy_request,
-    resolve_route, resolve_site, resolve_static_path, RouteAction, RuntimeSnapshot, StaticAsset,
-    StaticFileConfig,
+    RouteAction, RuntimeSnapshot, StaticAsset, StaticFileConfig, execute_php_front_controller,
+    load_static_asset, normalize_request_path, proxy_request, resolve_route, resolve_site,
+    resolve_static_path,
 };
 
 #[derive(Clone, Debug)]
@@ -45,17 +45,6 @@ pub async fn dispatch(
             "",
         );
     };
-    if let Some(preview) = parse_panel_preview_path(&path) {
-        return handle_panel_preview(
-            snapshot,
-            ctx,
-            site,
-            preview,
-            request,
-            proxy_client,
-        )
-        .await;
-    }
     if site.scope == "system" && is_system_phpmyadmin_path(&path) {
         let mut response = handle_system_phpmyadmin(
             request,
@@ -112,11 +101,14 @@ pub async fn dispatch(
             // Prefer a PHP front controller for directory requests. This
             // prevents a leftover starter index.html from shadowing a real
             // application index.php in the same document root.
-            if (path == "/" || path.ends_with('/')) && config.document_root.join("index.php").is_file() {
+            if (path == "/" || path.ends_with('/'))
+                && config.document_root.join("index.php").is_file()
+            {
                 let response = execute_php_front_controller(
                     request,
                     &config.document_root,
                     site.php_version.as_deref(),
+                    user_pool_owner(site.scope.as_str(), site.site_owner.as_deref()),
                 )
                 .await
                 .unwrap_or_else(|error| {
@@ -131,17 +123,14 @@ pub async fn dispatch(
             let exact_static_path = if is_php_path(&path) {
                 None
             } else {
-                resolve_static_path(
-                    &config.document_root,
-                    &path,
-                    &config.index_file,
-                    false,
-                )
+                resolve_static_path(&config.document_root, &path, &config.index_file, false)
             };
             if let Some(path_on_disk) = exact_static_path {
                 let asset = match load_static_asset(&path_on_disk) {
                     Ok(asset) => asset,
-                    Err(error) => return simple_response(StatusCode::INTERNAL_SERVER_ERROR, &error),
+                    Err(error) => {
+                        return simple_response(StatusCode::INTERNAL_SERVER_ERROR, &error);
+                    }
                 };
                 return annotated_response(
                     static_response(asset, config.cache_ttl),
@@ -155,6 +144,7 @@ pub async fn dispatch(
                     request,
                     &config.document_root,
                     site.php_version.as_deref(),
+                    user_pool_owner(site.scope.as_str(), site.site_owner.as_deref()),
                 )
                 .await
                 .unwrap_or_else(|error| {
@@ -248,7 +238,11 @@ async fn handle_system_phpmyadmin(
     if (local_path == "/" || local_path.ends_with('/')) {
         if root.join("index.php").is_file() {
             let (mut parts, body) = request.into_parts();
-            let query = parts.uri.query().map(|value| format!("?{value}")).unwrap_or_default();
+            let query = parts
+                .uri
+                .query()
+                .map(|value| format!("?{value}"))
+                .unwrap_or_default();
             let Ok(uri) = format!("/{query}").parse() else {
                 return simple_response(StatusCode::BAD_REQUEST, "Invalid phpMyAdmin path");
             };
@@ -257,9 +251,15 @@ async fn handle_system_phpmyadmin(
                 Request::from_parts(parts, body),
                 root,
                 php_version,
+                None,
             )
             .await
-            .unwrap_or_else(|error| simple_response(StatusCode::BAD_GATEWAY, &format!("phpMyAdmin unavailable: {error}")));
+            .unwrap_or_else(|error| {
+                simple_response(
+                    StatusCode::BAD_GATEWAY,
+                    &format!("phpMyAdmin unavailable: {error}"),
+                )
+            });
             return annotated_response(response, site_match, "/phpmyadmin");
         }
     }
@@ -281,123 +281,33 @@ async fn handle_system_phpmyadmin(
     }
 
     let (mut parts, body) = request.into_parts();
-    let query = parts.uri.query().map(|value| format!("?{value}")).unwrap_or_default();
+    let query = parts
+        .uri
+        .query()
+        .map(|value| format!("?{value}"))
+        .unwrap_or_default();
     let Ok(uri) = format!("{local_path}{query}").parse() else {
         return simple_response(StatusCode::BAD_REQUEST, "Invalid phpMyAdmin path");
     };
     parts.uri = uri;
-    let response = execute_php_front_controller(Request::from_parts(parts, body), root, php_version)
-        .await
-        .unwrap_or_else(|error| simple_response(StatusCode::BAD_GATEWAY, &format!("phpMyAdmin unavailable: {error}")));
+    let response =
+        execute_php_front_controller(Request::from_parts(parts, body), root, php_version, None)
+            .await
+            .unwrap_or_else(|error| {
+                simple_response(
+                    StatusCode::BAD_GATEWAY,
+                    &format!("phpMyAdmin unavailable: {error}"),
+                )
+            });
     annotated_response(response, site_match, "/phpmyadmin")
 }
 
-struct PanelPreview<'a> {
-    session_prefix: &'a str,
-    website_id: &'a str,
-    relative_path: &'a str,
-}
-
-fn parse_panel_preview_path(path: &str) -> Option<PanelPreview<'_>> {
-    let mut segments = path.trim_start_matches('/').split('/');
-    let session_prefix = segments.next()?;
-    if session_prefix.len() != 70
-        || !session_prefix.starts_with("cpsess")
-        || !session_prefix[6..].bytes().all(|byte| byte.is_ascii_hexdigit())
-        || segments.next()? != "websites"
-    {
-        return None;
-    }
-    let website_id = segments.next()?;
-    if website_id.is_empty() || segments.next()? != "preview" {
-        return None;
-    }
-    Some(PanelPreview {
-        session_prefix,
-        website_id,
-        relative_path: path
-            .split_once(&format!("/preview/"))
-            .map(|(_, relative)| relative)
-            .unwrap_or(""),
-    })
-}
-
-async fn handle_panel_preview(
-    snapshot: &RuntimeSnapshot,
-    ctx: &DispatchContext,
-    panel_site: &super::SiteConfig,
-    preview: PanelPreview<'_>,
-    request: Request<Body>,
-    proxy_client: &reqwest::Client,
-) -> Response {
-    let Some(target_site) = snapshot.sites.iter().find(|site| site.id == preview.website_id) else {
-        return simple_response(StatusCode::NOT_FOUND, "Preview website not found");
-    };
-    let Some(panel_root) = panel_site.document_root.as_ref() else {
-        return simple_response(StatusCode::INTERNAL_SERVER_ERROR, "Panel root missing");
-    };
-
-    let original_method = request.method().clone();
-    let original_headers = request.headers().clone();
-    let original_query = request.uri().query().map(str::to_string);
-    let (mut parts, _) = request.into_parts();
-    let authorization_path = format!(
-        "/{}/websites/{}/manage",
-        preview.session_prefix, preview.website_id
-    );
-    parts.uri = match authorization_path.parse() {
-        Ok(uri) => uri,
-        Err(_) => return simple_response(StatusCode::BAD_REQUEST, "Invalid preview path"),
-    };
-    let authorization = execute_php_front_controller(
-        Request::from_parts(parts, Body::empty()),
-        panel_root,
-        panel_site.php_version.as_deref(),
-    )
-    .await
-    .unwrap_or_else(|error| {
-        simple_response(
-            StatusCode::BAD_GATEWAY,
-            &format!("Preview authorization unavailable: {error}"),
-        )
-    });
-    if !authorization.status().is_success() {
-        return authorization;
-    }
-
-    let Some(domain) = target_site.hostnames.first() else {
-        return simple_response(StatusCode::NOT_FOUND, "Preview domain missing");
-    };
-    let mut target_path = if preview.relative_path.is_empty() {
-        "/".to_string()
+fn user_pool_owner<'a>(scope: &str, site_owner: Option<&'a str>) -> Option<&'a str> {
+    if scope.eq_ignore_ascii_case("system") {
+        None
     } else {
-        format!("/{}", preview.relative_path)
-    };
-    if let Some(query) = original_query {
-        target_path.push('?');
-        target_path.push_str(&query);
+        site_owner
     }
-
-    let mut builder = Request::builder().method(original_method).uri(target_path);
-    for (name, value) in &original_headers {
-        if name == header::HOST
-            || (name == header::COOKIE
-                && !panel_site
-                    .hostnames
-                    .iter()
-                    .any(|panel_domain| panel_domain.eq_ignore_ascii_case(domain)))
-        {
-            continue;
-        }
-        builder = builder.header(name, value);
-    }
-    builder = builder.header(header::HOST, domain);
-    let target_request = match builder.body(Body::empty()) {
-        Ok(request) => request,
-        Err(_) => return simple_response(StatusCode::BAD_REQUEST, "Invalid preview request"),
-    };
-
-    Box::pin(dispatch(snapshot, ctx, target_request, proxy_client)).await
 }
 
 fn annotated_response(mut response: Response, site_match: &str, route_match: &str) -> Response {
@@ -421,7 +331,8 @@ fn static_response(asset: StaticAsset, cache_ttl: Duration) -> Response {
     );
     headers.insert(
         header::ETAG,
-        HeaderValue::from_str(&asset.etag).unwrap_or_else(|_| HeaderValue::from_static("\"invalid\"")),
+        HeaderValue::from_str(&asset.etag)
+            .unwrap_or_else(|_| HeaderValue::from_static("\"invalid\"")),
     );
     headers.insert(
         header::LAST_MODIFIED,
@@ -492,7 +403,18 @@ fn is_blocked_htaccess_path(path: &str) -> bool {
         .map(|(_, extension)| extension.to_ascii_lowercase());
     matches!(
         extension.as_deref(),
-        Some("sh" | "bash" | "env" | "ini" | "conf" | "sql" | "sqlite" | "yml" | "yaml" | "json" | "md")
+        Some(
+            "sh" | "bash"
+                | "env"
+                | "ini"
+                | "conf"
+                | "sql"
+                | "sqlite"
+                | "yml"
+                | "yaml"
+                | "json"
+                | "md"
+        )
     )
 }
 
@@ -568,12 +490,12 @@ mod tests {
     }
 
     #[test]
-    fn parses_secure_panel_preview_path() {
-        let token = "a".repeat(64);
-        let path = format!("/cpsess{token}/websites/site-1/preview/assets/app.css");
-        let preview = parse_panel_preview_path(&path).unwrap();
-        assert_eq!(preview.website_id, "site-1");
-        assert_eq!(preview.relative_path, "assets/app.css");
-        assert!(parse_panel_preview_path("/websites/site-1/preview").is_none());
+    fn system_sites_never_select_a_user_pool() {
+        assert_eq!(user_pool_owner("system", Some("dpanel_localhost")), None);
+        assert_eq!(user_pool_owner("SYSTEM", Some("root")), None);
+        assert_eq!(
+            user_pool_owner("user", Some("account_user")),
+            Some("account_user")
+        );
     }
 }
