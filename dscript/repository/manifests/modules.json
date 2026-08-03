@@ -5,6 +5,7 @@
   "filemanager": "1.0.0",
   "ssl": "1.1.0",
   "firewall": "1.0.0",
+  "firewall-manager": "1.0.0",
   "dns": "1.0.0",
   "fail2ban": "1.0.0",
   "queue": "1.0.0",

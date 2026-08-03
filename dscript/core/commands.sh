@@ -32,6 +32,7 @@ Commands:
   site:create <args>            Create a website configuration scaffold
   filemanager <action> <args>   Run file-manager operations
   ssh <action> [value]          Install and manage SSH safely
+  firewall <action> [value]     Inspect and manage UFW safely
   script <list|help|run> [...]  List or run maintenance shell scripts
   doctor [--fix]                Diagnose dscript and its host dependencies
   info                           Show server and installed-module information
@@ -129,6 +130,27 @@ Simple SSH management:
   sudo dpanel ssh list-access
   sudo dpanel ssh root-login <disable|keys-only|enable>
   sudo dpanel ssh password-auth <enable|disable>
+  sudo dpanel ssh list-users
+  sudo dpanel ssh remove-user <username> --yes
+  sudo dpanel ssh sessions
+  sudo dpanel ssh diagnose
+EOF
+      ;;
+    firewall|firewall-manager)
+      cat <<'EOF'
+Simple UFW management:
+  sudo dpanel firewall status
+  sudo dpanel firewall rules
+  sudo dpanel firewall logs [1-1000]
+  sudo dpanel firewall diagnose
+  sudo dpanel firewall allow-port <port> [tcp|udp]
+  sudo dpanel firewall remove-port <port> [tcp|udp]
+  sudo dpanel firewall allow-ip <ip-or-cidr> [port] [tcp|udp]
+  sudo dpanel firewall remove-ip <ip-or-cidr> [port] [tcp|udp]
+  sudo dpanel firewall limit-ssh [port]
+  sudo dpanel firewall delete-rule <number> --yes
+  sudo dpanel firewall logging <off|low|medium|high|full>
+  sudo dpanel firewall enable|disable --yes
 EOF
       ;;
     *)
@@ -466,7 +488,7 @@ dscript_help() {
     chain|install|update) dscript_chain_help ;;
     module) dscript_module_help "${2:-}" ;;
     script) dscript_script_help "${2:-}" ;;
-    php|filemanager|ssh) dscript_module_help "$topic" ;;
+    php|filemanager|ssh|firewall) dscript_module_help "$topic" ;;
     doctor) printf '%s\n' "Usage: dpanel doctor [--fix]" "Runs dependency, manifest, syntax and runtime checks." ;;
     *)
       if dscript_module_exists "$topic"; then dscript_module_help "$topic"; else panel_die "No help topic: ${topic}"; fi
@@ -528,6 +550,11 @@ dscript_cli() {
       local ssh_action="${1:-help}"
       shift || true
       dscript_run_module ssh-manager install "$ssh_action" "$@"
+      ;;
+    firewall)
+      local firewall_action="${1:-help}"
+      shift || true
+      dscript_run_module firewall-manager install "$firewall_action" "$@"
       ;;
     user:create) dscript_run_script create-admin-user "$@" ;;
     user:password) dscript_run_script set-system-user-password "$@" ;;

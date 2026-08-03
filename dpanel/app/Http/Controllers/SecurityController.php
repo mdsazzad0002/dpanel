@@ -43,16 +43,27 @@ class SecurityController extends Controller
             'success' => true,
             'data' => [
                 'groups' => [
-                    ['title' => 'Install and check', 'commands' => ['sudo dpanel ssh install', 'sudo dpanel ssh status']],
-                    ['title' => 'Enable or disable SSH', 'commands' => ['sudo dpanel ssh enable', 'sudo dpanel ssh disable']],
-                    ['title' => '1. Remove global SSH access', 'commands' => ['sudo dpanel ssh deny-global']],
-                    ['title' => '2. Allow one specific IP', 'commands' => ['sudo dpanel ssh allow-ip 203.0.113.10']],
-                    ['title' => '3. Remove one specific IP', 'commands' => ['sudo dpanel ssh remove-ip 203.0.113.10']],
-                    ['title' => 'Review access rules', 'commands' => ['sudo dpanel ssh list-access']],
-                    ['title' => 'Change SSH port safely', 'commands' => ['sudo dpanel ssh port 2222']],
-                    ['title' => 'Secure login methods', 'commands' => ['sudo dpanel ssh root-login disable', 'sudo dpanel ssh root-login keys-only', 'sudo dpanel ssh password-auth disable']],
+                    ['category' => 'SSH Service', 'title' => 'Install and check', 'commands' => ['sudo dpanel ssh install', 'sudo dpanel ssh status']],
+                    ['category' => 'SSH Service', 'title' => 'Enable or disable SSH', 'risk' => 'Caution', 'commands' => ['sudo dpanel ssh enable', 'sudo dpanel ssh disable']],
+                    ['category' => 'SSH Diagnostics', 'title' => 'Run a complete SSH health check', 'description' => 'Validates sshd, shows effective security settings, listeners, connections and recent service logs without changing the server.', 'commands' => [['command' => 'sudo dpanel ssh diagnose', 'comment' => 'Read-only combined SSH diagnostic report']]],
+                    ['category' => 'SSH Diagnostics', 'title' => 'View active SSH sessions', 'description' => 'Shows logged-in users and established connections handled by sshd.', 'commands' => [['command' => 'sudo dpanel ssh sessions', 'comment' => 'Read-only session and connection report']]],
+                    ['category' => 'Network Access', 'title' => '1. Allow one specific IP', 'commands' => ['sudo dpanel ssh allow-ip 203.0.113.10', 'sudo dpanel ssh allow-ip 203.0.113.10 2222']],
+                    ['category' => 'Network Access', 'title' => '2. Remove global SSH access after testing', 'risk' => 'Lockout risk', 'commands' => ['sudo dpanel ssh deny-global', 'sudo dpanel ssh deny-global 2222']],
+                    ['category' => 'Network Access', 'title' => 'Remove one specific IP', 'commands' => ['sudo dpanel ssh remove-ip 203.0.113.10', 'sudo dpanel ssh remove-ip 203.0.113.10 2222']],
+                    ['category' => 'Network Access', 'title' => 'Review access rules', 'commands' => ['sudo dpanel ssh list-access']],
+                    ['category' => 'Network Access', 'title' => 'Change SSH port safely', 'commands' => ['sudo dpanel ssh port 2222']],
+                    ['category' => 'Login Security', 'title' => 'Check effective root login status', 'description' => 'Reads the configuration sshd is actually using; it does not change the server.', 'commands' => [['command' => "sudo sshd -T | grep '^permitrootlogin'", 'comment' => 'yes = enabled, no = disabled, prohibit-password = SSH key only']]],
+                    ['category' => 'Login Security', 'title' => 'Secure login methods', 'risk' => 'Lockout risk', 'commands' => ['sudo dpanel ssh root-login disable', 'sudo dpanel ssh root-login keys-only', 'sudo dpanel ssh password-auth disable']],
+                    ['category' => 'Login Security', 'title' => 'Change an SSH user password', 'commands' => ['sudo passwd username']],
+                    ['category' => 'SSH Keys', 'title' => 'Prepare and copy an SSH key', 'commands' => ['sudo install -d -m 700 -o username -g username /home/username/.ssh', 'ssh-copy-id -p 2222 username@server-ip']],
+                    ['category' => 'SSH Keys', 'title' => 'Review authorized keys and fingerprints', 'commands' => ['sudo cat /home/username/.ssh/authorized_keys', 'sudo ssh-keygen -lf /home/username/.ssh/authorized_keys']],
+                    ['category' => 'User Management', 'title' => 'View SSH-capable users', 'commands' => ['sudo dpanel ssh list-users']],
+                    ['category' => 'User Management', 'title' => 'Create a new SSH user', 'commands' => ['sudo adduser username']],
+                    ['category' => 'User Management', 'title' => 'Rename a user and move the home directory', 'commands' => ['sudo usermod --login newname username', 'sudo usermod --home /home/newname --move-home newname']],
+                    ['category' => 'User Management', 'title' => 'Change a user login shell', 'commands' => ['sudo usermod --shell /bin/bash username']],
+                    ['category' => 'User Management', 'title' => 'Delete a user and home directory', 'risk' => 'Deletes data', 'commands' => ['sudo dpanel ssh remove-user username --yes']],
                 ],
-                'warning' => 'After allowing your IP, test it from a second terminal before removing global access. Keep the server console open to avoid lockout.',
+                'warning' => 'Test SSH access from a second terminal before removing global access. Do not rename or delete the user running your current session, and keep the server console open to avoid lockout.',
             ],
         ]);
     }
@@ -63,12 +74,18 @@ class SecurityController extends Controller
             'success' => true,
             'data' => [
                 'groups' => [
-                    ['title' => 'Install and configure', 'commands' => ['sudo dpanel module firewall install']],
-                    ['title' => 'View firewall status', 'commands' => ['sudo ufw status numbered', 'sudo ufw status verbose']],
-                    ['title' => 'Enable or disable UFW', 'commands' => ['sudo ufw enable', 'sudo ufw disable']],
-                    ['title' => 'Allow a port', 'commands' => ['sudo ufw allow 443/tcp']],
-                    ['title' => 'Remove an allowed port', 'commands' => ['sudo ufw delete allow 443/tcp']],
-                    ['title' => 'Allow or remove a specific IP', 'commands' => ['sudo ufw allow from 203.0.113.10', 'sudo ufw delete allow from 203.0.113.10']],
+                    ['category' => 'Firewall Service', 'title' => 'Install and configure', 'commands' => ['sudo dpanel module firewall install']],
+                    ['category' => 'Firewall Service', 'title' => 'View firewall status and rules', 'description' => 'Read-only commands showing policy, state and numbered rules.', 'commands' => [['command' => 'sudo dpanel firewall status', 'comment' => 'Show UFW state and default policies'], ['command' => 'sudo dpanel firewall rules', 'comment' => 'Show rules with deletion numbers']]],
+                    ['category' => 'Firewall Service', 'title' => 'Enable or disable UFW', 'description' => 'Requires explicit confirmation because changing firewall state can interrupt remote access.', 'risk' => 'Lockout risk', 'commands' => [['command' => 'sudo dpanel firewall enable --yes', 'comment' => 'Allow the active SSH port before enabling'], ['command' => 'sudo dpanel firewall disable --yes', 'comment' => 'Stops UFW filtering until it is enabled again']]],
+                    ['category' => 'Firewall Service', 'title' => 'Inspect firewall logs', 'description' => 'Reads recent kernel firewall events; accepts between 1 and 1000 lines.', 'commands' => [['command' => 'sudo dpanel firewall logs 100', 'comment' => 'Show the latest 100 UFW log entries']]],
+                    ['category' => 'Firewall Service', 'title' => 'Configure firewall logging', 'description' => 'Medium is suitable for normal diagnostics; high and full can create substantial log volume.', 'commands' => [['command' => 'sudo dpanel firewall logging medium', 'comment' => 'Enable balanced UFW logging'], ['command' => 'sudo dpanel firewall logging off', 'comment' => 'Disable UFW logging']]],
+                    ['category' => 'Firewall Diagnostics', 'title' => 'Run a complete firewall health check', 'description' => 'Shows UFW status, numbered rules, listening services and recent logs in one report.', 'commands' => [['command' => 'sudo dpanel firewall diagnose', 'comment' => 'Read-only combined firewall diagnostic report']]],
+                    ['category' => 'Firewall Policy', 'title' => 'Set secure default policies', 'risk' => 'High impact', 'commands' => ['sudo ufw default deny incoming', 'sudo ufw default allow outgoing']],
+                    ['category' => 'Firewall Rules', 'title' => 'Allow or remove a port', 'description' => 'Protocol defaults to TCP; pass udp explicitly for UDP services.', 'commands' => [['command' => 'sudo dpanel firewall allow-port 443 tcp', 'comment' => 'Allow inbound HTTPS'], ['command' => 'sudo dpanel firewall remove-port 443 tcp', 'comment' => 'Remove the matching HTTPS allow rule']]],
+                    ['category' => 'Firewall Rules', 'title' => 'Allow or remove a specific IP', 'description' => 'Accepts IPv4, IPv6 and CIDR. Add a port to restrict access to one service.', 'commands' => [['command' => 'sudo dpanel firewall allow-ip 203.0.113.10 22 tcp', 'comment' => 'Allow this IP to reach SSH only'], ['command' => 'sudo dpanel firewall remove-ip 203.0.113.10 22 tcp', 'comment' => 'Remove the exact matching IP rule']]],
+                    ['category' => 'Firewall Rules', 'title' => 'Allow a subnet to a specific port', 'description' => 'CIDR restricts a service to a trusted network range.', 'commands' => [['command' => 'sudo dpanel firewall allow-ip 203.0.113.0/24 22 tcp', 'comment' => 'Allow this subnet to reach SSH only']]],
+                    ['category' => 'Firewall Rules', 'title' => 'Rate-limit SSH connections', 'description' => 'Adds UFW connection throttling to reduce repeated login attempts.', 'commands' => [['command' => 'sudo dpanel firewall limit-ssh 22', 'comment' => 'Replace 22 with the effective SSH port']]],
+                    ['category' => 'Firewall Rules', 'title' => 'Delete a rule by number', 'description' => 'Review the numbered list immediately before deletion because numbers change after each removal.', 'risk' => 'Caution', 'commands' => [['command' => 'sudo dpanel firewall rules', 'comment' => 'Find the current rule number'], ['command' => 'sudo dpanel firewall delete-rule 3 --yes', 'comment' => 'Delete rule number 3 after reviewing it']]],
                 ],
                 'warning' => 'Before enabling UFW, allow the active SSH port and keep the server console open to avoid lockout.',
             ],
@@ -414,7 +431,7 @@ class SecurityController extends Controller
     }
 
     /** @param array<string, mixed>|null $payload
-     *  @return array<string, mixed>
+     * @return array<string, mixed>
      */
     private function drustSecurityRequest(?array $payload = null): array
     {

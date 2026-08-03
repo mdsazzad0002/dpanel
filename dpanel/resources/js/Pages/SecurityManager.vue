@@ -32,14 +32,17 @@ const loadLive = async () => {
 };
 
 const copyCommand = async (command) => {
+    const value = typeof command === 'string' ? command : command.command;
     try {
-        await navigator.clipboard.writeText(command);
-        copiedCommand.value = command;
+        await navigator.clipboard.writeText(value);
+        copiedCommand.value = value;
         window.setTimeout(() => { copiedCommand.value = ''; }, 1800);
     } catch {
         error.value = 'Unable to copy the command. Please copy it manually.';
     }
 };
+
+const commandValue = (command) => typeof command === 'string' ? command : command.command;
 
 const openSshGuide = async () => {
     guideType.value = 'ssh';
@@ -74,6 +77,15 @@ const openFirewallGuide = async () => {
 };
 
 const activeGuide = computed(() => guideType.value === 'ssh' ? sshGuide.value : firewallGuide.value);
+const activeGuideSections = computed(() => {
+    const sections = new Map();
+    for (const group of activeGuide.value.groups || []) {
+        const category = group.category || 'Commands';
+        if (!sections.has(category)) sections.set(category, []);
+        sections.get(category).push(group);
+    }
+    return Array.from(sections, ([title, groups]) => ({ title, groups }));
+});
 const sectionTitle = computed(() => 'Security Overview');
 
 onMounted(loadLive);
@@ -123,7 +135,7 @@ onMounted(loadLive);
 
             <div v-if="guideOpen" class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="SSH management guide">
                 <button type="button" class="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px]" aria-label="Close SSH guide" @click="guideOpen = false"></button>
-                <aside class="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col bg-white shadow-2xl dark:bg-slate-900">
+                <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-2xl sm:w-[80%] dark:bg-slate-900">
                     <div class="flex items-start justify-between border-b border-slate-200 p-5 dark:border-slate-800">
                         <div><h2 class="font-semibold">{{ guideType === 'ssh' ? 'SSH Status & Guide' : 'Firewall Status & Guide' }}</h2><p class="mt-1 text-xs text-slate-500">Live status with simple server commands</p></div>
                         <button type="button" class="rounded-md p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close" @click="guideOpen = false">✕</button>
@@ -133,7 +145,19 @@ onMounted(loadLive);
                     <div class="flex-1 overflow-y-auto p-5">
                         <p v-if="guideLoading" class="py-12 text-center text-sm text-slate-500">Loading guide...</p>
                         <div v-else-if="guideError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ guideError }}</div>
-                        <div v-else class="space-y-5"><div v-for="group in activeGuide.groups" :key="group.title"><h3 class="text-sm font-semibold">{{ group.title }}</h3><div class="mt-2 space-y-2"><div v-for="command in group.commands" :key="command" class="flex items-center gap-2 rounded-lg bg-slate-950 p-2 text-slate-100"><code class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-1 text-xs">{{ command }}</code><button type="button" class="rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600" @click="copyCommand(command)">{{ copiedCommand === command ? 'Copied' : 'Copy' }}</button></div></div></div><div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{{ activeGuide.warning }}</div></div>
+                        <div v-else class="space-y-6">
+                            <section v-for="section in activeGuideSections" :key="section.title">
+                                <h3 class="mb-3 border-b border-slate-200 pb-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">{{ section.title }}</h3>
+                                <div class="grid gap-3 md:grid-cols-2">
+                                    <div v-for="group in section.groups" :key="group.title" class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                                        <div class="flex items-start justify-between gap-2"><h4 class="text-sm font-medium">{{ group.title }}</h4><span v-if="group.risk" class="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">{{ group.risk }}</span></div>
+                                        <p v-if="group.description" class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{{ group.description }}</p>
+                                        <div class="mt-2 space-y-2"><div v-for="command in group.commands" :key="commandValue(command)" class="rounded-lg bg-slate-950 p-2 text-slate-100"><p v-if="command.comment" class="mb-2 px-1 text-[11px] leading-4 text-slate-400"># {{ command.comment }}</p><div class="flex items-center gap-2"><code class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-1 text-xs">{{ commandValue(command) }}</code><button type="button" class="rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600" @click="copyCommand(command)">{{ copiedCommand === commandValue(command) ? 'Copied' : 'Copy' }}</button></div></div></div>
+                                    </div>
+                                </div>
+                            </section>
+                            <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{{ activeGuide.warning }}</div>
+                        </div>
                     </div>
                 </aside>
             </div>

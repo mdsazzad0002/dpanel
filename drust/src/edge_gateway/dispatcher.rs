@@ -389,6 +389,12 @@ fn is_php_path(path: &str) -> bool {
 }
 
 fn is_blocked_htaccess_path(path: &str) -> bool {
+    // Certbot's webroot authenticator must expose its temporary token through
+    // this standardized dot-directory. Keep every other hidden path blocked.
+    if path.starts_with("/.well-known/acme-challenge/") {
+        return false;
+    }
+
     if path
         .split('/')
         .filter(|segment| !segment.is_empty())
@@ -497,5 +503,15 @@ mod tests {
             user_pool_owner("user", Some("account_user")),
             Some("account_user")
         );
+    }
+
+    #[test]
+    fn permits_acme_challenges_without_exposing_other_hidden_paths() {
+        assert!(!is_blocked_htaccess_path(
+            "/.well-known/acme-challenge/example-token"
+        ));
+        assert!(is_blocked_htaccess_path("/.env"));
+        assert!(is_blocked_htaccess_path("/.well-known/private.txt"));
+        assert!(is_blocked_htaccess_path("/.well-known/acme-challenge"));
     }
 }

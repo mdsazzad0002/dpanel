@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     zones: { type: Array, default: () => [] },
@@ -25,8 +25,6 @@ const selectedZone = ref('');
 
 const deleteZoneForm = useForm({});
 const deleteRecordForm = useForm({});
-const syncAllForm = useForm({ domain: '' });
-const syncZoneForm = useForm({ domain: '' });
 
 const zoneForm = useForm({
     domain: '',
@@ -155,16 +153,6 @@ const deleteRecord = (id) => {
     deleteRecordForm.delete(panelRoute('dns.records.destroy', { id }));
 };
 
-const syncAll = () => {
-    syncAllForm.domain = '';
-    syncAllForm.post(panelRoute('dns.cloudflare.sync'));
-};
-
-const syncZone = (domain) => {
-    syncZoneForm.domain = domain;
-    syncZoneForm.post(panelRoute('dns.cloudflare.sync'));
-};
-
 const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV'];
 const isInlineCreateRow = (domain) => creatingRecordFor.value === domain;
 const isInlineEditRow = (record) => recordEditingId.value === record.id;
@@ -250,7 +238,7 @@ watch(
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editZone(selectedZoneObject)">Load for Edit</button>
-                        <button type="button" :disabled="syncZoneForm.processing" class="rounded-md border border-indigo-300 px-3 py-2 text-xs text-indigo-700 hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-700 dark:text-indigo-300" @click="syncZone(selectedZoneObject.domain)">Sync</button>
+                        <Link :href="panelRoute('dns.cloudflare.review', { domain: selectedZoneObject.domain })" class="rounded-md border border-indigo-300 px-3 py-2 text-xs text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300">Review Cloudflare Sync</Link>
                     </div>
                 </div>
 
@@ -307,9 +295,7 @@ watch(
                         <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">Add and edit records directly inside the table.</p>
                     </div>
                     <div class="flex items-center gap-2">
-                        <button type="button" :disabled="syncAllForm.processing" class="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-900" @click="syncAll">
-                            Sync All
-                        </button>
+                        <Link :href="panelRoute('dns.cloudflare.review')" class="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900">Review All for Cloudflare</Link>
                         <button type="button" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="startCreateRecord(selectedZoneObject.domain)">
                             + Add record
                         </button>

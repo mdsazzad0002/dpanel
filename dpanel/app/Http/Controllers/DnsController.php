@@ -256,6 +256,7 @@ class DnsController extends Controller
             'websiteDomains' => $this->readWebsiteDomains(),
         ]);
     }
+
     public function storeZone(Request $request): RedirectResponse
     {
         $this->ensureDnsTables();
@@ -452,42 +453,39 @@ class DnsController extends Controller
     {
         $this->ensureDnsTables();
         $validated = $request->validate([
-            'domain' => ['nullable', 'string', 'max:255'],
+            'records' => ['required', 'array', 'min:1', 'max:2000'],
+            'records.*.zone_domain' => ['required', 'string', 'max:255'],
+            'records.*.type' => ['required', 'in:A,AAAA,CNAME,MX,TXT,NS,SRV'],
+            'records.*.name' => ['required', 'string', 'max:255'],
+            'records.*.content' => ['nullable', 'string', 'max:4096'],
+            'records.*.ttl' => ['required', 'integer', 'min:1', 'max:86400'],
+            'records.*.priority' => ['nullable', 'integer', 'min:0', 'max:65535'],
+            'records.*.proxied' => ['required', 'boolean'],
         ]);
 
         $token = trim((string) env('CLOUDFLARE_API_TOKEN', ''));
         if ($token === '') {
-            return redirect()->route('dns.zones')->with('error', 'Cloudflare API token is missing. Set CLOUDFLARE_API_TOKEN in .env.');
-        }
-
-        $domainFilter = isset($validated['domain']) && $validated['domain'] !== ''
-            ? $this->normalizeDomain((string) $validated['domain'])
-            : null;
-
-        $zonesQuery = $this->pdns()->table('domains');
-        if ($domainFilter !== null) {
-            $zonesQuery->where('name', $domainFilter);
-        }
-
-        $zones = $zonesQuery->get(['id', 'name']);
-        if ($zones->isEmpty()) {
-            return redirect()->route('dns.zones')->with('error', 'No DNS zone found to sync.');
+            return back()->with('error', 'Cloudflare API token is missing. Set CLOUDFLARE_API_TOKEN in .env.');
         }
 
         $zoneMap = $this->cloudflareZoneMap();
-        $proxied = filter_var(env('CLOUDFLARE_SYNC_PROXIED', false), FILTER_VALIDATE_BOOLEAN);
         $summary = ['created' => 0, 'skipped' => 0, 'failed' => 0];
         $errors = [];
 
-        foreach ($zones as $zone) {
-            $zoneDomain = $this->normalizeDomain((string) $zone->name);
-            $zoneId = (int) $zone->id;
+        foreach (collect($validated['records'])->groupBy(fn ($record) => $this->normalizeDomain((string) $record['zone_domain'])) as $zoneDomain => $records) {
+            if (! $this->findDomainByName($zoneDomain)) {
+                $summary['failed'] += $records->count();
+                $errors[] = "{$zoneDomain}: Local DNS zone not found.";
+
+                continue;
+            }
 
             try {
                 $cloudflareZoneId = $this->resolveCloudflareZoneId($token, $zoneDomain, $zoneMap);
                 if ($cloudflareZoneId === null) {
                     $summary['failed']++;
                     $errors[] = "{$zoneDomain}: Cloudflare zone not found.";
+
                     continue;
                 }
 
@@ -497,27 +495,24 @@ class DnsController extends Controller
                     ->filter()
                     ->flip();
 
-                $records = $this->pdns()->table('records')
-                    ->where('domain_id', $zoneId)
-                    ->where('type', '!=', 'SOA')
-                    ->where('disabled', 0)
-                    ->get(['name', 'type', 'content', 'ttl', 'prio']);
-
                 foreach ($records as $record) {
-                    $payload = $this->toCloudflarePayload($record, $zoneDomain, $proxied);
+                    $payload = $this->reviewRecordToCloudflarePayload($record, $zoneDomain);
                     if ($payload === null) {
                         $summary['skipped']++;
+
                         continue;
                     }
 
                     $fingerprint = $this->cloudflareRecordFingerprint($payload);
                     if ($fingerprint === null) {
                         $summary['skipped']++;
+
                         continue;
                     }
 
                     if ($existingFingerprints->has($fingerprint)) {
                         $summary['skipped']++;
+
                         continue;
                     }
 
@@ -531,6 +526,7 @@ class DnsController extends Controller
                     if (! (bool) ($response['success'] ?? false)) {
                         $summary['failed']++;
                         $errors[] = "{$zoneDomain}: ".((string) data_get($response, 'errors.0.message', 'Create failed.'));
+
                         continue;
                     }
 
@@ -549,13 +545,84 @@ class DnsController extends Controller
                 $message .= ' '.implode(' | ', array_slice($errors, 0, 3));
             }
 
-            return redirect()->route('dns.zones')->with('error', $message);
+            return back()->with('error', $message);
         }
 
         return redirect()->route('dns.zones')->with(
             'success',
             "Cloudflare sync completed. Created {$summary['created']}, skipped {$summary['skipped']}."
         );
+    }
+
+    public function reviewCloudflare(Request $request): Response
+    {
+        $this->ensureDnsTables();
+        $domain = $request->filled('domain') ? $this->normalizeDomain((string) $request->query('domain')) : null;
+        $zones = $this->pdns()->table('domains')
+            ->when($domain, fn ($query) => $query->where('name', $domain))
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        $records = [];
+        foreach ($zones as $zone) {
+            $zoneDomain = $this->normalizeDomain((string) $zone->name);
+            foreach ($this->pdns()->table('records')->where('domain_id', (int) $zone->id)->where('type', '!=', 'SOA')->where('disabled', 0)->get(['name', 'type', 'content', 'ttl', 'prio']) as $record) {
+                $payload = $this->toCloudflarePayload($record, $zoneDomain, false);
+                if ($payload === null) {
+                    continue;
+                }
+                $records[] = [
+                    'zone_domain' => $zoneDomain,
+                    'type' => $payload['type'],
+                    'name' => $payload['name'],
+                    'content' => $payload['type'] === 'SRV' ? json_encode($payload['data'], JSON_UNESCAPED_SLASHES) : ($payload['content'] ?? ''),
+                    'ttl' => $payload['ttl'],
+                    'priority' => $payload['priority'] ?? null,
+                    'proxied' => (bool) ($payload['proxied'] ?? false),
+                ];
+            }
+        }
+
+        return Inertia::render('DnsCloudflareReview', [
+            'records' => $records,
+            'zoneDomains' => $this->pdns()->table('domains')->orderBy('name')->pluck('name')->map(fn ($name) => (string) $name)->values()->all(),
+            'selectedDomain' => $domain,
+            'tokenConfigured' => trim((string) env('CLOUDFLARE_API_TOKEN', '')) !== '',
+        ]);
+    }
+
+    private function reviewRecordToCloudflarePayload(array $record, string $zoneDomain): ?array
+    {
+        $type = strtoupper((string) $record['type']);
+        $name = $this->normalizeDomain((string) $record['name']);
+        if ($name === '' || ($name !== $zoneDomain && ! str_ends_with($name, '.'.$zoneDomain))) {
+            return null;
+        }
+
+        $payload = ['type' => $type, 'name' => $name, 'ttl' => (int) $record['ttl']];
+        if ($type === 'SRV') {
+            $data = json_decode((string) ($record['content'] ?? ''), true);
+            if (! is_array($data) || ! isset($data['service'], $data['proto'], $data['name'], $data['target'])) {
+                return null;
+            }
+            $payload['data'] = $data;
+
+            return $payload;
+        }
+
+        $content = trim((string) ($record['content'] ?? ''));
+        if ($content === '') {
+            return null;
+        }
+        $payload['content'] = $content;
+        if ($type === 'MX') {
+            $payload['priority'] = (int) ($record['priority'] ?? 0);
+        }
+        if ((bool) $record['proxied'] && in_array($type, ['A', 'AAAA', 'CNAME'], true)) {
+            $payload['proxied'] = true;
+        }
+
+        return $payload;
     }
 
     private function pdns()
@@ -737,6 +804,7 @@ class DnsController extends Controller
                 'disabled' => $validated['status'] === 'disabled' ? 1 : 0,
                 'auth' => 1,
             ]);
+
             return;
         }
 
@@ -1123,7 +1191,6 @@ class DnsController extends Controller
     }
 
     /**
-     * @param  object  $record
      * @return array<string, mixed>|null
      */
     private function toCloudflarePayload(object $record, string $zoneDomain, bool $proxied): ?array

@@ -39,6 +39,7 @@ class DatabaseController extends Controller
     {
         $this->migrateLegacyJsonRequests();
         $actor = $request->user();
+        $nameFilter = trim((string) $request->query('name', ''));
         $websiteFilter = strtolower(trim((string) $request->query('website', '')));
         $userFilter = trim((string) $request->query('user', ''));
 
@@ -79,7 +80,11 @@ class DatabaseController extends Controller
             ->all();
 
         $requests = $requests
-            ->filter(function (DatabaseRequestModel $request) use ($websiteFilter, $userFilter): bool {
+            ->filter(function (DatabaseRequestModel $request) use ($nameFilter, $websiteFilter, $userFilter): bool {
+                if ($nameFilter !== '' && ! Str::contains((string) $request->database_name, $nameFilter, true)) {
+                    return false;
+                }
+
                 if ($websiteFilter !== '' && strtolower(trim((string) $request->domain)) !== $websiteFilter) {
                     return false;
                 }
@@ -102,6 +107,7 @@ class DatabaseController extends Controller
             'websiteOptions' => $websiteOptions,
             'userOptions' => $userOptions,
             'filters' => [
+                'name' => $nameFilter,
                 'website' => $websiteFilter,
                 'user' => $userFilter,
             ],

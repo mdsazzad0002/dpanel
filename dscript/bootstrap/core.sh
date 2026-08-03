@@ -2096,11 +2096,19 @@ panel_cli_dispatch() {
       ;;
     ssh)
       if [[ $# -lt 1 ]]; then
-        panel_die "Usage: dpanel ssh <install|status|enable|disable|port|allow-ip|remove-ip|deny-global|allow-global|list-access|root-login|password-auth> [value]"
+        panel_die "Usage: dpanel ssh <install|status|enable|disable|port|allow-ip|remove-ip|deny-global|allow-global|list-access|root-login|password-auth|list-users|remove-user|sessions|diagnose> [value]"
       fi
       local ssh_command="$1"
       shift || true
       panel_run_module_exact "ssh-manager" install "" "$ssh_command" "$@"
+      ;;
+    firewall)
+      if [[ $# -lt 1 ]]; then
+        panel_die "Usage: dpanel firewall <status|rules|logs|diagnose|allow-port|remove-port|allow-ip|remove-ip|limit-ssh|delete-rule|logging|enable|disable> [value]"
+      fi
+      local firewall_command="$1"
+      shift || true
+      panel_run_module_exact "firewall-manager" install "" "$firewall_command" "$@"
       ;;
     filemanager)
       if [[ $# -lt 1 ]]; then

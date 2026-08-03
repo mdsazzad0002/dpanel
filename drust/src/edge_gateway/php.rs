@@ -38,6 +38,7 @@ pub async fn execute_php_front_controller(
         .unwrap_or("/");
     let query_string = parts.uri.query().unwrap_or("");
     let (script, script_name) = resolve_php_script(document_root, parts.uri.path())?;
+    let is_https = forwarded_request_is_https(&parts.headers);
 
     let mut command = Command::new("/usr/bin/cgi-fcgi");
     command
@@ -48,7 +49,7 @@ pub async fn execute_php_front_controller(
         .env("SERVER_SOFTWARE", "drust-edge-gateway")
         .env("SERVER_PROTOCOL", "HTTP/1.1")
         .env("SERVER_NAME", server_name)
-        .env("SERVER_PORT", "80")
+        .env("SERVER_PORT", if is_https { "443" } else { "80" })
         .env("REQUEST_METHOD", parts.method.as_str())
         .env("REQUEST_URI", request_uri)
         .env("QUERY_STRING", query_string)
@@ -65,6 +66,10 @@ pub async fn execute_php_front_controller(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    if is_https {
+        command.env("HTTPS", "on");
+    }
 
     if let Some(content_type) = parts
         .headers
@@ -111,6 +116,27 @@ pub async fn execute_php_front_controller(
     }
 
     parse_cgi_response(&output.stdout)
+}
+
+fn forwarded_request_is_https(headers: &axum::http::HeaderMap) -> bool {
+    let forwarded_proto_is_https = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("https"));
+    if forwarded_proto_is_https {
+        return true;
+    }
+
+    headers
+        .get("cf-visitor")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            serde_json::from_str::<serde_json::Value>(value)
+                .ok()
+                .and_then(|visitor| visitor.get("scheme")?.as_str().map(str::to_owned))
+                .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https"))
+        })
 }
 
 fn normalize_site_owner(value: &str) -> Option<String> {
@@ -441,5 +467,23 @@ mod tests {
         );
         assert_eq!(normalize_site_owner("../www-data"), None);
         assert_eq!(normalize_site_owner("bad/name"), None);
+    }
+
+    #[test]
+    fn detects_forwarded_https_scheme() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        assert!(forwarded_request_is_https(&headers));
+
+        headers.clear();
+        headers.insert(
+            "cf-visitor",
+            HeaderValue::from_static(r#"{"scheme":"https"}"#),
+        );
+        assert!(forwarded_request_is_https(&headers));
+
+        headers.clear();
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("http"));
+        assert!(!forwarded_request_is_https(&headers));
     }
 }
