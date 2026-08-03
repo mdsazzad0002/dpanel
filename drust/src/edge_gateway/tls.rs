@@ -3,11 +3,11 @@
 use std::{fs::File, io::BufReader, path::PathBuf, sync::Arc};
 
 use rustls::{
+    ServerConfig,
     crypto::ring::default_provider,
     pki_types::{CertificateDer, PrivateKeyDer},
     server::ResolvesServerCertUsingSni,
     sign::CertifiedKey,
-    ServerConfig,
 };
 use rustls_pemfile::{certs, private_key};
 
@@ -99,7 +99,9 @@ pub fn build_tls_config(store: &TlsStore) -> Result<ServerConfig, String> {
     let builder = builder
         .with_safe_default_protocol_versions()
         .map_err(|error| format!("tls versions failed: {error}"))?;
-    Ok(builder.with_no_client_auth().with_cert_resolver(Arc::new(resolver)))
+    Ok(builder
+        .with_no_client_auth()
+        .with_cert_resolver(Arc::new(resolver)))
 }
 
 fn load_certs(path: &PathBuf) -> Result<Vec<CertificateDer<'static>>, String> {

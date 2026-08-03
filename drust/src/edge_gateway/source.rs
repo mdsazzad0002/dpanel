@@ -23,7 +23,10 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         .get("DB_HOST")
         .cloned()
         .unwrap_or_else(|| "127.0.0.1".to_string());
-    let port = env.get("DB_PORT").cloned().unwrap_or_else(|| "3306".to_string());
+    let port = env
+        .get("DB_PORT")
+        .cloned()
+        .unwrap_or_else(|| "3306".to_string());
     let database = env
         .get("DB_DATABASE")
         .cloned()
@@ -50,7 +53,9 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
     if !password.is_empty() {
         cmd.env("MYSQL_PWD", password);
     }
-    let output = cmd.output().map_err(|error| format!("mysql cli failed: {error}"))?;
+    let output = cmd
+        .output()
+        .map_err(|error| format!("mysql cli failed: {error}"))?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
@@ -77,7 +82,8 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         if !matches_status(status) {
             continue;
         }
-        let document_root = resolve_document_root(root_path, project_root, start_directory, &domain);
+        let document_root =
+            resolve_document_root(root_path, project_root, start_directory, &domain);
         sites.push(SiteConfig {
             id: cols[0].trim().to_string(),
             scope,
@@ -102,7 +108,6 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
                 key_path: default_key_path(&domain),
             });
         }
-
     }
 
     if sites.is_empty() {
@@ -197,7 +202,10 @@ fn resolve_document_root(
 
     // DPanel stores the account web root and the app's public entry directory separately.
     if let Some(root) = root.as_ref() {
-        push_candidate(&mut candidates, join_start_directory(root, start.as_deref()));
+        push_candidate(
+            &mut candidates,
+            join_start_directory(root, start.as_deref()),
+        );
         push_candidate(&mut candidates, root.clone());
     }
     if let Some(project) = project.as_ref() {
@@ -260,7 +268,11 @@ fn matches_status(status: &str) -> bool {
 
 fn normalize_php_version(value: &str) -> Option<String> {
     let value = value.trim();
-    if value.eq_ignore_ascii_case("null") || !value.bytes().all(|byte| byte.is_ascii_digit() || byte == b'.') {
+    if value.eq_ignore_ascii_case("null")
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'.')
+    {
         return None;
     }
     let (major, minor) = value.split_once('.')?;
@@ -297,20 +309,14 @@ mod tests {
 
     #[test]
     fn does_not_duplicate_start_directory() {
-        let root = resolve_document_root(
-            "/srv/example/public",
-            "",
-            "public",
-            "example.test",
-        )
-        .unwrap();
+        let root =
+            resolve_document_root("/srv/example/public", "", "public", "example.test").unwrap();
         assert_eq!(root, PathBuf::from("/srv/example/public"));
     }
 
     #[test]
     fn ignores_database_null_paths() {
-        let root =
-            resolve_document_root("NULL", "/srv/example", "public", "example.test").unwrap();
+        let root = resolve_document_root("NULL", "/srv/example", "public", "example.test").unwrap();
         assert_eq!(root, PathBuf::from("/srv/example/public"));
     }
 }

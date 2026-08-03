@@ -9,5 +9,5 @@ pub(crate) mod remove;
 pub(crate) mod unzip;
 pub(crate) mod upload;
 pub(crate) mod user;
-pub(crate) mod write;
 pub(crate) mod wordpress;
+pub(crate) mod write;

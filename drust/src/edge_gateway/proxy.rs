@@ -1,4 +1,4 @@
-use std::{time::Duration};
+use std::time::Duration;
 
 use axum::{
     body::Body,
@@ -90,7 +90,10 @@ pub async fn proxy_request(
     Ok(axum_response)
 }
 
-pub async fn health_check_upstream(client: &Client, upstream: &UpstreamConfig) -> Result<bool, String> {
+pub async fn health_check_upstream(
+    client: &Client,
+    upstream: &UpstreamConfig,
+) -> Result<bool, String> {
     let url = upstream_health_url(upstream)?;
     let response = client
         .get(url)
@@ -103,7 +106,10 @@ pub async fn health_check_upstream(client: &Client, upstream: &UpstreamConfig) -
 fn upstream_uri(upstream: &UpstreamConfig, uri: &Uri) -> Result<reqwest::Url, String> {
     match upstream {
         UpstreamConfig::Http(addr) => {
-            let path_and_query = uri.path_and_query().map(|value| value.as_str()).unwrap_or("/");
+            let path_and_query = uri
+                .path_and_query()
+                .map(|value| value.as_str())
+                .unwrap_or("/");
             let url = format!("http://{addr}{path_and_query}");
             reqwest::Url::parse(&url).map_err(|error| format!("invalid upstream url: {error}"))
         }
@@ -115,7 +121,8 @@ fn upstream_health_url(upstream: &UpstreamConfig) -> Result<reqwest::Url, String
     match upstream {
         UpstreamConfig::Http(addr) => {
             let url = format!("http://{addr}/health");
-            reqwest::Url::parse(&url).map_err(|error| format!("invalid upstream health url: {error}"))
+            reqwest::Url::parse(&url)
+                .map_err(|error| format!("invalid upstream health url: {error}"))
         }
         UpstreamConfig::Unix(_) => Err("unix socket upstream health not implemented yet".into()),
     }

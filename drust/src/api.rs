@@ -6,17 +6,17 @@ use std::sync::Arc;
 use crate::app;
 
 mod admin;
-mod database;
 mod cron;
+mod database;
 mod filemanager;
 mod health;
 mod laravel;
-mod website;
 mod php;
 mod script;
 mod security;
 mod ssl;
 mod vhost_ops;
+mod website;
 
 #[derive(Clone)]
 pub struct ApiState {
