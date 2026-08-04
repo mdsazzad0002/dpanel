@@ -86,17 +86,7 @@ install_system_packages() {
     return 0
   fi
 
-  if command -v apt-get >/dev/null 2>&1; then
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
-  elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y "$@"
-  elif command -v yum >/dev/null 2>&1; then
-    yum install -y "$@"
-  else
-    echo "No supported package manager found." >&2
-    return 1
-  fi
+  pkg_install "$@"
 }
 
 install_mail_services() {
@@ -232,7 +222,10 @@ confirm_action() {
 }
 
 default_install_sequence() {
-  dscript_cli chain install php mariadb supervisor
+  # The default install is split so Drust can be installed between the module
+  # groups. Defer post-install configuration for the first group; otherwise the
+  # panel details and system records are collected once per group.
+  PANEL_DEFER_FINALIZE=true dscript_cli chain install php mariadb supervisor
   install_drust_service
   dscript_cli chain install firewall dns fail2ban ssl
   install_mail_services

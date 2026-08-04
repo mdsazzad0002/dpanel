@@ -1355,7 +1355,7 @@ EOF
   fi
 
   panel_env_set "$env_file" APP_URL "$app_url"
-  panel_env_set "$env_file" SESSION_DOMAIN "$panel_domain"
+  panel_env_set "$env_file" SESSION_COOKIE_DOMAIN ""
   panel_env_set "$env_file" SESSION_SECURE_COOKIE "$([[ "$panel_port" == "443" ]] && printf true || printf false)"
   chmod 0644 "$env_file" 2>/dev/null || true
   printf '[INFO] Created missing application .env: %s\n' "$env_file" >&2
@@ -1835,7 +1835,7 @@ panel_finalize_default_install() {
 
   if [[ -n "$panel_domain" ]]; then
     panel_env_set "$env_file" APP_URL "http://${panel_domain}"
-    panel_env_set "$env_file" SESSION_DOMAIN "$panel_domain"
+    panel_env_set "$env_file" SESSION_COOKIE_DOMAIN ""
     panel_env_set "$env_file" SESSION_SECURE_COOKIE "$([[ "$panel_port" == "443" ]] && printf true || printf false)"
     panel_env_set "$env_file" PHPMYADMIN_URL "http://${panel_domain}/phpmyadmin/"
   fi
@@ -1964,7 +1964,9 @@ panel_bootstrap() {
           panel_setup_application_database
         fi
       done
-      panel_finalize_default_install
+      if [[ "${PANEL_DEFER_FINALIZE:-false}" != "true" ]]; then
+        panel_finalize_default_install
+      fi
       ;;
     update)
       panel_sync_manifest

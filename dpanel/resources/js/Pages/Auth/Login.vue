@@ -78,7 +78,7 @@ const submit = async () => {
                     <TextInput
                         id="email"
                         type="email"
-                        class="login-input mt-2 block w-full rounded-xl border-white/10 bg-black text-white transition placeholder:text-slate-400/70 focus:border-emerald-400 focus:ring-emerald-400"
+                        class="login-input mt-2 block w-full rounded-xl border-white/10 bg-black text-slate-300 transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-emerald-400"
                         v-model="form.email"
                         required
                         autofocus
@@ -93,7 +93,7 @@ const submit = async () => {
                     <TextInput
                         id="password"
                         type="password"
-                        class="login-input mt-2 block w-full rounded-xl border-white/10 bg-black text-white transition placeholder:text-slate-400/70 focus:border-emerald-400 focus:ring-emerald-400"
+                        class="login-input mt-2 block w-full rounded-xl border-white/10 bg-black text-slate-300 transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-emerald-400"
                         v-model="form.password"
                         required
                         autocomplete="current-password"

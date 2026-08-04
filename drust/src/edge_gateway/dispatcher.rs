@@ -33,6 +33,13 @@ pub async fn dispatch(
         .unwrap_or("");
     let path = normalize_request_path(request.uri().path());
 
+    if path == "/__dpanel/brand-logo.png" {
+        return brand_logo_response();
+    }
+    if path == "/__dpanel/favicon.ico" {
+        return favicon_response();
+    }
+
     let Some(site) = resolve_site(snapshot, host) else {
         return annotated_response(
             not_found_response(
@@ -381,6 +388,38 @@ fn simple_response(status: StatusCode, message: &str) -> Response {
     response
 }
 
+fn brand_logo_response() -> Response {
+    let mut response = Response::new(Body::from(
+        include_bytes!("../../../dpanel/public/dpanel_logo.png").as_slice(),
+    ));
+    *response.status_mut() = StatusCode::OK;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("image/png"),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=86400"),
+    );
+    response
+}
+
+fn favicon_response() -> Response {
+    let mut response = Response::new(Body::from(
+        include_bytes!("../../../dpanel/public/favicon.ico").as_slice(),
+    ));
+    *response.status_mut() = StatusCode::OK;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("image/x-icon"),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=86400"),
+    );
+    response
+}
+
 fn is_php_path(path: &str) -> bool {
     path.rsplit('/').next().is_some_and(|name| {
         name.rsplit_once('.')
@@ -426,21 +465,23 @@ fn is_blocked_htaccess_path(path: &str) -> bool {
 
 fn not_found_response(title: &str, message: &str, host: &str, path: &str) -> Response {
     let body = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{title} · Drust</title><style>\
-        :root{{color-scheme:dark;--bg1:#07111f;--bg2:#0f1d33;--card:#0f172a;--card2:#111c30;--text:#e5eefb;--muted:#9fb1cb;--accent:#6ee7ff;--accent2:#8b5cf6;--border:rgba(255,255,255,.10)}}\
-        *{{box-sizing:border-box}} body{{margin:0;min-height:100vh;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;color:var(--text);background:radial-gradient(circle at top left,#17345c 0,#07111f 40%,#050b14 100%);display:grid;place-items:center;padding:24px}}\
-        .wrap{{width:min(760px,100%);position:relative}} .glow{{position:absolute;inset:-80px auto auto -80px;width:180px;height:180px;border-radius:50%;background:rgba(110,231,255,.14);filter:blur(18px)}}\
-        .card{{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:24px;background:linear-gradient(180deg,rgba(17,28,48,.92),rgba(9,15,28,.96));box-shadow:0 24px 80px rgba(0,0,0,.42);padding:34px}}\
-        .badge{{display:inline-flex;align-items:center;gap:10px;padding:8px 14px;border-radius:999px;background:rgba(110,231,255,.09);border:1px solid rgba(110,231,255,.22);color:var(--accent);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}}\
-        h1{{margin:18px 0 10px;font-size:clamp(32px,5vw,56px);line-height:1.02;letter-spacing:-.04em}} p{{margin:0;color:var(--muted);font-size:18px;line-height:1.65;max-width:62ch}}\
-        .meta{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:24px 0}} .item{{padding:16px 18px;border-radius:18px;background:rgba(255,255,255,.03);border:1px solid var(--border)}}\
-        .label{{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px}} .value{{font-size:15px;word-break:break-word;color:#f8fbff}}\
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><link rel=\"icon\" type=\"image/x-icon\" href=\"/__dpanel/favicon.ico\"><link rel=\"shortcut icon\" href=\"/__dpanel/favicon.ico\"><title>{title} · dPanel</title><style>\
+        :root{{color-scheme:dark;--text:#f8fafc;--muted:#cbd5e1;--accent:#fca5a5;--accent-strong:#fb7185;--border:rgba(255,255,255,.10)}}\
+        *{{box-sizing:border-box}} body{{margin:0;min-height:100vh;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;color:var(--text);background-color:#03060f;background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px),radial-gradient(circle at top left,rgba(248,113,113,.13),transparent 35%),radial-gradient(circle at bottom right,rgba(251,113,133,.09),transparent 30%),linear-gradient(180deg,#040814 0%,#02050a 100%);background-size:72px 72px,72px 72px,100% 100%,100% 100%,100% 100%;display:grid;place-items:center;padding:24px}}\
+        .wrap{{width:min(896px,100%);position:relative}} .glow{{position:absolute;inset:-70px auto auto -70px;width:220px;height:220px;border-radius:50%;background:rgba(248,113,113,.16);filter:blur(42px)}}\
+        .card{{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:32px;background:rgba(255,255,255,.04);box-shadow:0 30px 100px rgba(0,0,0,.45);backdrop-filter:blur(20px);padding:clamp(28px,6vw,56px)}}\
+        .brand-logo{{display:none}}\
+        .badge{{display:inline-flex;align-items:center;gap:10px;padding:8px 14px;border-radius:999px;background:rgba(248,113,113,.10);border:1px solid rgba(252,165,165,.28);color:var(--accent);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}}\
+        h1{{margin:18px 0 10px;font-size:clamp(32px,5vw,52px);line-height:1.04;letter-spacing:-.04em}} p{{margin:0;color:var(--muted);font-size:16px;line-height:1.65;max-width:62ch}}\
+        .meta{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:28px 0}} .item{{padding:16px 18px;border-radius:16px;background:rgba(0,0,0,.22);border:1px solid var(--border)}}\
+        .label{{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;margin-bottom:8px}} .value{{font-size:14px;word-break:break-word;color:#e2e8f0}}\
         .actions{{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}} a,button{{appearance:none;border:none;cursor:pointer;text-decoration:none;font:inherit}}\
-        .primary{{background:linear-gradient(135deg,var(--accent),#7dd3fc);color:#04111c;font-weight:800;padding:12px 18px;border-radius:14px}}\
-        .secondary{{background:transparent;color:var(--text);border:1px solid var(--border);padding:12px 18px;border-radius:14px}}\
-        .footer{{margin-top:22px;font-size:13px;color:#7f92ae}} code{{padding:.18rem .42rem;border-radius:8px;background:rgba(255,255,255,.06);color:#dbeafe}}\
+        .primary{{background:linear-gradient(135deg,var(--accent),var(--accent-strong));color:#2b080b;font-weight:800;padding:12px 18px;border-radius:14px;box-shadow:0 10px 30px rgba(248,113,113,.16)}}\
+        .secondary{{background:transparent;color:#fecaca;border:1px solid rgba(252,165,165,.24);padding:12px 18px;border-radius:14px}}\
+        .primary:hover{{filter:brightness(1.06)}} .secondary:hover{{background:rgba(248,113,113,.08)}} .footer{{margin-top:22px;font-size:13px;color:#94a3b8}} code{{padding:.18rem .42rem;border-radius:8px;background:rgba(255,255,255,.06);color:#fecaca}}\
+        @media (min-width:1024px){{.brand-logo{{display:block;position:absolute;right:46px;width:270px;height:auto;object-fit:contain;opacity:.92}} .card{{padding-top:72px}}}}\
         @media (max-width:640px){{.card{{padding:24px}} .meta{{grid-template-columns:1fr}} h1{{font-size:34px}} p{{font-size:16px}}}}\
-        </style></head><body><main class=\"wrap\"><div class=\"glow\"></div><section class=\"card\"><div class=\"badge\">HTTP 404 · Not Found</div><h1>{title}</h1><p>{message}</p><div class=\"meta\"><div class=\"item\"><span class=\"label\">Host</span><span class=\"value\">{host_value}</span></div><div class=\"item\"><span class=\"label\">Path</span><span class=\"value\">{path_value}</span></div></div><div class=\"actions\"><a class=\"primary\" href=\"/\">Go to home</a><a class=\"secondary\" href=\"javascript:history.back()\">Go back</a></div><div class=\"footer\">If this should exist, check the site entry, route rules, and whether the gateway snapshot has been reloaded.</div></section></main></body></html>",
+        </style></head><body><main class=\"wrap\"><div class=\"glow\"></div><section class=\"card\"><img class=\"brand-logo\" src=\"/__dpanel/brand-logo.png\" alt=\"dPanel\"><div class=\"badge\">HTTP 404 · Not Found</div><h1>{title}</h1><p>{message}</p><div class=\"meta\"><div class=\"item\"><span class=\"label\">Host</span><span class=\"value\">{host_value}</span></div><div class=\"item\"><span class=\"label\">Path</span><span class=\"value\">{path_value}</span></div></div><div class=\"actions\"><a class=\"primary\" href=\"/\">Go to home</a><a class=\"secondary\" href=\"javascript:history.back()\">Go back</a></div><div class=\"footer\">If this should exist, check the site entry, route rules, and whether the gateway snapshot has been reloaded.</div></section></main></body></html>",
         title = escape_html(title),
         message = escape_html(message),
         host_value = escape_html(if host.is_empty() { "-" } else { host }),

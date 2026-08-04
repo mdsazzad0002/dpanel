@@ -4,6 +4,8 @@ set -Eeuo pipefail
 APP_DIR="${PANEL_APP_DIR:-/var/www/dpanel}"
 NON_INTERACTIVE=false
 PANEL_DOMAIN_INPUT="${PANEL_DOMAIN:-}"
+PANEL_DOMAIN_PROVIDED=false
+[[ -n "$PANEL_DOMAIN_INPUT" ]] && PANEL_DOMAIN_PROVIDED=true
 PANEL_ROOT_INPUT="${PANEL_ROOT:-$APP_DIR}"
 SYSTEM_USER_NAME="${PANEL_SYSTEM_USER_NAME:-dpanel}"
 SYSTEM_USER_EMAIL="${PANEL_SYSTEM_USER_EMAIL:-system@dpanel.localhost}"
@@ -27,7 +29,7 @@ EOF
 
 while (($#)); do
   case "$1" in
-    --domain) PANEL_DOMAIN_INPUT="${2:-}"; shift 2 ;;
+    --domain) PANEL_DOMAIN_INPUT="${2:-}"; PANEL_DOMAIN_PROVIDED=true; shift 2 ;;
     --alias) ALIASES+=("${2:-}"); ALIASES_PROVIDED=true; shift 2 ;;
     --root) PANEL_ROOT_INPUT="${2:-}"; shift 2 ;;
     --user-name) SYSTEM_USER_NAME="${2:-}"; shift 2 ;;
@@ -95,15 +97,21 @@ PANEL_DOMAIN_INPUT="$(normalize_domain "$PANEL_DOMAIN_INPUT")"
 
 configure_website=false
 if [[ -n "$existing_domain" ]]; then
-  confirm "Update reserved panel website id 1 (${existing_domain})?" n && configure_website=true
+  if [[ "$PANEL_DOMAIN_PROVIDED" == true ]]; then
+    confirm "Update reserved panel website id 1: ${existing_domain} -> ${PANEL_DOMAIN_INPUT}?" n && configure_website=true
+  else
+    confirm "Update reserved panel website id 1 (${existing_domain})?" n && configure_website=true
+  fi
 else
   confirm "Reserved panel website id 1 is missing. Create it?" y && configure_website=true
 fi
 
 if [[ "$configure_website" == true ]]; then
   if [[ "$NON_INTERACTIVE" != true && -t 0 ]]; then
-    read -rp "Panel domain [${PANEL_DOMAIN_INPUT}]: " answer
-    PANEL_DOMAIN_INPUT="$(normalize_domain "${answer:-$PANEL_DOMAIN_INPUT}")"
+    if [[ "$PANEL_DOMAIN_PROVIDED" != true ]]; then
+      read -rp "Panel domain [${PANEL_DOMAIN_INPUT}]: " answer
+      PANEL_DOMAIN_INPUT="$(normalize_domain "${answer:-$PANEL_DOMAIN_INPUT}")"
+    fi
     read -rp "Aliases (comma/space separated, blank for none): " aliases_raw
     read -ra ALIASES <<< "${aliases_raw//,/ }"
     ALIASES_PROVIDED=true

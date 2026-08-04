@@ -88,16 +88,30 @@ pkg_apt_install_retry() {
 }
 
 pkg_install() {
+  local package
+  local packages=()
+
   pkg_require_root
+
+  # Do not refresh repository metadata when every requested package is already
+  # present. Besides making repeat runs faster, this keeps no-op module updates
+  # from contacting the distribution repositories.
+  for package in "$@"; do
+    if ! pkg_package_installed "$package"; then
+      packages+=("$package")
+    fi
+  done
+
+  [[ ${#packages[@]} -gt 0 ]] || return 0
   pkg_update_index
 
   case "$(pkg_distro_family)" in
     debian)
       export DEBIAN_FRONTEND=noninteractive
-      pkg_apt_install_retry "$@"
+      pkg_apt_install_retry "${packages[@]}"
       ;;
     rpm)
-      dnf install -y "$@"
+      dnf install -y "${packages[@]}"
       ;;
     *)
       echo "Unsupported package manager for distro ${DISTRO:-unknown}" >&2

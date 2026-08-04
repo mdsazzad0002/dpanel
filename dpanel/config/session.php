@@ -154,7 +154,12 @@ return [
     |
     */
 
-    'domain' => env('SESSION_DOMAIN'),
+    // Keep the cookie host-only by default. A cookie fixed to the primary
+    // panel domain is rejected when the same login screen is served from one
+    // of the panel's alias domains, which causes the login POST to fail CSRF
+    // validation. Set SESSION_COOKIE_DOMAIN only when all entry points are
+    // genuine subdomains of one shared registrable domain.
+    'domain' => env('SESSION_COOKIE_DOMAIN'),
 
     /*
     |--------------------------------------------------------------------------

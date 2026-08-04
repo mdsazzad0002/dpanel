@@ -318,13 +318,17 @@ if [[ "${CHECK_ONLY}" -eq 1 ]]; then
     exit 0
 fi
 
-if [[ "${SKIP_UPDATE}" -eq 0 ]]; then
-    log "Running apt-get update..."
-    apt-get update
-fi
+if ! dpkg-query -W -f='${Status}' "${PACKAGE_NAME}" 2>/dev/null | grep -q 'install ok installed'; then
+    if [[ "${SKIP_UPDATE}" -eq 0 ]]; then
+        log "Running apt-get update..."
+        apt-get update
+    fi
 
-log "Installing ${PACKAGE_NAME}..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y "${PACKAGE_NAME}"
+    log "Installing ${PACKAGE_NAME}..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "${PACKAGE_NAME}"
+else
+    log "${PACKAGE_NAME} is already installed; skipping apt-get update and package install."
+fi
 
 check_installation
 if phpmyadmin_root="$(detect_phpmyadmin_root 2>/dev/null || true)"; then
