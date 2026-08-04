@@ -103,7 +103,11 @@ class MainWebsiteController extends Controller
                 'nullable',
                 'string',
                 'max:255',
-                function (string $attribute, mixed $value, \Closure $fail): void {
+                function (string $attribute, mixed $value, \Closure $fail) use ($domainType): void {
+                    if ($domainType === 'alis') {
+                        return;
+                    }
+
                     if (! is_string($value) || trim($value) === '') {
                         return;
                     }
@@ -177,7 +181,7 @@ class MainWebsiteController extends Controller
             $phpVersion = (string) $validated['php_version'];
         }
 
-        if (! is_dir($projectRoot) || ! is_dir($rootPath)) {
+        if ($parentWebsite === null && (! is_dir($projectRoot) || ! is_dir($rootPath))) {
             return response()->json([
                 'type' => 'error',
                 'message' => 'Failed to prepare website account home.',
