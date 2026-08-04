@@ -7,6 +7,7 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 DRUST_ROOT="/var/www/drust"
+DPANEL_ROOT="${DRUST_ROOT}/../dpanel"
 # Keep the daemon toolchain isolated from any developer user's rustup state.
 export CARGO_HOME="/root/.cargo"
 export RUSTUP_HOME="/root/.rustup"
@@ -37,6 +38,106 @@ ensure_rust_toolchain() {
   }
 }
 
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  local value
+
+  value="$(awk -F= -v key="${key}" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "${file}")"
+  value="${value%\"}"
+  value="${value#\"}"
+  value="${value%\'}"
+  value="${value#\'}"
+  printf '%s' "${value}"
+}
+
+install_powerdns() {
+  local laravel_env="${DPANEL_ROOT}/.env"
+  if [[ ! -f "${laravel_env}" ]]; then
+    echo "[drust] Skipping PowerDNS: ${laravel_env} is missing."
+    return 0
+  fi
+
+  # PowerDNS owns authoritative port 53. BIND must not compete for it.
+  systemctl disable --now named.service bind9.service >/dev/null 2>&1 || true
+  systemctl mask named.service >/dev/null 2>&1 || true
+
+  if ! dpkg-query -W -f='${db:Status-Abbrev}\n' pdns-server pdns-backend-mysql 2>/dev/null \
+    | awk 'BEGIN { ok = 1; count = 0 } { count++; if ($0 !~ /^ii /) ok = 0 } END { exit !(ok && count == 2) }'; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y pdns-server pdns-backend-mysql
+  fi
+  systemctl stop pdns.service >/dev/null 2>&1 || true
+
+  local db_host db_port db_name db_user db_password listen_address
+  db_host="$(read_env_value "${laravel_env}" PDNS_DB_HOST)"
+  db_port="$(read_env_value "${laravel_env}" PDNS_DB_PORT)"
+  db_name="$(read_env_value "${laravel_env}" PDNS_DB_DATABASE)"
+  db_user="$(read_env_value "${laravel_env}" PDNS_DB_USERNAME)"
+  db_password="$(read_env_value "${laravel_env}" PDNS_DB_PASSWORD)"
+  [[ -n "${db_host}" ]] || db_host="$(read_env_value "${laravel_env}" DB_HOST)"
+  [[ -n "${db_port}" ]] || db_port="$(read_env_value "${laravel_env}" DB_PORT)"
+  [[ -n "${db_name}" ]] || db_name="$(read_env_value "${laravel_env}" DB_DATABASE)"
+  [[ -n "${db_user}" ]] || db_user="$(read_env_value "${laravel_env}" DB_USERNAME)"
+  [[ -n "${db_password}" ]] || db_password="$(read_env_value "${laravel_env}" DB_PASSWORD)"
+  db_host="${db_host:-127.0.0.1}"
+  db_port="${db_port:-3306}"
+
+  if [[ -z "${db_name}" || -z "${db_user}" ]]; then
+    echo "[drust] PowerDNS database name or user is missing from ${laravel_env}." >&2
+    exit 1
+  fi
+
+  listen_address="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") {print $(i + 1); exit}}')"
+  if [[ -z "${listen_address}" ]]; then
+    listen_address="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  fi
+  if [[ -z "${listen_address}" ]]; then
+    echo "[drust] Unable to detect the IPv4 address for PowerDNS." >&2
+    exit 1
+  fi
+
+  # PowerDNS 5 requires the schema migration shipped with dPanel.
+  (cd "${DPANEL_ROOT}" && php artisan migrate --force)
+
+  if [[ -f /etc/powerdns/pdns.d/bind.conf ]]; then
+    mv /etc/powerdns/pdns.d/bind.conf /etc/powerdns/pdns.d/bind.conf.disabled
+  fi
+
+  local gmysql_config
+  gmysql_config="$(mktemp)"
+  {
+    printf 'launch+=gmysql\n'
+    printf 'gmysql-host=%s\n' "${db_host}"
+    printf 'gmysql-port=%s\n' "${db_port}"
+    printf 'gmysql-dbname=%s\n' "${db_name}"
+    printf 'gmysql-user=%s\n' "${db_user}"
+    printf 'gmysql-password=%s\n' "${db_password}"
+    printf 'gmysql-dnssec=no\n'
+  } > "${gmysql_config}"
+  install -o root -g pdns -m 0640 "${gmysql_config}" /etc/powerdns/pdns.d/gmysql.conf
+  rm -f "${gmysql_config}"
+
+  printf 'local-address=%s\nlocal-port=53\n' "${listen_address}" \
+    > /etc/powerdns/pdns.d/listener.conf
+  chmod 0644 /etc/powerdns/pdns.d/listener.conf
+
+  if command -v ufw >/dev/null 2>&1; then
+    ufw allow 53/udp comment 'Authoritative DNS'
+    ufw allow 53/tcp comment 'Authoritative DNS'
+  fi
+
+  pdns_server --config=check
+  systemctl reset-failed pdns.service || true
+  systemctl enable pdns.service
+  systemctl restart pdns.service
+  systemctl is-active --quiet pdns.service || {
+    journalctl -u pdns.service -n 50 --no-pager >&2
+    exit 1
+  }
+  echo "[drust] PowerDNS is serving ${listen_address}:53 over UDP and TCP."
+}
+
 ensure_rust_toolchain
 if ! command -v certbot >/dev/null 2>&1; then
   apt-get update
@@ -63,7 +164,7 @@ if [[ -z "${DRUST_API_TOKEN}" ]]; then
 fi
 
 # Keep Laravel's client token aligned with the daemon token automatically.
-LARAVEL_ENV="${DRUST_ROOT}/../dpanel/.env"
+LARAVEL_ENV="${DPANEL_ROOT}/.env"
 if [[ -f "${LARAVEL_ENV}" ]]; then
   if grep -q '^SERVERPANEL_EXECUTION_API_TOKEN=' "${LARAVEL_ENV}"; then
     sed -i "s#^SERVERPANEL_EXECUTION_API_TOKEN=.*#SERVERPANEL_EXECUTION_API_TOKEN=${DRUST_API_TOKEN}#" "${LARAVEL_ENV}"
@@ -89,6 +190,8 @@ if [[ -f "${LARAVEL_ENV}" ]]; then
   fi
 fi
 
+install_powerdns
+
 # Parallel codegen is what makes rustc peak; on a small VPS that peak is an
 # OOM kill. One job is slower but finishes on a 1 GB machine.
 MEMORY_MB="$(awk '/^MemTotal:/ {printf "%d", $2 / 1024; found = 1} END {if (!found) print 0}' /proc/meminfo 2>/dev/null || printf '0')"
@@ -109,3 +212,4 @@ systemctl enable edge-gateway.service
 systemctl restart drust.service
 systemctl restart edge-gateway.service
 systemctl --no-pager --full status drust.service
+systemctl --no-pager --full status pdns.service

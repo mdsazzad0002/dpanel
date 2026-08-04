@@ -371,7 +371,7 @@ Body:
 }
 ```
 
-The daemon validates the real certificate hostname and expiry with OpenSSL. It invokes Certbot only when the certificate is missing, invalid, or inside the renewal window, then validates the resulting certificate again.
+The daemon validates the real certificate hostname and expiry with OpenSSL. It invokes Certbot only when the certificate is missing, invalid, or inside the renewal window, then validates the resulting certificate again. After a successful validation it restarts `edge-gateway.service` so the SNI certificate store and port 443 listener are refreshed immediately.
 
 ### 16. Database request
 

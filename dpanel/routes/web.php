@@ -17,14 +17,11 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\ServerController;
-use App\Http\Controllers\ServerPanelController;
 use App\Http\Controllers\ServerTaskController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WebsiteTrashBackupController;
-use App\Models\PanelSession;
 use Illuminate\Foundation\Application;
-use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -386,32 +383,38 @@ Route::prefix('cpsess{token}')
                 ->name('dns.nameservers.destroy');
 
             Route::get('/dns/zones', [DnsController::class, 'zones'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role:admin|reseller|general|general_user')
                 ->name('dns.zones');
             Route::post('/dns/zones', [DnsController::class, 'storeZone'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role:admin|reseller|general|general_user')
                 ->name('dns.zones.store');
             Route::patch('/dns/zones/{id}', [DnsController::class, 'updateZone'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role:admin|reseller|general|general_user')
                 ->name('dns.zones.update');
             Route::delete('/dns/zones/{id}', [DnsController::class, 'destroyZone'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role:admin|reseller|general|general_user')
                 ->name('dns.zones.destroy');
+            Route::patch('/dns/zones/{id}/transfer', [DnsController::class, 'transferZone'])
+                ->middleware('role:admin|reseller')
+                ->name('dns.zones.transfer');
             Route::get('/dns/cloudflare/review', [DnsController::class, 'reviewCloudflare'])
                 ->middleware('role:admin|reseller')
                 ->name('dns.cloudflare.review');
             Route::post('/dns/cloudflare/sync', [DnsController::class, 'syncCloudflare'])
                 ->middleware('role:admin|reseller')
                 ->name('dns.cloudflare.sync');
+            Route::post('/dns/cloudflare/import', [DnsController::class, 'importCloudflareZone'])
+                ->middleware('role:admin|reseller')
+                ->name('dns.cloudflare.import');
 
             Route::post('/dns/records', [DnsController::class, 'storeRecord'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role:admin|reseller|general|general_user')
                 ->name('dns.records.store');
             Route::patch('/dns/records/{id}', [DnsController::class, 'updateRecord'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role:admin|reseller|general|general_user')
                 ->name('dns.records.update');
             Route::delete('/dns/records/{id}', [DnsController::class, 'destroyRecord'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role:admin|reseller|general|general_user')
                 ->name('dns.records.destroy');
 
             Route::get('/php/versions', [PhpManagementController::class, 'versions'])

@@ -45,6 +45,7 @@ const actionLoading = ref(false);
 const statusCheckLoading = ref(false);
 const sslActionLoading = ref(false);
 const cacheClearLoading = ref(false);
+const storageLinkLoading = ref('');
 const aliasSubmitting = ref(false);
 const aliasActionLoading = ref('');
 const aliasEditingId = ref('');
@@ -155,6 +156,29 @@ const sslStatusClass = (status) => {
     return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 };
 
+const aliasSslValidityLabel = (alias) => {
+    if (!alias?.enable_ssl) return 'Disabled';
+    if (alias?.ssl_days_remaining === null || alias?.ssl_days_remaining === undefined || alias?.ssl_days_remaining === '') {
+        return sslStatusLabel(alias?.ssl_status);
+    }
+    const days = Number(alias.ssl_days_remaining);
+    if (!Number.isFinite(days)) return sslStatusLabel(alias?.ssl_status);
+    if (days < 0) return `Expired ${Math.abs(days)}d ago`;
+    if (days === 0) return 'Expires today';
+    return `Valid ${days}d`;
+};
+
+const aliasSslValidityClass = (alias) => {
+    if (!alias?.enable_ssl || alias?.ssl_days_remaining === null || alias?.ssl_days_remaining === undefined || alias?.ssl_days_remaining === '') {
+        return sslStatusClass(alias?.ssl_status);
+    }
+    const days = Number(alias.ssl_days_remaining);
+    if (!Number.isFinite(days)) return sslStatusClass(alias?.ssl_status);
+    if (days < 0) return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
+    if (days <= 30) return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
+};
+
 const sslEnabled = computed(() => Boolean(props.website?.enable_ssl));
 const websiteSslStatus = computed(() => String(props.sslStatus?.status || 'unknown').toLowerCase());
 const websiteSslLabel = computed(() => {
@@ -168,12 +192,38 @@ const websiteSslClass = computed(() => {
     return 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
 });
 const sslDaysRemaining = computed(() => {
+    if (props.sslStatus?.days_remaining === null || props.sslStatus?.days_remaining === undefined || props.sslStatus?.days_remaining === '') return null;
     const value = Number(props.sslStatus?.days_remaining);
     return Number.isFinite(value) ? value : null;
+});
+const sslValidityLabel = computed(() => {
+    const days = sslDaysRemaining.value;
+    if (days === null) return '-';
+    if (days < 0) return `Expired ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ago`;
+    if (days === 0) return 'Expires today';
+    return `${days} day${days === 1 ? '' : 's'}`;
+});
+const sslCompactValidityLabel = computed(() => {
+    if (!sslEnabled.value) return 'Disabled';
+    const days = sslDaysRemaining.value;
+    if (days === null) return websiteSslLabel.value;
+    if (days < 0) return `Expired ${Math.abs(days)}d ago`;
+    if (days === 0) return 'Expires today';
+    return `Valid ${days}d`;
+});
+const sslCompactValidityClass = computed(() => {
+    if (!sslEnabled.value) return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+    const days = sslDaysRemaining.value;
+    if (days === null) return websiteSslClass.value;
+    if (days < 0) return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
+    if (days <= 30) return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
 });
 const scheme = computed(() => (sslEnabled.value ? 'https' : 'http'));
 const detectedApp = computed(() => String(props.rootInspection?.detected_app || '').toLowerCase());
 const canClearCache = computed(() => ['wordpress', 'laravel'].includes(detectedApp.value));
+const isLaravelWebsite = computed(() => detectedApp.value === 'laravel');
+const storageLinked = computed(() => Boolean(props.rootInspection?.storage_linked));
 const isSystemWebsite = computed(() => String(props.website.id) === '1');
 
 const serviceLinks = computed(() => [
@@ -442,6 +492,34 @@ const clearProjectCache = async () => {
         pushToast(actionMessage.value, 'error');
     } finally {
         cacheClearLoading.value = false;
+    }
+};
+
+const updateStorageLink = async (action) => {
+    if (storageLinkLoading.value) return;
+    storageLinkLoading.value = action;
+
+    try {
+        const response = await fetch(panelRoute('websites.project-storage-link.update', { id: props.website.id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({ action }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'Storage link action failed.');
+
+        pushToast(data.message || 'Storage link updated successfully.', 'success');
+        router.reload({ only: ['rootInspection'], preserveScroll: true });
+    } catch (error) {
+        pushToast(error?.message || 'Storage link action failed.', 'error');
+    } finally {
+        storageLinkLoading.value = '';
     }
 };
 
@@ -719,6 +797,20 @@ const issueWebsiteSsl = async () => {
                                     </svg>
                                     {{ action.label }}
                                 </Link>
+                                <div v-if="isLaravelWebsite" class="grid gap-2" :class="storageLinked ? 'grid-cols-2' : 'grid-cols-1'">
+                                    <button type="button" :disabled="Boolean(storageLinkLoading)"
+                                        class="flex w-full items-center gap-2 rounded-xl border border-blue-200 bg-blue-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:border-blue-700"
+                                        @click="updateStorageLink(storageLinked ? 'refresh' : 'link')">
+                                        <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70"><path d="M3.9 12a5 5 0 0 1 1.46-3.54l3.1-3.1a5 5 0 0 1 7.07 7.07l-1.41 1.41-1.42-1.42 1.42-1.41a3 3 0 0 0-4.24-4.24l-3.1 3.1a3 3 0 0 0 4.24 4.24l.7-.7 1.42 1.42-.7.7A5 5 0 0 1 3.9 12zm6.97-2.83.7-.7a5 5 0 0 1 7.07 7.07l-3.1 3.1a5 5 0 0 1-7.07-7.07l1.41-1.41 1.42 1.42-1.42 1.41a3 3 0 0 0 4.24 4.24l3.1-3.1a3 3 0 0 0-4.24-4.24l-.7.7-1.42-1.42z" /></svg>
+                                        {{ storageLinkLoading ? 'Processing...' : (storageLinked ? 'Refresh Storage Link' : 'Link Storage') }}
+                                    </button>
+                                    <button v-if="storageLinked" type="button" :disabled="Boolean(storageLinkLoading)"
+                                        class="flex w-full items-center gap-2 rounded-xl border border-red-200 bg-red-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
+                                        @click="updateStorageLink('unlink')">
+                                        <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70"><path d="M17 7h-3V5h3a5 5 0 0 1 0 10h-3v-2h3a3 3 0 0 0 0-6zM7 7h3V5H7a5 5 0 0 0 0 10h3v-2H7a3 3 0 0 1 0-6zm1 4h8V9H8v2zm-5.29 8.88 17.17-17.17 1.41 1.41L4.12 21.29l-1.41-1.41z" /></svg>
+                                        {{ storageLinkLoading === 'unlink' ? 'Unlinking...' : 'Unlink' }}
+                                    </button>
+                                </div>
                                 <button v-for="action in quickActions.filter((item) => item.action === 'clearCache')"
                                     :key="action.label" type="button" :disabled="cacheClearLoading" :class="[
                                         'flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60',
@@ -789,14 +881,11 @@ const issueWebsiteSsl = async () => {
                                 <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Issue, renew and inspect the certificate without leaving Manage.</p>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
-                                <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold" :class="websiteSslClass">
-                                    {{ websiteSslLabel }}
-                                </span>
-                                <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold"
-                                    :class="sslEnabled
-                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400'
-                                        : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'">
-                                    {{ sslEnabled ? 'SSL Enabled' : 'SSL Disabled' }}
+                                <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-semibold" :class="sslCompactValidityClass">
+                                    <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
+                                    <span>SSL</span>
+                                    <span class="opacity-40">|</span>
+                                    <span>{{ sslCompactValidityLabel }}</span>
                                 </span>
                             </div>
                         </div>
@@ -808,7 +897,7 @@ const issueWebsiteSsl = async () => {
                             <p class="text-sm text-slate-600 dark:text-slate-300">{{ sslStatus.message || 'No certificate status available.' }}</p>
                             <p class="mt-1 text-[11px] text-slate-400">Checked: {{ formatCertificateDate(sslStatus.checked_at) }}</p>
 
-                            <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                                 <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
                                     <p class="text-[11px] font-medium text-slate-400">Subject</p>
                                     <p class="mt-1 break-all text-xs font-semibold text-slate-700 dark:text-slate-200">{{ sslStatus.subject_cn || sslStatus.domain || website.domain || '-' }}</p>
@@ -818,12 +907,16 @@ const issueWebsiteSsl = async () => {
                                     <p class="mt-1 break-all text-xs font-semibold text-slate-700 dark:text-slate-200">{{ sslStatus.issuer_cn || '-' }}</p>
                                 </div>
                                 <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                                    <p class="text-[11px] font-medium text-slate-400">Valid From</p>
+                                    <p class="mt-1 text-xs font-semibold text-slate-700 dark:text-slate-200">{{ formatCertificateDate(sslStatus.valid_from) }}</p>
+                                </div>
+                                <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
                                     <p class="text-[11px] font-medium text-slate-400">Valid Until</p>
                                     <p class="mt-1 text-xs font-semibold text-slate-700 dark:text-slate-200">{{ formatCertificateDate(sslStatus.valid_to) }}</p>
                                 </div>
                                 <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
                                     <p class="text-[11px] font-medium text-slate-400">Days Remaining</p>
-                                    <p class="mt-1 text-xs font-semibold text-slate-700 dark:text-slate-200">{{ sslDaysRemaining === null ? '-' : sslDaysRemaining }}</p>
+                                    <p class="mt-1 text-xs font-semibold" :class="sslDaysRemaining !== null && sslDaysRemaining < 0 ? 'text-red-600 dark:text-red-400' : sslDaysRemaining !== null && sslDaysRemaining <= 30 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'">{{ sslValidityLabel }}</p>
                                 </div>
                             </div>
 
@@ -920,11 +1013,13 @@ const issueWebsiteSsl = async () => {
                                         <span class="block truncate text-sm font-medium text-slate-800 dark:text-slate-100">{{
                                             alias.domain || '-' }}</span>
                                         <div v-if="aliasEditingId !== alias.id" class="mt-1">
-                                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                                                :class="sslStatusClass(alias.ssl_status)">
-                                                <span class="h-1.5 w-1.5 rounded-full"
-                                                    :class="String(alias.ssl_status || '').toLowerCase() === 'valid' || String(alias.ssl_status || '').toLowerCase() === 'issued' || String(alias.ssl_status || '').toLowerCase() === 'renewed' ? 'bg-emerald-500' : String(alias.ssl_status || '').toLowerCase() === 'failed' ? 'bg-red-500' : String(alias.ssl_status || '').toLowerCase() === 'disabled' ? 'bg-amber-500' : 'bg-slate-400'"></span>
-                                                {{ sslStatusLabel(alias.ssl_status) }}
+                                            <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                                                :class="aliasSslValidityClass(alias)"
+                                                :title="alias.ssl_expires_at ? `Expires ${formatCertificateDate(alias.ssl_expires_at)}` : 'Certificate expiry is unavailable'">
+                                                <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
+                                                <span>SSL</span>
+                                                <span class="opacity-40">|</span>
+                                                <span>{{ aliasSslValidityLabel(alias) }}</span>
                                             </span>
                                         </div>
                                         <div v-else class="mt-1">

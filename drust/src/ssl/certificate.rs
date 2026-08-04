@@ -99,7 +99,7 @@ pub(super) fn ensure(
             // Renewals happen outside the panel; the deployment hook keeps the
             // active TLS service in sync after certbot updates the lineage.
             "--deploy-hook",
-            "systemctl reload drust",
+            "systemctl restart edge-gateway.service",
             "-d",
             &domain,
         ];
@@ -136,6 +136,12 @@ pub(super) fn ensure(
         );
     }
 
+    // The gateway builds its SNI certificate store when it starts. Restarting it
+    // here makes a newly issued certificate available on port 443 immediately.
+    if !command_success("systemctl", &["restart", "edge-gateway.service"]) {
+        return Err("Certificate is valid, but the edge gateway could not be restarted.".into());
+    }
+
     Ok(json!({
         "status": "valid",
         "issued": needs_issue && !existed,
@@ -144,5 +150,6 @@ pub(super) fn ensure(
         "certificate_path": certificate_path,
         "private_key_path": private_key_path,
         "expires_at": certificate_expiry(&certificate_path),
+        "gateway_reloaded": true,
     }))
 }

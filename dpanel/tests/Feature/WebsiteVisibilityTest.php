@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\SslCertificate;
 use App\Models\User;
 use App\Models\Website;
 use Database\Seeders\RolePermissionSeeder;
@@ -83,8 +84,36 @@ class WebsiteVisibilityTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_website_list_includes_ssl_validity(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+        $website = $this->createWebsite([
+            'domain' => 'secure-example.test',
+            'enable_ssl' => true,
+        ]);
+        $expiresAt = now()->startOfDay()->addDays(45);
+
+        SslCertificate::query()->create([
+            'id' => (string) Str::uuid(),
+            'domain' => $website->domain,
+            'status' => 'valid',
+            'expires_at' => $expiresAt,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('websites.list'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('websiteRequests.0.ssl_status', 'valid')
+                ->where('websiteRequests.0.ssl_days_remaining', 45)
+                ->where('websiteRequests.0.ssl_expires_at', $expiresAt->toIso8601String()));
+    }
+
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     private function createWebsite(array $overrides = []): Website
     {

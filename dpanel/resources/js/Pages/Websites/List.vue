@@ -18,6 +18,25 @@ const toasts = ref([]);
 let toastSequence = 0;
 const perPage = 20;
 
+const sslValidityLabel = (item) => {
+    if (!item?.enable_ssl) return 'SSL disabled';
+    if (item?.ssl_days_remaining === null || item?.ssl_days_remaining === undefined || item?.ssl_days_remaining === '') return 'Validity unknown';
+    const days = Number(item?.ssl_days_remaining);
+    if (!Number.isFinite(days)) return 'Validity unknown';
+    if (days < 0) return `Expired ${Math.abs(days)}d ago`;
+    if (days === 0) return 'Expires today';
+    return `Valid ${days}d`;
+};
+
+const sslValidityClass = (item) => {
+    if (item?.ssl_days_remaining === null || item?.ssl_days_remaining === undefined || item?.ssl_days_remaining === '') return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+    const days = Number(item?.ssl_days_remaining);
+    if (!item?.enable_ssl || !Number.isFinite(days)) return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+    if (days < 0) return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
+    if (days <= 30) return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
+};
+
 const props = defineProps({
     websiteRequests: {
         type: Array,
@@ -360,9 +379,11 @@ const copyUrl = (url) => {
                                             <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current opacity-50"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" /></svg>
                                             {{ item.root_path || '-' }}
                                         </span>
-                                        <span v-if="item.enable_ssl" class="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                                        <span v-if="item.enable_ssl" class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="sslValidityClass(item)" :title="item.ssl_expires_at ? `Expires ${formatDate(item.ssl_expires_at)}` : 'Certificate expiry is unavailable'">
                                             <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
-                                            SSL
+                                            <span>SSL</span>
+                                            <span class="opacity-40">|</span>
+                                            <span>{{ sslValidityLabel(item) }}</span>
                                         </span>
                                     </div>
                                 </div>
@@ -447,19 +468,18 @@ const copyUrl = (url) => {
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-2">
                                     <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-300">A</span>
-                                    <Link
-                                        :href="panelRoute('websites.edit', { id: alias.id })"
-                                        class="truncate text-[14px] font-semibold text-slate-900 transition hover:text-blue-600 dark:text-slate-100 dark:hover:text-blue-400"
-                                    >
+                                    <span class="truncate text-[14px] font-semibold text-slate-900 dark:text-slate-100">
                                         {{ alias.domain }}
-                                    </Link>
+                                    </span>
                                     <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="statusClass(alias.status)">
                                         <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(alias.status)"></span>
                                         {{ alias.status }}
                                     </span>
-                                    <span v-if="alias.enable_ssl" class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">
+                                    <span v-if="alias.enable_ssl" class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="sslValidityClass(alias)" :title="alias.ssl_expires_at ? `Expires ${formatDate(alias.ssl_expires_at)}` : 'Certificate expiry is unavailable'">
                                         <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
-                                        SSL
+                                        <span>SSL</span>
+                                        <span class="opacity-40">|</span>
+                                        <span>{{ sslValidityLabel(alias) }}</span>
                                     </span>
                                 </div>
                             </div>
@@ -483,12 +503,6 @@ const copyUrl = (url) => {
                                 >
                                     {{ sslLoadingId === String(alias.id) ? 'Issuing...' : 'Issue SSL' }}
                                 </button>
-                                <Link
-                                    :href="panelRoute('websites.edit', { id: alias.id })"
-                                    class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600"
-                                >
-                                    Edit
-                                </Link>
                                 <button
                                     :disabled="deleteForm.processing"
                                     class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"

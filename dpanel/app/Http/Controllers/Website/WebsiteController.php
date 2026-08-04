@@ -174,7 +174,7 @@ class WebsiteController extends Controller
         $metrics = $this->safeBuildDynamicMetrics($website);
         $websiteRootPath = (string) ($website['root_path'] ?? '');
         $websiteSiteOwner = (string) ($website['site_owner'] ?? '');
-        $aliasWebsites = Website::query()
+        $aliasWebsiteRecords = Website::query()
             ->visibleTo(request()->user())
             ->whereIn('type', ['alis', 'alias'])
             ->where(function ($query) use ($websiteRootPath, $websiteSiteOwner): void {
@@ -189,8 +189,8 @@ class WebsiteController extends Controller
             ->orderByDesc('created_at')
             ->get()
             ->map(fn (Website $alias): array => $this->websiteModelToArray($alias))
-            ->values()
-            ->all();
+            ->values();
+        $aliasWebsites = $this->decorateWebsiteRecords($aliasWebsiteRecords);
 
         $runtimeStatus = strtolower(trim((string) ($website['status'] ?? 'pending'))) === 'live'
             ? 'live'
@@ -382,6 +382,66 @@ class WebsiteController extends Controller
         return $respond(false, 'Project cache clear failed.'.$suffix, 422);
     }
 
+    public function updateProjectStorageLink(Request $request, string $token, string $id): RedirectResponse|JsonResponse
+    {
+        $respond = function (bool $success, string $message, bool $linked, int $status = 200) use ($request, $id): RedirectResponse|JsonResponse {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => $success,
+                    'message' => $message,
+                    'linked' => $linked,
+                ], $status);
+            }
+
+            return redirect()
+                ->route('websites.manage', $id)
+                ->with($success ? 'success' : 'error', $message);
+        };
+
+        $validated = $request->validate([
+            'action' => ['required', 'string', 'in:link,refresh,unlink'],
+        ]);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+        $inspection = $this->inspectWebsiteApplication($website);
+        if (strtolower((string) ($inspection['detected_app'] ?? '')) !== 'laravel') {
+            return $respond(false, 'Storage link is only available for detected Laravel websites.', false, 422);
+        }
+
+        $artisanPath = $this->resolveProjectArtisanPath((string) ($inspection['root_path'] ?? $website['root_path'] ?? ''));
+        if ($artisanPath === null) {
+            return $respond(false, 'Laravel artisan file not found for this website.', false, 422);
+        }
+
+        $projectPath = dirname($artisanPath);
+        $publicStoragePath = $projectPath.'/public/storage';
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath((string) ($website['root_path'] ?? '')));
+        $action = (string) $validated['action'];
+
+        if (in_array($action, ['refresh', 'unlink'], true)) {
+            $unlink = $this->runProjectArtisanCommand($projectPath, 'storage:unlink', $siteOwner);
+            if (! $unlink['success'] && is_link($publicStoragePath)) {
+                return $respond(false, 'Storage unlink failed: '.trim($unlink['output']), true, 422);
+            }
+        }
+
+        if ($action === 'unlink') {
+            $linked = is_link($publicStoragePath);
+
+            return $respond(! $linked, $linked ? 'Storage link could not be removed.' : 'Storage link removed successfully.', $linked, $linked ? 422 : 200);
+        }
+
+        $link = $this->runProjectArtisanCommand($projectPath, 'storage:link', $siteOwner);
+        $linked = is_link($publicStoragePath);
+        if (! $link['success'] || ! $linked) {
+            $details = trim((string) ($link['output'] ?? ''));
+            $message = $action === 'refresh' ? 'Storage link refresh failed.' : 'Storage link creation failed.';
+
+            return $respond(false, $details !== '' ? $message.' '.$details : $message, $linked, 422);
+        }
+
+        return $respond(true, $action === 'refresh' ? 'Storage link refreshed successfully.' : 'Storage link created successfully.', true);
+    }
+
     /** @param array<string, mixed> $website */
     private function inspectWebsiteApplication(array $website): array
     {
@@ -396,6 +456,13 @@ class WebsiteController extends Controller
         foreach ($candidates as $candidate) {
             $inspection = $this->wordpressInstallService->inspectRootDirectory($candidate);
             $inspection['root_path'] = $candidate;
+            if (strtolower((string) ($inspection['detected_app'] ?? '')) === 'laravel') {
+                $artisanPath = $this->resolveProjectArtisanPath($candidate);
+                $projectPath = $artisanPath !== null ? dirname($artisanPath) : rtrim($candidate, '/');
+                $storagePath = $projectPath.'/public/storage';
+                $inspection['storage_linked'] = is_link($storagePath);
+                $inspection['storage_link_path'] = $storagePath;
+            }
             $fallback ??= $inspection;
             if (in_array((string) ($inspection['detected_app'] ?? ''), ['wordpress', 'laravel'], true)) {
                 return $inspection;
@@ -1325,6 +1392,7 @@ class WebsiteController extends Controller
                 if (is_executable($candidate)) {
                     return $candidate;
                 }
+
                 continue;
             }
 
@@ -1374,7 +1442,6 @@ class WebsiteController extends Controller
         ];
     }
 
-
     /**
      * @return Collection<int, array<string, mixed>>
      */
@@ -1393,6 +1460,26 @@ class WebsiteController extends Controller
      */
     protected function decorateWebsiteRecords(Collection $requests): array
     {
+        $domains = $requests
+            ->map(fn (array $item): string => strtolower(trim((string) ($item['domain'] ?? ''))))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $certificatesByDomain = $domains->isNotEmpty()
+            ? SslCertificate::query()
+                ->whereIn('domain', $domains->all())
+                ->orderBy('expires_at')
+                ->get(['domain', 'status', 'expires_at'])
+                ->keyBy(fn (SslCertificate $certificate): string => strtolower(trim($certificate->domain)))
+            : collect();
+        $managedDomainsByName = $domains->isNotEmpty()
+            ? Domain::query()
+                ->whereIn('name', $domains->all())
+                ->get(['name', 'ssl_status', 'ssl_expires_at'])
+                ->keyBy(fn (Domain $domain): string => strtolower(trim($domain->name)))
+            : collect();
+
         $assignmentUserIds = $requests
             ->flatMap(fn (array $item): array => [
                 (int) ($item['assigned_user_id'] ?? 0),
@@ -1408,7 +1495,7 @@ class WebsiteController extends Controller
             : collect();
 
         return $requests
-            ->map(function (array $item) use ($usersById): array {
+            ->map(function (array $item) use ($usersById, $certificatesByDomain, $managedDomainsByName): array {
                 $item = $this->normalizeWebsiteRecord($item);
                 $runtimeStatus = $this->detectRuntimeStatus($item);
                 if ($runtimeStatus !== '') {
@@ -1420,6 +1507,18 @@ class WebsiteController extends Controller
                     }
                 }
                 $domain = (string) ($item['domain'] ?? '');
+                $domainKey = strtolower(trim($domain));
+                $certificate = $certificatesByDomain->get($domainKey);
+                $managedDomain = $managedDomainsByName->get($domainKey);
+                $expiresAt = $certificate?->expires_at ?? $managedDomain?->ssl_expires_at;
+
+                $item['ssl_status'] = $certificate?->status
+                    ?? $managedDomain?->ssl_status
+                    ?? ($item['ssl_status'] ?? 'unknown');
+                $item['ssl_expires_at'] = $expiresAt?->toIso8601String();
+                $item['ssl_days_remaining'] = $expiresAt !== null
+                    ? (int) now()->startOfDay()->diffInDays($expiresAt->copy()->startOfDay(), false)
+                    : null;
 
                 $assignedUserId = (int) ($item['assigned_user_id'] ?? 0);
                 $assignedResellerId = (int) ($item['assigned_reseller_id'] ?? 0);
@@ -2904,6 +3003,7 @@ class WebsiteController extends Controller
         }
 
         $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
+
         return $domain !== '' ? 'live' : 'pending';
     }
 
@@ -2926,6 +3026,7 @@ class WebsiteController extends Controller
             return false;
         }
     }
+
     protected function countWebsiteCronJobs(string $websiteId): int
     {
         return (int) CronJob::query()

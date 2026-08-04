@@ -2,9 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DnsRecord;
+use App\Models\DnsZone;
 use App\Models\Mailbox;
+use App\Models\User;
 use App\Models\Website;
 use App\Services\Dns\DnsRegistryService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,13 +25,14 @@ class DnsController extends Controller
     public function nameservers(DnsRegistryService $dnsRegistry): Response
     {
         $this->ensureDnsTables();
+        $visibleDomains = DnsZone::query()->visibleTo(request()->user())->pluck('domain');
 
         return Inertia::render('DnsNameservers', [
             'dnsEngine' => $dnsRegistry->engine(),
             'dnsProviderLabel' => $dnsRegistry->providerLabel(),
             'authoritativeMode' => $dnsRegistry->authoritativeMode(),
             'dynamicUpdatesAllowed' => $dnsRegistry->allowDynamicUpdates(),
-            'nameservers' => $this->pdns()->table(self::NAMESERVER_TABLE)->orderByDesc('created_at')->get()->map(fn ($row) => [
+            'nameservers' => $this->pdns()->table(self::NAMESERVER_TABLE)->whereIn('domain', $visibleDomains)->orderByDesc('created_at')->get()->map(fn ($row) => [
                 'id' => (string) $row->id,
                 'domain' => (string) $row->domain,
                 'hostname' => (string) $row->hostname,
@@ -38,7 +43,7 @@ class DnsController extends Controller
                 'created_at' => $row->created_at,
                 'updated_at' => $row->updated_at,
             ])->values()->all(),
-            'websiteDomains' => $this->readWebsiteDomains(),
+            'websiteDomains' => $visibleDomains->values()->all(),
         ]);
     }
 
@@ -49,7 +54,7 @@ class DnsController extends Controller
             'hostname' => ['required', 'string', 'max:255'],
             'ipv4' => ['nullable', 'ip'],
             'ipv6' => ['nullable', 'ip'],
-            'ttl' => ['required', 'integer', 'min:60', 'max:86400'],
+            'ttl' => ['required', 'integer', 'min:1', 'max:86400'],
             'status' => ['required', 'in:active,disabled'],
         ]);
 
@@ -61,6 +66,7 @@ class DnsController extends Controller
         if (! $zone) {
             return redirect()->route('dns.nameservers')->with('error', 'DNS zone must exist before creating nameserver.');
         }
+        $this->authorizeZone($request, (int) $zone->id);
 
         $now = now();
         $this->pdns()->table(self::NAMESERVER_TABLE)->insert([
@@ -97,6 +103,9 @@ class DnsController extends Controller
         if (! $existing) {
             return redirect()->route('dns.nameservers')->with('error', 'Nameserver not found.');
         }
+        $existingZone = $this->findDomainByName((string) $existing->domain);
+        abort_unless($existingZone, 404);
+        $this->authorizeZone($request, (int) $existingZone->id);
 
         $domain = $this->normalizeDomain($validated['domain']);
         $hostname = $this->normalizeDomain($validated['hostname']);
@@ -104,6 +113,7 @@ class DnsController extends Controller
         if (! $zone) {
             return redirect()->route('dns.nameservers')->with('error', 'DNS zone must exist before updating nameserver.');
         }
+        $this->authorizeZone($request, (int) $zone->id);
 
         $this->pdns()->table(self::NAMESERVER_TABLE)
             ->where('id', $id)
@@ -165,6 +175,9 @@ class DnsController extends Controller
         if (! $existing) {
             return redirect()->route('dns.nameservers')->with('error', 'Nameserver not found.');
         }
+        $existingZone = $this->findDomainByName((string) $existing->domain);
+        abort_unless($existingZone, 404);
+        $this->authorizeZone(request(), (int) $existingZone->id);
 
         $domain = (string) $existing->domain;
         $hostname = $this->normalizeDomain((string) $existing->hostname);
@@ -195,14 +208,19 @@ class DnsController extends Controller
     {
         $this->ensureDnsTables();
         $domains = $this->pdns()->table('domains')->orderByDesc('id')->get();
+        foreach ($domains as $domain) {
+            $this->syncRecordEntities((int) $domain->id, request()->user());
+        }
+        $zoneProfiles = DnsZone::query()->visibleTo(request()->user())->with(['creator:id,name,email', 'owner:id,name,email'])->get()->keyBy('powerdns_domain_id');
+        $domains = $domains->whereIn('id', $zoneProfiles->keys())->values();
         $soaRecords = $this->pdns()->table('records')
             ->where('type', 'SOA')
             ->whereIn('domain_id', $domains->pluck('id')->all())
             ->get()
             ->keyBy('domain_id');
-
-        $zones = $domains->map(function ($domainRow) use ($soaRecords) {
+        $zones = $domains->map(function ($domainRow) use ($soaRecords, $zoneProfiles) {
             $soa = $soaRecords->get($domainRow->id);
+            $profile = $zoneProfiles->get($domainRow->id);
             $soaParsed = $this->parseSoaContent((string) ($soa->content ?? ''));
 
             return [
@@ -216,22 +234,40 @@ class DnsController extends Controller
                 'minimum_ttl' => $soaParsed['minimum_ttl'],
                 'status' => ((int) ($soa->disabled ?? 0)) === 1 ? 'disabled' : 'active',
                 'created_at' => $domainRow->id,
+                'zone_uuid' => $profile?->id,
+                'website_id' => $profile?->website_id,
+                'source' => $profile?->source ?? 'legacy',
+                'provider' => $profile?->provider ?? 'powerdns',
+                'mode' => $profile?->mode ?? 'authoritative',
+                'dnssec_enabled' => (bool) ($profile?->dnssec_enabled ?? false),
+                'proxy_enabled' => (bool) ($profile?->proxy_enabled ?? false),
+                'logging_enabled' => (bool) ($profile?->logging_enabled ?? false),
+                'analytics_enabled' => (bool) ($profile?->analytics_enabled ?? false),
+                'creator_name' => $profile?->creator?->name ?? 'System',
+                'creator_email' => $profile?->creator?->email,
+                'owner_user_id' => $profile?->owner_user_id,
+                'owner_name' => $profile?->owner?->name ?? 'System',
+                'owner_email' => $profile?->owner?->email,
+                'can_transfer' => $this->canTransferZone(request()->user(), $profile),
             ];
         })->values()->all();
 
         $recordsByZone = $this->pdns()->table('records as r')
             ->join('domains as d', 'd.id', '=', 'r.domain_id')
+            ->leftJoin('dns_records as dr', 'dr.powerdns_record_id', '=', 'r.id')
             ->where('r.type', '!=', 'SOA')
+            ->whereIn('r.domain_id', $domains->pluck('id')->all())
             ->orderBy('d.name')
             ->orderBy('r.name')
             ->orderBy('r.type')
-            ->select(['r.id', 'r.name', 'r.type', 'r.content', 'r.ttl', 'r.prio', 'r.disabled', 'd.name as zone_domain'])
+            ->select(['r.id', 'dr.id as record_uuid', 'r.name', 'r.type', 'r.content', 'r.ttl', 'r.prio', 'r.disabled', 'd.name as zone_domain'])
             ->get()
             ->groupBy('zone_domain')
             ->map(function ($items, $zoneDomain) {
                 return $items->map(function ($row) use ($zoneDomain) {
                     return [
-                        'id' => (string) $row->id,
+                        'id' => (string) ($row->record_uuid ?: $row->id),
+                        'powerdns_record_id' => (int) $row->id,
                         'zone_domain' => (string) $zoneDomain,
                         'type' => (string) $row->type,
                         'name' => $this->toUiRecordName((string) $row->name, (string) $zoneDomain),
@@ -253,7 +289,7 @@ class DnsController extends Controller
             'zones' => $zones,
             'recordsByZone' => $recordsByZone,
             'zoneDomains' => collect($zones)->pluck('domain')->values()->all(),
-            'websiteDomains' => $this->readWebsiteDomains(),
+            'transferUsers' => $this->transferUsers(request()->user()),
         ]);
     }
 
@@ -277,13 +313,31 @@ class DnsController extends Controller
         }
 
         $zoneType = $this->uiZoneTypeToPdns($validated['type']);
-        $zoneId = (int) $this->pdns()->table('domains')->insertGetId([
-            'name' => $domain,
-            'type' => $zoneType,
-        ]);
-
-        $this->upsertSoaRecord($zoneId, $domain, $validated);
-        $this->syncNameserverRecordsForDomain($domain, $zoneId);
+        $this->pdns()->transaction(function () use ($request, $domain, $zoneType, $validated): void {
+            $zoneId = (int) $this->pdns()->table('domains')->insertGetId([
+                'name' => $domain,
+                'type' => $zoneType,
+            ]);
+            $actor = $request->user();
+            $website = Website::query()->visibleTo($actor)->whereRaw('LOWER(domain) = ?', [$domain])->first();
+            DnsZone::query()->create([
+                'id' => (string) Str::uuid(),
+                'powerdns_domain_id' => $zoneId,
+                'domain' => $domain,
+                'website_id' => $website?->id,
+                'status' => $validated['status'],
+                'assigned_user_id' => $website?->assigned_user_id,
+                'assigned_reseller_id' => $website?->assigned_reseller_id ?? ($actor?->hasRole('reseller') ? $actor->id : null),
+                'created_by_user_id' => $actor?->id,
+                'owner_user_id' => $website?->assigned_user_id ?? $website?->assigned_reseller_id ?? $actor?->id,
+                'source' => $website ? 'website' : 'standalone',
+                'provider' => 'powerdns',
+                'mode' => 'authoritative',
+            ]);
+            $this->upsertSoaRecord($zoneId, $domain, $validated);
+            $this->syncNameserverRecordsForDomain($domain, $zoneId);
+            $this->syncRecordEntities($zoneId);
+        });
 
         return redirect()->route('dns.zones')->with('success', 'DNS zone created.');
     }
@@ -302,7 +356,8 @@ class DnsController extends Controller
             'status' => ['required', 'in:active,disabled'],
         ]);
 
-        $zoneId = (int) $id;
+        $profile = $this->authorizeZoneIdentifier($request, $id);
+        $zoneId = (int) $profile->powerdns_domain_id;
         $existingZone = $this->pdns()->table('domains')->where('id', $zoneId)->first();
         if (! $existingZone) {
             return redirect()->route('dns.zones')->with('error', 'DNS zone not found.');
@@ -319,6 +374,11 @@ class DnsController extends Controller
             $this->pdns()->table('domains')->where('id', $zoneId)->update([
                 'name' => $newDomain,
                 'type' => $this->uiZoneTypeToPdns($validated['type']),
+            ]);
+            DnsZone::query()->where('powerdns_domain_id', $zoneId)->update([
+                'domain' => $newDomain,
+                'status' => $validated['status'],
+                'updated_at' => now(),
             ]);
 
             if ($oldDomain !== $newDomain) {
@@ -337,24 +397,27 @@ class DnsController extends Controller
 
             $this->upsertSoaRecord($zoneId, $newDomain, $validated);
             $this->syncNameserverRecordsForDomain($newDomain, $zoneId);
+            $this->syncRecordEntities($zoneId);
         });
 
         return redirect()->route('dns.zones')->with('success', 'DNS zone updated.');
     }
 
-    public function destroyZone(string $id): RedirectResponse
+    public function destroyZone(Request $request, string $id): RedirectResponse
     {
         $this->ensureDnsTables();
-        $zoneId = (int) $id;
+        $profile = $this->authorizeZoneIdentifier($request, $id);
+        $zoneId = (int) $profile->powerdns_domain_id;
         $zone = $this->pdns()->table('domains')->where('id', $zoneId)->first();
         if (! $zone) {
             return redirect()->route('dns.zones')->with('error', 'DNS zone not found.');
         }
 
         $zoneDomain = (string) $zone->name;
-        $this->pdns()->transaction(function () use ($zoneId, $zoneDomain) {
+        $this->pdns()->transaction(function () use ($zoneId, $zoneDomain, $profile) {
             $this->pdns()->table('records')->where('domain_id', $zoneId)->delete();
             $this->pdns()->table('domains')->where('id', $zoneId)->delete();
+            $profile->delete();
             $this->ensureNameserverTable();
             $this->pdns()->table(self::NAMESERVER_TABLE)->where('domain', $zoneDomain)->delete();
         });
@@ -385,9 +448,10 @@ class DnsController extends Controller
         if (! $zone) {
             return redirect()->route('dns.zones')->with('error', 'Zone not found.');
         }
+        $this->authorizeZone($request, (int) $zone->id);
 
         $name = $this->toFqdnRecordName($validated['name'], $zoneDomain);
-        $this->pdns()->table('records')->insert([
+        $recordId = (int) $this->pdns()->table('records')->insertGetId([
             'domain_id' => (int) $zone->id,
             'name' => $name,
             'type' => strtoupper((string) $validated['type']),
@@ -397,11 +461,25 @@ class DnsController extends Controller
             'disabled' => $validated['status'] === 'disabled' ? 1 : 0,
             'auth' => 1,
         ]);
+        $profile = DnsZone::query()->where('powerdns_domain_id', (int) $zone->id)->first();
+        if ($profile) {
+            DnsRecord::query()->create([
+                'id' => (string) Str::uuid(),
+                'powerdns_record_id' => $recordId,
+                'dns_zone_id' => $profile->id,
+                'type' => strtoupper((string) $validated['type']),
+                'name' => $name,
+                'content' => (string) $validated['content'],
+                'ttl' => (int) $validated['ttl'],
+                'priority' => $validated['priority'] !== null ? (int) $validated['priority'] : 0,
+                'is_active' => $validated['status'] !== 'disabled',
+            ]);
+        }
 
         return redirect()->route('dns.zones')->with('success', 'DNS record created.');
     }
 
-    public function updateRecord(Request $request, string $id): RedirectResponse
+    public function updateRecord(Request $request, string $id): RedirectResponse|JsonResponse
     {
         $this->ensureDnsTables();
         $validated = $request->validate([
@@ -409,22 +487,39 @@ class DnsController extends Controller
             'type' => ['required', 'in:A,AAAA,CNAME,MX,TXT,NS,SRV'],
             'name' => ['required', 'string', 'max:255'],
             'content' => ['required', 'string', 'max:2048'],
-            'ttl' => ['required', 'integer', 'min:60', 'max:86400'],
+            'ttl' => ['required', 'integer', 'min:1', 'max:86400'],
             'priority' => ['nullable', 'integer', 'min:0', 'max:65535'],
             'status' => ['required', 'in:active,disabled'],
+            'record_id' => ['nullable', 'string', 'max:64'],
+            'powerdns_record_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $recordId = (int) $id;
-        $record = $this->pdns()->table('records')->where('id', $recordId)->first();
+        [$recordId, $record] = $this->resolvePowerDnsRecord((string) ($validated['record_id'] ?? $id));
+        if (! $record && ! empty($validated['powerdns_record_id'])) {
+            [$recordId, $record] = $this->resolvePowerDnsRecord((string) $validated['powerdns_record_id']);
+        }
+        if (! $record && $id !== ($validated['record_id'] ?? null)) {
+            [$recordId, $record] = $this->resolvePowerDnsRecord($id);
+        }
         if (! $record) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'DNS record not found.'], 404);
+            }
+
             return redirect()->route('dns.zones')->with('error', 'DNS record not found.');
         }
+        $this->authorizeZone($request, (int) $record->domain_id);
 
         $zoneDomain = $this->normalizeDomain($validated['zone_domain']);
         $zone = $this->findDomainByName($zoneDomain);
         if (! $zone) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Zone not found.'], 404);
+            }
+
             return redirect()->route('dns.zones')->with('error', 'Zone not found.');
         }
+        $this->authorizeZone($request, (int) $zone->id);
 
         $name = $this->toFqdnRecordName($validated['name'], $zoneDomain);
         $this->pdns()->table('records')->where('id', $recordId)->update([
@@ -437,16 +532,72 @@ class DnsController extends Controller
             'disabled' => $validated['status'] === 'disabled' ? 1 : 0,
             'auth' => 1,
         ]);
+        $profile = DnsZone::query()->where('powerdns_domain_id', (int) $zone->id)->first();
+        if ($profile) {
+            DnsRecord::query()->updateOrCreate(
+                ['powerdns_record_id' => $recordId],
+                [
+                    'id' => DnsRecord::query()->where('powerdns_record_id', $recordId)->value('id') ?: (string) Str::uuid(),
+                    'dns_zone_id' => $profile->id,
+                    'type' => strtoupper((string) $validated['type']),
+                    'name' => $name,
+                    'content' => (string) $validated['content'],
+                    'ttl' => (int) $validated['ttl'],
+                    'priority' => $validated['priority'] !== null ? (int) $validated['priority'] : 0,
+                    'is_active' => $validated['status'] !== 'disabled',
+                ],
+            );
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'DNS record updated.',
+                'record' => [
+                    'id' => (string) $recordId,
+                    'zone_domain' => $zoneDomain,
+                    'type' => strtoupper((string) $validated['type']),
+                    'name' => $this->toUiRecordName($name, $zoneDomain),
+                    'content' => (string) $validated['content'],
+                    'ttl' => (int) $validated['ttl'],
+                    'priority' => $validated['priority'] !== null ? (int) $validated['priority'] : null,
+                    'status' => $validated['status'],
+                ],
+            ]);
+        }
 
         return redirect()->route('dns.zones')->with('success', 'DNS record updated.');
     }
 
-    public function destroyRecord(string $id): RedirectResponse
+    public function destroyRecord(Request $request, string $id): RedirectResponse
     {
         $this->ensureDnsTables();
-        $this->pdns()->table('records')->where('id', (int) $id)->delete();
+        [$recordId, $record] = $this->resolvePowerDnsRecord($id);
+        abort_unless($record, 404);
+        $this->authorizeZone($request, (int) $record->domain_id);
+        $this->pdns()->table('records')->where('id', $recordId)->delete();
+        DnsRecord::query()->where('powerdns_record_id', $recordId)->delete();
 
         return redirect()->route('dns.zones')->with('success', 'DNS record deleted.');
+    }
+
+    public function transferZone(Request $request, string $id): RedirectResponse
+    {
+        $profile = $this->authorizeZoneIdentifier($request, $id);
+        abort_unless($this->canTransferZone($request->user(), $profile), 403);
+
+        $validated = $request->validate(['owner_user_id' => ['required', 'integer', 'exists:users,id']]);
+        $target = User::query()->whereKey($validated['owner_user_id'])->where('is_suspended', false)->firstOrFail();
+        abort_unless($this->transferUsers($request->user())->contains('id', $target->id), 403);
+
+        $profile->update([
+            'owner_user_id' => $target->id,
+            'assigned_user_id' => $target->hasAnyRole(['general', 'general_user']) ? $target->id : null,
+            'assigned_reseller_id' => $target->hasRole('reseller') ? $target->id : $target->reseller_id,
+            'transferred_by_user_id' => $request->user()->id,
+            'transferred_at' => now(),
+        ]);
+
+        return redirect()->route('dns.zones')->with('success', "DNS zone transferred to {$target->name}.");
     }
 
     public function syncCloudflare(Request $request): RedirectResponse
@@ -473,12 +624,14 @@ class DnsController extends Controller
         $errors = [];
 
         foreach (collect($validated['records'])->groupBy(fn ($record) => $this->normalizeDomain((string) $record['zone_domain'])) as $zoneDomain => $records) {
-            if (! $this->findDomainByName($zoneDomain)) {
+            $localZone = $this->findDomainByName($zoneDomain);
+            if (! $localZone) {
                 $summary['failed'] += $records->count();
                 $errors[] = "{$zoneDomain}: Local DNS zone not found.";
 
                 continue;
             }
+            $this->authorizeZone($request, (int) $localZone->id);
 
             try {
                 $cloudflareZoneId = $this->resolveCloudflareZoneId($token, $zoneDomain, $zoneMap);
@@ -554,11 +707,109 @@ class DnsController extends Controller
         );
     }
 
+    public function importCloudflareZone(Request $request): RedirectResponse
+    {
+        $this->ensureDnsTables();
+        $validated = $request->validate([
+            'records' => ['required', 'array', 'min:1', 'max:2000'],
+            'records.*.zone_domain' => ['required', 'string', 'max:255'],
+            'records.*.type' => ['required', 'in:A,AAAA,CNAME,MX,TXT,NS,SRV'],
+            'records.*.name' => ['required', 'string', 'max:255'],
+            'records.*.content' => ['required', 'string', 'max:8192'],
+            'records.*.ttl' => ['required', 'integer', 'min:1', 'max:86400'],
+            'records.*.priority' => ['nullable', 'integer', 'min:0', 'max:65535'],
+            'records.*.proxied' => ['required', 'boolean'],
+        ]);
+
+        $created = 0;
+        $skipped = 0;
+
+        foreach (collect($validated['records'])->groupBy(fn ($record) => $this->normalizeDomain((string) $record['zone_domain'])) as $zoneDomain => $records) {
+            $zone = $this->findDomainByName($zoneDomain);
+            abort_unless($zone, 404, "Local DNS zone {$zoneDomain} was not found.");
+            $profile = $this->authorizeZone($request, (int) $zone->id);
+
+            foreach ($records as $record) {
+                $type = strtoupper((string) $record['type']);
+                $name = $this->normalizeDomain((string) $record['name']);
+                if ($name === '' || ($name !== $zoneDomain && ! str_ends_with($name, '.'.$zoneDomain))) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                // Cloudflare's apex NS records describe its own service, not this PowerDNS server.
+                if ($type === 'NS' && $name === $zoneDomain) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                $content = trim((string) $record['content']);
+                $priority = (int) ($record['priority'] ?? 0);
+                if ($type === 'SRV') {
+                    $srv = json_decode($content, true);
+                    if (! is_array($srv) || ! isset($srv['target'], $srv['port'])) {
+                        $skipped++;
+
+                        continue;
+                    }
+                    $priority = (int) ($srv['priority'] ?? 0);
+                    $content = (int) ($srv['weight'] ?? 0).' '.(int) $srv['port'].' '.$this->normalizeDomain((string) $srv['target']).'.';
+                } elseif ($type === 'TXT') {
+                    $content = $this->toPowerDnsTxtContent($content);
+                } elseif (in_array($type, ['CNAME', 'MX', 'NS'], true)) {
+                    $content = $this->normalizeDomain($content).'.';
+                }
+
+                $existingId = $this->pdns()->table('records')
+                    ->where('domain_id', (int) $zone->id)
+                    ->where('name', $name)
+                    ->where('type', $type)
+                    ->where('content', $content)
+                    ->value('id');
+                if ($existingId) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                $recordId = (int) $this->pdns()->table('records')->insertGetId([
+                    'domain_id' => (int) $zone->id,
+                    'name' => $name,
+                    'type' => $type,
+                    'content' => $content,
+                    'ttl' => (int) $record['ttl'],
+                    'prio' => $priority,
+                    'disabled' => 0,
+                    'auth' => 1,
+                ]);
+                DnsRecord::query()->create([
+                    'id' => (string) Str::uuid(),
+                    'dns_zone_id' => $profile->id,
+                    'powerdns_record_id' => $recordId,
+                    'type' => $type,
+                    'name' => $name,
+                    'content' => $content,
+                    'ttl' => (int) $record['ttl'],
+                    'priority' => $priority,
+                    'is_active' => true,
+                    'proxied' => (bool) $record['proxied'],
+                ]);
+                $created++;
+            }
+        }
+
+        return redirect()->route('dns.zones')->with('success', "Cloudflare zone imported into PowerDNS. Created {$created}, skipped {$skipped}.");
+    }
+
     public function reviewCloudflare(Request $request): Response
     {
         $this->ensureDnsTables();
         $domain = $request->filled('domain') ? $this->normalizeDomain((string) $request->query('domain')) : null;
+        $visibleDomainIds = DnsZone::query()->visibleTo($request->user())->pluck('powerdns_domain_id');
         $zones = $this->pdns()->table('domains')
+            ->whereIn('id', $visibleDomainIds)
             ->when($domain, fn ($query) => $query->where('name', $domain))
             ->orderBy('name')
             ->get(['id', 'name']);
@@ -585,7 +836,7 @@ class DnsController extends Controller
 
         return Inertia::render('DnsCloudflareReview', [
             'records' => $records,
-            'zoneDomains' => $this->pdns()->table('domains')->orderBy('name')->pluck('name')->map(fn ($name) => (string) $name)->values()->all(),
+            'zoneDomains' => $zones->pluck('name')->map(fn ($name) => (string) $name)->values()->all(),
             'selectedDomain' => $domain,
             'tokenConfigured' => trim((string) env('CLOUDFLARE_API_TOKEN', '')) !== '',
         ]);
@@ -623,6 +874,15 @@ class DnsController extends Controller
         }
 
         return $payload;
+    }
+
+    private function toPowerDnsTxtContent(string $content): string
+    {
+        $content = trim($content, " \t\n\r\0\x0B\"");
+
+        return collect(str_split($content, 255))
+            ->map(fn (string $chunk) => '"'.addcslashes($chunk, '\\"').'"')
+            ->implode(' ');
     }
 
     private function pdns()
@@ -682,6 +942,112 @@ class DnsController extends Controller
     private function ensureNameserverTable(): void
     {
         $this->ensureDnsTables();
+    }
+
+    private function syncRecordEntities(int $powerdnsDomainId, ?User $actor = null): void
+    {
+        $domain = $this->pdns()->table('domains')->where('id', $powerdnsDomainId)->first();
+        if (! $domain || ! Schema::hasTable('dns_zones') || ! Schema::hasColumn('dns_zones', 'powerdns_domain_id')) {
+            return;
+        }
+
+        $profile = DnsZone::query()->firstOrCreate(
+            ['powerdns_domain_id' => $powerdnsDomainId],
+            [
+                'id' => (string) Str::uuid(),
+                'domain' => strtolower((string) $domain->name),
+                'status' => 'active',
+                'created_by_user_id' => User::role('admin')->orderBy('id')->value('id'),
+                'owner_user_id' => User::role('admin')->orderBy('id')->value('id'),
+                'source' => 'legacy',
+                'provider' => 'powerdns',
+                'mode' => 'authoritative',
+            ],
+        );
+        $profile->forceFill(['domain' => strtolower((string) $domain->name)])->saveQuietly();
+
+        $powerdnsRecords = $this->pdns()->table('records')
+            ->where('domain_id', $powerdnsDomainId)
+            ->where('type', '!=', 'SOA')
+            ->get();
+        foreach ($powerdnsRecords as $record) {
+            $entity = DnsRecord::query()->firstOrNew(['powerdns_record_id' => (int) $record->id]);
+            if (! $entity->exists) {
+                $entity->id = (string) Str::uuid();
+            }
+            $entity->fill([
+                'dns_zone_id' => $profile->id,
+                'type' => (string) $record->type,
+                'name' => (string) $record->name,
+                'content' => (string) $record->content,
+                'ttl' => (int) ($record->ttl ?: 3600),
+                'priority' => $record->prio !== null ? (int) $record->prio : null,
+                'is_active' => ! (bool) $record->disabled,
+            ])->save();
+        }
+
+        DnsRecord::query()
+            ->where('dns_zone_id', $profile->id)
+            ->whereNotIn('powerdns_record_id', $powerdnsRecords->pluck('id')->map(fn ($id): int => (int) $id)->all())
+            ->delete();
+    }
+
+    private function authorizeZone(Request $request, int $powerdnsDomainId): DnsZone
+    {
+        return DnsZone::query()
+            ->visibleTo($request->user())
+            ->where('powerdns_domain_id', $powerdnsDomainId)
+            ->firstOrFail();
+    }
+
+    private function authorizeZoneIdentifier(Request $request, string $identifier): DnsZone
+    {
+        return DnsZone::query()
+            ->visibleTo($request->user())
+            ->where(function ($query) use ($identifier) {
+                $query->where('id', $identifier);
+                if (ctype_digit($identifier)) {
+                    $query->orWhere('powerdns_domain_id', (int) $identifier);
+                }
+            })
+            ->firstOrFail();
+    }
+
+    /**
+     * @return array{0:int,1:?object}
+     */
+    private function resolvePowerDnsRecord(string $identifier): array
+    {
+        $recordId = ctype_digit($identifier)
+            ? (int) $identifier
+            : (int) DnsRecord::query()->whereKey($identifier)->value('powerdns_record_id');
+
+        if ($recordId < 1) {
+            return [0, null];
+        }
+
+        return [$recordId, $this->pdns()->table('records')->where('id', $recordId)->first()];
+    }
+
+    private function canTransferZone(User $actor, ?DnsZone $zone): bool
+    {
+        return $zone !== null && ($actor->hasRole('admin') || $actor->hasRole('reseller'));
+    }
+
+    private function transferUsers(User $actor)
+    {
+        if (! $actor->hasAnyRole(['admin', 'reseller'])) {
+            return collect();
+        }
+
+        return User::query()
+            ->where('is_suspended', false)
+            ->when($actor->hasRole('reseller'), fn ($query) => $query->where(function ($scope) use ($actor) {
+                $scope->where('id', $actor->id)->orWhere('reseller_id', $actor->id);
+            }))
+            ->orderBy('name')
+            ->get(['id', 'name', 'email'])
+            ->map(fn (User $user) => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email]);
     }
 
     private function syncNameserverRecordsForDomain(string $domain, int $zoneId): void

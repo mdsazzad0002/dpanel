@@ -15,6 +15,9 @@ The installer is idempotent:
 - It checks whether the root Cargo toolchain is available before installing anything.
 - It installs Rust and build prerequisites only when the toolchain is missing or unusable.
 - It creates `/etc/drust/drust.env` and generates an API token on first install only.
+- It installs and configures PowerDNS with dPanel's MySQL backend, applies the
+  compatible database schema, disables conflicting BIND services, opens UDP/TCP
+  port 53 in UFW, and enables the authoritative DNS service.
 - It builds the release binary and installs the systemd unit.
 - It enables and starts `drust.service`.
 

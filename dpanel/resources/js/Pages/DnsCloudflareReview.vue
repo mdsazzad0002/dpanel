@@ -45,9 +45,102 @@ const inferZone = (name, fallback = '') => {
         .find((zone) => normalized === zone || normalized.endsWith(`.${zone}`)) || fallback || props.selectedDomain || '';
 };
 
+const stripBindComment = (line) => {
+    let quoted = false;
+    let escaped = false;
+    for (let index = 0; index < line.length; index += 1) {
+        const char = line[index];
+        if (escaped) { escaped = false; continue; }
+        if (char === '\\') { escaped = true; continue; }
+        if (char === '"') { quoted = !quoted; continue; }
+        if (char === ';' && !quoted) return { value: line.slice(0, index), comment: line.slice(index + 1) };
+    }
+    return { value: line, comment: '' };
+};
+
+const tokenizeBind = (value) => value.match(/"(?:\\.|[^"\\])*"|\S+/g) || [];
+const decodeBindText = (token) => token.startsWith('"')
+    ? token.slice(1, -1).replace(/\\(["\\])/g, '$1')
+    : token.replace(/\.$/, '');
+
+const importBindZone = (input) => {
+    const imported = [];
+    let origin = props.selectedDomain || props.zoneDomains[0] || '';
+
+    input.split(/\r?\n/).forEach((rawLine) => {
+        const { value, comment } = stripBindComment(rawLine);
+        const line = value.trim();
+        if (!line || line.startsWith(';')) return;
+        if (/^\$ORIGIN\s+/i.test(line)) {
+            origin = line.split(/\s+/)[1]?.replace(/\.$/, '') || origin;
+            return;
+        }
+        if (line.startsWith('$')) return;
+
+        const tokens = tokenizeBind(line);
+        const inIndex = tokens.findIndex((token) => token.toUpperCase() === 'IN');
+        if (inIndex < 1 || inIndex + 2 >= tokens.length) return;
+
+        const ownerToken = tokens[0];
+        const ttlToken = tokens.slice(1, inIndex).find((token) => /^\d+$/.test(token));
+        const type = String(tokens[inIndex + 1]).toUpperCase();
+        if (!recordTypes.includes(type)) return;
+
+        const zoneDomain = inferZone(ownerToken === '@' ? origin : ownerToken, origin);
+        if (!zoneDomain) return;
+        const name = ownerToken === '@'
+            ? zoneDomain
+            : (ownerToken.endsWith('.') ? ownerToken.slice(0, -1) : (ownerToken.includes('.') ? ownerToken : `${ownerToken}.${zoneDomain}`));
+        const data = tokens.slice(inIndex + 2);
+        let priority = null;
+        let content = '';
+
+        if (type === 'MX') {
+            priority = Number(data.shift() || 0);
+            content = decodeBindText(data[0] || '');
+        } else if (type === 'SRV') {
+            const [srvPriority, weight, port, target] = data;
+            const relative = name === zoneDomain ? '' : name.slice(0, -(zoneDomain.length + 1));
+            const labels = relative.split('.');
+            content = JSON.stringify({
+                service: labels[0] || '',
+                proto: labels[1] || '',
+                name: labels.slice(2).join('.') || zoneDomain,
+                priority: Number(srvPriority || 0),
+                weight: Number(weight || 0),
+                port: Number(port || 0),
+                target: decodeBindText(target || ''),
+            });
+        } else if (type === 'TXT') {
+            content = data.map(decodeBindText).join('');
+        } else {
+            content = decodeBindText(data[0] || '');
+        }
+
+        imported.push(makeRecord({
+            zone_domain: zoneDomain,
+            type,
+            name,
+            content,
+            ttl: Number(ttlToken || 3600),
+            priority,
+            proxied: /cf-proxied\s*:\s*true/i.test(comment),
+        }));
+    });
+
+    return imported;
+};
+
 const importJson = () => {
     jsonError.value = '';
     try {
+        if (!jsonInput.value.trim().startsWith('{') && !jsonInput.value.trim().startsWith('[')) {
+            const imported = importBindZone(jsonInput.value);
+            rows.value.push(...imported);
+            jsonInput.value = '';
+            if (!imported.length) jsonError.value = 'No supported records matched a local zone.';
+            return;
+        }
         const decoded = JSON.parse(jsonInput.value);
         const source = Array.isArray(decoded) ? decoded : (Array.isArray(decoded.result) ? decoded.result : (Array.isArray(decoded.records) ? decoded.records : null));
         if (!source) throw new Error('Use a JSON array, Cloudflare API response, or an object with a records array.');
@@ -72,7 +165,7 @@ const importJson = () => {
         jsonInput.value = '';
         if (!imported.length) jsonError.value = 'No supported records matched a local zone.';
     } catch (error) {
-        jsonError.value = error instanceof Error ? error.message : 'Invalid JSON.';
+        jsonError.value = error instanceof Error ? error.message : 'Invalid DNS zone file.';
     }
 };
 
@@ -90,7 +183,7 @@ const submit = () => {
         ttl: Number(record.ttl),
         priority: record.priority === '' || record.priority === null ? null : Number(record.priority),
     }));
-    form.post(panelRoute('dns.cloudflare.sync'), { preserveScroll: true });
+    form.post(panelRoute('dns.cloudflare.import'), { preserveScroll: true });
 };
 </script>
 
@@ -107,23 +200,22 @@ const submit = () => {
         <div class="space-y-4">
             <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ page.props.flash.success }}</div>
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ page.props.flash.error }}</div>
-            <div v-if="!tokenConfigured" class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Cloudflare API token is not configured. You can prepare the draft, but final submit needs CLOUDFLARE_API_TOKEN.</div>
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <h2 class="font-semibold">Cloudflare JSON import</h2>
-                        <p class="mt-1 text-sm text-slate-500">Accepts a records array, an object with <code>records</code>, or a Cloudflare API response with <code>result</code>. Imported records are added to the draft.</p>
+                        <h2 class="font-semibold">Cloudflare zone file import</h2>
+                        <p class="mt-1 text-sm text-slate-500">Upload the BIND-format TXT export from Cloudflare. Imported records are added to the draft for review.</p>
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <label class="cursor-pointer rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                            Choose JSON file
-                            <input type="file" accept="application/json,.json" class="hidden" @change="importJsonFile" />
+                            Choose TXT file
+                            <input type="file" accept="text/plain,.txt,.zone" class="hidden" @change="importJsonFile" />
                         </label>
-                        <button type="button" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" @click="importJson">Import pasted JSON</button>
+                        <button type="button" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" @click="importJson">Import pasted zone</button>
                     </div>
                 </div>
-                <textarea v-model="jsonInput" rows="6" class="mt-4 w-full rounded-md border border-slate-300 font-mono text-xs dark:border-slate-700 dark:bg-slate-950" placeholder='[{"type":"A","name":"example.com","content":"192.0.2.10","ttl":3600,"proxied":false}]'></textarea>
+                <textarea v-model="jsonInput" rows="6" class="mt-4 w-full rounded-md border border-slate-300 font-mono text-xs dark:border-slate-700 dark:bg-slate-950" placeholder="example.com. 3600 IN A 192.0.2.10 ; cf_tags=cf-proxied:false"></textarea>
                 <p v-if="jsonError" class="mt-2 text-sm text-red-600">{{ jsonError }}</p>
             </section>
 
@@ -155,7 +247,7 @@ const submit = () => {
                                 <td class="p-3"><input v-model="record.proxied" type="checkbox" :disabled="!['A', 'AAAA', 'CNAME'].includes(record.type)" class="rounded disabled:opacity-40" /></td>
                                 <td class="p-3"><button type="button" class="text-red-600 hover:underline" @click="removeRecord(record._key)">Remove</button></td>
                             </tr>
-                            <tr v-if="!rows.length"><td colspan="9" class="p-8 text-center text-slate-500">No draft records. Add one or import Cloudflare JSON.</td></tr>
+                            <tr v-if="!rows.length"><td colspan="9" class="p-8 text-center text-slate-500">No draft records. Add one or import a Cloudflare zone file.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -163,7 +255,7 @@ const submit = () => {
                 <div v-if="form.hasErrors" class="border-t border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">Please correct the invalid record fields and submit again.</div>
                 <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-5 dark:border-slate-800">
                     <Link :href="panelRoute('dns.zones')" class="rounded-md border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">Back to DNS zones</Link>
-                    <button type="button" :disabled="form.processing || selectedCount === 0 || !tokenConfigured" class="rounded-md bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50" @click="submit">{{ form.processing ? 'Syncing…' : `Final submit (${selectedCount})` }}</button>
+                    <button type="button" :disabled="form.processing || selectedCount === 0" class="rounded-md bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50" @click="submit">{{ form.processing ? 'Importing…' : `Import selected (${selectedCount})` }}</button>
                 </div>
             </section>
         </div>
