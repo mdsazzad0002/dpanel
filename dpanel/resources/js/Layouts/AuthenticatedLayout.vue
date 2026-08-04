@@ -141,9 +141,9 @@ const menuItems = computed(() => [
         children: [
             { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'] },
             { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'] },
-            { label: 'Mail Plans', hint: 'Manage subscription plans', icon: 'MP', iconClass: 'bi bi-credit-card', routeName: 'mail-plans.index', roles: ['admin'] },
         ],
     },
+    { label: 'Resource Packages', hint: 'Manage user quotas', icon: 'PK', iconClass: 'bi bi-box-seam', routeName: 'packages.index', roles: ['admin', 'superadmin', 'reseller'], permissions: ['manage_packages'] },
     {
         id: 'database-management',
         label: 'Database Management',
@@ -185,12 +185,13 @@ const menuItems = computed(() => [
 ]);
 
 const hasAccess = (item) => {
-    if (item.permissions?.length) {
-        return item.permissions.some((permission) => userPermissions.value.includes(permission));
+    if (item.permissions?.length || item.roles?.length) {
+        const hasPermission = item.permissions?.some((permission) => userPermissions.value.includes(permission)) ?? false;
+        const hasRole = item.roles?.some((role) => userRoles.value.includes(role)) ?? false;
+        return hasPermission || hasRole;
     }
 
-    if (!item.roles) return true;
-    return item.roles.some((role) => userRoles.value.includes(role));
+    return true;
 };
 
 const visibleMenu = computed(() => menuItems.value

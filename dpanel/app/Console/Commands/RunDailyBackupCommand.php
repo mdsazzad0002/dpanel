@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Backup\CpanelMigrationArchive;
 use App\Support\BackupSettings;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -28,6 +29,8 @@ class RunDailyBackupCommand extends Command
         $backupRoot = storage_path('app/backups');
         $runDirectory = $backupRoot.DIRECTORY_SEPARATOR.$timestamp;
         File::ensureDirectoryExists($runDirectory);
+        @chmod($backupRoot, 02775);
+        @chmod($runDirectory, 02775);
         $settings = app(BackupSettings::class)->read();
 
         $hasFailure = false;
@@ -52,15 +55,27 @@ class RunDailyBackupCommand extends Command
             }
         }
 
+        if ($only === 'all' && ! $hasFailure) {
+            try {
+                $archive = app(CpanelMigrationArchive::class)->create($runDirectory, $timestamp);
+                $this->info('cPanel-style migration package created: '.$archive);
+            } catch (\Throwable $e) {
+                $hasFailure = true;
+                $this->error('Migration package failed: '.$e->getMessage());
+            }
+        }
+
         $this->cleanupOldBackups($backupRoot, (int) ($settings['retention_days'] ?? 7));
 
         if (! $hasFailure && (bool) ($settings['remote_upload_enabled'] ?? false)) {
             $uploadResult = $this->uploadRunDirectory($runDirectory, $settings);
             if ($uploadResult['success']) {
                 $this->info('Remote backup upload completed.');
+                $this->writeScpStatus('success', $timestamp, 'Remote backup upload completed.');
             } else {
                 $hasFailure = true;
                 $this->error('Remote backup upload failed: '.$uploadResult['message']);
+                $this->writeScpStatus('failed', $timestamp, $uploadResult['message']);
             }
         }
 
@@ -259,7 +274,7 @@ class RunDailyBackupCommand extends Command
         }
 
         $zipPath = $runDirectory.DIRECTORY_SEPARATOR.'app-data.zip';
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             return [
                 'success' => false,
@@ -462,4 +477,15 @@ class RunDailyBackupCommand extends Command
         ];
     }
 
+    private function writeScpStatus(string $status, string $run, string $message): void
+    {
+        $directory = storage_path('app/backup-status');
+        File::ensureDirectoryExists($directory);
+        File::put($directory.DIRECTORY_SEPARATOR.'scp.json', json_encode([
+            'status' => $status,
+            'run' => $run,
+            'message' => $message,
+            'updated_at' => now()->toIso8601String(),
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+    }
 }

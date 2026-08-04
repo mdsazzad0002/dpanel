@@ -49,9 +49,6 @@ const deleteMailbox = (id) => {
             </div>
 
             <div class="flex justify-end gap-2">
-                <Link :href="panelRoute('mail-plans.index')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    Mail Plans
-                </Link>
                 <Link :href="panelRoute('emails.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Email
                 </Link>

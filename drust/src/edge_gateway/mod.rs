@@ -1,3 +1,4 @@
+mod bandwidth;
 mod config;
 mod dispatcher;
 mod matching;
@@ -25,3 +26,4 @@ pub use tls::{
     TlsIdentity, TlsListenerConfig, TlsStore, build_tls_config, default_tls_runtime,
     scaffold_tls_listener_config,
 };
+pub use bandwidth::BandwidthTracker;

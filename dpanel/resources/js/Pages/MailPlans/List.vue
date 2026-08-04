@@ -18,8 +18,8 @@ defineProps({
 });
 
 const deletePlan = (id) => {
-    if (!confirm('Delete this plan? Mailboxes using it will have their plan removed.')) return;
-    deleteForm.delete(panelRoute('mail-plans.destroy', { id }));
+    if (!confirm('Delete this package? It must not have assigned users or mailboxes.')) return;
+    deleteForm.delete(panelRoute('packages.destroy', { id }));
 };
 
 const formatStorage = (mb) => {
@@ -34,13 +34,13 @@ const formatMailboxes = (count) => {
 </script>
 
 <template>
-    <Head title="Mail Plans" />
+    <Head title="Resource Packages" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Mail Plans</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Manage mailbox subscription plans and quotas.</p>
+                <h1 class="text-lg font-semibold">Resource Packages</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Manage hard quotas assigned to domain users.</p>
             </div>
         </template>
 
@@ -53,11 +53,11 @@ const formatMailboxes = (count) => {
             </div>
 
             <div class="flex items-center justify-between">
-                <Link :href="panelRoute('emails.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    Back to Emails
+                <Link :href="panelRoute('users.manage')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                    Manage Users
                 </Link>
-                <Link :href="panelRoute('mail-plans.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
-                    Create Plan
+                <Link :href="panelRoute('packages.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
+                    Create Package
                 </Link>
             </div>
 
@@ -65,7 +65,8 @@ const formatMailboxes = (count) => {
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800">
                         <tr>
-                            <th class="px-4 py-3">Plan</th>
+                            <th class="px-4 py-3">Package</th>
+                            <th class="px-4 py-3">Owner</th>
                             <th class="px-4 py-3">Storage</th>
                             <th class="px-4 py-3">Mailboxes</th>
                             <th class="px-4 py-3">Features</th>
@@ -79,8 +80,16 @@ const formatMailboxes = (count) => {
                                 <div class="font-medium">{{ plan.name }}</div>
                                 <div class="text-xs text-slate-500">{{ plan.slug }}</div>
                             </td>
+                            <td class="px-4 py-3">
+                                <div class="text-sm">{{ plan.owner?.name ?? 'Admin' }}</div>
+                                <div v-if="plan.owner?.email" class="text-xs text-slate-500">{{ plan.owner.email }}</div>
+                            </td>
                             <td class="px-4 py-3">{{ formatStorage(plan.max_storage_mb) }}</td>
-                            <td class="px-4 py-3">{{ formatMailboxes(plan.max_mailboxes) }}</td>
+                            <td class="px-4 py-3 text-xs">
+                                <div>{{ formatMailboxes(plan.max_mailboxes) }} mailboxes</div>
+                                <div>{{ plan.max_websites }} websites · {{ plan.max_databases }} databases</div>
+                                <div>{{ plan.max_bandwidth_gb }} GB bandwidth</div>
+                            </td>
                             <td class="px-4 py-3">
                                 <div class="flex flex-wrap gap-1">
                                     <span v-if="plan.allow_forwarding" class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">Forwarding</span>
@@ -91,14 +100,16 @@ const formatMailboxes = (count) => {
                             <td class="px-4 py-3">
                                 <div class="text-sm">{{ plan.mailbox_count }} mailboxes</div>
                                 <div class="text-xs text-slate-500">{{ formatStorage(plan.total_storage_mb) }} used</div>
+                                <div class="text-xs text-slate-500">{{ plan.assigned_users_count }} assigned users</div>
                             </td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
-                                    <Link :href="panelRoute('mail-plans.edit', { id: plan.id })" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                                    <Link v-if="plan.can_manage" :href="panelRoute('packages.edit', { id: plan.id })" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                         Edit
                                     </Link>
                                     <button
-                                        :disabled="deleteForm.processing || plan.mailbox_count > 0"
+                                        v-if="plan.can_manage"
+                                        :disabled="deleteForm.processing || plan.mailbox_count > 0 || plan.assigned_users_count > 0"
                                         class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-400"
                                         @click="deletePlan(plan.id)"
                                     >
@@ -108,7 +119,7 @@ const formatMailboxes = (count) => {
                             </td>
                         </tr>
                         <tr v-if="plans.length === 0">
-                            <td colspan="6" class="px-4 py-6 text-center text-slate-500">No plans found. Create one to get started.</td>
+                            <td colspan="7" class="px-4 py-6 text-center text-slate-500">No packages found. Create one to get started.</td>
                         </tr>
                     </tbody>
                 </table>

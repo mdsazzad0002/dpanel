@@ -26,6 +26,7 @@ class RolePermissionSeeder extends Seeder
             'manage_websites',
             'manage_email',
             'manage_subscriptions',
+            'manage_packages',
             'manage_users',
         ];
 
@@ -34,7 +35,7 @@ class RolePermissionSeeder extends Seeder
         }
 
         // Keep only system user types.
-        $systemRoles = ['admin', 'reseller', 'general'];
+        $systemRoles = ['superadmin', 'admin', 'reseller', 'general'];
 
         // Migrate legacy role name to the current one.
         $legacyGeneralRole = Role::query()->where('name', 'general_user')->first();
@@ -58,9 +59,11 @@ class RolePermissionSeeder extends Seeder
         $allPermissions = Permission::query()->pluck('name')->values()->all();
 
         $admin = Role::firstOrCreate(['name' => 'admin']);
+
         Role::firstOrCreate(['name' => 'reseller']);
         Role::firstOrCreate(['name' => 'general']);
 
         $admin->syncPermissions($allPermissions);
+
     }
 }

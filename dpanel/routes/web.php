@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\DashboardController;
@@ -199,24 +198,25 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->name('mailbox.mark-read');
 
-            Route::get('/mail-plans', [MailPlanController::class, 'index'])
-                ->middleware('role:admin')
-                ->name('mail-plans.index');
-            Route::get('/mail-plans/create', [MailPlanController::class, 'create'])
-                ->middleware('role:admin')
-                ->name('mail-plans.create');
-            Route::post('/mail-plans', [MailPlanController::class, 'store'])
-                ->middleware('role:admin')
-                ->name('mail-plans.store');
-            Route::get('/mail-plans/{id}/edit', [MailPlanController::class, 'edit'])
-                ->middleware('role:admin')
-                ->name('mail-plans.edit');
-            Route::patch('/mail-plans/{id}', [MailPlanController::class, 'update'])
-                ->middleware('role:admin')
-                ->name('mail-plans.update');
-            Route::delete('/mail-plans/{id}', [MailPlanController::class, 'destroy'])
-                ->middleware('role:admin')
-                ->name('mail-plans.destroy');
+            Route::redirect('/mail-plans', '/packages');
+            Route::get('/packages', [MailPlanController::class, 'index'])
+                ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
+                ->name('packages.index');
+            Route::get('/packages/create', [MailPlanController::class, 'create'])
+                ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
+                ->name('packages.create');
+            Route::post('/packages', [MailPlanController::class, 'store'])
+                ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
+                ->name('packages.store');
+            Route::get('/packages/{id}/edit', [MailPlanController::class, 'edit'])
+                ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
+                ->name('packages.edit');
+            Route::patch('/packages/{id}', [MailPlanController::class, 'update'])
+                ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
+                ->name('packages.update');
+            Route::delete('/packages/{id}', [MailPlanController::class, 'destroy'])
+                ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
+                ->name('packages.destroy');
 
             Route::get('/backups', [BackupController::class, 'index'])
                 ->middleware('role:admin|reseller')
@@ -224,14 +224,29 @@ Route::prefix('cpsess{token}')
             Route::post('/backups/run', [BackupController::class, 'runNow'])
                 ->middleware('role:admin|reseller')
                 ->name('backups.run');
+            Route::get('/backups/scp', [BackupController::class, 'scp'])
+                ->middleware('role:admin|reseller')
+                ->name('backups.scp');
+            Route::patch('/backups/scp/settings', [BackupController::class, 'updateScpSettings'])
+                ->middleware('role:admin|reseller')
+                ->name('backups.scp.settings.update');
             Route::patch('/backups/settings', [BackupController::class, 'updateSettings'])
                 ->middleware('role:admin|reseller')
                 ->name('backups.settings.update');
+            Route::get('/backups/{run}/fetch/{encoded}', [BackupController::class, 'downloadEncoded'])
+                ->middleware('role:admin|reseller')
+                ->where('run', '[0-9]{8}_[0-9]{6}')
+                ->where('encoded', '[A-Za-z0-9_-]+')
+                ->name('backups.download');
+            Route::get('/backups/{run}/download', [BackupController::class, 'downloadFromQuery'])
+                ->middleware('role:admin|reseller')
+                ->where('run', '[0-9]{8}_[0-9]{6}')
+                ->name('backups.download.query');
             Route::get('/backups/{run}/{file}', [BackupController::class, 'download'])
                 ->middleware('role:admin|reseller')
                 ->where('run', '[0-9]{8}_[0-9]{6}')
                 ->where('file', '[^/]+')
-                ->name('backups.download');
+                ->name('backups.download.legacy');
             Route::delete('/backups/{run}', [BackupController::class, 'destroyRun'])
                 ->middleware('role:admin|reseller')
                 ->where('run', '[0-9]{8}_[0-9]{6}')
@@ -472,7 +487,7 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->name('security.firewall.guide');
 
-            Route::get('/admin', [AdminController::class, 'index'])
+            Route::get('/admin', [UserManagementController::class, 'index'])
                 ->middleware('role:admin')
                 ->name('admin.panel');
 
@@ -486,15 +501,9 @@ Route::prefix('cpsess{token}')
             Route::get('/users/manage', [UserManagementController::class, 'index'])
                 ->middleware('role:admin|reseller|general|general_user')
                 ->name('users.manage');
-            Route::get('/users/manage/create', [UserManagementController::class, 'create'])
-                ->middleware('role:admin|reseller')
-                ->name('users.manage.create');
             Route::post('/users/manage', [UserManagementController::class, 'store'])
                 ->middleware('role:admin|reseller')
                 ->name('users.manage.store');
-            Route::get('/users/manage/{user}/edit', [UserManagementController::class, 'edit'])
-                ->middleware('role:admin|reseller')
-                ->name('users.manage.edit');
             Route::patch('/users/manage/{user}', [UserManagementController::class, 'update'])
                 ->middleware('role:admin|reseller')
                 ->name('users.manage.update');

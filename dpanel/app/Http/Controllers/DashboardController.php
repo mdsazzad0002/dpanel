@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\Mailbox;
+use App\Models\MailDomain;
+use App\Models\PanelSession;
 use App\Models\User;
 use App\Models\Website;
 use Illuminate\Http\Request;
@@ -23,7 +25,114 @@ class DashboardController extends Controller
             'dashboardStats' => $stats,
             'websiteRecords' => $this->buildWebsiteRecords($actor),
             'websiteScopeLabel' => $this->websiteScopeLabel($actor),
+            'accountSummary' => $this->buildAccountSummary($actor),
+            'canViewServerUsage' => (bool) $actor?->hasRole('admin'),
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function buildAccountSummary(?User $actor): array
+    {
+        if ($actor === null) {
+            return [];
+        }
+
+        $actor->loadMissing('package');
+        $userIds = $actor->hasRole('reseller')
+            ? User::query()->whereKey($actor->id)->orWhere('reseller_id', $actor->id)->pluck('id')->all()
+            : [$actor->id];
+
+        $websiteQuery = Website::query()->whereIn('assigned_user_id', $userIds)
+            ->whereNotIn('type', ['alis', 'alias']);
+        if ($actor->hasRole('reseller')) {
+            $websiteQuery->orWhere(function ($query) use ($actor): void {
+                $query->where('assigned_reseller_id', $actor->id)
+                    ->whereNull('assigned_user_id')
+                    ->whereNotIn('type', ['alis', 'alias']);
+            });
+        }
+
+        $websites = $websiteQuery->get(['domain', 'root_path']);
+        $domains = $websites->pluck('domain')
+            ->merge(MailDomain::query()->whereIn('assigned_user_id', $userIds)->pluck('domain'))
+            ->map(fn ($domain) => strtolower(trim((string) $domain)))
+            ->filter()->unique()->values()->all();
+        $mailboxes = Mailbox::query()->whereIn('domain', $domains);
+        $session = PanelSession::query()->where('user_id', $actor->id)->latest('created_at')->first();
+        $package = $actor->package;
+        $bandwidth = $this->bandwidthUsage($domains);
+
+        return [
+            'scope' => $actor->hasRole('reseller') ? 'Reseller aggregate usage' : 'Your account usage',
+            'package_name' => $package?->name,
+            'package_owner' => $package?->owner_user_id === null ? 'Admin' : 'Reseller',
+            'disk_used_mb' => $this->websiteDiskUsageMb($websites->pluck('root_path')->all()),
+            'disk_limit_mb' => $package?->max_storage_mb,
+            'mailboxes_used' => (int) $mailboxes->count(),
+            'mailboxes_limit' => $package?->max_mailboxes,
+            'mail_storage_mb' => (int) $mailboxes->sum('quota_mb'),
+            'websites_used' => $websites->count(),
+            'websites_limit' => $package?->max_websites,
+            'databases_used' => (int) DatabaseRequest::query()->whereIn('assigned_user_id', $userIds)->count(),
+            'databases_limit' => $package?->max_databases,
+            'bandwidth_used_gb' => $bandwidth['used_gb'],
+            'bandwidth_limit_gb' => $package?->max_bandwidth_gb,
+            'bandwidth_requests' => $bandwidth['requests'],
+            'bandwidth_status' => $bandwidth['status'],
+            'last_login_ip' => $session?->ip_address,
+            'last_login_at' => $session?->created_at?->toIso8601String(),
+        ];
+    }
+
+    /** @param array<int, mixed> $paths */
+    private function websiteDiskUsageMb(array $paths): float
+    {
+        $bytes = 0;
+        foreach (collect($paths)->map(fn ($path) => trim((string) $path))->filter()->unique() as $path) {
+            if ($path === '' || ! is_dir($path)) {
+                continue;
+            }
+            $output = @shell_exec('du -sb -- '.escapeshellarg($path).' 2>/dev/null');
+            if (is_string($output) && preg_match('/^(\d+)/', trim($output), $matches) === 1) {
+                $bytes += (int) $matches[1];
+            }
+        }
+
+        return round($bytes / 1024 / 1024, 2);
+    }
+
+    /** @param array<int, string> $domains
+     *  @return array{used_gb: float, requests: int, status: string}
+     */
+    private function bandwidthUsage(array $domains): array
+    {
+        $path = rtrim((string) config('serverpanel.bandwidth_directory'), '/')
+            .'/'.now('UTC')->format('Y-m').'.json';
+        if (! is_file($path)) {
+            return ['used_gb' => 0.0, 'requests' => 0, 'status' => 'Waiting for traffic'];
+        }
+        $payload = @file_get_contents($path);
+        $usage = is_string($payload) ? json_decode($payload, true) : null;
+        if (! is_array($usage)) {
+            return ['used_gb' => 0.0, 'requests' => 0, 'status' => 'Tracker data unavailable'];
+        }
+
+        $bytes = 0;
+        $requests = 0;
+        foreach ($domains as $domain) {
+            $record = $usage[strtolower(trim($domain))] ?? null;
+            if (! is_array($record)) {
+                continue;
+            }
+            $bytes += (int) ($record['upload_bytes'] ?? 0) + (int) ($record['download_bytes'] ?? 0);
+            $requests += (int) ($record['requests'] ?? 0);
+        }
+
+        return [
+            'used_gb' => round($bytes / 1024 / 1024 / 1024, 6),
+            'requests' => $requests,
+            'status' => 'Live · current month',
+        ];
     }
 
     /**
@@ -38,19 +147,20 @@ class DashboardController extends Controller
 
         $mailboxes = $this->safeCountMailboxes();
         $mailQueue = $this->mailQueueCount();
-        $system = $this->systemSnapshot();
+        $canViewServerUsage = (bool) $actor?->hasRole('admin');
+        $system = $canViewServerUsage ? $this->systemSnapshot() : null;
 
         return [
             'hostname' => $this->serverHostname(),
             'server_ip' => $this->serverIpAddress(),
             'os' => $this->serverOsName(),
             'uptime' => $this->serverUptime(),
-            'cpu_cores' => $this->cpuCoreCount(),
-            'cpu_load_percent' => $system['cpu_load_percent'],
-            'memory_used_mb' => $system['memory_used_mb'],
-            'memory_total_mb' => $system['memory_total_mb'],
-            'disk_used_gb' => $system['disk_used_gb'],
-            'disk_total_gb' => $system['disk_total_gb'],
+            'cpu_cores' => $canViewServerUsage ? $this->cpuCoreCount() : null,
+            'cpu_load_percent' => $system['cpu_load_percent'] ?? null,
+            'memory_used_mb' => $system['memory_used_mb'] ?? null,
+            'memory_total_mb' => $system['memory_total_mb'] ?? null,
+            'disk_used_gb' => $system['disk_used_gb'] ?? null,
+            'disk_total_gb' => $system['disk_total_gb'] ?? null,
             'websites_total' => $websites,
             'websites_pending' => $websitePending,
             'mailboxes_total' => $mailboxes,

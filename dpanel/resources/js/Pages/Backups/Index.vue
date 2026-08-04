@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 
@@ -8,26 +8,17 @@ const props = defineProps({
     retentionDays: { type: Number, default: 7 },
     backupSchedule: { type: Object, default: () => ({ enabled: true, time: '02:30' }) },
     remoteUpload: { type: Object, default: () => ({ enabled: false, host: '', path: '', user: '', port: '22' }) },
+    scpStatus: { type: Object, default: () => ({ status: 'never', updated_at: null }) },
+    websites: { type: Array, default: () => [] },
     runs: { type: Array, default: () => [] },
 });
 
 const page = usePage();
+const backupCanvasOpen = ref(false);
 const runForm = useForm({
-    only: 'all',
-});
-const settingsForm = useForm({
-    schedule_enabled: Boolean(props.backupSchedule?.enabled),
-    schedule_time: props.backupSchedule?.time || '02:30',
-    retention_days: Number(props.retentionDays || 7),
-    remote_upload_enabled: Boolean(props.remoteUpload?.enabled),
-    remote_host: props.remoteUpload?.host || '',
-    remote_port: Number(props.remoteUpload?.port || 22),
-    remote_user: props.remoteUpload?.user || '',
-    remote_path: props.remoteUpload?.path || '',
-    remote_ssh_key_path: props.remoteUpload?.ssh_key_path || '',
-    remote_strict_host_checking: Boolean(props.remoteUpload?.strict_host_checking ?? true),
-    remote_ssh_path: props.remoteUpload?.ssh_path || 'ssh',
-    remote_scp_path: props.remoteUpload?.scp_path || 'scp',
+    filter: 'all',
+    content: 'all',
+    website_id: '',
 });
 const deleteForm = useForm({});
 
@@ -46,8 +37,15 @@ const bytesToLabel = (bytes) => {
     return `${(value / 1024 ** 3).toFixed(2)} GB`;
 };
 
+const downloadToken = (filename) => btoa(String(filename))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+
 const runBackup = () => {
-    runForm.post(route('backups.run'));
+    runForm.post(route('backups.run'), {
+        onSuccess: () => { backupCanvasOpen.value = false; },
+    });
 };
 
 const deleteRun = (runName) => {
@@ -55,9 +53,6 @@ const deleteRun = (runName) => {
     deleteForm.delete(route('backups.destroy', runName));
 };
 
-const saveSettings = () => {
-    settingsForm.patch(route('backups.settings.update'));
-};
 </script>
 
 <template>
@@ -67,7 +62,7 @@ const saveSettings = () => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Backups</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Create and download panel backups.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Create portable, cPanel-style migration backups.</p>
             </div>
         </template>
 
@@ -110,101 +105,121 @@ const saveSettings = () => {
                 </div>
             </section>
 
-            <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Backup Settings</h2>
-                <form class="mt-4 grid gap-4 md:grid-cols-2" @submit.prevent="saveSettings">
-                    <label class="flex items-center gap-2 text-sm md:col-span-2">
-                        <input v-model="settingsForm.schedule_enabled" type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                        Enable daily backup schedule
-                    </label>
+            <Link :href="route('backups.scp')" class="block rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-5 shadow-sm transition hover:border-indigo-400 hover:shadow dark:border-indigo-900 dark:from-indigo-950/50 dark:to-slate-900">
+                <div class="flex flex-wrap items-center justify-between gap-5">
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Daily Time (HH:MM)</label>
-                        <input v-model="settingsForm.schedule_time" type="time" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                        <p v-if="settingsForm.errors.schedule_time" class="mt-1 text-xs text-red-600">{{ settingsForm.errors.schedule_time }}</p>
+                        <div class="flex items-center gap-2">
+                            <i class="itc bi bi-cloud-arrow-up text-indigo-600"></i>
+                            <h2 class="font-semibold">SCP Backup</h2>
+                            <span :class="remoteUpload?.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'" class="rounded-full px-2 py-0.5 text-xs font-medium">
+                                {{ remoteUpload?.enabled ? 'Enabled' : 'Disabled' }}
+                            </span>
+                        </div>
+                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                            Last status: <span class="font-medium capitalize">{{ scpStatus?.status || 'never' }}</span>
+                            <span v-if="scpStatus?.updated_at"> · {{ scpStatus.updated_at }}</span>
+                        </p>
                     </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Retention Days</label>
-                        <input v-model.number="settingsForm.retention_days" type="number" min="1" max="3650" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                        <p v-if="settingsForm.errors.retention_days" class="mt-1 text-xs text-red-600">{{ settingsForm.errors.retention_days }}</p>
+                    <div class="ml-auto flex flex-wrap items-center gap-2">
+                        <div class="min-w-24 rounded-lg border border-indigo-200 bg-white/80 px-3 py-2 dark:border-indigo-800 dark:bg-slate-900/70">
+                            <p class="text-[10px] uppercase tracking-wide text-slate-400">Time</p>
+                            <p class="mt-0.5 text-sm font-semibold">{{ backupSchedule?.enabled ? backupSchedule?.time : 'Disabled' }}</p>
+                        </div>
+                        <div class="min-w-24 rounded-lg border border-indigo-200 bg-white/80 px-3 py-2 dark:border-indigo-800 dark:bg-slate-900/70">
+                            <p class="text-[10px] uppercase tracking-wide text-slate-400">Period</p>
+                            <p class="mt-0.5 text-sm font-semibold">{{ retentionDays }} days</p>
+                        </div>
+                        <span class="ml-2 text-sm font-medium text-indigo-600">Open Settings →</span>
                     </div>
+                </div>
+            </Link>
 
-                    <label class="flex items-center gap-2 text-sm md:col-span-2">
-                        <input v-model="settingsForm.remote_upload_enabled" type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                        Enable auto-upload to remote server after backup
-                    </label>
-
+            <section class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white p-5 dark:border-blue-900 dark:from-blue-950/40 dark:to-slate-900">
+                <div class="flex items-center gap-4">
+                    <span class="grid h-12 w-12 place-items-center rounded-xl bg-blue-600 text-xl text-white shadow-sm"><i class="itc bi bi-cloud-arrow-up"></i></span>
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Remote Host</label>
-                        <input v-model="settingsForm.remote_host" type="text" placeholder="192.168.1.20 or backup.example.com" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <h2 class="font-semibold">Create a Backup</h2>
+                        <p class="mt-1 text-sm text-slate-500">Choose scope and content from the backup drawer.</p>
+                        <p class="mt-1 text-xs text-slate-400">{{ backupRoot }} · {{ backupSchedule?.enabled ? `Daily at ${backupSchedule?.time}` : 'Schedule disabled' }}</p>
                     </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Remote Port</label>
-                        <input v-model.number="settingsForm.remote_port" type="number" min="1" max="65535" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Remote User</label>
-                        <input v-model="settingsForm.remote_user" type="text" placeholder="ubuntu" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Remote Path</label>
-                        <input v-model="settingsForm.remote_path" type="text" placeholder="/home/ubuntu/backups/serverpanel" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">SSH Key Path (optional)</label>
-                        <input v-model="settingsForm.remote_ssh_key_path" type="text" placeholder="/home/user/.ssh/id_rsa" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">SSH Binary</label>
-                        <input v-model="settingsForm.remote_ssh_path" type="text" placeholder="ssh" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">SCP Binary</label>
-                        <input v-model="settingsForm.remote_scp_path" type="text" placeholder="scp" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <label class="flex items-center gap-2 text-sm md:col-span-2">
-                        <input v-model="settingsForm.remote_strict_host_checking" type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                        Strict host key checking
-                    </label>
-
-                    <div class="md:col-span-2">
-                        <button type="submit" :disabled="settingsForm.processing" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
-                            {{ settingsForm.processing ? 'Saving...' : 'Save Backup Settings' }}
-                        </button>
-                    </div>
-                </form>
+                </div>
+                <button type="button" class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700" @click="backupCanvasOpen = true">
+                    <i class="itc bi bi-plus-circle mr-1"></i> New Backup
+                </button>
             </section>
 
-            <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <form class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between" @submit.prevent="runBackup">
-                    <div class="grid gap-1">
-                        <label class="text-sm font-medium">Backup Type</label>
-                        <select v-model="runForm.only" class="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                            <option value="all">All (DB + Files)</option>
-                            <option value="db">Database Only</option>
-                            <option value="files">Files Only</option>
+            <div v-if="backupCanvasOpen" class="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="Create backup">
+                <button type="button" class="absolute inset-0 h-full w-full bg-slate-950/50 backdrop-blur-[1px]" aria-label="Close backup drawer" @click="backupCanvasOpen = false"></button>
+                <aside class="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl dark:bg-slate-900">
+                    <div class="flex items-start justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+                        <div>
+                            <h2 class="text-lg font-semibold">Create Backup</h2>
+                            <p class="text-xs text-slate-500">Configure a dRust backup job.</p>
+                        </div>
+                        <button type="button" class="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close" @click="backupCanvasOpen = false"><i class="itc bi bi-x-lg"></i></button>
+                    </div>
+                    <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="runBackup">
+                        <div class="flex-1 space-y-6 overflow-y-auto p-5">
+                            <div class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+                                Full backups create a portable cPanel-style <span class="font-mono">backup-*.tar.gz</span> migration package.
+                            </div>
+                    <div>
+                        <div class="mb-3">
+                            <h3 class="text-sm font-semibold">1. Backup Filter</h3>
+                            <p class="text-xs text-slate-500">Choose the account scope for this backup.</p>
+                        </div>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <button type="button" :class="runForm.filter === 'all' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100 dark:bg-blue-950/40 dark:ring-blue-900' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'" class="flex items-center gap-3 rounded-xl border p-4 text-left transition" @click="runForm.filter = 'all'; runForm.website_id = ''">
+                                <span class="grid h-10 w-10 place-items-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50"><i class="itc bi bi-hdd-stack"></i></span>
+                                <span><span class="block text-sm font-semibold">All</span><span class="block text-xs text-slate-500">Complete panel backup</span></span>
+                                <i v-if="runForm.filter === 'all'" class="itc bi bi-check-circle-fill ml-auto text-blue-600"></i>
+                            </button>
+                            <button type="button" :class="runForm.filter === 'website' ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-100 dark:bg-violet-950/40 dark:ring-violet-900' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'" class="flex items-center gap-3 rounded-xl border p-4 text-left transition" @click="runForm.filter = 'website'">
+                                <span class="grid h-10 w-10 place-items-center rounded-lg bg-violet-100 text-violet-600 dark:bg-violet-900/50"><i class="itc bi bi-globe2"></i></span>
+                                <span><span class="block text-sm font-semibold">Website Wise</span><span class="block text-xs text-slate-500">One main domain only</span></span>
+                                <i v-if="runForm.filter === 'website'" class="itc bi bi-check-circle-fill ml-auto text-violet-600"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div v-if="runForm.filter === 'website'" class="rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900 dark:bg-violet-950/20">
+                        <label class="mb-2 block text-sm font-semibold">Select Main Domain</label>
+                        <select v-model="runForm.website_id" required :disabled="websites.length === 0" class="w-full rounded-lg border border-violet-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:ring-violet-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-violet-800 dark:bg-slate-900">
+                            <option value="" disabled>{{ websites.length ? 'Choose a website' : 'No customer main domain available' }}</option>
+                            <option v-for="website in websites" :key="website.id" :value="website.id">{{ website.domain }}</option>
                         </select>
+                        <p class="mt-2 text-xs text-slate-500">Aliases and subdomains are covered by their parent folder.</p>
+                        <p v-if="runForm.errors.website_id" class="mt-1 text-xs text-red-600">{{ runForm.errors.website_id }}</p>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <button type="submit" :disabled="runForm.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                            {{ runForm.processing ? 'Running...' : 'Run Backup Now' }}
-                        </button>
-                        <Link :href="route('monitoring.index')" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                            Monitoring
-                        </Link>
+
+                    <div>
+                        <div class="mb-3">
+                            <h3 class="text-sm font-semibold">2. Backup Content</h3>
+                            <p class="text-xs text-slate-500">Select what should be included in the archive.</p>
+                        </div>
+                        <div class="grid gap-3 sm:grid-cols-3">
+                            <button v-for="item in [{ value: 'all', label: 'All', hint: 'Files + database', icon: 'bi-archive' }, { value: 'files', label: 'Files', hint: 'Website or panel files', icon: 'bi-folder2-open' }, { value: 'database', label: 'Database', hint: 'SQL dump only', icon: 'bi-database' }]" :key="item.value" type="button" :class="runForm.content === item.value ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100 dark:bg-emerald-950/30 dark:ring-emerald-900' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'" class="relative rounded-xl border p-4 text-left transition" @click="runForm.content = item.value">
+                                <i :class="item.icon" class="itc bi text-lg text-emerald-600"></i>
+                                <span class="mt-2 block text-sm font-semibold">{{ item.label }}</span>
+                                <span class="block text-xs text-slate-500">{{ item.hint }}</span>
+                                <i v-if="runForm.content === item.value" class="itc bi bi-check-circle-fill absolute right-3 top-3 text-emerald-600"></i>
+                            </button>
+                        </div>
                     </div>
-                </form>
-                <p class="mt-3 text-xs text-slate-500">Backup folder: {{ backupRoot }}</p>
-                <p class="mt-1 text-xs text-slate-500">
-                    Schedule: {{ backupSchedule?.enabled ? `Enabled at ${backupSchedule?.time || '02:30'}` : 'Disabled' }}
-                </p>
-                <p class="mt-1 text-xs text-slate-500">
-                    Remote upload:
-                    <span v-if="remoteUpload?.enabled">
-                        Enabled ({{ remoteUpload?.user }}@{{ remoteUpload?.host }}:{{ remoteUpload?.path }} | port {{ remoteUpload?.port }})
-                    </span>
-                    <span v-else>Disabled</span>
-                </p>
-            </section>
+
+                        </div>
+                    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                        <p class="text-xs text-slate-500"><span class="font-medium text-slate-700 dark:text-slate-200">Selected:</span> {{ runForm.filter === 'all' ? 'All' : 'Website Wise' }} · {{ runForm.content === 'database' ? 'Database' : runForm.content.charAt(0).toUpperCase() + runForm.content.slice(1) }}</p>
+                        <div class="flex items-center gap-2">
+                            <Link :href="route('monitoring.index')" class="rounded-lg border border-slate-300 px-4 py-2.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Monitoring</Link>
+                            <button type="submit" :disabled="runForm.processing || (runForm.filter === 'website' && (!runForm.website_id || websites.length === 0))" class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+                                <i class="itc bi bi-play-circle mr-1"></i>{{ runForm.processing ? 'Running Backup...' : 'Run Backup Now' }}
+                            </button>
+                        </div>
+                    </div>
+                    </form>
+                </aside>
+            </div>
 
             <section class="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <table class="min-w-full text-left text-sm">
@@ -225,7 +240,7 @@ const saveSettings = () => {
                                     <li v-for="file in run.files || []" :key="`${run.name}-${file.name}`" class="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
                                         <span class="font-mono">{{ file.name }}</span>
                                         <span class="text-slate-500">({{ bytesToLabel(file.size_bytes) }})</span>
-                                        <a :href="route('backups.download', { run: run.name, file: file.name })" class="rounded border border-slate-300 px-2 py-0.5 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                                        <a :href="route('backups.download', { run: run.name, encoded: downloadToken(file.name) })" class="rounded border border-slate-300 px-2 py-0.5 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" download>
                                             Download
                                         </a>
                                     </li>

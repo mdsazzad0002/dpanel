@@ -27,6 +27,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'is_suspended',
         'suspended_at',
         'reseller_id',
+        'package_id',
         'disk_space_mb_limit',
         'mail_accounts_limit',
         'databases_limit',
@@ -79,5 +80,15 @@ class User extends Authenticatable implements MustVerifyEmail
     public function managedUsers(): HasMany
     {
         return $this->hasMany(User::class, 'reseller_id');
+    }
+
+    public function package(): BelongsTo
+    {
+        return $this->belongsTo(MailPlan::class, 'package_id');
+    }
+
+    public function ownedPackages(): HasMany
+    {
+        return $this->hasMany(MailPlan::class, 'owner_user_id');
     }
 }

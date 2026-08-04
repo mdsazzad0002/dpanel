@@ -21,6 +21,20 @@ Backup files are saved in:
 
 `storage/app/backups/YYYYmmdd_HHMMSS/`
 
+Every full (`--only=all`) run also creates a portable archive named like:
+
+`backup-MM.DD.YYYY_HH-MM-SS_dpanel.tar.gz`
+
+The archive follows the familiar cPanel account-backup layout:
+
+- `homedir/app-data.zip` — panel environment and persistent application data
+- `mysql/database-*.sql` (or `.sqlite`) — the panel database
+- `meta/manifest.json` — format version, source details, sizes and SHA-256 checksums
+
+This is a **cPanel-style dPanel migration package**, not a claim that WHM can import it as a native cPanel account. The explicit layout and versioned manifest keep restores deterministic across dPanel servers.
+
+The web UI starts backups through the authenticated dRust endpoint (`POST /api/v1/backup/run`). dRust uses the explicit CLI binary configured by `DRUST_PHP_CLI` (default `/usr/bin/php`); it never reuses PHP-FPM's `PHP_BINARY`.
+
 Old backups are auto-deleted based on `BACKUP_RETENTION_DAYS`.
 
 ## Environment variables
@@ -67,6 +81,24 @@ Only files:
 ```bash
 php artisan serverpanel:backup --only=files
 ```
+
+## Restore on a new dPanel server
+
+Install the same or a newer compatible dPanel release on the destination, copy the full `backup-*.tar.gz` file there, then validate it first:
+
+```bash
+php artisan serverpanel:restore /path/to/backup-*.tar.gz --dry-run
+```
+
+After the validation succeeds, put the panel in maintenance mode and restore:
+
+```bash
+php artisan down
+php artisan serverpanel:restore /path/to/backup-file.tar.gz --force
+php artisan up
+```
+
+Restore rejects absolute/traversal paths, verifies every manifest checksum, and refuses to modify data unless `--force` is supplied. It restores into the destination's currently configured database. Review `.env`, DNS, SSL, IP addresses, filesystem ownership and service configuration before switching production traffic.
 
 ## Use from panel UI
 

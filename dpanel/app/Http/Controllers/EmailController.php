@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\MailPlan;
 use App\Models\Mailbox;
 use App\Models\Website;
+use App\Services\ResourceQuotaService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,10 @@ class EmailController extends Controller
     private const VMAIL_USER = 'vmail';
     private const VMAIL_GROUP = 'vmail';
 
+    public function __construct(private readonly ResourceQuotaService $quotas)
+    {
+    }
+
     public function webmailEntry(Request $request): RedirectResponse|HttpResponse
     {
         return redirect()->route('emails.list');
@@ -30,7 +35,6 @@ class EmailController extends Controller
     {
         return Inertia::render('CreateEmail', [
             'websiteDomains' => $this->readWebsiteDomains(),
-            'plans' => $this->readPlans(),
         ]);
     }
 
@@ -57,6 +61,10 @@ class EmailController extends Controller
         $email = "{$mailbox}@{$domain}";
         $password = (string) $validated['password'];
 
+        if ($owner = $this->quotas->ownerForDomain($domain)) {
+            $this->quotas->assertMailboxAllowed($owner, (int) $validated['quota_mb'], ! empty($validated['forwarding_to']));
+        }
+
         if (Mailbox::query()->whereRaw('LOWER(email) = ?', [$email])->exists()) {
             return redirect()->route('emails.create')->with('error', "Mailbox {$email} already exists.");
         }
@@ -78,7 +86,7 @@ class EmailController extends Controller
                 'quota_mb' => (int) $validated['quota_mb'],
                 'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
                 'status' => 'active',
-                'plan_id' => ! empty($validated['plan_id']) ? $validated['plan_id'] : null,
+                'plan_id' => $owner?->package_id,
             ]);
         } catch (\Throwable $e) {
             $this->removeMailboxFromStorage($email);
@@ -99,7 +107,6 @@ class EmailController extends Controller
         return Inertia::render('EditEmail', [
             'mailbox' => $mailbox->toArray(),
             'websiteDomains' => $this->readWebsiteDomains(),
-            'plans' => $this->readPlans(),
         ]);
     }
 
@@ -114,6 +121,10 @@ class EmailController extends Controller
         $mailboxRecord = Mailbox::query()->find($id);
         if ($mailboxRecord === null) {
             return redirect()->route('emails.list')->with('error', 'Mailbox not found.');
+        }
+
+        if ($owner = $this->quotas->ownerForDomain($domain)) {
+            $this->quotas->assertMailboxAllowed($owner, (int) $validated['quota_mb'], ! empty($validated['forwarding_to']), $mailboxRecord->id);
         }
 
         $exists = Mailbox::query()
@@ -140,7 +151,7 @@ class EmailController extends Controller
             'password' => $password,
             'quota_mb' => (int) $validated['quota_mb'],
             'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
-            'plan_id' => ! empty($validated['plan_id']) ? $validated['plan_id'] : null,
+            'plan_id' => $owner?->package_id,
         ]);
         $mailboxRecord->save();
 
@@ -829,7 +840,6 @@ CFG;
             'password' => ['required', 'string', 'min:6', 'max:255'],
             'quota_mb' => ['required', 'integer', 'min:1', 'max:102400'],
             'forwarding_to' => ['nullable', 'email', 'max:255'],
-            'plan_id' => ['nullable', 'string', 'exists:mail_plans,id'],
         ]);
     }
 

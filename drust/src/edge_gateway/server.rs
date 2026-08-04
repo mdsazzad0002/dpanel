@@ -16,12 +16,13 @@ use axum::{
 };
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
+use hyper::body::Body as HttpBody;
 use serde::Serialize;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use super::{
-    CachePolicy, DbSnapshotConfig, DispatchContext, ProxyConfig, RouteAction, RouteConfig,
+    BandwidthTracker, CachePolicy, DbSnapshotConfig, DispatchContext, ProxyConfig, RouteAction, RouteConfig,
     RuntimeSnapshot, SiteConfig, SnapshotCacheConfig, StaticFileConfig, TlsConfig, TlsIdentity,
     TlsListenerConfig, TlsStore, UpstreamConfig, build_client, build_tls_config, dispatch,
     health_check_upstream, load_runtime_snapshot, scaffold_tls_listener_config,
@@ -35,6 +36,7 @@ pub struct DemoServerState {
     pub source_config: DbSnapshotConfig,
     pub dispatch: DispatchContext,
     pub proxy_client: Arc<reqwest::Client>,
+    pub bandwidth: BandwidthTracker,
 }
 
 #[derive(Clone)]
@@ -101,6 +103,7 @@ pub fn serve_gateway_with_tls(
     let runtime =
         tokio::runtime::Runtime::new().map_err(|error| format!("runtime build failed: {error}"))?;
     runtime.block_on(async move {
+        state.bandwidth.spawn_periodic_flush();
         let app_router = build_demo_router(state);
         let https_router = app_router.clone();
 
@@ -197,11 +200,23 @@ pub async fn handle_request(
         .headers()
         .get("host")
         .and_then(|value| value.to_str().ok())
-        .unwrap_or("-");
+        .unwrap_or("-")
+        .to_string();
+    let upload_bytes = request.headers().get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
     let path = request.uri().path().to_string();
-    info!(host = host, path = %path, "incoming request");
+    info!(host = %host, path = %path, "incoming request");
     let snapshot = get_cached_snapshot(&state).await;
-    dispatch(&snapshot, &state.dispatch, request, &state.proxy_client).await
+    let canonical_domain = super::resolve_site(&snapshot, &host)
+        .and_then(|site| site.hostnames.first().cloned());
+    let response = dispatch(&snapshot, &state.dispatch, request, &state.proxy_client).await;
+    if let Some(domain) = canonical_domain {
+        let download_bytes = response.body().size_hint().exact().unwrap_or(0);
+        state.bandwidth.record(&domain, upload_bytes, download_bytes);
+    }
+    response
 }
 
 pub async fn handle_reload(State(state): State<Arc<DemoServerState>>) -> Json<ReloadResponse> {
@@ -268,6 +283,7 @@ pub fn make_demo_state(
         source_config,
         dispatch,
         proxy_client: Arc::new(client),
+        bandwidth: BandwidthTracker::from_env(),
     })
 }
 
@@ -299,6 +315,7 @@ pub fn serve_demo_with_tls(
     let runtime =
         tokio::runtime::Runtime::new().map_err(|error| format!("runtime build failed: {error}"))?;
     runtime.block_on(async move {
+        state.bandwidth.spawn_periodic_flush();
         let router = build_demo_router(state);
         let http_listener = tokio::net::TcpListener::bind(http_bind)
             .await

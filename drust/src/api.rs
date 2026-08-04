@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::app;
 
 mod admin;
+mod backup;
 mod cron;
 mod database;
 mod filemanager;
@@ -74,6 +75,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(vhost_ops::routes())
         .merge(website::routes())
         .merge(admin::routes())
+        .merge(backup::routes())
         .merge(filemanager::routes())
         .merge(php::routes())
         .merge(ssl::routes())

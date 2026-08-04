@@ -8,6 +8,7 @@ use App\Models\DatabaseRequest;
 use App\Models\Domain;
 use App\Models\SslCertificate;
 use App\Models\Website;
+use App\Models\User;
 use App\Models\WebsiteTrashBackup;
 use App\Services\Cron\CronSystemService;
 use App\Services\Dns\WebsiteDnsProvisionService;
@@ -17,6 +18,7 @@ use App\Services\Php\PhpService;
 use App\Services\Ssl\SslLifecycleService;
 use App\Services\Website\WebsiteService;
 use App\Services\Website\WebsiteTrashService;
+use App\Services\ResourceQuotaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -37,17 +39,22 @@ class MainWebsiteController extends Controller
         protected SslLifecycleService $sslLifecycleService,
         protected CronSystemService $cronSystemService,
         protected WebsiteDnsProvisionService $websiteDnsProvisionService,
+        protected ResourceQuotaService $quotas,
     ) {
     }
 
     /**
      * Show website creation page.
      */
-    public function create(): Response
+    public function create(Request $request): Response
     {
         return Inertia::render('Websites/Create', [
             'serverBaseDir' => PathService::websiteBaseDirectory(),
-            'phpVersions' => PhpService::getPhpVersions()]
+            'phpVersions' => PhpService::getPhpVersions(),
+            'domainUsers' => User::query()
+                ->when($request->user()?->hasRole('reseller'), fn ($query) => $query->where('reseller_id', $request->user()->id))
+                ->whereHas('roles', fn ($query) => $query->whereIn('name', ['general', 'general_user']))
+                ->orderBy('name')->get(['id', 'name', 'email', 'package_id'])]
         );
     }
 
@@ -122,6 +129,7 @@ class MainWebsiteController extends Controller
             'domain_type' => ['required', 'string', 'in:main,alis,sub'],
             'enable_ssl' => ['boolean'],
             'manage_dns' => ['boolean'],
+            'assigned_user_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
         if ($validator->fails()) {
@@ -134,6 +142,17 @@ class MainWebsiteController extends Controller
 
         $validated = $validator->validated();
 
+        $assignedUser = ! empty($validated['assigned_user_id'])
+            ? User::query()->find((int) $validated['assigned_user_id'])
+            : null;
+        if ($assignedUser !== null && $request->user()?->hasRole('reseller')
+            && (int) $assignedUser->reseller_id !== (int) $request->user()->id) {
+            abort(403);
+        }
+        if ($assignedUser !== null) {
+            $this->quotas->assertWebsiteAllowed($assignedUser, $domainType === 'alis');
+        }
+
         $parentWebsite = null;
         if ($validated['domain_type'] === 'alis') {
             $parentWebsite = Website::query()->visibleTo($request->user())
@@ -141,6 +160,13 @@ class MainWebsiteController extends Controller
                 ->first();
             if ($parentWebsite === null) {
                 return response()->json(['type' => 'error', 'message' => 'Select a valid parent website for this alias.', 'errors' => ['parent_id' => ['The selected parent website is invalid.']]], 422);
+            }
+
+            if ($parentWebsite->assigned_user_id) {
+                $assignedUser = User::query()->find($parentWebsite->assigned_user_id);
+                if ($assignedUser !== null) {
+                    $this->quotas->assertWebsiteAllowed($assignedUser, true);
+                }
             }
 
             $validated['parent_domain'] = (string) $parentWebsite->domain;
@@ -248,7 +274,7 @@ class MainWebsiteController extends Controller
             'enable_ssl' => $parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false),
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),
             'filemanager_show_hidden' => false,
-            'assigned_user_id' => null,
+            'assigned_user_id' => $parentWebsite?->assigned_user_id ?? $assignedUser?->id,
             'assigned_reseller_id' => ($request->user()?->hasRole('reseller') ? (int) $request->user()->id : null),
             'status' => 'live',
             'type' => match ((string) $validated['domain_type']) {

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DatabaseRequest as DatabaseRequestModel;
 use App\Models\Website;
+use App\Services\ResourceQuotaService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,6 +20,10 @@ use Inertia\Response;
 class DatabaseController extends Controller
 {
     private const LEGACY_MIGRATION_FLAG_FILE = 'database-requests.migrated';
+
+    public function __construct(private readonly ResourceQuotaService $quotas)
+    {
+    }
 
     /**
      * Show database create form.
@@ -123,6 +128,10 @@ class DatabaseController extends Controller
 
         $prepared = $this->preparePayload($request->all(), $request->user());
         $validated = $this->normalizePayload($this->validatePayload($prepared));
+        $owner = $this->quotas->ownerForDomain((string) $validated['domain']);
+        if ($owner !== null) {
+            $this->quotas->assertDatabaseAllowed($owner);
+        }
         $syncResult = $this->syncDatabaseToServer($validated);
         $status = $syncResult['success'] ? 'active' : ($syncResult['ran'] ? 'failed' : 'pending');
 
@@ -136,7 +145,7 @@ class DatabaseController extends Controller
             'charset' => $validated['charset'],
             'collation' => $validated['collation'],
             'status' => $status,
-            'assigned_user_id' => $request->user()?->id,
+            'assigned_user_id' => $owner?->id ?? $request->user()?->id,
         ]);
 
         if ($syncResult['success']) {

@@ -14,6 +14,9 @@ const form = useForm({
     name: '',
     max_storage_mb: 1024,
     max_mailboxes: 5,
+    max_websites: 1,
+    max_databases: 1,
+    max_bandwidth_gb: 10,
     allow_forwarding: true,
     allow_aliases: false,
     priority_support: false,
@@ -21,31 +24,31 @@ const form = useForm({
 });
 
 const submit = () => {
-    form.post(panelRoute('mail-plans.store'));
+    form.post(panelRoute('packages.store'));
 };
 </script>
 
 <template>
-    <Head title="Create Mail Plan" />
+    <Head title="Create Resource Package" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Create Mail Plan</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Create a new subscription plan for mailbox accounts.</p>
+                <h1 class="text-lg font-semibold">Create Resource Package</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Set hard resource limits for domain users.</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <div class="flex justify-end">
-                <Link :href="panelRoute('mail-plans.index')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    Back to Plans
+                <Link :href="panelRoute('packages.index')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                    Back to Packages
                 </Link>
             </div>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-2 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm">Plan Name</label>
+                    <label class="mb-1 block text-sm">Package Name</label>
                     <input v-model="form.name" type="text" placeholder="e.g. Basic, Pro, Enterprise" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.name" class="mt-1 text-xs text-red-600">{{ form.errors.name }}</p>
                 </div>
@@ -61,6 +64,22 @@ const submit = () => {
                     <label class="mb-1 block text-sm">Max Mailboxes</label>
                     <input v-model.number="form.max_mailboxes" type="number" min="1" max="99999" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.max_mailboxes" class="mt-1 text-xs text-red-600">{{ form.errors.max_mailboxes }}</p>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm">Max Websites</label>
+                    <input v-model.number="form.max_websites" type="number" min="0" max="99999" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p v-if="form.errors.max_websites" class="mt-1 text-xs text-red-600">{{ form.errors.max_websites }}</p>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Max Databases</label>
+                    <input v-model.number="form.max_databases" type="number" min="0" max="99999" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p v-if="form.errors.max_databases" class="mt-1 text-xs text-red-600">{{ form.errors.max_databases }}</p>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Bandwidth Limit (GB)</label>
+                    <input v-model.number="form.max_bandwidth_gb" type="number" min="0" max="1048576" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p v-if="form.errors.max_bandwidth_gb" class="mt-1 text-xs text-red-600">{{ form.errors.max_bandwidth_gb }}</p>
                 </div>
 
                 <div>
@@ -89,7 +108,7 @@ const submit = () => {
 
                 <div class="md:col-span-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                        Create Plan
+                        Create Package
                     </button>
                 </div>
             </form>

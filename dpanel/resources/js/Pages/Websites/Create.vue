@@ -20,6 +20,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    domainUsers: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const form = useForm({
@@ -33,6 +37,7 @@ const form = useForm({
     php_version: props.defaultPhpVersion || '',
     enable_ssl: true,
     manage_dns: false,
+    assigned_user_id: '',
 });
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
@@ -396,6 +401,17 @@ onBeforeUnmount(() => {
                     <div class="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                         Alias Domain
                     </div>
+                </div>
+                <div v-if="!props.aliasMode">
+                    <label class="mb-1 block text-sm">Domain User</label>
+                    <select v-model="form.assigned_user_id" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                        <option value="">Unassigned</option>
+                        <option v-for="user in domainUsers" :key="user.id" :value="user.id">
+                            {{ user.name }} ({{ user.email }}){{ user.package_id ? ' · packaged' : '' }}
+                        </option>
+                    </select>
+                    <p class="mt-1 text-xs text-slate-500">The selected user's package website quota is enforced before creation.</p>
+                    <p v-if="form.errors.assigned_user_id" class="mt-1 text-xs text-red-600">{{ form.errors.assigned_user_id }}</p>
                 </div>
                 <div v-if="form.domain_type !== 'main'">
                     <label class="mb-1 block text-sm">{{ form.domain_type === 'sub' ? 'Parent Domain' : 'Alias Target Domain' }}</label>

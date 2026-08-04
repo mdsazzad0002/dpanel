@@ -49,7 +49,7 @@ class RoleManagementController extends Controller
     /**
      * Role edit page.
      */
-    public function edit(Role $role): Response
+    public function edit(string $token, Role $role): Response
     {
         $role->load('permissions:id,name');
 
@@ -85,7 +85,7 @@ class RoleManagementController extends Controller
     /**
      * Update role and its permissions.
      */
-    public function update(Request $request, Role $role): RedirectResponse
+    public function update(Request $request, string $token, Role $role): RedirectResponse
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255', 'unique:roles,name,'.$role->id],
@@ -107,7 +107,7 @@ class RoleManagementController extends Controller
     /**
      * Delete role.
      */
-    public function destroy(Role $role): RedirectResponse
+    public function destroy(string $token, Role $role): RedirectResponse
     {
         if (in_array($role->name, $this->systemRoles(), true)) {
             return back()->with('error', 'System roles cannot be deleted.');

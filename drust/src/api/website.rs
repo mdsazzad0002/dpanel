@@ -164,6 +164,22 @@ pub(crate) struct WebsiteArchive {
     pub status: Option<String>,
     pub type_field: Option<String>,
     pub enable_ssl: Option<bool>,
+    #[serde(default = "default_archive_content")]
+    pub content: String,
+    #[serde(default)]
+    pub database_requests: Vec<DatabaseArchive>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DatabaseArchive {
+    pub name: String,
+    pub user: String,
+    pub password: String,
+    pub host: String,
+}
+
+fn default_archive_content() -> String {
+    "all".into()
 }
 
 pub(crate) async fn handle(
@@ -182,6 +198,9 @@ pub(crate) async fn handle(
 }
 
 fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_json::Value, String> {
+    if !matches!(website.content.as_str(), "all" | "files" | "database") {
+        return Err("invalid archive content; use all, files, or database".into());
+    }
     let zip_path = normalize_path(zip_path);
     if zip_path.as_os_str().is_empty() {
         return Err("Missing zip path.".into());
@@ -211,6 +230,8 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
             "status": website.status,
             "type": website.type_field,
             "enable_ssl": website.enable_ssl.unwrap_or(false),
+            "content": website.content,
+            "databases": website.database_requests.iter().map(|database| database.name.as_str()).collect::<Vec<_>>(),
             "archived_at": chrono_like_now(),
         }
     });
@@ -221,23 +242,73 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
         .write_all(manifest.to_string().as_bytes())
         .map_err(|e| format!("failed to write manifest: {e}"))?;
 
-    for source in [website.project_root.as_str(), website.root_path.as_str()] {
-        let source_path = normalize_path(source);
-        if source_path.as_os_str().is_empty() || !source_path.exists() || !source_path.is_dir() {
-            continue;
+    if matches!(website.content.as_str(), "all" | "files") {
+        for source in [website.project_root.as_str(), website.root_path.as_str()] {
+            let source_path = normalize_path(source);
+            if source_path.as_os_str().is_empty() || !source_path.exists() || !source_path.is_dir() {
+                continue;
+            }
+            let base_name = source_path
+                .file_name()
+                .and_then(|v| v.to_str())
+                .unwrap_or("site")
+                .to_string();
+            add_dir(&mut writer, &source_path, &base_name, options)?;
         }
-        let base_name = source_path
-            .file_name()
-            .and_then(|v| v.to_str())
-            .unwrap_or("site")
-            .to_string();
-        add_dir(&mut writer, &source_path, &base_name, options)?;
+    }
+
+    if matches!(website.content.as_str(), "all" | "database") {
+        for database in &website.database_requests {
+            add_database_dump(&mut writer, database, options)?;
+        }
     }
 
     writer
         .finish()
         .map_err(|e| format!("failed to finalize zip: {e}"))?;
     Ok(serde_json::json!({ "zip_path": zip_path.display().to_string() }))
+}
+
+fn add_database_dump(
+    writer: &mut ZipWriter<std::fs::File>,
+    database: &DatabaseArchive,
+    options: SimpleFileOptions,
+) -> Result<(), String> {
+    if database.name.is_empty() || database.user.is_empty() {
+        return Err("database name and user are required".into());
+    }
+    let output = Command::new("mysqldump")
+        .env("MYSQL_PWD", &database.password)
+        .args([
+            "--single-transaction",
+            "--skip-lock-tables",
+            "--host",
+            database.host.as_str(),
+            "--user",
+            database.user.as_str(),
+            database.name.as_str(),
+        ])
+        .output()
+        .map_err(|error| format!("cannot run mysqldump for {}: {error}", database.name))?;
+    if !output.status.success() {
+        return Err(format!(
+            "database dump failed for {}: {}",
+            database.name,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let safe_name: String = database
+        .name
+        .chars()
+        .map(|character| if character.is_ascii_alphanumeric() || character == '_' || character == '-' { character } else { '_' })
+        .collect();
+    writer
+        .start_file(format!("mysql/{safe_name}.sql"), options)
+        .map_err(|error| format!("cannot add database dump: {error}"))?;
+    writer
+        .write_all(&output.stdout)
+        .map_err(|error| format!("cannot write database dump: {error}"))?;
+    Ok(())
 }
 
 fn add_dir(

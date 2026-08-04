@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'bandwidth_directory' => env('DRUST_BANDWIDTH_DIR', '/var/lib/drust/bandwidth'),
     'panel_domain' => env('PANEL_DOMAIN', ''),
     'panel_port' => (int) env('PANEL_PORT'),
     'mail' => [

@@ -12,10 +12,6 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
-    plans: {
-        type: Array,
-        default: () => [],
-    },
 });
 
 const form = useForm({
@@ -24,7 +20,6 @@ const form = useForm({
     password: '',
     quota_mb: 1024,
     forwarding_to: '',
-    plan_id: '',
 });
 
 const submit = () => {
@@ -50,16 +45,6 @@ watch(
     },
 );
 
-watch(
-    () => form.plan_id,
-    (planId) => {
-        if (!planId) return;
-        const plan = props.plans.find((p) => p.id === planId);
-        if (plan) {
-            form.quota_mb = plan.max_storage_mb;
-        }
-    },
-);
 </script>
 
 <template>
@@ -88,17 +73,6 @@ watch(
                         <option v-for="domain in websiteDomains" :key="domain" :value="domain">{{ domain }}</option>
                     </select>
                     <p v-if="form.errors.domain" class="mt-1 text-xs text-red-600">{{ form.errors.domain }}</p>
-                </div>
-                <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm">Mail Plan (Optional)</label>
-                    <select v-model="form.plan_id" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">No plan</option>
-                        <option v-for="plan in plans" :key="plan.id" :value="plan.id">{{ plan.name }} - {{ plan.max_storage_mb >= 1024 ? (plan.max_storage_mb / 1024).toFixed(0) + ' GB' : plan.max_storage_mb + ' MB' }}</option>
-                    </select>
-                    <p v-if="form.plan_id && plans.find(p => p.id === form.plan_id)" class="mt-1 text-xs text-slate-500">
-                        Max {{ plans.find(p => p.id === form.plan_id).max_mailboxes }} mailboxes allowed
-                    </p>
-                    <p v-if="form.errors.plan_id" class="mt-1 text-xs text-red-600">{{ form.errors.plan_id }}</p>
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Mailbox</label>

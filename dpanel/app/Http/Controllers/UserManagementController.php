@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\MailPlan;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -54,7 +56,7 @@ class UserManagementController extends Controller
         ];
 
         $users = (clone $filteredScopeQuery)
-            ->with(['roles:id,name', 'reseller:id,name,email'])
+            ->with(['roles:id,name', 'reseller:id,name,email', 'package:id,name'])
             ->when($roleFilter === 'admin', fn ($query) => $query->whereHas('roles', fn ($q) => $q->where('name', 'admin')))
             ->when($roleFilter === 'reseller', fn ($query) => $query->whereHas('roles', fn ($q) => $q->where('name', 'reseller')))
             ->when($roleFilter === 'general', fn ($query) => $query->whereHas('roles', fn ($q) => $q->whereIn('name', ['general', 'general_user'])))
@@ -64,6 +66,7 @@ class UserManagementController extends Controller
                 'name',
                 'email',
                 'reseller_id',
+                'package_id',
                 'is_suspended',
                 'suspended_at',
                 'disk_space_mb_limit',
@@ -86,6 +89,8 @@ class UserManagementController extends Controller
                     ->values()
                     ->all(),
                 'reseller_id' => $user->reseller_id,
+                'package_id' => $user->package_id,
+                'package' => $user->package ? ['id' => $user->package->id, 'name' => $user->package->name] : null,
                 'is_suspended' => (bool) $user->is_suspended,
                 'suspended_at' => optional($user->suspended_at)->toDateTimeString(),
                 'disk_space_mb_limit' => $user->disk_space_mb_limit,
@@ -109,41 +114,8 @@ class UserManagementController extends Controller
                 'search' => $search,
                 'status' => $statusFilter ?? 'all',
             ],
-        ]);
-    }
-
-    public function create(Request $request): Response
-    {
-        $actor = $request->user();
-
-        return Inertia::render('Users/Create', [
             'assignableRoles' => $this->assignableRoles($actor),
-            'resellers' => $this->availableResellers(),
-        ]);
-    }
-
-    public function edit(Request $request, User $user): Response
-    {
-        $actor = $request->user();
-        if ($actor?->hasRole('reseller') && (int) $user->reseller_id !== (int) $actor->id) {
-            abort(403);
-        }
-
-        return Inertia::render('Users/Edit', [
-            'assignableRoles' => $this->assignableRoles($actor),
-            'resellers' => $this->availableResellers(),
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $this->normalizeRoleName($user->roles()->value('name')),
-                'reseller_id' => $user->reseller_id,
-                'disk_space_mb_limit' => $user->disk_space_mb_limit,
-                'mail_accounts_limit' => $user->mail_accounts_limit,
-                'databases_limit' => $user->databases_limit,
-                'bandwidth_gb_limit' => $user->bandwidth_gb_limit,
-                'websites_limit' => $user->websites_limit,
-            ],
+            'packages' => $this->availablePackages($actor),
         ]);
     }
 
@@ -154,26 +126,20 @@ class UserManagementController extends Controller
     {
         $actor = $request->user();
         $assignableRoles = $this->assignableRoles($actor);
+        $packageRule = Rule::exists('mail_plans', 'id');
+        if ($actor?->hasRole('reseller')) {
+            $packageRule->where(fn ($query) => $query->where('owner_user_id', $actor->id));
+        }
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'confirmed', Password::defaults()],
             'role' => ['required', 'string', 'in:'.implode(',', $assignableRoles)],
-            'reseller_id' => ['nullable', 'integer', 'exists:users,id'],
-            'disk_space_mb_limit' => ['nullable', 'integer', 'min:0'],
-            'mail_accounts_limit' => ['nullable', 'integer', 'min:0'],
-            'databases_limit' => ['nullable', 'integer', 'min:0'],
-            'bandwidth_gb_limit' => ['nullable', 'integer', 'min:0'],
-            'websites_limit' => ['nullable', 'integer', 'min:0'],
+            'package_id' => ['nullable', 'required_if:role,general', 'string', $packageRule],
         ]);
 
-        $resellerId = null;
-        if ($actor?->hasRole('reseller')) {
-            $resellerId = $actor->id;
-        } elseif ($validated['role'] !== 'reseller') {
-            $resellerId = $validated['reseller_id'] ?? null;
-        }
+        $resellerId = $actor?->hasRole('reseller') ? $actor->id : null;
 
         $user = User::create([
             'name' => $validated['name'],
@@ -181,12 +147,10 @@ class UserManagementController extends Controller
             'password' => Hash::make($validated['password']),
             'email_verified_at' => now(),
             'reseller_id' => $resellerId,
-            'disk_space_mb_limit' => $validated['disk_space_mb_limit'] ?? null,
-            'mail_accounts_limit' => $validated['mail_accounts_limit'] ?? null,
-            'databases_limit' => $validated['databases_limit'] ?? null,
-            'bandwidth_gb_limit' => $validated['bandwidth_gb_limit'] ?? null,
-            'websites_limit' => $validated['websites_limit'] ?? null,
+            'package_id' => $validated['package_id'] ?? null,
         ]);
+
+        $this->applyPackageLimits($user);
 
         Role::findOrCreate($validated['role']);
         $user->syncRoles([$validated['role']]);
@@ -197,10 +161,14 @@ class UserManagementController extends Controller
     /**
      * Update user from management panel.
      */
-    public function update(Request $request, User $user): RedirectResponse
+    public function update(Request $request, string $token, User $user): RedirectResponse
     {
         $actor = $request->user();
         $assignableRoles = $this->assignableRoles($actor);
+        $packageRule = Rule::exists('mail_plans', 'id');
+        if ($actor?->hasRole('reseller')) {
+            $packageRule->where(fn ($query) => $query->where('owner_user_id', $actor->id));
+        }
 
         if ($actor?->hasRole('reseller') && (int) $user->reseller_id !== (int) $actor->id) {
             abort(403);
@@ -211,30 +179,18 @@ class UserManagementController extends Controller
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email,'.$user->id],
             'password' => ['nullable', 'confirmed', Password::defaults()],
             'role' => ['required', 'string', 'in:'.implode(',', $assignableRoles)],
-            'reseller_id' => ['nullable', 'integer', 'exists:users,id'],
-            'disk_space_mb_limit' => ['nullable', 'integer', 'min:0'],
-            'mail_accounts_limit' => ['nullable', 'integer', 'min:0'],
-            'databases_limit' => ['nullable', 'integer', 'min:0'],
-            'bandwidth_gb_limit' => ['nullable', 'integer', 'min:0'],
-            'websites_limit' => ['nullable', 'integer', 'min:0'],
+            'package_id' => ['nullable', 'required_if:role,general', 'string', $packageRule],
         ]);
 
-        $resellerId = null;
-        if ($actor?->hasRole('reseller')) {
-            $resellerId = $actor->id;
-        } elseif ($validated['role'] !== 'reseller') {
-            $resellerId = $validated['reseller_id'] ?? null;
-        }
+        $resellerId = $actor?->hasRole('reseller')
+            ? $actor->id
+            : ($validated['role'] === 'reseller' ? null : $user->reseller_id);
 
         $payload = [
             'name' => $validated['name'],
             'email' => $validated['email'],
             'reseller_id' => $resellerId,
-            'disk_space_mb_limit' => $validated['disk_space_mb_limit'] ?? null,
-            'mail_accounts_limit' => $validated['mail_accounts_limit'] ?? null,
-            'databases_limit' => $validated['databases_limit'] ?? null,
-            'bandwidth_gb_limit' => $validated['bandwidth_gb_limit'] ?? null,
-            'websites_limit' => $validated['websites_limit'] ?? null,
+            'package_id' => $validated['package_id'] ?? null,
         ];
 
         if (! empty($validated['password'])) {
@@ -242,12 +198,13 @@ class UserManagementController extends Controller
         }
 
         $user->update($payload);
+        $this->applyPackageLimits($user);
         $user->syncRoles([$validated['role']]);
 
         return redirect()->route('users.manage')->with('success', 'User updated successfully.');
     }
 
-    public function updateSuspension(Request $request, User $user): RedirectResponse
+    public function updateSuspension(Request $request, string $token, User $user): RedirectResponse
     {
         $actor = $request->user();
         if ($actor?->hasRole('reseller') && (int) $user->reseller_id !== (int) $actor->id) {
@@ -269,7 +226,7 @@ class UserManagementController extends Controller
         return back()->with('success', $suspend ? 'User suspended successfully.' : 'User unsuspended successfully.');
     }
 
-    public function destroy(Request $request, User $user): RedirectResponse
+    public function destroy(Request $request, string $token, User $user): RedirectResponse
     {
         $actor = $request->user();
         if ($actor?->hasRole('reseller') && (int) $user->reseller_id !== (int) $actor->id) {
@@ -301,16 +258,41 @@ class UserManagementController extends Controller
         return $roles;
     }
 
-    private function availableResellers()
+    private function availablePackages(?User $actor)
     {
-        if (! Role::query()->where('name', 'reseller')->exists()) {
+        if (! $actor?->hasAnyRole(['admin', 'superadmin', 'reseller']) && ! $actor?->can('manage_packages')) {
             return collect();
         }
 
-        return User::query()
-            ->role('reseller')
-            ->orderBy('name')
-            ->get(['id', 'name', 'email']);
+        return MailPlan::query()
+            ->when($actor?->hasRole('reseller'), fn ($query) => $query->where('owner_user_id', $actor->id))
+            ->orderBy('sort_order')->orderBy('name')->get([
+            'id', 'name', 'max_storage_mb', 'max_mailboxes', 'max_websites',
+            'max_databases', 'max_bandwidth_gb',
+        ]);
+    }
+
+    private function applyPackageLimits(User $user): void
+    {
+        $package = $user->package()->first();
+        if ($package === null) {
+            $user->forceFill([
+                'disk_space_mb_limit' => null,
+                'mail_accounts_limit' => null,
+                'websites_limit' => null,
+                'databases_limit' => null,
+                'bandwidth_gb_limit' => null,
+            ])->save();
+            return;
+        }
+
+        $user->forceFill([
+            'disk_space_mb_limit' => $package->max_storage_mb,
+            'mail_accounts_limit' => $package->max_mailboxes,
+            'websites_limit' => $package->max_websites,
+            'databases_limit' => $package->max_databases,
+            'bandwidth_gb_limit' => $package->max_bandwidth_gb,
+        ])->save();
     }
 
     private function normalizeRoleName(?string $role): string
