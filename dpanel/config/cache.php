@@ -112,6 +112,6 @@ return [
     |
     */
 
-    'prefix' => 'dPanel-cache-',
+    'prefix' => env('CACHE_PREFIX', 'dpanel_cache_'),
 
 ];

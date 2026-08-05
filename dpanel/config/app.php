@@ -80,6 +80,7 @@ return [
     'panel_port' => env('PANEL_PORT'),
     'nginx_primary_port' => env('NGINX_PRIMARY_PORT', 80),
     'redis_service' => env('REDIS_SERVICE', 'auto'),
+    'website_redis_connection' => env('WEBSITE_REDIS_CONNECTION', 'website_cache'),
     'webtools_separate_ports' => false,
     'phpmyadmin_port' => env('PHPMYADMIN_PORT', env('PANEL_PORT')),
     'phpmyadmin_url' => env('PHPMYADMIN_URL', ''),

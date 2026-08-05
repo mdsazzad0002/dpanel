@@ -52,6 +52,24 @@ const aliasEditingId = ref('');
 const aliasEditForm = useForm({
     domain: '',
 });
+const aliasApiOpen = ref(false);
+const aliasApiLoading = ref(false);
+const aliasApi = ref({ enabled: false, has_token: false, token_hint: '', challenge_token: '', endpoint: '' });
+const aliasApiPlainToken = ref('');
+const loadAliasApi = async () => {
+    aliasApiOpen.value = true; aliasApiLoading.value = true;
+    try { const response = await fetch(panelRoute('websites.alias-api.settings', { id: props.website.id }), { headers: { Accept: 'application/json' } }); aliasApi.value = await response.json(); }
+    finally { aliasApiLoading.value = false; }
+};
+const rotateAliasApi = async () => {
+    if (!confirm('Rotate the Alias API token? The previous token will stop working.')) return;
+    const response = await fetch(panelRoute('websites.alias-api.rotate', { id: props.website.id }), { method: 'POST', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken.value } });
+    const data = await response.json(); if (response.ok) { aliasApiPlainToken.value = data.token; await loadAliasApi(); }
+};
+const toggleAliasApi = async () => {
+    const response = await fetch(panelRoute('websites.alias-api.toggle', { id: props.website.id }), { method: 'PATCH', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken.value }, body: JSON.stringify({ enabled: !aliasApi.value.enabled }) });
+    if (response.ok) aliasApi.value.enabled = !aliasApi.value.enabled;
+};
 const toasts = ref([]);
 let toastSeq = 0;
 const aliasForm = useForm({
@@ -1162,6 +1180,66 @@ const issueWebsiteSsl = async () => {
                 </div>
 
             </section>
+
+            <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div><h2 class="font-semibold">Alias API</h2><p class="mt-1 text-sm text-slate-500">Securely verify, add, issue SSL, or revoke alias domains through API.</p></div>
+                    <Link :href="panelRoute('websites.alias-api.index', { id: website.id })" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Manage Alias API</Link>
+                </div>
+            </section>
+
+            <Teleport to="body">
+            <div v-if="aliasApiOpen" class="fixed inset-0 z-[100] flex justify-end">
+                <button class="absolute inset-0 bg-slate-950/60" aria-label="Close" @click="aliasApiOpen = false"></button>
+                <aside class="relative flex h-dvh w-full flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-950 lg:w-[70vw] lg:max-w-none">
+                    <div class="z-10 flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-950 sm:px-6">
+                        <div><h2 class="text-lg font-semibold leading-tight">Alias API</h2><p class="text-xs text-slate-500">Admin/reseller access only</p></div>
+                        <button class="rounded border px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-900" @click="aliasApiOpen = false">Close</button>
+                    </div>
+                    <div v-if="aliasApiLoading" class="flex flex-1 items-center justify-center text-sm text-slate-500">Loading…</div>
+                    <div v-else class="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
+                        <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 dark:border-slate-800">
+                            <div><p class="text-sm">Status: <strong>{{ aliasApi.enabled ? 'Enabled' : 'Disabled' }}</strong></p><p v-if="aliasApi.token_hint" class="mt-0.5 text-xs text-slate-500">Token ending: {{ aliasApi.token_hint }}</p></div>
+                            <div class="flex gap-2"><button class="rounded bg-indigo-600 px-3 py-2 text-sm text-white" @click="rotateAliasApi">{{ aliasApi.has_token ? 'Rotate token' : 'Create token' }}</button><button v-if="aliasApi.has_token" class="rounded border px-3 py-2 text-sm dark:border-slate-700" @click="toggleAliasApi">{{ aliasApi.enabled ? 'Disable' : 'Enable' }}</button></div>
+                        </div>
+                        <div v-if="aliasApiPlainToken" class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><strong>Copy now — shown once:</strong><code class="mt-2 block break-all">{{ aliasApiPlainToken }}</code></div>
+                        <div class="grid gap-4 xl:grid-cols-2">
+                            <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">API endpoint &amp; authentication</h3><code class="mt-2 block break-all rounded bg-slate-100 p-2 text-xs dark:bg-slate-900">POST {{ aliasApi.endpoint }}</code><p class="mt-3 text-xs text-slate-500">Send JSON and the token on every request:</p><pre class="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs leading-6 text-slate-100">Authorization: Bearer YOUR_TOKEN
+Content-Type: application/json
+Accept: application/json</pre></div>
+                            <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">Safe execution flow</h3><ol class="mt-2 list-decimal space-y-1.5 pl-5 text-xs text-slate-600 dark:text-slate-300"><li>Authenticate the website-scoped token.</li><li>Validate action and domain syntax.</li><li>Confirm DNS IP match or HTTP challenge.</li><li>Create alias only after verification passes.</li><li>Issue SSL; rollback alias if SSL fails.</li></ol></div>
+                        </div>
+                        <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">Domain verification</h3><p class="mt-2">No verification mode is required in the request. The API first compares the alias IP with the parent website IP. If they do not match, it checks the HTTP challenge.</p><div class="mt-3 grid gap-2 lg:grid-cols-[1fr_1fr]"><code class="block break-all rounded bg-slate-100 p-2 text-xs dark:bg-slate-900">http://ALIAS/.well-known/dpanel-alias/{{ aliasApi.challenge_token }}</code><code class="block break-all rounded bg-slate-100 p-2 text-xs dark:bg-slate-900">Response body: {{ aliasApi.challenge_token }}</code></div><p class="mt-2 text-xs text-slate-500">The response must be HTTP 200 with the exact token and no redirect. Failed verification never creates an alias.</p></div>
+                        <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">1. Add and verify</h3><p class="mt-2 text-xs text-slate-500">The API automatically checks matching server IP first, then HTTP challenge. Nothing is added unless one succeeds.</p><pre class="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs text-slate-100">curl -X POST {{ aliasApi.endpoint }} \
+-H "Authorization: Bearer YOUR_TOKEN" \
+-H "Content-Type: application/json" \
+-d '{"action":"add","domain":"alias.example.com"}'</pre></div>
+                        <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">2. Remove alias</h3><pre class="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs text-slate-100">{"action":"remove","domain":"alias.example.com"}</pre><p class="mt-2 text-xs text-slate-500">Only an alias scoped to this website can be removed.</p></div>
+                        <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">3. Paginated alias list</h3><pre class="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs text-slate-100">{"action":"list","page":1,"per_page":25}</pre><p class="mt-2 text-xs text-slate-500">Every list is paginated. Default 25, maximum 100. Each item includes SSL status and expiry; JSON metadata includes total, last page and has-more.</p></div>
+                        <div class="grid gap-4 xl:grid-cols-2">
+                            <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">List response shape</h3><pre class="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs leading-5 text-slate-100">{
+  "success": true,
+  "data": [{
+    "id": "...",
+    "domain": "alias.example.com",
+    "ssl_status": "valid",
+    "ssl_expires_at": "..."
+  }],
+  "meta": {
+    "current_page": 1,
+    "per_page": 25,
+    "total": 5000,
+    "last_page": 200,
+    "has_more": true
+  }
+}</pre></div>
+                            <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">Pagination pattern</h3><p class="mt-2 text-xs text-slate-500">Start at page 1 and request the next page only while <code>meta.has_more</code> is true. Keep <code>per_page</code> at 25–100; never assume all aliases fit in one response.</p><h3 class="mt-4 font-semibold">HTTP status codes</h3><dl class="mt-2 grid grid-cols-[4rem_1fr] gap-1.5 text-xs"><dt>200</dt><dd>List/remove succeeded</dd><dt>201</dt><dd>Alias and SSL created</dd><dt>401</dt><dd>Invalid or disabled token</dd><dt>404</dt><dd>Scoped alias not found</dd><dt>422</dt><dd>Validation, reachability, or SSL failure</dd><dt>429</dt><dd>Rate limit exceeded</dd></dl></div>
+                        </div>
+                        <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"><strong>Operational rules:</strong> store the token as a secret, rotate it if exposed, use HTTPS for API calls, do not retry 422 requests without fixing DNS/challenge, and use list pagination to confirm the final SSL state.</div>
+                    </div>
+                </aside>
+            </div>
+            </Teleport>
         </div>
     </AuthenticatedLayout>
 </template>

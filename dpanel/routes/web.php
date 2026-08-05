@@ -24,6 +24,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use App\Http\Controllers\RedisCacheController;
 
 Route::get('/', function () {
     if (Auth::check() && session('panel_session_token')) {
@@ -70,6 +71,7 @@ Route::post('/sso/webmail/consume', [SsoController::class, 'consumeWebmail'])
 
 Route::post('/telegram/webhook', [TelegramWebhookController::class, 'store'])
     ->name('telegram.webhook');
+Route::post('/api/v1/alias', [RedisCacheController::class, 'aliasApiHandle'])->middleware('throttle:30,1')->name('api.alias');
 Route::get('/telegram/webhook-url', [TelegramWebhookController::class, 'url'])
     ->name('telegram.webhook-url');
 

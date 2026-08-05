@@ -87,6 +87,14 @@ Route::get('/websites/{id}/redis-cache', [RedisCacheController::class, 'index'])
 Route::post('/websites/{id}/redis-cache/clear', [RedisCacheController::class, 'clearWebsiteCache'])
     ->middleware('role:admin|reseller')
     ->name('websites.redis-cache.clear');
+Route::post('/websites/{id}/redis-cache/configure', [RedisCacheController::class, 'configure'])
+    ->middleware('role:admin|reseller')->name('websites.redis-cache.configure');
+Route::post('/websites/{id}/redis-cache/revisions/{revision}/rollback', [RedisCacheController::class, 'rollback'])
+    ->middleware('role:admin|reseller')->name('websites.redis-cache.rollback');
+Route::get('/websites/{id}/alias-api', [RedisCacheController::class, 'aliasApiPage'])->middleware('role:admin|reseller')->name('websites.alias-api.index');
+Route::get('/websites/{id}/alias-api/settings', [RedisCacheController::class, 'aliasApiSettings'])->middleware('role:admin|reseller')->name('websites.alias-api.settings');
+Route::post('/websites/{id}/alias-api/rotate', [RedisCacheController::class, 'aliasApiRotate'])->middleware('role:admin|reseller')->name('websites.alias-api.rotate');
+Route::patch('/websites/{id}/alias-api', [RedisCacheController::class, 'aliasApiToggle'])->middleware('role:admin|reseller')->name('websites.alias-api.toggle');
 Route::get('/websites/{id}/filemanager', [WebsiteFileManagerController::class, 'fileManager'])
     ->middleware('role:admin|reseller')
     ->name('websites.filemanager');
