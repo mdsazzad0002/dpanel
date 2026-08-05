@@ -11,6 +11,7 @@ use axum::{
     body::Body,
     extract::State,
     http::{HeaderValue, Request, StatusCode},
+    middleware::map_request,
     response::Response,
     routing::{any, post},
 };
@@ -105,7 +106,7 @@ pub fn serve_gateway_with_tls(
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
         let app_router = build_demo_router(state);
-        let https_router = app_router.clone();
+        let https_router = app_router.clone().layer(map_request(mark_https_request));
 
         let http_listener = tokio::net::TcpListener::bind(http_bind)
             .await
@@ -146,6 +147,16 @@ pub fn serve_gateway_with_tls(
         }
         Ok(())
     })
+}
+
+async fn mark_https_request(mut request: Request<Body>) -> Request<Body> {
+    // Hyper receives origin-form URIs on the TLS listener, so the URI itself
+    // does not retain the transport scheme. Mark it explicitly for PHP-FPM and
+    // reverse-proxy consumers such as WordPress.
+    request
+        .headers_mut()
+        .insert("x-forwarded-proto", HeaderValue::from_static("https"));
+    request
 }
 
 fn build_http_redirect_router(redirect_to: Option<String>) -> Router {

@@ -57,7 +57,12 @@ pub async fn proxy_request(
         builder = builder.header(name, value);
     }
 
-    builder = builder.header("x-forwarded-proto", uri.scheme_str().unwrap_or("http"));
+    let forwarded_proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| matches!(value.to_ascii_lowercase().as_str(), "http" | "https"))
+        .unwrap_or_else(|| uri.scheme_str().unwrap_or("http"));
+    builder = builder.header("x-forwarded-proto", forwarded_proto);
     if let Some(host) = headers.get("host").and_then(|value| value.to_str().ok()) {
         builder = builder.header("x-forwarded-host", host);
     }
