@@ -23,6 +23,48 @@ fn command_success(program: &str, args: &[&str]) -> bool {
         .unwrap_or(false)
 }
 
+fn schedule_gateway_restart() -> bool {
+    // SSL issuance can be requested through the edge gateway itself. Restarting
+    // it synchronously here drops that in-flight HTTP response, which browsers
+    // report as a network error even though the certificate was issued. A
+    // transient timer lets the API response finish before the gateway restarts.
+    command_success(
+        "systemd-run",
+        &[
+            "--quiet",
+            "--collect",
+            "--on-active=2s",
+            "systemctl",
+            "restart",
+            "edge-gateway.service",
+        ],
+    )
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn http_auth_hook(root_path: &str) -> String {
+    let challenge_dir = format!("{root_path}/.well-known/acme-challenge");
+    let script = format!(
+        "umask 022; mkdir -p {directory} && printf %s \"$CERTBOT_VALIDATION\" > {directory}/\"$CERTBOT_TOKEN\"",
+        directory = shell_single_quote(&challenge_dir),
+    );
+    format!("/bin/sh -c {}", shell_single_quote(&script))
+}
+
+fn http_cleanup_hook(root_path: &str) -> String {
+    let challenge_dir = format!("{root_path}/.well-known/acme-challenge");
+    let well_known_dir = format!("{root_path}/.well-known");
+    let script = format!(
+        "rm -f -- {directory}/\"$CERTBOT_TOKEN\"; rmdir -- {directory} {well_known} 2>/dev/null || true",
+        directory = shell_single_quote(&challenge_dir),
+        well_known = shell_single_quote(&well_known_dir),
+    );
+    format!("/bin/sh -c {}", shell_single_quote(&script))
+}
+
 fn certificate_valid(path: &str, domain: &str, renew_before_days: u64) -> bool {
     let seconds = renew_before_days.saturating_mul(86_400).to_string();
     command_success(
@@ -82,24 +124,26 @@ pub(super) fn ensure(
         if !command_success("sh", &["-c", "command -v certbot >/dev/null 2>&1"]) {
             return Err("certbot is not installed.".into());
         }
+        let auth_hook = http_auth_hook(root_path);
+        let cleanup_hook = http_cleanup_hook(root_path);
         let mut args = vec![
             "certonly",
             "--non-interactive",
             "--agree-tos",
             "--register-unsafely-without-email",
-            "--webroot",
-            "-w",
-            root_path,
+            "--manual",
+            "--preferred-challenges",
+            "http",
+            "--manual-auth-hook",
+            &auth_hook,
+            "--manual-cleanup-hook",
+            &cleanup_hook,
             // The vhost points at /etc/letsencrypt/live/<domain>. Pinning the lineage
             // name keeps that path correct when the domain set changes, instead of
             // certbot silently starting a <domain>-0001 lineage the vhost never reads.
             "--cert-name",
             &domain,
             "--expand",
-            // Renewals happen outside the panel; the deployment hook keeps the
-            // active TLS service in sync after certbot updates the lineage.
-            "--deploy-hook",
-            "systemctl restart edge-gateway.service",
             "-d",
             &domain,
         ];
@@ -136,11 +180,19 @@ pub(super) fn ensure(
         );
     }
 
-    // The gateway builds its SNI certificate store when it starts. Restarting it
-    // here makes a newly issued certificate available on port 443 immediately.
-    if !command_success("systemctl", &["restart", "edge-gateway.service"]) {
-        return Err("Certificate is valid, but the edge gateway could not be restarted.".into());
-    }
+    // The gateway builds its SNI certificate store when it starts. Only a
+    // changed certificate requires a restart; schedule it so this request can
+    // return its JSON response through the gateway first.
+    let gateway_reload_scheduled = if needs_issue {
+        if !schedule_gateway_restart() {
+            return Err(
+                "Certificate is valid, but the edge gateway restart could not be scheduled.".into(),
+            );
+        }
+        true
+    } else {
+        false
+    };
 
     Ok(json!({
         "status": "valid",
@@ -150,6 +202,7 @@ pub(super) fn ensure(
         "certificate_path": certificate_path,
         "private_key_path": private_key_path,
         "expires_at": certificate_expiry(&certificate_path),
-        "gateway_reloaded": true,
+        "gateway_reloaded": false,
+        "gateway_reload_scheduled": gateway_reload_scheduled,
     }))
 }

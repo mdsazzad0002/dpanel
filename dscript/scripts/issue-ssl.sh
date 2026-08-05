@@ -88,20 +88,27 @@ for alias_domain in "${ALIASES[@]}"; do
     [[ -n "$alias_domain" ]] && domain_args+=(-d "$alias_domain")
 done
 
+challenge_dir="${ROOT_PATH}/.well-known/acme-challenge"
+well_known_dir="${ROOT_PATH}/.well-known"
+printf -v auth_script 'umask 022; mkdir -p %q && printf %%s "$CERTBOT_VALIDATION" > %q/"$CERTBOT_TOKEN"' "$challenge_dir" "$challenge_dir"
+printf -v auth_hook '/bin/sh -c %q' "$auth_script"
+printf -v cleanup_script 'rm -f -- %q/"$CERTBOT_TOKEN"; rmdir -- %q %q 2>/dev/null || true' "$challenge_dir" "$challenge_dir" "$well_known_dir"
+printf -v cleanup_hook '/bin/sh -c %q' "$cleanup_script"
+
 cmd=(
     "${CERTBOT_PATH}"
     certonly
     --non-interactive
     --agree-tos
-    --webroot
-    -w "${ROOT_PATH}"
+    --manual
+    --preferred-challenges http
+    --manual-auth-hook "$auth_hook"
+    --manual-cleanup-hook "$cleanup_hook"
     # The vhost points at /etc/letsencrypt/live/<domain>. Without --cert-name a
     # changed domain set makes certbot open a <domain>-0001 lineage instead, and
     # the web server keeps serving the stale certificate from the old path.
     --cert-name "${DOMAIN}"
     --expand
-    --deploy-hook
-    "systemctl restart edge-gateway.service"
 )
 
 if [[ -n "${LETSENCRYPT_EMAIL:-}" ]]; then
@@ -113,5 +120,9 @@ cmd+=("${domain_args[@]}")
 
 log "Issuing certificate for ${DOMAIN} (webroot: ${ROOT_PATH})"
 "${cmd[@]}"
+if ! systemd-run --quiet --collect --on-active=2s systemctl restart edge-gateway.service; then
+    log "Certificate issued, but the edge gateway restart could not be scheduled."
+    exit 1
+fi
 log "SSL issue completed for ${DOMAIN}"
 exit 0
