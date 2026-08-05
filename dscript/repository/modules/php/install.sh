@@ -66,6 +66,7 @@ php_extension_packages() {
         "php${php_version}-intl" \
         "php${php_version}-opcache" \
         "php${php_version}-readline" \
+        "php${php_version}-redis" \
         "php${php_version}-soap"
       ;;
     rpm)
@@ -75,6 +76,7 @@ php_extension_packages() {
         php-intl \
         php-opcache \
         php-readline \
+        php-redis \
         php-soap
       ;;
   esac

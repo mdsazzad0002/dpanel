@@ -13,6 +13,7 @@ mod filemanager;
 mod health;
 mod laravel;
 mod php;
+mod redis_config;
 mod script;
 mod security;
 mod ssl;
@@ -78,6 +79,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(backup::routes())
         .merge(filemanager::routes())
         .merge(php::routes())
+        .merge(redis_config::routes())
         .merge(ssl::routes())
         .merge(script::routes())
         .merge(security::routes())
