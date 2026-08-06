@@ -144,6 +144,14 @@ if ! command -v certbot >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y certbot
 fi
 install -d -m 0750 /etc/drust
+# Drust executes only scripts from its isolated runtime directory. Keep that
+# directory synchronized on every install/update so newly shipped operations
+# are available immediately after the daemon restarts.
+install -d -o root -g root -m 0755 /opt/dpanel/runtime/scripts
+for runtime_script in "${DRUST_ROOT}/../dscript/scripts/"*.sh; do
+  [[ -f "${runtime_script}" ]] || continue
+  install -o root -g root -m 0755 "${runtime_script}" "/opt/dpanel/runtime/scripts/$(basename "${runtime_script}")"
+done
 if [[ ! -f /etc/drust/edge-gateway.env ]]; then
   install -m 0600 "${DRUST_ROOT}/deploy/edge-gateway.env.example" /etc/drust/edge-gateway.env
 fi

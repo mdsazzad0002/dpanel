@@ -6,6 +6,9 @@ use App\Http\Controllers\Website\WebsiteController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
+use App\Http\Controllers\Website\WebsiteGitController;
+use App\Http\Controllers\Website\WebsiteSshKeyController;
+use App\Http\Controllers\Website\WebsiteTerminalController;
 use App\Http\Controllers\Website\WordpressController;
 // Manage Website ===================================================================
 use Illuminate\Support\Facades\Route;
@@ -54,6 +57,20 @@ Route::post('/websites/{id}/status/check', [WebsiteController::class, 'refreshRu
 Route::get('/websites/{id}/manage', [WebsiteOperationsController::class, 'manage'])
     ->middleware('role:admin|reseller')
     ->name('websites.manage');
+Route::get('/websites/{id}/git', [WebsiteGitController::class, 'index'])
+    ->middleware('role:admin|reseller')->name('websites.git.index');
+Route::put('/websites/{id}/git', [WebsiteGitController::class, 'store'])
+    ->middleware('role:admin|reseller')->name('websites.git.store');
+Route::post('/websites/{id}/git/run', [WebsiteGitController::class, 'run'])
+    ->middleware('role:admin|reseller')->name('websites.git.run');
+Route::get('/websites/{id}/ssh-key', [WebsiteSshKeyController::class, 'index'])
+    ->middleware('role:admin|reseller')->name('websites.ssh-key.index');
+Route::post('/websites/{id}/ssh-key', [WebsiteSshKeyController::class, 'generate'])
+    ->middleware(['role:admin|reseller', 'throttle:6,1'])->name('websites.ssh-key.generate');
+Route::get('/websites/{id}/terminal', [WebsiteTerminalController::class, 'index'])
+    ->middleware('role:admin|reseller')->name('websites.terminal.index');
+Route::post('/websites/{id}/terminal', [WebsiteTerminalController::class, 'execute'])
+    ->middleware(['role:admin|reseller', 'throttle:30,1'])->name('websites.terminal.execute');
 Route::get('/websites/{id}/ssl', [WebsiteOperationsController::class, 'sslManager'])
     ->middleware('role:admin|reseller')
     ->name('websites.ssl');
@@ -69,6 +86,15 @@ Route::get('/websites/{id}/usage', [WebsiteOperationsController::class, 'Usage']
 Route::post('/websites/{id}/project-cache/clear', [WebsiteOperationsController::class, 'clearProjectCache'])
     ->middleware('role:admin|reseller')
     ->name('websites.project-cache.clear');
+Route::post('/websites/{id}/project-permissions/fix', [WebsiteOperationsController::class, 'fixProjectPermissions'])
+    ->middleware(['role:admin|reseller', 'throttle:10,1'])
+    ->name('websites.project-permissions.fix');
+Route::post('/websites/{id}/project-database/connect', [WebsiteOperationsController::class, 'connectProjectDatabase'])
+    ->middleware(['role:admin|reseller', 'throttle:10,1'])
+    ->name('websites.project-database.connect');
+Route::post('/websites/{id}/project-dependencies/install', [WebsiteOperationsController::class, 'installProjectDependencies'])
+    ->middleware(['role:admin|reseller', 'throttle:6,1'])
+    ->name('websites.project-dependencies.install');
 Route::post('/websites/{id}/project-storage-link', [WebsiteOperationsController::class, 'updateProjectStorageLink'])
     ->middleware('role:admin|reseller')
     ->name('websites.project-storage-link.update');

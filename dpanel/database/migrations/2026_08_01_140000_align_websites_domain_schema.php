@@ -9,14 +9,21 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement("ALTER TABLE websites MODIFY type VARCHAR(32) NULL");
+        $isMySql = DB::getDriverName() === 'mysql';
+        if ($isMySql) {
+            DB::statement("ALTER TABLE websites MODIFY type VARCHAR(32) NULL");
+        }
         DB::table('websites')->where('type', 'alis')->update(['type' => 'alias']);
         DB::table('websites')->where('type', 'sub')->update(['type' => 'subdomain']);
         DB::table('websites')->whereNotIn('type', ['primary', 'alias', 'subdomain', 'redirect'])->update(['type' => 'primary']);
-        DB::statement("ALTER TABLE websites MODIFY type ENUM('primary', 'alias', 'subdomain', 'redirect') NOT NULL DEFAULT 'primary'");
+        if ($isMySql) {
+            DB::statement("ALTER TABLE websites MODIFY type ENUM('primary', 'alias', 'subdomain', 'redirect') NOT NULL DEFAULT 'primary'");
+        }
 
         if (! Schema::hasColumn('websites', 'hostname')) {
-            DB::statement("ALTER TABLE websites ADD COLUMN hostname VARCHAR(255) NULL AFTER domain");
+            Schema::table('websites', function (Blueprint $table): void {
+                $table->string('hostname')->nullable()->after('domain');
+            });
         }
 
         if (! Schema::hasColumn('websites', 'scope')) {

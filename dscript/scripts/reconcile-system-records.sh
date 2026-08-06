@@ -116,7 +116,7 @@ if [[ "$configure_website" == true ]]; then
     read -ra ALIASES <<< "${aliases_raw//,/ }"
     ALIASES_PROVIDED=true
   elif [[ "$ALIASES_PROVIDED" != true ]]; then
-    existing_aliases="$(artisan_eval 'echo App\Models\Website::query()->where("type", "alis")->where("assigned_user_id", 1)->orderBy("domain")->pluck("domain")->implode(",");' | tail -n 1)"
+    existing_aliases="$(artisan_eval 'echo App\Models\Website::query()->whereIn("type", ["alis", "alias"])->where("assigned_user_id", 1)->orderBy("domain")->pluck("domain")->implode(",");' | tail -n 1)"
     IFS=',' read -ra ALIASES <<< "$existing_aliases"
   fi
 
@@ -149,7 +149,7 @@ if ($conflict) {
     throw new RuntimeException("Panel domain belongs to website {$conflict->id}; refusing to overwrite it.");
 }
 foreach ($aliases as $alias) {
-    $conflict = Website::query()->where("domain", $alias)->where("type", "!=", "alis")->first();
+    $conflict = Website::query()->where("domain", $alias)->whereNotIn("type", ["alis", "alias"])->first();
     if ($conflict) {
         throw new RuntimeException("Alias {$alias} belongs to website {$conflict->id}; refusing to overwrite it.");
     }
@@ -168,9 +168,10 @@ Website::query()->updateOrCreate(["id" => "1"], $values($domain, "primary"));
     foreach ($aliases as $alias) {
         $id = "1-alias-".substr(hash("sha256", $alias), 0, 24);
         $keep[] = $id;
-        Website::query()->updateOrCreate(["id" => $id], $values($alias, "alis"));
+        Website::query()->updateOrCreate(["id" => $id], array_merge($values($alias, "alias"), ["parent_id" => "1"]));
     }
-    $query = Website::query()->where("type", "alis")->where("assigned_user_id", 1);
+    $query = Website::query()->whereIn("type", ["alis", "alias"])->where("assigned_user_id", 1)
+        ->where(fn ($query) => $query->where("parent_id", "1")->orWhere("id", "like", "1-alias-%"));
     $keep === [] ? $query->delete() : $query->whereNotIn("id", $keep)->delete();
 });
 echo "Reserved panel website configured: {$domain} (id 1)\n";

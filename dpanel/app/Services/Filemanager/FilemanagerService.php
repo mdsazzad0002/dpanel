@@ -244,6 +244,22 @@ class FilemanagerService
         }
     }
 
+    /** @return array{success: bool, output: string} */
+    public function fixWebsitePermissions(string $username, string $rootPath): array
+    {
+        $username = $this->normalizeUsername($username);
+        $rootPath = $this->normalizeAbsolutePath($rootPath);
+        if ($rootPath === '') {
+            throw new \InvalidArgumentException('Website project path is required.');
+        }
+
+        return $this->filemanagerApiRequest('fix-permissions', [
+            'username' => $username,
+            'root_path' => $rootPath,
+            'all' => false,
+        ]);
+    }
+
     public function unzipFile(string $username, string $path, ?string $destination = null): void
     {
         $username = $this->normalizeUsername($username);

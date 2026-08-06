@@ -1,24 +1,145 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-const props=defineProps({website:{type:Object,required:true},aliasApi:{type:Object,required:true}});
-const page=usePage(); const token=computed(()=>String(page.props.panel?.token||''));
-const panelRoute=(name,params={})=>token.value?route(name,{token:token.value,...params}):route(name,params);
-const state=ref({...props.aliasApi}); const plainToken=ref(''); const loading=ref(false);
-const csrf=()=>document.querySelector('meta[name="csrf-token"]')?.content||'';
-const rotate=async()=>{if(!confirm('Rotate token? The previous token will stop working.'))return;loading.value=true;try{const r=await fetch(panelRoute('websites.alias-api.rotate',{id:props.website.id}),{method:'POST',headers:{Accept:'application/json','X-CSRF-TOKEN':csrf()}});const d=await r.json();if(r.ok){plainToken.value=d.token;state.value={...state.value,enabled:true,has_token:true,token_hint:d.token.slice(-8),challenge_token:d.challenge_token};}}finally{loading.value=false;}};
-const toggle=async()=>{loading.value=true;try{const r=await fetch(panelRoute('websites.alias-api.toggle',{id:props.website.id}),{method:'PATCH',headers:{Accept:'application/json','Content-Type':'application/json','X-CSRF-TOKEN':csrf()},body:JSON.stringify({enabled:!state.value.enabled})});if(r.ok)state.value.enabled=!state.value.enabled;}finally{loading.value=false;}};
-const examples=[['1. Add alias','{"action":"add","domain":"alias.example.com"}'],['2. Remove alias','{"action":"remove","domain":"alias.example.com"}'],['3. Paginated list','{"action":"list","page":1,"per_page":25}']];
+const props = defineProps({ website: { type: Object, required: true }, aliases: { type: Array, default: () => [] }, aliasApi: { type: Object, required: true } });
+const page = usePage(); const token = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => token.value ? route(name, { token: token.value, ...params }) : route(name, params);
+const state = ref({ ...props.aliasApi }); const plainToken = ref(''); const loading = ref(false);
+const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+const rotate = async () => { if (!confirm('Rotate token? The previous token will stop working.')) return; loading.value = true; try { const r = await fetch(panelRoute('websites.alias-api.rotate', { id: props.website.id }), { method: 'POST', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrf() } }); const d = await r.json(); if (r.ok) { plainToken.value = d.token; state.value = { ...state.value, enabled: true, has_token: true, token_hint: d.token.slice(-8), challenge_token: d.challenge_token }; } } finally { loading.value = false; } };
+const toggle = async () => { loading.value = true; try { const r = await fetch(panelRoute('websites.alias-api.toggle', { id: props.website.id }), { method: 'PATCH', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() }, body: JSON.stringify({ enabled: !state.value.enabled }) }); if (r.ok) state.value.enabled = !state.value.enabled; } finally { loading.value = false; } };
+const removing = ref('');
+const removeAlias = (alias) => { if (removing.value || !confirm(`Remove alias ${alias.domain}?`)) return; removing.value = alias.id; router.delete(panelRoute('websites.destroy', { id: alias.id }), { preserveScroll: true, onFinish: () => { removing.value = ''; } }); };
+const sslLabel = (alias) => alias.enable_ssl ? String(alias.ssl_status || 'unknown').replaceAll('_', ' ') : 'disabled';
+const sslClass = (alias) => ['valid', 'issued', 'renewed'].includes(String(alias.ssl_status || '').toLowerCase()) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400';
+const examples = [['1. Add alias', '{"action":"add","domain":"alias.example.com"}'], ['2. Remove alias', '{"action":"remove","domain":"alias.example.com"}'], ['3. Paginated list', '{"action":"list","page":1,"per_page":25}']];
 </script>
-<template><Head :title="`Alias API - ${website.domain}`"/><AuthenticatedLayout><template #header><div><h1 class="text-lg font-semibold">Alias API</h1><p class="text-sm text-slate-500">Secure alias and SSL automation for {{ website.domain }}</p></div></template>
-<div class="space-y-5"><div class="flex justify-end"><Link :href="panelRoute('websites.manage',{id:website.id})" class="rounded border px-3 py-2 text-sm dark:border-slate-700">Back to Website Management</Link></div>
-<section class="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><div><p>Status: <strong>{{ state.enabled?'Enabled':'Disabled' }}</strong></p><p v-if="state.token_hint" class="text-xs text-slate-500">Token ending: {{ state.token_hint }}</p></div><div class="flex gap-2"><button :disabled="loading" class="rounded bg-indigo-600 px-4 py-2 text-sm text-white" @click="rotate">{{ state.has_token?'Rotate token':'Create token' }}</button><button v-if="state.has_token" :disabled="loading" class="rounded border px-4 py-2 text-sm dark:border-slate-700" @click="toggle">{{ state.enabled?'Disable':'Enable' }}</button></div></section>
-<div v-if="plainToken" class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><strong>Copy now — shown once:</strong><code class="mt-2 block break-all">{{ plainToken }}</code></div>
-<div class="grid gap-5 xl:grid-cols-2"><section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">Endpoint &amp; authentication</h2><code class="mt-3 block rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">POST {{ state.endpoint }}</code><pre class="mt-3 overflow-x-auto rounded bg-slate-950 p-4 text-xs leading-6 text-white">Authorization: Bearer YOUR_TOKEN
-Content-Type: application/json
-Accept: application/json</pre></section><section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">Safe flow</h2><ol class="mt-3 list-decimal space-y-2 pl-5 text-sm"><li>Authenticate scoped token.</li><li>Validate action and domain.</li><li>Confirm DNS IP match or HTTP challenge.</li><li>Add alias only after reachability succeeds.</li><li>Issue SSL; rollback alias if SSL fails.</li></ol></section></div>
-<section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">HTTP challenge fallback</h2><p class="mt-2 text-sm">Serve the exact response below only if alias and parent IP do not match.</p><div class="mt-3 grid gap-3 lg:grid-cols-2"><code class="break-all rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">http://ALIAS/.well-known/dpanel-alias/{{ state.challenge_token }}</code><code class="break-all rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">Response: {{ state.challenge_token }}</code></div></section>
-<div class="grid gap-5 xl:grid-cols-3"><section v-for="item in examples" :key="item[0]" class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">{{ item[0] }}</h2><pre class="mt-3 overflow-x-auto rounded bg-slate-950 p-3 text-xs text-white">{{ item[1] }}</pre></section></div>
-<div class="grid gap-5 xl:grid-cols-2"><section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">Pagination</h2><p class="mt-2 text-sm">Default 25, maximum 100. Continue while <code>meta.has_more</code> is true. Metadata contains current_page, per_page, total and last_page. Every item includes SSL status and expiry.</p></section><section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">Status codes</h2><dl class="mt-3 grid grid-cols-[4rem_1fr] gap-2 text-sm"><dt>200</dt><dd>List/remove success</dd><dt>201</dt><dd>Alias and SSL created</dd><dt>401</dt><dd>Invalid/disabled token</dd><dt>404</dt><dd>Scoped alias not found</dd><dt>422</dt><dd>Validation/reachability/SSL failure</dd><dt>429</dt><dd>Rate limited</dd></dl></section></div>
-</div></AuthenticatedLayout></template>
+<template>
+
+    <Head :title="`Alias API - ${website.domain}`" />
+    <AuthenticatedLayout><template #header>
+            <div>
+                <h1 class="text-lg font-semibold">Alias API</h1>
+                <p class="text-sm text-slate-500">Secure alias and SSL automation for {{ website.domain }}</p>
+            </div>
+        </template>
+        <div class="space-y-5">
+            <div class="flex flex-wrap justify-end gap-2">
+                <Link :href="panelRoute('websites.alias.create')"
+                    class="rounded bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">Add Alias
+                </Link><a href="#service-api"
+                    class="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">Alis
+                    API</a>
+                <Link :href="panelRoute('websites.manage', { id: website.id })"
+                    class="rounded border px-3 py-2 text-sm dark:border-slate-700">Back to Website Management</Link>
+            </div>
+            <section class="overflow-hidden rounded-xl border bg-white dark:border-slate-800 dark:bg-slate-900">
+                <div class="border-b px-5 py-4 dark:border-slate-800">
+                    <h2 class="font-semibold">Alias Websites</h2>
+                    <p class="mt-1 text-sm text-slate-500">Aliases connected to {{ website.domain }}</p>
+                </div>
+                <div v-if="aliases.length" class="divide-y dark:divide-slate-800">
+                    <div v-for="alias in aliases" :key="alias.id"
+                        class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                        <div class="min-w-0">
+                            <p class="truncate font-medium">{{ alias.domain }}</p>
+                            <div class="mt-1 flex items-center gap-2 text-xs text-slate-500"><span class="capitalize">{{
+                                    alias.status||'unknown' }}</span><span
+                                    :class="['rounded-full px-2 py-0.5 capitalize', sslClass(alias)]">SSL {{
+                                    sslLabel(alias)
+                                    }}</span></div>
+                        </div>
+                        <div class="flex gap-2">
+                            <Link :href="panelRoute('websites.edit', { id: alias.id })"
+                                class="rounded border px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                                Edit</Link><button type="button" :disabled="removing === alias.id"
+                                class="rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950"
+                                @click="removeAlias(alias)">{{ removing === alias.id ? 'Removing...' : 'Remove' }}</button>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="px-5 py-10 text-center text-sm text-slate-500">No alias websites yet.</div>
+            </section>
+            <section id="service-api"
+                class="flex scroll-mt-5 flex-wrap items-center justify-between gap-4 rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                <div>
+                    <h2 class="font-semibold">Alis API</h2>
+                    <p class="mt-1">Status: <strong>{{ state.enabled ? 'Enabled' : 'Disabled' }}</strong></p>
+                    <p v-if="state.token_hint" class="text-xs text-slate-500">Token ending: {{ state.token_hint }}</p>
+                </div>
+                <div class="flex gap-2"><button :disabled="loading"
+                        class="rounded bg-indigo-600 px-4 py-2 text-sm text-white" @click="rotate">{{
+                            state.has_token ?'Rotate token':'Create token' }}</button><button v-if="state.has_token"
+                        :disabled="loading" class="rounded border px-4 py-2 text-sm dark:border-slate-700"
+                        @click="toggle">{{
+                            state.enabled ?'Disable':'Enable' }}</button></div>
+            </section>
+            <div v-if="plainToken" class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                <strong>Copy now — shown once:</strong><code class="mt-2 block break-all">{{ plainToken }}</code>
+            </div>
+            <div class="grid gap-5 xl:grid-cols-2">
+                <section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                    <h2 class="font-semibold">Endpoint &amp; authentication</h2><code
+                        class="mt-3 block rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">POST {{ state.endpoint }}</code>
+                    <pre class="mt-3 overflow-x-auto rounded bg-slate-950 p-4 text-xs leading-6 text-white">Authorization:
+                Bearer YOUR_TOKEN
+                Content-Type: application/json
+                Accept: application/json</pre>
+                </section>
+                <section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                    <h2 class="font-semibold">Safe flow</h2>
+                    <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm">
+                        <li>Authenticate scoped token.</li>
+                        <li>Validate action and domain.</li>
+                        <li>Confirm DNS IP match or HTTP challenge.</li>
+                        <li>Add alias only after reachability succeeds.</li>
+                        <li>Issue SSL; rollback alias if SSL fails.</li>
+                    </ol>
+                </section>
+            </div>
+            <section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                <h2 class="font-semibold">HTTP challenge fallback</h2>
+                <p class="mt-2 text-sm">Serve the exact response below only if alias and parent IP do not match.</p>
+                <div class="mt-3 grid gap-3 lg:grid-cols-2"><code
+                        class="break-all rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">http://ALIAS/.well-known/dpanel-alias/{{
+                            state.challenge_token }}</code><code
+                        class="break-all rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">Response: {{ state.challenge_token
+                }}</code></div>
+            </section>
+            <div class="grid gap-5 xl:grid-cols-3">
+                <section v-for="item in examples" :key="item[0]"
+                    class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                    <h2 class="font-semibold">{{ item[0] }}</h2>
+                    <pre class="mt-3 overflow-x-auto rounded bg-slate-950 p-3 text-xs text-white">{{ item[1] }}</pre>
+                </section>
+            </div>
+            <div class="grid gap-5 xl:grid-cols-2">
+                <section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                    <h2 class="font-semibold">Pagination</h2>
+                    <p class="mt-2 text-sm">Default 25, maximum 100. Continue while <code>meta.has_more</code> is true.
+                        Metadata
+                        contains current_page, per_page, total and last_page. Every item includes SSL status and expiry.
+                    </p>
+                </section>
+                <section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                    <h2 class="font-semibold">Status codes</h2>
+                    <dl class="mt-3 grid grid-cols-[4rem_1fr] gap-2 text-sm">
+                        <dt>200</dt>
+                        <dd>List/remove success</dd>
+                        <dt>201</dt>
+                        <dd>Alias and SSL created</dd>
+                        <dt>401</dt>
+                        <dd>Invalid/disabled token</dd>
+                        <dt>404</dt>
+                        <dd>Scoped alias not found</dd>
+                        <dt>422</dt>
+                        <dd>Validation/reachability/SSL failure</dd>
+                        <dt>429</dt>
+                        <dd>Rate limited</dd>
+                    </dl>
+                </section>
+            </div>
+        </div>
+    </AuthenticatedLayout>
+</template>

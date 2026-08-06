@@ -175,6 +175,7 @@ fn site_project_roots(home: &Path) -> Vec<PathBuf> {
 }
 
 fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
+    prepare_laravel_runtime(root_path)?;
     let path = root_path.to_string_lossy();
     let site_group = user_group(username)?;
     let owner = format!("{username}:{site_group}");
@@ -215,6 +216,23 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
                 path.as_ref(),
             ],
         )?;
+        // The panel's File Manager lists and previews files through its
+        // www-data PHP process. Grant read/traverse access without granting
+        // project-wide write access; mutations still go through Drust.
+        run_status(
+            "setfacl",
+            &["-R", "-m", &format!("u:{WEB_GROUP}:rX"), path.as_ref()],
+        )?;
+        run_status(
+            "setfacl",
+            &[
+                "-R",
+                "-d",
+                "-m",
+                &format!("u:{WEB_GROUP}:rX"),
+                path.as_ref(),
+            ],
+        )?;
     }
 
     for relative in ["storage", "bootstrap/cache", "public"] {
@@ -251,6 +269,43 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
         }
     }
 
+    Ok(())
+}
+
+fn prepare_laravel_runtime(root_path: &Path) -> Result<(), String> {
+    if !root_path.join("artisan").is_file() {
+        return Ok(());
+    }
+
+    for relative in [
+        "storage/logs",
+        "storage/framework/cache/data",
+        "storage/framework/sessions",
+        "storage/framework/views",
+        "bootstrap/cache",
+    ] {
+        fs::create_dir_all(root_path.join(relative)).map_err(|error| {
+            format!("failed to create Laravel runtime directory {relative}: {error}")
+        })?;
+    }
+
+    let env = fs::read_to_string(root_path.join(".env")).unwrap_or_default();
+    let uses_sqlite = env.lines().any(|line| {
+        let line = line.trim();
+        line == "DB_CONNECTION=sqlite"
+            || line == "DB_CONNECTION=\"sqlite\""
+            || line == "DB_CONNECTION='sqlite'"
+    });
+    if uses_sqlite {
+        let database_dir = root_path.join("database");
+        fs::create_dir_all(&database_dir)
+            .map_err(|error| format!("failed to create Laravel database directory: {error}"))?;
+        let database = database_dir.join("database.sqlite");
+        if !database.exists() {
+            fs::File::create(&database)
+                .map_err(|error| format!("failed to create database/database.sqlite: {error}"))?;
+        }
+    }
     Ok(())
 }
 

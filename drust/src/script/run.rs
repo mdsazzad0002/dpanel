@@ -5,6 +5,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde::Deserialize;
+use std::collections::HashMap;
 
 use crate::{
     api::{ApiResponse, ApiState, check_token},
@@ -15,6 +16,7 @@ use crate::{
 pub(crate) struct Request {
     pub script: String,
     pub args: Option<Vec<String>>,
+    pub environment: Option<HashMap<String, String>>,
 }
 
 pub(crate) async fn handle(
@@ -27,7 +29,12 @@ pub(crate) async fn handle(
     }
 
     let args = request.args.unwrap_or_default();
-    match scripts::run_script(&request.script, &args) {
+    let environment = request
+        .environment
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<Vec<_>>();
+    match scripts::run_script_with_env(&request.script, &args, &environment) {
         Ok(output) => {
             ApiResponse::ok_data("Script executed", serde_json::json!({"output": output}))
                 .into_response()

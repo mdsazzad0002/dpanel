@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     website: {
@@ -13,10 +13,6 @@ const props = defineProps({
         default: () => ({}),
     },
     activities: {
-        type: Array,
-        default: () => [],
-    },
-    aliasWebsites: {
         type: Array,
         default: () => [],
     },
@@ -32,6 +28,7 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    databaseConnection: { type: Object, default: () => ({ available: false }) },
 });
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
@@ -45,42 +42,12 @@ const actionLoading = ref(false);
 const statusCheckLoading = ref(false);
 const sslActionLoading = ref(false);
 const cacheClearLoading = ref(false);
+const permissionFixLoading = ref(false);
+const databaseConnectLoading = ref(false);
+const dependencyInstallLoading = ref('');
 const storageLinkLoading = ref('');
-const aliasSubmitting = ref(false);
-const aliasActionLoading = ref('');
-const aliasEditingId = ref('');
-const aliasEditForm = useForm({
-    domain: '',
-});
-const aliasApiOpen = ref(false);
-const aliasApiLoading = ref(false);
-const aliasApi = ref({ enabled: false, has_token: false, token_hint: '', challenge_token: '', endpoint: '' });
-const aliasApiPlainToken = ref('');
-const loadAliasApi = async () => {
-    aliasApiOpen.value = true; aliasApiLoading.value = true;
-    try { const response = await fetch(panelRoute('websites.alias-api.settings', { id: props.website.id }), { headers: { Accept: 'application/json' } }); aliasApi.value = await response.json(); }
-    finally { aliasApiLoading.value = false; }
-};
-const rotateAliasApi = async () => {
-    if (!confirm('Rotate the Alias API token? The previous token will stop working.')) return;
-    const response = await fetch(panelRoute('websites.alias-api.rotate', { id: props.website.id }), { method: 'POST', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken.value } });
-    const data = await response.json(); if (response.ok) { aliasApiPlainToken.value = data.token; await loadAliasApi(); }
-};
-const toggleAliasApi = async () => {
-    const response = await fetch(panelRoute('websites.alias-api.toggle', { id: props.website.id }), { method: 'PATCH', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken.value }, body: JSON.stringify({ enabled: !aliasApi.value.enabled }) });
-    if (response.ok) aliasApi.value.enabled = !aliasApi.value.enabled;
-};
 const toasts = ref([]);
 let toastSeq = 0;
-const aliasForm = useForm({
-    domain_type: 'alis',
-    domain: '',
-    parent_id: '',
-    start_directory: '',
-    root_path: '',
-    php_version: '',
-    enable_ssl: false,
-});
 
 const toNumber = (value) => {
     const parsed = Number(value);
@@ -150,53 +117,6 @@ const statusClassFor = (status) => {
     return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 };
 
-const sslStatusLabel = (status) => {
-    const value = String(status ?? '').toLowerCase();
-    if (value === 'valid') return 'SSL Active';
-    if (value === 'issued') return 'SSL Active';
-    if (value === 'renewed') return 'SSL Active';
-    if (value === 'failed') return 'SSL Failed';
-    if (value === 'disabled') return 'SSL Off';
-    return 'SSL Unknown';
-};
-
-const sslStatusClass = (status) => {
-    const value = String(status ?? '').toLowerCase();
-    if (value === 'valid' || value === 'issued' || value === 'renewed') {
-        return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
-    }
-    if (value === 'failed') {
-        return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
-    }
-    if (value === 'disabled') {
-        return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
-    }
-    return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
-};
-
-const aliasSslValidityLabel = (alias) => {
-    if (!alias?.enable_ssl) return 'Disabled';
-    if (alias?.ssl_days_remaining === null || alias?.ssl_days_remaining === undefined || alias?.ssl_days_remaining === '') {
-        return sslStatusLabel(alias?.ssl_status);
-    }
-    const days = Number(alias.ssl_days_remaining);
-    if (!Number.isFinite(days)) return sslStatusLabel(alias?.ssl_status);
-    if (days < 0) return `Expired ${Math.abs(days)}d ago`;
-    if (days === 0) return 'Expires today';
-    return `Valid ${days}d`;
-};
-
-const aliasSslValidityClass = (alias) => {
-    if (!alias?.enable_ssl || alias?.ssl_days_remaining === null || alias?.ssl_days_remaining === undefined || alias?.ssl_days_remaining === '') {
-        return sslStatusClass(alias?.ssl_status);
-    }
-    const days = Number(alias.ssl_days_remaining);
-    if (!Number.isFinite(days)) return sslStatusClass(alias?.ssl_status);
-    if (days < 0) return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
-    if (days <= 30) return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
-};
-
 const sslEnabled = computed(() => Boolean(props.website?.enable_ssl));
 const websiteSslStatus = computed(() => String(props.sslStatus?.status || 'unknown').toLowerCase());
 const websiteSslLabel = computed(() => {
@@ -241,6 +161,7 @@ const scheme = computed(() => (sslEnabled.value ? 'https' : 'http'));
 const detectedApp = computed(() => String(props.rootInspection?.detected_app || '').toLowerCase());
 const canClearCache = computed(() => ['wordpress', 'laravel'].includes(detectedApp.value));
 const isLaravelWebsite = computed(() => detectedApp.value === 'laravel');
+const supportsDatabaseAutoConnect = computed(() => ['laravel', 'wordpress'].includes(detectedApp.value));
 const storageLinked = computed(() => Boolean(props.rootInspection?.storage_linked));
 const isSystemWebsite = computed(() => String(props.website.id) === '1');
 
@@ -250,6 +171,10 @@ const serviceLinks = computed(() => [
     { label: 'Redis Cache', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
     { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
     { label: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Scheduled tasks' },
+    { label: 'Git Deployment', icon: 'bi-github', color: 'emerald', href: panelRoute('websites.git.index', { id: props.website.id }), description: 'Clone, pull, push & auto sync' },
+    { label: 'SSH Key Generator', icon: 'bi-key', color: 'amber', href: panelRoute('websites.ssh-key.index', { id: props.website.id }), description: 'Create a GitHub deployment key' },
+    { label: 'Website Terminal', icon: 'bi-terminal', color: 'emerald', href: panelRoute('websites.terminal.index', { id: props.website.id }), description: 'Open the isolated project shell' },
+    { label: 'Alis API', icon: 'bi-code-slash', color: 'violet', href: panelRoute('websites.alias-api.index', { id: props.website.id }), description: 'Manage aliases and scoped API access' },
     { label: 'Email Accounts', icon: 'bi-envelope', color: 'pink', href: panelRoute('emails.list'), description: 'Mailbox services' },
     { label: 'Databases', icon: 'bi-database', color: 'orange', href: panelRoute('databases.list', { website: props.website.domain }), description: `Databases for ${props.website.domain}` },
     { label: 'DNS Zones', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.zones'), description: 'DNS entries' },
@@ -315,45 +240,6 @@ const removeToast = (id) => {
     toasts.value = toasts.value.filter((toast) => toast.id !== id);
 };
 
-const startAliasEdit = (alias) => {
-    aliasEditingId.value = String(alias?.id || '');
-    aliasEditForm.domain = String(alias?.domain || '');
-};
-
-const cancelAliasEdit = () => {
-    aliasEditingId.value = '';
-    aliasEditForm.reset();
-};
-
-const saveAliasEdit = async (alias) => {
-    const aliasId = String(alias?.id || '').trim();
-    if (!aliasId || aliasActionLoading.value) return;
-
-    aliasActionLoading.value = `edit:${aliasId}`;
-
-    try {
-        const response = await window.axios.patch(panelRoute('websites.alias.update', { id: aliasId }), {
-            domain: String(aliasEditForm.domain || '').trim(),
-        }, {
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-        });
-
-        const responseType = String(response?.data?.type || 'success');
-        pushToast(String(response?.data?.message || 'Alias updated successfully.'), responseType === 'warning' ? 'error' : 'success');
-        aliasEditingId.value = '';
-        router.reload({ only: ['aliasWebsites', 'metrics', 'activities'], preserveScroll: true });
-    } catch (error) {
-        const data = error?.response?.data || {};
-        pushToast(String(data?.message || 'Alias update failed.'), 'error');
-    } finally {
-        aliasActionLoading.value = '';
-    }
-};
-
 const pushToast = (message, type = 'error') => {
     if (!message) return;
 
@@ -367,112 +253,6 @@ const pushToast = (message, type = 'error') => {
     window.setTimeout(() => {
         removeToast(id);
     }, 3500);
-};
-
-const aliasParentDomain = computed(() => String(props.website?.domain || '').trim().toLowerCase());
-const aliasParentId = computed(() => String(props.website?.id || '').trim());
-
-const submitAlias = () => {
-    aliasForm.clearErrors();
-    aliasForm.parent_id = aliasParentId.value;
-    aliasForm.start_directory = String(props.website?.start_directory || 'public').trim() || 'public';
-    aliasForm.root_path = String(props.website?.root_path || '').trim();
-    aliasForm.php_version = String(props.website?.php_version || '').trim();
-    aliasForm.enable_ssl = Boolean(props.website?.enable_ssl);
-    aliasSubmitting.value = true;
-
-    window.axios.post(panelRoute('websites.store'), aliasForm.data(), {
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-        },
-    })
-        .then(() => {
-            pushToast('Alias website created successfully.', 'success');
-            aliasForm.reset('domain');
-            aliasForm.parent_id = '';
-            router.reload({ only: ['aliasWebsites', 'metrics', 'activities'], preserveScroll: true });
-        })
-        .catch((error) => {
-            const data = error?.response?.data || {};
-            const errors = data?.errors || {};
-            pushToast(data?.message || 'Alias website creation failed.', 'error');
-            Object.entries(errors).forEach(([key, messages]) => {
-                aliasForm.setError(key, Array.isArray(messages) ? String(messages[0] || '') : String(messages || ''));
-            });
-        })
-        .finally(() => {
-            aliasSubmitting.value = false;
-        });
-};
-
-const runAliasAction = async (alias, action) => {
-    const aliasId = String(alias?.id || '').trim();
-    if (!aliasId || aliasActionLoading.value) return;
-
-    aliasActionLoading.value = `${action}:${aliasId}`;
-
-    try {
-        const endpoint = panelRoute('websites.ssl.issue', { id: aliasId });
-
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': csrfToken.value,
-            },
-            body: JSON.stringify({}),
-        });
-
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw data;
-        }
-
-        actionMessageType.value = String(data.type || 'success');
-        actionMessage.value = String(data.message || 'Action completed successfully.');
-        pushToast(actionMessage.value, actionMessageType.value === 'success' ? 'success' : 'error');
-    } catch (error) {
-        actionMessageType.value = 'error';
-        actionMessage.value = String(error?.message || 'Alias action failed.');
-        pushToast(actionMessage.value, 'error');
-    } finally {
-        aliasActionLoading.value = '';
-    }
-};
-
-const removeAlias = async (alias) => {
-    const aliasId = String(alias?.id || '').trim();
-    if (!aliasId || aliasActionLoading.value) return;
-
-    if (!window.confirm(`Remove alias ${String(alias?.domain || aliasId)}?`)) {
-        return;
-    }
-
-    aliasActionLoading.value = `remove:${aliasId}`;
-
-    try {
-        router.delete(panelRoute('websites.destroy', { id: aliasId }), {
-            preserveScroll: true,
-            onSuccess: () => {
-                pushToast('Alias removed successfully.', 'success');
-                router.reload({ only: ['aliasWebsites', 'metrics', 'activities'], preserveScroll: true });
-            },
-            onError: () => {
-                pushToast('Alias remove failed.', 'error');
-            },
-            onFinish: () => {
-                aliasActionLoading.value = '';
-            },
-        });
-    } catch (error) {
-        aliasActionLoading.value = '';
-        pushToast(error?.message || 'Alias remove failed.', 'error');
-    }
 };
 
 const clearProjectCache = async () => {
@@ -510,6 +290,63 @@ const clearProjectCache = async () => {
         pushToast(actionMessage.value, 'error');
     } finally {
         cacheClearLoading.value = false;
+    }
+};
+
+const fixProjectPermissions = async () => {
+    if (permissionFixLoading.value) return;
+    permissionFixLoading.value = true;
+    try {
+        const response = await fetch(panelRoute('websites.project-permissions.fix', { id: props.website.id }), {
+            method: 'POST', credentials: 'same-origin',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken.value },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'Permission repair failed.');
+        pushToast(data.message || 'Project permissions fixed successfully.', 'success');
+    } catch (error) {
+        pushToast(error?.message || 'Permission repair failed.', 'error');
+    } finally {
+        permissionFixLoading.value = false;
+    }
+};
+
+const connectProjectDatabase = async () => {
+    if (databaseConnectLoading.value || !props.databaseConnection?.available) return;
+    databaseConnectLoading.value = true;
+    try {
+        const response = await fetch(panelRoute('websites.project-database.connect', { id: props.website.id }), {
+            method: 'POST', credentials: 'same-origin',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken.value },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'Database connection failed.');
+        pushToast(data.message || 'Project database connected successfully.', 'success');
+    } catch (error) {
+        pushToast(error?.message || 'Database connection failed.', 'error');
+    } finally {
+        databaseConnectLoading.value = false;
+    }
+};
+
+const installProjectDependencies = async (action) => {
+    if (dependencyInstallLoading.value) return;
+    dependencyInstallLoading.value = action;
+    try {
+        const response = await fetch(panelRoute('websites.project-dependencies.install', { id: props.website.id }), {
+            method: 'POST', credentials: 'same-origin',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken.value },
+            body: JSON.stringify({ action }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'Dependency installation failed.');
+        pushToast(data.message || 'Dependencies installed successfully.', 'success');
+    } catch (error) {
+        pushToast(error?.message || 'Dependency installation failed.', 'error');
+    } finally {
+        dependencyInstallLoading.value = '';
     }
 };
 
@@ -711,19 +548,19 @@ const issueWebsiteSsl = async () => {
 
             <!-- Hero Section -->
             <section
-                class="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                class="relative grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(420px,1fr)]">
                 <!-- Background decorations -->
                 <div
-                    class="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full bg-gradient-to-br from-blue-400/10 to-indigo-400/10 blur-3xl dark:from-blue-500/5 dark:to-indigo-500/5">
+                    class="hidden">
                 </div>
                 <div
-                    class="pointer-events-none absolute -left-16 bottom-0 h-40 w-40 rounded-full bg-gradient-to-tr from-cyan-400/10 to-blue-400/10 blur-3xl dark:from-cyan-500/5 dark:to-blue-500/5">
+                    class="hidden">
                 </div>
 
-                <div class="relative p-6 lg:p-8">
-                    <div class="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+                <div class="contents">
+                    <div class="contents">
                         <!-- Left: Website Info -->
-                        <div class="space-y-5">
+                        <div class="space-y-5 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50 lg:p-8">
                             <!-- Status Badges -->
                             <div class="flex flex-wrap items-center gap-2">
                                 <span
@@ -796,16 +633,26 @@ const issueWebsiteSsl = async () => {
                                         </button>
                                     </div>
                                 </div>
+                                <div class="grid gap-3 sm:grid-cols-2">
+                                    <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-700/80 dark:bg-slate-800/30">
+                                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Project</p>
+                                        <p class="mt-1.5 text-sm font-semibold capitalize text-slate-700 dark:text-slate-200">{{ detectedApp || 'Generic website' }}</p>
+                                    </div>
+                                    <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-700/80 dark:bg-slate-800/30">
+                                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Database Connection</p>
+                                        <p class="mt-1.5 truncate text-sm font-semibold" :class="databaseConnection.available ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'">{{ databaseConnection.available ? databaseConnection.database_name : 'No active database' }}</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         <!-- Right: Quick Actions -->
-                        <div>
+                        <div class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50 lg:p-8">
                             <p
                                 class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                                 Quick Actions</p>
-                            <div class="mt-3 space-y-2">
-                                <Link v-for="action in quickActions.filter((item) => !item.action)" :key="action.label"
+                            <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <Link v-for="action in quickActions.filter((item) => !item.action && item.label !== 'Back to List')" :key="action.label"
                                     :href="action.href" :method="action.method" as="button" :class="[
                                         'flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150',
                                         quickActionColorClasses[action.color] || quickActionColorClasses.slate,
@@ -829,6 +676,37 @@ const issueWebsiteSsl = async () => {
                                         {{ storageLinkLoading === 'unlink' ? 'Unlinking...' : 'Unlink' }}
                                     </button>
                                 </div>
+                                <button type="button" :disabled="permissionFixLoading"
+                                    class="flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-amber-700 transition hover:border-amber-300 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400"
+                                    @click="fixProjectPermissions">
+                                    <i class="bi bi-wrench-adjustable-circle text-base"></i>
+                                    {{ permissionFixLoading ? 'Fixing Permissions...' : 'Fix Website Permissions' }}
+                                </button>
+                            </div>
+                    <!-- Remaining quick actions stay inside the right card. -->
+                    <div class="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <button v-if="supportsDatabaseAutoConnect" type="button"
+                                    :disabled="databaseConnectLoading || !databaseConnection.available"
+                                    :title="databaseConnection.available ? `Connect ${databaseConnection.database_name}` : 'Create an active database for this domain first'"
+                                    class="flex w-full items-center gap-3 rounded-xl border border-cyan-200 bg-cyan-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-800 dark:bg-cyan-500/10 dark:text-cyan-400"
+                                    @click="connectProjectDatabase">
+                                    <i class="bi bi-database-check text-base"></i>
+                                    {{ databaseConnectLoading ? 'Connecting Database...' : databaseConnection.available ? `Connect ${detectedApp === 'wordpress' ? 'WordPress' : 'Laravel'} Database` : 'Create Database First' }}
+                                </button>
+                                <button v-if="rootInspection.has_composer_json" type="button"
+                                    :disabled="Boolean(dependencyInstallLoading)"
+                                    class="flex w-full items-center gap-3 rounded-xl border border-violet-200 bg-violet-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-violet-700 transition hover:border-violet-300 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-800 dark:bg-violet-500/10 dark:text-violet-400"
+                                    @click="installProjectDependencies('composer_install')">
+                                    <i class="bi bi-box-seam text-base"></i>
+                                    {{ dependencyInstallLoading === 'composer_install' ? 'Installing Composer...' : 'Install Composer Dependencies' }}
+                                </button>
+                                <button v-if="rootInspection.has_package_json" type="button"
+                                    :disabled="Boolean(dependencyInstallLoading)"
+                                    class="flex w-full items-center gap-3 rounded-xl border border-red-200 bg-red-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400"
+                                    @click="installProjectDependencies('npm_install')">
+                                    <i class="bi bi-node-plus text-base"></i>
+                                    {{ dependencyInstallLoading === 'npm_install' ? 'Installing & Building...' : 'Install & Build NPM' }}
+                                </button>
                                 <button v-for="action in quickActions.filter((item) => item.action === 'clearCache')"
                                     :key="action.label" type="button" :disabled="cacheClearLoading" :class="[
                                         'flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60',
@@ -851,8 +729,15 @@ const issueWebsiteSsl = async () => {
                                     </svg>
                                     {{ statusCheckLoading ? 'Checking...' : action.label }}
                                 </button>
-                            </div>
-                        </div>
+                    </div>
+                    <div class="mt-2">
+                                <Link :href="panelRoute('websites.list')" as="button"
+                                    class="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-left text-[13px] font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-700">
+                                    <i class="bi bi-arrow-left text-base opacity-70"></i>
+                                    Back to List
+                                </Link>
+                    </div>
+                </div>
                     </div>
                 </div>
             </section>
@@ -864,9 +749,9 @@ const issueWebsiteSsl = async () => {
 
             <!-- Services + Activity -->
             <section class="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
-                <div class="min-w-0 space-y-4">
+                <div class="contents">
 
-                    <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <section class="order-1 grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-4">
                         <div v-for="metric in metrics" :key="metric.label"
                             class="group rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-slate-800/80 dark:bg-slate-900/50">
                             <div class="flex items-start justify-between">
@@ -892,7 +777,7 @@ const issueWebsiteSsl = async () => {
 
 
                     <!-- SSL Management -->
-                    <section class="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                    <section class="order-2 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
                         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                             <div>
                                 <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">SSL Certificate</h2>
@@ -955,7 +840,7 @@ const issueWebsiteSsl = async () => {
 
                     <!-- Services Grid -->
                     <div
-                        class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                        class="order-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50 xl:col-span-2">
                         <div class="flex items-center justify-between">
                             <h2
                                 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -964,7 +849,7 @@ const issueWebsiteSsl = async () => {
                                 class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{
                                     serviceLinks.length }} tools</span>
                         </div>
-                        <div class="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                        <div class="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                             <Link v-for="service in serviceLinks" :key="service.label" :href="service.href"
                                 class="group flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:shadow-lg">
                                 <div
@@ -990,145 +875,7 @@ const issueWebsiteSsl = async () => {
 
                 </div>
 
-                <div class="min-w-0 space-y-4">
-
-                    <section
-                        class="w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50 ">
-                        <div
-                            class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-                            <div>
-                                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Alias Websites</h3>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">Add alias domains for {{
-                                    website.domain }}
-                                    without leaving this screen.</p>
-                            </div>
-                        </div>
-                        <form
-                            class="grid gap-3 border-b border-slate-200 px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto] dark:border-slate-800"
-                            @submit.prevent="submitAlias">
-                            <div>
-                                <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Alias
-                                    domain</label>
-                                <input v-model.trim="aliasForm.domain" type="text" placeholder="alias.example.com"
-                                    class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-cyan-500 dark:focus:ring-cyan-500/20" />
-                                <p v-if="aliasForm.errors.domain" class="mt-1 text-xs text-red-600">{{
-                                    aliasForm.errors.domain
-                                }}</p>
-                            </div>
-                            <div class="flex items-end">
-                                <button type="submit" :disabled="aliasSubmitting || !aliasParentDomain"
-                                    class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto">
-                                    {{ aliasSubmitting ? 'Creating...' : 'Create Alias' }}
-                                </button>
-                            </div>
-                        </form>
-                        <div v-if="aliasWebsites.length" class="space-y-3 p-5">
-                            <div v-for="(alias, index) in aliasWebsites" :key="alias.id"
-                                class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/60 sm:flex-row sm:items-center sm:justify-between">
-                                <div class="flex items-start gap-3">
-                                    <span class="text-xs font-semibold text-slate-400">{{ index + 1 }}</span>
-                                    <div class="min-w-0 flex-1">
-                                        <span class="block truncate text-sm font-medium text-slate-800 dark:text-slate-100">{{
-                                            alias.domain || '-' }}</span>
-                                        <div v-if="aliasEditingId !== alias.id" class="mt-1">
-                                            <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                                                :class="aliasSslValidityClass(alias)"
-                                                :title="alias.ssl_expires_at ? `Expires ${formatCertificateDate(alias.ssl_expires_at)}` : 'Certificate expiry is unavailable'">
-                                                <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
-                                                <span>SSL</span>
-                                                <span class="opacity-40">|</span>
-                                                <span>{{ aliasSslValidityLabel(alias) }}</span>
-                                            </span>
-                                        </div>
-                                        <div v-else class="mt-1">
-                                            <label class="sr-only" :for="`alias-domain-${alias.id}`">Alias domain</label>
-                                            <input
-                                                :id="`alias-domain-${alias.id}`"
-                                                v-model.trim="aliasEditForm.domain"
-                                                type="text"
-                                                class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-cyan-500 dark:focus:ring-cyan-500/20"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="flex flex-wrap gap-2 sm:justify-end">
-                                    <button
-                                        v-if="aliasEditingId !== alias.id"
-                                        type="button"
-                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                                        aria-label="Edit alias"
-                                        title="Edit"
-                                        @click="startAliasEdit(alias)"
-                                    >
-                                        <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current">
-                                            <path d="M3 17.25V21h3.75L17.8 9.95l-3.75-3.75L3 17.25zm18-11.5a1 1 0 0 0 0-1.4l-1.6-1.6a1 1 0 0 0-1.4 0l-1.4 1.4 3.75 3.75 1.65-1.55z" />
-                                        </svg>
-                                    </button>
-                                    <button
-                                        v-else
-                                        type="button"
-                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20"
-                                        :disabled="aliasActionLoading === `edit:${alias.id}`"
-                                        aria-label="Save alias"
-                                        title="Save"
-                                        @click="saveAliasEdit(alias)"
-                                    >
-                                        <svg v-if="aliasActionLoading !== `edit:${alias.id}`" viewBox="0 0 24 24" class="h-4 w-4 fill-current">
-                                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zM12 19a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z" />
-                                        </svg>
-                                        <svg v-else viewBox="0 0 24 24" class="h-4 w-4 animate-spin fill-current">
-                                            <path d="M12 4a8 8 0 1 0 7.45 5H17l3.5-3.5L24 9h-2.55A10 10 0 1 1 12 2v2zm1 4h-2v5l4.25 2.52 1-1.72L13 11.9V8z" />
-                                        </svg>
-                                    </button>
-                                    <button
-                                        v-if="aliasEditingId === alias.id"
-                                        type="button"
-                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                                        aria-label="Cancel edit"
-                                        title="Cancel"
-                                        @click="cancelAliasEdit()"
-                                    >
-                                        <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current">
-                                            <path d="M12 10.586 6.707 5.293 5.293 6.707 10.586 12l-5.293 5.293 1.414 1.414L12 13.414l5.293 5.293 1.414-1.414L13.414 12l5.293-5.293-1.414-1.414L12 10.586z" />
-                                        </svg>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        :disabled="aliasActionLoading === `ssl:${alias.id}`"
-                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20"
-                                        aria-label="Sync SSL"
-                                        title="SSL Sync"
-                                        @click="runAliasAction(alias, 'ssl')"
-                                    >
-                                        <svg v-if="aliasActionLoading !== `ssl:${alias.id}`" viewBox="0 0 24 24" class="h-4 w-4 fill-current">
-                                            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 7a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm-1 5h2v5h-2v-5z" />
-                                        </svg>
-                                        <svg v-else viewBox="0 0 24 24" class="h-4 w-4 animate-spin fill-current">
-                                            <path d="M12 4a8 8 0 1 0 7.45 5H17l3.5-3.5L24 9h-2.55A10 10 0 1 1 12 2v2zm1 4h-2v5l4.25 2.52 1-1.72L13 11.9V8z" />
-                                        </svg>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        :disabled="aliasActionLoading === `remove:${alias.id}`"
-                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
-                                        aria-label="Remove alias"
-                                        title="Remove"
-                                        @click="removeAlias(alias)"
-                                    >
-                                        <svg v-if="aliasActionLoading !== `remove:${alias.id}`" viewBox="0 0 24 24" class="h-4 w-4 fill-current">
-                                            <path d="M9 3.75V5H4.5v2H19V5H14.5V3.75A1.75 1.75 0 0 0 12.75 2h-1.5A1.75 1.75 0 0 0 9.5 3.75V5h-1V3.75A1.75 1.75 0 0 0 6.75 2h-.5A1.75 1.75 0 0 0 4.5 3.75V5H3v2h18V5h-1.5V3.75A1.75 1.75 0 0 0 17.75 2h-.5A1.75 1.75 0 0 0 15.5 3.75V5h-1V3.75A1.75 1.75 0 0 0 12.75 2h-1.5A1.75 1.75 0 0 0 9.5 3.75zM5 9l1 11h12l1-11H5zm4 2h2v7H9v-7zm4 0h2v7h-2v-7z" />
-                                        </svg>
-                                        <svg v-else viewBox="0 0 24 24" class="h-4 w-4 animate-spin fill-current">
-                                            <path d="M12 2v4l3-3-3-1z" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <div v-else class="px-5 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
-                            No alias websites yet.
-                        </div>
-                    </section>
+                <div class="order-3 min-w-0 space-y-4">
                     <!-- Activity Timeline -->
                     <div
                         class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
@@ -1181,65 +928,6 @@ const issueWebsiteSsl = async () => {
 
             </section>
 
-            <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-                <div class="flex flex-wrap items-center justify-between gap-4">
-                    <div><h2 class="font-semibold">Alias API</h2><p class="mt-1 text-sm text-slate-500">Securely verify, add, issue SSL, or revoke alias domains through API.</p></div>
-                    <Link :href="panelRoute('websites.alias-api.index', { id: website.id })" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Manage Alias API</Link>
-                </div>
-            </section>
-
-            <Teleport to="body">
-            <div v-if="aliasApiOpen" class="fixed inset-0 z-[100] flex justify-end">
-                <button class="absolute inset-0 bg-slate-950/60" aria-label="Close" @click="aliasApiOpen = false"></button>
-                <aside class="relative flex h-dvh w-full flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-950 lg:w-[70vw] lg:max-w-none">
-                    <div class="z-10 flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-950 sm:px-6">
-                        <div><h2 class="text-lg font-semibold leading-tight">Alias API</h2><p class="text-xs text-slate-500">Admin/reseller access only</p></div>
-                        <button class="rounded border px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-900" @click="aliasApiOpen = false">Close</button>
-                    </div>
-                    <div v-if="aliasApiLoading" class="flex flex-1 items-center justify-center text-sm text-slate-500">Loading…</div>
-                    <div v-else class="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
-                        <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 dark:border-slate-800">
-                            <div><p class="text-sm">Status: <strong>{{ aliasApi.enabled ? 'Enabled' : 'Disabled' }}</strong></p><p v-if="aliasApi.token_hint" class="mt-0.5 text-xs text-slate-500">Token ending: {{ aliasApi.token_hint }}</p></div>
-                            <div class="flex gap-2"><button class="rounded bg-indigo-600 px-3 py-2 text-sm text-white" @click="rotateAliasApi">{{ aliasApi.has_token ? 'Rotate token' : 'Create token' }}</button><button v-if="aliasApi.has_token" class="rounded border px-3 py-2 text-sm dark:border-slate-700" @click="toggleAliasApi">{{ aliasApi.enabled ? 'Disable' : 'Enable' }}</button></div>
-                        </div>
-                        <div v-if="aliasApiPlainToken" class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><strong>Copy now — shown once:</strong><code class="mt-2 block break-all">{{ aliasApiPlainToken }}</code></div>
-                        <div class="grid gap-4 xl:grid-cols-2">
-                            <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">API endpoint &amp; authentication</h3><code class="mt-2 block break-all rounded bg-slate-100 p-2 text-xs dark:bg-slate-900">POST {{ aliasApi.endpoint }}</code><p class="mt-3 text-xs text-slate-500">Send JSON and the token on every request:</p><pre class="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs leading-6 text-slate-100">Authorization: Bearer YOUR_TOKEN
-Content-Type: application/json
-Accept: application/json</pre></div>
-                            <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">Safe execution flow</h3><ol class="mt-2 list-decimal space-y-1.5 pl-5 text-xs text-slate-600 dark:text-slate-300"><li>Authenticate the website-scoped token.</li><li>Validate action and domain syntax.</li><li>Confirm DNS IP match or HTTP challenge.</li><li>Create alias only after verification passes.</li><li>Issue SSL; rollback alias if SSL fails.</li></ol></div>
-                        </div>
-                        <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">Domain verification</h3><p class="mt-2">No verification mode is required in the request. The API first compares the alias IP with the parent website IP. If they do not match, it checks the HTTP challenge.</p><div class="mt-3 grid gap-2 lg:grid-cols-[1fr_1fr]"><code class="block break-all rounded bg-slate-100 p-2 text-xs dark:bg-slate-900">http://ALIAS/.well-known/dpanel-alias/{{ aliasApi.challenge_token }}</code><code class="block break-all rounded bg-slate-100 p-2 text-xs dark:bg-slate-900">Response body: {{ aliasApi.challenge_token }}</code></div><p class="mt-2 text-xs text-slate-500">The response must be HTTP 200 with the exact token and no redirect. Failed verification never creates an alias.</p></div>
-                        <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">1. Add and verify</h3><p class="mt-2 text-xs text-slate-500">The API automatically checks matching server IP first, then HTTP challenge. Nothing is added unless one succeeds.</p><pre class="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs text-slate-100">curl -X POST {{ aliasApi.endpoint }} \
--H "Authorization: Bearer YOUR_TOKEN" \
--H "Content-Type: application/json" \
--d '{"action":"add","domain":"alias.example.com"}'</pre></div>
-                        <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">2. Remove alias</h3><pre class="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs text-slate-100">{"action":"remove","domain":"alias.example.com"}</pre><p class="mt-2 text-xs text-slate-500">Only an alias scoped to this website can be removed.</p></div>
-                        <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">3. Paginated alias list</h3><pre class="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs text-slate-100">{"action":"list","page":1,"per_page":25}</pre><p class="mt-2 text-xs text-slate-500">Every list is paginated. Default 25, maximum 100. Each item includes SSL status and expiry; JSON metadata includes total, last page and has-more.</p></div>
-                        <div class="grid gap-4 xl:grid-cols-2">
-                            <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">List response shape</h3><pre class="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs leading-5 text-slate-100">{
-  "success": true,
-  "data": [{
-    "id": "...",
-    "domain": "alias.example.com",
-    "ssl_status": "valid",
-    "ssl_expires_at": "..."
-  }],
-  "meta": {
-    "current_page": 1,
-    "per_page": 25,
-    "total": 5000,
-    "last_page": 200,
-    "has_more": true
-  }
-}</pre></div>
-                            <div class="rounded-lg border p-4 text-sm dark:border-slate-800"><h3 class="font-semibold">Pagination pattern</h3><p class="mt-2 text-xs text-slate-500">Start at page 1 and request the next page only while <code>meta.has_more</code> is true. Keep <code>per_page</code> at 25–100; never assume all aliases fit in one response.</p><h3 class="mt-4 font-semibold">HTTP status codes</h3><dl class="mt-2 grid grid-cols-[4rem_1fr] gap-1.5 text-xs"><dt>200</dt><dd>List/remove succeeded</dd><dt>201</dt><dd>Alias and SSL created</dd><dt>401</dt><dd>Invalid or disabled token</dd><dt>404</dt><dd>Scoped alias not found</dd><dt>422</dt><dd>Validation, reachability, or SSL failure</dd><dt>429</dt><dd>Rate limit exceeded</dd></dl></div>
-                        </div>
-                        <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"><strong>Operational rules:</strong> store the token as a secret, rotate it if exposed, use HTTPS for API calls, do not retry 422 requests without fixing DNS/challenge, and use list pagination to confirm the final SSL state.</div>
-                    </div>
-                </aside>
-            </div>
-            </Teleport>
         </div>
     </AuthenticatedLayout>
 </template>

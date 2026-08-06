@@ -25,7 +25,14 @@ class RedisCacheController extends Controller
     {
         $website=$this->findWebsiteById($id,$request); abort_if($website===null,404);
         $row=AliasApiCredential::query()->where('website_id',$id)->first();
-        return Inertia::render('Websites/AliasApi', ['website'=>$website,'aliasApi'=>['enabled'=>(bool)$row?->enabled,'token_hint'=>$row?->token_hint,'challenge_token'=>$row?->challenge_token,'endpoint'=>url('/api/v1/alias'),'has_token'=>$row!==null]]);
+        $aliases=Website::query()->from('websites as w')
+            ->leftJoin('managed_domains as md',DB::raw('LOWER(md.name)'),'=',DB::raw('LOWER(w.domain)'))
+            ->leftJoin('ssl_certificates as sc',DB::raw('LOWER(sc.domain)'),'=',DB::raw('LOWER(w.domain)'))
+            ->where('w.parent_id',$id)->whereIn('w.type',['alis','alias'])
+            ->orderBy('w.domain')
+            ->select(['w.id','w.domain','w.status','w.enable_ssl','w.created_at',DB::raw("COALESCE(sc.status, md.ssl_status, 'disabled') as ssl_status"),DB::raw('COALESCE(sc.expires_at, md.ssl_expires_at) as ssl_expires_at')])
+            ->get();
+        return Inertia::render('Websites/AliasApi', ['website'=>$website,'aliases'=>$aliases,'aliasApi'=>['enabled'=>(bool)$row?->enabled,'token_hint'=>$row?->token_hint,'challenge_token'=>$row?->challenge_token,'endpoint'=>url('/api/v1/alias'),'has_token'=>$row!==null]]);
     }
 
     public function aliasApiSettings(Request $request, string $token, string $id): JsonResponse

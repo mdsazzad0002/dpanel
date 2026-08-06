@@ -23,3 +23,7 @@ Schedule::command('serverpanel:ssl-reconcile')
 Schedule::command('dns:reconcile-websites')
     ->hourly()
     ->withoutOverlapping();
+
+Schedule::command('websites:git-sync')
+    ->everyMinute()
+    ->withoutOverlapping();

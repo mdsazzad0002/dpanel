@@ -2,7 +2,13 @@
 set -euo pipefail
 
 DRUST_BIN="/var/www/drust/target/release/drust"
-if [[ ! -x "$DRUST_BIN" ]]; then
+DEBUG_BIN="/var/www/drust/target/debug/drust"
+if [[ -x "$DEBUG_BIN" && ( ! -x "$DRUST_BIN" || "$DEBUG_BIN" -nt "$DRUST_BIN" ) ]]; then
+  # During an incremental update a verified debug build may be newer while a
+  # release build is temporarily unavailable. The next release build takes
+  # precedence automatically because it becomes the newest binary.
+  DRUST_BIN="$DEBUG_BIN"
+elif [[ ! -x "$DRUST_BIN" ]]; then
   DRUST_BIN="/var/www/drust/target/debug/drust"
 fi
 

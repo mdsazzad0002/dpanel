@@ -9,13 +9,18 @@ mod admin;
 mod backup;
 mod cron;
 mod database;
+mod database_config;
+mod dependencies;
 mod filemanager;
+mod git_deploy;
 mod health;
 mod laravel;
 mod php;
 mod redis_config;
 mod script;
 mod security;
+mod ssh_key;
+mod terminal;
 mod ssl;
 mod vhost_ops;
 mod website;
@@ -78,12 +83,17 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(admin::routes())
         .merge(backup::routes())
         .merge(filemanager::routes())
+        .merge(git_deploy::routes())
         .merge(php::routes())
         .merge(redis_config::routes())
         .merge(ssl::routes())
         .merge(script::routes())
         .merge(security::routes())
+        .merge(ssh_key::routes())
+        .merge(terminal::routes())
         .merge(database::routes())
+        .merge(database_config::routes())
+        .merge(dependencies::routes())
         .merge(cron::routes())
         .merge(laravel::routes())
         .with_state(Arc::new(state))

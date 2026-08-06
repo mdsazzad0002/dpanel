@@ -26,6 +26,8 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -172,26 +174,6 @@ class WebsiteController extends Controller
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $metrics = $this->safeBuildDynamicMetrics($website);
-        $websiteRootPath = (string) ($website['root_path'] ?? '');
-        $websiteSiteOwner = (string) ($website['site_owner'] ?? '');
-        $aliasWebsiteRecords = Website::query()
-            ->visibleTo(request()->user())
-            ->whereIn('type', ['alis', 'alias'])
-            ->where(function ($query) use ($websiteRootPath, $websiteSiteOwner): void {
-                if ($websiteRootPath !== '') {
-                    $query->where('root_path', $websiteRootPath);
-                }
-
-                if ($websiteSiteOwner !== '') {
-                    $query->orWhere('site_owner', $websiteSiteOwner);
-                }
-            })
-            ->orderByDesc('created_at')
-            ->get()
-            ->map(fn (Website $alias): array => $this->websiteModelToArray($alias))
-            ->values();
-        $aliasWebsites = $this->decorateWebsiteRecords($aliasWebsiteRecords);
-
         $runtimeStatus = strtolower(trim((string) ($website['status'] ?? 'pending'))) === 'live'
             ? 'live'
             : $this->detectRuntimeStatus($website);
@@ -218,15 +200,28 @@ class WebsiteController extends Controller
         $autoRenewNotice = $this->autoRenewWebsiteSslIfNeeded($website);
         $sslStatus = $this->inspectWebsiteSslStatus($website);
         $rootInspection = $this->inspectWebsiteApplication($website);
+        $inspectedProjectRoot = rtrim((string) ($rootInspection['root_path'] ?? ''), '/');
+        $rootInspection['has_composer_json'] = $inspectedProjectRoot !== '' && is_file($inspectedProjectRoot.'/composer.json');
+        $rootInspection['has_package_json'] = $inspectedProjectRoot !== '' && is_file($inspectedProjectRoot.'/package.json');
+        $databaseRequest = DatabaseRequest::query()
+            ->visibleTo(request()->user())
+            ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
+            ->where('status', 'active')
+            ->latest()
+            ->first();
 
         return Inertia::render('Websites/Manage', [
             'website' => $website,
             'metrics' => $metrics,
             'activities' => $activities,
-            'aliasWebsites' => $aliasWebsites,
             'sslStatus' => $sslStatus,
             'autoRenewNotice' => $autoRenewNotice,
             'rootInspection' => $rootInspection,
+            'databaseConnection' => [
+                'available' => $databaseRequest !== null,
+                'database_name' => $databaseRequest?->database_name,
+                'status' => $databaseRequest?->status,
+            ],
         ]);
     }
 
@@ -380,6 +375,107 @@ class WebsiteController extends Controller
         $suffix = $errorDetails !== '' ? " Error: {$errorDetails}" : '';
 
         return $respond(false, 'Project cache clear failed.'.$suffix, 422);
+    }
+
+    public function fixProjectPermissions(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+        $inspection = $this->inspectWebsiteApplication($website);
+        $rootPath = (string) ($inspection['root_path'] ?? $website['project_root'] ?? $website['root_path'] ?? '');
+        $artisanPath = $this->resolveProjectArtisanPath($rootPath);
+        $projectPath = $artisanPath !== null ? dirname($artisanPath) : rtrim($rootPath, '/');
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($projectPath));
+
+        if ($siteOwner === '' || $projectPath === '') {
+            return response()->json(['success' => false, 'message' => 'Website owner or project path is unavailable.'], 422);
+        }
+
+        try {
+            $result = $this->filemanagerService->fixWebsitePermissions($siteOwner, $projectPath);
+            if (! $result['success']) {
+                return response()->json(['success' => false, 'message' => $result['output'] ?: 'Permission repair failed.'], 422);
+            }
+
+            return response()->json(['success' => true, 'message' => 'Website permissions fixed successfully. Laravel runtime files were prepared when applicable.']);
+        } catch (\Throwable $error) {
+            return response()->json(['success' => false, 'message' => 'Permission repair failed: '.$error->getMessage()], 422);
+        }
+    }
+
+    public function connectProjectDatabase(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+        $inspection = $this->inspectWebsiteApplication($website);
+        $framework = strtolower((string) ($inspection['detected_app'] ?? ''));
+        if (! in_array($framework, ['laravel', 'wordpress'], true)) {
+            return response()->json(['success' => false, 'message' => 'Laravel or WordPress project was not detected.'], 422);
+        }
+
+        $root = rtrim((string) ($inspection['root_path'] ?? ''), '/');
+        $configPath = $framework === 'laravel' ? $root.'/.env' : $root.'/wp-config.php';
+        $database = DatabaseRequest::query()
+            ->visibleTo($request->user())
+            ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
+            ->where('status', 'active')
+            ->latest()
+            ->first();
+        if ($database === null) {
+            return response()->json(['success' => false, 'message' => 'No active database is assigned to this website domain.'], 422);
+        }
+
+        $client = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
+        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($apiToken !== '') $client = $client->withToken($apiToken);
+        $response = $client->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/database-config', [
+            'site_owner' => (string) ($website['site_owner'] ?? ''),
+            'framework' => $framework,
+            'config_path' => $configPath,
+            'database_name' => (string) $database->database_name,
+            'database_user' => (string) $database->database_user,
+            'database_password' => (string) $database->database_password,
+            'database_host' => (string) ($database->database_host ?: '127.0.0.1'),
+            'database_port' => 3306,
+        ]);
+        $json = $response->json();
+        if (! $response->successful() || ! ($json['success'] ?? false)) {
+            return response()->json(['success' => false, 'message' => (string) ($json['message'] ?? 'Database configuration update failed.')], 422);
+        }
+
+        if ($framework === 'laravel') {
+            $this->runProjectArtisanCommand($root, 'config:clear', (string) ($website['site_owner'] ?? ''));
+        }
+        return response()->json(['success' => true, 'message' => ucfirst($framework).' database connected successfully.']);
+    }
+
+    public function installProjectDependencies(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+        $validated = $request->validate(['action' => ['required', 'string', 'in:composer_install,npm_install,npm_build']]);
+        $inspection = $this->inspectWebsiteApplication($website);
+        $root = rtrim((string) ($inspection['root_path'] ?? ''), '/');
+        $manifest = $validated['action'] === 'composer_install' ? 'composer.json' : 'package.json';
+        if ($root === '' || ! is_file($root.'/'.$manifest)) {
+            return response()->json(['success' => false, 'message' => $manifest.' was not found in the detected project root.'], 422);
+        }
+
+        $client = Http::acceptJson()->asJson()->timeout(900);
+        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($apiToken !== '') $client = $client->withToken($apiToken);
+        $response = $client->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/project-dependencies', [
+            'site_owner' => (string) ($website['site_owner'] ?? ''),
+            'project_root' => $root,
+            'action' => $validated['action'],
+        ]);
+        $json = $response->json();
+        if (! $response->successful() || ! ($json['success'] ?? false)) {
+            return response()->json(['success' => false, 'message' => (string) ($json['message'] ?? 'Dependency installation failed.')], 422);
+        }
+        $message = match ($validated['action']) {
+            'composer_install' => 'Composer dependencies installed successfully.',
+            'npm_build' => 'Frontend assets built successfully.',
+            default => 'NPM dependencies installed and frontend assets built successfully.',
+        };
+        return response()->json(['success' => true, 'message' => $message]);
     }
 
     public function updateProjectStorageLink(Request $request, string $token, string $id): RedirectResponse|JsonResponse
@@ -2437,7 +2533,7 @@ class WebsiteController extends Controller
      */
     protected function buildDynamicMetrics(array $website): array
     {
-        $basePath = $this->resolveFileManagerBasePath($website);
+        $basePath = $this->normalizeAbsolutePath((string) ($website['root_path'] ?? ''));
         $filesystem = $this->scanWebsiteFilesystemStats($basePath);
         $domain = $this->normalizeDomain((string) ($website['domain'] ?? ''));
 
@@ -2957,7 +3053,8 @@ class WebsiteController extends Controller
      */
     protected function scanWebsiteFilesystemStats(string $basePath): array
     {
-        $sizeBytes = 0;
+        $sizeBytes = $this->privilegedDirectorySize($basePath);
+        $scanSizeBytes = 0;
         $fileCount = 0;
         $latestMtime = null;
 
@@ -2981,7 +3078,7 @@ class WebsiteController extends Controller
 
                 if ($item->isFile()) {
                     $fileCount++;
-                    $sizeBytes += $item->getSize();
+                    $scanSizeBytes += $item->getSize();
                 }
             }
         } catch (\Throwable $e) {
@@ -2989,10 +3086,33 @@ class WebsiteController extends Controller
         }
 
         return [
-            'size_bytes' => $sizeBytes,
+            'size_bytes' => $sizeBytes ?? $scanSizeBytes,
             'file_count' => $fileCount,
             'last_modified_at' => $latestMtime ? date('c', (int) $latestMtime) : null,
         ];
+    }
+
+    protected function privilegedDirectorySize(string $path): ?int
+    {
+        if ($path === '' || ! is_dir($path)) {
+            return null;
+        }
+
+        $command = ['du', '-sb', '--', $path];
+        if (! function_exists('posix_geteuid') || posix_geteuid() !== 0) {
+            $command = array_merge(['sudo', '-n'], $command);
+        }
+
+        try {
+            $result = Process::timeout(30)->run($command);
+            if ($result->successful() && preg_match('/^(\d+)/', trim($result->output()), $matches) === 1) {
+                return (int) $matches[1];
+            }
+        } catch (\Throwable $e) {
+            // Fall back to the unprivileged recursive scan below.
+        }
+
+        return null;
     }
 
     protected function detectRuntimeStatus(array $website): string

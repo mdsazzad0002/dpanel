@@ -9,10 +9,6 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (DB::getDriverName() === 'sqlite') {
-            return;
-        }
-
         if (Schema::hasTable('users') && Schema::hasColumn('users', 'package_id')) {
             $this->dropForeignKeysForColumn('users', 'package_id');
             Schema::table('users', function (Blueprint $table) {
@@ -65,6 +61,9 @@ return new class extends Migration
     private function dropForeignKeysForColumn(string $table, string $column): void
     {
         if (DB::getDriverName() === 'sqlite') {
+            Schema::table($table, function (Blueprint $blueprint) use ($column): void {
+                $blueprint->dropForeign([$column]);
+            });
             return;
         }
 

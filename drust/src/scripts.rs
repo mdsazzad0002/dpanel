@@ -3,6 +3,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn run_script(script_name: &str, args: &[String]) -> Result<String, String> {
+    run_script_with_env(script_name, args, &[])
+}
+
+pub fn run_script_with_env(
+    script_name: &str,
+    args: &[String],
+    environment: &[(String, String)],
+) -> Result<String, String> {
     let safe_name = Path::new(script_name)
         .file_name()
         .and_then(|name| name.to_str())
@@ -13,9 +21,16 @@ pub fn run_script(script_name: &str, args: &[String]) -> Result<String, String> 
         return Err(format!("Script not found: {}", script_path.display()));
     }
 
-    let output = Command::new("bash")
-        .arg(&script_path)
-        .args(args)
+    let mut command = Command::new("bash");
+    command.arg(&script_path).args(args);
+    for (key, value) in environment {
+        // Script callers may only pass application-scoped secrets. Blocking
+        // loader/shell variables prevents environment based command injection.
+        if matches!(key.as_str(), "DPANEL_GIT_USERNAME" | "DPANEL_GIT_TOKEN") {
+            command.env(key, value);
+        }
+    }
+    let output = command
         .output()
         .map_err(|e| format!("failed to run {}: {e}", script_path.display()))?;
 
