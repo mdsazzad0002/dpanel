@@ -19,7 +19,7 @@ mariadb_tuning_conf_path() {
 }
 
 # Stock defaults assume the database owns the machine. On a shared 1-2 GB server
-# it has to leave room for PHP-FPM pools, nginx and Apache, so the buffer pool
+# it has to leave room for PHP-FPM pools and the Rust edge gateway, so the buffer pool
 # and connection ceiling are sized down instead of the box swapping under load.
 mariadb_configure_small_server() {
   local conf_path memory

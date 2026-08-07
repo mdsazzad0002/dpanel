@@ -7,6 +7,7 @@ use App\Models\Mailbox;
 use App\Models\Website;
 use App\Services\ResourceQuotaService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -53,7 +54,7 @@ class EmailController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): JsonResponse
     {
         $validated = $this->validatePayload($request);
         $domain = strtolower(trim((string) $validated['domain']));
@@ -66,14 +67,18 @@ class EmailController extends Controller
         }
 
         if (Mailbox::query()->whereRaw('LOWER(email) = ?', [$email])->exists()) {
-            return redirect()->route('emails.create')->with('error', "Mailbox {$email} already exists.");
+            return response()->json([
+                'ok' => false,
+                'message' => "Mailbox {$email} already exists.",
+            ], 422);
         }
 
         $storageSync = $this->provisionMailboxStorage($email, $password);
         if (! $storageSync['ok']) {
-            return redirect()
-                ->route('emails.create')
-                ->with('error', "Mailbox {$email} was not created: ".$storageSync['message']);
+            return response()->json([
+                'ok' => false,
+                'message' => "Mailbox {$email} was not created: ".$storageSync['message'],
+            ], 500);
         }
 
         try {
@@ -91,12 +96,21 @@ class EmailController extends Controller
         } catch (\Throwable $e) {
             $this->removeMailboxFromStorage($email);
 
-            return redirect()
-                ->route('emails.create')
-                ->with('error', "Mailbox {$email} was not created: ".$e->getMessage());
+            return response()->json([
+                'ok' => false,
+                'message' => "Mailbox {$email} was not created: ".$e->getMessage(),
+            ], 500);
         }
 
-        return redirect()->route('emails.list')->with('success', "Mailbox {$email} created and synced to storage server.");
+        return response()->json([
+            'ok' => true,
+            'message' => "Mailbox {$email} created and synced to storage server.",
+            'mailbox' => [
+                'email' => $email,
+                'domain' => $domain,
+                'mailbox' => $mailbox,
+            ],
+        ], 201);
     }
 
     public function edit(string $token, string $id): Response
@@ -718,7 +732,10 @@ userdb {
 }
 CFG;
 
-        if (@file_put_contents(self::DOVECOT_AUTH_FILE, $authConfig.PHP_EOL) === false) {
+        $desiredAuthConfig = $authConfig.PHP_EOL;
+        $currentAuthConfig = @file_get_contents(self::DOVECOT_AUTH_FILE);
+        if ($currentAuthConfig !== $desiredAuthConfig
+            && @file_put_contents(self::DOVECOT_AUTH_FILE, $desiredAuthConfig) === false) {
             return ['ok' => false, 'message' => 'Unable to write Dovecot auth config for panel mailboxes.'];
         }
         @chmod(self::DOVECOT_AUTH_FILE, 0644);
@@ -819,7 +836,7 @@ CFG;
 
         $out = [];
         $exitCode = 1;
-        @exec('systemctl restart '.escapeshellarg($service).' 2>&1', $out, $exitCode);
+        @exec('sudo -n /usr/bin/systemctl restart '.escapeshellarg($service).'.service 2>&1', $out, $exitCode);
 
         return $exitCode === 0;
     }

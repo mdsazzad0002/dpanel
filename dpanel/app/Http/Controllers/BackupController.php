@@ -7,6 +7,7 @@ use App\Models\Website;
 use App\Support\BackupSettings;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -126,7 +127,14 @@ class BackupController extends Controller
             ->with('success', 'Backup settings saved.');
     }
 
-    public function runNow(Request $request): RedirectResponse
+    public function data(): JsonResponse
+    {
+        $runs = $this->listRuns(storage_path('app/backups'));
+
+        return response()->json(['ok' => true, 'runs' => $runs]);
+    }
+
+    public function runNow(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'filter' => ['required', 'in:all,website'],
@@ -137,9 +145,7 @@ class BackupController extends Controller
         $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
         $token = trim((string) config('serverpanel.execution_api_token', ''));
         if ($baseUrl === '' || $token === '') {
-            return redirect()
-                ->route('backups.index')
-                ->with('error', 'dRust backup API is not configured.');
+            return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
         }
 
         try {
@@ -147,52 +153,61 @@ class BackupController extends Controller
                 return $this->runWebsiteBackup($request, (string) $validated['website_id'], (string) $validated['content'], $baseUrl, $token);
             }
 
-            $response = Http::acceptJson()
-                ->asJson()
-                ->withToken($token)
-                ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
-                ->post(rtrim($baseUrl, '/').'/api/v1/backup/run', [
-                    'only' => $validated['content'] === 'database' ? 'db' : (string) $validated['content'],
-                ]);
+            $websites = $this->backupWebsites($request);
+            if ($websites->isEmpty()) {
+                return response()->json(['ok' => false, 'message' => 'No website accounts are available to back up.'], 422);
+            }
+
+            $completed = [];
+            foreach ($websites as $website) {
+                $result = $this->createWebsiteArchive($request, $website, (string) $validated['content'], $baseUrl, $token);
+                if (! $result['ok']) {
+                    return response()->json([
+                        'ok' => false,
+                        'message' => 'Backup stopped at '.$website->domain.': '.$result['message'],
+                        'completed' => $completed,
+                    ], 500);
+                }
+                $completed[] = (string) $website->domain;
+            }
+
+            return response()->json([
+                'ok' => true,
+                'message' => count($completed).' website account backup(s) completed.',
+                'runs' => $this->listRuns(storage_path('app/backups')),
+            ]);
         } catch (\Throwable $e) {
-            return redirect()
-                ->route('backups.index')
-                ->with('error', 'dRust backup API request failed: '.$e->getMessage());
+            return response()->json(['ok' => false, 'message' => 'dRust backup API request failed: '.$e->getMessage()], 500);
         }
-
-        if (! $response->successful() || ! (bool) $response->json('success')) {
-            $message = trim((string) ($response->json('message') ?: $response->body()));
-
-            return redirect()
-                ->route('backups.index')
-                ->with('error', $message !== '' ? $message : 'dRust backup failed.');
-        }
-
-        return redirect()
-            ->route('backups.index')
-            ->with('success', 'Backup completed successfully through dRust.');
     }
 
-    private function runWebsiteBackup(Request $request, string $websiteId, string $content, string $baseUrl, string $token): RedirectResponse
+    private function runWebsiteBackup(Request $request, string $websiteId, string $content, string $baseUrl, string $token): JsonResponse
     {
-        $website = Website::query()
-            ->visibleTo($request->user())
-            ->whereNull('parent_id')
-            ->whereIn('type', ['main', 'primary'])
-            ->where(function ($query): void {
-                $query->whereNull('site_owner')->orWhere('site_owner', '!=', 'system');
-            })
-            ->where('project_root', '!=', base_path())
-            ->findOrFail($websiteId);
+        $website = $this->backupWebsites($request)->firstWhere('id', $websiteId);
+        if (! $website instanceof Website) {
+            return response()->json(['ok' => false, 'message' => 'Website account not found.'], 404);
+        }
+        $result = $this->createWebsiteArchive($request, $website, $content, $baseUrl, $token);
+
+        return response()->json([
+            'ok' => $result['ok'],
+            'message' => $result['ok'] ? 'Website backup completed: '.$website->domain : $result['message'],
+            'runs' => $result['ok'] ? $this->listRuns(storage_path('app/backups')) : null,
+        ], $result['ok'] ? 201 : 500);
+    }
+
+    /** @return array{ok:bool,message:string} */
+    private function createWebsiteArchive(Request $request, Website $website, string $content, string $baseUrl, string $token): array
+    {
         $timestamp = now()->format('Ymd_His');
         $runDirectory = storage_path('app/backups/'.$timestamp);
-        File::ensureDirectoryExists($runDirectory);
         $safeDomain = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $website->domain) ?: 'website';
-        $zipPath = $runDirectory.DIRECTORY_SEPARATOR.'website-'.$safeDomain.'.zip';
+        $safeOwner = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) ($website->site_owner ?: 'account')) ?: 'account';
+        $zipPath = $runDirectory.DIRECTORY_SEPARATOR.'backup-'.now()->format('m.d.Y_H-i-s').'_'.$safeOwner.'.tar.gz';
         $databases = DatabaseRequest::query()
             ->visibleTo($request->user())
             ->where('domain', $website->domain)
-            ->where('status', 'approved')
+            ->where('status', 'active')
             ->get()
             ->map(fn (DatabaseRequest $database): array => [
                 'name' => (string) $database->database_name,
@@ -202,9 +217,7 @@ class BackupController extends Controller
             ])->values()->all();
 
         if ($content === 'database' && $databases === []) {
-            File::deleteDirectory($runDirectory);
-
-            return redirect()->route('backups.index')->with('error', 'No approved database is linked to this main domain.');
+            return ['ok' => false, 'message' => 'No approved database is linked to this main domain.'];
         }
 
         $response = Http::acceptJson()->asJson()->withToken($token)
@@ -222,20 +235,26 @@ class BackupController extends Controller
                     'status' => $website->status,
                     'type_field' => $website->type,
                     'enable_ssl' => (bool) $website->enable_ssl,
+                    'assigned_user_id' => $website->assigned_user_id,
+                    'assigned_reseller_id' => $website->assigned_reseller_id,
                     'content' => $content,
                     'database_requests' => $databases,
                 ],
             ]);
 
         if (! $response->successful() || ! (bool) $response->json('success')) {
-            File::deleteDirectory($runDirectory);
-
-            return redirect()->route('backups.index')
-                ->with('error', (string) ($response->json('message') ?: 'Website backup failed.'));
+            return ['ok' => false, 'message' => (string) ($response->json('message') ?: 'Website backup failed.')];
         }
 
-        return redirect()->route('backups.index')
-            ->with('success', 'Website backup completed through dRust: '.$website->domain);
+        return ['ok' => true, 'message' => ''];
+    }
+
+    private function backupWebsites(Request $request)
+    {
+        return Website::query()->visibleTo($request->user())
+            ->whereNull('parent_id')->whereIn('type', ['main', 'primary'])
+            ->where(fn ($query) => $query->whereNull('site_owner')->orWhere('site_owner', '!=', 'system'))
+            ->where('project_root', '!=', base_path())->orderBy('domain')->get();
     }
 
     public function download(string $token, string $run, string $file): BinaryFileResponse
@@ -283,20 +302,106 @@ class BackupController extends Controller
         return response()->download($target, basename($target));
     }
 
-    public function destroyRun(string $token, string $run): RedirectResponse
+    public function destroyRun(string $token, string $run): JsonResponse
     {
         $runPath = $this->resolveRunPath($run);
         if ($runPath === null) {
-            return redirect()
-                ->route('backups.index')
-                ->with('error', 'Backup run not found.');
+            return response()->json(['ok' => false, 'message' => 'Backup run not found.'], 404);
         }
 
-        File::deleteDirectory($runPath);
+        try {
+            $response = Http::acceptJson()->asJson()
+                ->withToken((string) config('serverpanel.execution_api_token', ''))
+                ->timeout(120)
+                ->post(rtrim((string) config('serverpanel.execution_api_base_url', ''), '/').'/api/v1/backup/delete', [
+                    'run_path' => $runPath,
+                ]);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'message' => 'dRust delete request failed: '.$e->getMessage()], 500);
+        }
+        if (! $response->successful() || ! (bool) $response->json('success')) {
+            return response()->json(['ok' => false, 'message' => (string) ($response->json('message') ?: 'dRust could not delete the backup run.')], 500);
+        }
 
-        return redirect()
-            ->route('backups.index')
-            ->with('success', 'Backup run deleted.');
+        return response()->json(['ok' => true, 'message' => 'Backup run deleted.', 'runs' => $this->listRuns(storage_path('app/backups'))]);
+    }
+
+    public function restore(Request $request, string $token, string $run, string $encoded): JsonResponse
+    {
+        $file = $this->decodeFileToken($encoded);
+        $runPath = $this->resolveRunPath($run);
+        if ($runPath === null || $file === null || ! str_ends_with(strtolower($file), '.tar.gz')) {
+            return response()->json(['ok' => false, 'message' => 'Restorable website archive not found.'], 404);
+        }
+        $archive = realpath($runPath.DIRECTORY_SEPARATOR.$file);
+        if (! is_string($archive) || dirname($archive) !== $runPath) {
+            return response()->json(['ok' => false, 'message' => 'Invalid backup archive path.'], 422);
+        }
+
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        try {
+            $response = Http::acceptJson()->asJson()->withToken($apiToken)
+                ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
+                ->post(rtrim($baseUrl, '/').'/api/v1/website/archive/restore', ['zip_path' => $archive]);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'message' => 'Restore API request failed: '.$e->getMessage()], 500);
+        }
+        if (! $response->successful() || ! (bool) $response->json('success')) {
+            return response()->json(['ok' => false, 'message' => (string) ($response->json('message') ?: 'Restore failed.')], 500);
+        }
+
+        $website = (array) $response->json('data.website', []);
+        if (($website['domain'] ?? '') !== '') {
+            Website::query()->updateOrCreate(
+                ['domain' => (string) $website['domain'], 'parent_id' => null],
+                array_filter([
+                    'id' => (string) ($website['id'] ?? str()->uuid()),
+                    'hostname' => (string) $website['domain'],
+                    'root_path' => $website['root_path'] ?? null,
+                    'project_root' => $website['project_root'] ?? null,
+                    'start_directory' => $website['start_directory'] ?? null,
+                    'site_owner' => $website['site_owner'] ?? null,
+                    'php_version' => $website['php_version'] ?? null,
+                    'status' => $website['status'] ?? 'active',
+                    'type' => $website['type'] ?? 'main',
+                    'enable_ssl' => (bool) ($website['enable_ssl'] ?? false),
+                    'assigned_user_id' => $website['assigned_user_id'] ?? $request->user()?->id,
+                    'assigned_reseller_id' => $website['assigned_reseller_id'] ?? null,
+                ], static fn ($value) => $value !== null)
+            );
+
+            foreach ((array) ($website['databases'] ?? []) as $database) {
+                if (! is_array($database) || trim((string) ($database['name'] ?? '')) === '') {
+                    continue;
+                }
+                $databaseRecord = DatabaseRequest::query()->firstOrNew(['database_name' => (string) $database['name']]);
+                if (! $databaseRecord->exists) {
+                    $databaseRecord->id = (string) str()->uuid();
+                }
+                $databaseRecord->fill([
+                        'domain' => (string) $website['domain'],
+                        'database_user' => (string) ($database['user'] ?? ''),
+                        'database_password' => (string) ($database['password'] ?? ''),
+                        'database_host' => (string) ($database['host'] ?? '127.0.0.1'),
+                        'charset' => 'utf8mb4',
+                        'collation' => 'utf8mb4_unicode_ci',
+                        'status' => 'active',
+                        'assigned_user_id' => $website['assigned_user_id'] ?? $request->user()?->id,
+                    ])->save();
+            }
+        }
+
+        return response()->json(['ok' => true, 'message' => 'Website files, databases and panel record restored from this version.']);
+    }
+
+    private function decodeFileToken(string $encoded): ?string
+    {
+        $normalized = strtr($encoded, '-_', '+/');
+        $normalized .= str_repeat('=', (4 - strlen($normalized) % 4) % 4);
+        $file = base64_decode($normalized, true);
+
+        return is_string($file) && $file !== '' && ! str_contains($file, '/') && ! str_contains($file, '\\') ? $file : null;
     }
 
     /**
@@ -324,11 +429,17 @@ class BackupController extends Controller
                 }
 
                 $files = collect(File::files($realDirectory))
+                    ->reject(fn (\SplFileInfo $file): bool => str_ends_with($file->getFilename(), '.tar.gz.json'))
                     ->map(function (\SplFileInfo $file): array {
                         $realPath = $file->getRealPath();
+                        $metadata = is_string($realPath) ? $this->websiteArchiveMetadata($realPath) : null;
 
                         return [
                             'name' => $file->getFilename(),
+                            'label' => $metadata['label'] ?? $file->getFilename(),
+                            'domain' => $metadata['domain'] ?? null,
+                            'owner' => $metadata['owner'] ?? null,
+                            'restorable' => $metadata !== null,
                             'size_bytes' => is_string($realPath) ? (int) @filesize($realPath) : 0,
                             'updated_at' => Carbon::createFromTimestamp($file->getMTime())->toDateTimeString(),
                         ];
@@ -349,6 +460,31 @@ class BackupController extends Controller
             ->sortByDesc('name')
             ->values()
             ->all();
+    }
+
+    /** @return array{label:string,domain:string,owner:string}|null */
+    private function websiteArchiveMetadata(string $path): ?array
+    {
+        if (! str_ends_with(strtolower($path), '.tar.gz')) {
+            return null;
+        }
+        $sidecar = $path.'.json';
+        $raw = File::isFile($sidecar) ? File::get($sidecar) : null;
+        if (! is_string($raw)) {
+            return null;
+        }
+        try {
+            $website = (array) (json_decode($raw, true, 512, JSON_THROW_ON_ERROR)['website'] ?? []);
+        } catch (\Throwable) {
+            return null;
+        }
+        $domain = trim((string) ($website['domain'] ?? ''));
+        if ($domain === '') {
+            return null;
+        }
+        $owner = trim((string) ($website['site_owner'] ?? 'account'));
+
+        return ['label' => $domain.' account backup', 'domain' => $domain, 'owner' => $owner];
     }
 
     private function resolveRunPath(string $run): ?string

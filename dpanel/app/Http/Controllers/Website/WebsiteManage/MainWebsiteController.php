@@ -350,13 +350,14 @@ class MainWebsiteController extends Controller
 
         $databaseRequests = DatabaseRequest::query()
             ->where('domain', $domain)
-            ->get(['id', 'domain', 'database_name', 'database_user', 'database_host', 'charset', 'collation', 'status', 'assigned_user_id'])
+            ->get(['id', 'domain', 'database_name', 'database_user', 'database_password', 'database_host', 'charset', 'collation', 'status', 'assigned_user_id'])
             ->map(fn (DatabaseRequest $item): array => [
                 'id' => (string) $item->id,
                 'domain' => (string) $item->domain,
-                'database_name' => (string) $item->database_name,
-                'database_user' => (string) $item->database_user,
-                'database_host' => (string) $item->database_host,
+                'name' => (string) $item->database_name,
+                'user' => (string) $item->database_user,
+                'password' => (string) $item->database_password,
+                'host' => (string) ($item->database_host ?: '127.0.0.1'),
                 'charset' => (string) $item->charset,
                 'collation' => (string) $item->collation,
                 'status' => (string) $item->status,

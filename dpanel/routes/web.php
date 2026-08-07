@@ -226,6 +226,9 @@ Route::prefix('cpsess{token}')
             Route::post('/backups/run', [BackupController::class, 'runNow'])
                 ->middleware('role:admin|reseller')
                 ->name('backups.run');
+            Route::get('/backups/data', [BackupController::class, 'data'])
+                ->middleware('role:admin|reseller')
+                ->name('backups.data');
             Route::get('/backups/scp', [BackupController::class, 'scp'])
                 ->middleware('role:admin|reseller')
                 ->name('backups.scp');
@@ -253,6 +256,11 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->where('run', '[0-9]{8}_[0-9]{6}')
                 ->name('backups.destroy');
+            Route::post('/backups/{run}/restore/{encoded}', [BackupController::class, 'restore'])
+                ->middleware('role:admin|reseller')
+                ->where('run', '[0-9]{8}_[0-9]{6}')
+                ->where('encoded', '[A-Za-z0-9_-]+')
+                ->name('backups.restore');
             Route::get('/trash-backups', [WebsiteTrashBackupController::class, 'index'])
                 ->middleware('role:admin|reseller|general|general_user')
                 ->name('trash-backups.index');

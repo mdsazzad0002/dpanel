@@ -70,7 +70,7 @@ Before using dPanel on a public server:
 - run the panel with least-privilege web server users
 - avoid `chmod 777`
 - run `/var/www/dscript/scripts/fix-permissions.sh --all` after first install or project migration
-- keep PHP, Laravel dependencies, Rust dependencies, nginx, Apache, and system packages updated
+- keep PHP, Laravel dependencies, Rust dependencies, the edge gateway, and system packages updated
 - disable unused services and public ports
 - review logs without exposing secrets
 

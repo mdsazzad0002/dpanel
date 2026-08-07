@@ -33,7 +33,7 @@ installer.sh update       -> dpanel chain update
 sudo /var/www/dscript/dpanel default-install
 
 # One independent operation
-sudo /var/www/dscript/dpanel module nginx update
+sudo /var/www/dscript/dpanel module redis update
 ```
 
 After a chain install, the public command is available:
@@ -58,21 +58,21 @@ dpanel chain repair
 Default chain module order:
 
 ```text
-apache -> nginx -> php -> mariadb -> supervisor -> firewall -> fail2ban
+php -> mariadb -> redis -> supervisor -> firewall -> fail2ban
 ```
 
 The top-level default install adds non-module services around that chain:
 
 ```text
-apache -> nginx -> php -> mariadb -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs
+php -> mariadb -> redis -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs
 ```
 
 Choose modules with either syntax:
 
 ```bash
-sudo dpanel chain install apache,nginx,php,mariadb
-sudo dpanel chain install apache nginx php mariadb
-sudo env PANEL_MODULES="nginx,php,mariadb,redis" dpanel chain install
+sudo dpanel chain install php,mariadb,redis
+sudo dpanel chain install php mariadb redis
+sudo env PANEL_MODULES="php,mariadb,redis" dpanel chain install
 ```
 
 The chain stops on the first failure. It does not continue to the next module
@@ -84,25 +84,25 @@ after an error. Review the first `[ERROR]`, inspect the log, run
 An individual process changes one module only:
 
 ```bash
-sudo dpanel module nginx install
-sudo dpanel module nginx update
-sudo dpanel module nginx remove
-sudo dpanel module nginx reinstall
-dpanel module nginx info
+sudo dpanel module redis install
+sudo dpanel module redis update
+sudo dpanel module redis remove
+sudo dpanel module redis reinstall
+dpanel module redis info
 ```
 
 The short form is equivalent:
 
 ```bash
-sudo dpanel nginx update
+sudo dpanel redis update
 ```
 
 Legacy forms remain supported:
 
 ```bash
-sudo dpanel install nginx
-sudo dpanel update nginx
-sudo dpanel remove nginx
+sudo dpanel install redis
+sudo dpanel update redis
+sudo dpanel remove redis
 ```
 
 ## 3. Global options
@@ -141,7 +141,7 @@ Common menu command hints:
 ```text
 Default Install                         dpanel default-install
 Default Update                          dpanel chain update
-Apache/Nginx install                    dpanel module apache install && dpanel module nginx install
+Rust edge install                       bash /var/www/drust/deploy/install-service.sh
 PHP install all                         dpanel php install all
 PHP set default                         dpanel php default <version>
 PHP repair one version                  dpanel php reinstall <version>
@@ -166,8 +166,6 @@ dpanel module <name> info
 
 | Module | Purpose | Individual examples |
 |---|---|---|
-| `apache` | Apache backend web server | `dpanel apache install` |
-| `nginx` | Nginx frontend web server | `dpanel nginx update` |
 | `php` | Multi-version PHP/FPM | `dpanel php install 8.3` |
 | `mariadb` | MariaDB server | `dpanel mariadb install` |
 | `redis` | Redis service | `dpanel redis install` |
@@ -234,7 +232,7 @@ Every maintained shell file has a stable CLI name:
 | `disable-root-login` | `script run disable-root-login` |
 | `fix-dpanel-root` | `script run fix-dpanel-root [domain] [options]` |
 | `fix-panel-web-stack` | `script run fix-panel-web-stack <domain> [ports] [options]` |
-| `fix-web-stack` | `script run fix-web-stack [apache-port] [nginx-port]` |
+| `fix-web-stack` | `script run fix-web-stack [options]` |
 | `install-roundcube-dovecot-mysql` | Legacy Roundcube helper; not used by the default stack |
 | `issue-ssl` | `script run issue-ssl <domain> <root-path> [include-www=0|1]` |
 | `php-config-apply` | `script run php-config-apply --version VERSION [settings]` |
@@ -267,7 +265,7 @@ Generate cached website templates:
 
 ```bash
 dpanel site:create <domain> <username> [php-version] [ssl] [web-server] [root]
-dpanel site:create example.com example 8.3 yes nginx /home/example/public_html
+dpanel site:create example.com example 8.3 yes edge /home/example/public_html
 ```
 
 Synchronize a real vhost through drust:
@@ -334,7 +332,7 @@ sudo dpanel --dry-run script run reset-web-stack --yes
 sudo dpanel script run reset-web-stack --yes
 ```
 
-`reset-web-stack` backs up Apache/Nginx configuration before resetting it.
+`reset-web-stack` backs up edge configuration before resetting it.
 
 ## 9. Logs and failure workflow
 
@@ -364,10 +362,9 @@ When a command fails:
 Service examples:
 
 ```bash
-systemctl status nginx apache2 mariadb php8.3-fpm drust --no-pager
+systemctl status edge-gateway mariadb php8.3-fpm drust --no-pager
 journalctl -u drust -n 100 --no-pager
-nginx -t
-apache2ctl configtest
+systemctl status edge-gateway --no-pager
 ```
 
 ## 10. Environment variables
@@ -426,8 +423,8 @@ sudo ./installer.sh
 Forward any dscript command:
 
 ```bash
-sudo ./installer.sh nginx,php,mariadb
-sudo ./installer.sh chain install nginx,php,mariadb
+sudo ./installer.sh php,mariadb,redis
+sudo ./installer.sh chain install php,mariadb,redis
 ```
 
 Local/offline development can point the installer at a local dscript archive:
@@ -440,7 +437,7 @@ It can also install directly from a checkout without downloading or extracting:
 
 ```bash
 sudo env DSCRIPT_SOURCE_DIR=/var/www/dscript /var/www/installer.sh
-sudo env DSCRIPT_SOURCE_DIR=/var/www/dscript /var/www/installer.sh nginx,php,mariadb
+sudo env DSCRIPT_SOURCE_DIR=/var/www/dscript /var/www/installer.sh php,mariadb,redis
 ```
 
 Source precedence is `DSCRIPT_SOURCE_DIR`, `DSCRIPT_ARCHIVE_PATH`,
@@ -514,7 +511,7 @@ Use this flow when installing dPanel on a fresh device/server.
 6. Verify the important services:
 
    ```bash
-   systemctl status nginx apache2 mariadb drust --no-pager
+   systemctl status edge-gateway mariadb drust --no-pager
    curl -fsS http://127.0.0.1:9500/health
    ```
 

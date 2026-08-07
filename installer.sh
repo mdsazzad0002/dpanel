@@ -72,7 +72,7 @@ EOF
 # How to run this installer:
 #
 #   bash installer.sh
-#   bash installer.sh apache nginx php mariadb
+#   bash installer.sh php mariadb redis
 #   bash installer.sh update
 #   PANEL_INSTALL_BASE_URL="https://installer.dengrweb.com" bash installer.sh
 #   DSCRIPT_SOURCE_DIR="/var/www/dscript" bash installer.sh
@@ -189,7 +189,7 @@ register_dpanel_command
 #
 # Supported handovers:
 #   installer.sh                  -> dpanel default-install
-#   installer.sh apache nginx     -> dpanel chain install apache nginx
+#   installer.sh php redis        -> dpanel chain install php redis
 #   installer.sh update           -> dpanel chain update
 #   installer.sh chain update     -> dpanel chain update
 #

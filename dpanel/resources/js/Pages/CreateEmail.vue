@@ -1,6 +1,7 @@
 <script setup>
 import { usePage } from '@inertiajs/vue3';
-import { watch } from 'vue';
+import axios from 'axios';
+import { ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
@@ -21,9 +22,37 @@ const form = useForm({
     quota_mb: 1024,
     forwarding_to: '',
 });
+const responseMessage = ref('');
+const responseOk = ref(false);
 
-const submit = () => {
-    form.post(panelToken ? route('emails.store', { token: panelToken }) : route('emails.store'));
+const submit = async () => {
+    form.processing = true;
+    form.clearErrors();
+    responseMessage.value = '';
+
+    try {
+        const response = await axios.post(
+            panelToken ? route('emails.store', { token: panelToken }) : route('emails.store'),
+            form.data(),
+            { headers: { Accept: 'application/json' } },
+        );
+
+        responseOk.value = true;
+        responseMessage.value = response.data?.message || 'Mailbox created successfully.';
+        form.reset('mailbox', 'password', 'forwarding_to');
+    } catch (error) {
+        const data = error.response?.data;
+        const validationErrors = data?.errors || {};
+
+        Object.entries(validationErrors).forEach(([field, messages]) => {
+            form.setError(field, Array.isArray(messages) ? messages[0] : messages);
+        });
+
+        responseOk.value = false;
+        responseMessage.value = data?.message || 'Mailbox could not be created.';
+    } finally {
+        form.processing = false;
+    }
 };
 
 const generatePassword = () => {
@@ -66,6 +95,13 @@ watch(
             </div>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-2 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
+                <div
+                    v-if="responseMessage"
+                    class="rounded-md px-4 py-3 text-sm md:col-span-2"
+                    :class="responseOk ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300'"
+                >
+                    {{ responseMessage }}
+                </div>
                 <div class="md:col-span-2">
                     <label class="mb-1 block text-sm">Website Domain</label>
                     <select v-model="form.domain" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">

@@ -137,25 +137,6 @@ else
 fi
 install -m 644 "${TEMPLATE_ROOT}/phpmyadminsignin.php" "${TARGET_ROOT}/phpmyadminsignin.php"
 
-APACHE_CONF=""
-if [[ "${PHPMYADMIN_CONFIGURE_WEB_SERVER:-true}" == true ]]; then
-    if command -v a2enconf >/dev/null 2>&1 && [[ -d /etc/apache2/conf-available ]]; then
-        APACHE_CONF=/etc/apache2/conf-available/dpanel-phpmyadmin.conf
-        cat > "$APACHE_CONF" <<EOF
-Alias ${PUBLIC_PATH} ${TARGET_ROOT}
-<Directory ${TARGET_ROOT}>
-    Options FollowSymLinks
-    DirectoryIndex index.php
-    AllowOverride All
-    Require all granted
-</Directory>
-EOF
-        a2enconf dpanel-phpmyadmin >/dev/null
-    else
-        log "Apache is not installed; keeping the panel-native ${PUBLIC_PATH} routes for the Rust gateway."
-    fi
-fi
-
 upsert_env "${PANEL_APP_DIR}/.env" PHPMYADMIN_URL "${PUBLIC_URL}/"
 if [[ -f "${PANEL_APP_DIR}/artisan" ]] && command -v php >/dev/null 2>&1; then
     (cd "$PANEL_APP_DIR" && php artisan config:clear >/dev/null) || true

@@ -1868,24 +1868,11 @@ panel_finalize_default_install() {
     site_owner="$(printf '%s' "$PANEL_DOMAIN" | cut -d. -f1 | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-32)"
     [[ -n "$site_owner" ]] || site_owner="panel"
     root_path="${SERVER_BASE_DIR:-/var/www/serverpanel}"
-    panel_site_create "$PANEL_DOMAIN" "$site_owner" "${PANEL_PHP_VERSION:-$(panel_php_default_version)}" "no" "nginx" "${root_path}/${site_owner}/public_html"
+    panel_site_create "$PANEL_DOMAIN" "$site_owner" "${PANEL_PHP_VERSION:-$(panel_php_default_version)}" "no" "edge" "${root_path}/${site_owner}/public_html"
   fi
 }
 
 panel_write_runtime_templates() {
-  cat > "${DPANEL_RUNTIME_DIR}/apache-site.conf.tpl" <<'EOF'
-<VirtualHost *:80>
-    ServerName {{domain}}
-    ServerAlias www.{{domain}}
-    DocumentRoot {{root}}
-
-    <Directory {{root}}>
-        AllowOverride All
-        Require all granted
-    </Directory>
-</VirtualHost>
-EOF
-
   cat > "${DPANEL_RUNTIME_DIR}/php-pool.conf.tpl" <<'EOF'
 [{{username}}]
 user = {{username}}

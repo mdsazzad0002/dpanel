@@ -109,7 +109,7 @@ class CommandJobController extends Controller
             return response()->json([
                 'ok' => true,
                 'chat_mode' => true,
-                'message' => 'Please tell me exactly what to install (package/app). Example: install nginx, install docker, install php8.2-zip.',
+                'message' => 'Please tell me exactly what to install (package/app). Example: install docker or install php8.2-zip.',
                 'system_info' => 'No command executed. Waiting for specific install target.',
             ]);
         }

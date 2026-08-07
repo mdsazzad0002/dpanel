@@ -91,6 +91,48 @@ install_system_packages() {
 
 install_mail_services() {
   install_system_packages postfix dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql
+
+  if [[ "${DSCRIPT_DRY_RUN:-false}" == "true" ]]; then
+    printf '[DRY-RUN] configure dPanel Dovecot passwd-file backend and mail storage\n'
+    return 0
+  fi
+
+  getent group vmail >/dev/null 2>&1 || groupadd --system vmail
+  id -u vmail >/dev/null 2>&1 || useradd --system --gid vmail --home /var/mail/vhosts --shell /usr/sbin/nologin vmail
+
+  install -d -o www-data -g vmail -m 2770 /var/mail/vhosts
+  if [[ ! -e /etc/dovecot/serverpanel-users ]]; then
+    install -o root -g www-data -m 0660 /dev/null /etc/dovecot/serverpanel-users
+  else
+    chown root:www-data /etc/dovecot/serverpanel-users
+    chmod 0660 /etc/dovecot/serverpanel-users
+  fi
+
+  cat > /etc/dovecot/conf.d/auth-serverpanel.conf.ext <<'EOF'
+passdb {
+  driver = passwd-file
+  args = scheme=SHA512-CRYPT username_format=%u /etc/dovecot/serverpanel-users
+}
+
+userdb {
+  driver = static
+  args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n mail=maildir:/var/mail/vhosts/%d/%n
+}
+EOF
+  chown root:root /etc/dovecot/conf.d/auth-serverpanel.conf.ext
+  chmod 0644 /etc/dovecot/conf.d/auth-serverpanel.conf.ext
+
+  if ! grep -Fq '!include auth-serverpanel.conf.ext' /etc/dovecot/conf.d/10-auth.conf; then
+    printf '\n!include auth-serverpanel.conf.ext\n' >> /etc/dovecot/conf.d/10-auth.conf
+  fi
+
+  cat > /etc/sudoers.d/dpanel-dovecot <<'EOF'
+www-data ALL=(root) NOPASSWD: /usr/bin/systemctl restart dovecot.service
+EOF
+  chmod 0440 /etc/sudoers.d/dpanel-dovecot
+  visudo -cf /etc/sudoers.d/dpanel-dovecot >/dev/null
+
+  systemctl enable --now dovecot
 }
 
 install_node_runtime() {
@@ -225,11 +267,12 @@ default_install_sequence() {
   # The default install is split so Drust can be installed between the module
   # groups. Defer post-install configuration for the first group; otherwise the
   # panel details and system records are collected once per group.
-  PANEL_DEFER_FINALIZE=true dscript_cli chain install php mariadb supervisor
+  PANEL_DEFER_FINALIZE=true dscript_cli chain install php mariadb redis supervisor
   install_drust_service
-  dscript_cli chain install firewall dns fail2ban ssl
+  PANEL_DEFER_FINALIZE=true dscript_cli chain install firewall dns fail2ban ssl
   install_mail_services
   install_node_runtime
+  panel_finalize_default_install
 }
 
 run_interactive_menu() {
@@ -239,7 +282,7 @@ run_interactive_menu() {
     printf '\n'
     printf 'dpanel interactive menu\n'
     printf '=======================\n'
-    printf '1) Default Install (php -> mariadb -> supervisor -> rust/drust -> firewall -> dns -> fail2ban -> ssl -> postfix -> dovecot -> nodejs) | dpanel default-install\n'
+    printf '1) Default Install (php -> mariadb -> redis -> supervisor -> rust/drust -> firewall -> dns -> fail2ban -> ssl -> postfix -> dovecot -> nodejs) | dpanel default-install\n'
     printf '2) Default Update | dpanel chain update\n'
     printf '3) Web stack menu | dpanel script run sync-vhost <action> <domain> <root-path> [php-version]\n'
     printf '4) PHP menu | dpanel php install all / dpanel php default <version>\n'

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Auth;
 
 use App\Models\User;
+use App\Http\Middleware\EnsurePanelSessionIsValid;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -50,5 +51,29 @@ class AuthenticationTest extends TestCase
 
         $this->assertGuest();
         $response->assertRedirect('/');
+    }
+
+    public function test_login_returns_to_the_path_remembered_at_logout(): void
+    {
+        $this->withoutMiddleware(EnsurePanelSessionIsValid::class);
+
+        $user = User::factory()->create();
+        $oldToken = str_repeat('a', 64);
+
+        $this->actingAs($user)
+            ->withSession(['panel_session_token' => $oldToken])
+            ->withHeader('referer', 'http://p.localhost/cpsess'.$oldToken.'/emails/create?secret=discarded')
+            ->post('/logout')
+            ->assertSessionHas('panel.last_path', '/emails/create');
+
+        $response = $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $newToken = (string) session('panel_session_token');
+        $this->assertNotSame($oldToken, $newToken);
+        $response->assertRedirect('/cpsess'.$newToken.'/emails/create');
+        $response->assertSessionMissing('panel.last_path');
     }
 }

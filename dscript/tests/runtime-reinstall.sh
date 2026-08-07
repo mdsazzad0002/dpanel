@@ -21,7 +21,7 @@ trap 'rm -rf -- "$TEST_ROOT"' EXIT
 [[ -x "$TEST_ROOT/base/runtime/commands.sh" ]]
 [[ -x "$TEST_ROOT/base/runtime/launcher.sh" ]]
 [[ -x "$TEST_ROOT/bin/dpanel" ]]
-[[ -x "$TEST_ROOT/base/repository/modules/nginx/install.sh" ]]
+[[ -x "$TEST_ROOT/base/repository/modules/redis/install.sh" ]]
 [[ -f "$TEST_ROOT/base/repository/manifests/modules.json" ]]
 [[ "$(DPANEL_BASE_DIR="$TEST_ROOT/base" DPANEL_RUNTIME_DIR="$TEST_ROOT/base/runtime" "$TEST_ROOT/bin/dpanel" --version)" == "dscript 2.0.0" ]]
 
@@ -39,7 +39,7 @@ trap 'rm -rf -- "$TEST_ROOT"' EXIT
   # shellcheck disable=SC1091
   source package-manager.sh
   panel_install_runtime_assets
-  [[ "$(panel_local_module_script nginx install)" == "$TEST_ROOT/base/repository/modules/nginx/install.sh" ]]
+  [[ "$(panel_local_module_script redis install)" == "$TEST_ROOT/base/repository/modules/redis/install.sh" ]]
   panel_sync_manifest
   [[ -f "$TEST_ROOT/base/cache/modules.manifest.json" ]]
 )

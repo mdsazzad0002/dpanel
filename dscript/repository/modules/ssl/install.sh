@@ -7,28 +7,17 @@ source "${SCRIPT_DIR}/../_load.sh" 2>/dev/null || { source "${DPANEL_RUNTIME_DIR
 
 action="${1:-install}"
 
-SSL_RENEWAL_HOOK='/etc/letsencrypt/renewal-hooks/deploy/00-dpanel-reload-webstack.sh'
+SSL_RENEWAL_HOOK='/etc/letsencrypt/renewal-hooks/deploy/00-dpanel-reload-edge.sh'
 
-# certbot renews out of band. Without a deploy hook the web servers keep the old
-# certificate in memory until something reloads them, so a renewed site still
-# serves an expired certificate. A hook in renewal-hooks/deploy applies to every
-# certificate on the server, including ones issued before this panel version.
+# Restart the Rust edge gateway after certbot deploys a renewed certificate.
 ssl_install_renewal_hook() {
   mkdir -p "$(dirname "${SSL_RENEWAL_HOOK}")"
   cat > "${SSL_RENEWAL_HOOK}" <<'HOOK'
 #!/usr/bin/env bash
-# Managed by dpanel. Reloads the web stack after certbot deploys a certificate.
+# Managed by dpanel. Restarts the Rust edge gateway after certificate renewal.
 set -uo pipefail
 
-if command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; then
-  systemctl reload nginx >/dev/null 2>&1 || true
-fi
-
-if command -v apache2ctl >/dev/null 2>&1 && apache2ctl -t >/dev/null 2>&1; then
-  systemctl reload apache2 >/dev/null 2>&1 || true
-elif command -v httpd >/dev/null 2>&1 && httpd -t >/dev/null 2>&1; then
-  systemctl reload httpd >/dev/null 2>&1 || true
-fi
+systemctl restart edge-gateway.service >/dev/null 2>&1 || true
 
 exit 0
 HOOK
@@ -57,11 +46,7 @@ ssl_enable_renewal_schedule() {
 # certbot; only SSL issuing waits until it is available.
 ssl_install() {
   local packages=()
-  case "$(pkg_distro_family)" in
-    debian) packages=(certbot python3-certbot-nginx python3-certbot-apache) ;;
-    rpm) packages=(certbot python3-certbot-nginx) ;;
-    *) packages=(certbot) ;;
-  esac
+  packages=(certbot)
 
   if ! pkg_install "${packages[@]}"; then
     panel_warn_log "Full certbot package set unavailable; retrying with certbot alone."
@@ -78,14 +63,7 @@ ssl_install() {
 
 ssl_remove() {
   rm -f "${SSL_RENEWAL_HOOK}"
-  case "$(pkg_distro_family)" in
-    debian)
-      pkg_remove certbot python3-certbot-nginx python3-certbot-apache
-      ;;
-    rpm)
-      pkg_remove certbot python3-certbot-nginx
-      ;;
-  esac
+  pkg_remove certbot
   panel_info_log "ssl tooling removed."
 }
 

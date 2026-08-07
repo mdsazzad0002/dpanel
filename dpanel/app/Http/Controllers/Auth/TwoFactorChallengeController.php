@@ -125,7 +125,13 @@ class TwoFactorChallengeController extends Controller
         Auth::loginUsingId($user->id, (bool) ($pending['remember'] ?? false));
         $panelCookie = $this->issuePanelSessionProof($request);
 
-        return redirect()->intended(route('dashboard', absolute: false))
+        $token = (string) $request->session()->get('panel_session_token', '');
+        $relativePath = $request->session()->pull('panel.last_path');
+        $redirectPath = is_string($relativePath) && str_starts_with($relativePath, '/') && ! str_starts_with($relativePath, '//')
+            ? '/cpsess'.$token.$relativePath
+            : route('dashboard', ['token' => $token], absolute: false);
+
+        return redirect($redirectPath)
             ->withCookie($panelCookie);
     }
 

@@ -8,7 +8,7 @@ dPanel is a Laravel/Vue hosting panel backed by local Rust services:
 - `dscript`: installation, update, and recovery commands.
 
 This README is the single production and developer manual. The current stack
-does not use Apache, nginx, or generated vhost files.
+uses the Rust edge gateway directly and does not generate legacy vhost files.
 
 ## Request Flow
 

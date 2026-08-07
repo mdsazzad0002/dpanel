@@ -8,13 +8,35 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use serde::Deserialize;
+use std::fs;
 
 use crate::api::{ApiResponse, ApiState, check_token};
 
 const DEFAULT_PANEL_ROOT: &str = "/var/www/dpanel";
 
 pub fn routes() -> Router<Arc<ApiState>> {
-    Router::new().route("/api/v1/backup/run", post(run_handle))
+    Router::new()
+        .route("/api/v1/backup/run", post(run_handle))
+        .route("/api/v1/backup/delete", post(delete_handle))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DeleteBackupRequest { pub run_path: String }
+
+pub(crate) async fn delete_handle(
+    State(state): State<Arc<ApiState>>, headers: HeaderMap, Json(request): Json<DeleteBackupRequest>,
+) -> Response {
+    if let Err(error) = check_token(&state, &headers) { return error.into_response(); }
+    let path = Path::new(request.run_path.trim());
+    let root = Path::new("/var/www/dpanel/storage/app/backups");
+    let valid_name = path.file_name().and_then(|v| v.to_str())
+        .map(|v| v.len() == 15 && v.chars().enumerate().all(|(i, c)| if i == 8 { c == '_' } else { c.is_ascii_digit() }))
+        .unwrap_or(false);
+    if !valid_name || path.parent() != Some(root) { return ApiResponse::error("Invalid backup run path").into_response(); }
+    match fs::remove_dir_all(path) {
+        Ok(()) => ApiResponse::ok("Backup run deleted").into_response(),
+        Err(error) => ApiResponse::error(&format!("Backup delete failed: {error}")).into_response(),
+    }
 }
 
 #[derive(Deserialize)]

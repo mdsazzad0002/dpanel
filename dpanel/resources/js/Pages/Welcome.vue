@@ -80,7 +80,7 @@ const passwordCopyStatus = ref('');
 const presetMatrix = {
     basic: {
         label: 'Basic',
-        modules: 'nginx,php,mariadb,supervisor',
+        modules: 'php,mariadb,redis,supervisor',
         include_firewall: false,
         include_ssl: false,
         disable_root: false,
@@ -88,7 +88,7 @@ const presetMatrix = {
     },
     production: {
         label: 'Production',
-        modules: 'nginx,php,mariadb,supervisor,firewall,fail2ban,ssl',
+        modules: 'php,mariadb,redis,supervisor,firewall,fail2ban,ssl',
         include_firewall: true,
         include_ssl: true,
         disable_root: true,
@@ -96,7 +96,7 @@ const presetMatrix = {
     },
     secure: {
         label: 'Secure',
-        modules: 'nginx,php,mariadb,supervisor,firewall,fail2ban,ssl,ssh-root-login',
+        modules: 'php,mariadb,redis,supervisor,firewall,fail2ban,ssl,ssh-root-login',
         include_firewall: true,
         include_ssl: true,
         disable_root: true,
@@ -104,7 +104,7 @@ const presetMatrix = {
     },
     mail: {
         label: 'Mail Server',
-        modules: 'nginx,php,mariadb,supervisor,firewall,fail2ban,ssl',
+        modules: 'php,mariadb,redis,supervisor,firewall,fail2ban,ssl',
         include_firewall: true,
         include_ssl: true,
         disable_root: true,
@@ -486,7 +486,7 @@ ssh ubuntu@your_server_ip</code></pre>
                     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">2. Install Required Packages</h2>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>sudo apt update && sudo apt upgrade -y
-sudo apt install -y nginx git unzip curl sqlite3
+sudo apt install -y git unzip curl sqlite3
 sudo apt install -y php-cli php-fpm php-mbstring php-xml php-curl php-zip php-sqlite3
 sudo apt install -y composer nodejs npm</code></pre>
                     </section>
@@ -514,9 +514,9 @@ php artisan optimize</code></pre>
                         <pre class="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100 dark:bg-black sm:text-sm"><code>sudo chown -R www-data:www-data /var/www/serverpanel
 sudo chmod -R 775 /var/www/serverpanel/storage /var/www/serverpanel/bootstrap/cache
 
-sudo systemctl enable nginx
+sudo systemctl enable edge-gateway
 sudo systemctl enable php8.3-fpm
-sudo systemctl restart nginx
+sudo systemctl restart edge-gateway
 sudo systemctl restart php8.3-fpm</code></pre>
                     </section>
 

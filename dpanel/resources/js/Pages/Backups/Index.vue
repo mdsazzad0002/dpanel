@@ -1,7 +1,8 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import axios from 'axios';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
     backupRoot: { type: String, default: '' },
@@ -13,19 +14,22 @@ const props = defineProps({
     runs: { type: Array, default: () => [] },
 });
 
-const page = usePage();
 const backupCanvasOpen = ref(false);
+const runs = ref([...props.runs]);
+const responseMessage = ref('');
+const responseOk = ref(true);
+const deletingRun = ref('');
+const restoringFile = ref('');
+const runsLoading = ref(false);
 const runForm = useForm({
     filter: 'all',
     content: 'all',
     website_id: '',
 });
-const deleteForm = useForm({});
-
 const totals = computed(() => ({
-    runs: props.runs.length,
-    files: props.runs.reduce((carry, run) => carry + Number(run.file_count ?? 0), 0),
-    size: props.runs.reduce((carry, run) => carry + Number(run.total_size_bytes ?? 0), 0),
+    runs: runs.value.length,
+    files: runs.value.reduce((carry, run) => carry + Number(run.file_count ?? 0), 0),
+    size: runs.value.reduce((carry, run) => carry + Number(run.total_size_bytes ?? 0), 0),
 }));
 
 const bytesToLabel = (bytes) => {
@@ -42,16 +46,74 @@ const downloadToken = (filename) => btoa(String(filename))
     .replace(/\//g, '_')
     .replace(/=+$/g, '');
 
-const runBackup = () => {
-    runForm.post(route('backups.run'), {
-        onSuccess: () => { backupCanvasOpen.value = false; },
+const showError = (error, fallback) => {
+    const data = error.response?.data;
+    Object.entries(data?.errors || {}).forEach(([field, messages]) => {
+        runForm.setError(field, Array.isArray(messages) ? messages[0] : messages);
     });
+    responseOk.value = false;
+    responseMessage.value = data?.message || fallback;
 };
 
-const deleteRun = (runName) => {
-    if (!confirm(`Delete backup run "${runName}"?`)) return;
-    deleteForm.delete(route('backups.destroy', runName));
+const runBackup = async () => {
+    runForm.processing = true;
+    runForm.clearErrors();
+    responseMessage.value = '';
+    try {
+        const { data } = await axios.post(route('backups.run'), runForm.data(), { headers: { Accept: 'application/json' } });
+        runs.value = data.runs || runs.value;
+        responseOk.value = true;
+        responseMessage.value = data.message;
+        backupCanvasOpen.value = false;
+    } catch (error) {
+        showError(error, 'Backup could not be completed.');
+    } finally {
+        runForm.processing = false;
+    }
 };
+
+const deleteRun = async (runName) => {
+    if (!confirm(`Delete backup run "${runName}"?`)) return;
+    deletingRun.value = runName;
+    try {
+        const { data } = await axios.delete(route('backups.destroy', runName), { headers: { Accept: 'application/json' } });
+        runs.value = data.runs || [];
+        responseOk.value = true;
+        responseMessage.value = data.message;
+    } catch (error) {
+        showError(error, 'Backup run could not be deleted.');
+    } finally {
+        deletingRun.value = '';
+    }
+};
+
+const restoreBackup = async (runName, file) => {
+    if (!confirm(`Restore ${file.label || file.name}? Current website files and database data will be replaced.`)) return;
+    restoringFile.value = `${runName}:${file.name}`;
+    try {
+        const { data } = await axios.post(route('backups.restore', { run: runName, encoded: downloadToken(file.name) }), {}, { headers: { Accept: 'application/json' } });
+        responseOk.value = true;
+        responseMessage.value = data.message;
+    } catch (error) {
+        showError(error, 'Backup restore failed.');
+    } finally {
+        restoringFile.value = '';
+    }
+};
+
+const loadRuns = async () => {
+    runsLoading.value = true;
+    try {
+        const { data } = await axios.get(route('backups.data'), { headers: { Accept: 'application/json' } });
+        runs.value = data.runs || [];
+    } catch (error) {
+        showError(error, 'Backup list could not be loaded.');
+    } finally {
+        runsLoading.value = false;
+    }
+};
+
+onMounted(loadRuns);
 
 </script>
 
@@ -67,11 +129,8 @@ const deleteRun = (runName) => {
         </template>
 
         <div class="space-y-4">
-            <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                {{ page.props.flash.success }}
-            </div>
-            <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 whitespace-pre-line">
-                {{ page.props.flash.error }}
+            <div v-if="responseMessage" :class="responseOk ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'" class="rounded-md border px-4 py-3 text-sm whitespace-pre-line">
+                {{ responseMessage }}
             </div>
 
             <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -105,48 +164,32 @@ const deleteRun = (runName) => {
                 </div>
             </section>
 
-            <Link :href="route('backups.scp')" class="block rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-5 shadow-sm transition hover:border-indigo-400 hover:shadow dark:border-indigo-900 dark:from-indigo-950/50 dark:to-slate-900">
-                <div class="flex flex-wrap items-center justify-between gap-5">
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <i class="itc bi bi-cloud-arrow-up text-indigo-600"></i>
+            <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Link :href="route('backups.scp')" class="group flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-800">
+                    <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-100 text-lg text-indigo-600 transition group-hover:bg-indigo-600 group-hover:text-white dark:bg-indigo-950"><i class="itc bi bi-cloud-arrow-up"></i></span>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-2">
                             <h2 class="font-semibold">SCP Backup</h2>
-                            <span :class="remoteUpload?.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'" class="rounded-full px-2 py-0.5 text-xs font-medium">
+                            <span :class="remoteUpload?.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'" class="rounded-full px-2 py-0.5 text-[11px] font-medium">
                                 {{ remoteUpload?.enabled ? 'Enabled' : 'Disabled' }}
                             </span>
                         </div>
-                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                            Last status: <span class="font-medium capitalize">{{ scpStatus?.status || 'never' }}</span>
-                            <span v-if="scpStatus?.updated_at"> · {{ scpStatus.updated_at }}</span>
-                        </p>
+                        <p class="mt-1 text-sm text-slate-500">Configure remote backup transfer and credentials.</p>
                     </div>
-                    <div class="ml-auto flex flex-wrap items-center gap-2">
-                        <div class="min-w-24 rounded-lg border border-indigo-200 bg-white/80 px-3 py-2 dark:border-indigo-800 dark:bg-slate-900/70">
-                            <p class="text-[10px] uppercase tracking-wide text-slate-400">Time</p>
-                            <p class="mt-0.5 text-sm font-semibold">{{ backupSchedule?.enabled ? backupSchedule?.time : 'Disabled' }}</p>
-                        </div>
-                        <div class="min-w-24 rounded-lg border border-indigo-200 bg-white/80 px-3 py-2 dark:border-indigo-800 dark:bg-slate-900/70">
-                            <p class="text-[10px] uppercase tracking-wide text-slate-400">Period</p>
-                            <p class="mt-0.5 text-sm font-semibold">{{ retentionDays }} days</p>
-                        </div>
-                        <span class="ml-2 text-sm font-medium text-indigo-600">Open Settings →</span>
-                    </div>
-                </div>
+                    <i class="itc bi bi-chevron-right shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-indigo-600"></i>
             </Link>
 
-            <section class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white p-5 dark:border-blue-900 dark:from-blue-950/40 dark:to-slate-900">
-                <div class="flex items-center gap-4">
-                    <span class="grid h-12 w-12 place-items-center rounded-xl bg-blue-600 text-xl text-white shadow-sm"><i class="itc bi bi-cloud-arrow-up"></i></span>
-                    <div>
+            <section class="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-800">
+                    <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-blue-100 text-lg text-blue-600 dark:bg-blue-950"><i class="itc bi bi-archive"></i></span>
+                    <div class="min-w-0 flex-1">
                         <h2 class="font-semibold">Create a Backup</h2>
-                        <p class="mt-1 text-sm text-slate-500">Choose scope and content from the backup drawer.</p>
-                        <p class="mt-1 text-xs text-slate-400">{{ backupRoot }} · {{ backupSchedule?.enabled ? `Daily at ${backupSchedule?.time}` : 'Schedule disabled' }}</p>
+                        <p class="mt-1 text-sm text-slate-500">Choose backup scope and content.</p>
                     </div>
-                </div>
-                <button type="button" class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700" @click="backupCanvasOpen = true">
+                <button type="button" class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700" @click="backupCanvasOpen = true">
                     <i class="itc bi bi-plus-circle mr-1"></i> New Backup
                 </button>
             </section>
+            </div>
 
             <div v-if="backupCanvasOpen" class="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="Create backup">
                 <button type="button" class="absolute inset-0 h-full w-full bg-slate-950/50 backdrop-blur-[1px]" aria-label="Close backup drawer" @click="backupCanvasOpen = false"></button>
@@ -171,7 +214,7 @@ const deleteRun = (runName) => {
                         <div class="grid gap-3 sm:grid-cols-2">
                             <button type="button" :class="runForm.filter === 'all' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100 dark:bg-blue-950/40 dark:ring-blue-900' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'" class="flex items-center gap-3 rounded-xl border p-4 text-left transition" @click="runForm.filter = 'all'; runForm.website_id = ''">
                                 <span class="grid h-10 w-10 place-items-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50"><i class="itc bi bi-hdd-stack"></i></span>
-                                <span><span class="block text-sm font-semibold">All</span><span class="block text-xs text-slate-500">Complete panel backup</span></span>
+                                <span><span class="block text-sm font-semibold">All Websites</span><span class="block text-xs text-slate-500">One account archive per website</span></span>
                                 <i v-if="runForm.filter === 'all'" class="itc bi bi-check-circle-fill ml-auto text-blue-600"></i>
                             </button>
                             <button type="button" :class="runForm.filter === 'website' ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-100 dark:bg-violet-950/40 dark:ring-violet-900' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'" class="flex items-center gap-3 rounded-xl border p-4 text-left transition" @click="runForm.filter = 'website'">
@@ -238,11 +281,17 @@ const deleteRun = (runName) => {
                                 <p class="font-mono text-xs">{{ run.name }}</p>
                                 <ul class="mt-2 space-y-1">
                                     <li v-for="file in run.files || []" :key="`${run.name}-${file.name}`" class="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                                        <span class="font-mono">{{ file.name }}</span>
+                                        <span>
+                                            <span class="block font-medium text-slate-700 dark:text-slate-200">{{ file.label || file.name }}</span>
+                                            <span class="block font-mono text-[10px] text-slate-400">{{ file.name }}</span>
+                                        </span>
                                         <span class="text-slate-500">({{ bytesToLabel(file.size_bytes) }})</span>
                                         <a :href="route('backups.download', { run: run.name, encoded: downloadToken(file.name) })" class="rounded border border-slate-300 px-2 py-0.5 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" download>
                                             Download
                                         </a>
+                                        <button v-if="file.restorable" type="button" :disabled="restoringFile !== ''" class="rounded border border-emerald-300 px-2 py-0.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-400" @click="restoreBackup(run.name, file)">
+                                            {{ restoringFile === `${run.name}:${file.name}` ? 'Restoring...' : 'Restore' }}
+                                        </button>
                                     </li>
                                 </ul>
                             </td>
@@ -250,12 +299,15 @@ const deleteRun = (runName) => {
                             <td class="px-4 py-3">{{ run.file_count || 0 }}</td>
                             <td class="px-4 py-3">{{ bytesToLabel(run.total_size_bytes || 0) }}</td>
                             <td class="px-4 py-3">
-                                <button type="button" class="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400" @click="deleteRun(run.name)">
-                                    Delete Run
+                                <button type="button" :disabled="deletingRun !== ''" class="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-400" @click="deleteRun(run.name)">
+                                    {{ deletingRun === run.name ? 'Deleting...' : 'Delete Run' }}
                                 </button>
                             </td>
                         </tr>
-                        <tr v-if="runs.length === 0">
+                        <tr v-if="runsLoading">
+                            <td colspan="5" class="px-4 py-8 text-center text-slate-500"><i class="itc bi bi-arrow-repeat mr-2 animate-spin"></i>Loading backups...</td>
+                        </tr>
+                        <tr v-else-if="runs.length === 0">
                             <td colspan="5" class="px-4 py-8 text-center text-slate-500">No backup runs found.</td>
                         </tr>
                     </tbody>

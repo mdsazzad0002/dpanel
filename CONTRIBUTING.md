@@ -162,8 +162,7 @@ cargo build
 Server config changes:
 
 ```bash
-sudo nginx -t
-sudo apache2ctl configtest
+sudo systemctl status edge-gateway.service --no-pager
 ```
 
 Permission repair changes:
@@ -216,7 +215,7 @@ For bugs, include:
 - dPanel version or commit hash
 - operating system
 - PHP version
-- web server: nginx, Apache, or both
+- gateway: Rust edge gateway
 - exact error message
 - reproduction steps
 - relevant logs with secrets removed
