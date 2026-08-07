@@ -1,11 +1,68 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { usePage } from '@inertiajs/vue3';
-const props=defineProps({website:{type:Object,required:true},compact:{type:Boolean,default:false}});
-const page=usePage();const command=ref('');const output=ref('Sandbox ready. Commands run only inside /workspace.\n');const running=ref(false);
-const panelToken=computed(()=>String(page.props.panel?.token||''));
-const panelRoute=(name,params={})=>panelToken.value?route(name,{token:panelToken.value,...params}):route(name,params);
-const csrf=()=>document.querySelector('meta[name="csrf-token"]')?.content||'';
-const run=async()=>{const value=command.value.trim();if(!value||running.value)return;output.value+=`\n$ ${value}\n`;command.value='';running.value=true;try{const response=await fetch(panelRoute('websites.terminal.execute',{id:props.website.id}),{method:'POST',headers:{Accept:'application/json','Content-Type':'application/json','X-CSRF-TOKEN':csrf()},body:JSON.stringify({command:value})});const data=await response.json();if(!response.ok)throw new Error(data.message||'Command failed.');output.value+=(data.output||'(no output)')+`\n[exit ${data.exit_code}]\n`;}catch(error){output.value+=`Blocked/Error: ${error.message}\n`;}finally{running.value=false;}};
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
+
+const props = defineProps({ website: { type: Object, required: true }, compact: { type: Boolean, default: false } });
+const page = usePage();
+const host = ref(null);
+const status = ref('Connecting…');
+const panelToken = computed(() => String(page.props.panel?.token || ''));
+const panelRoute = (name, params = {}) => panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params);
+const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+let terminal;
+let fitAddon;
+let socket;
+let resizeObserver;
+
+const fit = () => {
+    if (!terminal || !fitAddon) return;
+    fitAddon.fit();
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ rows: terminal.rows, cols: terminal.cols }));
+};
+
+const connect = async () => {
+    status.value = 'Connecting…';
+    const response = await fetch(panelRoute('websites.terminal.session', { id: props.website.id }), {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
+        body: '{}',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Unable to open terminal.');
+    const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(`${scheme}//${window.location.host}${data.path}?ticket=${encodeURIComponent(data.ticket)}`);
+    socket.binaryType = 'arraybuffer';
+    socket.onopen = () => { status.value = 'Connected'; fit(); terminal.focus(); };
+    socket.onmessage = async (event) => terminal.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data));
+    socket.onerror = () => { status.value = 'Connection error'; };
+    socket.onclose = () => { status.value = 'Session closed'; terminal?.write('\r\n[session closed]\r\n'); };
+};
+
+onMounted(async () => {
+    terminal = new Terminal({ cursorBlink: true, convertEol: true, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 13, theme: { background: '#020617', foreground: '#e2e8f0', cursor: '#34d399' }, scrollback: 5000 });
+    fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.open(host.value);
+    terminal.onData((value) => { if (socket?.readyState === WebSocket.OPEN) socket.send(new TextEncoder().encode(value)); });
+    resizeObserver = new ResizeObserver(fit);
+    resizeObserver.observe(host.value);
+    await nextTick();
+    fit();
+    try { await connect(); } catch (error) { status.value = error.message; terminal.write(`Error: ${error.message}\r\n`); }
+});
+
+onBeforeUnmount(() => { resizeObserver?.disconnect(); socket?.close(); terminal?.dispose(); });
 </script>
-<template><div class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-sm"><div class="flex items-center justify-between border-b border-slate-800 px-4 py-3"><div><p class="text-sm font-semibold text-slate-100">Sandbox Terminal</p><p class="text-[11px] text-emerald-400">{{ website.site_owner }} · /workspace · network isolated</p></div><button type="button" class="text-xs text-slate-400 hover:text-white" @click="output='Sandbox ready. Commands run only inside /workspace.\n'">Clear</button></div><pre :class="['overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-slate-200',compact?'h-44':'h-[55vh]']">{{ output }}</pre><form class="flex border-t border-slate-800" @submit.prevent="run"><span class="px-3 py-3 font-mono text-sm text-emerald-400">$</span><input v-model="command" :disabled="running" autocomplete="off" spellcheck="false" class="min-w-0 flex-1 border-0 bg-transparent px-1 py-3 font-mono text-sm text-white outline-none ring-0 placeholder:text-slate-600 focus:ring-0" placeholder="pwd, ls, php artisan..."/><button :disabled="running||!command.trim()" class="m-1.5 rounded-lg bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-40">{{ running?'Running...':'Run' }}</button></form></div></template>
+
+<template>
+    <div class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-sm">
+        <div class="flex items-center justify-between border-b border-slate-800 px-4 py-2">
+            <div><p class="text-sm font-semibold text-slate-100">Terminal</p><p class="text-[11px] text-emerald-400">{{ website.site_owner }} · {{ status }}</p></div>
+            <button type="button" class="text-xs text-slate-400 hover:text-white" @click="terminal?.clear(); terminal?.focus()">Clear</button>
+        </div>
+        <div ref="host" class="w-full bg-slate-950 p-2" :class="compact ? 'h-48' : 'h-[62vh]'" @click="terminal?.focus()"></div>
+    </div>
+</template>

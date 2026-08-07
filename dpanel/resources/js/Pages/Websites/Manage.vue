@@ -198,7 +198,7 @@ const quickActions = computed(() => [
     { label: 'Edit Website', icon: 'bi-pencil-square', href: panelRoute('websites.edit', { id: props.website.id }), color: 'slate', method: 'get' },
     ...(canClearCache.value
         ? [{ label: `Clear ${detectedApp.value === 'wordpress' ? 'WordPress' : 'Laravel'} Cache`, icon: 'bi-trash3', action: 'clearCache', color: 'red' }]
-        : [{ label: 'Check Website Status', icon: 'bi-arrow-repeat', action: 'checkStatus', color: 'blue' }]),
+        : [{ label: 'Check Status', icon: 'bi-arrow-repeat', action: 'checkStatus', color: 'blue' }]),
     { label: 'File Manager', icon: 'bi-folder2-open', href: panelRoute('websites.filemanager', { id: props.website.id }), color: 'emerald', method: 'get' },
     { label: 'Back to List', icon: 'bi-arrow-left', href: panelRoute('websites.list'), color: 'slate', method: 'get' },
 ].filter((item) => !isSystemWebsite.value || ['Back to List'].includes(item.label)));
@@ -680,11 +680,10 @@ const issueWebsiteSsl = async () => {
                                     class="flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-amber-700 transition hover:border-amber-300 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400"
                                     @click="fixProjectPermissions">
                                     <i class="bi bi-wrench-adjustable-circle text-base"></i>
-                                    {{ permissionFixLoading ? 'Fixing Permissions...' : 'Fix Website Permissions' }}
+                                    {{ permissionFixLoading ? 'Fixing Permissions...' : 'Fix Permissions' }}
                                 </button>
-                            </div>
-                    <!-- Remaining quick actions stay inside the right card. -->
-                    <div class="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
+
+
                                 <button v-if="supportsDatabaseAutoConnect" type="button"
                                     :disabled="databaseConnectLoading || !databaseConnection.available"
                                     :title="databaseConnection.available ? `Connect ${databaseConnection.database_name}` : 'Create an active database for this domain first'"

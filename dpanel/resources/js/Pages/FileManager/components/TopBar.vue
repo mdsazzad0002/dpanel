@@ -31,18 +31,6 @@ defineProps({
                 <i class="bi bi-list text-sm"></i>
             </button>
 
-            <Link :href="fm.panelRoute('websites.manage', { id: fm.props.website.id })" class="flex items-center gap-1.5 text-sm font-semibold hover:underline">
-                {{ fm.websiteLabel }}
-            </Link>
-            <span class="text-slate-400">/</span>
-            <div v-if="fm.props.basePath" class="flex items-center gap-2 rounded-full border border-sky-200/80 bg-sky-50/90 px-2.5 py-1 text-[11px] text-sky-700 shadow-sm dark:border-sky-800/60 dark:bg-sky-900/20 dark:text-sky-300">
-                <i class="bi bi-diagram-3"></i>
-                <span class="max-w-40 truncate font-medium">Root: {{ fm.resolveDisplayPath(fm.props.basePath) }}</span>
-                <button type="button" class="rounded-full border border-sky-200 px-1.5 py-0.5 text-[10px] transition hover:bg-sky-100 dark:border-sky-800 dark:hover:bg-sky-900/40" @click="fm.resetRootScope">
-                    Reset
-                </button>
-            </div>
-
             <div class="flex min-w-0 items-center gap-1 overflow-x-auto text-sm">
                 <button type="button" class="shrink-0 rounded-md px-1.5 py-1 transition hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.goRoot">
                     <i class="bi bi-house-door text-xs"></i>

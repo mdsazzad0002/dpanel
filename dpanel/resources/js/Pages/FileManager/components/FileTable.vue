@@ -52,12 +52,12 @@ defineProps({
                         @dragleave="item.type === 'dir' ? fm.handleFolderTargetDragLeave(item.path) : null"
                         @drop="item.type === 'dir' ? fm.handleFolderTargetDrop(item.path, $event) : null"
                     >
-                        <td class="px-3 py-2.5" @click.stop>
+                        <td class="px-3 py-0.5" @click.stop>
                             <input type="checkbox" :checked="fm.isItemSelected(item.path)" @change="fm.toggleSelectPath(item.path, $event.target.checked, $event)" />
                         </td>
-                        <td class="px-3 py-2.5 font-medium">
+                        <td class="px-3 py-0.5 font-medium">
                             <div class="flex items-center gap-2.5">
-                                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors" :class="item.type === 'dir' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'">
+                                <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg transition-colors" :class="item.type === 'dir' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'">
                                     <i class="bi text-sm" :class="fm.iconClassForItem(item)"></i>
                                 </div>
                                 <span class="truncate" :class="fm.nameClassForItem(item)">
@@ -69,14 +69,14 @@ defineProps({
                                 {{ fm.typeLabelForItem(item) }} &middot; {{ fm.formatBytes(item.size) }}
                             </div>
                         </td>
-                        <td class="hidden px-3 py-2.5 sm:table-cell">
+                        <td class="hidden px-3 py-0.5 sm:table-cell">
                             <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                                 {{ fm.typeLabelForItem(item) }}
                             </span>
                         </td>
-                        <td class="hidden px-3 py-2.5 text-slate-600 md:table-cell dark:text-slate-400">{{ fm.formatBytes(item.size) }}</td>
-                        <td class="hidden px-3 py-2.5 font-mono text-xs text-slate-500 lg:table-cell">{{ item.permissions }}</td>
-                        <td class="hidden px-3 py-2.5 text-xs text-slate-500 xl:table-cell">{{ item.modified_at ? new Date(item.modified_at).toLocaleString() : '-' }}</td>
+                        <td class="hidden px-3 py-0.5 text-slate-600 md:table-cell dark:text-slate-400">{{ fm.formatBytes(item.size) }}</td>
+                        <td class="hidden px-3 py-0.5 font-mono text-xs text-slate-500 lg:table-cell">{{ item.permissions }}</td>
+                        <td class="hidden px-3 py-0.5 text-xs text-slate-500 xl:table-cell">{{ item.modified_at ? new Date(item.modified_at).toLocaleString() : '-' }}</td>
                     </tr>
                     <tr v-if="fm.filteredItems.length === 0">
                         <td colspan="6" class="px-4 py-16 text-center">

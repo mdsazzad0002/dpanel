@@ -28,12 +28,15 @@ class ScriptExecutionGateway
         }
 
         $scriptName = $this->scriptNameFromPath($scriptPath);
+        $environment = $this->normalizeEnvironment($environment);
         $payload = [
             'script' => $scriptName,
             'args' => array_values(array_map(static fn ($value) => (string) $value, $arguments)),
-            'environment' => $this->normalizeEnvironment($environment),
             'run_as_root' => $asRoot,
         ];
+        if ($environment !== []) {
+            $payload['environment'] = $environment;
+        }
 
         $request = Http::acceptJson()
             ->asJson()

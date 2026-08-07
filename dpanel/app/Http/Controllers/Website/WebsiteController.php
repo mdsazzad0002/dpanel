@@ -903,7 +903,7 @@ class WebsiteController extends Controller
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', $message);
     }
 
-    public function renameItem(Request $request, string $token, string $id): RedirectResponse
+    public function renameItem(Request $request, string $token, string $id): RedirectResponse|JsonResponse
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
 
@@ -922,6 +922,9 @@ class WebsiteController extends Controller
 
         $newName = $this->sanitizeFilename((string) $validated['new_name']);
         if ($newName === '') {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Invalid new name.'], 422);
+            }
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Invalid new name.');
         }
 
@@ -933,7 +936,14 @@ class WebsiteController extends Controller
         try {
             $this->filemanagerService->movePath($siteOwner, $itemPath, $targetPath);
         } catch (\Throwable $e) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Failed to rename item. '.$e->getMessage()], 422);
+            }
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to rename item. '.$e->getMessage());
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Item renamed.', 'path' => $targetRelative]);
         }
 
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Item renamed.');

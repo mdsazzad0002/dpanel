@@ -71,6 +71,8 @@ Route::get('/websites/{id}/terminal', [WebsiteTerminalController::class, 'index'
     ->middleware('role:admin|reseller')->name('websites.terminal.index');
 Route::post('/websites/{id}/terminal', [WebsiteTerminalController::class, 'execute'])
     ->middleware(['role:admin|reseller', 'throttle:30,1'])->name('websites.terminal.execute');
+Route::post('/websites/{id}/terminal/session', [WebsiteTerminalController::class, 'session'])
+    ->middleware(['role:admin|reseller', 'throttle:10,1'])->name('websites.terminal.session');
 Route::get('/websites/{id}/ssl', [WebsiteOperationsController::class, 'sslManager'])
     ->middleware('role:admin|reseller')
     ->name('websites.ssl');

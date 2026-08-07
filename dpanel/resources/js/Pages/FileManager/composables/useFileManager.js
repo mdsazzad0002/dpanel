@@ -33,6 +33,7 @@ export function useFileManager(props) {
     const isMobile = ref(false);
     const pathInput = ref(resolveDisplayPath(props.basePath, props.currentPath));
     const activeItemPath = ref(props.selectedFile?.path || props.items?.[0]?.path || '');
+    const localItems = ref(Array.isArray(props.items) ? props.items.map((item) => ({ ...item })) : []);
     const selectedPaths = ref([]);
     const selectionAnchorPath = ref('');
     const hiddenEnabled = ref(Boolean(props.showHidden));
@@ -49,6 +50,7 @@ export function useFileManager(props) {
     const cacheClearInProgress = ref(false);
     const treeOpenState = ref({});
     const saveInProgress = ref(false);
+    const renameInProgress = ref(false);
     const INTERNAL_MOVE_MIME = 'application/x-serverpanel-item-paths';
     const toasts = ref([]);
     let toastSeq = 0;
@@ -86,7 +88,14 @@ export function useFileManager(props) {
     }
 
     function closeModal() {
+        const wasEditor = modalType.value === 'editor';
         modalType.value = '';
+
+        if (wasEditor && props.selectedFile?.path) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('file_path');
+            window.history.replaceState(window.history.state, '', url.toString());
+        }
     }
 
     function toggleSidebar() {
@@ -234,7 +243,7 @@ export function useFileManager(props) {
         itemName: '',
     });
 
-    const contextItem = computed(() => props.items.find((item) => item.path === contextMenu.value.itemPath) || null);
+    const contextItem = computed(() => localItems.value.find((item) => item.path === contextMenu.value.itemPath) || null);
     const contextZip = computed(() => contextItem.value?.type === 'file' && String(contextItem.value?.name || '').toLowerCase().endsWith('.zip'));
 
     function openContextMenu(item, event) {
@@ -391,7 +400,10 @@ export function useFileManager(props) {
             return;
         }
 
-        router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ file_path: path })));
+        router.get(panelRoute('websites.filemanager', fileManagerRouteParams({
+            path: props.currentPath,
+            file_path: path,
+        })));
     }
 
     function downloadSelected() {
@@ -435,13 +447,48 @@ export function useFileManager(props) {
     }
 
     function submitRename() {
+        if (renameInProgress.value) return;
+
+        const sourcePath = String(renameForm.item_path || '');
+        const sourceItem = localItems.value.find((item) => item.path === sourcePath);
+        const newName = String(renameForm.new_name || '').trim();
+        if (!sourceItem || newName === '') return;
+        if (newName === sourceItem.name) {
+            closeModal();
+            return;
+        }
+
         renameForm.current_path = props.currentPath;
-        renameForm.patch(panelRoute('websites.filemanager.item.rename', fileManagerRouteParams()), {
-            onSuccess: () => {
+        renameInProgress.value = true;
+        window.axios
+            .patch(panelRoute('websites.filemanager.item.rename', fileManagerRouteParams()), {
+                item_path: sourcePath,
+                current_path: props.currentPath,
+                new_name: newName,
+            }, {
+                headers: { Accept: 'application/json' },
+            })
+            .then((response) => {
+                const parent = sourcePath.includes('/') ? sourcePath.slice(0, sourcePath.lastIndexOf('/')) : '';
+                const targetPath = String(response?.data?.path || [parent, newName].filter(Boolean).join('/'));
+                localItems.value = localItems.value.map((item) => (
+                    item.path === sourcePath
+                        ? { ...item, name: newName, path: targetPath, modified_at: new Date().toISOString() }
+                        : item
+                ));
+                activeItemPath.value = activeItemPath.value === sourcePath ? targetPath : activeItemPath.value;
+                selectedPaths.value = selectedPaths.value.map((path) => path === sourcePath ? targetPath : path);
+                selectionAnchorPath.value = selectionAnchorPath.value === sourcePath ? targetPath : selectionAnchorPath.value;
                 renameForm.new_name = '';
                 closeModal();
-            },
-        });
+                pushToast(response?.data?.message || 'Item renamed.', 'success');
+            })
+            .catch((error) => {
+                pushToast(error?.response?.data?.message || 'Failed to rename item.', 'error');
+            })
+            .finally(() => {
+                renameInProgress.value = false;
+            });
     }
 
     function submitPermissions() {
@@ -579,7 +626,10 @@ export function useFileManager(props) {
                 break;
             case 'open-tab':
                 if (isEditableFile(item.name)) {
-                    window.open(panelRoute('websites.filemanager', fileManagerRouteParams({ file_path: item.path })), '_blank');
+                    window.open(panelRoute('websites.filemanager', fileManagerRouteParams({
+                        path: props.currentPath,
+                        file_path: item.path,
+                    })), '_blank');
                 } else {
                     pushToast(`Cannot edit "${item.name}". This file type is not supported for editing.`, 'info');
                 }
@@ -638,7 +688,7 @@ export function useFileManager(props) {
         if (!paths.length) return;
 
         zipForm.item_paths = paths;
-        const sourceItem = props.items.find((item) => item.path === paths[0]) || singleSelectedItem.value;
+        const sourceItem = localItems.value.find((item) => item.path === paths[0]) || singleSelectedItem.value;
         zipForm.zip_name = sourceItem
             ? (sourceItem.type === 'dir'
                 ? `${sourceItem.name}.zip`
@@ -698,7 +748,7 @@ export function useFileManager(props) {
     const isItemSelected = (path) => selectedPathList.value.includes(path);
     const singleSelectedItem = computed(() => {
         if (selectedPaths.value.length !== 1) return null;
-        return props.items.find((item) => item.path === selectedPaths.value[0]) || null;
+        return localItems.value.find((item) => item.path === selectedPaths.value[0]) || null;
     });
     const isZipSelected = computed(() => {
         if (!singleSelectedItem.value) return false;
@@ -743,8 +793,8 @@ export function useFileManager(props) {
     })));
 
     const filteredItems = computed(() => {
-        let list = Array.isArray(props.items)
-            ? props.items.filter((item) => item && typeof item === 'object' && Boolean(item.path))
+        let list = Array.isArray(localItems.value)
+            ? localItems.value.filter((item) => item && typeof item === 'object' && Boolean(item.path))
             : [];
 
         if (searchQuery.value.trim()) {
@@ -833,7 +883,7 @@ export function useFileManager(props) {
     const isBusy = computed(() =>
         createFolderForm.processing || createFileForm.processing || saveInProgress.value ||
         deleteForm.processing || uploadForm.processing || permissionForm.processing ||
-        renameForm.processing || zipForm.processing || unzipForm.processing || moveForm.processing
+        renameInProgress.value || zipForm.processing || unzipForm.processing || moveForm.processing
     );
 
     function handleEditorBeforeUnload(event) {
@@ -879,6 +929,7 @@ export function useFileManager(props) {
     watch(
         () => props.items,
         (list) => {
+            localItems.value = Array.isArray(list) ? list.map((item) => ({ ...item })) : [];
             if (!Array.isArray(list) || list.length === 0) {
                 activeItemPath.value = '';
                 selectedPaths.value = [];
@@ -984,6 +1035,7 @@ export function useFileManager(props) {
         uploadForm,
         permissionForm,
         renameForm,
+        renameInProgress,
         zipForm,
         unzipForm,
         moveForm,
@@ -997,7 +1049,7 @@ export function useFileManager(props) {
         quickActionsGroups,
         filteredItems,
         treeRows,
-        items: computed(() => props.items || []),
+        items: computed(() => localItems.value),
         directoryTree: computed(() => props.directoryTree || []),
         selectedFile: computed(() => props.selectedFile || null),
         contextItem,
