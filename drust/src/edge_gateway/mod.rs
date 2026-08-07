@@ -8,6 +8,7 @@ mod server;
 mod source;
 mod static_files;
 mod tls;
+mod terminal_ws;
 
 pub use config::{
     CachePolicy, RouteAction, RouteConfig, RuntimeSnapshot, SiteConfig, SnapshotCacheConfig,

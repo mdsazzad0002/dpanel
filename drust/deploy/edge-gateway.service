@@ -6,6 +6,7 @@ After=network.target mariadb.service mysql.service
 Type=simple
 WorkingDirectory=/var/www/drust
 EnvironmentFile=/etc/drust/edge-gateway.env
+EnvironmentFile=/etc/drust/drust.env
 Environment=DRUST_EDGE_GATEWAY_BIND=0.0.0.0:80
 ExecStart=/usr/local/bin/drust-edge-gateway
 Restart=always

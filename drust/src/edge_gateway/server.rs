@@ -20,6 +20,8 @@ use hyper_util::service::TowerToHyperService;
 use hyper::body::Body as HttpBody;
 use serde::Serialize;
 use tokio::sync::RwLock;
+use std::collections::HashMap;
+use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 use super::{
@@ -38,6 +40,7 @@ pub struct DemoServerState {
     pub dispatch: DispatchContext,
     pub proxy_client: Arc<reqwest::Client>,
     pub bandwidth: BandwidthTracker,
+    pub terminal_tickets: Arc<Mutex<HashMap<String, super::terminal_ws::TerminalTicket>>>,
 }
 
 #[derive(Clone)]
@@ -197,6 +200,8 @@ fn build_http_redirect_router(redirect_to: Option<String>) -> Router {
 pub fn build_demo_router(state: DemoServerState) -> Router {
     Router::new()
         .fallback(any(handle_request))
+        .route("/__admin/terminal-ticket", post(super::terminal_ws::register_ticket))
+        .route("/__dpanel/terminal-ws", any(super::terminal_ws::terminal_socket))
         .route("/__admin/reload", post(handle_reload))
         .route("/__admin/health", any(handle_health))
         .route("/__admin/upstreams/health", any(handle_upstreams_health))
@@ -295,6 +300,7 @@ pub fn make_demo_state(
         dispatch,
         proxy_client: Arc::new(client),
         bandwidth: BandwidthTracker::from_env(),
+        terminal_tickets: Arc::new(Mutex::new(HashMap::new())),
     })
 }
 
