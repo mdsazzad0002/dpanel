@@ -102,7 +102,7 @@ fn create(
     }
     let group = user_group(username).unwrap_or_else(|_| username.to_string());
     fs::create_dir_all(&home).map_err(|e| format!("failed to create {}: {e}", home.display()))?;
-    apply_directory_owner(username, &group, &home);
+    apply_directory_owner(username, &group, &home, "0700")?;
 
     let site_directory = site_directory.trim_matches('/');
     if site_directory.is_empty() || site_directory.contains("..") || site_directory.contains('/') {
@@ -111,20 +111,20 @@ fn create(
     let site_path = home.join(site_directory);
     fs::create_dir_all(&site_path)
         .map_err(|e| format!("failed to create {}: {e}", site_path.display()))?;
-    apply_directory_owner(username, &group, &site_path);
+    apply_directory_owner(username, &group, &site_path, "0750")?;
     info(&format!("home prepared: {}", home.display()));
     Ok(())
 }
 
-fn apply_directory_owner(username: &str, group: &str, path: &std::path::Path) {
-    let _ = run_status(
+fn apply_directory_owner(username: &str, group: &str, path: &std::path::Path, mode: &str) -> Result<(), String> {
+    run_status(
         "chown",
         &[
             &format!("{username}:{group}"),
             path.to_string_lossy().as_ref(),
         ],
-    );
-    let _ = run_status("chmod", &["0755", path.to_string_lossy().as_ref()]);
+    )?;
+    run_status("chmod", &[mode, path.to_string_lossy().as_ref()])
 }
 
 fn set_password(username: &str, password: &str) -> Result<(), String> {

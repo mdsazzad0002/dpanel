@@ -71,10 +71,18 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         if domain.is_empty() {
             continue;
         }
-        let scope = normalize_scope(cols[2]);
-        let site_owner = normalize_site_owner(cols[3]);
+        let mut scope = normalize_scope(cols[2]);
+        let mut site_owner = normalize_site_owner(cols[3]);
         let root_path = cols[4].trim();
         let project_root = cols[5].trim();
+        // Older panel records were created before `scope=system` was
+        // persisted. Never dispatch the panel's reserved service paths as a
+        // regular tenant merely because that nullable database field is
+        // empty.
+        if Path::new(project_root) == Path::new("/var/www/dpanel") {
+            scope = "system".to_string();
+            site_owner = None;
+        }
         let start_directory = cols[6].trim();
         let php_version = normalize_php_version(cols[7]);
         let enable_ssl = cols[8].trim() == "1";

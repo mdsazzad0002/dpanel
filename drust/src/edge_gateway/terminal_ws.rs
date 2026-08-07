@@ -1,4 +1,4 @@
-use std::{io::{Read, Write}, path::Path, process::Command, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{fs, io::{Read, Write}, os::unix::fs::PermissionsExt, path::{Path, PathBuf}, process::Command, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use axum::{extract::{Query, State, WebSocketUpgrade, ws::{Message, WebSocket}}, http::{HeaderMap, StatusCode}, response::{IntoResponse, Response}, Json};
 use futures_util::{SinkExt, StreamExt};
@@ -44,7 +44,7 @@ pub async fn terminal_socket(State(state): State<Arc<DemoServerState>>, Query(qu
 }
 
 fn validate_ticket(ticket: &TerminalTicket) -> Result<(), ()> {
-    if ticket.ticket.len() < 48 || ticket.expires_at < now() || ticket.expires_at > now() + 90 { return Err(()); }
+    if ticket.ticket.len() < 48 || !ticket.ticket.chars().all(|c| c.is_ascii_alphanumeric()) || ticket.expires_at < now() || ticket.expires_at > now() + 90 { return Err(()); }
     if !ticket.site_owner.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') { return Err(()); }
     let root = Path::new(&ticket.project_root).canonicalize().map_err(|_| ())?;
     let home = Path::new("/home").join(&ticket.site_owner).canonicalize().map_err(|_| ())?;
@@ -55,7 +55,7 @@ fn validate_ticket(ticket: &TerminalTicket) -> Result<(), ()> {
 fn now() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() }
 
 async fn run_terminal(socket: WebSocket, ticket: TerminalTicket) {
-    let Ok((mut child, mut reader, writer, master)) = spawn_pty(&ticket) else { return; };
+    let Ok((mut child, mut reader, writer, master, identity_dir)) = spawn_pty(&ticket) else { return; };
     let writer = Arc::new(std::sync::Mutex::new(writer));
     let (output_tx, mut output_rx) = mpsc::channel::<Vec<u8>>(64);
     std::thread::spawn(move || {
@@ -79,6 +79,7 @@ async fn run_terminal(socket: WebSocket, ticket: TerminalTicket) {
     }
     let _ = child.kill();
     let _ = child.wait();
+    let _ = fs::remove_dir_all(identity_dir);
 }
 
 #[derive(Deserialize)]
@@ -91,15 +92,61 @@ fn account_id(flag: &str, owner: &str) -> Result<String, String> {
     Ok(value)
 }
 
-fn spawn_pty(ticket: &TerminalTicket) -> Result<(Box<dyn portable_pty::Child + Send + Sync>, Box<dyn Read + Send>, Box<dyn Write + Send>, Box<dyn portable_pty::MasterPty + Send>), String> {
+fn create_identity_files(ticket: &TerminalTicket, uid: &str, gid: &str) -> Result<PathBuf, String> {
+    let dir = std::env::temp_dir().join(format!("dpanel-terminal-{}", ticket.ticket));
+    fs::create_dir(&dir).map_err(|e| e.to_string())?;
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    let passwd = format!("{}:x:{}:{}::{}:/bin/bash\n", ticket.site_owner, uid, gid, ticket.project_root);
+    let group = format!("{}:x:{}:{}\n", ticket.site_owner, gid, ticket.site_owner);
+    if let Err(error) = fs::write(dir.join("passwd"), passwd).and_then(|_| fs::write(dir.join("group"), group)) {
+        let _ = fs::remove_dir_all(&dir);
+        return Err(error.to_string());
+    }
+    for protected in ["empty-ssh", "empty-dpanel"] {
+        let path = dir.join(protected);
+        fs::create_dir(&path).map_err(|e| e.to_string())?;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o500)).map_err(|e| e.to_string())?;
+    }
+    Ok(dir)
+}
+
+fn ensure_protected_mountpoint(root: &Path, name: &str) -> Result<(), String> {
+    let path = root.join(name);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(format!("unsafe protected terminal path: {}", path.display()));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir(&path).map_err(|e| e.to_string())?;
+        }
+        Err(error) => return Err(error.to_string()),
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())
+}
+
+fn spawn_pty(ticket: &TerminalTicket) -> Result<(Box<dyn portable_pty::Child + Send + Sync>, Box<dyn Read + Send>, Box<dyn Write + Send>, Box<dyn portable_pty::MasterPty + Send>, PathBuf), String> {
     let uid = account_id("-u", &ticket.site_owner)?;
     let gid = account_id("-g", &ticket.site_owner)?;
+    let root = Path::new(&ticket.project_root);
+    ensure_protected_mountpoint(root, ".ssh")?;
+    ensure_protected_mountpoint(root, ".dpanel")?;
+    let identity_dir = create_identity_files(ticket, &uid, &gid)?;
+    let passwd_path = identity_dir.join("passwd").to_string_lossy().into_owned();
+    let group_path = identity_dir.join("group").to_string_lossy().into_owned();
+    let protected_ssh = identity_dir.join("empty-ssh").to_string_lossy().into_owned();
+    let protected_dpanel = identity_dir.join("empty-dpanel").to_string_lossy().into_owned();
+    let protected_ssh_target = format!("{}/.ssh", ticket.project_root);
+    let protected_dpanel_target = format!("{}/.dpanel", ticket.project_root);
     let prompt = format!("[{}@dpanel \\W]\\$ ", ticket.site_owner);
     let pty = native_pty_system().openpty(PtySize { rows: 30, cols: 120, pixel_width: 0, pixel_height: 0 }).map_err(|e| e.to_string())?;
     let mut cmd = CommandBuilder::new("prlimit");
-    for arg in ["--as=1073741824","--nproc=128","--nofile=256","--","bwrap","--unshare-pid","--unshare-net","--unshare-ipc","--unshare-uts","--unshare-cgroup-try","--die-with-parent","--ro-bind","/usr","/usr","--symlink","usr/bin","/bin","--symlink","usr/lib","/lib","--symlink","usr/lib64","/lib64","--proc","/proc","--dev","/dev","--tmpfs","/tmp","--dir","/etc","--ro-bind","/etc/passwd","/etc/passwd","--ro-bind","/etc/group","/etc/group","--dir","/home","--bind",&ticket.project_root,&ticket.project_root,"--chdir",&ticket.project_root,"--clearenv","--setenv","HOME",&ticket.project_root,"--setenv","PATH","/usr/local/bin:/usr/bin:/bin","--setenv","TERM","xterm-256color","--setenv","PS1",&prompt,"setpriv","--reuid",&uid,"--regid",&gid,"--clear-groups","--no-new-privs","script","-qfec","bash --noprofile --norc -i","/dev/null"] { cmd.arg(arg); }
-    let child = pty.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    for arg in ["--as=1073741824","--nproc=128","--nofile=256","--","bwrap","--unshare-pid","--unshare-net","--unshare-ipc","--unshare-uts","--unshare-cgroup-try","--die-with-parent","--ro-bind","/usr","/usr","--symlink","usr/bin","/bin","--symlink","usr/lib","/lib","--symlink","usr/lib64","/lib64","--proc","/proc","--dev","/dev","--tmpfs","/tmp","--dir","/etc","--ro-bind",&passwd_path,"/etc/passwd","--ro-bind",&group_path,"/etc/group","--dir","/home","--bind",&ticket.project_root,&ticket.project_root,"--ro-bind",&protected_ssh,&protected_ssh_target,"--ro-bind",&protected_dpanel,&protected_dpanel_target,"--chdir",&ticket.project_root,"--clearenv","--setenv","HOME",&ticket.project_root,"--setenv","PATH","/usr/local/bin:/usr/bin:/bin","--setenv","TERM","xterm-256color","--setenv","PS1",&prompt,"setpriv","--reuid",&uid,"--regid",&gid,"--clear-groups","--no-new-privs","script","-qfec","bash --noprofile --norc -i","/dev/null"] { cmd.arg(arg); }
+    let child = match pty.slave.spawn_command(cmd) {
+        Ok(child) => child,
+        Err(error) => { let _ = fs::remove_dir_all(&identity_dir); return Err(error.to_string()); }
+    };
     let reader = pty.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pty.master.take_writer().map_err(|e| e.to_string())?;
-    Ok((child, reader, writer, pty.master))
+    Ok((child, reader, writer, pty.master, identity_dir))
 }
