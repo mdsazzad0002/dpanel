@@ -1,13 +1,16 @@
 #![allow(dead_code)]
 
-use axum::http::Request;
 use axum::{
     body::Body,
     http::{HeaderValue, StatusCode, header},
     response::Response,
 };
-use std::path::Path;
+use axum::{extract::ConnectInfo, http::Request};
 use std::time::Duration;
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::Path,
+};
 
 use super::{
     RouteAction, RuntimeSnapshot, StaticAsset, StaticFileConfig, execute_php_front_controller,
@@ -52,6 +55,18 @@ pub async fn dispatch(
             "",
         );
     };
+    let client_ips = request_client_ips(&request);
+    let explicitly_allowed = client_ips.iter().any(|ip| site.allowed_ips.contains(ip));
+    let explicitly_banned = client_ips.iter().any(|ip| site.banned_ips.contains(ip));
+    if (!site.allowed_ips.is_empty() && !explicitly_allowed)
+        || (explicitly_banned && !explicitly_allowed)
+    {
+        return annotated_response(
+            simple_response(StatusCode::FORBIDDEN, "IP address blocked for this website"),
+            site.hostnames.first().map(String::as_str).unwrap_or(""),
+            "",
+        );
+    }
     if site.scope == "system" && is_system_phpmyadmin_path(&path) {
         let mut response = handle_system_phpmyadmin(
             request,
@@ -209,6 +224,38 @@ pub async fn dispatch(
             return annotated_response(redirect_response(*code, location), site_match, route_match);
         }
     }
+}
+
+fn request_client_ips(request: &Request<Body>) -> Vec<IpAddr> {
+    let mut ips = Vec::new();
+    if let Some(peer) = request.extensions().get::<ConnectInfo<SocketAddr>>() {
+        ips.push(peer.0.ip());
+    }
+    if let Some(peer) = request.extensions().get::<SocketAddr>() {
+        ips.push(peer.ip());
+    }
+    for header in ["cf-connecting-ip", "x-real-ip"] {
+        if let Some(ip) = request
+            .headers()
+            .get(header)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse().ok())
+        {
+            ips.push(ip);
+        }
+    }
+    if let Some(ip) = request
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .and_then(|value| value.trim().parse().ok())
+    {
+        ips.push(ip);
+    }
+    ips.sort_unstable();
+    ips.dedup();
+    ips
 }
 
 fn is_system_phpmyadmin_path(path: &str) -> bool {
@@ -393,10 +440,9 @@ fn brand_logo_response() -> Response {
         include_bytes!("../../../dpanel/public/dpanel_logo.png").as_slice(),
     ));
     *response.status_mut() = StatusCode::OK;
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("image/png"),
-    );
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
     response.headers_mut().insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=86400"),

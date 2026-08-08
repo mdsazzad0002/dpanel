@@ -57,6 +57,8 @@ mod tests {
                     path_prefix: "/".to_string(),
                     action: RouteAction::Static,
                 }]),
+                banned_ips: Arc::from([]),
+                allowed_ips: Arc::from([]),
             }]),
             tls: Arc::from([]),
             cache: CachePolicy {
@@ -94,6 +96,8 @@ mod tests {
                     )),
                 },
             ]),
+            banned_ips: Arc::from([]),
+            allowed_ips: Arc::from([]),
         };
 
         let route = resolve_route(&site, "/api/users").unwrap();

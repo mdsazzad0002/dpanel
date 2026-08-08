@@ -15,20 +15,20 @@ use axum::{
     response::Response,
     routing::{any, post},
 };
+use hyper::body::Body as HttpBody;
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
-use hyper::body::Body as HttpBody;
 use serde::Serialize;
-use tokio::sync::RwLock;
 use std::collections::HashMap;
 use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use super::{
-    BandwidthTracker, CachePolicy, DbSnapshotConfig, DispatchContext, ProxyConfig, RouteAction, RouteConfig,
-    RuntimeSnapshot, SiteConfig, SnapshotCacheConfig, StaticFileConfig, TlsConfig, TlsIdentity,
-    TlsListenerConfig, TlsStore, UpstreamConfig, build_client, build_tls_config, dispatch,
-    health_check_upstream, load_runtime_snapshot, scaffold_tls_listener_config,
+    BandwidthTracker, CachePolicy, DbSnapshotConfig, DispatchContext, ProxyConfig, RouteAction,
+    RouteConfig, RuntimeSnapshot, SiteConfig, SnapshotCacheConfig, StaticFileConfig, TlsConfig,
+    TlsIdentity, TlsListenerConfig, TlsStore, UpstreamConfig, build_client, build_tls_config,
+    dispatch, health_check_upstream, load_runtime_snapshot, scaffold_tls_listener_config,
 };
 
 #[derive(Clone)]
@@ -122,7 +122,10 @@ pub fn serve_gateway_with_tls(
             } else {
                 app_router.clone()
             };
-            axum::serve(http_listener, router)
+            axum::serve(
+                http_listener,
+                router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
                 .await
                 .map_err(|error| format!("http server failed: {error}"))
         });
@@ -200,8 +203,14 @@ fn build_http_redirect_router(redirect_to: Option<String>) -> Router {
 pub fn build_demo_router(state: DemoServerState) -> Router {
     Router::new()
         .fallback(any(handle_request))
-        .route("/__admin/terminal-ticket", post(super::terminal_ws::register_ticket))
-        .route("/__dpanel/terminal-ws", any(super::terminal_ws::terminal_socket))
+        .route(
+            "/__admin/terminal-ticket",
+            post(super::terminal_ws::register_ticket),
+        )
+        .route(
+            "/__dpanel/terminal-ws",
+            any(super::terminal_ws::terminal_socket),
+        )
         .route("/__admin/reload", post(handle_reload))
         .route("/__admin/health", any(handle_health))
         .route("/__admin/upstreams/health", any(handle_upstreams_health))
@@ -218,19 +227,23 @@ pub async fn handle_request(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("-")
         .to_string();
-    let upload_bytes = request.headers().get(axum::http::header::CONTENT_LENGTH)
+    let upload_bytes = request
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(0);
     let path = request.uri().path().to_string();
     info!(host = %host, path = %path, "incoming request");
     let snapshot = get_cached_snapshot(&state).await;
-    let canonical_domain = super::resolve_site(&snapshot, &host)
-        .and_then(|site| site.hostnames.first().cloned());
+    let canonical_domain =
+        super::resolve_site(&snapshot, &host).and_then(|site| site.hostnames.first().cloned());
     let response = dispatch(&snapshot, &state.dispatch, request, &state.proxy_client).await;
     if let Some(domain) = canonical_domain {
         let download_bytes = response.body().size_hint().exact().unwrap_or(0);
-        state.bandwidth.record(&domain, upload_bytes, download_bytes);
+        state
+            .bandwidth
+            .record(&domain, upload_bytes, download_bytes);
     }
     response
 }
@@ -342,7 +355,10 @@ pub fn serve_demo_with_tls(
         let http_task = tokio::spawn({
             let router = router.clone();
             async move {
-                axum::serve(http_listener, router)
+                axum::serve(
+                    http_listener,
+                    router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
                     .await
                     .map_err(|error| format!("http server failed: {error}"))
             }
@@ -442,11 +458,14 @@ async fn run_https_listener(router: Router, tls_config: TlsListenerConfig) -> Re
                 Ok(tls_stream) => {
                     tracing::info!(peer = %peer, "TLS connection accepted");
                     let io = TokioIo::new(tls_stream);
+                    let router = router.clone().layer(map_request(
+                        move |mut request: Request<Body>| async move {
+                            request.extensions_mut().insert(peer);
+                            request
+                        },
+                    ));
                     if let Err(error) = hyper::server::conn::http1::Builder::new()
-                        .serve_connection(
-                            io,
-                            TowerToHyperService::new(router.clone().into_service()),
-                        )
+                        .serve_connection(io, TowerToHyperService::new(router.into_service()))
                         .await
                     {
                         tracing::error!(peer = %peer, error = %error, "HTTPS connection failed");
@@ -523,6 +542,8 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
                     action: RouteAction::Static,
                 },
             ]),
+            banned_ips: Arc::from([]),
+            allowed_ips: Arc::from([]),
         }]),
         tls: Arc::from([TlsConfig {
             hostnames: Arc::from([primary_domain, www_domain]),

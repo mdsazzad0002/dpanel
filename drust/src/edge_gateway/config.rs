@@ -1,6 +1,11 @@
 #![allow(dead_code)]
 
-use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 
 #[derive(Clone, Debug)]
 pub struct RuntimeSnapshot {
@@ -23,6 +28,8 @@ pub struct SiteConfig {
     pub enable_ssl: bool,
     pub spa_fallback: bool,
     pub routes: Arc<[RouteConfig]>,
+    pub banned_ips: Arc<[IpAddr]>,
+    pub allowed_ips: Arc<[IpAddr]>,
 }
 
 #[derive(Clone, Debug)]

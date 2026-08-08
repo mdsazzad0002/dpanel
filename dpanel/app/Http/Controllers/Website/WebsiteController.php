@@ -9,6 +9,7 @@ use App\Models\Domain;
 use App\Models\SslCertificate;
 use App\Models\User;
 use App\Models\Website;
+use App\Models\WebsiteIpRule;
 use App\Services\Filemanager\FilemanagerService;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
@@ -222,7 +223,48 @@ class WebsiteController extends Controller
                 'database_name' => $databaseRequest?->database_name,
                 'status' => $databaseRequest?->status,
             ],
+            'ipRules' => WebsiteIpRule::query()
+                ->where('website_id', $id)
+                ->latest()
+                ->get(['id', 'rule_type', 'ip_address', 'created_at'])
+                ->map(fn (WebsiteIpRule $rule): array => [
+                    'id' => (string) $rule->id,
+                    'rule_type' => (string) $rule->rule_type,
+                    'ip_address' => (string) $rule->ip_address,
+                    'created_at' => $rule->created_at?->toIso8601String(),
+                ])
+                ->all(),
         ]);
+    }
+
+    public function storeIpRule(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->findAuthorizedWebsiteOrFail($id);
+        $validated = $request->validate([
+            'rule_type' => ['required', 'string', 'in:ban,allow'],
+            'ip_address' => ['required', 'string', 'max:45', 'ip'],
+        ]);
+        $ip = (string) filter_var(trim((string) $validated['ip_address']), FILTER_VALIDATE_IP);
+        $type = (string) $validated['rule_type'];
+
+        $rule = WebsiteIpRule::query()->firstOrCreate(
+            ['website_id' => $id, 'rule_type' => $type, 'ip_address' => $ip],
+            ['id' => (string) str()->uuid(), 'created_by' => $request->user()?->id],
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => $rule->wasRecentlyCreated ? 'IP rule added successfully.' : 'This IP rule already exists.',
+            'rule' => ['id' => (string) $rule->id, 'rule_type' => (string) $rule->rule_type, 'ip_address' => (string) $rule->ip_address, 'created_at' => $rule->created_at?->toIso8601String()],
+        ]);
+    }
+
+    public function destroyIpRule(Request $request, string $token, string $id, string $rule): JsonResponse
+    {
+        $this->findAuthorizedWebsiteOrFail($id);
+        WebsiteIpRule::query()->where('website_id', $id)->findOrFail($rule)->delete();
+
+        return response()->json(['success' => true, 'message' => 'IP rule removed successfully.']);
     }
 
     public function sslManager(string $token, string $id): RedirectResponse
@@ -317,8 +359,8 @@ class WebsiteController extends Controller
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $rootInspection = $this->inspectWebsiteApplication($website);
         $detectedApp = strtolower((string) ($rootInspection['detected_app'] ?? ''));
-        if (! in_array($detectedApp, ['wordpress', 'laravel'], true)) {
-            return $respond(false, 'Cache clear is only available for detected WordPress or Laravel websites.', 422);
+        if (! in_array($detectedApp, ['wordpress', 'laravel', 'codeigniter'], true)) {
+            return $respond(false, 'Cache clear is only available for detected WordPress, Laravel, or CodeIgniter websites.', 422);
         }
 
         if ($detectedApp === 'wordpress') {
@@ -333,6 +375,32 @@ class WebsiteController extends Controller
                 return $respond(true, 'WordPress cache cleared successfully.');
             } catch (\Throwable $e) {
                 return $respond(false, 'WordPress cache clear failed: '.$e->getMessage(), 422);
+            }
+        }
+
+        if ($detectedApp === 'codeigniter') {
+            $projectPath = rtrim((string) ($rootInspection['root_path'] ?? ''), '/');
+            $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($projectPath));
+            $cachePath = is_file($projectPath.'/spark')
+                ? $projectPath.'/writable/cache'
+                : $projectPath.'/application/cache';
+
+            if (! is_dir($cachePath)) {
+                return $respond(true, 'CodeIgniter cache directory is already empty.');
+            }
+
+            try {
+                $protectedNames = ['.', '..', 'index.html', '.htaccess', '.gitignore'];
+                foreach (new \FilesystemIterator($cachePath, \FilesystemIterator::SKIP_DOTS) as $item) {
+                    if (in_array($item->getFilename(), $protectedNames, true)) {
+                        continue;
+                    }
+                    $this->filemanagerService->deletePath($siteOwner, $item->getPathname());
+                }
+
+                return $respond(true, 'CodeIgniter cache cleared successfully.');
+            } catch (\Throwable $e) {
+                return $respond(false, 'CodeIgniter cache clear failed: '.$e->getMessage(), 422);
             }
         }
 
@@ -560,7 +628,7 @@ class WebsiteController extends Controller
                 $inspection['storage_link_path'] = $storagePath;
             }
             $fallback ??= $inspection;
-            if (in_array((string) ($inspection['detected_app'] ?? ''), ['wordpress', 'laravel'], true)) {
+            if (in_array((string) ($inspection['detected_app'] ?? ''), ['wordpress', 'laravel', 'codeigniter'], true)) {
                 return $inspection;
             }
         }

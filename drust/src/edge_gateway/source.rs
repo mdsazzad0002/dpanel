@@ -49,7 +49,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         .arg("--skip-column-names")
         .arg(database.clone())
         .arg("-e")
-        .arg("SELECT id,domain,scope,site_owner,root_path,project_root,start_directory,php_version,enable_ssl,status,type FROM websites ORDER BY updated_at DESC");
+        .arg("SELECT w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='ban' THEN r.ip_address END),''),COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='allow' THEN r.ip_address END),'') FROM websites w LEFT JOIN website_ip_rules r ON r.website_id=w.id GROUP BY w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,w.updated_at ORDER BY w.updated_at DESC");
     if !password.is_empty() {
         cmd.env("MYSQL_PWD", password);
     }
@@ -64,7 +64,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
     let mut tls = Vec::new();
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let cols: Vec<&str> = line.split('\t').collect();
-        if cols.len() < 11 {
+        if cols.len() < 13 {
             continue;
         }
         let domain = normalize_domain(cols[1]);
@@ -105,6 +105,8 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
                 path_prefix: "/".to_string(),
                 action: RouteAction::Static,
             }]),
+            banned_ips: parse_ip_list(cols[11]),
+            allowed_ips: parse_ip_list(cols[12]),
         });
         if enable_ssl {
             tls.push(super::TlsConfig {
@@ -132,6 +134,14 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
             stale_while_revalidate: Duration::from_secs(1),
         },
     })
+}
+
+fn parse_ip_list(value: &str) -> std::sync::Arc<[std::net::IpAddr]> {
+    value
+        .split(',')
+        .filter_map(|item| item.trim().parse().ok())
+        .collect::<Vec<_>>()
+        .into()
 }
 
 fn read_env_file(path: &Path) -> Result<HashMap<String, String>, String> {

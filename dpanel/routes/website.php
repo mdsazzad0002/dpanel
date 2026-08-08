@@ -100,6 +100,12 @@ Route::post('/websites/{id}/project-dependencies/install', [WebsiteOperationsCon
 Route::post('/websites/{id}/project-storage-link', [WebsiteOperationsController::class, 'updateProjectStorageLink'])
     ->middleware('role:admin|reseller')
     ->name('websites.project-storage-link.update');
+Route::post('/websites/{id}/ip-rules', [WebsiteOperationsController::class, 'storeIpRule'])
+    ->middleware(['role:admin|reseller', 'throttle:20,1'])
+    ->name('websites.ip-rules.store');
+Route::delete('/websites/{id}/ip-rules/{rule}', [WebsiteOperationsController::class, 'destroyIpRule'])
+    ->middleware(['role:admin|reseller', 'throttle:20,1'])
+    ->name('websites.ip-rules.destroy');
 
 // WordPress Management Routes
 Route::get('/websites/{id}/wordpress', [WordpressController::class, 'wordpressManager'])

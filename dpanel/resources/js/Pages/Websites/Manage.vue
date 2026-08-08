@@ -29,6 +29,7 @@ const props = defineProps({
         default: () => ({}),
     },
     databaseConnection: { type: Object, default: () => ({ available: false }) },
+    ipRules: { type: Array, default: () => [] },
 });
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
@@ -46,6 +47,10 @@ const permissionFixLoading = ref(false);
 const databaseConnectLoading = ref(false);
 const dependencyInstallLoading = ref('');
 const storageLinkLoading = ref('');
+const ipRules = ref([...props.ipRules]);
+const ipRuleAddress = ref('');
+const ipRuleType = ref('ban');
+const ipRuleLoading = ref(false);
 const toasts = ref([]);
 let toastSeq = 0;
 
@@ -159,7 +164,7 @@ const sslCompactValidityClass = computed(() => {
 });
 const scheme = computed(() => (sslEnabled.value ? 'https' : 'http'));
 const detectedApp = computed(() => String(props.rootInspection?.detected_app || '').toLowerCase());
-const canClearCache = computed(() => ['wordpress', 'laravel'].includes(detectedApp.value));
+const canClearCache = computed(() => ['wordpress', 'laravel', 'codeigniter'].includes(detectedApp.value));
 const isLaravelWebsite = computed(() => detectedApp.value === 'laravel');
 const supportsDatabaseAutoConnect = computed(() => ['laravel', 'wordpress'].includes(detectedApp.value));
 const storageLinked = computed(() => Boolean(props.rootInspection?.storage_linked));
@@ -197,7 +202,7 @@ const serviceColorClasses = {
 const quickActions = computed(() => [
     { label: 'Edit Website', icon: 'bi-pencil-square', href: panelRoute('websites.edit', { id: props.website.id }), color: 'slate', method: 'get' },
     ...(canClearCache.value
-        ? [{ label: `Clear ${detectedApp.value === 'wordpress' ? 'WordPress' : 'Laravel'} Cache`, icon: 'bi-trash3', action: 'clearCache', color: 'red' }]
+        ? [{ label: `Clear ${{ wordpress: 'WordPress', laravel: 'Laravel', codeigniter: 'CodeIgniter' }[detectedApp.value]} Cache`, icon: 'bi-trash3', action: 'clearCache', color: 'red' }]
         : [{ label: 'Check Status', icon: 'bi-arrow-repeat', action: 'checkStatus', color: 'blue' }]),
     { label: 'File Manager', icon: 'bi-folder2-open', href: panelRoute('websites.filemanager', { id: props.website.id }), color: 'emerald', method: 'get' },
     { label: 'Back to List', icon: 'bi-arrow-left', href: panelRoute('websites.list'), color: 'slate', method: 'get' },
@@ -290,6 +295,46 @@ const clearProjectCache = async () => {
         pushToast(actionMessage.value, 'error');
     } finally {
         cacheClearLoading.value = false;
+    }
+};
+
+const addIpRule = async () => {
+    if (ipRuleLoading.value || !ipRuleAddress.value.trim()) return;
+    ipRuleLoading.value = true;
+    try {
+        const response = await fetch(panelRoute('websites.ip-rules.store', { id: props.website.id }), {
+            method: 'POST', credentials: 'same-origin',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken.value },
+            body: JSON.stringify({ rule_type: ipRuleType.value, ip_address: ipRuleAddress.value.trim() }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Unable to add IP rule.');
+        if (data.rule && !ipRules.value.some((item) => item.id === data.rule.id)) ipRules.value.unshift(data.rule);
+        ipRuleAddress.value = '';
+        pushToast(data.message || 'IP rule added successfully.', 'success');
+    } catch (error) {
+        pushToast(error?.message || 'Unable to add IP rule.', 'error');
+    } finally {
+        ipRuleLoading.value = false;
+    }
+};
+
+const removeIpRule = async (ruleItem) => {
+    if (ipRuleLoading.value) return;
+    ipRuleLoading.value = true;
+    try {
+        const response = await fetch(panelRoute('websites.ip-rules.destroy', { id: props.website.id, rule: ruleItem.id }), {
+            method: 'DELETE', credentials: 'same-origin',
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken.value },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'Unable to remove IP rule.');
+        ipRules.value = ipRules.value.filter((item) => item.id !== ruleItem.id);
+        pushToast(data.message || 'IP rule removed successfully.', 'success');
+    } catch (error) {
+        pushToast(error?.message || 'Unable to remove IP rule.', 'error');
+    } finally {
+        ipRuleLoading.value = false;
     }
 };
 
@@ -739,6 +784,37 @@ const issueWebsiteSsl = async () => {
                 </div>
                     </div>
                 </div>
+            </section>
+
+            <section class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">IP Ban / Whitelist</h2>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Rules apply only to {{ website.domain }}. IPv4 and IPv6 are supported.</p>
+                    </div>
+                    <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ ipRules.length }} rules</span>
+                </div>
+                <div class="mt-4 grid gap-2 sm:grid-cols-[140px_minmax(0,1fr)_auto]">
+                    <select v-model="ipRuleType" class="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                        <option value="ban">Ban IP</option>
+                        <option value="allow">Whitelist IP</option>
+                    </select>
+                    <input v-model="ipRuleAddress" type="text" placeholder="203.0.113.10 or IPv6 address" class="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" @keyup.enter="addIpRule" />
+                    <button type="button" :disabled="ipRuleLoading || !ipRuleAddress.trim()" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900" @click="addIpRule">
+                        {{ ipRuleLoading ? 'Saving...' : 'Add Rule' }}
+                    </button>
+                </div>
+                <p v-if="ipRuleType === 'allow'" class="mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">Warning: after the first whitelist entry is added, every non-whitelisted IP is blocked.</p>
+                <div v-if="ipRules.length" class="mt-4 grid gap-2 sm:grid-cols-2">
+                    <div v-for="ruleItem in ipRules" :key="ruleItem.id" class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
+                        <div class="min-w-0">
+                            <span class="mr-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase" :class="ruleItem.rule_type === 'allow' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400'">{{ ruleItem.rule_type === 'allow' ? 'Whitelist' : 'Ban' }}</span>
+                            <code class="break-all text-xs text-slate-700 dark:text-slate-200">{{ ruleItem.ip_address }}</code>
+                        </div>
+                        <button type="button" :disabled="ipRuleLoading" class="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700 disabled:opacity-50" @click="removeIpRule(ruleItem)">Remove</button>
+                    </div>
+                </div>
+                <p v-else class="mt-4 text-xs text-slate-400">No IP rules configured; all visitors are currently allowed.</p>
             </section>
 
             <!-- Metrics Cards -->
