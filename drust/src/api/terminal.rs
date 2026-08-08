@@ -42,8 +42,9 @@ fn execute(request: &Request) -> Result<(String, i32, String), String> {
     let mut command = Command::new("timeout");
     command.args(["--signal=KILL", "35s", "prlimit", "--as=1073741824", "--cpu=30", "--nproc=128", "--nofile=256", "--",
             "bwrap",
-            "--unshare-pid", "--unshare-net", "--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try",
+            "--unshare-user", "--unshare-pid", "--unshare-net", "--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try",
             "--die-with-parent", "--new-session",
+            "--uid", &owner_uid, "--gid", &owner_gid,
             "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin",
             "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64",
             "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/etc", "--dir", "/home"]);
@@ -64,7 +65,6 @@ fn execute(request: &Request) -> Result<(String, i32, String), String> {
     command.args(["--bind", &root_value, &root_value, "--chdir", &working_directory_value,
             "--clearenv", "--setenv", "HOME", &owner_home_value, "--setenv", "PWD", &working_directory_value,
             "--setenv", "PATH", "/usr/local/bin:/usr/bin:/bin", "--setenv", "TERM", "xterm-256color",
-            "setpriv", "--reuid", &owner_uid, "--regid", &owner_gid, "--clear-groups", "--no-new-privs",
             "bash", "--noprofile", "--norc", "-lc", &tracked_command]);
     let output = command
         .current_dir(&root)

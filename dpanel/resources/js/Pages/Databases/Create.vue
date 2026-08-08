@@ -9,6 +9,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    databasePrefixes: {
+        type: Object,
+        default: () => ({}),
+    },
 });
 
 const form = useForm({
@@ -26,6 +30,8 @@ const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
 const showPassword = ref(false);
+const suggestedDatabaseName = ref('');
+const suggestedDatabaseUser = ref('');
 
 const submit = () => {
     form.post(panelRoute('databases.store'));
@@ -40,8 +46,11 @@ const generatePassword = () => {
 };
 
 const sanitizePrefix = (domain) => {
+    const accountPrefix = String(props.databasePrefixes[String(domain).trim().toLowerCase()] || '');
+    if (accountPrefix) return accountPrefix.slice(0, 48);
+
     const root = String(domain).trim().toLowerCase().split('.')[0] || '';
-    return root.replace(/[^a-z0-9_]/g, '_').slice(0, 12);
+    return root.replace(/[^a-z0-9_]/g, '_').slice(0, 48);
 };
 
 watch(
@@ -50,12 +59,18 @@ watch(
         const prefix = sanitizePrefix(domain);
         if (!prefix) return;
 
-        if (!form.database_name) {
-            form.database_name = `${prefix}_db`;
+        const nextDatabaseName = `${prefix}_db`;
+        const nextDatabaseUser = `${prefix}_usr`;
+
+        if (!form.database_name || form.database_name === suggestedDatabaseName.value) {
+            form.database_name = nextDatabaseName;
         }
-        if (!form.database_user) {
-            form.database_user = `${prefix}_usr`;
+        if (!form.database_user || form.database_user === suggestedDatabaseUser.value) {
+            form.database_user = nextDatabaseUser;
         }
+
+        suggestedDatabaseName.value = nextDatabaseName;
+        suggestedDatabaseUser.value = nextDatabaseUser;
     },
 );
 </script>
@@ -99,11 +114,13 @@ watch(
                 <div>
                     <label class="mb-1 block text-sm">Database Name</label>
                     <input v-model="form.database_name" type="text" placeholder="Auto-generated if blank" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">The selected website user's prefix is added automatically.</p>
                     <p v-if="form.errors.database_name" class="mt-1 text-xs text-red-600">{{ form.errors.database_name }}</p>
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Database User</label>
                     <input v-model="form.database_user" type="text" placeholder="Auto-generated if blank" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">The selected website user's prefix is added automatically.</p>
                     <p v-if="form.errors.database_user" class="mt-1 text-xs text-red-600">{{ form.errors.database_user }}</p>
                 </div>
                 <div>

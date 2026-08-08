@@ -266,6 +266,30 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
                     "+",
                 ],
             )?;
+            if command_exists("setfacl") {
+                // The explicit project-wide www-data:rX ACL above overrides
+                // group mode bits. Laravel actions initiated by the panel need
+                // write access only in these runtime/public directories.
+                run_status(
+                    "setfacl",
+                    &[
+                        "-R",
+                        "-m",
+                        &format!("u:{WEB_GROUP}:rwX"),
+                        writable_path.as_ref(),
+                    ],
+                )?;
+                run_status(
+                    "setfacl",
+                    &[
+                        "-R",
+                        "-d",
+                        "-m",
+                        &format!("u:{WEB_GROUP}:rwX"),
+                        writable_path.as_ref(),
+                    ],
+                )?;
+            }
         }
     }
 

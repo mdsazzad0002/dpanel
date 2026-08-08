@@ -32,8 +32,20 @@ class DatabaseController extends Controller
     {
         $this->migrateLegacyJsonRequests();
 
+        $websites = Website::query()
+            ->visibleTo(request()->user())
+            ->whereNotNull('domain')
+            ->orderBy('domain')
+            ->get(['domain', 'site_owner']);
+
         return Inertia::render('Databases/Create', [
-            'websiteDomains' => $this->readWebsiteDomains(),
+            'websiteDomains' => $websites->pluck('domain')->filter()->values()->all(),
+            'databasePrefixes' => $websites
+                ->filter(fn (Website $website): bool => trim((string) $website->domain) !== '')
+                ->mapWithKeys(fn (Website $website): array => [
+                    strtolower(trim((string) $website->domain)) => $this->sanitizeDatabasePrefix((string) $website->site_owner),
+                ])
+                ->all(),
         ]);
     }
 
@@ -442,6 +454,14 @@ class DatabaseController extends Controller
 
     private function databasePrefixFromDomain(string $domain, ?\App\Models\User $user = null): string
     {
+        $siteOwner = Website::query()
+            ->whereRaw('LOWER(domain) = ?', [strtolower($domain)])
+            ->value('site_owner');
+        $ownerPrefix = $this->sanitizeDatabasePrefix((string) $siteOwner);
+        if ($ownerPrefix !== '') {
+            return $ownerPrefix;
+        }
+
         $segment = '';
         if ($domain !== '') {
             $segment = (string) Str::of(explode('.', $domain)[0] ?? '')
@@ -460,6 +480,15 @@ class DatabaseController extends Controller
         }
 
         return $segment !== '' ? $segment : 'dpanel';
+    }
+
+    private function sanitizeDatabasePrefix(string $value): string
+    {
+        return (string) Str::of($value)
+            ->lower()
+            ->replaceMatches('/[^a-z0-9_]+/', '_')
+            ->trim('_')
+            ->limit(48, '');
     }
 
     private function makeDatabaseIdentifier(string $prefix, string $suffix): string
