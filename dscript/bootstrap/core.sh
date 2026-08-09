@@ -1787,6 +1787,7 @@ panel_refresh_app_config_cache() {
 
 panel_reconcile_system_records() {
   local args=()
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
 
   [[ -x "${DPANEL_RUNTIME_DIR}/scripts/reconcile-system-records.sh" ]] || {
     panel_warn_log "System record reconciler not found; reserved user/domain records were not checked."
@@ -1794,6 +1795,7 @@ panel_reconcile_system_records() {
   }
 
   [[ -n "${PANEL_DOMAIN:-}" ]] && args+=(--domain "$PANEL_DOMAIN")
+  args+=(--root "$app_dir")
   if [[ "${PANEL_SKIP_FIRST_INSTALL_PROMPTS:-false}" == "true" || ! -t 0 ]]; then
     args+=(--non-interactive)
   fi
@@ -1863,13 +1865,6 @@ panel_finalize_default_install() {
   # root, so repairing before them leaves root-owned files under storage/.
   panel_fix_app_permissions
 
-  if [[ -n "${PANEL_DOMAIN:-}" ]]; then
-    local site_owner root_path
-    site_owner="$(printf '%s' "$PANEL_DOMAIN" | cut -d. -f1 | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-32)"
-    [[ -n "$site_owner" ]] || site_owner="panel"
-    root_path="${SERVER_BASE_DIR:-/var/www/serverpanel}"
-    panel_site_create "$PANEL_DOMAIN" "$site_owner" "${PANEL_PHP_VERSION:-$(panel_php_default_version)}" "no" "edge" "${root_path}/${site_owner}/public_html"
-  fi
 }
 
 panel_write_runtime_templates() {

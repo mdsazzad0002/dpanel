@@ -2,20 +2,16 @@
 
 namespace App\Http\Controllers\Website\WebsiteManage;
 use App\Http\Controllers\Controller;
-use App\Services\PathService;
-use App\Services\Php\PhpService;
-use Inertia\Inertia;
-use Inertia\Response;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 
 class AlisWebsiteController extends Controller
 {
-    public function create(): Response
+    public function create(Request $request): RedirectResponse
     {
-        return Inertia::render('Websites/Create', [
-            'serverBaseDir' => PathService::websiteBaseDirectory(),
-            'phpVersions' => PhpService::getPhpVersions(),
-            'aliasMode' => true,
-        ]);
+        return redirect()
+            ->route('websites.list', ['token' => $request->route('token')])
+            ->with('info', 'Open a website and choose Alias API to manage its aliases.');
     }
 }

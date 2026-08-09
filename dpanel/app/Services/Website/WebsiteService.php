@@ -122,7 +122,23 @@ class WebsiteService
             return $normalizedRootPath;
         }
 
-        return $this->joinPaths($normalizedRootPath, $normalizedStartDirectory);
+        $configuredRoot = $this->joinPaths($normalizedRootPath, $normalizedStartDirectory);
+        $candidates = [$configuredRoot, $normalizedRootPath];
+
+        // Match the edge gateway: prefer a candidate with a front controller,
+        // then an existing directory, and only then the configured path.
+        foreach ($candidates as $candidate) {
+            if (is_file($candidate.'/index.php') || is_file($candidate.'/index.html')) {
+                return $candidate;
+            }
+        }
+        foreach ($candidates as $candidate) {
+            if (is_dir($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return $configuredRoot;
     }
 
 }

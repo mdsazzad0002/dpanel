@@ -181,6 +181,7 @@ php-detect-config|Print effective PHP configuration|[--version VERSION]
 php-detect-extensions|Print loaded PHP extensions|[--version VERSION]
 php-detect-versions|Detect installed PHP versions|
 reset-web-stack|Back up and reset legacy web configuration|--yes
+reset-drust|Rebuild drust and/or rotate its synchronized API secret|<--binary|--secret|--all> --yes
 sync-vhost|Create/update/remove a vhost through drust|<action> <domain> <root-path> [php-version] [options]
 EOF
 }
@@ -195,7 +196,7 @@ dscript_script_path() {
     script_root="${DPANEL_RUNTIME_DIR}/scripts"
   fi
   case "$name" in
-    configure-phpmyadmin-signon|reconcile-system-records|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-web-stack|sync-vhost)
+    configure-phpmyadmin-signon|reconcile-system-records|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-drust|reset-web-stack|sync-vhost)
       printf '%s/%s.sh' "$script_root" "$name"
       ;;
     *) printf '%s' '' ;;
@@ -247,7 +248,7 @@ dscript_run_script() {
     return 0
   fi
 
-  if [[ "$DSCRIPT_ASSUME_YES" == "true" && "$name" == "reset-web-stack" ]]; then
+  if [[ "$DSCRIPT_ASSUME_YES" == "true" && ( "$name" == "reset-web-stack" || "$name" == "reset-drust" ) ]]; then
     set -- --yes "$@"
   fi
 

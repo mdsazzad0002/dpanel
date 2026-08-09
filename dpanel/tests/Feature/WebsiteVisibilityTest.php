@@ -112,6 +112,34 @@ class WebsiteVisibilityTest extends TestCase
                 ->where('websiteRequests.0.ssl_expires_at', $expiresAt->toIso8601String()));
     }
 
+    public function test_runtime_settings_allow_blank_start_directory_to_use_root_path(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+        $website = $this->createWebsite(['start_directory' => 'public']);
+        $alias = $this->createWebsite([
+            'domain' => 'alias-root-example.test',
+            'parent_id' => $website->id,
+            'type' => 'alias',
+            'start_directory' => 'public',
+        ]);
+        $token = str_repeat('d', 64);
+
+        $this->withoutMiddleware()
+            ->actingAs($admin)
+            ->patchJson(route('websites.update', ['token' => $token, 'id' => $website->id]), [
+                'start_directory' => '',
+                'php_version' => '8.3',
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->assertSame('', (string) $website->fresh()->start_directory);
+        $this->assertSame('', (string) $alias->fresh()->start_directory);
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      */

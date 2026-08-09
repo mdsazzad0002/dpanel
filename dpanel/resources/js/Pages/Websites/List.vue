@@ -472,6 +472,17 @@ const copyUrl = (url) => {
                                     <span class="truncate text-[14px] font-semibold text-slate-900 dark:text-slate-100">
                                         {{ alias.domain }}
                                     </span>
+                                    <a
+                                        v-if="siteUrl(alias)"
+                                        :href="siteUrl(alias)"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-100 dark:border-cyan-800 dark:bg-cyan-500/10 dark:text-cyan-400"
+                                        :title="`Quick visit ${alias.domain}`"
+                                        :aria-label="`Quick visit ${alias.domain}`"
+                                    >
+                                        <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" /></svg>
+                                    </a>
                                     <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="statusClass(alias.status)">
                                         <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(alias.status)"></span>
                                         {{ alias.status }}

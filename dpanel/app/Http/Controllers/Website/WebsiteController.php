@@ -203,7 +203,7 @@ class WebsiteController extends Controller
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $validated = $request->validate([
-            'start_directory' => ['required', 'string', 'max:255'],
+            'start_directory' => ['nullable', 'string', 'max:255'],
             'php_version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
         ]);
 
@@ -216,13 +216,26 @@ class WebsiteController extends Controller
             ], 422);
         }
 
-        Website::query()
-            ->whereKey($website['id'])
-            ->update([
-                'start_directory' => $this->normalizeSiteDirectory((string) $validated['start_directory'], 'public'),
+        // Blank means the root path itself is the public document root.
+        $startDirectory = trim((string) ($validated['start_directory'] ?? '')) === ''
+            ? ''
+            : $this->normalizeSiteDirectory((string) $validated['start_directory'], '');
+
+        DB::transaction(function () use ($website, $startDirectory, $phpVersion): void {
+            $runtimeSettings = [
+                'start_directory' => $startDirectory,
                 'php_version' => $phpVersion,
                 'updated_at' => now(),
-            ]);
+            ];
+
+            Website::query()->whereKey($website['id'])->update($runtimeSettings);
+
+            // Aliases share their parent's document root and PHP runtime.
+            Website::query()
+                ->where('parent_id', (string) $website['id'])
+                ->whereIn('type', ['alis', 'alias'])
+                ->update($runtimeSettings);
+        });
 
         return response()->json([
             'success' => true,
@@ -307,7 +320,7 @@ class WebsiteController extends Controller
         $message = "SSL certificate {$action} successfully.";
 
         return $request->expectsJson()
-            ? response()->json(['type' => 'success', 'message' => $message])
+            ? response()->json(['type' => 'success', 'message' => $message, 'ssl' => $result])
             : back()->with('success', $message);
     }
 

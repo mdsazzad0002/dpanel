@@ -24,6 +24,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    aliases: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const form = useForm({
@@ -54,6 +58,20 @@ const selectedParentStartDirectory = ref('');
 const submitMessage = ref('');
 const submitMessageType = ref('success');
 const submitting = ref(false);
+const aliasRows = ref([...props.aliases]);
+const responseJson = ref(null);
+const aliasActionId = ref('');
+const editingAliasId = ref('');
+const editingAliasDomain = ref('');
+const addAliasResponseRow = (website, ssl = {}) => {
+    const id = String(website?.id || '');
+    if (!id || aliasRows.value.some((item) => String(item.id) === id)) return;
+    aliasRows.value.unshift({
+        ...website,
+        parent_domain: normalizedParentDomain.value,
+        ssl_status: ssl?.status || (website?.enable_ssl ? 'enabled' : 'disabled'),
+    });
+};
 let parentDomainTimer = null;
 
 const normalizedDomain = computed(() => form.domain.trim().toLowerCase());
@@ -140,7 +158,7 @@ const deriveRootPath = () => {
 const suggestedRootPath = computed(() => deriveRootPath());
 const effectiveStartDirectory = computed(() => {
     if (form.domain_type === 'alis') {
-        return selectedParentStartDirectory.value || form.start_directory || 'public';
+        return form.parent_id ? selectedParentStartDirectory.value : form.start_directory;
     }
 
     return form.start_directory;
@@ -165,6 +183,10 @@ const validateBeforeSubmit = () => {
         if (!normalizedSubdomainPrefix.value) {
             errors.subdomain_prefix = 'Subdomain prefix is required.';
         }
+    }
+
+    if (form.domain_type === 'alis' && !form.parent_id) {
+        errors.parent_id = 'Select a target website for this alias.';
     }
 
     if (!finalDomain.value) {
@@ -266,6 +288,19 @@ const submit = async () => {
         const data = response?.data || {};
         const createdWebsiteId = String(data?.website?.id || '').trim();
         if (data?.type === 'success' && createdWebsiteId) {
+            if (props.aliasMode) {
+                addAliasResponseRow(data.website, data.ssl);
+                responseJson.value = data;
+                submitMessageType.value = 'success';
+                submitMessage.value = String(data.message || 'Alias created successfully.');
+                form.domain = '';
+                form.parent_id = '';
+                form.parent_domain = '';
+                parentDomainSearch.value = '';
+                selectedParentRootPath.value = '';
+                selectedParentStartDirectory.value = '';
+                return;
+            }
             window.location.assign(panelRoute('websites.manage', { id: createdWebsiteId }));
             return;
         }
@@ -283,6 +318,10 @@ const submit = async () => {
         form.manage_dns = false;
     } catch (error) {
         const data = error?.response?.data || {};
+        if (props.aliasMode && data?.website?.id) {
+            addAliasResponseRow(data.website, data.ssl);
+            responseJson.value = data;
+        }
         const errors = data?.errors || {};
         const entries = Object.entries(errors);
 
@@ -298,6 +337,68 @@ const submit = async () => {
         submitMessage.value = String(data?.message || 'Website creation failed.');
     } finally {
         submitting.value = false;
+    }
+};
+
+const beginAliasEdit = (alias) => {
+    editingAliasId.value = String(alias.id);
+    editingAliasDomain.value = String(alias.domain || '');
+};
+
+const saveAliasEdit = async (alias) => {
+    const domain = editingAliasDomain.value.trim().toLowerCase();
+    if (!domain || aliasActionId.value) return;
+    aliasActionId.value = String(alias.id);
+    try {
+        const response = await window.axios.patch(panelRoute('websites.alias.update', { id: alias.id }), { domain });
+        Object.assign(alias, response.data.website || {}, { domain });
+        responseJson.value = response.data;
+        submitMessageType.value = 'success';
+        submitMessage.value = response.data.message || 'Alias updated successfully.';
+        editingAliasId.value = '';
+    } catch (error) {
+        responseJson.value = error?.response?.data || null;
+        submitMessageType.value = 'error';
+        submitMessage.value = error?.response?.data?.message || 'Alias update failed.';
+    } finally {
+        aliasActionId.value = '';
+    }
+};
+
+const removeAlias = async (alias) => {
+    if (aliasActionId.value || !window.confirm(`Remove alias ${alias.domain}?`)) return;
+    aliasActionId.value = String(alias.id);
+    try {
+        const response = await window.axios.delete(panelRoute('websites.destroy', { id: alias.id }), { headers: { Accept: 'application/json' } });
+        aliasRows.value = aliasRows.value.filter((item) => String(item.id) !== String(alias.id));
+        responseJson.value = response.data;
+        submitMessageType.value = 'success';
+        submitMessage.value = response.data.message || 'Alias removed successfully.';
+    } catch (error) {
+        responseJson.value = error?.response?.data || null;
+        submitMessageType.value = 'error';
+        submitMessage.value = error?.response?.data?.message || 'Alias removal failed.';
+    } finally {
+        aliasActionId.value = '';
+    }
+};
+
+const issueAliasSsl = async (alias) => {
+    if (aliasActionId.value) return;
+    aliasActionId.value = String(alias.id);
+    try {
+        const response = await window.axios.post(panelRoute('websites.ssl.issue', { id: alias.id }), {}, { headers: { Accept: 'application/json' } });
+        alias.enable_ssl = true;
+        alias.ssl_status = 'valid';
+        responseJson.value = response.data;
+        submitMessageType.value = 'success';
+        submitMessage.value = response.data.message || 'SSL issued successfully.';
+    } catch (error) {
+        responseJson.value = error?.response?.data || null;
+        submitMessageType.value = 'error';
+        submitMessage.value = error?.response?.data?.message || 'SSL issue failed.';
+    } finally {
+        aliasActionId.value = '';
     }
 };
 
@@ -447,6 +548,7 @@ onBeforeUnmount(() => {
                         <span v-else>Searchable AJAX list (max 10). The alias will use the selected website's document root.</span>
                     </p>
                     <p v-if="form.errors.parent_domain" class="mt-1 text-xs text-red-600">{{ form.errors.parent_domain }}</p>
+                    <p v-if="form.errors.parent_id" class="mt-1 text-xs text-red-600">{{ form.errors.parent_id }}</p>
                 </div>
                 <div v-if="form.domain_type === 'sub'">
                     <label class="mb-1 block text-sm">Subdomain Prefix</label>
@@ -466,7 +568,7 @@ onBeforeUnmount(() => {
                     </p>
                     <p v-if="form.errors.subdomain_prefix" class="mt-1 text-xs text-red-600">{{ form.errors.subdomain_prefix }}</p>
                 </div>
-                <div v-else-if="!props.aliasMode">
+                <div v-else>
                     <label class="mb-1 block text-sm">{{ form.domain_type === 'alis' ? 'Alias Domain' : 'Domain' }}</label>
                     <input
                         v-model="form.domain"
@@ -532,6 +634,39 @@ onBeforeUnmount(() => {
                     </button>
                 </div>
             </form>
+
+            <section v-if="props.aliasMode" class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+                    <h2 class="font-semibold">Alias domains</h2>
+                    <p class="mt-1 text-sm text-slate-500">Create, edit, remove and issue SSL without leaving this page.</p>
+                </div>
+                <div v-if="aliasRows.length" class="divide-y divide-slate-200 dark:divide-slate-800">
+                    <div v-for="alias in aliasRows" :key="alias.id" class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                        <div class="min-w-0 flex-1">
+                            <div v-if="editingAliasId === String(alias.id)" class="flex max-w-lg gap-2">
+                                <input v-model="editingAliasDomain" type="text" class="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" @keyup.enter="saveAliasEdit(alias)" />
+                                <button type="button" class="rounded bg-blue-600 px-3 py-2 text-sm text-white" @click="saveAliasEdit(alias)">Save</button>
+                                <button type="button" class="rounded border px-3 py-2 text-sm dark:border-slate-700" @click="editingAliasId = ''">Cancel</button>
+                            </div>
+                            <template v-else>
+                                <p class="truncate font-medium">{{ alias.domain }}</p>
+                                <p class="mt-1 text-xs text-slate-500">Target: {{ alias.parent_domain || '-' }} · SSL: {{ alias.ssl_status || (alias.enable_ssl ? 'enabled' : 'disabled') }}</p>
+                            </template>
+                        </div>
+                        <div v-if="editingAliasId !== String(alias.id)" class="flex flex-wrap gap-2">
+                            <button type="button" :disabled="Boolean(aliasActionId)" class="rounded border px-3 py-1.5 text-sm dark:border-slate-700" @click="beginAliasEdit(alias)">Edit</button>
+                            <button type="button" :disabled="Boolean(aliasActionId)" class="rounded border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700 dark:border-emerald-800 dark:text-emerald-400" @click="issueAliasSsl(alias)">Issue SSL</button>
+                            <button type="button" :disabled="Boolean(aliasActionId)" class="rounded border border-red-300 px-3 py-1.5 text-sm text-red-600 dark:border-red-900" @click="removeAlias(alias)">Remove</button>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="px-5 py-8 text-center text-sm text-slate-500">No alias domains yet.</div>
+            </section>
+
+            <section v-if="props.aliasMode && responseJson" class="rounded-xl border border-slate-200 bg-slate-950 p-4 text-slate-100 dark:border-slate-800">
+                <h2 class="mb-2 text-sm font-semibold">Last JSON response</h2>
+                <pre class="overflow-x-auto text-xs leading-5">{{ JSON.stringify(responseJson, null, 2) }}</pre>
+            </section>
         </div>
     </AuthenticatedLayout>
 </template>

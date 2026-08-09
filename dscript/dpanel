@@ -102,7 +102,17 @@ install_mail_services() {
     cp -p /etc/dovecot/serverpanel-users /etc/dovecot/serverpanel-users.pre-sql.bak
   fi
 
-  cat > /etc/dovecot/conf.d/auth-serverpanel.conf.ext <<'EOF'
+  local dovecot_version dovecot_major
+  dovecot_version=$(dovecot --version 2>/dev/null | awk '{print $1}')
+  dovecot_major=${dovecot_version%%.*}
+
+  if [[ "$dovecot_major" =~ ^[0-9]+$ ]] && (( dovecot_major >= 2 )) && [[ "$dovecot_version" == 2.4* ]]; then
+    # Dovecot 2.4 requires named passdb/userdb sections. The connection and
+    # queries are written below after the panel database settings are loaded.
+    : > /etc/dovecot/conf.d/auth-serverpanel.conf.ext
+  else
+    # Dovecot 2.3 reads SQL settings from a separate args file.
+    cat > /etc/dovecot/conf.d/auth-serverpanel.conf.ext <<'EOF'
 passdb {
   driver = sql
   args = /etc/dovecot/dpanel-sql.conf.ext
@@ -113,9 +123,7 @@ userdb {
   args = /etc/dovecot/dpanel-sql.conf.ext
 }
 EOF
-  chown root:root /etc/dovecot/conf.d/auth-serverpanel.conf.ext
-  chmod 0644 /etc/dovecot/conf.d/auth-serverpanel.conf.ext
-
+  fi
   # Dovecot reads the same dPanel database; credentials are intentionally root-only.
   local dpanel_env="${DPANEL_ENV_FILE:-/var/www/dpanel/.env}"
   [[ -f "$dpanel_env" ]] || { echo "dPanel env file not found: $dpanel_env" >&2; return 1; }
@@ -125,13 +133,39 @@ EOF
   db_name=$(sed -n 's/^DB_DATABASE=//p' "$dpanel_env" | tail -n1 | tr -d '"')
   db_user=$(sed -n 's/^DB_USERNAME=//p' "$dpanel_env" | tail -n1 | tr -d '"')
   db_password=$(sed -n 's/^DB_PASSWORD=//p' "$dpanel_env" | tail -n1 | tr -d '"')
-  cat > /etc/dovecot/dpanel-sql.conf.ext <<EOF
+  if [[ "$dovecot_version" == 2.4* ]]; then
+    cat > /etc/dovecot/conf.d/auth-serverpanel.conf.ext <<EOF
+sql_driver = mysql
+
+mysql ${db_host:-127.0.0.1} {
+  port = ${db_port:-3306}
+  dbname = ${db_name}
+  user = ${db_user}
+  password = ${db_password}
+}
+
+passdb sql {
+  default_password_scheme = SHA512-CRYPT
+  query = SELECT email AS user, password FROM mailboxes WHERE email = '%{user}' AND status = 'active' LIMIT 1
+}
+
+userdb sql {
+  query = SELECT mail_home AS home, CONCAT('maildir:', mail_home) AS mail, mail_uid AS uid, mail_gid AS gid, CONCAT('*:bytes=', quota_mb * 1048576) AS quota_rule FROM mailboxes WHERE email = '%{user}' AND status = 'active' LIMIT 1
+}
+EOF
+    # Retain the expected marker file for readiness checks and older tooling.
+    : > /etc/dovecot/dpanel-sql.conf.ext
+  else
+    cat > /etc/dovecot/dpanel-sql.conf.ext <<EOF
 driver = mysql
 connect = host=${db_host:-127.0.0.1} port=${db_port:-3306} dbname=${db_name} user=${db_user} password=${db_password}
 default_pass_scheme = SHA512-CRYPT
 password_query = SELECT email AS user, password FROM mailboxes WHERE email = '%u' AND status = 'active' LIMIT 1
 user_query = SELECT mail_home AS home, CONCAT('maildir:', mail_home) AS mail, mail_uid AS uid, mail_gid AS gid, CONCAT('*:bytes=', quota_mb * 1048576) AS quota_rule FROM mailboxes WHERE email = '%u' AND status = 'active' LIMIT 1
 EOF
+  fi
+  chown root:dovecot /etc/dovecot/conf.d/auth-serverpanel.conf.ext 2>/dev/null || chown root:root /etc/dovecot/conf.d/auth-serverpanel.conf.ext
+  chmod 0640 /etc/dovecot/conf.d/auth-serverpanel.conf.ext
   chown root:dovecot /etc/dovecot/dpanel-sql.conf.ext 2>/dev/null || chown root:root /etc/dovecot/dpanel-sql.conf.ext
   chmod 0640 /etc/dovecot/dpanel-sql.conf.ext
 
@@ -753,7 +787,7 @@ else
     _drust-api create-admin-user create-first-laravel-user create-demo-site database-request disable-root-login \
     configure-phpmyadmin-signon reconcile-system-records set-system-user-password set-panel-domain fix-dpanel-root fix-panel-web-stack fix-web-stack install-roundcube-dovecot-mysql \
     issue-ssl php-config-apply php-detect-config php-detect-extensions php-detect-versions \
-    reset-web-stack sync-vhost; do
+    reset-drust reset-web-stack sync-vhost; do
     download_file "$DSCRIPT_BASE_URL/scripts/${script_name}.sh" "$downloaded_scripts/${script_name}.sh"
   done
 

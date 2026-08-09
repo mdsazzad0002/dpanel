@@ -463,7 +463,7 @@ const issueWebsiteSsl = async () => {
 };
 
 const openRuntimeSettings = () => {
-    startDirectoryInput.value = String(props.website?.start_directory || 'public');
+    startDirectoryInput.value = String(props.website?.start_directory ?? '');
     phpVersionInput.value = String(props.website?.php_version || '');
     editingRuntimeSettings.value = true;
 };
@@ -472,10 +472,6 @@ const saveRuntimeSettings = async () => {
     if (updateLoading.value) return;
     const startDirectory = String(startDirectoryInput.value || '').trim();
     const phpVersion = String(phpVersionInput.value || '').trim();
-    if (!startDirectory) {
-        pushToast('Start directory cannot be empty.', 'error');
-        return;
-    }
     if (!phpVersion) {
         pushToast('Select a PHP version.', 'error');
         return;
@@ -657,7 +653,7 @@ const saveRuntimeSettings = async () => {
                                         '-'
                                     }}</span>
                                     <button type="button" class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20" @click="openRuntimeSettings">
-                                        <span>Start: {{ website.start_directory || 'public' }}</span>
+                                        <span>Start: {{ website.start_directory || 'Root path' }}</span>
                                         <span class="border-l border-blue-200 pl-1.5 font-semibold dark:border-blue-800">Edit</span>
                                     </button>
                                 </div>
@@ -1017,8 +1013,8 @@ const saveRuntimeSettings = async () => {
                         <div class="space-y-5">
                             <div>
                                 <label for="start-directory" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Start directory</label>
-                                <input id="start-directory" v-model="startDirectoryInput" type="text" required class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" placeholder="public" />
-                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Relative to the website root, for example <code>public</code>.</p>
+                                <input id="start-directory" v-model="startDirectoryInput" type="text" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" placeholder="Leave blank to use root path" />
+                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Leave blank to serve the root path directly, or enter a relative directory such as <code>public</code>.</p>
                             </div>
                             <div>
                                 <label for="php-version" class="block text-sm font-medium text-slate-700 dark:text-slate-200">PHP version</label>

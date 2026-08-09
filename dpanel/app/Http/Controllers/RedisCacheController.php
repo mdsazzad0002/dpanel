@@ -62,7 +62,7 @@ class RedisCacheController extends Controller
         $plain=(string)$request->bearerToken(); $credential=AliasApiCredential::query()->where('token_hash',hash('sha256',$plain))->where('enabled',true)->first();
         if ($plain==='' || $credential===null) return response()->json(['message'=>'Invalid or disabled API token.'],401);
         $data=$request->validate([
-            'action'=>['required','in:add,remove,revoke,list'],
+            'action'=>['required','in:verify,add,remove,revoke,list'],
             'domain'=>['required_unless:action,list','nullable','string','max:253','regex:/^(?!-)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i'],
             'page'=>['nullable','integer','min:1'],
             'per_page'=>['nullable','integer','min:1','max:100'],
@@ -86,9 +86,28 @@ class RedisCacheController extends Controller
             DB::transaction(function()use($alias,$domain){SslCertificate::query()->where('domain',$domain)->delete();Domain::query()->where('name',$domain)->delete();$alias->delete();});
             $credential->update(['last_used_at'=>now()]); return response()->json(['success'=>true,'message'=>'Alias and managed SSL state revoked.']);
         }
-        if (Website::query()->whereRaw('LOWER(domain)=?',[$domain])->exists()) return response()->json(['message'=>'Domain already exists.'],422);
+        if ($data['action']==='add' && Website::query()->whereRaw('LOWER(domain)=?',[$domain])->exists()) return response()->json(['message'=>'Domain already exists.'],422);
         $verification=$this->verifyAliasDomain($parent->domain,$domain,$credential->challenge_token);
-        if ($verification===null) return response()->json(['message'=>'Domain did not reach this server by DNS match or HTTP challenge; alias was not added.'],422);
+        if ($verification===null) return response()->json([
+            'success'=>false,
+            'verified'=>false,
+            'message'=>'Domain did not reach this server by DNS match or HTTP challenge; alias was not added.',
+            'verification'=>[
+                'enabled'=>true,
+                'methods'=>['dns_ip_match','http_challenge'],
+                'challenge_path'=>'/.well-known/dpanel-alias/'.$credential->challenge_token,
+            ],
+        ],422);
+        if ($data['action']==='verify') {
+            $credential->update(['last_used_at'=>now()]);
+            return response()->json([
+                'success'=>true,
+                'verified'=>true,
+                'domain'=>$domain,
+                'verification'=>['enabled'=>true,'method'=>$verification],
+                'message'=>'Domain verification passed.',
+            ]);
+        }
         $alias=DB::transaction(fn()=>Website::query()->create(['id'=>(string)Str::uuid(),'domain'=>$domain,'hostname'=>$domain,'parent_id'=>$parent->id,'scope'=>$parent->scope,'root_path'=>$parent->root_path,'project_root'=>$parent->project_root,'start_directory'=>$parent->start_directory,'site_owner'=>$parent->site_owner,'php_version'=>$parent->php_version,'enable_ssl'=>true,'manage_dns'=>false,'assigned_user_id'=>$parent->assigned_user_id,'assigned_reseller_id'=>$parent->assigned_reseller_id,'status'=>'live','type'=>'alias','ssl_mode'=>'letsencrypt']));
         try { app(SslLifecycleService::class)->ensureForWebsite($alias); } catch (Throwable $e) { DB::transaction(function()use($alias,$domain){$alias->delete();SslCertificate::query()->where('domain',$domain)->delete();Domain::query()->where('name',$domain)->delete();}); report($e); return response()->json(['message'=>'SSL issue failed; alias was rolled back.'],422); }
         $credential->update(['last_used_at'=>now()]); return response()->json(['success'=>true,'message'=>'Alias reached this server, was added, and SSL was issued.','alias_id'=>$alias->id,'verification'=>$verification,'ssl_status'=>'valid'],201);

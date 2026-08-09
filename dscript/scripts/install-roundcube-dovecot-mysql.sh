@@ -273,7 +273,7 @@ check_installation() {
     log "Package installed and MySQL auth module detected: ${PACKAGE_NAME}"
 
     if command -v doveconf >/dev/null 2>&1; then
-        if doveconf -n 2>/dev/null | grep -Eqi 'passdb[[:space:]]*\{[^}]*driver[[:space:]]*=[[:space:]]*sql|userdb[[:space:]]*\{[^}]*driver[[:space:]]*=[[:space:]]*sql'; then
+        if doveconf -n 2>/dev/null | grep -Eqi 'passdb([[:space:]]+sql)?[[:space:]]*\{|userdb([[:space:]]+sql)?[[:space:]]*\{'; then
             log "Dovecot SQL auth config appears enabled."
         else
             log "Dovecot SQL auth config not detected yet (configure it for Roundcube login)."

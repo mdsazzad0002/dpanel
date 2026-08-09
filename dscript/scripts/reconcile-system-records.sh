@@ -157,6 +157,7 @@ foreach ($aliases as $alias) {
 $values = fn (string $name, string $type) => [
     "domain" => $name, "root_path" => $root, "project_root" => $root,
     "start_directory" => "public", "site_owner" => "system",
+    "scope" => "system",
     "php_version" => (string) env("PANEL_PHP_VERSION", "8.3"),
     "enable_ssl" => str_starts_with((string) config("app.url"), "https://"),
     "filemanager_show_hidden" => false, "assigned_user_id" => 1,

@@ -18,6 +18,10 @@ case "$code" in
   *'optional(App\Models\Website::query()->find("1"))'*) printf '\n' ;;
   *'optional(App\Models\User::query()->find(1))'*) printf '\n' ;;
   *'Website::query()->updateOrCreate(["id" => "1"]'*)
+    [[ "$code" == *'"scope" => "system"'* ]] || {
+      echo 'reserved panel records are missing system scope' >&2
+      exit 1
+    }
     printf 'website:%s:%s:%s\n' "$DPANEL_SYSTEM_DOMAIN" "$DPANEL_SYSTEM_ALIASES" "$DPANEL_SYSTEM_ROOT" >> "$TEST_LOG"
     ;;
   *'User::query()->find(1) ?? new User()'*)
