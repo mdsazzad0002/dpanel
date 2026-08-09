@@ -138,37 +138,6 @@ class WebsiteController extends Controller
     }
 
     /**
-     * Edit website request.
-     */
-    public function edit(string $token, string $id): Response
-    {
-
-        $requestItem = $this->findAuthorizedWebsiteOrFail($id);
-
-        $phpVersions = $this->getPhpVersionsForWebsites();
-        $currentVersion = (string) ($requestItem['php_version'] ?? '');
-        if ($currentVersion !== '' && ! in_array($currentVersion, $phpVersions, true)) {
-            $phpVersions[] = $currentVersion;
-        }
-
-        return Inertia::render('Websites/Edit', [
-            'websiteRequest' => $requestItem,
-            'serverBaseDir' => $this->websiteBaseDirectory(),
-            'defaultPhpVersion' => $this->getDefaultWebsitePhpVersion('none'),
-            'phpVersions' => array_values(
-                collect($phpVersions)
-                    ->map(fn (string $version): string => trim($version))
-                    ->filter()
-                    ->unique()
-                    ->sort(fn ($a, $b) => version_compare($b, $a))
-                    ->values()
-                    ->all(),
-            ),
-            'wordpressVersions' => $this->getWordPressVersionOptions(),
-        ]);
-    }
-
-    /**
      * Show website management overview.
      */
     public function manage(string $token, string $id): Response
@@ -213,6 +182,7 @@ class WebsiteController extends Controller
 
         return Inertia::render('Websites/Manage', [
             'website' => $website,
+            'phpVersions' => $this->getPhpVersionsForWebsites(),
             'metrics' => $metrics,
             'activities' => $activities,
             'sslStatus' => $sslStatus,
@@ -234,6 +204,40 @@ class WebsiteController extends Controller
                     'created_at' => $rule->created_at?->toIso8601String(),
                 ])
                 ->all(),
+        ]);
+    }
+
+    /**
+     * Update the settings that determine the website's public entry point.
+     */
+    public function updateRuntimeSettings(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+        $validated = $request->validate([
+            'start_directory' => ['required', 'string', 'max:255'],
+            'php_version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
+        ]);
+
+        $phpVersion = trim((string) $validated['php_version']);
+        $availableVersions = $this->getPhpVersionsForWebsites();
+        if (! in_array($phpVersion, $availableVersions, true)) {
+            return response()->json([
+                'message' => 'The selected PHP version is not available on this server.',
+                'errors' => ['php_version' => ['The selected PHP version is not available on this server.']],
+            ], 422);
+        }
+
+        Website::query()
+            ->whereKey($website['id'])
+            ->update([
+                'start_directory' => $this->normalizeSiteDirectory((string) $validated['start_directory'], 'public'),
+                'php_version' => $phpVersion,
+                'updated_at' => now(),
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Website runtime settings updated successfully.',
         ]);
     }
 
@@ -637,14 +641,6 @@ class WebsiteController extends Controller
             'detected_app' => 'missing',
             'root_path' => $installationRoot,
         ];
-    }
-
-    /**
-     * Update website request.
-     */
-    public function update(Request $request, string $token, string $id): RedirectResponse|JsonResponse
-    {
-        return $this->websiteCreateEdit->update($request, $id, $this->websiteMutationDeps($request));
     }
 
     /**

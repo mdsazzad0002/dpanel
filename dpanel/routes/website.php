@@ -36,12 +36,6 @@ Route::get('/websites/parent-domains/search', [WebsiteController::class, 'search
     ->middleware('role:admin|reseller')
     ->name('websites.parent-domains.search');
 
-Route::get('/websites/{id}/edit', [WebsiteController::class, 'edit'])
-    ->middleware('role:admin|reseller')
-    ->name('websites.edit');
-Route::patch('/websites/{id}', [WebsiteController::class, 'update'])
-    ->middleware('role:admin|reseller')
-    ->name('websites.update');
 Route::patch('/websites/{id}/alias', [MainWebsiteController::class, 'updateAlias'])
     ->middleware('role:admin|reseller')
     ->name('websites.alias.update');
@@ -57,6 +51,9 @@ Route::post('/websites/{id}/status/check', [WebsiteController::class, 'refreshRu
 Route::get('/websites/{id}/manage', [WebsiteOperationsController::class, 'manage'])
     ->middleware('role:admin|reseller')
     ->name('websites.manage');
+Route::patch('/websites/{id}/runtime-settings', [WebsiteOperationsController::class, 'updateRuntimeSettings'])
+    ->middleware('role:admin|reseller')
+    ->name('websites.update');
 Route::get('/websites/{id}/git', [WebsiteGitController::class, 'index'])
     ->middleware('role:admin|reseller')->name('websites.git.index');
 Route::put('/websites/{id}/git', [WebsiteGitController::class, 'store'])

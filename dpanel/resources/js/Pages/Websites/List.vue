@@ -369,6 +369,15 @@ const copyUrl = (url) => {
                                         >
                                             {{ item.domain }}
                                         </Link>
+                                        <a
+                                            v-if="siteUrl(item)"
+                                            :href="siteUrl(item)"
+                                            target="_blank"
+                                            class="shrink-0 text-slate-400 transition hover:text-indigo-600 dark:text-slate-500 dark:hover:text-indigo-400"
+                                            title="Open website"
+                                        >
+                                            <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" /></svg>
+                                        </a>
                                         <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="statusClass(item.status)">
                                             <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(item.status)"></span>
                                             {{ item.status }}
@@ -422,14 +431,6 @@ const copyUrl = (url) => {
                             >
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" /></svg>
                                 Files
-                            </Link>
-                            <Link
-                                v-if="String(item.id) !== '1'"
-                                :href="panelRoute('websites.edit', { id: item.id })"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600"
-                            >
-                                <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" /></svg>
-                                Edit
                             </Link>
                             <button
                                 v-if="String(item.id) !== '1'"
