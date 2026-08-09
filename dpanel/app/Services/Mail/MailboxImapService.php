@@ -88,7 +88,11 @@ class MailboxImapService
         }
 
         $mailboxPath = $this->mailboxPath($folder);
-        $stream = @imap_open($mailboxPath, (string) $mailbox->email, (string) $mailbox->password, 0, 1, [
+        $clientPassword = (string) ($mailbox->client_password ?? '');
+        if ($clientPassword === '') {
+            throw new RuntimeException('Mailbox password must be reset before the webmail client can connect.');
+        }
+        $stream = @imap_open($mailboxPath, (string) $mailbox->email, $clientPassword, 0, 1, [
             'DISABLE_AUTHENTICATOR' => 'GSSAPI',
         ]);
 
@@ -359,7 +363,7 @@ class MailboxImapService
 
     private function mailboxPath(string $folder): string
     {
-        $configured = trim((string) config('app.roundcube_imap_host', 'tls://127.0.0.1'));
+        $configured = trim((string) config('app.roundcube_imap_host', 'imaps://127.0.0.1:993'));
         $parts = parse_url($configured) ?: [];
         $host = (string) ($parts['host'] ?? '127.0.0.1');
         $port = (int) ($parts['port'] ?? 993);
@@ -369,6 +373,11 @@ class MailboxImapService
             'tls' => '/imap/tls',
             default => '/imap',
         };
+        // The panel connects locally to Dovecot. Its default certificate is
+        // self-signed, so validate it only after a real certificate is set.
+        if (in_array($host, ['127.0.0.1', '::1', 'localhost'], true) && in_array($scheme, ['ssl', 'imaps'], true)) {
+            $flags .= '/novalidate-cert';
+        }
 
         $folder = ltrim($folder, '/');
 

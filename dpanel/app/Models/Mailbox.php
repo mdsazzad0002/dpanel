@@ -13,13 +13,25 @@ class Mailbox extends Model
         'mailbox',
         'email',
         'password',
+        'client_password',
         'quota_mb',
         'forwarding_to',
         'status',
+        'site_owner',
+        'mail_home',
+        'mail_uid',
+        'mail_gid',
         'plan_id',
     ];
 
     public $incrementing = false;
+
+    protected function casts(): array
+    {
+        return [
+            'client_password' => 'encrypted',
+        ];
+    }
 
     protected $keyType = 'string';
 

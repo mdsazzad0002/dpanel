@@ -273,6 +273,9 @@ pkg_install_php_stack() {
       if pkg_package_available "php${version}-fpm"; then
         packages+=("php${version}-fpm")
       fi
+      if pkg_package_available "php${version}-imap"; then
+        packages+=("php${version}-imap")
+      fi
       if pkg_package_available "php${version}-mbstring"; then
         packages+=("php${version}-mbstring")
       fi
@@ -287,7 +290,7 @@ pkg_install_php_stack() {
       fi
       ;;
     rpm)
-      packages=(php php-cli php-common php-fpm php-mbstring php-mysqlnd php-xml php-zip php-curl)
+      packages=(php php-cli php-common php-fpm php-imap php-mbstring php-mysqlnd php-xml php-zip php-curl)
       ;;
   esac
 

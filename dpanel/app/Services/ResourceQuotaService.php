@@ -27,6 +27,11 @@ class ResourceQuotaService
         if ($package !== null && $hasForwarding && ! $package->allow_forwarding) {
             throw ValidationException::withMessages(['forwarding_to' => 'This package does not allow email forwarding.']);
         }
+        if ($package !== null && $quotaMb > (int) $package->max_storage_mb) {
+            throw ValidationException::withMessages([
+                'quota_mb' => "A single mailbox cannot exceed the package storage limit ({$package->max_storage_mb} MB).",
+            ]);
+        }
 
         $domains = $this->ownedDomains($user);
         $query = Mailbox::query()->whereIn('domain', $domains);
@@ -36,9 +41,6 @@ class ResourceQuotaService
 
         if ($package !== null && (int) $query->count() >= (int) $package->max_mailboxes) {
             throw ValidationException::withMessages(['mailbox' => "Package mailbox limit reached ({$package->max_mailboxes})."]);
-        }
-        if ($package !== null && (int) $query->sum('quota_mb') + $quotaMb > (int) $package->max_storage_mb) {
-            throw ValidationException::withMessages(['quota_mb' => "Package mail storage limit exceeded ({$package->max_storage_mb} MB)."]);
         }
 
         $reseller = $this->quotaReseller($user);
@@ -53,10 +55,8 @@ class ResourceQuotaService
         if ((int) $resellerQuery->count() >= (int) $reseller->package->max_mailboxes) {
             throw ValidationException::withMessages(['mailbox' => "Reseller mailbox quota reached ({$reseller->package->max_mailboxes})."]);
         }
-        if ((int) $resellerQuery->sum('quota_mb') + $quotaMb > (int) $reseller->package->max_storage_mb) {
-            throw ValidationException::withMessages(['quota_mb' => "Reseller storage quota exceeded ({$reseller->package->max_storage_mb} MB)."]);
-        }
     }
+
 
     public function assertWebsiteAllowed(User $user, bool $isAlias = false): void
     {

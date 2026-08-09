@@ -29,7 +29,6 @@ const props = defineProps({
         default: () => ({}),
     },
     databaseConnection: { type: Object, default: () => ({ available: false }) },
-    ipRules: { type: Array, default: () => [] },
     phpVersions: { type: Array, default: () => [] },
 });
 const page = usePage();
@@ -48,10 +47,6 @@ const permissionFixLoading = ref(false);
 const databaseConnectLoading = ref(false);
 const dependencyInstallLoading = ref('');
 const storageLinkLoading = ref('');
-const ipRules = ref([...props.ipRules]);
-const ipRuleAddress = ref('');
-const ipRuleType = ref('ban');
-const ipRuleLoading = ref(false);
 const toasts = ref([]);
 let toastSeq = 0;
 
@@ -190,6 +185,7 @@ const serviceLinks = computed(() => [
     { label: 'Databases', icon: 'bi-database', color: 'orange', href: panelRoute('databases.list', { website: props.website.domain }), description: `Databases for ${props.website.domain}` },
     { label: 'DNS Zones', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.zones'), description: 'DNS entries' },
     { label: 'PHP Manager', icon: 'bi-braces', color: 'indigo', href: panelRoute('php.manager'), description: 'PHP versions & modules' },
+    { label: 'IP Ban / Whitelist', icon: 'bi-shield-lock', color: 'red', href: panelRoute('websites.ip-rules.index', { id: props.website.id }), description: 'Control website IP access' },
 ].filter((item) => !isSystemWebsite.value || !['WordPress Installer', 'File Manager'].includes(item.label)));
 
 const serviceColorClasses = {
@@ -300,46 +296,6 @@ const clearProjectCache = async () => {
         pushToast(actionMessage.value, 'error');
     } finally {
         cacheClearLoading.value = false;
-    }
-};
-
-const addIpRule = async () => {
-    if (ipRuleLoading.value || !ipRuleAddress.value.trim()) return;
-    ipRuleLoading.value = true;
-    try {
-        const response = await fetch(panelRoute('websites.ip-rules.store', { id: props.website.id }), {
-            method: 'POST', credentials: 'same-origin',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken.value },
-            body: JSON.stringify({ rule_type: ipRuleType.value, ip_address: ipRuleAddress.value.trim() }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Unable to add IP rule.');
-        if (data.rule && !ipRules.value.some((item) => item.id === data.rule.id)) ipRules.value.unshift(data.rule);
-        ipRuleAddress.value = '';
-        pushToast(data.message || 'IP rule added successfully.', 'success');
-    } catch (error) {
-        pushToast(error?.message || 'Unable to add IP rule.', 'error');
-    } finally {
-        ipRuleLoading.value = false;
-    }
-};
-
-const removeIpRule = async (ruleItem) => {
-    if (ipRuleLoading.value) return;
-    ipRuleLoading.value = true;
-    try {
-        const response = await fetch(panelRoute('websites.ip-rules.destroy', { id: props.website.id, rule: ruleItem.id }), {
-            method: 'DELETE', credentials: 'same-origin',
-            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken.value },
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.message || 'Unable to remove IP rule.');
-        ipRules.value = ipRules.value.filter((item) => item.id !== ruleItem.id);
-        pushToast(data.message || 'IP rule removed successfully.', 'success');
-    } catch (error) {
-        pushToast(error?.message || 'Unable to remove IP rule.', 'error');
-    } finally {
-        ipRuleLoading.value = false;
     }
 };
 
@@ -653,7 +609,7 @@ const saveRuntimeSettings = async () => {
                     <div class="contents">
                         <!-- Left: Website Info -->
                         <div class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50 lg:p-8">
-                            <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,.65fr)]">
+                            <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(380px,.9fr)]">
                             <div class="space-y-5">
                             <!-- Status Badges -->
                             <div class="flex flex-wrap items-center gap-2">
@@ -663,14 +619,16 @@ const saveRuntimeSettings = async () => {
                                     <span class="h-1.5 w-1.5 rounded-full" :class="statusDot"></span>
                                     {{ statusLabel }}
                                 </span>
-                                <span
-                                    class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400">
+                                <button type="button"
+                                    class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20"
+                                    @click="openRuntimeSettings">
                                     <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current">
                                         <path
                                             d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
                                     </svg>
                                     PHP {{ website.php_version || '-' }}
-                                </span>
+                                    <span class="border-l border-blue-200 pl-1.5 font-semibold dark:border-blue-800">Edit</span>
+                                </button>
                                 <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium" :class="sslCompactValidityClass">
                                     <i class="bi bi-shield-check"></i>
                                     <span>SSL</span>
@@ -690,7 +648,7 @@ const saveRuntimeSettings = async () => {
                                         <i class="bi bi-box-arrow-up-right text-sm"></i>
                                     </a>
                                 </div>
-                                <p class="mt-1.5 flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
+                                <div class="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                                     <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current opacity-50">
                                         <path
                                             d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
@@ -698,7 +656,11 @@ const saveRuntimeSettings = async () => {
                                     <span class="font-medium text-slate-700 dark:text-slate-300">{{ website.root_path ||
                                         '-'
                                     }}</span>
-                                </p>
+                                    <button type="button" class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20" @click="openRuntimeSettings">
+                                        <span>Start: {{ website.start_directory || 'public' }}</span>
+                                        <span class="border-l border-blue-200 pl-1.5 font-semibold dark:border-blue-800">Edit</span>
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="flex items-center gap-4">
@@ -741,24 +703,7 @@ const saveRuntimeSettings = async () => {
                             </div>
                             </div>
 
-                            <div class="space-y-3">
-                            <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-700/80 dark:bg-slate-800/30">
-                                <div class="flex items-center justify-between">
-                                    <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Runtime Settings</p>
-                                    <button type="button" class="text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400" @click="openRuntimeSettings">Edit</button>
-                                </div>
-                                <div class="mt-3 flex items-center gap-4">
-                                    <div>
-                                        <p class="text-[11px] font-medium text-slate-400 dark:text-slate-500">Path</p>
-                                        <code class="mt-0.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">{{ website.start_directory || 'public' }}</code>
-                                    </div>
-                                    <div class="border-l border-slate-200 pl-4 dark:border-slate-700">
-                                        <p class="text-[11px] font-medium text-slate-400 dark:text-slate-500">PHP Version</p>
-                                        <p class="mt-0.5 text-sm font-semibold text-slate-700 dark:text-slate-200">PHP {{ website.php_version || '-' }}</p>
-                                    </div>
-                                </div>
-                            </div>
-
+                            <div class="space-y-3 lg:col-start-1 lg:row-start-2">
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 dark:border-slate-700/80 dark:bg-slate-800/30">
                                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Project Type</p>
@@ -770,13 +715,12 @@ const saveRuntimeSettings = async () => {
                                 </div>
                             </div>
                             </div>
-                            </div>
-                        <!-- Quick Actions: placed below the full-width management summary -->
-                        <div class="mt-6 border-t border-slate-200 pt-5 dark:border-slate-800">
+                        <!-- Quick Actions: shown in the right column on large screens -->
+                        <div class="mt-6 border-t border-slate-200 pt-5 dark:border-slate-800 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 lg:border-t-0 lg:border-l lg:pl-6 lg:pt-0">
                             <p
                                 class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                                 Quick Actions</p>
-                            <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            <div class="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
                                 <Link v-for="action in quickActions.filter((item) => !item.action && item.label !== 'Back to List')" :key="action.label"
                                     :href="action.href" :method="action.method" as="button" :class="[
                                         'flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150',
@@ -861,41 +805,11 @@ const saveRuntimeSettings = async () => {
                                     Back to List
                                 </Link>
                     </div>
-                </div>
                         </div>
                     </div>
                 </div>
-            </section>
-
-            <section class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">IP Ban / Whitelist</h2>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Rules apply only to {{ website.domain }}. IPv4 and IPv6 are supported.</p>
-                    </div>
-                    <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ ipRules.length }} rules</span>
-                </div>
-                <div class="mt-4 grid gap-2 sm:grid-cols-[140px_minmax(0,1fr)_auto]">
-                    <select v-model="ipRuleType" class="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="ban">Ban IP</option>
-                        <option value="allow">Whitelist IP</option>
-                    </select>
-                    <input v-model="ipRuleAddress" type="text" placeholder="203.0.113.10 or IPv6 address" class="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" @keyup.enter="addIpRule" />
-                    <button type="button" :disabled="ipRuleLoading || !ipRuleAddress.trim()" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900" @click="addIpRule">
-                        {{ ipRuleLoading ? 'Saving...' : 'Add Rule' }}
-                    </button>
-                </div>
-                <p v-if="ipRuleType === 'allow'" class="mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">Warning: after the first whitelist entry is added, every non-whitelisted IP is blocked.</p>
-                <div v-if="ipRules.length" class="mt-4 grid gap-2 sm:grid-cols-2">
-                    <div v-for="ruleItem in ipRules" :key="ruleItem.id" class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
-                        <div class="min-w-0">
-                            <span class="mr-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase" :class="ruleItem.rule_type === 'allow' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400'">{{ ruleItem.rule_type === 'allow' ? 'Whitelist' : 'Ban' }}</span>
-                            <code class="break-all text-xs text-slate-700 dark:text-slate-200">{{ ruleItem.ip_address }}</code>
-                        </div>
-                        <button type="button" :disabled="ipRuleLoading" class="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700 disabled:opacity-50" @click="removeIpRule(ruleItem)">Remove</button>
-                    </div>
-                </div>
-                <p v-else class="mt-4 text-xs text-slate-400">No IP rules configured; all visitors are currently allowed.</p>
+            </div>
+        </div>
             </section>
 
             <!-- Metrics Cards -->
@@ -904,10 +818,10 @@ const saveRuntimeSettings = async () => {
 
 
             <!-- Services + Activity -->
-            <section class="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
+            <section class="grid gap-4 xl:grid-cols-[minmax(0,2.4fr)_minmax(300px,1fr)]">
                 <div class="contents">
 
-                    <section class="order-1 grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-4">
+                    <section class="order-2 grid gap-3 sm:grid-cols-2 xl:col-start-2 xl:row-start-1 xl:grid-cols-1">
                         <div v-for="metric in metrics" :key="metric.label"
                             class="group rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-slate-800/80 dark:bg-slate-900/50">
                             <div class="flex items-start justify-between">
@@ -996,7 +910,7 @@ const saveRuntimeSettings = async () => {
 
                     <!-- Services Grid -->
                     <div
-                        class="order-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50 xl:col-span-2">
+                        class="order-1 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50 xl:row-span-2">
                         <div class="flex items-center justify-between">
                             <h2
                                 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -1005,7 +919,7 @@ const saveRuntimeSettings = async () => {
                                 class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{
                                     serviceLinks.length }} tools</span>
                         </div>
-                        <div class="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        <div class="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                             <Link v-for="service in serviceLinks" :key="service.label" :href="service.href"
                                 class="group flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:shadow-lg">
                                 <div
@@ -1031,7 +945,7 @@ const saveRuntimeSettings = async () => {
 
                 </div>
 
-                <div class="order-3 min-w-0 space-y-4">
+                <div class="order-3 min-w-0 space-y-4 xl:col-start-2 xl:row-start-2">
                     <!-- Activity Timeline -->
                     <div
                         class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">

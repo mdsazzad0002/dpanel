@@ -37,6 +37,7 @@ php_core_packages() {
         "php${php_version}-common" \
         "php${php_version}-curl" \
         "php${php_version}-fpm" \
+        "php${php_version}-imap" \
         "php${php_version}-mbstring" \
         "php${php_version}-mysql" \
         "php${php_version}-xml" \
@@ -48,6 +49,7 @@ php_core_packages() {
         php-cli \
         php-common \
         php-fpm \
+        php-imap \
         php-mbstring \
         php-mysqlnd \
         php-xml \

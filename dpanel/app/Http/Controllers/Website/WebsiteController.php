@@ -193,17 +193,6 @@ class WebsiteController extends Controller
                 'database_name' => $databaseRequest?->database_name,
                 'status' => $databaseRequest?->status,
             ],
-            'ipRules' => WebsiteIpRule::query()
-                ->where('website_id', $id)
-                ->latest()
-                ->get(['id', 'rule_type', 'ip_address', 'created_at'])
-                ->map(fn (WebsiteIpRule $rule): array => [
-                    'id' => (string) $rule->id,
-                    'rule_type' => (string) $rule->rule_type,
-                    'ip_address' => (string) $rule->ip_address,
-                    'created_at' => $rule->created_at?->toIso8601String(),
-                ])
-                ->all(),
         ]);
     }
 
@@ -260,6 +249,26 @@ class WebsiteController extends Controller
             'success' => true,
             'message' => $rule->wasRecentlyCreated ? 'IP rule added successfully.' : 'This IP rule already exists.',
             'rule' => ['id' => (string) $rule->id, 'rule_type' => (string) $rule->rule_type, 'ip_address' => (string) $rule->ip_address, 'created_at' => $rule->created_at?->toIso8601String()],
+        ]);
+    }
+
+    public function ipRules(string $token, string $id): Response
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+
+        return Inertia::render('Websites/Whitelist', [
+            'website' => $website,
+            'rules' => WebsiteIpRule::query()
+                ->where('website_id', $id)
+                ->latest()
+                ->get(['id', 'rule_type', 'ip_address', 'created_at'])
+                ->map(fn (WebsiteIpRule $rule): array => [
+                    'id' => (string) $rule->id,
+                    'rule_type' => (string) $rule->rule_type,
+                    'ip_address' => (string) $rule->ip_address,
+                    'created_at' => $rule->created_at?->toIso8601String(),
+                ])
+                ->all(),
         ]);
     }
 

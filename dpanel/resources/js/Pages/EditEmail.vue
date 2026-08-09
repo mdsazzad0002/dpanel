@@ -21,7 +21,7 @@ const props = defineProps({
 const form = useForm({
     domain: props.mailbox.domain ?? '',
     mailbox: props.mailbox.mailbox ?? '',
-    password: props.mailbox.password ?? '',
+    password: '',
     quota_mb: Number(props.mailbox.quota_mb ?? 1024),
     forwarding_to: props.mailbox.forwarding_to ?? '',
 });

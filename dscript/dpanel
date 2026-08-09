@@ -93,45 +93,53 @@ install_mail_services() {
   install_system_packages postfix dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql
 
   if [[ "${DSCRIPT_DRY_RUN:-false}" == "true" ]]; then
-    printf '[DRY-RUN] configure dPanel Dovecot passwd-file backend and mail storage\n'
+    printf '[DRY-RUN] configure dPanel Dovecot SQL backend and per-owner mail storage\n'
     return 0
   fi
 
-  getent group vmail >/dev/null 2>&1 || groupadd --system vmail
-  id -u vmail >/dev/null 2>&1 || useradd --system --gid vmail --home /var/mail/vhosts --shell /usr/sbin/nologin vmail
-
-  install -d -o www-data -g vmail -m 2770 /var/mail/vhosts
-  if [[ ! -e /etc/dovecot/serverpanel-users ]]; then
-    install -o root -g www-data -m 0660 /dev/null /etc/dovecot/serverpanel-users
-  else
-    chown root:www-data /etc/dovecot/serverpanel-users
-    chmod 0660 /etc/dovecot/serverpanel-users
+  # Keep the legacy file only as a rollback artifact; it is never included by Dovecot.
+  if [[ -f /etc/dovecot/serverpanel-users && ! -f /etc/dovecot/serverpanel-users.pre-sql.bak ]]; then
+    cp -p /etc/dovecot/serverpanel-users /etc/dovecot/serverpanel-users.pre-sql.bak
   fi
 
   cat > /etc/dovecot/conf.d/auth-serverpanel.conf.ext <<'EOF'
 passdb {
-  driver = passwd-file
-  args = scheme=SHA512-CRYPT username_format=%u /etc/dovecot/serverpanel-users
+  driver = sql
+  args = /etc/dovecot/dpanel-sql.conf.ext
 }
 
 userdb {
-  driver = static
-  args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n mail=maildir:/var/mail/vhosts/%d/%n
+  driver = sql
+  args = /etc/dovecot/dpanel-sql.conf.ext
 }
 EOF
   chown root:root /etc/dovecot/conf.d/auth-serverpanel.conf.ext
   chmod 0644 /etc/dovecot/conf.d/auth-serverpanel.conf.ext
 
+  # Dovecot reads the same dPanel database; credentials are intentionally root-only.
+  local dpanel_env="${DPANEL_ENV_FILE:-/var/www/dpanel/.env}"
+  [[ -f "$dpanel_env" ]] || { echo "dPanel env file not found: $dpanel_env" >&2; return 1; }
+  local db_host db_port db_name db_user db_password
+  db_host=$(sed -n 's/^DB_HOST=//p' "$dpanel_env" | tail -n1 | tr -d '"')
+  db_port=$(sed -n 's/^DB_PORT=//p' "$dpanel_env" | tail -n1 | tr -d '"')
+  db_name=$(sed -n 's/^DB_DATABASE=//p' "$dpanel_env" | tail -n1 | tr -d '"')
+  db_user=$(sed -n 's/^DB_USERNAME=//p' "$dpanel_env" | tail -n1 | tr -d '"')
+  db_password=$(sed -n 's/^DB_PASSWORD=//p' "$dpanel_env" | tail -n1 | tr -d '"')
+  cat > /etc/dovecot/dpanel-sql.conf.ext <<EOF
+driver = mysql
+connect = host=${db_host:-127.0.0.1} port=${db_port:-3306} dbname=${db_name} user=${db_user} password=${db_password}
+default_pass_scheme = SHA512-CRYPT
+password_query = SELECT email AS user, password FROM mailboxes WHERE email = '%u' AND status = 'active' LIMIT 1
+user_query = SELECT mail_home AS home, CONCAT('maildir:', mail_home) AS mail, mail_uid AS uid, mail_gid AS gid, CONCAT('*:bytes=', quota_mb * 1048576) AS quota_rule FROM mailboxes WHERE email = '%u' AND status = 'active' LIMIT 1
+EOF
+  chown root:dovecot /etc/dovecot/dpanel-sql.conf.ext 2>/dev/null || chown root:root /etc/dovecot/dpanel-sql.conf.ext
+  chmod 0640 /etc/dovecot/dpanel-sql.conf.ext
+
   if ! grep -Fq '!include auth-serverpanel.conf.ext' /etc/dovecot/conf.d/10-auth.conf; then
     printf '\n!include auth-serverpanel.conf.ext\n' >> /etc/dovecot/conf.d/10-auth.conf
   fi
 
-  cat > /etc/sudoers.d/dpanel-dovecot <<'EOF'
-www-data ALL=(root) NOPASSWD: /usr/bin/systemctl restart dovecot.service
-EOF
-  chmod 0440 /etc/sudoers.d/dpanel-dovecot
-  visudo -cf /etc/sudoers.d/dpanel-dovecot >/dev/null
-
+  doveconf -n >/dev/null
   systemctl enable --now dovecot
 }
 

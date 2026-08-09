@@ -11,17 +11,15 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class EmailController extends Controller
 {
-    private const DOVECOT_USERS_FILE = '/etc/dovecot/serverpanel-users';
     private const DOVECOT_AUTH_FILE = '/etc/dovecot/conf.d/auth-serverpanel.conf.ext';
     private const DOVECOT_AUTH_INCLUDE_FILE = '/etc/dovecot/conf.d/10-auth.conf';
-    private const VMAIL_BASE_DIR = '/var/mail/vhosts';
-    private const VMAIL_USER = 'vmail';
-    private const VMAIL_GROUP = 'vmail';
 
     public function __construct(private readonly ResourceQuotaService $quotas)
     {
@@ -73,29 +71,28 @@ class EmailController extends Controller
             ], 422);
         }
 
-        $storageSync = $this->provisionMailboxStorage($email, $password);
-        if (! $storageSync['ok']) {
-            return response()->json([
-                'ok' => false,
-                'message' => "Mailbox {$email} was not created: ".$storageSync['message'],
-            ], 500);
-        }
-
         try {
-            Mailbox::query()->create([
+            $storage = $this->storageAttributes($domain, $mailbox);
+            $mailboxRecord = DB::transaction(fn () => Mailbox::query()->create([
                 'id' => (string) str()->uuid(),
                 'domain' => $domain,
                 'mailbox' => $mailbox,
                 'email' => $email,
-                'password' => $password,
+                'password' => $this->hashStoragePassword($password),
+                'client_password' => $password,
                 'quota_mb' => (int) $validated['quota_mb'],
                 'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
                 'status' => 'active',
+                ...$storage,
                 'plan_id' => $owner?->package_id,
-            ]);
-        } catch (\Throwable $e) {
-            $this->removeMailboxFromStorage($email);
+            ]));
 
+            $storageSync = $this->provisionMailboxStorage($mailboxRecord);
+            if (! $storageSync['ok']) {
+                $mailboxRecord->delete();
+                throw new \RuntimeException($storageSync['message']);
+            }
+        } catch (\Throwable $e) {
             return response()->json([
                 'ok' => false,
                 'message' => "Mailbox {$email} was not created: ".$e->getMessage(),
@@ -119,7 +116,7 @@ class EmailController extends Controller
         abort_if($mailbox === null, 404);
 
         return Inertia::render('EditEmail', [
-            'mailbox' => $mailbox->toArray(),
+            'mailbox' => array_merge($mailbox->toArray(), ['password' => '']),
             'websiteDomains' => $this->readWebsiteDomains(),
         ]);
     }
@@ -150,24 +147,25 @@ class EmailController extends Controller
             return redirect()->route('emails.edit', $id)->with('error', "Mailbox {$email} already exists.");
         }
 
-        $oldEmail = strtolower(trim((string) ($mailboxRecord->email ?? '')));
-        $storageSync = $this->provisionMailboxStorage($email, $password, $oldEmail !== '' ? $oldEmail : null);
-        if (! $storageSync['ok']) {
-            return redirect()
-                ->route('emails.edit', $id)
-                ->with('error', "Mailbox {$email} was not updated: ".$storageSync['message']);
-        }
-
+        $oldMailHome = (string) ($mailboxRecord->mail_home ?? '');
+        $storage = $this->storageAttributes($domain, $mailboxName);
         $mailboxRecord->fill([
             'domain' => $domain,
             'mailbox' => $mailboxName,
             'email' => $email,
-            'password' => $password,
+            'password' => $this->hashStoragePassword($password),
+            'client_password' => $password,
             'quota_mb' => (int) $validated['quota_mb'],
             'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
             'plan_id' => $owner?->package_id,
+            ...$storage,
         ]);
         $mailboxRecord->save();
+
+        $storageSync = $this->provisionMailboxStorage($mailboxRecord, $oldMailHome);
+        if (! $storageSync['ok']) {
+            return redirect()->route('emails.edit', $id)->with('error', "Mailbox {$email} was updated in database, but storage sync failed: ".$storageSync['message']);
+        }
 
         return redirect()->route('emails.list')->with('success', "Mailbox {$email} updated and synced to storage server.");
     }
@@ -180,7 +178,7 @@ class EmailController extends Controller
         }
 
         $email = strtolower(trim((string) ($mailbox->email ?? '')));
-        $storageDelete = $email !== '' ? $this->removeMailboxFromStorage($email) : ['ok' => true, 'message' => ''];
+        $storageDelete = $email !== '' ? $this->removeMailboxFromStorage($mailbox) : ['ok' => true, 'message' => ''];
 
         $deleted = Mailbox::query()->where('id', $id)->delete();
         if ($deleted === 0) {
@@ -221,7 +219,7 @@ class EmailController extends Controller
 
         $token = $this->issueWebmailSsoToken(
             (string) ($mailbox->email ?? ''),
-            (string) ($mailbox->password ?? ''),
+            (string) ($mailbox->client_password ?? ''),
             600
         );
 
@@ -234,7 +232,7 @@ class EmailController extends Controller
         return response()->view('webmail.autologin', [
             'targetUrl' => $targetUrl,
             'email' => (string) ($mailbox->email ?? ''),
-            'password' => (string) ($mailbox->password ?? ''),
+            'password' => (string) ($mailbox->client_password ?? ''),
         ]);
     }
 
@@ -537,8 +535,8 @@ class EmailController extends Controller
             return true;
         }
 
-        return is_file(self::DOVECOT_USERS_FILE)
-            && is_file(self::DOVECOT_AUTH_FILE)
+        return is_file(self::DOVECOT_AUTH_FILE)
+            && is_file('/etc/dovecot/dpanel-sql.conf.ext')
             && is_file(self::DOVECOT_AUTH_INCLUDE_FILE);
     }
 
@@ -575,128 +573,53 @@ class EmailController extends Controller
             return ['ok' => true, 'message' => ''];
         }
 
-        if (! is_file(self::DOVECOT_USERS_FILE)) {
-            return ['ok' => false, 'message' => 'Dovecot users file is missing. Recreate mailbox or run mailbox sync.'];
-        }
-
-        $target = strtolower(trim($email));
-        if ($target === '') {
+        $mailbox = Mailbox::query()->whereRaw('LOWER(email) = ?', [strtolower(trim($email))])->first();
+        if ($mailbox === null || $mailbox->status !== 'active') {
             return ['ok' => false, 'message' => 'Mailbox email is empty.'];
         }
-
-        $lines = $this->readDovecotUserLines();
-        foreach ($lines as $line) {
-            $lineEmail = strtolower(trim((string) strtok($line, ':')));
-            if ($lineEmail === $target) {
-                return ['ok' => true, 'message' => ''];
-            }
-        }
-
-        return ['ok' => false, 'message' => 'Mailbox is not synced to Dovecot auth users file.'];
+        return is_dir((string) $mailbox->mail_home)
+            ? ['ok' => true, 'message' => '']
+            : ['ok' => false, 'message' => 'Mailbox Maildir is missing.'];
     }
 
     /**
      * @return array{ok: bool, message: string}
      */
-    private function provisionMailboxStorage(string $email, string $password, ?string $oldEmail = null): array
+    private function provisionMailboxStorage(Mailbox $mailbox, ?string $oldMailHome = null): array
     {
         if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
             return ['ok' => true, 'message' => 'Storage sync skipped on Windows.'];
         }
 
-        $backendReady = $this->ensureDovecotStorageBackendReady();
-        if (! $backendReady['ok']) {
-            return $backendReady;
-        }
-
-        $hash = $this->hashStoragePassword($password);
-        if ($hash === '') {
-            return ['ok' => false, 'message' => 'Unable to hash mailbox password for Dovecot.'];
-        }
-
-        $mailDir = $this->maildirPathForEmail($email);
-        if ($mailDir === '') {
-            return ['ok' => false, 'message' => 'Invalid mailbox email format for storage path.'];
-        }
-
-        $uid = $this->resolveSystemId('u', self::VMAIL_USER, 5000);
-        $gid = $this->resolveSystemId('g', self::VMAIL_GROUP, 5000);
-        $entry = sprintf(
-            '%s:%s:%d:%d::%s::userdb_mail=maildir:%s',
-            $email,
-            $hash,
-            $uid,
-            $gid,
-            $mailDir,
-            $mailDir,
-        );
-
-        $existingLines = $this->readDovecotUserLines();
-        $targetEmail = strtolower(trim($email));
-        $oldTarget = strtolower(trim((string) $oldEmail));
-        $nextLines = [];
-
-        foreach ($existingLines as $line) {
-            $lineEmail = strtolower(trim((string) strtok($line, ':')));
-            if ($lineEmail === '' || $lineEmail === $targetEmail || ($oldTarget !== '' && $lineEmail === $oldTarget)) {
-                continue;
-            }
-            $nextLines[] = $line;
-        }
-
-        $nextLines[] = $entry;
-        sort($nextLines, SORT_NATURAL | SORT_FLAG_CASE);
-
-        if (! $this->writeDovecotUserLines($nextLines)) {
-            return ['ok' => false, 'message' => 'Failed to write Dovecot users file.'];
-        }
-
-        @mkdir($mailDir.'/cur', 0770, true);
-        @mkdir($mailDir.'/new', 0770, true);
-        @mkdir($mailDir.'/tmp', 0770, true);
-        @shell_exec('chown -R '.escapeshellarg(self::VMAIL_USER.':'.self::VMAIL_GROUP).' '.escapeshellarg($mailDir).' 2>/dev/null');
-        @shell_exec('chmod -R 0770 '.escapeshellarg($mailDir).' 2>/dev/null');
-
-        if (! $this->restartService('dovecot')) {
-            return ['ok' => false, 'message' => 'Dovecot restart failed after mailbox sync.'];
-        }
-
-        return ['ok' => true, 'message' => 'Storage server synchronized.'];
+        return $this->syncMailboxStorage($mailbox, $oldMailHome !== null && $oldMailHome !== '' && $oldMailHome !== (string) $mailbox->mail_home ? 'move' : 'create', $oldMailHome);
     }
 
     /**
      * @return array{ok: bool, message: string}
      */
-    private function removeMailboxFromStorage(string $email): array
+    private function removeMailboxFromStorage(Mailbox $mailbox): array
     {
         if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
             return ['ok' => true, 'message' => 'Storage cleanup skipped on Windows.'];
         }
 
-        if (! is_file(self::DOVECOT_USERS_FILE)) {
-            return ['ok' => true, 'message' => 'Dovecot users file not found.'];
-        }
+        return $this->syncMailboxStorage($mailbox, 'remove');
+    }
 
-        $targetEmail = strtolower(trim($email));
-        $existingLines = $this->readDovecotUserLines();
-        $nextLines = [];
-        foreach ($existingLines as $line) {
-            $lineEmail = strtolower(trim((string) strtok($line, ':')));
-            if ($lineEmail === '' || $lineEmail === $targetEmail) {
-                continue;
-            }
-            $nextLines[] = $line;
-        }
-
-        if (! $this->writeDovecotUserLines($nextLines)) {
-            return ['ok' => false, 'message' => 'Failed to update Dovecot users file during cleanup.'];
-        }
-
-        if (! $this->restartService('dovecot')) {
-            return ['ok' => false, 'message' => 'Dovecot restart failed after mailbox cleanup.'];
-        }
-
-        return ['ok' => true, 'message' => 'Storage cleanup completed.'];
+    /** @return array{ok: bool, message: string} */
+    private function syncMailboxStorage(Mailbox $mailbox, string $action, ?string $previousMailHome = null): array
+    {
+        $baseUrl = rtrim((string) config('serverpanel.execution_api_base_url', ''), '/');
+        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($baseUrl === '' || $token === '') return ['ok' => false, 'message' => 'Rust execution service is not configured.'];
+        try {
+            $response = Http::acceptJson()->asJson()->withToken($token)->timeout((int) config('serverpanel.execution_api_timeout', 60))->post($baseUrl.'/api/v1/mailbox-storage', [
+                'action' => $action, 'mail_home' => $mailbox->mail_home, 'site_owner' => $mailbox->site_owner, 'previous_mail_home' => $previousMailHome,
+            ]);
+            return $response->ok() && $response->json('success') === true
+                ? ['ok' => true, 'message' => 'Maildir synchronized.']
+                : ['ok' => false, 'message' => (string) ($response->json('message') ?: $response->body())];
+        } catch (\Throwable $e) { return ['ok' => false, 'message' => $e->getMessage()]; }
     }
 
     /**
@@ -711,46 +634,11 @@ class EmailController extends Controller
             ];
         }
 
-        @shell_exec('getent group '.escapeshellarg(self::VMAIL_GROUP).' >/dev/null 2>&1 || groupadd --system '.escapeshellarg(self::VMAIL_GROUP));
-        @shell_exec('id -u '.escapeshellarg(self::VMAIL_USER).' >/dev/null 2>&1 || useradd --system --gid '.escapeshellarg(self::VMAIL_GROUP).' --home '.escapeshellarg(self::VMAIL_BASE_DIR).' --shell /usr/sbin/nologin '.escapeshellarg(self::VMAIL_USER));
-
-        @mkdir(self::VMAIL_BASE_DIR, 0770, true);
-        if (! is_file(self::DOVECOT_USERS_FILE)) {
-            @touch(self::DOVECOT_USERS_FILE);
-        }
-        @chmod(self::DOVECOT_USERS_FILE, 0640);
-
-        $authConfig = <<<'CFG'
-passdb {
-  driver = passwd-file
-  args = scheme=SHA512-CRYPT username_format=%u /etc/dovecot/serverpanel-users
-}
-
-userdb {
-  driver = static
-  args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n mail=maildir:/var/mail/vhosts/%d/%n
-}
-CFG;
-
-        $desiredAuthConfig = $authConfig.PHP_EOL;
-        $currentAuthConfig = @file_get_contents(self::DOVECOT_AUTH_FILE);
-        if ($currentAuthConfig !== $desiredAuthConfig
-            && @file_put_contents(self::DOVECOT_AUTH_FILE, $desiredAuthConfig) === false) {
-            return ['ok' => false, 'message' => 'Unable to write Dovecot auth config for panel mailboxes.'];
-        }
-        @chmod(self::DOVECOT_AUTH_FILE, 0644);
-
-        $includeContents = @file_get_contents(self::DOVECOT_AUTH_INCLUDE_FILE);
-        if (! is_string($includeContents)) {
-            return ['ok' => false, 'message' => 'Unable to read Dovecot auth include file.'];
-        }
-        if (! str_contains($includeContents, 'auth-serverpanel.conf.ext')) {
-            if (@file_put_contents(self::DOVECOT_AUTH_INCLUDE_FILE, PHP_EOL.'!include auth-serverpanel.conf.ext'.PHP_EOL, FILE_APPEND) === false) {
-                return ['ok' => false, 'message' => 'Unable to append panel auth include to Dovecot config.'];
-            }
+        if (! is_file(self::DOVECOT_AUTH_FILE) || ! is_file('/etc/dovecot/dpanel-sql.conf.ext')) {
+            return ['ok' => false, 'message' => 'Dovecot SQL auth is not configured. Run dpanel mail installation/migration.'];
         }
 
-        return ['ok' => true, 'message' => 'Dovecot backend is ready.'];
+        return ['ok' => true, 'message' => 'Dovecot SQL backend is ready.'];
     }
 
     private function hashStoragePassword(string $password): string
@@ -782,63 +670,27 @@ CFG;
         return $fallback;
     }
 
-    private function maildirPathForEmail(string $email): string
+    /** @return array{site_owner: string, mail_home: string, mail_uid: int, mail_gid: int} */
+    private function storageAttributes(string $domain, string $mailbox): array
     {
-        $parts = explode('@', strtolower(trim($email)), 2);
-        if (count($parts) !== 2 || $parts[0] === '' || $parts[1] === '') {
-            return '';
+        $website = Website::query()->whereRaw('LOWER(domain) = ?', [$domain])->first();
+        $owner = trim((string) ($website?->site_owner ?? ''));
+        if ($owner === '' || ! preg_match('/^[a-z_][a-z0-9_-]{0,31}$/i', $owner)) {
+            throw new \RuntimeException("No valid website owner found for {$domain}.");
         }
-
-        return rtrim(self::VMAIL_BASE_DIR, '/').'/'.$parts[1].'/'.$parts[0];
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function readDovecotUserLines(): array
-    {
-        $raw = @file(self::DOVECOT_USERS_FILE, FILE_IGNORE_NEW_LINES);
-        if (! is_array($raw)) {
-            return [];
+        $uid = $this->resolveSystemId('u', $owner, -1);
+        $gid = $this->resolveSystemId('g', $owner, -1);
+        if ($uid < 0 || $gid < 0) {
+            throw new \RuntimeException("System account {$owner} does not exist.");
         }
-
-        return array_values(array_filter(array_map(static fn ($line): string => trim((string) $line), $raw), static function (string $line): bool {
-            return $line !== '' && ! str_starts_with($line, '#');
-        }));
-    }
-
-    /**
-     * @param array<int, string> $lines
-     */
-    private function writeDovecotUserLines(array $lines): bool
-    {
-        $payload = count($lines) > 0 ? implode(PHP_EOL, $lines).PHP_EOL : '';
-        $written = @file_put_contents(self::DOVECOT_USERS_FILE, $payload, LOCK_EX);
-        if ($written === false) {
-            return false;
-        }
-
-        @chmod(self::DOVECOT_USERS_FILE, 0640);
-
-        return true;
-    }
-
-    private function restartService(string $service): bool
-    {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return true;
-        }
-
-        $exists = trim((string) @shell_exec('systemctl cat '.escapeshellarg($service).'.service 2>/dev/null'));
-        if ($exists === '') {
-            return false;
-        }
-
-        $out = [];
-        $exitCode = 1;
-        @exec('sudo -n /usr/bin/systemctl restart '.escapeshellarg($service).'.service 2>&1', $out, $exitCode);
-
-        return $exitCode === 0;
+        $safeDomain = strtolower($domain);
+        $safeMailbox = strtolower($mailbox);
+        return [
+            'site_owner' => $owner,
+            'mail_home' => "/home/{$owner}/mail/{$safeDomain}/{$safeMailbox}/Maildir",
+            'mail_uid' => $uid,
+            'mail_gid' => $gid,
+        ];
     }
 
     /**

@@ -92,7 +92,7 @@ return [
     'phpmyadmin_debug' => env('PHPMYADMIN_DEBUG', false),
     'webmail_url' => env('WEBMAIL_URL', ''),
     'webmail_helper_url' => env('WEBMAIL_HELPER_URL', ''),
-    'roundcube_imap_host' => env('ROUNDCUBE_IMAP_HOST', 'tls://127.0.0.1'),
+    'roundcube_imap_host' => env('ROUNDCUBE_IMAP_HOST', 'imaps://127.0.0.1:993'),
 
 
     /*

@@ -51,6 +51,9 @@ Route::post('/websites/{id}/status/check', [WebsiteController::class, 'refreshRu
 Route::get('/websites/{id}/manage', [WebsiteOperationsController::class, 'manage'])
     ->middleware('role:admin|reseller')
     ->name('websites.manage');
+Route::get('/websites/{id}/ip-rules', [WebsiteOperationsController::class, 'ipRules'])
+    ->middleware('role:admin|reseller')
+    ->name('websites.ip-rules.index');
 Route::patch('/websites/{id}/runtime-settings', [WebsiteOperationsController::class, 'updateRuntimeSettings'])
     ->middleware('role:admin|reseller')
     ->name('websites.update');
