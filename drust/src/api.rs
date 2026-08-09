@@ -15,6 +15,7 @@ mod filemanager;
 mod git_deploy;
 mod health;
 mod laravel;
+mod mailbox_storage;
 mod php;
 mod redis_config;
 mod script;
@@ -96,6 +97,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(dependencies::routes())
         .merge(cron::routes())
         .merge(laravel::routes())
+        .merge(mailbox_storage::routes())
         .with_state(Arc::new(state))
 }
 

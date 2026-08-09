@@ -71,18 +71,10 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         if domain.is_empty() {
             continue;
         }
-        let mut scope = normalize_scope(cols[2]);
-        let mut site_owner = normalize_site_owner(cols[3]);
+        let scope = normalize_scope(cols[2]);
+        let site_owner = normalize_site_owner(cols[3]);
         let root_path = cols[4].trim();
         let project_root = cols[5].trim();
-        // Older panel records were created before `scope=system` was
-        // persisted. Never dispatch the panel's reserved service paths as a
-        // regular tenant merely because that nullable database field is
-        // empty.
-        if Path::new(project_root) == Path::new("/var/www/dpanel") {
-            scope = "system".to_string();
-            site_owner = None;
-        }
         let start_directory = cols[6].trim();
         let php_version = normalize_php_version(cols[7]);
         let enable_ssl = cols[8].trim() == "1";
@@ -90,8 +82,14 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         if !matches_status(status) {
             continue;
         }
-        let document_root =
-            resolve_document_root(root_path, project_root, start_directory, &domain);
+        let document_root = resolve_document_root(
+            root_path,
+            project_root,
+            start_directory,
+            &domain,
+            scope == "system",
+            site_owner.as_deref(),
+        );
         sites.push(SiteConfig {
             id: cols[0].trim().to_string(),
             scope,
@@ -212,6 +210,8 @@ fn resolve_document_root(
     project_root: &str,
     start_directory: &str,
     domain: &str,
+    is_system_site: bool,
+    site_owner: Option<&str>,
 ) -> Option<PathBuf> {
     let root = optional_path(root_path);
     let project = optional_path(project_root);
@@ -226,12 +226,14 @@ fn resolve_document_root(
         );
         push_candidate(&mut candidates, root.clone());
     }
-    if let Some(project) = project.as_ref() {
-        push_candidate(
-            &mut candidates,
-            join_start_directory(project, start.as_deref()),
-        );
-        push_candidate(&mut candidates, project.clone());
+    let project_is_owned = site_owner
+        .map(|owner| project.as_ref().is_some_and(|path| path.starts_with(format!("/home/{owner}"))))
+        .unwrap_or(false);
+    if is_system_site || project_is_owned {
+        if let Some(project) = project.as_ref() {
+            push_candidate(&mut candidates, join_start_directory(project, start.as_deref()));
+            push_candidate(&mut candidates, project.clone());
+        }
     }
     push_candidate(&mut candidates, default_document_root(domain));
 
@@ -320,6 +322,8 @@ mod tests {
             "/home/example",
             "public",
             "example.test",
+            false,
+            Some("example"),
         )
         .unwrap();
         assert_eq!(root, PathBuf::from("/home/example/public_html/public"));
@@ -328,13 +332,13 @@ mod tests {
     #[test]
     fn does_not_duplicate_start_directory() {
         let root =
-            resolve_document_root("/srv/example/public", "", "public", "example.test").unwrap();
+            resolve_document_root("/srv/example/public", "", "public", "example.test", false, Some("example")).unwrap();
         assert_eq!(root, PathBuf::from("/srv/example/public"));
     }
 
     #[test]
     fn ignores_database_null_paths() {
-        let root = resolve_document_root("NULL", "/srv/example", "public", "example.test").unwrap();
+        let root = resolve_document_root("NULL", "/srv/example", "public", "example.test", true, None).unwrap();
         assert_eq!(root, PathBuf::from("/srv/example/public"));
     }
 }
