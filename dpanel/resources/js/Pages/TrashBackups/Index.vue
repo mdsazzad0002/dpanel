@@ -25,11 +25,14 @@ const formatSize = (bytes) => {
 };
 
 const downloading = ref('');
+const restoring = ref('');
 const downloadError = ref('');
+const noticeType = ref('error');
 
 const downloadBackup = async (backup) => {
     downloading.value = backup.id;
     downloadError.value = '';
+    noticeType.value = 'error';
 
     try {
         const response = await fetch(route('trash-backups.download', { id: backup.id }), {
@@ -57,6 +60,34 @@ const downloadBackup = async (backup) => {
     }
 };
 
+const restoreBackup = async (backup) => {
+    if (!confirm(`Restore ${backup.domain} from Trash Backup?`)) return;
+    restoring.value = backup.id;
+    downloadError.value = '';
+    noticeType.value = 'error';
+
+    try {
+        const response = await fetch(route('trash-backups.restore', { id: backup.id }), {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+            },
+            credentials: 'same-origin',
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || `Recovery failed with HTTP ${response.status}.`);
+        backup.can_restore = false;
+        downloadError.value = payload.message || 'Website recovered successfully.';
+        noticeType.value = 'success';
+    } catch (error) {
+        downloadError.value = error?.message || 'Website recovery failed.';
+    } finally {
+        restoring.value = '';
+    }
+};
+
 const saveRetention = () => {
     retentionForm.patch(route('trash-backups.retention.update'), { preserveScroll: true });
 };
@@ -68,11 +99,11 @@ const saveRetention = () => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Trash Backup</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Download archives created automatically before websites are deleted.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Recover deleted websites or download their automatic archives.</p>
             </div>
         </template>
 
-        <div v-if="downloadError" class="fixed bottom-5 right-5 z-50 max-w-sm rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 shadow-lg">
+        <div v-if="downloadError" class="fixed bottom-5 right-5 z-50 max-w-sm rounded-lg border px-4 py-3 text-sm font-medium shadow-lg" :class="noticeType === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'">
             {{ downloadError }}
         </div>
 
@@ -129,16 +160,28 @@ const saveRetention = () => {
                         <p class="mt-1 truncate text-xs text-slate-500">{{ backup.file_name }}</p>
                         <p class="mt-1 text-xs text-slate-400">{{ formatSize(backup.file_size) }} · Deleted {{ backup.created_at || '-' }}</p>
                     </div>
-                    <button
-                        v-if="backup.available"
-                        type="button"
-                        :disabled="downloading === backup.id"
-                        class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900"
-                        @click="downloadBackup(backup)"
-                    >
-                        <i :class="downloading === backup.id ? 'bi bi-arrow-repeat animate-spin' : 'bi bi-download'"></i>
-                        {{ downloading === backup.id ? 'Downloading...' : 'Download ZIP' }}
-                    </button>
+                    <div v-if="backup.available" class="flex shrink-0 flex-wrap gap-2">
+                        <button
+                            v-if="backup.can_restore"
+                            type="button"
+                            :disabled="Boolean(restoring)"
+                            class="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                            @click="restoreBackup(backup)"
+                        >
+                            <i :class="restoring === backup.id ? 'bi bi-arrow-repeat animate-spin' : 'bi bi-arrow-counterclockwise'"></i>
+                            {{ restoring === backup.id ? 'Recovering...' : 'Restore Website' }}
+                        </button>
+                        <span v-else class="inline-flex items-center px-2 text-xs font-medium text-slate-500">Website already exists</span>
+                        <button
+                            type="button"
+                            :disabled="downloading === backup.id"
+                            class="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900"
+                            @click="downloadBackup(backup)"
+                        >
+                            <i :class="downloading === backup.id ? 'bi bi-arrow-repeat animate-spin' : 'bi bi-download'"></i>
+                            {{ downloading === backup.id ? 'Downloading...' : 'Download ZIP' }}
+                        </button>
+                    </div>
                     <span v-else class="text-sm font-medium text-red-500">Archive missing</span>
                 </div>
             </div>

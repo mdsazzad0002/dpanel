@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Support\UserAccessCache;
 use App\Models\Website;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -59,6 +60,7 @@ class PanelSearchController extends Controller
             'routeName' => 'websites.create',
             'iconClass' => 'bi bi-plus-square',
             'roles' => ['admin', 'reseller'],
+            'permissions' => ['manage_websites'],
         ]);
         $this->appendRouteItem($items, $actor, $token, [
             'label' => 'List Websites',
@@ -67,6 +69,7 @@ class PanelSearchController extends Controller
             'routeName' => 'websites.list',
             'iconClass' => 'bi bi-list-ul',
             'roles' => ['admin', 'reseller'],
+            'permissions' => ['manage_websites'],
         ]);
 
         $this->appendRouteItem($items, $actor, $token, [
@@ -76,6 +79,7 @@ class PanelSearchController extends Controller
             'routeName' => 'emails.create',
             'iconClass' => 'bi bi-envelope-plus',
             'roles' => ['admin', 'reseller'],
+            'permissions' => ['manage_email'],
         ]);
         $this->appendRouteItem($items, $actor, $token, [
             'label' => 'List Emails',
@@ -84,6 +88,7 @@ class PanelSearchController extends Controller
             'routeName' => 'emails.list',
             'iconClass' => 'bi bi-envelope-open',
             'roles' => ['admin', 'reseller'],
+            'permissions' => ['manage_email'],
         ]);
 
         $this->appendRouteItem($items, $actor, $token, [
@@ -321,22 +326,20 @@ class PanelSearchController extends Controller
         $roles = (array) ($definition['roles'] ?? []);
         $permissions = (array) ($definition['permissions'] ?? []);
 
-        if ($permissions !== []) {
-            foreach ($permissions as $permission) {
-                if ($actor->can((string) $permission)) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        if ($roles === []) {
+        if ($roles === [] && $permissions === []) {
             return true;
         }
 
+        $access = UserAccessCache::get($actor);
+
         foreach ($roles as $role) {
-            if ($actor->hasRole((string) $role)) {
+            if (in_array((string) $role, $access['roles'], true)) {
+                return true;
+            }
+        }
+
+        foreach ($permissions as $permission) {
+            if (in_array((string) $permission, $access['permissions'], true)) {
                 return true;
             }
         }

@@ -138,7 +138,18 @@ class DatabaseController extends Controller
     {
         $this->migrateLegacyJsonRequests();
 
-        $prepared = $this->preparePayload($request->all(), $request->user());
+        $input = $request->all();
+        $suffixes = Validator::make($input, [
+            'database_name' => ['required', 'string', 'max:31', 'regex:/^[A-Za-z0-9_]+$/'],
+            'database_user' => ['required', 'string', 'max:31', 'regex:/^[A-Za-z0-9_]+$/'],
+        ])->validate();
+        $domain = strtolower(trim((string) ($input['domain'] ?? '')));
+        $website = Website::query()->visibleTo($request->user())->whereRaw('LOWER(domain) = ?', [$domain])->first();
+        abort_if($website === null || trim((string) $website->site_owner) === '', 422, 'Select a website with a system owner before creating a database.');
+        $ownerPrefix = $this->sanitizeDatabasePrefix((string) $website->site_owner).'_';
+        $input['database_name'] = substr($ownerPrefix, 0, 64 - strlen($suffixes['database_name'])).$suffixes['database_name'];
+        $input['database_user'] = substr($ownerPrefix, 0, 64 - strlen($suffixes['database_user'])).$suffixes['database_user'];
+        $prepared = $this->preparePayload($input, $request->user());
         $validated = $this->normalizePayload($this->validatePayload($prepared));
         $owner = $this->quotas->ownerForDomain((string) $validated['domain']);
         if ($owner !== null) {

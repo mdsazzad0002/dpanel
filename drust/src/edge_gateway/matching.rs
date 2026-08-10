@@ -1,11 +1,17 @@
 use super::{RouteConfig, RuntimeSnapshot, SiteConfig};
 
 pub fn resolve_site<'a>(snapshot: &'a RuntimeSnapshot, host: &str) -> Option<&'a SiteConfig> {
-    snapshot.sites.iter().find(|site| {
-        site.hostnames
-            .iter()
-            .any(|candidate| candidate.eq_ignore_ascii_case(host))
-    })
+    let normalized = host
+        .split(':')
+        .next()
+        .unwrap_or(host)
+        .trim()
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    snapshot
+        .hostname_index
+        .get(&normalized)
+        .and_then(|index| snapshot.sites.get(*index))
 }
 
 pub fn resolve_route<'a>(site: &'a SiteConfig, path: &str) -> Option<&'a RouteConfig> {
@@ -42,9 +48,9 @@ mod tests {
 
     #[test]
     fn resolve_site_matches_host() {
-        let snapshot = RuntimeSnapshot {
-            version: 1,
-            sites: Arc::from([SiteConfig {
+        let snapshot = RuntimeSnapshot::new(
+            1,
+            Arc::from([SiteConfig {
                 id: "site-1".to_string(),
                 scope: "user".to_string(),
                 site_owner: Some("example".to_string()),
@@ -60,13 +66,13 @@ mod tests {
                 banned_ips: Arc::from([]),
                 allowed_ips: Arc::from([]),
             }]),
-            tls: Arc::from([]),
-            cache: CachePolicy {
+            Arc::from([]),
+            CachePolicy {
                 enabled: true,
                 ttl: Duration::from_secs(60),
                 stale_while_revalidate: Duration::from_secs(30),
             },
-        };
+        );
 
         assert!(resolve_site(&snapshot, "example.com").is_some());
         assert!(resolve_site(&snapshot, "www.example.com").is_some());

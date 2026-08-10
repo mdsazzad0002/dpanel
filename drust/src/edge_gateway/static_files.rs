@@ -1,6 +1,9 @@
+use bytes::Bytes;
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
+    sync::{OnceLock, RwLock},
     time::{Duration, SystemTime},
 };
 
@@ -16,9 +19,15 @@ pub struct StaticFileConfig {
 pub struct StaticAsset {
     pub path: PathBuf,
     pub content_type: String,
-    pub body: Vec<u8>,
+    pub body: StaticAssetBody,
     pub etag: String,
     pub last_modified: SystemTime,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StaticAssetBody {
+    Memory(Bytes),
+    Stream(PathBuf),
 }
 
 pub fn resolve_static_path(
@@ -54,11 +63,27 @@ pub fn load_static_asset(path: &Path) -> Result<StaticAsset, String> {
         return Err("not a file".into());
     }
 
-    let body = fs::read(path).map_err(|error| format!("file read failed: {error}"))?;
     let last_modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+    let cache = STATIC_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
+    if let Ok(items) = cache.read() {
+        if let Some(asset) = items.get(path) {
+            if asset.last_modified == last_modified
+                && matches!(&asset.body, StaticAssetBody::Memory(body) if body.len() as u64 == meta.len())
+            {
+                return Ok(asset.clone());
+            }
+        }
+    }
+    let body = if meta.len() <= static_cache_max_file_bytes() {
+        StaticAssetBody::Memory(Bytes::from(
+            fs::read(path).map_err(|error| format!("file read failed: {error}"))?,
+        ))
+    } else {
+        StaticAssetBody::Stream(path.to_path_buf())
+    };
     let etag = format!(
         "\"{:x}-{:x}\"",
-        body.len(),
+        meta.len(),
         last_modified
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
@@ -66,13 +91,43 @@ pub fn load_static_asset(path: &Path) -> Result<StaticAsset, String> {
     );
     let content_type = guess_content_type(path);
 
-    Ok(StaticAsset {
+    let asset = StaticAsset {
         path: path.to_path_buf(),
         content_type,
         body,
         etag,
         last_modified,
-    })
+    };
+    if meta.len() <= static_cache_max_file_bytes() {
+        if let Ok(mut items) = cache.write() {
+            if items.len() >= static_cache_max_entries() {
+                items.clear();
+            }
+            items.insert(path.to_path_buf(), asset.clone());
+        }
+    }
+    Ok(asset)
+}
+
+static STATIC_CACHE: OnceLock<RwLock<HashMap<PathBuf, StaticAsset>>> = OnceLock::new();
+pub fn clear_static_cache() {
+    if let Some(cache) = STATIC_CACHE.get() {
+        if let Ok(mut items) = cache.write() {
+            items.clear();
+        }
+    }
+}
+fn static_cache_max_file_bytes() -> u64 {
+    std::env::var("DRUST_STATIC_CACHE_MAX_FILE_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1_048_576)
+}
+fn static_cache_max_entries() -> usize {
+    std::env::var("DRUST_STATIC_CACHE_MAX_ENTRIES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1024)
 }
 
 pub fn normalize_static_path(path: &str) -> String {
@@ -146,7 +201,9 @@ mod tests {
         fs::write(&file, b"body{}").unwrap();
 
         let asset = load_static_asset(&file).unwrap();
-        assert_eq!(asset.body, b"body{}");
+        assert!(
+            matches!(asset.body, StaticAssetBody::Memory(ref body) if body.as_ref() == b"body{}")
+        );
         assert!(asset.content_type.contains("text/css"));
 
         let _ = fs::remove_dir_all(&base);

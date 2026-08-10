@@ -32,6 +32,13 @@ const panelRoute = (name, params = {}) => (
 const showPassword = ref(false);
 const suggestedDatabaseName = ref('');
 const suggestedDatabaseUser = ref('');
+const selectedOwnerPrefix = computed(() => String(props.databasePrefixes[String(form.domain).trim().toLowerCase()] || ''));
+const selectedDomainPart = computed(() => String(form.domain).trim().toLowerCase().split('.')[0].replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '').slice(0, 16) || 'site');
+const databaseUserSuggestions = computed(() => [
+    `${selectedDomainPart.value}_user`,
+    `${selectedDomainPart.value}_usr`,
+    `${selectedDomainPart.value}_admin`,
+]);
 
 const submit = () => {
     form.post(panelRoute('databases.store'));
@@ -58,9 +65,10 @@ watch(
     (domain) => {
         const prefix = sanitizePrefix(domain);
         if (!prefix) return;
+        const domainPart = String(domain).trim().toLowerCase().split('.')[0].replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '').slice(0, 16) || 'site';
 
-        const nextDatabaseName = `${prefix}_db`;
-        const nextDatabaseUser = `${prefix}_usr`;
+        const nextDatabaseName = `${domainPart}_db`;
+        const nextDatabaseUser = `${domainPart}_user`;
 
         if (!form.database_name || form.database_name === suggestedDatabaseName.value) {
             form.database_name = nextDatabaseName;
@@ -113,14 +121,15 @@ watch(
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Database Name</label>
-                    <input v-model="form.database_name" type="text" placeholder="Auto-generated if blank" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">The selected website user's prefix is added automatically.</p>
+                    <div class="flex rounded-md border border-slate-300 bg-white focus-within:border-blue-500 dark:border-slate-700 dark:bg-slate-800"><span class="flex items-center border-r border-slate-300 bg-slate-50 px-3 font-mono text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">{{ selectedOwnerPrefix ? `${selectedOwnerPrefix}_` : 'owner_' }}</span><input v-model="form.database_name" maxlength="31" required type="text" placeholder="domain_db" class="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm focus:ring-0" /></div>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Website owner prefix is fixed; the remaining part is editable.</p>
                     <p v-if="form.errors.database_name" class="mt-1 text-xs text-red-600">{{ form.errors.database_name }}</p>
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Database User</label>
-                    <input v-model="form.database_user" type="text" placeholder="Auto-generated if blank" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">The selected website user's prefix is added automatically.</p>
+                    <div class="flex rounded-md border border-slate-300 bg-white focus-within:border-blue-500 dark:border-slate-700 dark:bg-slate-800"><span class="flex items-center border-r border-slate-300 bg-slate-50 px-3 font-mono text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">{{ selectedOwnerPrefix ? `${selectedOwnerPrefix}_` : 'owner_' }}</span><input v-model="form.database_user" maxlength="31" required type="text" placeholder="domain_user" class="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm focus:ring-0" /></div>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Website owner prefix is fixed; the remaining part is editable.</p>
+                    <div v-if="form.domain" class="mt-2 flex flex-wrap items-center gap-1.5 text-xs"><span class="text-slate-500 dark:text-slate-400">Suggestions:</span><button v-for="suggestion in databaseUserSuggestions" :key="suggestion" type="button" class="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-slate-600 hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300" @click="form.database_user = suggestion">{{ suggestion }}</button></div>
                     <p v-if="form.errors.database_user" class="mt-1 text-xs text-red-600">{{ form.errors.database_user }}</p>
                 </div>
                 <div>

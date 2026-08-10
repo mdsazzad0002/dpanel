@@ -57,7 +57,10 @@ impl BandwidthTracker {
     pub fn spawn_periodic_flush(&self) {
         let tracker = self.clone();
         let interval = std::env::var("DRUST_BANDWIDTH_FLUSH_SECONDS")
-            .ok().and_then(|value| value.parse::<u64>().ok()).unwrap_or(30).max(5);
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(30)
+            .max(5);
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(Duration::from_secs(interval));
             ticker.tick().await;
@@ -73,8 +76,11 @@ impl BandwidthTracker {
     pub fn flush(&self) -> Result<(), String> {
         fs::create_dir_all(self.directory.as_ref())
             .map_err(|error| format!("create bandwidth directory failed: {error}"))?;
-        let snapshot = self.counters.lock()
-            .map_err(|_| "bandwidth counter lock poisoned".to_string())?.clone();
+        let snapshot = self
+            .counters
+            .lock()
+            .map_err(|_| "bandwidth counter lock poisoned".to_string())?
+            .clone();
         let path = month_path(self.directory.as_ref());
         let temporary = path.with_extension("json.tmp");
         let payload = serde_json::to_vec(&snapshot)
@@ -94,8 +100,10 @@ fn read_month(path: &Path) -> Result<HashMap<String, DomainBandwidth>, String> {
     if !path.is_file() {
         return Ok(HashMap::new());
     }
-    let payload = fs::read(path).map_err(|error| format!("read bandwidth counters failed: {error}"))?;
-    serde_json::from_slice(&payload).map_err(|error| format!("parse bandwidth counters failed: {error}"))
+    let payload =
+        fs::read(path).map_err(|error| format!("read bandwidth counters failed: {error}"))?;
+    serde_json::from_slice(&payload)
+        .map_err(|error| format!("parse bandwidth counters failed: {error}"))
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Website;
 use App\Models\WebsiteIpRule;
 use App\Services\Filemanager\FilemanagerService;
+use App\Services\EdgeGatewayReloader;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
 use App\Services\Ssl\SslLifecycleService;
@@ -37,6 +38,12 @@ use ZipArchive;
 
 class WebsiteController extends Controller
 {
+    public function reloadGatewayCache(EdgeGatewayReloader $reloader): JsonResponse
+    {
+        if (! $reloader->reload()) return response()->json(['message' => 'Gateway reload failed; the previous cache is still active.'], 502);
+        return response()->json(['message' => 'Website routing and static caches reloaded.']);
+    }
+
     public function __construct(
         protected WebsiteResolverService $websiteResolver,
         protected WebsiteTemplateCatalogService $templateCatalog,
@@ -128,12 +135,98 @@ class WebsiteController extends Controller
      */
     public function index(Request $request): Response
     {
+        $actor = $request->user();
         $requests = $this->decorateWebsiteRecords(
-            $this->visibleRequestsForActor($request->user())
+            $this->visibleRequestsForActor($actor)
         );
 
         return Inertia::render('Websites/List', [
             'websiteRequests' => $requests,
+            'canChangeOwnership' => (bool) $actor?->hasRole('admin'),
+            'ownershipUsers' => $actor?->hasRole('admin')
+                ? User::query()
+                    ->whereHas('roles', fn ($query) => $query->whereIn('name', ['reseller', 'general', 'general_user']))
+                    ->with('roles:id,name')
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'email', 'reseller_id'])
+                    ->map(fn (User $user): array => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->hasRole('reseller')
+                            ? 'reseller'
+                            : ($user->hasRole('general_user') ? 'general_user' : 'general'),
+                    ])
+                    ->values()
+                    ->all()
+                : [],
+        ]);
+    }
+
+    public function updateOwnership(Request $request, string $token, string $id): JsonResponse
+    {
+        abort_unless($request->user()?->hasRole('admin'), 403);
+
+        $validated = $request->validate([
+            'owner_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'reseller_user_id' => ['nullable', 'integer', 'exists:users,id'],
+        ]);
+
+        $website = Website::query()->findOrFail($id);
+        $owner = isset($validated['owner_user_id'])
+            ? User::query()->with('roles:id,name')->findOrFail((int) $validated['owner_user_id'])
+            : null;
+        $reseller = isset($validated['reseller_user_id'])
+            ? User::query()->with('roles:id,name')->findOrFail((int) $validated['reseller_user_id'])
+            : null;
+
+        if ($owner && ! $owner->hasAnyRole(['general', 'general_user'])) {
+            return response()->json(['message' => 'The selected owner must be a General User.'], 422);
+        }
+        if ($reseller && ! $reseller->hasRole('reseller')) {
+            return response()->json(['message' => 'The selected reseller must have the Reseller role.'], 422);
+        }
+
+        $assignedUserId = $owner?->id;
+        $assignedResellerId = $reseller?->id;
+
+        $affectedIds = DB::transaction(function () use ($website, $assignedUserId, $assignedResellerId): array {
+            $affectedIds = [(string) $website->id];
+            $frontier = $affectedIds;
+
+            while ($frontier !== []) {
+                $children = Website::query()
+                    ->whereIn('parent_id', $frontier)
+                    ->pluck('id')
+                    ->map(fn ($childId): string => (string) $childId)
+                    ->all();
+                $children = array_values(array_diff($children, $affectedIds));
+                if ($children === []) break;
+                $affectedIds = array_values(array_unique(array_merge($affectedIds, $children)));
+                $frontier = $children;
+            }
+
+            Website::query()->whereIn('id', $affectedIds)->update([
+                'assigned_user_id' => $assignedUserId,
+                'assigned_reseller_id' => $assignedResellerId,
+                'updated_at' => now(),
+            ]);
+
+            return $affectedIds;
+        });
+
+        return response()->json([
+            'message' => count($affectedIds) > 1
+                ? 'Website ownership and all child ownerships updated.'
+                : 'Website ownership updated.',
+            'affected_ids' => $affectedIds,
+            'owner' => [
+                'assigned_user_id' => $assignedUserId,
+                'assigned_reseller_id' => $assignedResellerId,
+                'assigned_user_name' => $owner?->name,
+                'assigned_reseller_name' => $reseller?->name,
+                'label' => $reseller?->name ?? $owner?->name ?? 'Admin',
+            ],
         ]);
     }
 
@@ -501,12 +594,21 @@ class WebsiteController extends Controller
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $inspection = $this->inspectWebsiteApplication($website);
         $framework = strtolower((string) ($inspection['detected_app'] ?? ''));
-        if (! in_array($framework, ['laravel', 'wordpress'], true)) {
-            return response()->json(['success' => false, 'message' => 'Laravel or WordPress project was not detected.'], 422);
+        if (! in_array($framework, ['laravel', 'wordpress', 'codeigniter'], true)) {
+            return response()->json(['success' => false, 'message' => 'Laravel, WordPress, or CodeIgniter project was not detected.'], 422);
         }
 
         $root = rtrim((string) ($inspection['root_path'] ?? ''), '/');
-        $configPath = $framework === 'laravel' ? $root.'/.env' : $root.'/wp-config.php';
+        if ($framework === 'codeigniter') {
+            $signals = (array) data_get($inspection, 'signals.codeigniter', []);
+            $isCodeIgniter4 = in_array('spark', $signals, true) || in_array('app/Config/App.php', $signals, true);
+            $framework = $isCodeIgniter4 ? 'codeigniter4' : 'codeigniter3';
+        }
+        $configPath = match ($framework) {
+            'laravel', 'codeigniter4' => $root.'/.env',
+            'wordpress' => $root.'/wp-config.php',
+            'codeigniter3' => $root.'/application/config/database.php',
+        };
         $database = DatabaseRequest::query()
             ->visibleTo($request->user())
             ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
@@ -538,7 +640,12 @@ class WebsiteController extends Controller
         if ($framework === 'laravel') {
             $this->runProjectArtisanCommand($root, 'config:clear', (string) ($website['site_owner'] ?? ''));
         }
-        return response()->json(['success' => true, 'message' => ucfirst($framework).' database connected successfully.']);
+        $frameworkLabel = match ($framework) {
+            'codeigniter3' => 'CodeIgniter 3',
+            'codeigniter4' => 'CodeIgniter 4',
+            default => ucfirst($framework),
+        };
+        return response()->json(['success' => true, 'message' => $frameworkLabel.' database connected successfully.']);
     }
 
     public function installProjectDependencies(Request $request, string $token, string $id): JsonResponse

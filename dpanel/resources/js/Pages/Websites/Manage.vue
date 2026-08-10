@@ -167,7 +167,8 @@ const scheme = computed(() => (sslEnabled.value ? 'https' : 'http'));
 const detectedApp = computed(() => String(props.rootInspection?.detected_app || '').toLowerCase());
 const canClearCache = computed(() => ['wordpress', 'laravel', 'codeigniter'].includes(detectedApp.value));
 const isLaravelWebsite = computed(() => detectedApp.value === 'laravel');
-const supportsDatabaseAutoConnect = computed(() => ['laravel', 'wordpress'].includes(detectedApp.value));
+const supportsDatabaseAutoConnect = computed(() => ['laravel', 'wordpress', 'codeigniter'].includes(detectedApp.value));
+const detectedAppLabel = computed(() => ({ wordpress: 'WordPress', laravel: 'Laravel', codeigniter: 'CodeIgniter' }[detectedApp.value] || 'Project'));
 const storageLinked = computed(() => Boolean(props.rootInspection?.storage_linked));
 const isSystemWebsite = computed(() => String(props.website.id) === '1');
 
@@ -178,6 +179,7 @@ const serviceLinks = computed(() => [
     { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
     { label: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Scheduled tasks' },
     { label: 'Git Deployment', icon: 'bi-github', color: 'emerald', href: panelRoute('websites.git.index', { id: props.website.id }), description: 'Clone, pull, push & auto sync' },
+    { label: 'Import Website', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and an optional SQL database' },
     { label: 'SSH Key Generator', icon: 'bi-key', color: 'amber', href: panelRoute('websites.ssh-key.index', { id: props.website.id }), description: 'Create a GitHub deployment key' },
     { label: 'Website Terminal', icon: 'bi-terminal', color: 'emerald', href: panelRoute('websites.terminal.index', { id: props.website.id }), description: 'Open the isolated project shell' },
     { label: 'Alis API', icon: 'bi-code-slash', color: 'violet', href: panelRoute('websites.alias-api.index', { id: props.website.id }), description: 'Manage aliases and scoped API access' },
@@ -199,6 +201,7 @@ const serviceColorClasses = {
     orange: 'bg-orange-500/10 text-orange-600 dark:bg-orange-500/15 dark:text-orange-400',
     teal: 'bg-teal-500/10 text-teal-600 dark:bg-teal-500/15 dark:text-teal-400',
     red: 'bg-red-500/10 text-red-600 dark:bg-red-500/15 dark:text-red-400',
+    cyan: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/15 dark:text-cyan-400',
 };
 
 const quickActions = computed(() => [
@@ -755,7 +758,7 @@ const saveRuntimeSettings = async () => {
                                     class="flex w-full items-center gap-3 rounded-xl border border-cyan-200 bg-cyan-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-800 dark:bg-cyan-500/10 dark:text-cyan-400"
                                     @click="connectProjectDatabase">
                                     <i class="bi bi-database-check text-base"></i>
-                                    {{ databaseConnectLoading ? 'Connecting Database...' : databaseConnection.available ? `Connect ${detectedApp === 'wordpress' ? 'WordPress' : 'Laravel'} Database` : 'Create Database First' }}
+                                    {{ databaseConnectLoading ? 'Connecting Database...' : databaseConnection.available ? `Connect ${detectedAppLabel} Database` : 'Create Database First' }}
                                 </button>
                                 <button v-if="rootInspection.has_composer_json" type="button"
                                     :disabled="Boolean(dependencyInstallLoading)"

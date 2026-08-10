@@ -120,7 +120,10 @@ fn delete_website(request: &DeleteRequest) -> Result<(), String> {
             .unwrap_or(false)
         {
             let output = Command::new("userdel")
-                .args(["-r", user])
+                // Website PHP workers may still be winding down when the panel
+                // removes a site. Force account removal so that a short-lived
+                // worker cannot leave the website stuck in a half-deleted state.
+                .args(["--force", "--remove", user])
                 .output()
                 .map_err(|error| format!("cannot run userdel: {error}"))?;
             if !output.status.success() {
@@ -226,6 +229,9 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .unix_permissions(0o644);
+    let owner = website.site_owner.as_deref().unwrap_or("");
+    let system_uid = numeric_account_id("-u", owner);
+    let system_gid = numeric_account_id("-g", owner);
 
     let manifest = serde_json::json!({
         "website": {
@@ -235,6 +241,8 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
             "project_root": website.project_root,
             "start_directory": website.start_directory,
             "site_owner": website.site_owner,
+            "system_uid": system_uid,
+            "system_gid": system_gid,
             "php_version": website.php_version,
             "status": website.status,
             "type": website.type_field,
@@ -393,8 +401,11 @@ pub(crate) async fn restore_archive_handle(
 
 fn restore_archive(value: &str) -> Result<serde_json::Value, String> {
     let path = normalize_path(value);
-    let root = Path::new("/var/www/dpanel/storage/app/backups");
-    if !path.starts_with(root)
+    let allowed_roots = [
+        Path::new("/var/www/dpanel/storage/app/backups"),
+        Path::new("/var/www/dpanel/storage/app/website-trash"),
+    ];
+    if !allowed_roots.iter().any(|root| path.starts_with(root))
         || path.components().any(|part| matches!(part, Component::ParentDir))
         || !path.is_file()
     {
@@ -427,11 +438,35 @@ fn restore_archive(value: &str) -> Result<serde_json::Value, String> {
         return Err("archive project path is outside the website owner home".into());
     }
 
-    if !Command::new("id").args(["-u", owner]).status().map(|s| s.success()).unwrap_or(false) {
-        let _ = Command::new("groupadd").args(["--force", owner]).status();
-        let status = Command::new("useradd").args(["--create-home", "--gid", owner, "--shell", "/usr/sbin/nologin", owner])
-            .status().map_err(|e| format!("cannot create website user: {e}"))?;
-        if !status.success() { return Err("cannot recreate website user".into()); }
+    if numeric_account_id("-u", owner).is_none() {
+        let archived_uid = website.get("system_uid").and_then(|value| value.as_u64());
+        let archived_gid = website.get("system_gid").and_then(|value| value.as_u64());
+
+        let mut group_args = vec!["--force".to_string()];
+        if let Some(gid) = archived_gid {
+            group_args.extend(["--gid".to_string(), gid.to_string()]);
+        }
+        group_args.push(owner.to_string());
+        let group_output = Command::new("groupadd").args(&group_args).output()
+            .map_err(|error| format!("cannot recreate website group: {error}"))?;
+        if !group_output.status.success() {
+            return Err(format!("cannot recreate website group: {}", String::from_utf8_lossy(&group_output.stderr).trim()));
+        }
+
+        let mut user_args = vec!["--create-home".to_string()];
+        if let Some(uid) = archived_uid {
+            user_args.extend(["--uid".to_string(), uid.to_string()]);
+        }
+        user_args.extend([
+            "--gid".to_string(), owner.to_string(),
+            "--shell".to_string(), "/usr/sbin/nologin".to_string(),
+            owner.to_string(),
+        ]);
+        let user_output = Command::new("useradd").args(&user_args).output()
+            .map_err(|error| format!("cannot create website user: {error}"))?;
+        if !user_output.status.success() {
+            return Err(format!("cannot recreate website user: {}", String::from_utf8_lossy(&user_output.stderr).trim()));
+        }
     }
     fs::create_dir_all(&project_root).map_err(|e| format!("cannot create website root: {e}"))?;
 
@@ -487,7 +522,42 @@ fn restore_archive(value: &str) -> Result<serde_json::Value, String> {
         }
     }
     let _ = Command::new("chown").args(["-R", &format!("{owner}:{owner}"), project_root.to_string_lossy().as_ref()]).status();
+    crate::filemanager::fix_permissions::run(
+        Some(owner),
+        project_root.to_str(),
+        false,
+    )
+    .map_err(|error| format!("files restored but permissions could not be repaired: {error}"))?;
+
+    if let Some(version) = website.get("php_version").and_then(|value| value.as_str()) {
+        if !version.is_empty() && version.chars().all(|ch| ch.is_ascii_digit() || ch == '.') {
+            let service = format!("php{version}-fpm");
+            // The archived numeric identity is reused, so a graceful reload is
+            // sufficient and avoids interrupting other sites on this runtime.
+            let restart = Command::new("systemctl")
+                .args(["reload", service.as_str()])
+                .output()
+                .map_err(|error| format!("cannot reload {service}: {error}"))?;
+            if !restart.status.success() {
+                return Err(format!(
+                    "files restored but {service} could not be reloaded: {}",
+                    String::from_utf8_lossy(&restart.stderr).trim()
+                ));
+            }
+        }
+    }
     Ok(website)
+}
+
+fn numeric_account_id(flag: &str, owner: &str) -> Option<u64> {
+    if owner.is_empty() {
+        return None;
+    }
+    let output = Command::new("id").args([flag, owner]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()?.trim().parse().ok()
 }
 
 fn restore_cpmove(path: &Path) -> Result<serde_json::Value, String> {

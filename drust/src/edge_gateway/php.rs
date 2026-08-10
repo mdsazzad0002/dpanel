@@ -11,7 +11,11 @@ use axum::{
     body::Body,
     http::{HeaderName, HeaderValue, Request, Response, StatusCode, header},
 };
-use tokio::{io::AsyncWriteExt, process::Command, time::timeout};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::UnixStream,
+    time::timeout,
+};
 use tracing::warn;
 
 pub async fn execute_php_front_controller(
@@ -40,35 +44,38 @@ pub async fn execute_php_front_controller(
     let (script, script_name) = resolve_php_script(document_root, parts.uri.path())?;
     let is_https = forwarded_request_is_https(&parts.headers);
 
-    let mut command = Command::new("/usr/bin/cgi-fcgi");
-    command
-        .arg("-bind")
-        .arg("-connect")
-        .arg(&socket)
-        .env("GATEWAY_INTERFACE", "CGI/1.1")
-        .env("SERVER_SOFTWARE", "drust-edge-gateway")
-        .env("SERVER_PROTOCOL", "HTTP/1.1")
-        .env("SERVER_NAME", server_name)
-        .env("SERVER_PORT", if is_https { "443" } else { "80" })
-        .env("REQUEST_METHOD", parts.method.as_str())
-        .env("REQUEST_URI", request_uri)
-        .env("QUERY_STRING", query_string)
-        .env("DOCUMENT_ROOT", document_root)
-        .env("SCRIPT_FILENAME", &script)
-        .env("SCRIPT_NAME", &script_name)
-        .env("PHP_SELF", &script_name)
-        .env("REDIRECT_STATUS", "200")
-        .env("REMOTE_ADDR", "127.0.0.1")
-        .env("HTTP_HOST", host)
-        .env("CONTENT_LENGTH", body.len().to_string())
-        .env("PHP_VALUE", "zlib.output_compression=0")
-        .env("PHP_ADMIN_VALUE", "zlib.output_compression=0")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    let mut params = vec![
+        ("GATEWAY_INTERFACE".into(), "CGI/1.1".into()),
+        ("SERVER_SOFTWARE".into(), "drust-edge-gateway".into()),
+        ("SERVER_PROTOCOL".into(), "HTTP/1.1".into()),
+        ("SERVER_NAME".into(), server_name.into()),
+        (
+            "SERVER_PORT".into(),
+            if is_https { "443".into() } else { "80".into() },
+        ),
+        ("REQUEST_METHOD".into(), parts.method.as_str().into()),
+        ("REQUEST_URI".into(), request_uri.into()),
+        ("QUERY_STRING".into(), query_string.into()),
+        (
+            "DOCUMENT_ROOT".into(),
+            document_root.to_string_lossy().into_owned(),
+        ),
+        (
+            "SCRIPT_FILENAME".into(),
+            script.to_string_lossy().into_owned(),
+        ),
+        ("SCRIPT_NAME".into(), script_name.clone()),
+        ("PHP_SELF".into(), script_name),
+        ("REDIRECT_STATUS".into(), "200".into()),
+        ("REMOTE_ADDR".into(), "127.0.0.1".into()),
+        ("HTTP_HOST".into(), host.into()),
+        ("CONTENT_LENGTH".into(), body.len().to_string()),
+        ("PHP_VALUE".into(), "zlib.output_compression=0".into()),
+        ("PHP_ADMIN_VALUE".into(), "zlib.output_compression=0".into()),
+    ];
 
     if is_https {
-        command.env("HTTPS", "on");
+        params.push(("HTTPS".into(), "on".into()));
     }
 
     if let Some(content_type) = parts
@@ -76,7 +83,7 @@ pub async fn execute_php_front_controller(
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
     {
-        command.env("CONTENT_TYPE", content_type);
+        params.push(("CONTENT_TYPE".into(), content_type.into()));
     }
     for (name, value) in &parts.headers {
         // Let the gateway own compression. Forwarding browser encodings to
@@ -88,34 +95,132 @@ pub async fn execute_php_front_controller(
             continue;
         }
         if let Ok(value) = value.to_str() {
-            command.env(
+            params.push((
                 format!("HTTP_{}", name.as_str().replace('-', "_").to_uppercase()),
-                value,
-            );
+                value.into(),
+            ));
         }
     }
-
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("start cgi-fcgi failed: {error}"))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(&body)
-            .await
-            .map_err(|error| format!("write FastCGI body failed: {error}"))?;
+    let (stdout, stderr) = timeout(
+        Duration::from_secs(60),
+        fastcgi_request(&socket, &params, &body),
+    )
+    .await
+    .map_err(|_| "PHP-FPM request timed out".to_string())??;
+    if !stderr.is_empty() {
+        warn!(message = %String::from_utf8_lossy(&stderr).trim(), "PHP-FPM stderr");
     }
-    let output = timeout(Duration::from_secs(60), child.wait_with_output())
+    parse_cgi_response(&stdout)
+}
+
+async fn fastcgi_request(
+    socket: &Path,
+    params: &[(String, String)],
+    body: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let mut stream = UnixStream::connect(socket)
         .await
-        .map_err(|_| "PHP-FPM request timed out".to_string())?
-        .map_err(|error| format!("wait for cgi-fcgi failed: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "PHP-FPM request failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
+        .map_err(|e| format!("connect PHP-FPM failed: {e}"))?;
+    fastcgi_exchange(&mut stream, params, body).await
+}
 
-    parse_cgi_response(&output.stdout)
+async fn fastcgi_exchange(
+    stream: &mut UnixStream,
+    params: &[(String, String)],
+    body: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>), String> {
+    write_fcgi_record(stream, 1, &[0, 1, 0, 0, 0, 0, 0, 0]).await?;
+    let encoded = encode_params(params)?;
+    for chunk in encoded.chunks(u16::MAX as usize) {
+        write_fcgi_record(stream, 4, chunk).await?;
+    }
+    write_fcgi_record(stream, 4, &[]).await?;
+    for chunk in body.chunks(u16::MAX as usize) {
+        write_fcgi_record(stream, 5, chunk).await?;
+    }
+    write_fcgi_record(stream, 5, &[]).await?;
+    stream.flush().await.map_err(|e| e.to_string())?;
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    loop {
+        let mut header = [0u8; 8];
+        stream
+            .read_exact(&mut header)
+            .await
+            .map_err(|e| format!("read FastCGI header failed: {e}"))?;
+        if header[0] != 1 {
+            return Err("unsupported FastCGI version".into());
+        }
+        let length = u16::from_be_bytes([header[4], header[5]]) as usize;
+        let padding = header[6] as usize;
+        let mut content = vec![0; length];
+        stream
+            .read_exact(&mut content)
+            .await
+            .map_err(|e| e.to_string())?;
+        if padding > 0 {
+            let mut discard = vec![0; padding];
+            stream
+                .read_exact(&mut discard)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        match header[1] {
+            6 => stdout.extend(content),
+            7 => stderr.extend(content),
+            3 => break,
+            _ => {}
+        }
+    }
+    Ok((stdout, stderr))
+}
+
+async fn write_fcgi_record(
+    stream: &mut UnixStream,
+    kind: u8,
+    content: &[u8],
+) -> Result<(), String> {
+    let padding = (8 - content.len() % 8) % 8;
+    let length = content.len() as u16;
+    let header = [
+        1,
+        kind,
+        0,
+        1,
+        (length >> 8) as u8,
+        length as u8,
+        padding as u8,
+        0,
+    ];
+    stream.write_all(&header).await.map_err(|e| e.to_string())?;
+    stream.write_all(content).await.map_err(|e| e.to_string())?;
+    if padding > 0 {
+        stream
+            .write_all(&[0; 8][..padding])
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn encode_params(params: &[(String, String)]) -> Result<Vec<u8>, String> {
+    let mut encoded = Vec::new();
+    for (name, value) in params {
+        encode_length(&mut encoded, name.len())?;
+        encode_length(&mut encoded, value.len())?;
+        encoded.extend_from_slice(name.as_bytes());
+        encoded.extend_from_slice(value.as_bytes());
+    }
+    Ok(encoded)
+}
+
+fn encode_length(output: &mut Vec<u8>, length: usize) -> Result<(), String> {
+    if length < 128 {
+        output.push(length as u8);
+    } else {
+        let value = u32::try_from(length).map_err(|_| "FastCGI parameter too large")? | 0x8000_0000;
+        output.extend_from_slice(&value.to_be_bytes());
+    }
+    Ok(())
 }
 
 fn forwarded_request_is_https(headers: &axum::http::HeaderMap) -> bool {
@@ -291,7 +396,7 @@ fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(),
              listen.mode = 0660\n\
              pm = ondemand\n\
              pm.max_children = {max_children}\n\
-             pm.process_idle_timeout = 10s\n\
+             pm.process_idle_timeout = 300s\n\
              pm.max_requests = 500\n\
              security.limit_extensions = .php\n",
             socket.display()
@@ -357,11 +462,66 @@ fn validate_system_user(owner: &str) -> Result<(), String> {
 }
 
 fn site_pool_max_children() -> u16 {
-    std::env::var("DRUST_SITE_POOL_MAX_CHILDREN")
+    if let Some(configured) = std::env::var("DRUST_SITE_POOL_MAX_CHILDREN")
         .ok()
         .and_then(|value| value.trim().parse::<u16>().ok())
         .map(|value| value.clamp(1, 50))
-        .unwrap_or(4)
+    {
+        return configured;
+    }
+
+    let total_memory_kb = fs::read_to_string("/proc/meminfo")
+        .ok()
+        .and_then(|contents| {
+            contents.lines().find_map(|line| {
+                line.strip_prefix("MemTotal:")?
+                    .split_whitespace()
+                    .next()?
+                    .parse::<u64>()
+                    .ok()
+            })
+        })
+        .unwrap_or(4 * 1024 * 1024);
+    let pool_count = Path::new("/etc/php")
+        .read_dir()
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().join("fpm/pool.d"))
+        .filter_map(|directory| directory.read_dir().ok())
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("dpanel-")
+                && entry.path().extension().and_then(|value| value.to_str()) == Some("conf")
+        })
+        .count()
+        .max(1);
+    let estimated_child_mb = std::env::var("DRUST_SITE_POOL_CHILD_MEMORY_MB")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(96)
+        .clamp(32, 512);
+
+    automatic_site_pool_max_children(total_memory_kb, pool_count, estimated_child_mb)
+}
+
+fn automatic_site_pool_max_children(
+    total_memory_kb: u64,
+    pool_count: usize,
+    estimated_child_mb: u64,
+) -> u16 {
+    // Site pools are ondemand. Reserve 70% for the OS, database, Redis and
+    // non-PHP services, then share the bounded PHP budget across all sites.
+    let php_budget_mb = total_memory_kb.saturating_div(1024).saturating_mul(30) / 100;
+    let per_pool = php_budget_mb
+        .saturating_div(pool_count.max(1) as u64)
+        .saturating_div(estimated_child_mb.max(1));
+
+    per_pool.clamp(2, 12) as u16
 }
 
 fn test_fpm_configuration(version: &str) -> Result<(), String> {
@@ -485,5 +645,12 @@ mod tests {
         headers.clear();
         headers.insert("x-forwarded-proto", HeaderValue::from_static("http"));
         assert!(!forwarded_request_is_https(&headers));
+    }
+
+    #[test]
+    fn sizes_site_pools_from_a_bounded_shared_memory_budget() {
+        assert_eq!(automatic_site_pool_max_children(16 * 1024 * 1024, 8, 96), 6);
+        assert_eq!(automatic_site_pool_max_children(2 * 1024 * 1024, 50, 128), 2);
+        assert_eq!(automatic_site_pool_max_children(128 * 1024 * 1024, 1, 32), 12);
     }
 }

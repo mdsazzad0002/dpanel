@@ -34,6 +34,8 @@ const props = defineProps({
 const page = usePage();
 const actorRoles = computed(() => page.props.auth?.roles ?? []);
 const actorPermissions = computed(() => page.props.auth?.permissions ?? []);
+const actorId = computed(() => Number(page.props.auth?.user?.id ?? page.props.auth?.id ?? 0));
+const isCurrentUser = (user) => Number(user?.id) === actorId.value;
 const usersData = computed(() => props.users?.data ?? []);
 const canManageUsers = computed(() =>
     actorRoles.value.includes('admin') ||
@@ -170,6 +172,7 @@ const formatDate = (value) => {
 };
 
 const toggleSuspension = (user) => {
+    if (isCurrentUser(user)) return;
     suspendForm.suspend = !user.is_suspended;
     suspendForm.patch(route('users.manage.suspension', user.id), {
         preserveScroll: true,
@@ -177,6 +180,7 @@ const toggleSuspension = (user) => {
 };
 
 const deleteUser = (user) => {
+    if (isCurrentUser(user)) return;
     if (!confirm(`Delete user "${user.name}"? This cannot be undone.`)) return;
 
     deleteForm.delete(route('users.manage.destroy', user.id), {
@@ -320,22 +324,24 @@ const deleteUser = (user) => {
                                     </button>
                                     <button
                                         type="button"
-                                        :disabled="suspendForm.processing"
+                                        :disabled="suspendForm.processing || isCurrentUser(user)"
+                                        :title="isCurrentUser(user) ? 'You cannot suspend your own account.' : ''"
                                         class="rounded-md border px-2 py-1 text-xs disabled:opacity-50"
                                         :class="user.is_suspended
                                             ? 'border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300'
                                             : 'border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300'"
                                         @click="toggleSuspension(user)"
                                     >
-                                        {{ user.is_suspended ? 'Unsuspend' : 'Suspend' }}
+                                        {{ isCurrentUser(user) ? 'Current account' : (user.is_suspended ? 'Unsuspend' : 'Suspend') }}
                                     </button>
                                     <button
                                         type="button"
-                                        :disabled="deleteForm.processing"
+                                        :disabled="deleteForm.processing || isCurrentUser(user)"
+                                        :title="isCurrentUser(user) ? 'You cannot delete your own account.' : ''"
                                         class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-300"
                                         @click="deleteUser(user)"
                                     >
-                                        Delete
+                                        {{ isCurrentUser(user) ? 'Protected' : 'Delete' }}
                                     </button>
                                 </div>
                                 <span v-else class="text-xs text-slate-500 dark:text-slate-400">View only</span>

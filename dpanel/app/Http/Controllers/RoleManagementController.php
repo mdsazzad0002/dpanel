@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\UserAccessCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Illuminate\Validation\ValidationException;
 
 class RoleManagementController extends Controller
 {
@@ -16,8 +18,16 @@ class RoleManagementController extends Controller
      */
     public function create(): Response
     {
+        $assignerPermissions = request()->user()->getAllPermissions()->pluck('name');
+
         return Inertia::render('Roles/Create', [
-            'permissions' => Permission::query()->orderBy('name')->pluck('name')->values()->all(),
+            'permissions' => Permission::query()
+                ->whereIn('name', $assignerPermissions)
+                ->orderBy('priority')
+                ->orderBy('name')
+                ->pluck('name')
+                ->values()
+                ->all(),
         ]);
     }
 
@@ -52,6 +62,7 @@ class RoleManagementController extends Controller
     public function edit(string $token, Role $role): Response
     {
         $role->load('permissions:id,name');
+        $permissions = Permission::query()->orderBy('priority')->orderBy('name')->get(['name', 'priority']);
 
         return Inertia::render('Roles/Edit', [
             'role' => [
@@ -60,7 +71,9 @@ class RoleManagementController extends Controller
                 'permissions' => $role->permissions->pluck('name')->values()->all(),
                 'is_system' => in_array($role->name, $this->systemRoles(), true),
             ],
-            'permissions' => Permission::query()->orderBy('name')->pluck('name')->values()->all(),
+            'permissions' => $permissions->pluck('name')->values()->all(),
+            'permissionPriorities' => $permissions->pluck('priority', 'name')->all(),
+            'assignablePermissions' => request()->user()->getAllPermissions()->pluck('name')->values()->all(),
             'systemRoles' => $this->systemRoles(),
         ]);
     }
@@ -76,8 +89,19 @@ class RoleManagementController extends Controller
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
+        $selectedPermissions = $validated['permissions'] ?? [];
+        $assignerPermissions = $request->user()->getAllPermissions()->pluck('name')->all();
+        $unownedPermissions = array_values(array_diff($selectedPermissions, $assignerPermissions));
+
+        if ($unownedPermissions !== []) {
+            throw ValidationException::withMessages([
+                'permissions' => 'You can only assign permissions that you already have: '.implode(', ', $unownedPermissions),
+            ]);
+        }
+
         $role = Role::create(['name' => $validated['name']]);
-        $role->syncPermissions($validated['permissions'] ?? []);
+        $role->syncPermissions($selectedPermissions);
+        UserAccessCache::invalidate();
 
         return back()->with('success', 'Role created successfully.');
     }
@@ -93,13 +117,31 @@ class RoleManagementController extends Controller
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
-        if (in_array($role->name, $this->systemRoles(), true) && $validated['name'] !== $role->name) {
-            return back()->with('error', 'System role names cannot be changed.');
+        if ($validated['name'] !== $role->name) {
+            return back()->with('error', 'Role names cannot be changed after creation.');
+        }
+
+        $selectedPermissions = $validated['permissions'] ?? [];
+        $currentPermissions = $role->permissions()->pluck('name')->all();
+        $newPermissions = array_values(array_diff($selectedPermissions, $currentPermissions));
+        $assignerPermissions = $request->user()->getAllPermissions()->pluck('name')->all();
+        $unownedPermissions = array_values(array_diff($newPermissions, $assignerPermissions));
+
+        if ($unownedPermissions !== []) {
+            throw ValidationException::withMessages([
+                'permissions' => 'You can only assign permissions that you already have: '.implode(', ', $unownedPermissions),
+            ]);
+        }
+
+        // The admin system role always retains the complete permission set.
+        if ($role->name === 'admin') {
+            $selectedPermissions = Permission::query()->pluck('name')->all();
         }
 
         $role->name = $validated['name'];
         $role->save();
-        $role->syncPermissions($validated['permissions'] ?? []);
+        $role->syncPermissions($selectedPermissions);
+        UserAccessCache::invalidate();
 
         return back()->with('success', 'Role updated successfully.');
     }
@@ -118,6 +160,7 @@ class RoleManagementController extends Controller
         }
 
         $role->delete();
+        UserAccessCache::invalidate();
 
         return back()->with('success', 'Role deleted successfully.');
     }
@@ -129,4 +172,5 @@ class RoleManagementController extends Controller
     {
         return ['admin', 'reseller', 'general'];
     }
+
 }

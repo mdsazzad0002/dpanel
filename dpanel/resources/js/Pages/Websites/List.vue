@@ -8,12 +8,18 @@ const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
-const deleteForm = useForm({});
 const statusForm = useForm({ status: '' });
 const search = ref('');
 const statusFilter = ref('all');
 const currentPage = ref(1);
 const sslLoadingId = ref('');
+const deleteLoadingId = ref('');
+const cacheReloading = ref(false);
+const ownershipItem = ref(null);
+const ownershipMode = ref('owner');
+const ownershipUserId = ref('');
+const ownershipResellerId = ref('');
+const ownershipSaving = ref(false);
 const toasts = ref([]);
 let toastSequence = 0;
 const perPage = 20;
@@ -42,9 +48,26 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    canChangeOwnership: {
+        type: Boolean,
+        default: false,
+    },
+    ownershipUsers: {
+        type: Array,
+        default: () => [],
+    },
 });
 
-const normalizedRequests = computed(() => (Array.isArray(props.websiteRequests) ? props.websiteRequests : []).map((item) => ({
+const websiteRequests = ref([]);
+
+const resellerOptions = computed(() => props.ownershipUsers.filter((user) => String(user.role) === 'reseller'));
+const ownerOptions = computed(() => props.ownershipUsers.filter((user) => ['general', 'general_user'].includes(String(user.role))));
+
+watch(() => props.websiteRequests, (items) => {
+    websiteRequests.value = Array.isArray(items) ? items.map((item) => ({ ...item })) : [];
+}, { immediate: true });
+
+const normalizedRequests = computed(() => websiteRequests.value.map((item) => ({
     ...item,
     parent_id: item.parent_id ? String(item.parent_id) : null,
 })));
@@ -100,7 +123,7 @@ const pageStart = computed(() => groupedWebsites.value.length === 0 ? 0 : (curre
 const pageEnd = computed(() => Math.min(currentPage.value * perPage, groupedWebsites.value.length));
 
 const stats = computed(() => {
-    const all = Array.isArray(props.websiteRequests) ? props.websiteRequests : [];
+    const all = websiteRequests.value;
     return {
         total: all.filter((w) => !aliasTypes.includes(String(w.type ?? '').toLowerCase())).length,
         live: all.filter((w) => !aliasTypes.includes(String(w.type ?? '').toLowerCase()) && String(w.status ?? '').toLowerCase() === 'live').length,
@@ -127,9 +150,35 @@ const formatDate = (value) => {
     return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-const deleteRequest = (id) => {
+const deleteRequest = async (id) => {
     if (!confirm('Delete this website?')) return;
-    deleteForm.delete(panelRoute('websites.destroy', { id }));
+    const deletingId = String(id);
+    if (!deletingId || deleteLoadingId.value) return;
+    deleteLoadingId.value = deletingId;
+
+    try {
+        const response = await fetch(panelRoute('websites.destroy', { id }), {
+            method: 'DELETE',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const detail = Object.values(data.errors || {}).flat().find(Boolean);
+            throw new Error(detail ? `${data.message || 'Website delete failed.'} ${detail}` : (data.message || 'Website delete failed.'));
+        }
+
+        websiteRequests.value = websiteRequests.value.filter((item) => String(item.id) !== deletingId);
+        pushToast(data.message || 'Website deleted successfully.');
+    } catch (error) {
+        pushToast(error?.message || 'Website delete failed.', 'error');
+    } finally {
+        deleteLoadingId.value = '';
+    }
 };
 
 const toggleStatus = (item) => {
@@ -145,6 +194,21 @@ const pushToast = (message, type = 'success') => {
     window.setTimeout(() => {
         toasts.value = toasts.value.filter((toast) => toast.id !== id);
     }, 4500);
+};
+
+const reloadGatewayCache = async () => {
+    if (cacheReloading.value) return;
+    cacheReloading.value = true;
+    try {
+        const response = await fetch(panelRoute('websites.cache.reload'), {
+            method: 'POST', credentials: 'same-origin',
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'Cache reload failed.');
+        pushToast(data.message || 'Website cache reloaded.');
+    } catch (error) { pushToast(error?.message || 'Cache reload failed.', 'error'); }
+    finally { cacheReloading.value = false; }
 };
 
 const issueAliasSsl = async (alias) => {
@@ -231,12 +295,105 @@ const siteUrl = (item) => {
 const copyUrl = (url) => {
     if (navigator.clipboard) navigator.clipboard.writeText(url);
 };
+
+const openOwnership = (item, mode) => {
+    ownershipItem.value = item;
+    ownershipMode.value = mode;
+    ownershipUserId.value = item.assigned_user_id
+        ? String(item.assigned_user_id)
+        : '';
+    ownershipResellerId.value = item.assigned_reseller_id ? String(item.assigned_reseller_id) : '';
+};
+
+const closeOwnership = () => {
+    if (ownershipSaving.value) return;
+    ownershipItem.value = null;
+    ownershipMode.value = 'owner';
+    ownershipUserId.value = '';
+    ownershipResellerId.value = '';
+};
+
+const saveOwnership = async () => {
+    const item = ownershipItem.value;
+    if (!item || ownershipSaving.value) return;
+    ownershipSaving.value = true;
+
+    try {
+        const response = await fetch(panelRoute('websites.ownership.update', { id: item.id }), {
+            method: 'PATCH',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+            },
+            body: JSON.stringify({
+                owner_user_id: ownershipUserId.value ? Number(ownershipUserId.value) : null,
+                reseller_user_id: ownershipResellerId.value ? Number(ownershipResellerId.value) : null,
+            }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const detail = Object.values(data.errors || {}).flat().find(Boolean);
+            throw new Error(detail || data.message || 'Ownership update failed.');
+        }
+
+        const affectedIds = new Set((data.affected_ids || []).map(String));
+        websiteRequests.value = websiteRequests.value.map((website) => affectedIds.has(String(website.id))
+            ? {
+                ...website,
+                assigned_user_id: data.owner?.assigned_user_id ?? null,
+                assigned_reseller_id: data.owner?.assigned_reseller_id ?? null,
+                assigned_user_name: data.owner?.assigned_user_name ?? null,
+                assigned_reseller_name: data.owner?.assigned_reseller_name ?? null,
+                created_by_label: data.owner?.label || 'Admin',
+            }
+            : website);
+        pushToast(data.message || 'Website ownership updated.');
+        ownershipItem.value = null;
+        ownershipMode.value = 'owner';
+        ownershipUserId.value = '';
+        ownershipResellerId.value = '';
+    } catch (error) {
+        pushToast(error?.message || 'Ownership update failed.', 'error');
+    } finally {
+        ownershipSaving.value = false;
+    }
+};
 </script>
 
 <template>
     <Head title="Websites" />
 
     <AuthenticatedLayout>
+        <div v-if="ownershipItem" class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4" @click.self="closeOwnership">
+            <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ ownershipMode === 'owner' ? 'Edit Ownership' : 'Edit Reseller' }}</h2>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ ownershipItem.domain }}</p>
+                <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">Changing a root website also changes every child and alias owner.</p>
+
+                <label v-if="ownershipMode === 'owner'" class="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-300">Ownership</label>
+                <select v-if="ownershipMode === 'owner'" v-model="ownershipUserId" class="mt-1 w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800">
+                    <option value="">Admin / No user owner</option>
+                    <option v-for="user in ownerOptions" :key="user.id" :value="String(user.id)">{{ user.name }} — {{ user.email }}</option>
+                </select>
+
+                <label v-if="ownershipMode === 'reseller'" class="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-300">Reseller</label>
+                <select v-if="ownershipMode === 'reseller'" v-model="ownershipResellerId" class="mt-1 w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800">
+                    <option value="">No reseller</option>
+                    <option v-for="user in resellerOptions" :key="user.id" :value="String(user.id)">{{ user.name }} — {{ user.email }}</option>
+                </select>
+
+                <div class="mt-5 flex justify-end gap-2">
+                    <button type="button" :disabled="ownershipSaving" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700" @click="closeOwnership">Cancel</button>
+                    <button type="button" :disabled="ownershipSaving" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="saveOwnership">
+                        {{ ownershipSaving ? 'Updating...' : (ownershipMode === 'owner' ? 'Update Ownership' : 'Update Reseller') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <div class="fixed bottom-5 right-5 z-[100] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2">
             <div
                 v-for="toast in toasts"
@@ -313,6 +470,10 @@ const copyUrl = (url) => {
                     />
                 </div>
                 <div class="flex items-center gap-2">
+                    <button type="button" :disabled="cacheReloading" class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300" @click="reloadGatewayCache">
+                        <i class="bi bi-arrow-clockwise" :class="{ 'animate-spin': cacheReloading }"></i>
+                        Reload cache
+                    </button>
                     <select
                         v-model="statusFilter"
                         class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
@@ -417,6 +578,24 @@ const copyUrl = (url) => {
 
                         <!-- Right: Actions -->
                         <div class="flex items-center gap-1.5">
+                            <button
+                                v-if="canChangeOwnership"
+                                type="button"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-[12px] font-medium text-violet-700 transition hover:border-violet-300 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-500/10 dark:text-violet-400"
+                                @click="openOwnership(item, 'owner')"
+                            >
+                                <i class="bi bi-person"></i>
+                                Ownership: {{ item.assigned_user_name || 'Admin' }}
+                            </button>
+                            <button
+                                v-if="canChangeOwnership"
+                                type="button"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[12px] font-medium text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-400"
+                                @click="openOwnership(item, 'reseller')"
+                            >
+                                <i class="bi bi-person-workspace"></i>
+                                Reseller: {{ item.assigned_reseller_name || 'None' }}
+                            </button>
                             <Link
                                 :href="panelRoute('websites.manage', { id: item.id })"
                                 class="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[12px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:border-blue-700"
@@ -446,12 +625,12 @@ const copyUrl = (url) => {
                             </button>
                             <button
                                 v-if="String(item.id) !== '1'"
-                                :disabled="deleteForm.processing"
+                                :disabled="Boolean(deleteLoadingId)"
                                 class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
                                 @click="deleteRequest(item.id)"
                             >
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg>
-                                Delete
+                                {{ deleteLoadingId === String(item.id) ? 'Deleting...' : 'Delete' }}
                             </button>
                         </div>
                     </div>
@@ -516,11 +695,11 @@ const copyUrl = (url) => {
                                     {{ sslLoadingId === String(alias.id) ? 'Issuing...' : 'Issue SSL' }}
                                 </button>
                                 <button
-                                    :disabled="deleteForm.processing"
+                                    :disabled="Boolean(deleteLoadingId)"
                                     class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
                                     @click="deleteRequest(alias.id)"
                                 >
-                                    Delete
+                                    {{ deleteLoadingId === String(alias.id) ? 'Deleting...' : 'Delete' }}
                                 </button>
                             </div>
                         </div>

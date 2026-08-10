@@ -1,20 +1,17 @@
 #![allow(dead_code)]
 
-use std::{
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
     body::Body,
     extract::State,
-    http::{HeaderValue, Request, StatusCode},
+    http::{HeaderMap, HeaderValue, Request, StatusCode},
     middleware::map_request,
-    response::Response,
+    response::{IntoResponse, Response},
     routing::{any, post},
 };
+use futures_util::StreamExt;
 use hyper::body::Body as HttpBody;
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
@@ -22,6 +19,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
+use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use super::{
@@ -33,20 +31,12 @@ use super::{
 
 #[derive(Clone)]
 pub struct DemoServerState {
-    pub snapshot: Arc<RwLock<RuntimeSnapshot>>,
-    pub cache: Arc<RwLock<CachedSnapshot>>,
-    pub cache_config: SnapshotCacheConfig,
+    pub snapshot: Arc<RwLock<Arc<RuntimeSnapshot>>>,
     pub source_config: DbSnapshotConfig,
     pub dispatch: DispatchContext,
     pub proxy_client: Arc<reqwest::Client>,
     pub bandwidth: BandwidthTracker,
     pub terminal_tickets: Arc<Mutex<HashMap<String, super::terminal_ws::TerminalTicket>>>,
-}
-
-#[derive(Clone)]
-pub struct CachedSnapshot {
-    pub loaded_at: Instant,
-    pub snapshot: RuntimeSnapshot,
 }
 
 pub fn serve_gateway(bind: &str) -> Result<(), String> {
@@ -108,6 +98,7 @@ pub fn serve_gateway_with_tls(
         tokio::runtime::Runtime::new().map_err(|error| format!("runtime build failed: {error}"))?;
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
+        spawn_redis_reload_listener(state.clone());
         let app_router = build_demo_router(state);
         let https_router = app_router.clone().layer(map_request(mark_https_request));
 
@@ -234,11 +225,18 @@ pub async fn handle_request(
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(0);
     let path = request.uri().path().to_string();
-    info!(host = %host, path = %path, "incoming request");
+    tracing::debug!(host = %host, path = %path, "incoming request");
     let snapshot = get_cached_snapshot(&state).await;
-    let canonical_domain =
-        super::resolve_site(&snapshot, &host).and_then(|site| site.hostnames.first().cloned());
-    let response = dispatch(&snapshot, &state.dispatch, request, &state.proxy_client).await;
+    let site = super::resolve_site(snapshot.as_ref(), &host);
+    let canonical_domain = site.and_then(|site| site.hostnames.first().cloned());
+    let response = dispatch(
+        snapshot.as_ref(),
+        site,
+        &state.dispatch,
+        request,
+        &state.proxy_client,
+    )
+    .await;
     if let Some(domain) = canonical_domain {
         let download_bytes = response.body().size_hint().exact().unwrap_or(0);
         state
@@ -248,19 +246,106 @@ pub async fn handle_request(
     response
 }
 
-pub async fn handle_reload(State(state): State<Arc<DemoServerState>>) -> Json<ReloadResponse> {
-    let next = match load_runtime_snapshot(&state.source_config) {
-        Ok(snapshot) => snapshot,
-        Err(_) => sample_snapshot(),
-    };
-    let version = next.version;
-    *state.snapshot.write().await = next;
-    refresh_cache(&state).await;
-    Json(ReloadResponse {
-        success: true,
-        message: "snapshot reloaded".to_string(),
-        version,
-    })
+pub async fn handle_reload(
+    State(state): State<Arc<DemoServerState>>,
+    headers: HeaderMap,
+) -> Response {
+    let expected = std::env::var("DRUST_API_TOKEN").unwrap_or_default();
+    let supplied = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+    if expected.is_empty() || supplied.as_bytes() != expected.as_bytes() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ReloadResponse {
+                success: false,
+                message: "unauthorized".into(),
+                version: state.snapshot.read().await.version,
+            }),
+        )
+            .into_response();
+    }
+    match reload_snapshot(&state).await {
+        Ok(version) => Json(ReloadResponse {
+            success: true,
+            message: "snapshot reloaded".to_string(),
+            version,
+        })
+        .into_response(),
+        Err((error, version)) => {
+            warn!(%error, version, "snapshot reload failed; keeping last-known-good snapshot");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ReloadResponse {
+                    success: false,
+                    message: format!("reload failed; retained snapshot: {error}"),
+                    version,
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn reload_snapshot(state: &Arc<DemoServerState>) -> Result<u64, (String, u64)> {
+    let source = state.source_config.clone();
+    let loaded = tokio::task::spawn_blocking(move || load_runtime_snapshot(&source)).await;
+    match loaded {
+        Ok(Ok(next)) => {
+            let version = next.version;
+            *state.snapshot.write().await = Arc::new(next);
+            super::clear_static_cache();
+            Ok(version)
+        }
+        Ok(Err(error)) => Err((error, state.snapshot.read().await.version)),
+        Err(error) => Err((
+            format!("snapshot reload worker failed: {error}"),
+            state.snapshot.read().await.version,
+        )),
+    }
+}
+
+fn spawn_redis_reload_listener(state: DemoServerState) {
+    let state = Arc::new(state);
+    let (sender, mut receiver) = mpsc::channel::<()>(1);
+    let url = std::env::var("DRUST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".into());
+    let channel = std::env::var("DRUST_REDIS_RELOAD_CHANNEL")
+        .unwrap_or_else(|_| "dpanel_database_edge:reload".into());
+    tokio::spawn(async move {
+        loop {
+            let result = async {
+                let client = redis::Client::open(url.as_str()).map_err(|e| e.to_string())?;
+                let mut pubsub = client.get_async_pubsub().await.map_err(|e| e.to_string())?;
+                pubsub
+                    .subscribe(&channel)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                info!(%channel, "Redis website reload listener ready");
+                let mut messages = pubsub.on_message();
+                while messages.next().await.is_some() {
+                    let _ = sender.try_send(());
+                }
+                Ok::<(), String>(())
+            }
+            .await;
+            warn!(error = %result.err().unwrap_or_else(|| "connection closed".into()), "Redis reload listener reconnecting");
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    });
+    tokio::spawn(async move {
+        while receiver.recv().await.is_some() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            while receiver.try_recv().is_ok() {}
+            match reload_snapshot(&state).await {
+                Ok(version) => tracing::debug!(version, "Redis-triggered snapshot reload complete"),
+                Err((error, version)) => {
+                    warn!(%error, version, "Redis-triggered reload failed; retaining snapshot")
+                }
+            }
+        }
+    });
 }
 
 pub async fn handle_health(State(state): State<Arc<DemoServerState>>) -> Json<HealthResponse> {
@@ -298,17 +383,12 @@ pub async fn handle_upstreams_health(
 pub fn make_demo_state(
     snapshot: RuntimeSnapshot,
     dispatch: DispatchContext,
-    cache_config: SnapshotCacheConfig,
+    _cache_config: SnapshotCacheConfig,
     source_config: DbSnapshotConfig,
 ) -> Result<DemoServerState, String> {
     let client = build_client(&ProxyConfig::default())?;
     Ok(DemoServerState {
-        snapshot: Arc::new(RwLock::new(snapshot)),
-        cache: Arc::new(RwLock::new(CachedSnapshot {
-            loaded_at: Instant::now(),
-            snapshot: RuntimeSnapshot::empty(),
-        })),
-        cache_config,
+        snapshot: Arc::new(RwLock::new(Arc::new(snapshot))),
         source_config,
         dispatch,
         proxy_client: Arc::new(client),
@@ -346,6 +426,7 @@ pub fn serve_demo_with_tls(
         tokio::runtime::Runtime::new().map_err(|error| format!("runtime build failed: {error}"))?;
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
+        spawn_redis_reload_listener(state.clone());
         let router = build_demo_router(state);
         let http_listener = tokio::net::TcpListener::bind(http_bind)
             .await
@@ -389,46 +470,19 @@ pub fn serve_demo_with_tls(
     })
 }
 
-async fn get_cached_snapshot(state: &Arc<DemoServerState>) -> RuntimeSnapshot {
-    let now = Instant::now();
-    {
-        let cache = state.cache.read().await;
-        if now.duration_since(cache.loaded_at) <= state.cache_config.ttl {
-            info!(
-                version = cache.snapshot.version,
-                ttl_secs = state.cache_config.ttl.as_secs(),
-                "snapshot cache hit"
-            );
-            return cache.snapshot.clone();
-        }
-    }
-
-    warn!(
-        ttl_secs = state.cache_config.ttl.as_secs(),
-        "snapshot cache miss; refreshing from live database"
-    );
-    refresh_cache(state).await;
-    let snapshot = state.cache.read().await.snapshot.clone();
-    info!(
-        version = snapshot.version,
-        "snapshot cache refreshed from live database"
-    );
-    snapshot
+async fn get_cached_snapshot(state: &Arc<DemoServerState>) -> Arc<RuntimeSnapshot> {
+    state.snapshot.read().await.clone()
 }
 
 async fn refresh_cache(state: &Arc<DemoServerState>) {
     let snapshot = match load_runtime_snapshot(&state.source_config) {
         Ok(snapshot) => snapshot,
         Err(error) => {
-            warn!(error = %error, "live database snapshot load failed; falling back to in-memory snapshot");
-            state.snapshot.read().await.clone()
+            warn!(error = %error, "live database snapshot load failed; retaining last-known-good snapshot");
+            return;
         }
     };
-    *state.snapshot.write().await = snapshot.clone();
-    *state.cache.write().await = CachedSnapshot {
-        loaded_at: Instant::now(),
-        snapshot,
-    };
+    *state.snapshot.write().await = Arc::new(snapshot);
 }
 
 async fn run_https_listener(router: Router, tls_config: TlsListenerConfig) -> Result<(), String> {
@@ -519,9 +573,9 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
         }
     };
     let www_domain = format!("www.{primary_domain}");
-    RuntimeSnapshot {
-        version: 1,
-        sites: Arc::from([SiteConfig {
+    RuntimeSnapshot::new(
+        1,
+        Arc::from([SiteConfig {
             id: "demo".to_string(),
             scope: "system".to_string(),
             site_owner: None,
@@ -545,17 +599,17 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
             banned_ips: Arc::from([]),
             allowed_ips: Arc::from([]),
         }]),
-        tls: Arc::from([TlsConfig {
+        Arc::from([TlsConfig {
             hostnames: Arc::from([primary_domain, www_domain]),
             cert_path: PathBuf::from(format!("/etc/drust/tls/{panel_domain}.crt")),
             key_path: PathBuf::from(format!("/etc/drust/tls/{panel_domain}.key")),
         }]),
-        cache: CachePolicy {
+        CachePolicy {
             enabled: true,
             ttl: Duration::from_secs(60),
             stale_while_revalidate: Duration::from_secs(30),
         },
-    }
+    )
 }
 
 pub fn sample_dispatch_context() -> DispatchContext {

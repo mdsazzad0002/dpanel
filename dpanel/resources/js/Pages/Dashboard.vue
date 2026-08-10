@@ -12,6 +12,7 @@ const dashboardStats = computed(() => page.props.dashboardStats ?? {});
 const accountSummary = computed(() => page.props.accountSummary ?? {});
 const canViewServerUsage = computed(() => page.props.canViewServerUsage === true);
 const userRoles = computed(() => page.props.auth?.roles ?? []);
+const userPermissions = computed(() => page.props.auth?.permissions ?? []);
 
 const selectedService = ref(null);
 
@@ -99,29 +100,29 @@ const services = computed(() => {
 
 const rawToolCategories = [
     { name: 'Websites & Domains', icon: 'bi-globe2', color: 'blue', tools: [
-        { label: 'Create Website', hint: 'Add a new site', icon: 'bi-plus-square', route: 'websites.create', roles: ['admin', 'reseller'] },
-        { label: 'List Websites', hint: 'Manage hosted sites', icon: 'bi-window-stack', route: 'websites.list', roles: ['admin', 'reseller'] },
-        { label: 'DNS Zones', hint: 'Manage DNS records', icon: 'bi-diagram-3', route: 'dns.zones' },
-        { label: 'Nameservers', hint: 'Configure nameservers', icon: 'bi-signpost-split', route: 'dns.nameservers', roles: ['admin', 'reseller'] },
+        { label: 'Create Website', hint: 'Add a new site', icon: 'bi-plus-square', route: 'websites.create', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+        { label: 'List Websites', hint: 'Manage hosted sites', icon: 'bi-window-stack', route: 'websites.list', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+        { label: 'DNS Zones', hint: 'Manage DNS records', icon: 'bi-diagram-3', route: 'dns.zones', permissions: ['manage_dns'] },
+        { label: 'Nameservers', hint: 'Configure nameservers', icon: 'bi-signpost-split', route: 'dns.nameservers', roles: ['admin', 'reseller'], permissions: ['manage_dns'] },
     ] },
     { name: 'Email', icon: 'bi-envelope', color: 'violet', tools: [
-        { label: 'Create Email', hint: 'Create a mailbox', icon: 'bi-envelope-plus', route: 'emails.create', roles: ['admin', 'reseller'] },
-        { label: 'Email Accounts', hint: 'Manage mailboxes', icon: 'bi-envelope-open', route: 'emails.list', roles: ['admin', 'reseller'] },
+        { label: 'Create Email', hint: 'Create a mailbox', icon: 'bi-envelope-plus', route: 'emails.create', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+        { label: 'Email Accounts', hint: 'Manage mailboxes', icon: 'bi-envelope-open', route: 'emails.list', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
     ] },
     { name: 'Databases', icon: 'bi-database', color: 'amber', tools: [
-        { label: 'Create Database', hint: 'Add a database', icon: 'bi-database-add', route: 'databases.create', roles: ['admin', 'reseller'] },
-        { label: 'List Databases', hint: 'Users and databases', icon: 'bi-table', route: 'databases.list', roles: ['admin', 'reseller'] },
+        { label: 'Create Database', hint: 'Add a database', icon: 'bi-database-add', route: 'databases.create', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
+        { label: 'List Databases', hint: 'Users and databases', icon: 'bi-table', route: 'databases.list', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
     ] },
     { name: 'Server & Files', icon: 'bi-hdd-stack', color: 'emerald', tools: [
-        { label: 'PHP Manager', hint: 'Versions and settings', icon: 'bi-braces', route: 'php.manager', roles: ['admin', 'reseller'] },
-        { label: 'Monitoring', hint: 'Resources and logs', icon: 'bi-activity', route: 'monitoring.index', roles: ['admin', 'reseller'] },
-        { label: 'Backups', hint: 'Snapshots and restore', icon: 'bi-cloud-arrow-down', route: 'backups.index', roles: ['admin', 'reseller'] },
-        { label: 'Trash Backups', hint: 'Deleted site archives', icon: 'bi-trash3', route: 'trash-backups.index' },
+        { label: 'PHP Manager', hint: 'Versions and settings', icon: 'bi-braces', route: 'php.manager', roles: ['admin', 'reseller'], permissions: ['manage_php'] },
+        { label: 'Monitoring', hint: 'Resources and logs', icon: 'bi-activity', route: 'monitoring.index', roles: ['admin', 'reseller'], permissions: ['view_monitoring'] },
+        { label: 'Backups', hint: 'Snapshots and restore', icon: 'bi-cloud-arrow-down', route: 'backups.index', roles: ['admin', 'reseller'], permissions: ['manage_backups'] },
+        { label: 'Trash Backups', hint: 'Deleted site archives', icon: 'bi-trash3', route: 'trash-backups.index', permissions: ['manage_backups'] },
     ] },
     { name: 'Security & Account', icon: 'bi-shield-check', color: 'rose', tools: [
-        { label: 'Security', hint: 'Firewall and SSH', icon: 'bi-shield-lock', route: 'security.manager', roles: ['admin', 'reseller'] },
-        { label: 'Users', hint: 'Manage panel users', icon: 'bi-people', route: 'users.manage' },
-        { label: 'Packages', hint: 'Resource quotas', icon: 'bi-box-seam', route: 'packages.index', roles: ['admin', 'reseller', 'superadmin'] },
+        { label: 'Security', hint: 'Firewall and SSH', icon: 'bi-shield-lock', route: 'security.manager', roles: ['admin', 'reseller'], permissions: ['manage_security'] },
+        { label: 'Users', hint: 'Manage panel users', icon: 'bi-people', route: 'users.manage', roles: ['admin', 'reseller'] },
+        { label: 'Packages', hint: 'Resource quotas', icon: 'bi-box-seam', route: 'packages.index', roles: ['admin', 'reseller', 'superadmin'], permissions: ['manage_packages'] },
         { label: 'My Profile', hint: 'Account and password', icon: 'bi-person-circle', route: 'profile.edit' },
     ] },
 ];
@@ -129,7 +130,9 @@ const rawToolCategories = [
 const toolCategories = computed(() => rawToolCategories.map((category) => ({
     ...category,
     tools: category.tools.filter((tool) => route().has(tool.route)
-        && (!tool.roles || tool.roles.some((role) => userRoles.value.includes(role)))),
+        && ((!tool.roles && !tool.permissions)
+            || tool.roles?.some((role) => userRoles.value.includes(role))
+            || tool.permissions?.some((permission) => userPermissions.value.includes(permission)))),
 })).filter((category) => category.tools.length));
 
 const categoryColors = {

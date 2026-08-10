@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Http\Controllers\PanelSearchController;
+use App\Support\UserAccessCache;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -31,6 +32,7 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $user = $request->user();
+        $userAccess = $user ? UserAccessCache::get($user) : ['roles' => [], 'permissions' => []];
         $panelToken = $request->hasSession() ? $request->session()->get('panel_session_token') : null;
         $flashSuccess = $request->hasSession() ? fn () => $request->session()->get('success') : fn () => null;
         $flashError = $request->hasSession() ? fn () => $request->session()->get('error') : fn () => null;
@@ -51,8 +53,8 @@ class HandleInertiaRequests extends Middleware
             ],
             'auth' => [
                 'user' => $user,
-                'roles' => $user?->getRoleNames() ?? [],
-                'permissions' => $user?->getPermissionNames() ?? [],
+                'roles' => $userAccess['roles'],
+                'permissions' => $userAccess['permissions'],
             ],
         ];
     }

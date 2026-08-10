@@ -4,18 +4,25 @@ namespace App\Http\Controllers;
 
 use App\Models\WebsiteTrashBackup;
 use App\Models\CronJob;
+use App\Models\DatabaseRequest;
+use App\Models\Website;
+use App\Services\Cron\CronSystemService;
 use App\Support\BackupSettings;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class WebsiteTrashBackupController extends Controller
 {
-    public function __construct(private readonly BackupSettings $settings)
+    public function __construct(
+        private readonly BackupSettings $settings,
+        private readonly CronSystemService $cronSystemService,
+    )
     {
     }
 
@@ -32,6 +39,8 @@ class WebsiteTrashBackupController extends Controller
                 'file_name' => (string) $backup->file_name,
                 'file_size' => (int) $backup->file_size,
                 'available' => $this->validArchivePath($backup) !== null,
+                'can_restore' => $this->validArchivePath($backup) !== null
+                    && ! Website::query()->where('id', $backup->website_id)->orWhere('domain', $backup->domain)->exists(),
                 'created_at' => $backup->created_at?->toDateTimeString(),
             ]);
 
@@ -127,6 +136,92 @@ class WebsiteTrashBackupController extends Controller
 
         return response()->download($archive, (string) $backup->file_name, [
             'Content-Type' => 'application/zip',
+        ]);
+    }
+
+    public function restore(Request $request, string $token, string $id): JsonResponse
+    {
+        $backup = WebsiteTrashBackup::query()->visibleTo($request->user())->find($id);
+        if ($backup === null) {
+            return response()->json(['type' => 'error', 'message' => 'Trash backup was not found or is not accessible.'], 404);
+        }
+
+        $archive = $this->validArchivePath($backup);
+        if ($archive === null) {
+            return response()->json(['type' => 'error', 'message' => 'Trash backup file is not available.'], 404);
+        }
+
+        if (Website::query()->where('id', $backup->website_id)->orWhere('domain', $backup->domain)->exists()) {
+            return response()->json(['type' => 'error', 'message' => 'A website with this domain or ID already exists.'], 409);
+        }
+
+        $metadata = is_array($backup->metadata) ? $backup->metadata : [];
+        $websiteData = is_array($metadata['website'] ?? null) ? $metadata['website'] : [];
+        if (trim((string) ($websiteData['domain'] ?? '')) === '') {
+            return response()->json(['type' => 'error', 'message' => 'Website recovery metadata is missing.'], 422);
+        }
+
+        try {
+            $response = Http::acceptJson()->asJson()
+                ->withToken((string) config('serverpanel.execution_api_token', ''))
+                ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
+                ->post(rtrim((string) config('serverpanel.execution_api_base_url', ''), '/').'/api/v1/website/archive/restore', [
+                    'zip_path' => $archive,
+                ]);
+        } catch (\Throwable $e) {
+            return response()->json(['type' => 'error', 'message' => 'Recovery API request failed. '.$e->getMessage()], 500);
+        }
+
+        if (! $response->successful() || ! (bool) $response->json('success')) {
+            return response()->json([
+                'type' => 'error',
+                'message' => (string) ($response->json('message') ?: 'Website recovery failed.'),
+            ], 422);
+        }
+
+        try {
+            $website = DB::transaction(function () use ($metadata, $websiteData): Website {
+                $fillable = array_flip((new Website())->getFillable());
+                $website = Website::query()->create(array_intersect_key($websiteData, $fillable));
+
+                foreach ((array) ($metadata['database_requests'] ?? []) as $databaseData) {
+                    if (! is_array($databaseData)) continue;
+                    $databaseFillable = array_flip((new DatabaseRequest())->getFillable());
+                    DatabaseRequest::query()->updateOrCreate(
+                        ['database_name' => (string) ($databaseData['name'] ?? '')],
+                        array_intersect_key([
+                            'id' => $databaseData['id'] ?? (string) str()->uuid(),
+                            'domain' => $databaseData['domain'] ?? $website->domain,
+                            'database_name' => $databaseData['name'] ?? null,
+                            'database_user' => $databaseData['user'] ?? null,
+                            'database_password' => $databaseData['password'] ?? null,
+                            'database_host' => $databaseData['host'] ?? '127.0.0.1',
+                            'charset' => $databaseData['charset'] ?? 'utf8mb4',
+                            'collation' => $databaseData['collation'] ?? 'utf8mb4_unicode_ci',
+                            'status' => $databaseData['status'] ?? 'active',
+                            'assigned_user_id' => $databaseData['assigned_user_id'] ?? $website->assigned_user_id,
+                        ], $databaseFillable),
+                    );
+                }
+
+                foreach ((array) ($metadata['cron_jobs'] ?? []) as $cronData) {
+                    if (! is_array($cronData)) continue;
+                    $job = new CronJob(array_intersect_key($cronData, array_flip((new CronJob())->getFillable())));
+                    $job->website_id = (string) $website->id;
+                    $this->cronSystemService->sync($job, $website);
+                    $job->save();
+                }
+
+                return $website;
+            });
+        } catch (\Throwable $e) {
+            return response()->json(['type' => 'error', 'message' => 'Files were recovered, but panel records could not be restored. '.$e->getMessage()], 500);
+        }
+
+        return response()->json([
+            'type' => 'success',
+            'message' => 'Website, files, databases and cron jobs recovered successfully.',
+            'website_id' => (string) $website->id,
         ]);
     }
 

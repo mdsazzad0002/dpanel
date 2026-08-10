@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::{
+    collections::HashMap,
     net::{IpAddr, SocketAddr},
     path::PathBuf,
     sync::Arc,
@@ -13,6 +14,7 @@ pub struct RuntimeSnapshot {
     pub sites: Arc<[SiteConfig]>,
     pub tls: Arc<[TlsConfig]>,
     pub cache: CachePolicy,
+    pub hostname_index: Arc<HashMap<String, usize>>,
 }
 
 #[derive(Clone, Debug)]
@@ -79,17 +81,44 @@ pub struct EdgeGatewayRuntimeConfig {
 }
 
 impl RuntimeSnapshot {
-    pub fn empty() -> Self {
+    pub fn new(
+        version: u64,
+        sites: Arc<[SiteConfig]>,
+        tls: Arc<[TlsConfig]>,
+        cache: CachePolicy,
+    ) -> Self {
+        let hostname_index = sites
+            .iter()
+            .enumerate()
+            .flat_map(|(index, site)| {
+                site.hostnames.iter().map(move |host| {
+                    (
+                        host.trim().trim_end_matches('.').to_ascii_lowercase(),
+                        index,
+                    )
+                })
+            })
+            .collect();
         Self {
-            version: 0,
-            sites: Arc::from([]),
-            tls: Arc::from([]),
-            cache: CachePolicy {
+            version,
+            sites,
+            tls,
+            cache,
+            hostname_index: Arc::new(hostname_index),
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self::new(
+            0,
+            Arc::from([]),
+            Arc::from([]),
+            CachePolicy {
                 enabled: false,
                 ttl: Duration::from_secs(0),
                 stale_while_revalidate: Duration::from_secs(0),
             },
-        }
+        )
     }
 }
 
@@ -102,7 +131,7 @@ pub struct SnapshotCacheConfig {
 impl SnapshotCacheConfig {
     pub fn fast() -> Self {
         Self {
-            ttl: Duration::from_secs(2),
+            ttl: Duration::from_secs(86400 * 365),
             source_path: None,
         }
     }

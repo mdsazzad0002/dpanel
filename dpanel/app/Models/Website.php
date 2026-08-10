@@ -5,9 +5,16 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 class Website extends Model
 {
+    protected static function booted(): void
+    {
+        $reload = static fn () => DB::afterCommit(static fn () => app(\App\Services\EdgeGatewayReloader::class)->reload());
+        static::saved($reload);
+        static::deleted($reload);
+    }
     protected $table = 'websites';
 
     protected $primaryKey = 'id';

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Models\MailPlan;
+use App\Support\UserAccessCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -21,6 +22,7 @@ class UserManagementController extends Controller
     public function index(Request $request): Response
     {
         $actor = $request->user();
+        abort_unless($actor?->hasAnyRole(['admin', 'reseller']), 403);
         $search = trim((string) $request->query('search', ''));
         $statusFilter = $this->normalizeStatusFilter($request->query('status'));
 
@@ -154,6 +156,7 @@ class UserManagementController extends Controller
 
         Role::findOrCreate($validated['role']);
         $user->syncRoles([$validated['role']]);
+        UserAccessCache::invalidate();
 
         return redirect()->route('users.manage')->with('success', 'User created successfully.');
     }
@@ -200,6 +203,7 @@ class UserManagementController extends Controller
         $user->update($payload);
         $this->applyPackageLimits($user);
         $user->syncRoles([$validated['role']]);
+        UserAccessCache::invalidate();
 
         return redirect()->route('users.manage')->with('success', 'User updated successfully.');
     }

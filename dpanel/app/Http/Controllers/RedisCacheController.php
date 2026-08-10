@@ -152,7 +152,7 @@ class RedisCacheController extends Controller
     {
         $website = $this->findWebsiteById($id, $request); abort_if($website === null, 404);
         $app = $this->detectApplication($website);
-        if (! $app['detected'] || ! $app['config_file']) return back()->with('error', 'Laravel or WordPress was not detected.');
+        if (! $app['detected'] || ! $app['config_file']) return back()->with('error', 'Laravel, WordPress, or CodeIgniter was not detected.');
         try {
             $data = $this->drustRedisRequest(['action'=>'apply','site_owner'=>(string)$website->site_owner,'framework'=>$app['type'],'config_path'=>$app['config_file'],'prefix'=>$this->buildWebsiteRedisPrefix($website),'host'=>(string)config('database.redis.website_cache.host'),'port'=>(int)config('database.redis.website_cache.port'),'database'=>(int)config('database.redis.website_cache.database')]);
             RedisConfigRevision::create(['id'=>(string)Str::uuid(),'website_id'=>$id,'framework'=>$app['type'],'config_path'=>$data['config_path'],'backup_path'=>$data['backup_path'],'status'=>'applied','created_by'=>$request->user()?->id]);
@@ -316,6 +316,26 @@ class RedisCacheController extends Controller
                     'label' => 'WordPress',
                     'root' => $normalized,
                     'config_file' => $normalized.'/wp-config.php',
+                    'detected' => true,
+                ];
+            }
+
+            if (is_file($normalized.'/spark') && is_file($normalized.'/app/Config/Cache.php')) {
+                return [
+                    'type' => 'codeigniter4',
+                    'label' => 'CodeIgniter 4',
+                    'root' => $normalized,
+                    'config_file' => $normalized.'/.env',
+                    'detected' => is_file($normalized.'/.env'),
+                ];
+            }
+
+            if (is_file($normalized.'/application/config/config.php') && is_file($normalized.'/system/core/CodeIgniter.php')) {
+                return [
+                    'type' => 'codeigniter3',
+                    'label' => 'CodeIgniter 3',
+                    'root' => $normalized,
+                    'config_file' => $normalized.'/application/config/config.php',
                     'detected' => true,
                 ];
             }

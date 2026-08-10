@@ -75,8 +75,8 @@ const getNotificationIcon = (type) => {
 const rolePanelConfig = {
     admin: { label: 'Admin', hint: 'Super admin panel', icon: 'SA', iconClass: 'bi bi-person-gear', routeName: 'admin.panel', routeParams: { role: 'admin' }, roles: ['admin'] },
     reseller: { label: 'Reseller', hint: 'Reseller panel', icon: 'RS', iconClass: 'bi bi-person-workspace', routeName: 'reseller.panel', routeParams: { role: 'reseller' }, roles: ['admin', 'reseller'] },
-    general: { label: 'General User', hint: 'General user panel', icon: 'US', iconClass: 'bi bi-person', routeName: 'user.panel', routeParams: { role: 'general' }, roles: ['admin', 'reseller', 'general', 'general_user'] },
-    general_user: { label: 'General User', hint: 'General user panel', icon: 'US', iconClass: 'bi bi-person', routeName: 'user.panel', routeParams: { role: 'general' }, roles: ['admin', 'reseller', 'general', 'general_user'] },
+    general: { label: 'General User', hint: 'General user panel', icon: 'US', iconClass: 'bi bi-person', routeName: 'user.panel', routeParams: { role: 'general' }, roles: ['admin', 'reseller'] },
+    general_user: { label: 'General User', hint: 'General user panel', icon: 'US', iconClass: 'bi bi-person', routeName: 'user.panel', routeParams: { role: 'general' }, roles: ['admin', 'reseller'] },
 };
 
 const userRoles = computed(() => page.props.auth?.roles ?? []);
@@ -106,13 +106,13 @@ const dynamicUserManagementChildren = computed(() => {
 
     const adminRuleChildren = userRoles.value.includes('admin')
         ? [
-            { label: 'Manage Roles', hint: 'Edit existing roles', icon: 'MR', iconClass: 'bi bi-shield-check', routeName: 'roles.manage', roles: ['admin'] },
+            { label: 'Manage Roles', hint: 'Edit existing roles', icon: 'MR', iconClass: 'bi bi-shield-check', routeName: 'roles.manage', activeRouteNames: ['roles.manage', 'roles.manage.edit', 'roles.create'], roles: ['admin'] },
         ]
         : [];
 
     return [
         ...roleChildren,
-        { label: 'All Users', hint: 'Shared users panel', icon: 'MU', iconClass: 'bi bi-person-plus', routeName: 'users.manage', roles: ['admin', 'reseller', 'general', 'general_user'] },
+        { label: 'All Users', hint: 'Shared users panel', icon: 'MU', iconClass: 'bi bi-person-plus', routeName: 'users.manage', roles: ['admin', 'reseller'] },
         ...adminRuleChildren,
     ];
 });
@@ -127,8 +127,8 @@ const menuItems = computed(() => [
         iconClass: 'bi bi-globe2',
         color: 'emerald',
         children: [
-            { label: 'Create Website', hint: 'Add a new website', icon: 'CW', iconClass: 'bi bi-plus-square', routeName: 'websites.create', roles: ['admin', 'reseller'] },
-            { label: 'List Websites', hint: 'View all websites', icon: 'LW', iconClass: 'bi bi-list-ul', routeName: 'websites.list', roles: ['admin', 'reseller'] },
+            { label: 'Create Website', hint: 'Add a new website', icon: 'CW', iconClass: 'bi bi-plus-square', routeName: 'websites.create', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+            { label: 'List Websites', hint: 'View all websites', icon: 'LW', iconClass: 'bi bi-list-ul', routeName: 'websites.list', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
         ],
     },
     {
@@ -139,8 +139,8 @@ const menuItems = computed(() => [
         iconClass: 'bi bi-envelope',
         color: 'violet',
         children: [
-            { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'] },
-            { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'] },
+            { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+            { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
         ],
     },
     { label: 'Resource Packages', hint: 'Manage user quotas', icon: 'PK', iconClass: 'bi bi-box-seam', routeName: 'packages.index', roles: ['admin', 'superadmin', 'reseller'], permissions: ['manage_packages'] },
@@ -152,8 +152,8 @@ const menuItems = computed(() => [
         iconClass: 'bi bi-database',
         color: 'amber',
         children: [
-            { label: 'Create Database', hint: 'Create a new database', icon: 'CD', iconClass: 'bi bi-database-add', routeName: 'databases.create', roles: ['admin', 'reseller'] },
-            { label: 'List Databases', hint: 'View all databases', icon: 'LD', iconClass: 'bi bi-table', routeName: 'databases.list', roles: ['admin', 'reseller'] },
+            { label: 'Create Database', hint: 'Create a new database', icon: 'CD', iconClass: 'bi bi-database-add', routeName: 'databases.create', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
+            { label: 'List Databases', hint: 'View all databases', icon: 'LD', iconClass: 'bi bi-table', routeName: 'databases.list', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
         ],
     },
     {
@@ -164,15 +164,16 @@ const menuItems = computed(() => [
         iconClass: 'bi bi-diagram-3',
         color: 'cyan',
         children: [
-            { label: 'Nameservers', hint: 'Manage NS records', icon: 'NS', iconClass: 'bi bi-signpost-split', routeName: 'dns.nameservers', roles: ['admin', 'reseller'] },
-            { label: 'DNS Zones', hint: 'Manage DNS zones', icon: 'DZ', iconClass: 'bi bi-bounding-box-circles', routeName: 'dns.zones', roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Nameservers', hint: 'Manage NS records', icon: 'NS', iconClass: 'bi bi-signpost-split', routeName: 'dns.nameservers', roles: ['admin', 'reseller'], permissions: ['manage_dns'] },
+            { label: 'DNS Zones', hint: 'Manage DNS zones', icon: 'DZ', iconClass: 'bi bi-bounding-box-circles', routeName: 'dns.zones', roles: ['admin', 'reseller', 'general', 'general_user'], permissions: ['manage_dns'] },
         ],
     },
-    { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], color: 'indigo' },
-    { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], color: 'red' },
-    { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'], color: 'teal' },
-    { label: 'Trash Backup', hint: 'Deleted website archives', icon: 'TB', iconClass: 'bi bi-trash3', routeName: 'trash-backups.index', roles: ['admin', 'reseller', 'general', 'general_user'], color: 'orange' },
-    { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN', iconClass: 'bi bi-activity', routeName: 'monitoring.index', roles: ['admin', 'reseller'], color: 'orange' },
+    { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], permissions: ['manage_php'], color: 'indigo' },
+    { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], permissions: ['manage_security'], color: 'red' },
+    { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'], permissions: ['manage_backups'], color: 'teal' },
+    { label: 'Migrate', hint: 'Import cPanel accounts', icon: 'MG', iconClass: 'bi bi-box-arrow-in-down', routeName: 'migrations.index', roles: ['admin', 'reseller'], permissions: ['manage_migrations'], color: 'cyan' },
+    { label: 'Trash Backup', hint: 'Deleted website archives', icon: 'TB', iconClass: 'bi bi-trash3', routeName: 'trash-backups.index', roles: ['admin', 'reseller', 'general', 'general_user'], permissions: ['manage_backups'], color: 'orange' },
+    { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN', iconClass: 'bi bi-activity', routeName: 'monitoring.index', roles: ['admin', 'reseller'], permissions: ['view_monitoring'], color: 'orange' },
     {
         id: 'user-management',
         label: 'User Management',
@@ -327,6 +328,14 @@ const resolveItemRouteName = (item) => {
     return null;
 };
 
+const isItemActive = (item) => {
+    const routeNames = item?.activeRouteNames?.length
+        ? item.activeRouteNames
+        : [resolveItemRouteName(item)];
+
+    return routeNames.filter(Boolean).some((routeName) => route().current(routeName));
+};
+
 const openSearch = async () => {
     isSearchOpen.value = true;
     activeSearchIndex.value = 0;
@@ -457,7 +466,7 @@ onMounted(() => {
         (item) =>
             item.children &&
             item.id &&
-            item.children.some((child) => child.routeName && route().current(child.routeName)),
+            item.children.some((child) => isItemActive(child)),
     );
 
     if (expandedGroups.value.length === 0) {
@@ -606,12 +615,12 @@ watch(isSearchOpen, async (open) => {
                                 preserve-state
                                 preserve-scroll
                                 :class="[
-                                    route().current(child.routeName)
+                                    isItemActive(child)
                                         ? 'border-l-2 ' + getColor(item).border + ' ' + getColor(item).bgLight + ' ' + getColor(item).text
                                         : 'border-l-2 border-transparent text-slate-600 dark:text-slate-400',
                                     'flex items-center gap-3 rounded-lg px-3 py-2 transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                                 ]"
-                                :data-sidebar-active="route().current(child.routeName) ? 'true' : null"
+                                :data-sidebar-active="isItemActive(child) ? 'true' : null"
                             >
                                 <i :class="['text-sm', child.iconClass || 'bi bi-dot']"></i>
                                 <span class="text-sm">{{ child.label }}</span>
@@ -626,19 +635,19 @@ watch(isSearchOpen, async (open) => {
                         preserve-state
                         preserve-scroll
                         :class="[
-                            route().current(resolveItemRouteName(item))
+                            isItemActive(item)
                                 ? 'border-l-2 ' + getColor(item).border + ' ' + getColor(item).bgLight + ' ' + getColor(item).text
                                 : 'border-l-2 border-transparent text-slate-600 dark:text-slate-400',
                             sidebarCollapsed ? 'justify-center px-2' : 'px-3',
                             'flex items-center gap-3 rounded-xl py-2.5 transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                         ]"
-                        :data-sidebar-active="route().current(resolveItemRouteName(item)) ? 'true' : null"
+                        :data-sidebar-active="isItemActive(item) ? 'true' : null"
                         :title="sidebarCollapsed ? item.label : ''"
                     >
                         <span
                             :class="[
                                 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-200',
-                                route().current(resolveItemRouteName(item))
+                                isItemActive(item)
                                     ? getColor(item).bg + ' ' + getColor(item).text
                                     : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                             ]"
@@ -853,17 +862,17 @@ watch(isSearchOpen, async (open) => {
                                 </button>
                             </template>
                             <template #content>
-                                <DropdownLink :href="panelRoute('websites.create')">
+                                <DropdownLink v-if="userRoles.includes('admin') || userRoles.includes('reseller') || userPermissions.includes('manage_websites')" :href="panelRoute('websites.create')">
                                     <i class="bi bi-globe mr-2"></i>New Website
                                 </DropdownLink>
-                                <DropdownLink :href="panelRoute('emails.create')">
+                                <DropdownLink v-if="userRoles.includes('admin') || userRoles.includes('reseller') || userPermissions.includes('manage_email')" :href="panelRoute('emails.create')">
                                     <i class="bi bi-envelope mr-2"></i>New Email
                                 </DropdownLink>
-                                <DropdownLink :href="panelRoute('databases.create')">
+                                <DropdownLink v-if="userRoles.includes('admin') || userRoles.includes('reseller')" :href="panelRoute('databases.create')">
                                     <i class="bi bi-database mr-2"></i>New Database
                                 </DropdownLink>
                                 <div class="border-t border-slate-200 dark:border-slate-700"></div>
-                                <DropdownLink :href="panelRoute('users.manage')">
+                                <DropdownLink v-if="userRoles.includes('admin') || userRoles.includes('reseller')" :href="panelRoute('users.manage')">
                                     <i class="bi bi-person-plus mr-2"></i>New User
                                 </DropdownLink>
                             </template>

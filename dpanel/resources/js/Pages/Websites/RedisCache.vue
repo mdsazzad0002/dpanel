@@ -38,8 +38,9 @@ const clearForm = useForm({});
 const configureForm = useForm({});
 const copied = ref('');
 const guideOpen = ref(false);
-const showLaravel = computed(() => props.application.type !== 'wordpress');
-const showWordPress = computed(() => props.application.type !== 'laravel');
+const showLaravel = computed(() => ['laravel', 'unknown'].includes(props.application.type));
+const showWordPress = computed(() => ['wordpress', 'unknown'].includes(props.application.type));
+const showCodeIgniter = computed(() => ['codeigniter4', 'unknown'].includes(props.application.type));
 
 const laravelEnv = computed(() => `CACHE_STORE=redis
 CACHE_DRIVER=redis
@@ -71,6 +72,13 @@ define('WP_REDIS_DATABASE', ${props.redisCache.database});
 define('WP_REDIS_PREFIX', '${props.redisCache.prefix}');
 define('WP_REDIS_TIMEOUT', 1);
 define('WP_REDIS_READ_TIMEOUT', 1);`);
+
+const codeIgniterEnv = computed(() => `cache.handler = redis
+cache.backupHandler = file
+cache.redis.host = ${props.redisCache.host}
+cache.redis.port = ${props.redisCache.port}
+cache.redis.database = ${props.redisCache.database}
+cache.redis.prefix = ${props.redisCache.prefix}`);
 
 const copyText = async (label, value) => {
     try {
@@ -145,7 +153,7 @@ const rollbackRevision = (revision) => {
                     <button type="button" :disabled="configureForm.processing" class="mt-3 block rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50" @click="applyConfiguration">Apply Redis Configuration Automatically</button>
                 </div>
                 <div v-else class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                    Laravel or WordPress files were not found. Confirm the project root, then follow the matching manual guide.
+                    Laravel, WordPress, or CodeIgniter 4 files were not found. Confirm the project root, then follow the matching manual guide.
                 </div>
             </section>
 
@@ -251,6 +259,17 @@ const rollbackRevision = (revision) => {
                         </div>
                     </li>
                 </ol>
+            </section>
+
+            <section v-if="showCodeIgniter" class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                <h2 class="text-lg font-semibold">CodeIgniter 4 setup</h2>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">The automatic action backs up and updates the project <code>.env</code>. The file cache remains the fallback.</p>
+                <div class="relative mt-4 overflow-hidden rounded-lg bg-slate-950 text-slate-100">
+                    <button type="button" class="absolute right-3 top-3 rounded bg-slate-700 px-2.5 py-1 text-xs hover:bg-slate-600" @click="copyText('codeigniter', codeIgniterEnv)">
+                        {{ copied === 'codeigniter' ? 'Copied!' : 'Copy' }}
+                    </button>
+                    <pre class="overflow-x-auto p-4 pr-20 text-xs leading-6"><code>{{ codeIgniterEnv }}</code></pre>
+                </div>
             </section>
 
             <section v-if="showWordPress" class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">

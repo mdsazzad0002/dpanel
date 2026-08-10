@@ -475,6 +475,7 @@ class MainWebsiteController extends Controller
             return response()->json([
                 'type' => 'success',
                 'message' => $message,
+                'website_id' => (string) $website->id,
             ]);
         }
 
@@ -619,7 +620,11 @@ class MainWebsiteController extends Controller
         }
 
         return $request->expectsJson()
-            ? response()->json(['type' => 'success', 'message' => $message])
+            ? response()->json([
+                'type' => 'success',
+                'message' => $message,
+                'website_id' => (string) $website->id,
+            ])
             : back()->with('success', $message);
     }
 

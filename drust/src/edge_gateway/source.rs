@@ -122,16 +122,16 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         return Err("database snapshot returned no active websites".to_string());
     }
 
-    Ok(RuntimeSnapshot {
-        version: current_version_hint(&database),
-        sites: std::sync::Arc::from(sites),
-        tls: std::sync::Arc::from(tls),
-        cache: CachePolicy {
+    Ok(RuntimeSnapshot::new(
+        current_version_hint(&database),
+        std::sync::Arc::from(sites),
+        std::sync::Arc::from(tls),
+        CachePolicy {
             enabled: true,
             ttl: config.ttl,
             stale_while_revalidate: Duration::from_secs(1),
         },
-    })
+    ))
 }
 
 fn parse_ip_list(value: &str) -> std::sync::Arc<[std::net::IpAddr]> {
@@ -227,11 +227,18 @@ fn resolve_document_root(
         push_candidate(&mut candidates, root.clone());
     }
     let project_is_owned = site_owner
-        .map(|owner| project.as_ref().is_some_and(|path| path.starts_with(format!("/home/{owner}"))))
+        .map(|owner| {
+            project
+                .as_ref()
+                .is_some_and(|path| path.starts_with(format!("/home/{owner}")))
+        })
         .unwrap_or(false);
     if is_system_site || project_is_owned {
         if let Some(project) = project.as_ref() {
-            push_candidate(&mut candidates, join_start_directory(project, start.as_deref()));
+            push_candidate(
+                &mut candidates,
+                join_start_directory(project, start.as_deref()),
+            );
             push_candidate(&mut candidates, project.clone());
         }
     }
@@ -331,14 +338,23 @@ mod tests {
 
     #[test]
     fn does_not_duplicate_start_directory() {
-        let root =
-            resolve_document_root("/srv/example/public", "", "public", "example.test", false, Some("example")).unwrap();
+        let root = resolve_document_root(
+            "/srv/example/public",
+            "",
+            "public",
+            "example.test",
+            false,
+            Some("example"),
+        )
+        .unwrap();
         assert_eq!(root, PathBuf::from("/srv/example/public"));
     }
 
     #[test]
     fn ignores_database_null_paths() {
-        let root = resolve_document_root("NULL", "/srv/example", "public", "example.test", true, None).unwrap();
+        let root =
+            resolve_document_root("NULL", "/srv/example", "public", "example.test", true, None)
+                .unwrap();
         assert_eq!(root, PathBuf::from("/srv/example/public"));
     }
 }

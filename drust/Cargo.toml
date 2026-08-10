@@ -23,3 +23,6 @@ hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["server", "http1", "http2", "tokio"] }
 portable-pty = "0.9"
 futures-util = "0.3"
+bytes = "1"
+tokio-util = { version = "0.7", features = ["io"] }
+redis = { version = "0.32", features = ["tokio-comp"] }

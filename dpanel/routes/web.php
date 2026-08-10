@@ -9,6 +9,7 @@ use App\Http\Controllers\EmailController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\MailPlanController;
 use App\Http\Controllers\MonitoringController;
+use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
 use App\Http\Controllers\PhpMyAdmin\PhpMyAdminController;
@@ -140,19 +141,19 @@ Route::prefix('cpsess{token}')
                 ->name('server-tasks.cancel');
 
             Route::get('/emails/create', [EmailController::class, 'create'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.create');
             Route::post('/emails', [EmailController::class, 'store'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.store');
             Route::get('/emails/{id}/edit', [EmailController::class, 'edit'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.edit');
             Route::patch('/emails/{id}', [EmailController::class, 'update'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.update');
             Route::delete('/emails/{id}', [EmailController::class, 'destroy'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.destroy');
 
             Route::get('/mail/{id}', [MailClientController::class, 'show'])
@@ -193,7 +194,7 @@ Route::prefix('cpsess{token}')
                 ->name('emails.delete-message');
 
             Route::get('/emails/list', [EmailController::class, 'index'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.list');
 
             Route::post('/mail/{id}/mark-read', [MailClientController::class, 'markRead'])
@@ -221,43 +222,49 @@ Route::prefix('cpsess{token}')
                 ->name('packages.destroy');
 
             Route::get('/backups', [BackupController::class, 'index'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->name('backups.index');
+
+            Route::get('/migrations', [MigrationController::class, 'index'])->middleware('role:admin|reseller')->name('migrations.index');
+            Route::get('/migrations/cpanel', [MigrationController::class, 'cpanel'])->middleware('role:admin|reseller')->name('migrations.cpanel');
+            Route::post('/migrations', [MigrationController::class, 'store'])->middleware('role:admin|reseller')->name('migrations.store');
+            Route::post('/migrations/{migrationImport}/restore', [MigrationController::class, 'restore'])->middleware('role:admin|reseller')->name('migrations.restore');
+            Route::delete('/migrations/{migrationImport}', [MigrationController::class, 'destroy'])->middleware('role:admin|reseller')->name('migrations.destroy');
             Route::post('/backups/run', [BackupController::class, 'runNow'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->name('backups.run');
             Route::get('/backups/data', [BackupController::class, 'data'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->name('backups.data');
             Route::get('/backups/scp', [BackupController::class, 'scp'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->name('backups.scp');
             Route::patch('/backups/scp/settings', [BackupController::class, 'updateScpSettings'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->name('backups.scp.settings.update');
             Route::patch('/backups/settings', [BackupController::class, 'updateSettings'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->name('backups.settings.update');
             Route::get('/backups/{run}/fetch/{encoded}', [BackupController::class, 'downloadEncoded'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->where('run', '[0-9]{8}_[0-9]{6}')
                 ->where('encoded', '[A-Za-z0-9_-]+')
                 ->name('backups.download');
             Route::get('/backups/{run}/download', [BackupController::class, 'downloadFromQuery'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->where('run', '[0-9]{8}_[0-9]{6}')
                 ->name('backups.download.query');
             Route::get('/backups/{run}/{file}', [BackupController::class, 'download'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->where('run', '[0-9]{8}_[0-9]{6}')
                 ->where('file', '[^/]+')
                 ->name('backups.download.legacy');
             Route::delete('/backups/{run}', [BackupController::class, 'destroyRun'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->where('run', '[0-9]{8}_[0-9]{6}')
                 ->name('backups.destroy');
             Route::post('/backups/{run}/restore/{encoded}', [BackupController::class, 'restore'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->where('run', '[0-9]{8}_[0-9]{6}')
                 ->where('encoded', '[A-Za-z0-9_-]+')
                 ->name('backups.restore');
@@ -271,6 +278,10 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller|general|general_user')
                 ->whereUuid('id')
                 ->name('trash-backups.download');
+            Route::post('/trash-backups/{id}/restore', [WebsiteTrashBackupController::class, 'restore'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->whereUuid('id')
+                ->name('trash-backups.restore');
             Route::get('/monitoring', [MonitoringController::class, 'index'])
                 ->middleware('role:admin|reseller')
                 ->name('monitoring.index');
@@ -279,87 +290,87 @@ Route::prefix('cpsess{token}')
                 ->name('monitoring.snapshot');
 
             Route::get('/databases/create', [DatabaseController::class, 'create'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.create');
             Route::post('/databases', [DatabaseController::class, 'store'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.store');
             Route::get('/databases/{id}/edit', [DatabaseController::class, 'edit'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.edit');
 
             Route::get('/phpmyadmin', [PhpMyAdminController::class, 'index'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.index');
             Route::get('/phpmyadmin/about', [PhpMyAdminController::class, 'about'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.about');
             Route::get('/phpmyadmin/sql', [PhpMyAdminController::class, 'sqlPage'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.page.sql');
             Route::get('/phpmyadmin/databases-page', [PhpMyAdminController::class, 'databasesPage'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.page.databases');
             Route::get('/phpmyadmin/transfer', [PhpMyAdminController::class, 'transferPage'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.page.transfer');
             Route::get('/phpmyadmin/status', [PhpMyAdminController::class, 'statusPage'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.page.status');
             Route::get('/phpmyadmin/user-accounts', [PhpMyAdminController::class, 'userAccountsPage'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.page.user-accounts');
             Route::get('/phpmyadmin/settings', [PhpMyAdminController::class, 'settingsPage'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.page.settings');
             Route::get('/phpmyadmin/replication', [PhpMyAdminController::class, 'replicationPage'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.page.replication');
             Route::get('/phpmyadmin/variables', [PhpMyAdminController::class, 'variablesPage'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.page.variables');
             Route::get('/phpmyadmin/charsets', [PhpMyAdminController::class, 'charsetsPage'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.page.charsets');
             Route::get('/phpmyadmin/databases', [PhpMyAdminController::class, 'databases'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.databases');
             Route::get('/phpmyadmin/databases/{database}', [PhpMyAdminController::class, 'database'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->where('database', '[A-Za-z0-9_]+')
                 ->name('phpmyadmin.database');
             Route::get('/phpmyadmin/databases/{database}/tables/{table}', [PhpMyAdminController::class, 'table'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
                 ->name('phpmyadmin.table');
             Route::delete('/phpmyadmin/databases/{database}/tables/{table}', [PhpMyAdminController::class, 'destroyTable'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
                 ->name('phpmyadmin.table.destroy');
             Route::post('/phpmyadmin/databases/{database}/tables/{table}/empty', [PhpMyAdminController::class, 'emptyTable'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
                 ->name('phpmyadmin.table.empty');
             Route::post('/phpmyadmin/databases/{database}/tables/{table}/rename', [PhpMyAdminController::class, 'renameTable'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
                 ->name('phpmyadmin.table.rename');
             Route::post('/phpmyadmin/databases/{database}/tables/{table}/structure', [PhpMyAdminController::class, 'alterTableStructure'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
                 ->name('phpmyadmin.table.structure.update');
             Route::post('/phpmyadmin/databases/{database}/tables', [PhpMyAdminController::class, 'createTable'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->where(['database' => '[A-Za-z0-9_]+'])
                 ->name('phpmyadmin.table.create');
             Route::post('/phpmyadmin/query', [PhpMyAdminController::class, 'execute'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.execute');
             Route::post('/phpmyadmin/export', [PhpMyAdminController::class, 'export'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.export');
             Route::post('/phpmyadmin/import', [PhpMyAdminController::class, 'import'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('phpmyadmin.import');
 
             Route::get('/phpmyadmin/root-autologin', [DatabaseController::class, 'openPhpMyAdminRootGlobal'])
@@ -367,7 +378,7 @@ Route::prefix('cpsess{token}')
                 ->name('phpmyadmin.root-autologin');
 
             Route::get('/databases/{id}/phpmyadmin/autologin', [DatabaseController::class, 'openPhpMyAdmin'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->where('id', '[^/]+')
                 ->name('databases.phpmyadmin.autologin');
 
@@ -377,7 +388,7 @@ Route::prefix('cpsess{token}')
                 ->name('databases.phpmyadmin.root-autologin');
 
             Route::redirect('/databases/{id}/phpmyadmin/{path?}', '/phpmyadmin')
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->where('path', '.*')
                 ->where('id', '[^/]+')
                 ->name('databases.phpmyadmin');
@@ -385,61 +396,61 @@ Route::prefix('cpsess{token}')
             include __DIR__.'/website.php';
 
             Route::patch('/databases/{id}', [DatabaseController::class, 'update'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.update');
             Route::delete('/databases/{id}', [DatabaseController::class, 'destroy'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.destroy');
             Route::get('/databases/list', [DatabaseController::class, 'index'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.list');
 
             Route::get('/dns/nameservers', [DnsController::class, 'nameservers'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.nameservers');
             Route::post('/dns/nameservers', [DnsController::class, 'storeNameserver'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.nameservers.store');
             Route::patch('/dns/nameservers/{id}', [DnsController::class, 'updateNameserver'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.nameservers.update');
             Route::delete('/dns/nameservers/{id}', [DnsController::class, 'destroyNameserver'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.nameservers.destroy');
 
             Route::get('/dns/zones', [DnsController::class, 'zones'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.zones');
             Route::post('/dns/zones', [DnsController::class, 'storeZone'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.zones.store');
             Route::patch('/dns/zones/{id}', [DnsController::class, 'updateZone'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.zones.update');
             Route::delete('/dns/zones/{id}', [DnsController::class, 'destroyZone'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.zones.destroy');
             Route::patch('/dns/zones/{id}/transfer', [DnsController::class, 'transferZone'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.zones.transfer');
             Route::get('/dns/cloudflare/review', [DnsController::class, 'reviewCloudflare'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.cloudflare.review');
             Route::post('/dns/cloudflare/sync', [DnsController::class, 'syncCloudflare'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.cloudflare.sync');
             Route::post('/dns/cloudflare/import', [DnsController::class, 'importCloudflareZone'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.cloudflare.import');
 
             Route::post('/dns/records', [DnsController::class, 'storeRecord'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.records.store');
             Route::patch('/dns/records/{id}', [DnsController::class, 'updateRecord'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.records.update');
             Route::delete('/dns/records/{id}', [DnsController::class, 'destroyRecord'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.records.destroy');
 
             Route::get('/php/versions', [PhpManagementController::class, 'versions'])
@@ -506,10 +517,10 @@ Route::prefix('cpsess{token}')
                 ->name('reseller.panel');
 
             Route::get('/user-panel', [UserManagementController::class, 'index'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role:admin|reseller')
                 ->name('user.panel');
             Route::get('/users/manage', [UserManagementController::class, 'index'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role:admin|reseller')
                 ->name('users.manage');
             Route::post('/users/manage', [UserManagementController::class, 'store'])
                 ->middleware('role:admin|reseller')

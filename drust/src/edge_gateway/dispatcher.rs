@@ -13,9 +13,9 @@ use std::{
 };
 
 use super::{
-    RouteAction, RuntimeSnapshot, StaticAsset, StaticFileConfig, execute_php_front_controller,
-    load_static_asset, normalize_request_path, proxy_request, resolve_route, resolve_site,
-    resolve_static_path,
+    RouteAction, RuntimeSnapshot, StaticAsset, StaticAssetBody, StaticFileConfig,
+    execute_php_front_controller, load_static_asset, normalize_request_path, proxy_request,
+    resolve_route, resolve_static_path,
 };
 
 #[derive(Clone, Debug)]
@@ -25,6 +25,7 @@ pub struct DispatchContext {
 
 pub async fn dispatch(
     snapshot: &RuntimeSnapshot,
+    site: Option<&super::SiteConfig>,
     ctx: &DispatchContext,
     request: Request<Body>,
     proxy_client: &reqwest::Client,
@@ -43,7 +44,7 @@ pub async fn dispatch(
         return favicon_response();
     }
 
-    let Some(site) = resolve_site(snapshot, host) else {
+    let Some(site) = site else {
         return annotated_response(
             not_found_response(
                 "Site not found",
@@ -155,7 +156,7 @@ pub async fn dispatch(
                     }
                 };
                 return annotated_response(
-                    static_response(asset, config.cache_ttl),
+                    static_response(asset, config.cache_ttl, request.headers()).await,
                     site_match,
                     route_match,
                 );
@@ -209,7 +210,7 @@ pub async fn dispatch(
             };
 
             return annotated_response(
-                static_response(asset, config.cache_ttl),
+                static_response(asset, config.cache_ttl, request.headers()).await,
                 site_match,
                 route_match,
             );
@@ -326,7 +327,7 @@ async fn handle_system_phpmyadmin(
     if let Some(path_on_disk) = path_on_disk {
         return annotated_response(
             match load_static_asset(&path_on_disk) {
-                Ok(asset) => static_response(asset, cache_ttl),
+                Ok(asset) => static_response(asset, cache_ttl, request.headers()).await,
                 Err(error) => simple_response(StatusCode::INTERNAL_SERVER_ERROR, &error),
             },
             site_match,
@@ -374,8 +375,31 @@ fn annotated_response(mut response: Response, site_match: &str, route_match: &st
     response
 }
 
-fn static_response(asset: StaticAsset, cache_ttl: Duration) -> Response {
-    let mut response = Response::new(Body::from(asset.body));
+async fn static_response(
+    asset: StaticAsset,
+    cache_ttl: Duration,
+    request_headers: &axum::http::HeaderMap,
+) -> Response {
+    if request_headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.split(',').any(|tag| tag.trim() == asset.etag))
+    {
+        let mut response = Response::new(Body::empty());
+        *response.status_mut() = StatusCode::NOT_MODIFIED;
+        if let Ok(value) = HeaderValue::from_str(&asset.etag) {
+            response.headers_mut().insert(header::ETAG, value);
+        }
+        return response;
+    }
+    let body = match asset.body {
+        StaticAssetBody::Memory(body) => Body::from(body),
+        StaticAssetBody::Stream(path) => match tokio::fs::File::open(path).await {
+            Ok(file) => Body::from_stream(tokio_util::io::ReaderStream::new(file)),
+            Err(_) => return simple_response(StatusCode::NOT_FOUND, "static file unavailable"),
+        },
+    };
+    let mut response = Response::new(body);
     *response.status_mut() = StatusCode::OK;
     let headers = response.headers_mut();
     headers.insert(

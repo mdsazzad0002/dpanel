@@ -51,6 +51,7 @@ return [
     'execution_api_token' => env('SERVERPANEL_EXECUTION_API_TOKEN', ''),
     'execution_api_timeout' => (int) env('SERVERPANEL_EXECUTION_API_TIMEOUT', 60),
     'edge_gateway_internal_url' => env('DRUST_EDGE_GATEWAY_INTERNAL_URL', 'http://127.0.0.1'),
+    'edge_gateway_reload_channel' => env('DRUST_REDIS_RELOAD_CHANNEL', 'edge:reload'),
     'execution_api_upload_timeout' => (int) env('SERVERPANEL_EXECUTION_API_UPLOAD_TIMEOUT', 3600),
     'php_versions' => [
         '7.4',
