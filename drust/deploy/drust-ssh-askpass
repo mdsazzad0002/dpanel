@@ -1,0 +1,2 @@
+#!/bin/sh
+printf '%s\n' "$DPANEL_SSH_PASSWORD"

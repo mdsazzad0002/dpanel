@@ -212,6 +212,8 @@ cargo build --release --manifest-path "${DRUST_ROOT}/Cargo.toml"
 install -m 0755 "${DRUST_ROOT}/deploy/drust-start" /usr/local/bin/drust-start
 install -m 0755 "${DRUST_ROOT}/deploy/drust-edge-gateway" /usr/local/bin/drust-edge-gateway
 install -m 0755 "${DRUST_ROOT}/deploy/serverinstaller-site" /usr/local/bin/serverinstaller-site
+install -d -m 0755 /usr/local/libexec
+install -m 0755 "${DRUST_ROOT}/deploy/drust-ssh-askpass" /usr/local/libexec/drust-ssh-askpass
 install -m 0644 "${DRUST_ROOT}/deploy/drust.service" /etc/systemd/system/drust.service
 install -m 0644 "${DRUST_ROOT}/deploy/edge-gateway.service" /etc/systemd/system/edge-gateway.service
 systemctl daemon-reload

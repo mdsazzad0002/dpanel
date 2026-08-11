@@ -229,6 +229,12 @@ Route::prefix('cpsess{token}')
             Route::get('/migrations/cpanel', [MigrationController::class, 'cpanel'])->middleware('role:admin|reseller')->name('migrations.cpanel');
             Route::get('/migrations/cyberpanel-ssh', [MigrationController::class, 'cyberpanelSsh'])->middleware('role:admin|reseller')->name('migrations.cyberpanel-ssh');
             Route::post('/migrations/cyberpanel-ssh/inspect', [MigrationController::class, 'inspectCyberpanelSsh'])->middleware(['role:admin|reseller', 'throttle:10,1'])->name('migrations.cyberpanel-ssh.inspect');
+            Route::post('/migrations/cyberpanel-ssh/download', [MigrationController::class, 'downloadCyberpanelSsh'])->middleware(['role:admin|reseller', 'throttle:6,1'])->name('migrations.cyberpanel-ssh.download');
+            Route::post('/migrations/cyberpanel-ssh/prepare', [MigrationController::class, 'prepareCyberpanelSsh'])->middleware(['role:admin|reseller', 'throttle:10,1'])->name('migrations.cyberpanel-ssh.prepare');
+            Route::post('/migrations/cyberpanel-ssh/{migrationImport}/stage', [MigrationController::class, 'stageCyberpanelSsh'])->middleware(['role:admin|reseller', 'throttle:6,1'])->name('migrations.cyberpanel-ssh.stage');
+            Route::post('/migrations/cyberpanel-ssh/{migrationImport}/restore', [MigrationController::class, 'restoreCyberpanelSsh'])->middleware(['role:admin|reseller', 'throttle:6,1'])->name('migrations.cyberpanel-ssh.restore');
+            Route::get('/migrations/cyberpanel-ssh/connections/{connection}', [MigrationController::class, 'showCyberpanelSshConnection'])->middleware('role:admin|reseller')->name('migrations.cyberpanel-ssh.connections.show');
+            Route::delete('/migrations/cyberpanel-ssh/connections/{connection}', [MigrationController::class, 'destroyCyberpanelSshConnection'])->middleware(['role:admin|reseller', 'throttle:10,1'])->name('migrations.cyberpanel-ssh.connections.destroy');
             Route::post('/migrations', [MigrationController::class, 'store'])->middleware('role:admin|reseller')->name('migrations.store');
             Route::post('/migrations/{migrationImport}/restore', [MigrationController::class, 'restore'])->middleware('role:admin|reseller')->name('migrations.restore');
             Route::delete('/migrations/{migrationImport}', [MigrationController::class, 'destroy'])->middleware('role:admin|reseller')->name('migrations.destroy');

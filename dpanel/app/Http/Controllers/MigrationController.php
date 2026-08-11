@@ -7,16 +7,20 @@ use App\Jobs\RestoreGenericWebsiteJob;
 use App\Jobs\RestoreMigrationImportJob;
 use App\Models\DatabaseRequest;
 use App\Models\MigrationImport;
+use App\Models\MigrationSshConnection;
 use App\Services\Migration\CyberPanelSshInventoryService;
+use App\Services\Migration\GenericWebsiteMigrationProvider;
+use App\Services\Php\PhpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class MigrationController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, string $token): Response
     {
         return Inertia::render('Migrations/Index', [
             'provider' => null,
@@ -24,7 +28,7 @@ class MigrationController extends Controller
         ]);
     }
 
-    public function cpanel(Request $request): Response
+    public function cpanel(Request $request, string $token): Response
     {
         return Inertia::render('Migrations/Index', [
             'provider' => 'cpanel',
@@ -35,15 +39,18 @@ class MigrationController extends Controller
         ]);
     }
 
-    public function cyberpanelSsh(): Response
+    public function cyberpanelSsh(Request $request, string $token): Response
     {
         return Inertia::render('Migrations/Index', [
             'provider' => 'cyberpanel-ssh',
             'imports' => [],
+            'phpVersions' => PhpService::getPhpVersions(),
+            'savedSshConnections' => MigrationSshConnection::query()->where('user_id', $request->user()->id)
+                ->latest()->get(['id', 'name', 'host', 'port', 'username', 'auth_type']),
         ]);
     }
 
-    public function inspectCyberpanelSsh(Request $request, CyberPanelSshInventoryService $inventory): JsonResponse
+    public function inspectCyberpanelSsh(Request $request, string $token, CyberPanelSshInventoryService $inventory): JsonResponse
     {
         $credentials = $request->validate([
             'host' => ['required', 'string', 'max:253'],
@@ -53,14 +60,172 @@ class MigrationController extends Controller
             'password' => ['nullable', 'required_if:auth_type,password', 'string', 'max:1000'],
             'private_key' => ['nullable', 'required_if:auth_type,key', 'string', 'max:32768'],
             'key_passphrase' => ['nullable', 'string', 'max:1000'],
+            'remember_access' => ['nullable', 'boolean'],
+            'connection_name' => ['nullable', 'required_if:remember_access,true', 'string', 'max:100'],
         ]);
 
         try {
-            return response()->json(['inventory' => $inventory->discover($credentials)]);
+            $result = $inventory->discover($credentials);
+            $savedConnection = null;
+            if ((bool) ($credentials['remember_access'] ?? false)) {
+                $connection = MigrationSshConnection::query()->firstOrNew([
+                    'user_id' => $request->user()->id, 'host' => $credentials['host'], 'port' => $credentials['port'], 'username' => $credentials['username'],
+                ]);
+                if (! $connection->exists) {
+                    $connection->id = (string) Str::uuid();
+                }
+                $connection->fill([
+                    'name' => $credentials['connection_name'], 'auth_type' => $credentials['auth_type'],
+                    'password' => $credentials['auth_type'] === 'password' ? $credentials['password'] : null,
+                    'private_key' => $credentials['auth_type'] === 'key' ? $credentials['private_key'] : null,
+                    'key_passphrase' => $credentials['auth_type'] === 'key' ? ($credentials['key_passphrase'] ?? null) : null,
+                ])->save();
+                $savedConnection = $connection->only(['id', 'name', 'host', 'port', 'username', 'auth_type']);
+            }
+
+            return response()->json(['inventory' => $result, 'saved_connection' => $savedConnection]);
         } catch (\Throwable $exception) {
             report($exception);
 
             return response()->json(['message' => $exception->getMessage()], 422);
+        }
+    }
+
+    public function showCyberpanelSshConnection(Request $request, string $token, string $connection): JsonResponse
+    {
+        $connection = MigrationSshConnection::query()->where('user_id', $request->user()->id)->findOrFail($connection);
+
+        return response()->json(['connection' => [
+            'id' => $connection->id, 'connection_name' => $connection->name,
+            'host' => $connection->host, 'port' => $connection->port, 'username' => $connection->username,
+            'auth_type' => $connection->auth_type, 'password' => $connection->password ?? '',
+            'private_key' => $connection->private_key ?? '', 'key_passphrase' => $connection->key_passphrase ?? '',
+            'remember_access' => true,
+        ]]);
+    }
+
+    public function destroyCyberpanelSshConnection(Request $request, string $token, string $connection): JsonResponse
+    {
+        $connection = MigrationSshConnection::query()->where('user_id', $request->user()->id)->findOrFail($connection);
+        $connection->delete();
+
+        return response()->json(['message' => 'Saved SSH connection deleted.']);
+    }
+
+    public function downloadCyberpanelSsh(Request $request, string $token, CyberPanelSshInventoryService $inventory): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    {
+        $data = $request->validate([
+            'host' => ['required', 'string', 'max:253'], 'port' => ['required', 'integer', 'between:1,65535'],
+            'username' => ['required', 'string', 'max:64'], 'auth_type' => ['required', 'in:password,key'],
+            'password' => ['nullable', 'required_if:auth_type,password', 'string', 'max:1000'],
+            'private_key' => ['nullable', 'required_if:auth_type,key', 'string', 'max:32768'], 'key_passphrase' => ['nullable', 'string', 'max:1000'],
+            'type' => ['required', 'in:files,database'], 'source_path' => ['nullable', 'required_if:type,files', 'string', 'max:4096'],
+            'database' => ['nullable', 'required_if:type,database', 'string', 'max:64'],
+        ]);
+        try {
+            $download = $inventory->download($data, (string) $data['type'], $data['source_path'] ?? null, $data['database'] ?? null);
+
+            return response()->download($download['path'], $download['name'], ['Content-Type' => $download['mime']])->deleteFileAfterSend(true);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+    }
+
+    public function prepareCyberpanelSsh(Request $request, string $token): JsonResponse
+    {
+        $data = $request->validate([
+            'domain' => ['required', 'string', 'max:253', 'regex:/^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/'],
+            'source_path' => ['required', 'string', 'max:4096', 'regex:#^/home/(?!.*(?:^|/)\.\.(?:/|$)).+#'],
+            'database' => ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9_$-]+$/'],
+            'php_version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
+        ]);
+        $id = (string) Str::uuid();
+        $directory = storage_path('app/migrations/'.$id);
+        if (! is_dir($directory) && ! mkdir($directory, 0750, true) && ! is_dir($directory)) {
+            abort(500, 'Could not prepare migration temp storage.');
+        }
+        $actor = $request->user();
+        $steps = collect(['prepare', 'download', 'website', 'restore', 'verify'])->mapWithKeys(fn (string $step): array => [$step => ['status' => $step === 'prepare' ? 'completed' : 'waiting', 'message' => $step === 'prepare' ? 'Temporary storage prepared.' : null]])->all();
+        $import = MigrationImport::create([
+            'id' => $id, 'provider' => 'cyberpanel-ssh', 'original_name' => $data['domain'],
+            'archive_path' => $directory.'/website.tar.gz', 'archive_size' => 0, 'status' => 'prepared',
+            'inventory' => $data + ['sql_path' => filled($data['database'] ?? null) ? $directory.'/database.sql' : null, 'steps' => $steps],
+            'created_by' => $actor->id, 'assigned_reseller_id' => $actor->hasRole('reseller') ? $actor->id : null,
+        ]);
+
+        return response()->json(['message' => 'Temporary migration storage prepared.', 'run' => $import]);
+    }
+
+    public function stageCyberpanelSsh(Request $request, string $token, string $migrationImport, CyberPanelSshInventoryService $inventory): JsonResponse
+    {
+        $import = MigrationImport::visibleTo($request->user())->where('provider', 'cyberpanel-ssh')->findOrFail($migrationImport);
+        abort_unless(in_array($import->status, ['prepared', 'download_failed', 'downloaded'], true), 422, 'This migration cannot download source data now.');
+        $credentials = $request->validate([
+            'host' => ['required', 'string', 'max:253'], 'port' => ['required', 'integer', 'between:1,65535'], 'username' => ['required', 'string', 'max:64'],
+            'auth_type' => ['required', 'in:password,key'], 'password' => ['nullable', 'required_if:auth_type,password', 'string', 'max:1000'],
+            'private_key' => ['nullable', 'required_if:auth_type,key', 'string', 'max:32768'], 'key_passphrase' => ['nullable', 'string', 'max:1000'],
+        ]);
+        $settings = (array) $import->inventory;
+        try {
+            $import->update(['status' => 'downloading', 'last_error' => null]);
+            $files = $inventory->download($credentials, 'files', (string) $settings['source_path'], null);
+            rename($files['path'], $import->archive_path);
+            if (filled($settings['database'] ?? null)) {
+                $database = $inventory->download($credentials, 'database', null, (string) $settings['database']);
+                rename($database['path'], (string) $settings['sql_path']);
+            }
+            data_set($settings, 'steps.download', ['status' => 'completed', 'message' => 'Source files and database downloaded.']);
+            $import->update(['status' => 'downloaded', 'archive_size' => filesize($import->archive_path), 'inventory' => $settings]);
+
+            return response()->json(['message' => 'Source download completed.', 'run' => $import->fresh()]);
+        } catch (\Throwable $exception) {
+            data_set($settings, 'steps.download', ['status' => 'failed', 'message' => $exception->getMessage()]);
+            $import->update(['status' => 'download_failed', 'inventory' => $settings, 'last_error' => $exception->getMessage()]);
+            throw $exception;
+        }
+    }
+
+    public function restoreCyberpanelSsh(Request $request, string $token, string $migrationImport, GenericWebsiteMigrationProvider $provider): JsonResponse
+    {
+        $import = MigrationImport::visibleTo($request->user())->where('provider', 'cyberpanel-ssh')->findOrFail($migrationImport);
+        abort_unless(in_array($import->status, ['downloaded', 'restore_failed'], true), 422, 'Complete the source download first.');
+        $data = $request->validate(['website_id' => ['required', 'uuid']]);
+        $website = \App\Models\Website::visibleTo($request->user())->findOrFail($data['website_id']);
+        $settings = (array) $import->inventory;
+        $sqlPath = filled($settings['sql_path'] ?? null) ? (string) $settings['sql_path'] : null;
+        $owner = (string) $website->site_owner;
+        $domainPrefix = substr(trim(strtolower((string) preg_replace('/[^a-z0-9_]/i', '_', explode('.', (string) $website->domain)[0])), '_') ?: 'site', 0, 16);
+        $database = $sqlPath ? new DatabaseRequest([
+            'database_name' => substr($owner.'_'.$domainPrefix.'_db', 0, 64), 'database_user' => substr($owner.'_'.$domainPrefix.'_user', 0, 64),
+            'database_password' => Str::password(24), 'database_host' => '127.0.0.1',
+        ]) : null;
+        $payload = ['archive_path' => $import->archive_path, 'domain' => $website->domain, 'site_owner' => $owner,
+            'php_version' => $website->php_version, 'target_root' => $website->root_path, 'sql_path' => $sqlPath,
+            'database_host' => $database?->database_host ?? '127.0.0.1', 'database_port' => 3306,
+            'database_name' => $database?->database_name ?? '', 'database_user' => $database?->database_user ?? '',
+            'database_password' => $database?->database_password ?? '', 'overwrite_database' => false];
+        try {
+            $import->update(['status' => 'restoring', 'last_error' => null]);
+            $result = $provider->restore($payload);
+            DB::transaction(function () use ($database, $website): void {
+                if ($database === null) {
+                    return;
+                }
+                $database->forceFill(['id' => (string) Str::uuid(), 'domain' => $website->domain, 'charset' => 'utf8mb4', 'collation' => 'utf8mb4_unicode_ci',
+                    'status' => 'active', 'assigned_user_id' => $website->assigned_user_id])->save();
+            });
+            data_set($settings, 'steps.website', ['status' => 'completed', 'message' => 'Website account created.']);
+            data_set($settings, 'steps.restore', ['status' => 'completed', 'message' => 'Files and database restored.']);
+            data_set($settings, 'steps.verify', ['status' => 'completed', 'message' => 'Website is live.']);
+            $import->update(['status' => 'completed', 'inventory' => $settings + ['website_id' => $website->id] + $result]);
+
+            return response()->json(['message' => 'Website migration completed and is live.', 'run' => $import->fresh(), 'website' => $website]);
+        } catch (\Throwable $exception) {
+            data_set($settings, 'steps.restore', ['status' => 'failed', 'message' => $exception->getMessage()]);
+            $import->update(['status' => 'restore_failed', 'inventory' => $settings, 'last_error' => $exception->getMessage()]);
+            throw $exception;
         }
     }
 
@@ -258,7 +423,7 @@ class MigrationController extends Controller
         return $import;
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, string $token): JsonResponse
     {
         $request->validate(['provider' => ['required', 'in:cpanel'], 'archive' => ['required', 'file', 'max:5242880']]);
         $file = $request->file('archive');
@@ -284,7 +449,7 @@ class MigrationController extends Controller
         return response()->json(['message' => 'Backup uploaded. Inspection is running in the background.', 'import' => $import], 202);
     }
 
-    public function restore(Request $request, string $migrationImport): JsonResponse
+    public function restore(Request $request, string $token, string $migrationImport): JsonResponse
     {
         $import = MigrationImport::visibleTo($request->user())->findOrFail($migrationImport);
         abort_unless($import->status === 'ready', 422, 'This archive is not ready.');
@@ -305,7 +470,7 @@ class MigrationController extends Controller
         return response()->json(['message' => 'Selected restore is running in the background.'], 202);
     }
 
-    public function destroy(Request $request, string $migrationImport): JsonResponse
+    public function destroy(Request $request, string $token, string $migrationImport): JsonResponse
     {
         $import = MigrationImport::visibleTo($request->user())->findOrFail($migrationImport);
         if (is_file($import->archive_path)) {

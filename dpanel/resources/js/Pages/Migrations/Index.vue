@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import CyberPanelSshMigration from './components/CyberPanelSshMigration.vue';
 import { Head, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
@@ -10,6 +11,8 @@ const props = defineProps({
     website: { type: Object, default: null },
     panelToken: { type: String, default: '' },
     databaseConnection: { type: Object, default: () => ({ available: false, database_name: null }) },
+    savedSshConnections: { type: Array, default: () => [] },
+    phpVersions: { type: Array, default: () => [] },
 });
 const archive = ref(null);
 const uploading = ref(false);
@@ -28,18 +31,6 @@ const services = [
 const openService = (service) => {
     if (service.id === 'cpanel-full') router.visit(route('migrations.cpanel'));
     if (service.id === 'cyberpanel-ssh') router.visit(route('migrations.cyberpanel-ssh'));
-};
-const ssh = reactive({ host: '', port: 22, username: 'root', auth_type: 'password', password: '', private_key: '', key_passphrase: '' });
-const sshInspecting = ref(false);
-const remoteInventory = ref(null);
-const inspectCyberPanel = async () => {
-    sshInspecting.value = true; error.value = ''; message.value = ''; remoteInventory.value = null;
-    try {
-        const response = await axios.post(route('migrations.cyberpanel-ssh.inspect'), ssh);
-        remoteInventory.value = response.data.inventory;
-        message.value = `Connected to ${response.data.inventory.hostname}. ${response.data.inventory.websites.length} website(s) found.`;
-    } catch (e) { error.value = e.response?.data?.message || 'Could not inspect the CyberPanel server.'; }
-    finally { sshInspecting.value = false; }
 };
 const generic = reactive({ archive: null, database: null });
 const trackingId = ref('');
@@ -145,32 +136,7 @@ const remove = async (item) => {
         </div>
       </section>
 
-      <template v-else-if="props.provider === 'cyberpanel-ssh'">
-        <button type="button" class="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400" @click="router.visit(route('migrations.index'))"><i class="bi bi-arrow-left"></i> All migration services</button>
-        <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-          <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Connect to CyberPanel</h3>
-          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Credentials are used only for this request and are not stored by DPanel.</p>
-          <form class="mt-6 grid gap-4 md:grid-cols-2" @submit.prevent="inspectCyberPanel">
-            <label class="text-sm font-medium dark:text-slate-300">Host<input v-model.trim="ssh.host" required placeholder="server.example.com" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label>
-            <label class="text-sm font-medium dark:text-slate-300">SSH port<input v-model.number="ssh.port" required type="number" min="1" max="65535" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label>
-            <label class="text-sm font-medium dark:text-slate-300">Username<input v-model.trim="ssh.username" required class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label>
-            <label class="text-sm font-medium dark:text-slate-300">Authentication<select v-model="ssh.auth_type" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800"><option value="password">Password</option><option value="key">Private key</option></select></label>
-            <label v-if="ssh.auth_type === 'password'" class="text-sm font-medium dark:text-slate-300 md:col-span-2">Password<input v-model="ssh.password" required type="password" autocomplete="off" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label>
-            <template v-else><label class="text-sm font-medium dark:text-slate-300 md:col-span-2">Private key<textarea v-model="ssh.private_key" required rows="7" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" class="mt-1 block w-full rounded-lg border-slate-300 font-mono text-xs dark:border-slate-700 dark:bg-slate-800"></textarea></label><label class="text-sm font-medium dark:text-slate-300 md:col-span-2">Key passphrase <span class="font-normal text-slate-400">(optional)</span><input v-model="ssh.key_passphrase" type="password" autocomplete="off" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label></template>
-            <div class="md:col-span-2"><button :disabled="sshInspecting" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><i class="bi bi-search mr-2"></i>{{ sshInspecting ? 'Connecting…' : 'Connect & discover' }}</button></div>
-          </form>
-        </section>
-        <div v-if="message" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{{ message }}</div>
-        <div v-if="error" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300">{{ error }}</div>
-        <section v-if="remoteInventory" class="space-y-4">
-          <div><h3 class="text-lg font-semibold dark:text-slate-100">Remote websites</h3><p class="text-sm text-slate-500">{{ remoteInventory.panel }} · {{ remoteInventory.hostname }}</p></div>
-          <div v-if="!remoteInventory.websites.length" class="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500 dark:border-slate-800 dark:bg-slate-900/50">No websites were returned by CyberPanel.</div>
-          <article v-for="website in remoteInventory.websites" :key="website.domain" class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/50">
-            <div class="flex flex-wrap items-start justify-between gap-3"><div><h4 class="font-semibold text-slate-900 dark:text-slate-100">{{ website.domain }}</h4><p class="mt-1 break-all text-xs text-slate-500">{{ website.path }}</p></div><span v-if="website.php_version" class="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400">PHP {{ website.php_version }}</span></div>
-            <div class="mt-4"><h5 class="text-xs font-bold uppercase tracking-wide text-slate-400">Databases ({{ website.databases.length }})</h5><div v-if="website.databases.length" class="mt-2 grid gap-2 sm:grid-cols-2"><div v-for="database in website.databases" :key="database.name" class="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800"><span class="font-mono text-slate-700 dark:text-slate-200">{{ database.name }}</span><span v-if="database.user" class="ml-2 text-xs text-slate-400">{{ database.user }}</span></div></div><p v-else class="mt-2 text-sm text-slate-400">No database found.</p></div>
-          </article>
-        </section>
-      </template>
+      <CyberPanelSshMigration v-else-if="props.provider === 'cyberpanel-ssh'" :saved-connections="props.savedSshConnections" :php-versions="props.phpVersions" />
       <template v-else-if="props.provider === 'cpanel'">
       <button type="button" class="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300" @click="router.visit(route('migrations.index'))"><i class="bi bi-arrow-left"></i> All migration services</button>
       <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
