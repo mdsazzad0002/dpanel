@@ -16,8 +16,6 @@ use crate::{
 
 use super::common::{ensure_canonical_inside_home, validate_account, validate_user_path};
 
-const WEB_GROUP: &str = "www-data";
-
 #[derive(Deserialize)]
 pub(crate) struct Request {
     username: Option<String>,
@@ -31,8 +29,6 @@ pub fn run(
     all: bool,
 ) -> Result<Vec<String>, String> {
     ensure_root()?;
-    ensure_web_group()?;
-
     let targets = if all {
         discover_public_html_targets()?
     } else {
@@ -83,10 +79,6 @@ struct Target {
     root_path: PathBuf,
 }
 
-fn ensure_web_group() -> Result<(), String> {
-    run_status("getent", &["group", WEB_GROUP])
-}
-
 fn resolve_target(username: Option<&str>, root_path: Option<&str>) -> Result<Target, String> {
     let username = username
         .filter(|value| !value.trim().is_empty())
@@ -101,7 +93,13 @@ fn resolve_target(username: Option<&str>, root_path: Option<&str>) -> Result<Tar
     let path = root_path
         .map(|value| validate_user_path(username, value))
         .transpose()?
-        .unwrap_or_else(|| user_home.join("public_html"));
+        .unwrap_or_else(|| user_home.clone());
+    if path != user_home {
+        return Err(format!(
+            "Permission repair must start at the account home: {}",
+            user_home.display()
+        ));
+    }
     let canonical = ensure_canonical_inside_home(&canonical_home, &path, "Root path")?;
 
     Ok(Target {
@@ -129,20 +127,8 @@ fn discover_public_html_targets() -> Result<Vec<Target>, String> {
             continue;
         }
 
-        let home = entry.path();
-        let public_html = home.join("public_html");
-        if public_html.is_dir() {
-            if let Ok(target) = resolve_target(Some(&username), public_html.to_str()) {
-                targets.push(target);
-            }
-        }
-
-        // An account can host several websites, each in its own project folder
-        // (/home/<user>/<site>/public). Repairing only public_html would skip them.
-        for site in site_project_roots(&home) {
-            if let Ok(target) = resolve_target(Some(&username), site.to_str()) {
-                targets.push(target);
-            }
+        if let Ok(target) = resolve_target(Some(&username), entry.path().to_str()) {
+            targets.push(target);
         }
     }
 
@@ -153,183 +139,19 @@ fn discover_public_html_targets() -> Result<Vec<Target>, String> {
     Ok(targets)
 }
 
-fn site_project_roots(home: &Path) -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    let Ok(entries) = fs::read_dir(home) else {
-        return roots;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() || path.file_name().and_then(|name| name.to_str()) == Some("public_html")
-        {
-            continue;
-        }
-
-        if path.join("public").is_dir() || path.join("public_html").is_dir() {
-            roots.push(path);
-        }
-    }
-
-    roots
-}
-
 fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
-    prepare_laravel_runtime(root_path)?;
     let path = root_path.to_string_lossy();
     let site_group = user_group(username)?;
     let owner = format!("{username}:{site_group}");
 
     run_status("chown", &["-R", &owner, path.as_ref()])?;
-    run_status("chmod", &["-R", "u+rwX,g+rwX,o-rwx", path.as_ref()])?;
-    run_status(
-        "find",
-        &[
-            path.as_ref(),
-            "-type",
-            "d",
-            "-exec",
-            "chmod",
-            "g+s",
-            "{}",
-            "+",
-        ],
-    )?;
-
     if command_exists("setfacl") {
-        run_status(
-            "setfacl",
-            &[
-                "-R",
-                "-m",
-                &format!("u:{username}:rwx,g:{site_group}:rwx"),
-                path.as_ref(),
-            ],
-        )?;
-        run_status(
-            "setfacl",
-            &[
-                "-R",
-                "-d",
-                "-m",
-                &format!("u:{username}:rwx,g:{site_group}:rwx"),
-                path.as_ref(),
-            ],
-        )?;
-        // The panel's File Manager lists and previews files through its
-        // www-data PHP process. Grant read/traverse access without granting
-        // project-wide write access; mutations still go through Drust.
-        run_status(
-            "setfacl",
-            &["-R", "-m", &format!("u:{WEB_GROUP}:rX"), path.as_ref()],
-        )?;
-        run_status(
-            "setfacl",
-            &[
-                "-R",
-                "-d",
-                "-m",
-                &format!("u:{WEB_GROUP}:rX"),
-                path.as_ref(),
-            ],
-        )?;
+        run_status("setfacl", &["-R", "-b", path.as_ref()])?;
+        run_status("setfacl", &["-R", "-k", path.as_ref()])?;
     }
+    run_status("chmod", &["-R", "u+rwX,g+rX,g-w,o-rwx", path.as_ref()])?;
+    run_status("chmod", &["0750", path.as_ref()])?;
 
-    for relative in ["storage", "bootstrap/cache", "public"] {
-        let writable = root_path.join(relative);
-        if writable.is_dir() {
-            let writable_path = writable.to_string_lossy();
-            run_status("chgrp", &["-R", WEB_GROUP, writable_path.as_ref()])?;
-            run_status(
-                "find",
-                &[
-                    writable_path.as_ref(),
-                    "-type",
-                    "d",
-                    "-exec",
-                    "chmod",
-                    "2775",
-                    "{}",
-                    "+",
-                ],
-            )?;
-            run_status(
-                "find",
-                &[
-                    writable_path.as_ref(),
-                    "-type",
-                    "f",
-                    "-exec",
-                    "chmod",
-                    "ug+rw,o-rwx",
-                    "{}",
-                    "+",
-                ],
-            )?;
-            if command_exists("setfacl") {
-                // The explicit project-wide www-data:rX ACL above overrides
-                // group mode bits. Laravel actions initiated by the panel need
-                // write access only in these runtime/public directories.
-                run_status(
-                    "setfacl",
-                    &[
-                        "-R",
-                        "-m",
-                        &format!("u:{WEB_GROUP}:rwX"),
-                        writable_path.as_ref(),
-                    ],
-                )?;
-                run_status(
-                    "setfacl",
-                    &[
-                        "-R",
-                        "-d",
-                        "-m",
-                        &format!("u:{WEB_GROUP}:rwX"),
-                        writable_path.as_ref(),
-                    ],
-                )?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn prepare_laravel_runtime(root_path: &Path) -> Result<(), String> {
-    if !root_path.join("artisan").is_file() {
-        return Ok(());
-    }
-
-    for relative in [
-        "storage/logs",
-        "storage/framework/cache/data",
-        "storage/framework/sessions",
-        "storage/framework/views",
-        "bootstrap/cache",
-    ] {
-        fs::create_dir_all(root_path.join(relative)).map_err(|error| {
-            format!("failed to create Laravel runtime directory {relative}: {error}")
-        })?;
-    }
-
-    let env = fs::read_to_string(root_path.join(".env")).unwrap_or_default();
-    let uses_sqlite = env.lines().any(|line| {
-        let line = line.trim();
-        line == "DB_CONNECTION=sqlite"
-            || line == "DB_CONNECTION=\"sqlite\""
-            || line == "DB_CONNECTION='sqlite'"
-    });
-    if uses_sqlite {
-        let database_dir = root_path.join("database");
-        fs::create_dir_all(&database_dir)
-            .map_err(|error| format!("failed to create Laravel database directory: {error}"))?;
-        let database = database_dir.join("database.sqlite");
-        if !database.exists() {
-            fs::File::create(&database)
-                .map_err(|error| format!("failed to create database/database.sqlite: {error}"))?;
-        }
-    }
     Ok(())
 }
 

@@ -10,11 +10,9 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cookie;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
 use Inertia\Inertia;
 use Inertia\Response;
-use RuntimeException;
 
 class TwoFactorChallengeController extends Controller
 {
@@ -217,6 +215,7 @@ class TwoFactorChallengeController extends Controller
 
         if (! $force && $hasCode) {
             $request->session()->put('two_factor.challenge.method', $method);
+
             return;
         }
 
@@ -275,7 +274,7 @@ class TwoFactorChallengeController extends Controller
         URL::defaults(['token' => $token]);
 
         $cookieToken = bin2hex(random_bytes(32));
-        $lifetime = max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120)));
+        $lifetime = PanelSession::inactivityMinutes();
         $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
 
         PanelSession::syncSingleSession(
@@ -284,7 +283,7 @@ class TwoFactorChallengeController extends Controller
             cookieToken: $cookieToken,
             ipAddress: (string) $request->ip(),
             userAgent: (string) $request->userAgent(),
-            expiresAt: now()->addMinutes($lifetime),
+            expiresAt: PanelSession::initialExpiresAt(),
             lastSeenAt: now(),
         );
 

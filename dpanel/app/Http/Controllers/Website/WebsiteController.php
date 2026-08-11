@@ -10,8 +10,8 @@ use App\Models\SslCertificate;
 use App\Models\User;
 use App\Models\Website;
 use App\Models\WebsiteIpRule;
-use App\Services\Filemanager\FilemanagerService;
 use App\Services\EdgeGatewayReloader;
+use App\Services\Filemanager\FilemanagerService;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
 use App\Services\Ssl\SslLifecycleService;
@@ -27,8 +27,8 @@ use Illuminate\Support\Collection;
 // Service Quick Use
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -40,7 +40,10 @@ class WebsiteController extends Controller
 {
     public function reloadGatewayCache(EdgeGatewayReloader $reloader): JsonResponse
     {
-        if (! $reloader->reload()) return response()->json(['message' => 'Gateway reload failed; the previous cache is still active.'], 502);
+        if (! $reloader->reload()) {
+            return response()->json(['message' => 'Gateway reload failed; the previous cache is still active.'], 502);
+        }
+
         return response()->json(['message' => 'Website routing and static caches reloaded.']);
     }
 
@@ -95,33 +98,26 @@ class WebsiteController extends Controller
         $limit = (int) $request->query('limit', 10);
         $limit = max(1, min($limit, 10));
 
-        $domains = $this->visibleRequestsForActor($request->user())
-            ->map(function (array $item): array {
-                $domain = $this->normalizeDomain((string) ($item['domain'] ?? ''));
-                $rootPath = (string) ($item['root_path'] ?? '');
-                $startDirectory = (string) ($item['start_directory'] ?? 'public');
+        $domains = Website::query()
+            ->visibleTo($request->user())
+            ->whereNull('parent_id')
+            ->where('type', 'primary')
+            ->when($query !== '', fn ($builder) => $builder->where('domain', 'like', '%'.$query.'%'))
+            ->orderBy('domain')
+            ->limit($limit)
+            ->get(['id', 'domain', 'root_path', 'start_directory'])
+            ->map(function (Website $item): array {
+                $domain = $this->normalizeDomain((string) $item->domain);
 
                 return [
-                    'id' => (string) ($item['id'] ?? ''),
+                    'id' => (string) $item->id,
                     'domain' => $domain,
-                    'root_path' => $rootPath,
-                    'start_directory' => $startDirectory,
+                    'root_path' => (string) $item->root_path,
+                    'start_directory' => (string) ($item->start_directory ?: 'public'),
                 ];
             })
-            ->filter(function (array $item) use ($query): bool {
-                $domain = (string) ($item['domain'] ?? '');
-                if ($domain === '') {
-                    return false;
-                }
-
-                if ($query === '') {
-                    return true;
-                }
-
-                return str_contains($domain, $query);
-            })
+            ->filter(fn (array $item): bool => $item['domain'] !== '')
             ->unique('domain')
-            ->take($limit)
             ->values()
             ->all();
 
@@ -142,10 +138,15 @@ class WebsiteController extends Controller
 
         return Inertia::render('Websites/List', [
             'websiteRequests' => $requests,
-            'canChangeOwnership' => (bool) $actor?->hasRole('admin'),
-            'ownershipUsers' => $actor?->hasRole('admin')
+            'canChangeOwner' => (bool) $actor?->hasAnyRole(['admin', 'reseller']),
+            'canChangeReseller' => (bool) $actor?->hasRole('admin'),
+            'ownershipUsers' => $actor?->hasAnyRole(['admin', 'reseller'])
                 ? User::query()
                     ->whereHas('roles', fn ($query) => $query->whereIn('name', ['reseller', 'general', 'general_user']))
+                    ->when($actor?->hasRole('reseller'), function ($query) use ($actor): void {
+                        $query->where('reseller_id', $actor->id)
+                            ->whereHas('roles', fn ($roleQuery) => $roleQuery->whereIn('name', ['general', 'general_user']));
+                    })
                     ->with('roles:id,name')
                     ->orderBy('name')
                     ->get(['id', 'name', 'email', 'reseller_id'])
@@ -165,26 +166,31 @@ class WebsiteController extends Controller
 
     public function updateOwnership(Request $request, string $token, string $id): JsonResponse
     {
-        abort_unless($request->user()?->hasRole('admin'), 403);
+        $actor = $request->user();
+        abort_unless($actor?->hasAnyRole(['admin', 'reseller']), 403);
 
         $validated = $request->validate([
             'owner_user_id' => ['nullable', 'integer', 'exists:users,id'],
             'reseller_user_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
+        $this->findAuthorizedWebsiteOrFail($id, $actor);
         $website = Website::query()->findOrFail($id);
         $owner = isset($validated['owner_user_id'])
             ? User::query()->with('roles:id,name')->findOrFail((int) $validated['owner_user_id'])
             : null;
-        $reseller = isset($validated['reseller_user_id'])
+        $reseller = $actor->hasRole('admin') && isset($validated['reseller_user_id'])
             ? User::query()->with('roles:id,name')->findOrFail((int) $validated['reseller_user_id'])
-            : null;
+            : ($website->assigned_reseller_id ? User::query()->find($website->assigned_reseller_id) : null);
 
         if ($owner && ! $owner->hasAnyRole(['general', 'general_user'])) {
             return response()->json(['message' => 'The selected owner must be a General User.'], 422);
         }
         if ($reseller && ! $reseller->hasRole('reseller')) {
             return response()->json(['message' => 'The selected reseller must have the Reseller role.'], 422);
+        }
+        if ($actor->hasRole('reseller') && $owner && (int) $owner->reseller_id !== (int) $actor->id) {
+            return response()->json(['message' => 'You may only assign one of your own users.'], 403);
         }
 
         $assignedUserId = $owner?->id;
@@ -201,7 +207,9 @@ class WebsiteController extends Controller
                     ->map(fn ($childId): string => (string) $childId)
                     ->all();
                 $children = array_values(array_diff($children, $affectedIds));
-                if ($children === []) break;
+                if ($children === []) {
+                    break;
+                }
                 $affectedIds = array_values(array_unique(array_merge($affectedIds, $children)));
                 $frontier = $children;
             }
@@ -263,9 +271,6 @@ class WebsiteController extends Controller
         $autoRenewNotice = $this->autoRenewWebsiteSslIfNeeded($website);
         $sslStatus = $this->inspectWebsiteSslStatus($website);
         $rootInspection = $this->inspectWebsiteApplication($website);
-        $inspectedProjectRoot = rtrim((string) ($rootInspection['root_path'] ?? ''), '/');
-        $rootInspection['has_composer_json'] = $inspectedProjectRoot !== '' && is_file($inspectedProjectRoot.'/composer.json');
-        $rootInspection['has_package_json'] = $inspectedProjectRoot !== '' && is_file($inspectedProjectRoot.'/package.json');
         $databaseRequest = DatabaseRequest::query()
             ->visibleTo(request()->user())
             ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
@@ -314,6 +319,15 @@ class WebsiteController extends Controller
             ? ''
             : $this->normalizeSiteDirectory((string) $validated['start_directory'], '');
 
+        $affectedDomains = Website::query()
+            ->whereKey((string) $website['id'])
+            ->orWhere(function ($query) use ($website): void {
+                $query->where('parent_id', (string) $website['id'])
+                    ->whereIn('type', ['alis', 'alias']);
+            })
+            ->pluck('domain')
+            ->all();
+
         DB::transaction(function () use ($website, $startDirectory, $phpVersion): void {
             $runtimeSettings = [
                 'start_directory' => $startDirectory,
@@ -330,10 +344,16 @@ class WebsiteController extends Controller
                 ->update($runtimeSettings);
         });
 
+        $gatewayReloaded = app(EdgeGatewayReloader::class)->reloadDomains($affectedDomains);
+
         return response()->json([
-            'success' => true,
-            'message' => 'Website runtime settings updated successfully.',
-        ]);
+            'success' => $gatewayReloaded,
+            'message' => $gatewayReloaded
+                ? 'Website runtime settings updated and its cache refreshed successfully.'
+                : 'Website settings were saved, but its gateway cache could not be refreshed.',
+            'cache_scope' => 'website',
+            'domains' => $affectedDomains,
+        ], $gatewayReloaded ? 200 : 502);
     }
 
     public function storeIpRule(Request $request, string $token, string $id): JsonResponse
@@ -524,16 +544,10 @@ class WebsiteController extends Controller
         }
 
         $rootPath = (string) ($rootInspection['root_path'] ?? $website['root_path'] ?? '');
-        if ($rootPath === '' || ! is_dir($rootPath)) {
+        if ($rootPath === '') {
             return $respond(false, 'Website root path is missing or inaccessible.', 422);
         }
-
-        $artisanPath = $this->resolveProjectArtisanPath($rootPath);
-        if ($artisanPath === null) {
-            return $respond(false, 'Laravel artisan file not found for this website.', 422);
-        }
-
-        $projectPath = dirname($artisanPath);
+        $projectPath = rtrim($rootPath, '/');
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($rootPath));
         $primary = $this->runProjectArtisanCommand($projectPath, 'optimize:clear', $siteOwner);
 
@@ -567,23 +581,20 @@ class WebsiteController extends Controller
     public function fixProjectPermissions(Request $request, string $token, string $id): JsonResponse
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
-        $inspection = $this->inspectWebsiteApplication($website);
-        $rootPath = (string) ($inspection['root_path'] ?? $website['project_root'] ?? $website['root_path'] ?? '');
-        $artisanPath = $this->resolveProjectArtisanPath($rootPath);
-        $projectPath = $artisanPath !== null ? dirname($artisanPath) : rtrim($rootPath, '/');
-        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($projectPath));
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath((string) ($website['project_root'] ?? '')));
+        $accountHome = $siteOwner !== '' ? '/home/'.$siteOwner : '';
 
-        if ($siteOwner === '' || $projectPath === '') {
-            return response()->json(['success' => false, 'message' => 'Website owner or project path is unavailable.'], 422);
+        if ($siteOwner === '' || $accountHome === '') {
+            return response()->json(['success' => false, 'message' => 'Website owner is unavailable.'], 422);
         }
 
         try {
-            $result = $this->filemanagerService->fixWebsitePermissions($siteOwner, $projectPath);
+            $result = $this->filemanagerService->fixWebsitePermissions($siteOwner, $accountHome);
             if (! $result['success']) {
                 return response()->json(['success' => false, 'message' => $result['output'] ?: 'Permission repair failed.'], 422);
             }
 
-            return response()->json(['success' => true, 'message' => 'Website permissions fixed successfully. Laravel runtime files were prepared when applicable.']);
+            return response()->json(['success' => true, 'message' => "Permissions fixed recursively from {$accountHome} for {$siteOwner}."]);
         } catch (\Throwable $error) {
             return response()->json(['success' => false, 'message' => 'Permission repair failed: '.$error->getMessage()], 422);
         }
@@ -621,7 +632,9 @@ class WebsiteController extends Controller
 
         $client = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
         $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
-        if ($apiToken !== '') $client = $client->withToken($apiToken);
+        if ($apiToken !== '') {
+            $client = $client->withToken($apiToken);
+        }
         $response = $client->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/database-config', [
             'site_owner' => (string) ($website['site_owner'] ?? ''),
             'framework' => $framework,
@@ -645,6 +658,7 @@ class WebsiteController extends Controller
             'codeigniter4' => 'CodeIgniter 4',
             default => ucfirst($framework),
         };
+
         return response()->json(['success' => true, 'message' => $frameworkLabel.' database connected successfully.']);
     }
 
@@ -661,7 +675,9 @@ class WebsiteController extends Controller
 
         $client = Http::acceptJson()->asJson()->timeout(900);
         $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
-        if ($apiToken !== '') $client = $client->withToken($apiToken);
+        if ($apiToken !== '') {
+            $client = $client->withToken($apiToken);
+        }
         $response = $client->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/project-dependencies', [
             'site_owner' => (string) ($website['site_owner'] ?? ''),
             'project_root' => $root,
@@ -676,6 +692,7 @@ class WebsiteController extends Controller
             'npm_build' => 'Frontend assets built successfully.',
             default => 'NPM dependencies installed and frontend assets built successfully.',
         };
+
         return response()->json(['success' => true, 'message' => $message]);
     }
 
@@ -743,6 +760,7 @@ class WebsiteController extends Controller
     private function inspectWebsiteApplication(array $website): array
     {
         $installationRoot = $this->wordpressInstallService->resolveInstallationRoot($website);
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($installationRoot));
         $candidates = array_values(array_unique(array_filter([
             $installationRoot,
             (string) ($website['project_root'] ?? ''),
@@ -751,14 +769,10 @@ class WebsiteController extends Controller
         $fallback = null;
 
         foreach ($candidates as $candidate) {
-            $inspection = $this->wordpressInstallService->inspectRootDirectory($candidate);
-            $inspection['root_path'] = $candidate;
-            if (strtolower((string) ($inspection['detected_app'] ?? '')) === 'laravel') {
-                $artisanPath = $this->resolveProjectArtisanPath($candidate);
-                $projectPath = $artisanPath !== null ? dirname($artisanPath) : rtrim($candidate, '/');
-                $storagePath = $projectPath.'/public/storage';
-                $inspection['storage_linked'] = is_link($storagePath);
-                $inspection['storage_link_path'] = $storagePath;
+            try {
+                $inspection = $this->filemanagerService->inspectWebsiteApplication($siteOwner, $candidate);
+            } catch (\Throwable $exception) {
+                continue;
             }
             $fallback ??= $inspection;
             if (in_array((string) ($inspection['detected_app'] ?? ''), ['wordpress', 'laravel', 'codeigniter'], true)) {
@@ -823,24 +837,27 @@ class WebsiteController extends Controller
         $showHidden = $request->has('show_hidden')
             ? $request->boolean('show_hidden')
             : (bool) ($website['filemanager_show_hidden'] ?? false);
-        $directory = $this->resolvePathInsideBase($basePath, $currentPath);
-
-        if (! is_dir($directory)) {
-            $fallbackPath = $this->resolvePathInsideBase($basePath, $defaultPath);
-            if (is_dir($fallbackPath)) {
-                $directory = $fallbackPath;
-                $currentPath = $defaultPath;
-            } else {
-                $directory = $basePath;
-                $currentPath = '';
+        try {
+            $listing = $this->filemanagerService->browseDirectory($siteOwner, $basePath, $currentPath, $showHidden);
+        } catch (\Throwable $exception) {
+            if ($currentPath === $defaultPath) {
+                throw $exception;
             }
+            $listing = $this->filemanagerService->browseDirectory($siteOwner, $basePath, $defaultPath, $showHidden);
         }
+        $currentPath = $listing['current_path'];
+        $directory = $this->resolvePathInsideBase($basePath, $currentPath);
+        $items = array_map(function (array $item): array {
+            if (isset($item['modified_at']) && is_numeric($item['modified_at'])) {
+                $item['modified_at'] = date('c', (int) $item['modified_at']);
+            }
 
-        $items = $this->listDirectoryItems($basePath, $directory, $showHidden);
+            return $item;
+        }, $listing['items']);
 
         $selectedFilePath = $this->sanitizeRelativePath((string) ($request->query('file', $request->query('file_path', ''))));
-        $selectedFile = $this->readSelectedFile($basePath, $selectedFilePath);
-        $directoryTree = $this->buildDirectoryTree($basePath, '', 24, $showHidden, $currentPath);
+        $selectedFile = $this->readSelectedFile($siteOwner, $basePath, $selectedFilePath);
+        $directoryTree = $listing['directory_tree'];
 
         return Inertia::render('FileManager/FileManager', [
             'website' => [
@@ -1118,6 +1135,7 @@ class WebsiteController extends Controller
             if ($request->expectsJson()) {
                 return response()->json(['message' => 'Invalid new name.'], 422);
             }
+
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Invalid new name.');
         }
 
@@ -1132,6 +1150,7 @@ class WebsiteController extends Controller
             if ($request->expectsJson()) {
                 return response()->json(['message' => 'Failed to rename item. '.$e->getMessage()], 422);
             }
+
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to rename item. '.$e->getMessage());
         }
 
@@ -1288,65 +1307,16 @@ class WebsiteController extends Controller
         $zipRelative = $this->sanitizeRelativePath(trim($currentPath.'/'.$zipName, '/'));
         $zipPath = $this->resolvePathInsideBase($basePath, $zipRelative);
 
-        if (file_exists($zipPath)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Zip file already exists.');
-        }
-
-        if (! class_exists(ZipArchive::class)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', $this->zipExtensionMissingMessage());
-        }
-
-        $zipTempDir = $this->resolveTemporaryDirectory().'/filemanager-zips';
-        if (! is_dir($zipTempDir) && ! @mkdir($zipTempDir, 0775, true) && ! is_dir($zipTempDir)) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to prepare temporary zip folder.');
-        }
-
-        if (! is_writable($zipTempDir)) {
-            @chmod($zipTempDir, 0775);
-        }
-
-        $zipTempPath = $this->buildTemporaryFilePath($zipTempDir, 'zip-', '.zip');
-        if (@touch($zipTempPath) === false) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create temporary zip file.');
-        }
-
-        $zip = new ZipArchive;
-        if ($zip->open($zipTempPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-            @unlink($zipTempPath);
-
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create zip file.');
-        }
-
-        foreach ($itemPaths as $itemRelative) {
-            $sourcePath = $this->resolvePathInsideBase($basePath, $itemRelative);
-            if (! file_exists($sourcePath)) {
-                continue;
-            }
-
-            $baseName = basename($sourcePath);
-            if (is_dir($sourcePath)) {
-                $this->addDirectoryToZip($zip, $sourcePath, $baseName);
-            } else {
-                $zip->addFile($sourcePath, $baseName);
-            }
-        }
-
-        if ($zip->close() !== true) {
-            @unlink($zipTempPath);
-
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to finalize zip file.');
-        }
-
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
         try {
-            $this->filemanagerService->uploadFile($siteOwner, $zipPath, $zipTempPath);
+            $sourcePaths = array_map(
+                fn (string $itemRelative): string => $this->resolvePathInsideBase($basePath, $itemRelative),
+                $itemPaths
+            );
+            $this->filemanagerService->zipPaths($siteOwner, $sourcePaths, $zipPath);
         } catch (\Throwable $e) {
-            @unlink($zipTempPath);
-
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to save zip file. '.$e->getMessage());
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create zip. '.$e->getMessage());
         }
-
-        @unlink($zipTempPath);
 
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Zip created successfully.');
     }
@@ -1368,12 +1338,12 @@ class WebsiteController extends Controller
         $zipPath = $this->resolvePathInsideBase($basePath, $zipRelative);
         $destinationPath = $this->resolvePathInsideBase($basePath, $currentPath);
 
-        if (! is_file($zipPath) || ! str_ends_with(strtolower($zipPath), '.zip')) {
+        if (! str_ends_with(strtolower($zipPath), '.zip')) {
             if ($request->expectsJson()) {
-                return response()->json(['message' => 'Valid zip file not found.'], 422);
+                return response()->json(['message' => 'The selected file is not a .zip archive.'], 422);
             }
 
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Valid zip file not found.');
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'The selected file is not a .zip archive.');
         }
 
         try {
@@ -1602,63 +1572,15 @@ class WebsiteController extends Controller
     protected function runProjectArtisanCommand(string $projectPath, string $artisanCommand, string $siteOwner = ''): array
     {
         $projectPath = rtrim($this->normalizeAbsolutePath($projectPath), '/');
-        if ($projectPath === '' || ! is_dir($projectPath)) {
+        if ($projectPath === '' || trim($siteOwner) === '') {
             return [
                 'success' => false,
-                'output' => 'Invalid project path.',
+                'output' => 'Invalid project path or website owner.',
                 'exit_code' => 1,
             ];
         }
 
-        $phpBinary = $this->resolvePhpCliBinary();
-
-        $snippet = sprintf(
-            'cd %s && %s artisan %s',
-            escapeshellarg($projectPath),
-            escapeshellarg($phpBinary),
-            escapeshellarg($artisanCommand),
-        );
-
-        $output = [];
-        $exitCode = 1;
-        $owner = trim($siteOwner);
-        $canRunAsOwner = $owner !== ''
-            && preg_match('/^[a-z_][a-z0-9_-]*[$]?$/i', $owner) === 1
-            && function_exists('posix_geteuid')
-            && posix_geteuid() === 0;
-
-        if ($canRunAsOwner) {
-            $ownerOutput = [];
-            $ownerExitCode = 1;
-            @exec(
-                'runuser -u '.escapeshellarg($owner).' -- sh -lc '.escapeshellarg($snippet).' 2>&1',
-                $ownerOutput,
-                $ownerExitCode,
-            );
-            if ($ownerExitCode === 0) {
-                return [
-                    'success' => true,
-                    'output' => trim(implode("\n", $ownerOutput)),
-                    'exit_code' => 0,
-                ];
-            }
-            $output = $ownerOutput;
-            $exitCode = $ownerExitCode;
-        }
-
-        $directOutput = [];
-        $directExitCode = 1;
-        @exec('sh -lc '.escapeshellarg($snippet).' 2>&1', $directOutput, $directExitCode);
-
-        if ($canRunAsOwner && count($output) > 0) {
-            $directOutput = array_merge($output, ['---- fallback as current user ----'], $directOutput);
-        }
-
-        return [
-            'success' => $directExitCode === 0,
-            'output' => trim(implode("\n", $directOutput)),
-            'exit_code' => $directExitCode,
-        ];
+        return $this->filemanagerService->runArtisanCommand($siteOwner, $projectPath, $artisanCommand);
     }
 
     protected function resolvePhpCliBinary(): string
@@ -3518,7 +3440,8 @@ class WebsiteController extends Controller
 
     protected function resolveFileManagerBasePath(array $website, string $scopeRoot = ''): string
     {
-        $configured = (string) ($website['project_root'] ?? '');
+        $siteOwner = (string) ($website['site_owner'] ?? '');
+        $configured = $siteOwner !== '' ? '/home/'.$siteOwner : (string) ($website['project_root'] ?? '');
         $domain = (string) ($website['domain'] ?? 'site');
         $resolvedRoot = $configured !== ''
             ? $this->normalizeAbsolutePath($configured)
@@ -3527,10 +3450,6 @@ class WebsiteController extends Controller
 
         if ($resolvedRoot === '') {
             abort(422, 'Website root path is missing. Please set a valid root path first.');
-        }
-
-        if (! is_dir($resolvedRoot)) {
-            @mkdir($resolvedRoot, 0755, true);
         }
 
         return str_replace('\\', '/', rtrim($resolvedRoot, '/'));
@@ -3734,39 +3653,21 @@ class WebsiteController extends Controller
     /**
      * @return array<string, mixed>|null
      */
-    protected function readSelectedFile(string $basePath, string $fileRelative): ?array
+    protected function readSelectedFile(string $siteOwner, string $basePath, string $fileRelative): ?array
     {
         if ($fileRelative === '') {
             return null;
         }
 
         $filePath = $this->resolvePathInsideBase($basePath, $fileRelative);
-        if (! is_file($filePath)) {
-            return null;
-        }
-
-        $size = @filesize($filePath) ?: 0;
-        if ($size > 1024 * 1024) {
-            return [
-                'path' => $fileRelative,
-                'name' => basename($filePath),
-                'content' => '',
-                'readonly' => true,
-                'message' => 'File is larger than 1MB and not loaded in editor.',
-            ];
-        }
-
-        $content = @file_get_contents($filePath);
-        if (! is_string($content)) {
-            $content = '';
-        }
+        $file = $this->filemanagerService->readTextFile($siteOwner, $filePath);
 
         return [
             'path' => $fileRelative,
             'name' => basename($filePath),
-            'content' => $content,
-            'readonly' => false,
-            'message' => null,
+            'content' => $file['content'],
+            'readonly' => $file['readonly'],
+            'message' => $file['message'],
         ];
     }
 

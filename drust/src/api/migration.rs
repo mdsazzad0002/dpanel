@@ -23,18 +23,37 @@ pub fn routes() -> Router<Arc<ApiState>> {
     Router::new()
         .route("/api/v1/migration/cpanel/inspect", post(inspect_handle))
         .route("/api/v1/migration/cpanel/restore", post(restore_handle))
-        .route("/api/v1/migration/generic/restore", post(generic_restore_handle))
+        .route(
+            "/api/v1/migration/generic/restore",
+            post(generic_restore_handle),
+        )
 }
 
 #[derive(Deserialize)]
 struct GenericRestoreRequest {
-    archive_path: String, domain: String, site_owner: String, php_version: String, target_root: String,
-    sql_path: Option<String>, database_host: String, database_port: u16,
-    database_name: String, database_user: String, database_password: String,
+    archive_path: String,
+    domain: String,
+    site_owner: String,
+    php_version: String,
+    target_root: String,
+    sql_path: Option<String>,
+    database_host: String,
+    database_port: u16,
+    database_name: String,
+    database_user: String,
+    database_password: String,
+    #[serde(default)]
+    overwrite_database: bool,
 }
 
-async fn generic_restore_handle(State(state): State<Arc<ApiState>>, headers: HeaderMap, Json(req): Json<GenericRestoreRequest>) -> Response {
-    if let Err(e) = check_token(&state, &headers) { return e.into_response(); }
+async fn generic_restore_handle(
+    State(state): State<Arc<ApiState>>,
+    headers: HeaderMap,
+    Json(req): Json<GenericRestoreRequest>,
+) -> Response {
+    if let Err(e) = check_token(&state, &headers) {
+        return e.into_response();
+    }
     match generic_restore(&req) {
         Ok(v) => ApiResponse::ok_data("Generic website restored", v).into_response(),
         Err(e) => ApiResponse::error(&e).into_response(),
@@ -403,98 +422,451 @@ fn restore(value: &str, selection: &Selection) -> Result<serde_json::Value, Stri
 
 fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, String> {
     let source = archive_under_root(&req.archive_path, &[".zip", ".tar.gz", ".tgz"])?;
-    if req.site_owner.is_empty() || !req.site_owner.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
+    if req.site_owner.is_empty()
+        || !req
+            .site_owner
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+    {
         return Err("invalid target system user".into());
     }
-    if !req.domain.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'.' || c == b'-') || !req.domain.contains('.') { return Err("invalid domain".into()); }
-    if req.php_version.split_once('.').is_none() || !req.php_version.bytes().all(|c| c.is_ascii_digit() || c == b'.') { return Err("invalid PHP version".into()); }
-    for value in [&req.database_name, &req.database_user] {
-        if value.is_empty() || !value.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') { return Err("invalid database identity".into()); }
+    if !req
+        .domain
+        .bytes()
+        .all(|c| c.is_ascii_alphanumeric() || c == b'.' || c == b'-')
+        || !req.domain.contains('.')
+    {
+        return Err("invalid domain".into());
     }
-    let stage = PathBuf::from(format!("{ROOT}/.generic-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos()));
+    if req.php_version.split_once('.').is_none()
+        || !req
+            .php_version
+            .bytes()
+            .all(|c| c.is_ascii_digit() || c == b'.')
+    {
+        return Err("invalid PHP version".into());
+    }
+    if req.sql_path.as_deref().is_some_and(|path| !path.is_empty()) {
+        for value in [&req.database_name, &req.database_user] {
+            if value.is_empty()
+                || !value
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+            {
+                return Err("invalid database identity".into());
+            }
+        }
+    }
+    let stage = PathBuf::from(format!(
+        "{ROOT}/.generic-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_nanos()
+    ));
     fs::create_dir(&stage).map_err(|e| e.to_string())?;
     let names = generic_archive_listing(&source)?;
-    if names.iter().any(|name| Path::new(name).is_absolute() || Path::new(name).components().any(|c| matches!(c, Component::ParentDir))) {
-        fs::remove_dir_all(&stage).ok(); return Err("archive contains an unsafe path".into());
+    if names.iter().any(|name| {
+        Path::new(name).is_absolute()
+            || Path::new(name)
+                .components()
+                .any(|c| matches!(c, Component::ParentDir))
+    }) {
+        fs::remove_dir_all(&stage).ok();
+        return Err("archive contains an unsafe path".into());
     }
-    let status = if source.to_string_lossy().to_ascii_lowercase().ends_with(".zip") {
-        Command::new("unzip").args(["-q", source.to_string_lossy().as_ref(), "-d", stage.to_string_lossy().as_ref()]).status()
+    let status = if source
+        .to_string_lossy()
+        .to_ascii_lowercase()
+        .ends_with(".zip")
+    {
+        Command::new("unzip")
+            .args([
+                "-q",
+                source.to_string_lossy().as_ref(),
+                "-d",
+                stage.to_string_lossy().as_ref(),
+            ])
+            .status()
     } else {
-        Command::new("tar").args(["-xzf", source.to_string_lossy().as_ref(), "-C", stage.to_string_lossy().as_ref(), "--no-same-owner", "--no-same-permissions"]).status()
-    }.map_err(|e| e.to_string())?;
-    if !status.success() { fs::remove_dir_all(&stage).ok(); return Err("website archive extraction failed".into()); }
+        Command::new("tar")
+            .args([
+                "-xzf",
+                source.to_string_lossy().as_ref(),
+                "-C",
+                stage.to_string_lossy().as_ref(),
+                "--no-same-owner",
+                "--no-same-permissions",
+            ])
+            .status()
+    }
+    .map_err(|e| e.to_string())?;
+    if !status.success() {
+        fs::remove_dir_all(&stage).ok();
+        return Err("website archive extraction failed".into());
+    }
     let content_root = collapse_single_directory(&stage)?;
     let home = PathBuf::from(format!("/home/{}", req.site_owner));
     if !home.exists() {
-        let _ = Command::new("groupadd").args(["--force", &req.site_owner]).status();
-        if !Command::new("useradd").args(["--create-home", "--gid", &req.site_owner, "--shell", "/usr/sbin/nologin", &req.site_owner]).status().map_err(|e| e.to_string())?.success() {
-            fs::remove_dir_all(&stage).ok(); return Err("cannot create target system user".into());
+        let _ = Command::new("groupadd")
+            .args(["--force", &req.site_owner])
+            .status();
+        if !Command::new("useradd")
+            .args([
+                "--create-home",
+                "--gid",
+                &req.site_owner,
+                "--shell",
+                "/usr/sbin/nologin",
+                &req.site_owner,
+            ])
+            .status()
+            .map_err(|e| e.to_string())?
+            .success()
+        {
+            fs::remove_dir_all(&stage).ok();
+            return Err("cannot create target system user".into());
         }
     }
     let project_root = PathBuf::from(&req.target_root);
-    if !project_root.starts_with(&home) || project_root.components().any(|part| matches!(part, Component::ParentDir)) { fs::remove_dir_all(&stage).ok(); return Err("website import target is outside its system user home".into()); }
+    if !project_root.starts_with(&home)
+        || project_root
+            .components()
+            .any(|part| matches!(part, Component::ParentDir))
+    {
+        fs::remove_dir_all(&stage).ok();
+        return Err("website import target is outside its system user home".into());
+    }
     fs::create_dir_all(&project_root).map_err(|e| e.to_string())?;
     let copy_source = format!("{}/.", content_root.display());
-    if !Command::new("cp").args(["-a", &copy_source, project_root.to_string_lossy().as_ref()]).status().map_err(|e| e.to_string())?.success() {
-        fs::remove_dir_all(&stage).ok(); return Err("cannot copy website files".into());
+    if !Command::new("cp")
+        .args(["-a", &copy_source, project_root.to_string_lossy().as_ref()])
+        .status()
+        .map_err(|e| e.to_string())?
+        .success()
+    {
+        fs::remove_dir_all(&stage).ok();
+        return Err("cannot copy website files".into());
     }
-    if let Some(sql) = req.sql_path.as_deref() {
+    let mut database_backup = None;
+    let saved_database = if let Some(sql) = req.sql_path.as_deref() {
         let sql = archive_under_root(sql, &[".sql"])?;
+        if req.overwrite_database {
+            database_backup = Some(backup_generic_database(req, &home)?);
+        }
         restore_generic_database(req, &sql)?;
-    }
+        Some(preserve_generic_upload(&sql, &home)?)
+    } else {
+        None
+    };
+    let saved_archive = preserve_generic_upload(&source, &home)?;
     let (framework, config_path, document_root) = detect_generic_application(&project_root);
-    let _ = Command::new("chown").args(["-R", &format!("{}:{}", req.site_owner, req.site_owner), home.to_string_lossy().as_ref()]).status();
-    crate::filemanager::fix_permissions::run(Some(&req.site_owner), project_root.to_str(), false)?;
+    let _ = Command::new("chown")
+        .args([
+            "-R",
+            &format!("{}:{}", req.site_owner, req.site_owner),
+            home.to_string_lossy().as_ref(),
+        ])
+        .status();
+    crate::filemanager::fix_permissions::run(Some(&req.site_owner), home.to_str(), false)?;
     fs::remove_dir_all(stage).ok();
-    Ok(serde_json::json!({"project_root":project_root,"document_root":document_root,"framework":framework,"config_path":config_path}))
+    Ok(
+        serde_json::json!({"project_root":project_root,"document_root":document_root,"framework":framework,"config_path":config_path,"saved_archive":saved_archive,"saved_database":saved_database,"database_backup":database_backup}),
+    )
+}
+
+fn backup_generic_database(req: &GenericRestoreRequest, home: &Path) -> Result<PathBuf, String> {
+    let upload_directory = home.join("migration_uploads");
+    fs::create_dir_all(&upload_directory)
+        .map_err(|error| format!("cannot create migration upload folder: {error}"))?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos();
+    let destination = upload_directory.join(format!(
+        "database-backup-{}-{timestamp}.sql",
+        req.database_name
+    ));
+    let output_file = fs::File::create(&destination)
+        .map_err(|error| format!("cannot create database backup: {error}"))?;
+    let local = matches!(req.database_host.as_str(), "127.0.0.1" | "localhost");
+    let mut command = Command::new("mysqldump");
+    if local {
+        command.args(["--protocol=socket"]);
+    } else {
+        command.env("MYSQL_PWD", &req.database_password).args([
+            "--host",
+            &req.database_host,
+            "--port",
+            &req.database_port.to_string(),
+            "--user",
+            &req.database_user,
+        ]);
+    }
+    let output = command
+        .args(["--single-transaction", "--routines", "--triggers"])
+        .arg(&req.database_name)
+        .stdout(Stdio::from(output_file))
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| {
+            fs::remove_file(&destination).ok();
+            format!("database backup failed; database was not overwritten: {error}")
+        })?;
+    if !output.status.success() {
+        fs::remove_file(&destination).ok();
+        return Err(format!(
+            "database backup failed; database was not overwritten: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(destination)
+}
+
+fn preserve_generic_upload(source: &Path, home: &Path) -> Result<PathBuf, String> {
+    let upload_directory = home.join("migration_uploads");
+    fs::create_dir_all(&upload_directory)
+        .map_err(|error| format!("cannot create migration upload folder: {error}"))?;
+
+    let original_name = source
+        .file_name()
+        .ok_or_else(|| "uploaded migration filename is missing".to_string())?;
+    let mut destination = upload_directory.join(original_name);
+    if destination.exists() {
+        let original = original_name.to_string_lossy();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_nanos();
+        let (stem, extension) = if original.to_ascii_lowercase().ends_with(".tar.gz") {
+            (&original[..original.len() - 7], ".tar.gz")
+        } else if let Some((stem, _)) = original.rsplit_once('.') {
+            (stem, &original[stem.len()..])
+        } else {
+            (original.as_ref(), "")
+        };
+        destination = upload_directory.join(format!("{stem}-{timestamp}{extension}"));
+    }
+
+    fs::copy(source, &destination)
+        .map_err(|error| format!("cannot preserve uploaded migration archive: {error}"))?;
+    Ok(destination)
+}
+
+#[cfg(test)]
+mod generic_upload_tests {
+    use super::preserve_generic_upload;
+    use std::fs;
+
+    #[test]
+    fn preserves_upload_without_overwriting_an_existing_archive() {
+        let root = std::env::temp_dir().join(format!(
+            "drust-migration-upload-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let source_directory = root.join("source");
+        let home = root.join("home");
+        fs::create_dir_all(&source_directory).unwrap();
+        fs::create_dir_all(&home).unwrap();
+        let source = source_directory.join("website-project.tar.gz");
+        fs::write(&source, b"archive").unwrap();
+
+        let first = preserve_generic_upload(&source, &home).unwrap();
+        let second = preserve_generic_upload(&source, &home).unwrap();
+
+        assert_eq!(first.file_name().unwrap(), "website-project.tar.gz");
+        assert_ne!(first, second);
+        assert_eq!(fs::read(first).unwrap(), b"archive");
+        assert_eq!(fs::read(second).unwrap(), b"archive");
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 fn archive_under_root(value: &str, extensions: &[&str]) -> Result<PathBuf, String> {
-    let root = Path::new(ROOT).canonicalize().map_err(|_| "migration storage is unavailable")?;
-    let path = Path::new(value).canonicalize().map_err(|_| "uploaded migration file was not found")?;
-    let name = path.file_name().and_then(|v| v.to_str()).unwrap_or("").to_ascii_lowercase();
-    if !path.starts_with(root) || !path.is_file() || !extensions.iter().any(|ext| name.ends_with(ext)) { return Err("invalid migration file".into()); }
+    let root = Path::new(ROOT)
+        .canonicalize()
+        .map_err(|_| "migration storage is unavailable")?;
+    let path = Path::new(value)
+        .canonicalize()
+        .map_err(|_| "uploaded migration file was not found")?;
+    let name = path
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !path.starts_with(root)
+        || !path.is_file()
+        || !extensions.iter().any(|ext| name.ends_with(ext))
+    {
+        return Err("invalid migration file".into());
+    }
     Ok(path)
 }
 
 fn generic_archive_listing(path: &Path) -> Result<Vec<String>, String> {
-    let zip = path.to_string_lossy().to_ascii_lowercase().ends_with(".zip");
-    let out = if zip { Command::new("unzip").args(["-Z1", path.to_string_lossy().as_ref()]).output() }
-        else { Command::new("tar").args(["-tzf", path.to_string_lossy().as_ref()]).output() }.map_err(|e| e.to_string())?;
-    if !out.status.success() { return Err("invalid website archive".into()); }
-    let verbose = if zip { Command::new("zipinfo").args(["-l", path.to_string_lossy().as_ref()]).output() }
-        else { Command::new("tar").args(["-tvzf", path.to_string_lossy().as_ref()]).output() }.map_err(|e| e.to_string())?;
-    if !verbose.status.success() || String::from_utf8_lossy(&verbose.stdout).lines().any(|line| matches!(line.as_bytes().first(), Some(b'l' | b'b' | b'c' | b'p' | b's'))) {
+    let zip = path
+        .to_string_lossy()
+        .to_ascii_lowercase()
+        .ends_with(".zip");
+    let out = if zip {
+        Command::new("unzip")
+            .args(["-Z1", path.to_string_lossy().as_ref()])
+            .output()
+    } else {
+        Command::new("tar")
+            .args(["-tzf", path.to_string_lossy().as_ref()])
+            .output()
+    }
+    .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err("invalid website archive".into());
+    }
+    let verbose = if zip {
+        Command::new("zipinfo")
+            .args(["-l", path.to_string_lossy().as_ref()])
+            .output()
+    } else {
+        Command::new("tar")
+            .args(["-tvzf", path.to_string_lossy().as_ref()])
+            .output()
+    }
+    .map_err(|e| e.to_string())?;
+    if !verbose.status.success()
+        || String::from_utf8_lossy(&verbose.stdout)
+            .lines()
+            .any(|line| {
+                matches!(
+                    line.as_bytes().first(),
+                    Some(b'l' | b'b' | b'c' | b'p' | b's')
+                )
+            })
+    {
         return Err("archive contains links or unsupported special files".into());
     }
-    Ok(String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect())
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect())
 }
 
 fn collapse_single_directory(stage: &Path) -> Result<PathBuf, String> {
-    let entries: Vec<PathBuf> = fs::read_dir(stage).map_err(|e| e.to_string())?.filter_map(Result::ok).map(|e| e.path()).collect();
-    Ok(if entries.len() == 1 && entries[0].is_dir() { entries[0].clone() } else { stage.to_path_buf() })
+    let entries: Vec<PathBuf> = fs::read_dir(stage)
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .collect();
+    Ok(if entries.len() == 1 && entries[0].is_dir() {
+        entries[0].clone()
+    } else {
+        stage.to_path_buf()
+    })
 }
 
-fn sql_escape(value: &str) -> String { value.replace('\\', "\\\\").replace('\'', "''") }
+fn sql_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('\'', "''")
+}
 fn restore_generic_database(req: &GenericRestoreRequest, sql: &Path) -> Result<(), String> {
     let local = matches!(req.database_host.as_str(), "127.0.0.1" | "localhost");
     if local {
         let password = sql_escape(&req.database_password);
-        let statement = format!("CREATE DATABASE IF NOT EXISTS `{}` CHARACTER SET utf8mb4; CREATE USER IF NOT EXISTS '{}'@'localhost' IDENTIFIED BY '{}'; ALTER USER '{}'@'localhost' IDENTIFIED BY '{}'; GRANT ALL PRIVILEGES ON `{}`.* TO '{}'@'localhost'; FLUSH PRIVILEGES;", req.database_name, req.database_user, password, req.database_user, password, req.database_name, req.database_user);
-        if !Command::new("mysql").args(["--protocol=socket", "--execute", &statement]).status().map_err(|e| e.to_string())?.success() { return Err("cannot provision local database".into()); }
+        let reset = if req.overwrite_database {
+            format!("DROP DATABASE IF EXISTS `{}`; ", req.database_name)
+        } else {
+            String::new()
+        };
+        let statement = format!(
+            "{}CREATE DATABASE IF NOT EXISTS `{}` CHARACTER SET utf8mb4; CREATE USER IF NOT EXISTS '{}'@'localhost' IDENTIFIED BY '{}'; ALTER USER '{}'@'localhost' IDENTIFIED BY '{}'; GRANT ALL PRIVILEGES ON `{}`.* TO '{}'@'localhost'; FLUSH PRIVILEGES;",
+            reset,
+            req.database_name,
+            req.database_user,
+            password,
+            req.database_user,
+            password,
+            req.database_name,
+            req.database_user
+        );
+        if !Command::new("mysql")
+            .args(["--protocol=socket", "--execute", &statement])
+            .status()
+            .map_err(|e| e.to_string())?
+            .success()
+        {
+            return Err("cannot provision local database".into());
+        }
     }
     let bytes = fs::read(sql).map_err(|e| e.to_string())?;
-    let mut child = Command::new("mysql").env("MYSQL_PWD", &req.database_password).args(["--host", &req.database_host, "--port", &req.database_port.to_string(), "--user", &req.database_user, &req.database_name]).stdin(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| e.to_string())?;
-    child.stdin.as_mut().ok_or("database import stdin unavailable")?.write_all(&bytes).map_err(|e| e.to_string())?;
+    let mut child = Command::new("mysql")
+        .env("MYSQL_PWD", &req.database_password)
+        .args([
+            "--host",
+            &req.database_host,
+            "--port",
+            &req.database_port.to_string(),
+            "--user",
+            &req.database_user,
+            &req.database_name,
+        ])
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or("database import stdin unavailable")?
+        .write_all(&bytes)
+        .map_err(|e| e.to_string())?;
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    if !out.status.success() { return Err(format!("database import failed: {}", String::from_utf8_lossy(&out.stderr).trim())); }
+    if !out.status.success() {
+        return Err(format!(
+            "database import failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
     Ok(())
 }
 
 fn detect_generic_application(root: &Path) -> (Option<&'static str>, Option<PathBuf>, PathBuf) {
-    if root.join("artisan").is_file() { return (Some("laravel"), Some(root.join(".env")), if root.join("public").is_dir() { root.join("public") } else { root.to_path_buf() }); }
-    if root.join("wp-config.php").is_file() { return (Some("wordpress"), Some(root.join("wp-config.php")), root.to_path_buf()); }
-    if root.join("spark").is_file() { return (Some("codeigniter4"), Some(root.join(".env")), if root.join("public").is_dir() { root.join("public") } else { root.to_path_buf() }); }
-    if root.join("application/config/database.php").is_file() { return (Some("codeigniter3"), Some(root.join("application/config/database.php")), root.to_path_buf()); }
+    if root.join("artisan").is_file() {
+        return (
+            Some("laravel"),
+            Some(root.join(".env")),
+            if root.join("public").is_dir() {
+                root.join("public")
+            } else {
+                root.to_path_buf()
+            },
+        );
+    }
+    if root.join("wp-config.php").is_file() {
+        return (
+            Some("wordpress"),
+            Some(root.join("wp-config.php")),
+            root.to_path_buf(),
+        );
+    }
+    if root.join("spark").is_file() {
+        return (
+            Some("codeigniter4"),
+            Some(root.join(".env")),
+            if root.join("public").is_dir() {
+                root.join("public")
+            } else {
+                root.to_path_buf()
+            },
+        );
+    }
+    if root.join("application/config/database.php").is_file() {
+        return (
+            Some("codeigniter3"),
+            Some(root.join("application/config/database.php")),
+            root.to_path_buf(),
+        );
+    }
     (None, None, root.to_path_buf())
 }

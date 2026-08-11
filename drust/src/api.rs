@@ -22,8 +22,8 @@ mod redis_config;
 mod script;
 mod security;
 mod ssh_key;
-mod terminal;
 mod ssl;
+mod terminal;
 mod vhost_ops;
 mod website;
 

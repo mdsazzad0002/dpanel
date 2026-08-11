@@ -58,8 +58,9 @@ fn apply(request: &Request) -> Result<PathBuf, String> {
             .map_err(|error| format!("Unable to read project configuration: {error}"))?
     } else if request.framework == "codeigniter4" {
         let template = path.with_file_name("env");
-        fs::read_to_string(&template)
-            .map_err(|error| format!("CodeIgniter .env and env template are unavailable: {error}"))?
+        fs::read_to_string(&template).map_err(|error| {
+            format!("CodeIgniter .env and env template are unavailable: {error}")
+        })?
     } else {
         return Err("Project configuration file does not exist.".into());
     };
@@ -143,7 +144,9 @@ fn validate(request: &Request) -> Result<(), String> {
     if path.file_name().and_then(|name| name.to_str()) != Some(expected) {
         return Err("Unexpected project configuration file.".into());
     }
-    if !path.is_file() && !(request.framework == "codeigniter4" && path.with_file_name("env").is_file()) {
+    if !path.is_file()
+        && !(request.framework == "codeigniter4" && path.with_file_name("env").is_file())
+    {
         return Err("Project configuration file does not exist.".into());
     }
     for (value, label) in [
@@ -227,30 +230,32 @@ fn update_wordpress(text: String, request: &Request, host: &str) -> Result<Strin
     Ok(output)
 }
 
-fn update_codeigniter4(
-    mut text: String,
-    request: &Request,
-    host: &str,
-    port: &str,
-) -> String {
+fn update_codeigniter4(mut text: String, request: &Request, host: &str, port: &str) -> String {
     for (key, value) in [
         ("database.default.hostname", host),
         ("database.default.database", request.database_name.as_str()),
         ("database.default.username", request.database_user.as_str()),
-        ("database.default.password", request.database_password.as_str()),
+        (
+            "database.default.password",
+            request.database_password.as_str(),
+        ),
         ("database.default.DBDriver", "MySQLi"),
         ("database.default.port", port),
     ] {
         let replacement = format!("{key} = {}", env_value(value));
-        let existing = text.lines().find(|line| {
-            let normalized = line.trim().trim_start_matches('#').trim_start();
-            normalized.starts_with(key)
-                && normalized[key.len()..].trim_start().starts_with('=')
-        }).map(str::to_owned);
+        let existing = text
+            .lines()
+            .find(|line| {
+                let normalized = line.trim().trim_start_matches('#').trim_start();
+                normalized.starts_with(key) && normalized[key.len()..].trim_start().starts_with('=')
+            })
+            .map(str::to_owned);
         if let Some(old) = existing {
             text = text.replacen(&old, &replacement, 1);
         } else {
-            if !text.ends_with('\n') { text.push('\n'); }
+            if !text.ends_with('\n') {
+                text.push('\n');
+            }
             text.push_str(&replacement);
             text.push('\n');
         }
@@ -273,17 +278,26 @@ fn update_codeigniter3(
     ] {
         let needle = format!("$db['default']['{key}']");
         let replacement = format!("{needle} = '{}';", php_string(value));
-        let old = text.lines().find(|line| line.trim_start().starts_with(&needle)).map(str::to_owned)
+        let old = text
+            .lines()
+            .find(|line| line.trim_start().starts_with(&needle))
+            .map(str::to_owned)
             .ok_or_else(|| format!("CodeIgniter database setting {key} was not found."))?;
         text = text.replacen(&old, &replacement, 1);
     }
     let port_line = format!("$db['default']['port'] = '{}';", php_string(port));
-    if let Some(old) = text.lines().find(|line| line.trim_start().starts_with("$db['default']['port']")).map(str::to_owned) {
+    if let Some(old) = text
+        .lines()
+        .find(|line| line.trim_start().starts_with("$db['default']['port']"))
+        .map(str::to_owned)
+    {
         text = text.replacen(&old, &port_line, 1);
     } else if let Some(position) = text.rfind("?>") {
         text.insert_str(position, &format!("{port_line}\n"));
     } else {
-        if !text.ends_with('\n') { text.push('\n'); }
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
         text.push_str(&port_line);
         text.push('\n');
     }
@@ -296,22 +310,36 @@ mod tests {
 
     fn request(framework: &str) -> Request {
         Request {
-            site_owner: "example".into(), framework: framework.into(), config_path: "/home/example/config".into(),
-            database_name: "app_db".into(), database_user: "app_user".into(), database_password: "s'ecret".into(),
-            database_host: Some("127.0.0.1".into()), database_port: Some(3306),
+            site_owner: "example".into(),
+            framework: framework.into(),
+            config_path: "/home/example/config".into(),
+            database_name: "app_db".into(),
+            database_user: "app_user".into(),
+            database_password: "s'ecret".into(),
+            database_host: Some("127.0.0.1".into()),
+            database_port: Some(3306),
         }
     }
 
     #[test]
     fn updates_codeigniter4_commented_env_values() {
-        let output = update_codeigniter4("# database.default.hostname = localhost\n".into(), &request("codeigniter4"), "db", "3306");
+        let output = update_codeigniter4(
+            "# database.default.hostname = localhost\n".into(),
+            &request("codeigniter4"),
+            "db",
+            "3306",
+        );
         assert!(output.contains("database.default.hostname = db"));
         assert!(output.contains("database.default.database = app_db"));
     }
 
     #[test]
     fn updates_codeigniter3_default_connection() {
-        let input = ["hostname", "username", "password", "database", "dbdriver", "port"].map(|key| format!("$db['default']['{key}'] = '';" )).join("\n");
+        let input = [
+            "hostname", "username", "password", "database", "dbdriver", "port",
+        ]
+        .map(|key| format!("$db['default']['{key}'] = '';"))
+        .join("\n");
         let output = update_codeigniter3(input, &request("codeigniter3"), "db", "3306").unwrap();
         assert!(output.contains("$db['default']['database'] = 'app_db';"));
         assert!(output.contains("$db['default']['password'] = 's\\'ecret';"));

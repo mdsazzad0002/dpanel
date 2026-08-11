@@ -19,8 +19,9 @@ $escape = static fn (string $value): string => htmlspecialchars($value, ENT_QUOT
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
-    <link rel="icon" href="//dpanel.localhost/favicon.ico" sizes="any">
-    <link rel="shortcut icon" href="//dpanel.localhost/favicon.ico">
+    <link rel="icon" href="./assets/favicon.ico" sizes="any">
+    <link rel="shortcut icon" href="./assets/favicon.ico">
+    <link rel="stylesheet" href="./assets/bootstrap-icons/bootstrap-icons.min.css">
     <title><?= $escape($host) ?> is ready</title>
     <style>
         :root { color-scheme:dark; --ink:#f8fafc; --muted:#94a3b8; --paper:#03060f; --line:rgba(255,255,255,.10); --green:#34d399; --cyan:#22d3ee; --panel:rgba(255,255,255,.045); }
@@ -53,7 +54,7 @@ $escape = static fn (string $value): string => htmlspecialchars($value, ENT_QUOT
 </head>
 <body>
     <main class="shell">
-        <header class="topline"><span class="signal">Service online</span><span>Powered by dPanel + Rust</span></header>
+        <header class="topline"><span class="signal"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> Service online</span><span>Powered by dPanel + Rust</span></header>
         <section class="hero">
             <div>
                 <p class="eyebrow">Deployment confirmed</p>

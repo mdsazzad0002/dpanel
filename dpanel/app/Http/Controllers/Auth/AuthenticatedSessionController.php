@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\PanelSession;
 use App\Services\TwoFactorService;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cookie;
@@ -83,6 +83,7 @@ class AuthenticatedSessionController extends Controller
 
         if ($request->expectsJson() || $request->ajax()) {
             $token = (string) $request->session()->get('panel_session_token', '');
+
             return response()
                 ->json([
                     'success' => true,
@@ -109,7 +110,7 @@ class AuthenticatedSessionController extends Controller
         URL::defaults(['token' => $token]);
 
         $cookieToken = bin2hex(random_bytes(32));
-        $lifetime = max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120)));
+        $lifetime = PanelSession::inactivityMinutes();
         $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
 
         PanelSession::syncSingleSession(
@@ -118,7 +119,7 @@ class AuthenticatedSessionController extends Controller
             cookieToken: $cookieToken,
             ipAddress: (string) $request->ip(),
             userAgent: (string) $request->userAgent(),
-            expiresAt: now()->addMinutes($lifetime),
+            expiresAt: PanelSession::initialExpiresAt(),
             lastSeenAt: now(),
         );
 

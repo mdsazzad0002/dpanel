@@ -8,7 +8,9 @@ use axum::{
 use axum::{extract::ConnectInfo, http::Request};
 use std::time::Duration;
 use std::{
+    fs,
     net::{IpAddr, SocketAddr},
+    os::unix::fs::PermissionsExt,
     path::Path,
 };
 
@@ -273,6 +275,12 @@ async fn handle_system_phpmyadmin(
     // System paths are intentionally fixed. The hostname is database-driven,
     // while the service path remains stable across panel domain migrations.
     let root = Path::new("/var/www/phpmyadmin");
+    if let Err(error) = repair_phpmyadmin_sensitive_permissions(root) {
+        return simple_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("phpMyAdmin configuration permission repair failed: {error}"),
+        );
+    }
     let relative = path.strip_prefix("/phpmyadmin").unwrap_or("/");
     let relative = if relative.is_empty() { "/" } else { relative };
     let local_path = normalize_request_path(relative);
@@ -355,6 +363,29 @@ async fn handle_system_phpmyadmin(
                 )
             });
     annotated_response(response, site_match, "/phpmyadmin")
+}
+
+fn repair_phpmyadmin_sensitive_permissions(root: &Path) -> Result<(), String> {
+    for (name, mode) in [("config.inc.php", 0o640), ("phpmyadminsignin.php", 0o640)] {
+        let path = root.join(name);
+        let metadata =
+            fs::metadata(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let current_mode = metadata.permissions().mode() & 0o777;
+        if current_mode == mode {
+            continue;
+        }
+
+        crate::app::run_status("chown", &["root:www-data", path.to_string_lossy().as_ref()])?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(mode))
+            .map_err(|error| format!("failed to chmod {}: {error}", path.display()))?;
+        crate::app::info(&format!(
+            "repaired phpMyAdmin permission: {} {:o} -> {:o}",
+            path.display(),
+            current_mode,
+            mode
+        ));
+    }
+    Ok(())
 }
 
 fn user_pool_owner<'a>(scope: &str, site_owner: Option<&'a str>) -> Option<&'a str> {

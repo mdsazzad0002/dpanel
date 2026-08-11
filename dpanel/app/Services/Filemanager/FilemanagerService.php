@@ -10,48 +10,28 @@ use Illuminate\Support\Facades\Http;
 
 class FilemanagerService
 {
-    public function ensureWebsiteFoldersExist(Request $request, string $rootPath, string $projectRoot, string $context = 'create', bool $forceJson = false): RedirectResponse|JsonResponse|null
+    public function ensureWebsiteFoldersExist(Request $request, string $rootPath, string $projectRoot, string $context = 'create', bool $forceJson = false, ?string $username = null): RedirectResponse|JsonResponse|null
     {
-        $errors = [];
-        $created = [];
         $targets = array_values(array_unique(array_filter([
             $this->normalizeAbsolutePath($projectRoot),
             $this->normalizeAbsolutePath($rootPath),
         ], static fn (string $path): bool => $path !== '')));
-        $existing = array_fill_keys(array_filter($targets, static fn (string $path): bool => is_dir($path)), true);
-        $missing = array_values(array_diff($targets, array_keys($existing)));
 
-        if ($missing !== []) {
-            try {
-                $this->createDirectoriesViaApi($missing);
-            } catch (\Throwable $e) {
-                $errors['folder_command'] = $e->getMessage();
-            }
-        }
+        try {
+            $account = $username !== null && trim($username) !== ''
+                ? $this->normalizeUsername($username)
+                : $this->normalizeUsername(basename($this->normalizeAbsolutePath($projectRoot)));
+            $this->createDirectoriesViaApi($targets, $account);
+            $this->verifyDirectoriesViaApi($targets);
 
-        foreach ($targets as $path) {
-            if (! is_dir($path)) {
-                $errors[$path === $this->normalizeAbsolutePath($projectRoot) ? 'project_root' : 'root_path'] = "Could not create directory: {$path}";
-
-                continue;
-            }
-
-            if (! isset($existing[$path])) {
-                $created[] = $path;
-            }
-        }
-
-        if ($errors === []) {
             return null;
+        } catch (\Throwable $e) {
+            $errors = ['folder_command' => $e->getMessage()];
         }
 
         $message = $context === 'update'
             ? 'Website folder check failed during update.'
             : 'Website folder check failed during create.';
-
-        if ($created !== []) {
-            $message .= ' Created missing folder(s): '.implode(', ', array_values(array_unique($created))).'.';
-        }
 
         if ($forceJson || $request->expectsJson()) {
             return response()->json([
@@ -185,6 +165,72 @@ class FilemanagerService
         }
     }
 
+    /** @return array{current_path:string,items:array<int,array<string,mixed>>,directory_tree:array<int,array<string,mixed>>} */
+    public function browseDirectory(string $username, string $basePath, string $path = '', bool $showHidden = false): array
+    {
+        $result = $this->filemanagerApiRequest('browse', [
+            'username' => $this->normalizeUsername($username),
+            'base_path' => $this->normalizeAbsolutePath($basePath),
+            'path' => trim(str_replace('\\', '/', $path), '/'),
+            'show_hidden' => $showHidden,
+        ]);
+        if (! $result['success']) {
+            throw new \RuntimeException($result['output'] !== '' ? $result['output'] : 'Rust filemanager could not list the directory.');
+        }
+
+        return [
+            'current_path' => (string) ($result['data']['current_path'] ?? ''),
+            'items' => array_values((array) ($result['data']['items'] ?? [])),
+            'directory_tree' => array_values((array) ($result['data']['directory_tree'] ?? [])),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function inspectWebsiteApplication(string $username, string $rootPath): array
+    {
+        $result = $this->filemanagerApiRequest('inspect', ['username' => $this->normalizeUsername($username), 'root_path' => $this->normalizeAbsolutePath($rootPath)]);
+        if (! $result['success']) {
+            throw new \RuntimeException($result['output'] ?: 'Rust could not inspect the website application.');
+        }
+
+        return $result['data'];
+    }
+
+    /** @return array{success:bool,output:string,exit_code:int} */
+    public function runArtisanCommand(string $username, string $projectPath, string $command): array
+    {
+        $result = $this->filemanagerApiRequest('artisan', [
+            'username' => $this->normalizeUsername($username),
+            'project_path' => $this->normalizeAbsolutePath($projectPath),
+            'command' => trim($command),
+        ], 300);
+
+        return [
+            'success' => $result['success'],
+            'output' => $result['success'] ? (string) ($result['data']['output'] ?? '') : $result['output'],
+            'exit_code' => $result['success'] ? (int) ($result['data']['exit_code'] ?? 0) : 1,
+        ];
+    }
+
+    /** @return array{content:string,readonly:bool,message:?string,size:int} */
+    public function readTextFile(string $username, string $path): array
+    {
+        $result = $this->filemanagerApiRequest('read', [
+            'username' => $this->normalizeUsername($username),
+            'path' => $this->normalizeAbsolutePath($path),
+        ]);
+        if (! $result['success']) {
+            throw new \RuntimeException($result['output'] !== '' ? $result['output'] : 'Rust filemanager could not read the file.');
+        }
+
+        return [
+            'content' => (string) ($result['data']['content'] ?? ''),
+            'readonly' => (bool) ($result['data']['readonly'] ?? false),
+            'message' => isset($result['data']['message']) ? (string) $result['data']['message'] : null,
+            'size' => (int) ($result['data']['size'] ?? 0),
+        ];
+    }
+
     public function movePath(string $username, string $source, string $destination): void
     {
         $username = $this->normalizeUsername($username);
@@ -288,6 +334,30 @@ class FilemanagerService
         }
     }
 
+    /** @param array<int, string> $paths */
+    public function zipPaths(string $username, array $paths, string $destination): void
+    {
+        $username = $this->normalizeUsername($username);
+        $paths = array_values(array_filter(array_map(
+            fn ($path) => $this->normalizeAbsolutePath((string) $path),
+            $paths
+        ), fn (string $path) => $path !== ''));
+        $destination = $this->normalizeAbsolutePath($destination);
+        if ($paths === [] || $destination === '') {
+            throw new \InvalidArgumentException('Zip source paths and destination are required.');
+        }
+
+        $result = $this->filemanagerApiRequest('zip', [
+            'username' => $username,
+            'paths' => $paths,
+            'destination' => $destination,
+        ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Failed to create zip through the filemanager API.');
+        }
+    }
+
     public function installWordPress(string $username, string $path, string $version = 'latest'): void
     {
         $username = $this->normalizeUsername($username);
@@ -307,7 +377,7 @@ class FilemanagerService
     /**
      * @param  array<int, string>  $paths
      */
-    private function createDirectoriesViaApi(array $paths): void
+    private function createDirectoriesViaApi(array $paths, string $username): void
     {
         $paths = array_values(array_unique(array_filter(array_map(
             fn (string $path): string => $this->normalizeAbsolutePath($path),
@@ -318,7 +388,10 @@ class FilemanagerService
             return;
         }
 
-        $result = $this->filemanagerApiRequest('create', ['paths' => $paths]);
+        $result = $this->filemanagerApiRequest('create', [
+            'username' => $this->normalizeUsername($username),
+            'paths' => $paths,
+        ]);
         if ($result['success']) {
             return;
         }
@@ -327,16 +400,31 @@ class FilemanagerService
         throw new \RuntimeException($output !== '' ? $output : 'Filemanager command failed.');
     }
 
+    /** @param array<int, string> $paths */
+    private function verifyDirectoriesViaApi(array $paths): void
+    {
+        $result = $this->filemanagerApiRequest('exists', [
+            'paths' => $paths,
+            'check_file' => false,
+        ]);
+        if ($result['success']) {
+            return;
+        }
+
+        $output = trim((string) $result['output']);
+        throw new \RuntimeException($output !== '' ? $output : 'Rust filemanager could not verify the website directories.');
+    }
+
     /**
      * @param  array<string, mixed>  $payload
-     * @return array{success: bool, output: string}
+     * @return array{success: bool, output: string, data: array<string, mixed>}
      */
     private function filemanagerApiRequest(string $operation, array $payload, ?int $timeout = null): array
     {
         $baseUrl = $this->filemanagerApiBaseUrl();
 
         if ($baseUrl === '') {
-            return ['success' => false, 'output' => 'Filemanager API is not configured.'];
+            return ['success' => false, 'output' => 'Filemanager API is not configured.', 'data' => []];
         }
 
         $token = trim((string) config('serverpanel.execution_api_token', ''));
@@ -355,9 +443,10 @@ class FilemanagerService
             return [
                 'success' => $response->successful() && (bool) ($json['success'] ?? false),
                 'output' => $message !== '' ? $message : trim((string) $response->body()),
+                'data' => is_array($json) && is_array($json['data'] ?? null) ? $json['data'] : [],
             ];
         } catch (\Throwable $e) {
-            return ['success' => false, 'output' => $e->getMessage()];
+            return ['success' => false, 'output' => $e->getMessage(), 'data' => []];
         }
     }
 

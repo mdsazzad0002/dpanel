@@ -56,7 +56,7 @@ class RegisteredUserController extends Controller
 
         $urlToken = bin2hex(random_bytes(32));
         $cookieToken = bin2hex(random_bytes(32));
-        $lifetime = max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120)));
+        $lifetime = PanelSession::inactivityMinutes();
         $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
 
         PanelSession::syncSingleSession(
@@ -65,7 +65,7 @@ class RegisteredUserController extends Controller
             cookieToken: $cookieToken,
             ipAddress: (string) $request->ip(),
             userAgent: (string) $request->userAgent(),
-            expiresAt: now()->addMinutes($lifetime),
+            expiresAt: PanelSession::initialExpiresAt(),
             lastSeenAt: now(),
         );
 

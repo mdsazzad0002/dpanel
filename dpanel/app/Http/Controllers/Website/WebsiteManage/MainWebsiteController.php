@@ -7,23 +7,23 @@ use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\Domain;
 use App\Models\SslCertificate;
-use App\Models\Website;
 use App\Models\User;
+use App\Models\Website;
 use App\Models\WebsiteTrashBackup;
 use App\Services\Cron\CronSystemService;
 use App\Services\Dns\WebsiteDnsProvisionService;
 use App\Services\Filemanager\FilemanagerService;
 use App\Services\PathService;
 use App\Services\Php\PhpService;
+use App\Services\ResourceQuotaService;
 use App\Services\Ssl\SslLifecycleService;
 use App\Services\Website\WebsiteService;
 use App\Services\Website\WebsiteTrashService;
-use App\Services\ResourceQuotaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
@@ -40,8 +40,7 @@ class MainWebsiteController extends Controller
         protected CronSystemService $cronSystemService,
         protected WebsiteDnsProvisionService $websiteDnsProvisionService,
         protected ResourceQuotaService $quotas,
-    ) {
-    }
+    ) {}
 
     /**
      * Show website creation page.
@@ -58,9 +57,7 @@ class MainWebsiteController extends Controller
         );
     }
 
-
-
-        /**
+    /**
      * Create a website command request.
      * Command execution is intentionally commented out.
      */
@@ -98,6 +95,7 @@ class MainWebsiteController extends Controller
 
                     if ($domainType === 'sub' && $normalized === '') {
                         $fail("The {$attribute} field is required for subdomains.");
+
                         return;
                     }
 
@@ -154,6 +152,7 @@ class MainWebsiteController extends Controller
         }
 
         $parentWebsite = null;
+        $subdomainParent = null;
         if ($validated['domain_type'] === 'alis') {
             $parentWebsite = Website::query()->visibleTo($request->user())
                 ->whereKey((string) ($validated['parent_id'] ?? ''))
@@ -170,9 +169,29 @@ class MainWebsiteController extends Controller
             }
 
             $validated['parent_domain'] = (string) $parentWebsite->domain;
+        } elseif ($validated['domain_type'] === 'sub') {
+            $subdomainParent = Website::query()
+                ->visibleTo($request->user())
+                ->whereKey((string) ($validated['parent_id'] ?? ''))
+                ->whereNull('parent_id')
+                ->where('type', 'primary')
+                ->first();
+            if ($subdomainParent === null
+                || strtolower((string) $subdomainParent->domain) !== strtolower((string) ($validated['parent_domain'] ?? ''))) {
+                return response()->json([
+                    'type' => 'error',
+                    'message' => 'Select a valid main parent domain.',
+                    'errors' => ['parent_domain' => ['The selected parent must be a main domain.']],
+                ], 422);
+            }
+
+            $assignedUser = $subdomainParent->assigned_user_id
+                ? User::query()->find($subdomainParent->assigned_user_id)
+                : null;
+            if ($assignedUser !== null) {
+                $this->quotas->assertWebsiteAllowed($assignedUser, false);
+            }
         }
-
-
 
         // Exist Check
         if (WebsiteService::existWebsite($validated['domain'])) {
@@ -182,12 +201,10 @@ class MainWebsiteController extends Controller
             ], 422);
         }
 
-
-
-        $siteOwnerSource = $validated['domain_type'] === 'sub'
-            ? (string) ($validated['parent_domain'] ?? '')
-            : (string) $validated['domain'];
-        $siteOwner = $this->paths->normalizeSiteOwnerFromDomain($siteOwnerSource);
+        $siteOwnerSource = (string) $validated['domain'];
+        $siteOwner = $subdomainParent !== null
+            ? (string) $subdomainParent->site_owner
+            : $this->paths->normalizeSiteOwnerFromDomain($siteOwnerSource);
         $siteDirectory = $validated['domain_type'] === 'sub'
             ? $this->paths->normalizeSiteDirectory((string) ($validated['subdomain_prefix'] ?? ''), 'blog')
             : 'public_html';
@@ -207,43 +224,31 @@ class MainWebsiteController extends Controller
             $phpVersion = (string) $validated['php_version'];
         }
 
-        if ($parentWebsite === null && (! is_dir($projectRoot) || ! is_dir($rootPath))) {
-            return response()->json([
-                'type' => 'error',
-                'message' => 'Failed to prepare website account home.',
-                'errors' => [
-                    'project_root' => is_dir($projectRoot) ? null : 'Project root is missing after account setup.',
-                    'root_path' => is_dir($rootPath) ? null : 'Website root path is missing after account setup.',
-                ],
-            ], 422);
-        }
-
-
         // Folder Check
         $folderCheck = $parentWebsite === null ? $this->filemanagerService->ensureWebsiteFoldersExist(
             $request,
             $rootPath,
             $projectRoot,
             'create',
-            true
+            true,
+            $siteOwner,
         ) : null;
         if ($folderCheck instanceof JsonResponse) {
             return $folderCheck;
         }
 
-
-
-
         // Demo page setup
         try {
             if ($parentWebsite === null) {
-                if ($startDirectory === '') $startDirectory = null;
+                if ($startDirectory === '') {
+                    $startDirectory = null;
+                }
                 $demoFiles = $this->websiteService->createDemoSitePage(
-                $rootPath,
-                (string) $validated['domain'],
-                $phpVersion,
-                $startDirectory,
-                $siteOwner,
+                    $rootPath,
+                    (string) $validated['domain'],
+                    $phpVersion,
+                    $startDirectory,
+                    $siteOwner,
                 );
             }
         } catch (\Throwable $e) {
@@ -256,15 +261,12 @@ class MainWebsiteController extends Controller
             ], 422);
         }
 
-
-
-
         // Store in database
         $website = Website::query()->create([
             'id' => (string) str()->uuid(),
             'domain' => (string) $validated['domain'],
             'hostname' => (string) $validated['domain'],
-            'parent_id' => $parentWebsite?->id,
+            'parent_id' => $parentWebsite?->id ?? $subdomainParent?->id,
             'scope' => 'user',
             'root_path' => $rootPath,
             'project_root' => $projectRoot,
@@ -274,15 +276,17 @@ class MainWebsiteController extends Controller
             'enable_ssl' => $parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false),
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),
             'filemanager_show_hidden' => false,
-            'assigned_user_id' => $parentWebsite?->assigned_user_id ?? $assignedUser?->id,
-            'assigned_reseller_id' => ($request->user()?->hasRole('reseller') ? (int) $request->user()->id : null),
+            'assigned_user_id' => $parentWebsite?->assigned_user_id ?? $subdomainParent?->assigned_user_id ?? $assignedUser?->id,
+            'assigned_reseller_id' => $parentWebsite?->assigned_reseller_id
+                ?? $subdomainParent?->assigned_reseller_id
+                ?? ($request->user()?->hasRole('reseller') ? (int) $request->user()->id : null),
             'status' => 'live',
             'type' => match ((string) $validated['domain_type']) {
                 'alis' => 'alias',
                 'sub' => 'subdomain',
                 default => 'primary',
             },
-            'ssl_mode' => $parentWebsite?->ssl_mode ?? (!empty($validated['enable_ssl']) ? 'letsencrypt' : 'none'),
+            'ssl_mode' => $parentWebsite?->ssl_mode ?? (! empty($validated['enable_ssl']) ? 'letsencrypt' : 'none'),
         ]);
         $activation = ['managed_by' => 'edge-network'];
         $sslResult = ['status' => 'disabled'];
@@ -629,8 +633,8 @@ class MainWebsiteController extends Controller
     }
 
     /**
-     * @param array<int, array<string, mixed>> $databaseRequests
-     * @param array<int, array<string, mixed>> $cronJobs
+     * @param  array<int, array<string, mixed>>  $databaseRequests
+     * @param  array<int, array<string, mixed>>  $cronJobs
      * @return array{zip_path: string, zip_name: string}
      */
     private function archiveWebsiteViaDrust(Website $website, array $databaseRequests, array $cronJobs): array

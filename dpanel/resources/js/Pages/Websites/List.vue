@@ -48,7 +48,11 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
-    canChangeOwnership: {
+    canChangeOwner: {
+        type: Boolean,
+        default: false,
+    },
+    canChangeReseller: {
         type: Boolean,
         default: false,
     },
@@ -567,10 +571,6 @@ const saveOwnership = async () => {
                                 PHP {{ item.php_version || '-' }}
                             </div>
                             <div class="flex items-center gap-1.5">
-                                <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current opacity-50"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
-                                {{ createdByLabel(item) }}
-                            </div>
-                            <div class="flex items-center gap-1.5">
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current opacity-50"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" /></svg>
                                 {{ formatDate(item.created_at) }}
                             </div>
@@ -579,7 +579,7 @@ const saveOwnership = async () => {
                         <!-- Right: Actions -->
                         <div class="flex items-center gap-1.5">
                             <button
-                                v-if="canChangeOwnership"
+                                v-if="canChangeOwner"
                                 type="button"
                                 class="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-[12px] font-medium text-violet-700 transition hover:border-violet-300 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-500/10 dark:text-violet-400"
                                 @click="openOwnership(item, 'owner')"
@@ -587,8 +587,15 @@ const saveOwnership = async () => {
                                 <i class="bi bi-person"></i>
                                 Ownership: {{ item.assigned_user_name || 'Admin' }}
                             </button>
+                            <span
+                                v-else
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-[12px] font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-500/10 dark:text-violet-400"
+                            >
+                                <i class="bi bi-person"></i>
+                                Owner: {{ item.assigned_user_name || 'Admin' }}
+                            </span>
                             <button
-                                v-if="canChangeOwnership"
+                                v-if="canChangeReseller"
                                 type="button"
                                 class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[12px] font-medium text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-400"
                                 @click="openOwnership(item, 'reseller')"
@@ -596,6 +603,13 @@ const saveOwnership = async () => {
                                 <i class="bi bi-person-workspace"></i>
                                 Reseller: {{ item.assigned_reseller_name || 'None' }}
                             </button>
+                            <span
+                                v-else
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[12px] font-medium text-indigo-700 dark:border-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-400"
+                            >
+                                <i class="bi bi-person-workspace"></i>
+                                Reseller: {{ item.assigned_reseller_name || 'None' }}
+                            </span>
                             <Link
                                 :href="panelRoute('websites.manage', { id: item.id })"
                                 class="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[12px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:border-blue-700"

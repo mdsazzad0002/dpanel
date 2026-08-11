@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -41,6 +42,44 @@ class PanelSession extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public static function inactivityMinutes(): int
+    {
+        return max(1, (int) config('serverpanel.panel_inactivity_timeout', 10));
+    }
+
+    public static function maximumLifetimeMinutes(): int
+    {
+        return max(self::inactivityMinutes(), (int) config('serverpanel.panel_token_lifetime', 60));
+    }
+
+    public static function refreshThresholdMinutes(): int
+    {
+        return max(1, min(
+            self::inactivityMinutes(),
+            (int) config('serverpanel.panel_token_refresh_threshold', 4)
+        ));
+    }
+
+    public static function initialExpiresAt(): Carbon
+    {
+        return now()->addMinutes(min(self::inactivityMinutes(), self::maximumLifetimeMinutes()));
+    }
+
+    public function refreshedExpiresAt(): Carbon
+    {
+        $currentExpiry = $this->expires_at instanceof Carbon
+            ? $this->expires_at->copy()
+            : Carbon::parse($this->expires_at);
+        if (now()->diffInSeconds($currentExpiry, false) > self::refreshThresholdMinutes() * 60) {
+            return $currentExpiry;
+        }
+
+        $idleExpiry = now()->addMinutes(self::inactivityMinutes());
+        $absoluteExpiry = ($this->created_at ?? now())->copy()->addMinutes(self::maximumLifetimeMinutes());
+
+        return $idleExpiry->lessThan($absoluteExpiry) ? $idleExpiry : $absoluteExpiry;
     }
 
     public static function syncSingleSession(

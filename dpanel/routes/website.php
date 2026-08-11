@@ -1,13 +1,13 @@
 <?php
 
 use App\Http\Controllers\CronJobController;
-use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\MigrationController;
+use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\Website\WebsiteController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
+use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
-use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteSshKeyController;
 use App\Http\Controllers\Website\WebsiteTerminalController;
 use App\Http\Controllers\Website\WordpressController;
@@ -40,7 +40,7 @@ Route::post('/websites/cache/reload', [WebsiteController::class, 'reloadGatewayC
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.cache.reload');
 Route::patch('/websites/{id}/ownership', [WebsiteController::class, 'updateOwnership'])
-    ->middleware('role:admin')
+    ->middleware('role:admin|reseller')
     ->name('websites.ownership.update');
 
 Route::patch('/websites/{id}/alias', [MainWebsiteController::class, 'updateAlias'])
@@ -112,9 +112,9 @@ Route::get('/websites/{id}/import', [MigrationController::class, 'websiteImport'
 Route::post('/websites/{id}/import', [MigrationController::class, 'storeWebsiteImport'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:6,1'])->name('websites.import.store');
 Route::post('/websites/{id}/import/{tracking}/chunks/{kind}', [MigrationController::class, 'uploadWebsiteImportChunk'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:240,1'])->whereUuid('tracking')->whereIn('kind', ['database', 'archive'])->name('websites.import.chunk');
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:240,1'])->whereUuid('tracking')->whereIn('kind', ['archive', 'database'])->name('websites.import.chunk');
 Route::post('/websites/{id}/import/{tracking}/complete/{kind}', [MigrationController::class, 'completeWebsiteImportUpload'])
-    ->middleware('role_or_permission:admin|reseller|manage_websites')->whereUuid('tracking')->whereIn('kind', ['database', 'archive'])->name('websites.import.complete');
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->whereUuid('tracking')->whereIn('kind', ['archive', 'database'])->name('websites.import.complete');
 Route::post('/websites/{id}/import/{tracking}/connect', [MigrationController::class, 'connectWebsiteImport'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->whereUuid('tracking')->name('websites.import.connect');
 Route::get('/websites/{id}/import/{tracking}/status', [MigrationController::class, 'websiteImportStatus'])

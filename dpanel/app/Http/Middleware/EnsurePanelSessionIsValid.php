@@ -20,10 +20,9 @@ class EnsurePanelSessionIsValid
 
         $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
         $cookieToken = (string) $request->cookie($cookieName, '');
-        $issueCookie = false;
-        if ($cookieToken === '') {
+        $missingProofCookie = $cookieToken === '';
+        if ($missingProofCookie) {
             $cookieToken = bin2hex(random_bytes(32));
-            $issueCookie = true;
         }
 
         $token = (string) $request->route('token');
@@ -45,9 +44,10 @@ class EnsurePanelSessionIsValid
             ? PanelSession::query()
                 ->where('user_id', Auth::id())
                 ->where('token_hash', hash('sha256', $token))
-                ->where('cookie_hash', hash('sha256', $cookieToken))
+                ->when(! $missingProofCookie, fn ($query) => $query->where('cookie_hash', hash('sha256', $cookieToken)))
                 ->whereNull('revoked_at')
                 ->where('expires_at', '>', now())
+                ->where('created_at', '>', now()->subMinutes(PanelSession::maximumLifetimeMinutes()))
                 ->first()
             : null;
 
@@ -62,23 +62,34 @@ class EnsurePanelSessionIsValid
                 ->withCookie(Cookie::forget($cookieName));
         }
 
-        $activeSession->forceFill(['last_seen_at' => now()])->save();
+        if ($missingProofCookie) {
+            PanelSession::query()
+                ->where('user_id', Auth::id())
+                ->where('id', '!=', $activeSession->id)
+                ->delete();
+        }
+
+        $nextExpiry = $activeSession->refreshedExpiresAt();
+        $activeSession->forceFill([
+            'cookie_hash' => hash('sha256', $cookieToken),
+            'last_seen_at' => now(),
+            'expires_at' => $nextExpiry,
+        ])->save();
 
         $response = $next($request);
 
-        if ($issueCookie) {
-            $response->headers->setCookie(cookie(
-                name: $cookieName,
-                value: $cookieToken,
-                minutes: max(1, (int) config('serverpanel.panel_token_lifetime', config('session.lifetime', 120))),
-                path: (string) config('session.path', '/'),
-                domain: config('session.domain'),
-                secure: (bool) config('session.secure'),
-                httpOnly: true,
-                raw: false,
-                sameSite: 'Lax'
-            ));
-        }
+        $cookieMinutes = max(1, (int) ceil(now()->diffInSeconds($nextExpiry, false) / 60));
+        $response->headers->setCookie(cookie(
+            name: $cookieName,
+            value: $cookieToken,
+            minutes: $cookieMinutes,
+            path: (string) config('session.path', '/'),
+            domain: config('session.domain'),
+            secure: (bool) config('session.secure'),
+            httpOnly: true,
+            raw: false,
+            sameSite: 'Lax'
+        ));
 
         return $response;
     }

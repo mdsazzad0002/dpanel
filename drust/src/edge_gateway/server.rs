@@ -15,7 +15,7 @@ use futures_util::StreamExt;
 use hyper::body::Body as HttpBody;
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
@@ -249,6 +249,7 @@ pub async fn handle_request(
 pub async fn handle_reload(
     State(state): State<Arc<DemoServerState>>,
     headers: HeaderMap,
+    payload: Option<Json<ReloadRequest>>,
 ) -> Response {
     let expected = std::env::var("DRUST_API_TOKEN").unwrap_or_default();
     let supplied = headers
@@ -267,7 +268,15 @@ pub async fn handle_reload(
         )
             .into_response();
     }
-    match reload_snapshot(&state).await {
+    let domains = payload
+        .map(|Json(payload)| payload.domains)
+        .unwrap_or_default();
+    let result = if domains.is_empty() {
+        reload_snapshot(&state).await
+    } else {
+        reload_domains(&state, &domains).await
+    };
+    match result {
         Ok(version) => Json(ReloadResponse {
             success: true,
             message: "snapshot reloaded".to_string(),
@@ -289,6 +298,12 @@ pub async fn handle_reload(
     }
 }
 
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct ReloadRequest {
+    #[serde(default)]
+    domains: Vec<String>,
+}
+
 async fn reload_snapshot(state: &Arc<DemoServerState>) -> Result<u64, (String, u64)> {
     let source = state.source_config.clone();
     let loaded = tokio::task::spawn_blocking(move || load_runtime_snapshot(&source)).await;
@@ -307,9 +322,74 @@ async fn reload_snapshot(state: &Arc<DemoServerState>) -> Result<u64, (String, u
     }
 }
 
+async fn reload_domains(
+    state: &Arc<DemoServerState>,
+    requested_domains: &[String],
+) -> Result<u64, (String, u64)> {
+    let domains = requested_domains
+        .iter()
+        .map(|domain| domain.trim().trim_end_matches('.').to_ascii_lowercase())
+        .filter(|domain| !domain.is_empty())
+        .collect::<std::collections::HashSet<_>>();
+    if domains.is_empty() {
+        return Ok(state.snapshot.read().await.version);
+    }
+
+    let source = state.source_config.clone();
+    let loaded = tokio::task::spawn_blocking(move || load_runtime_snapshot(&source)).await;
+    match loaded {
+        Ok(Ok(next)) => {
+            let current = state.snapshot.read().await.clone();
+            let mut roots = Vec::new();
+            let mut sites = current
+                .sites
+                .iter()
+                .filter(|site| {
+                    let targeted = site
+                        .hostnames
+                        .first()
+                        .is_some_and(|domain| domains.contains(domain));
+                    if targeted {
+                        if let Some(root) = &site.document_root {
+                            roots.push(root.clone());
+                        }
+                    }
+                    !targeted
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            for site in next.sites.iter().filter(|site| {
+                site.hostnames
+                    .first()
+                    .is_some_and(|domain| domains.contains(domain))
+            }) {
+                if let Some(root) = &site.document_root {
+                    roots.push(root.clone());
+                }
+                sites.push(site.clone());
+            }
+
+            let updated = RuntimeSnapshot::new(
+                next.version,
+                Arc::from(sites),
+                current.tls.clone(),
+                current.cache.clone(),
+            );
+            *state.snapshot.write().await = Arc::new(updated);
+            super::clear_static_cache_under(&roots);
+            Ok(next.version)
+        }
+        Ok(Err(error)) => Err((error, state.snapshot.read().await.version)),
+        Err(error) => Err((
+            format!("snapshot reload worker failed: {error}"),
+            state.snapshot.read().await.version,
+        )),
+    }
+}
+
 fn spawn_redis_reload_listener(state: DemoServerState) {
     let state = Arc::new(state);
-    let (sender, mut receiver) = mpsc::channel::<()>(1);
+    let (sender, mut receiver) = mpsc::channel::<Vec<String>>(16);
     let url = std::env::var("DRUST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".into());
     let channel = std::env::var("DRUST_REDIS_RELOAD_CHANNEL")
         .unwrap_or_else(|_| "dpanel_database_edge:reload".into());
@@ -324,8 +404,13 @@ fn spawn_redis_reload_listener(state: DemoServerState) {
                     .map_err(|e| e.to_string())?;
                 info!(%channel, "Redis website reload listener ready");
                 let mut messages = pubsub.on_message();
-                while messages.next().await.is_some() {
-                    let _ = sender.try_send(());
+                while let Some(message) = messages.next().await {
+                    let payload = message
+                        .get_payload::<String>()
+                        .ok()
+                        .and_then(|payload| serde_json::from_str::<ReloadRequest>(&payload).ok())
+                        .unwrap_or_default();
+                    let _ = sender.try_send(payload.domains);
                 }
                 Ok::<(), String>(())
             }
@@ -335,10 +420,17 @@ fn spawn_redis_reload_listener(state: DemoServerState) {
         }
     });
     tokio::spawn(async move {
-        while receiver.recv().await.is_some() {
+        while let Some(mut domains) = receiver.recv().await {
             tokio::time::sleep(Duration::from_millis(100)).await;
-            while receiver.try_recv().is_ok() {}
-            match reload_snapshot(&state).await {
+            while let Ok(more) = receiver.try_recv() {
+                domains.extend(more);
+            }
+            let result = if domains.is_empty() {
+                reload_snapshot(&state).await
+            } else {
+                reload_domains(&state, &domains).await
+            };
+            match result {
                 Ok(version) => tracing::debug!(version, "Redis-triggered snapshot reload complete"),
                 Err((error, version)) => {
                     warn!(%error, version, "Redis-triggered reload failed; retaining snapshot")

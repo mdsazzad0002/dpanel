@@ -117,6 +117,17 @@ pub fn clear_static_cache() {
         }
     }
 }
+
+pub fn clear_static_cache_under(roots: &[PathBuf]) {
+    if roots.is_empty() {
+        return;
+    }
+    if let Some(cache) = STATIC_CACHE.get() {
+        if let Ok(mut items) = cache.write() {
+            items.retain(|path, _| !roots.iter().any(|root| path.starts_with(root)));
+        }
+    }
+}
 fn static_cache_max_file_bytes() -> u64 {
     std::env::var("DRUST_STATIC_CACHE_MAX_FILE_BYTES")
         .ok()

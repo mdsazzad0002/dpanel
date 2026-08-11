@@ -8,12 +8,13 @@ use App\Http\Controllers\DnsController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\MailPlanController;
-use App\Http\Controllers\MonitoringController;
 use App\Http\Controllers\MigrationController;
+use App\Http\Controllers\MonitoringController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
 use App\Http\Controllers\PhpMyAdmin\PhpMyAdminController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\ServerController;
@@ -25,7 +26,6 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
-use App\Http\Controllers\RedisCacheController;
 
 Route::get('/', function () {
     if (Auth::check() && session('panel_session_token')) {
@@ -227,6 +227,8 @@ Route::prefix('cpsess{token}')
 
             Route::get('/migrations', [MigrationController::class, 'index'])->middleware('role:admin|reseller')->name('migrations.index');
             Route::get('/migrations/cpanel', [MigrationController::class, 'cpanel'])->middleware('role:admin|reseller')->name('migrations.cpanel');
+            Route::get('/migrations/cyberpanel-ssh', [MigrationController::class, 'cyberpanelSsh'])->middleware('role:admin|reseller')->name('migrations.cyberpanel-ssh');
+            Route::post('/migrations/cyberpanel-ssh/inspect', [MigrationController::class, 'inspectCyberpanelSsh'])->middleware(['role:admin|reseller', 'throttle:10,1'])->name('migrations.cyberpanel-ssh.inspect');
             Route::post('/migrations', [MigrationController::class, 'store'])->middleware('role:admin|reseller')->name('migrations.store');
             Route::post('/migrations/{migrationImport}/restore', [MigrationController::class, 'restore'])->middleware('role:admin|reseller')->name('migrations.restore');
             Route::delete('/migrations/{migrationImport}', [MigrationController::class, 'destroy'])->middleware('role:admin|reseller')->name('migrations.destroy');

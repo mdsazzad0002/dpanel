@@ -116,7 +116,12 @@ fn create(
     Ok(())
 }
 
-fn apply_directory_owner(username: &str, group: &str, path: &std::path::Path, mode: &str) -> Result<(), String> {
+fn apply_directory_owner(
+    username: &str,
+    group: &str,
+    path: &std::path::Path,
+    mode: &str,
+) -> Result<(), String> {
     run_status(
         "chown",
         &[

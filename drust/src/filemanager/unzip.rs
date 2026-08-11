@@ -390,6 +390,32 @@ mod tests {
         let error = validate_archive(&mut archive, 10, 16).unwrap_err();
         assert!(error.contains("expanded data"));
     }
+
+    #[test]
+    fn accepts_environment_and_project_config_files() {
+        let mut bytes = Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut bytes);
+            for name in [".env", ".env.example", ".htaccess", "composer.json"] {
+                writer
+                    .start_file(name, SimpleFileOptions::default())
+                    .unwrap();
+                writer.write_all(b"text configuration").unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        bytes.set_position(0);
+        let mut archive = zip::ZipArchive::new(bytes).unwrap();
+        validate_archive(&mut archive, 10, 1024).unwrap();
+        for index in 0..archive.len() {
+            let entry = archive.by_index(index).unwrap();
+            let name = safe_entry_path(&entry, index).unwrap();
+            assert!(
+                [".env", ".env.example", ".htaccess", "composer.json"]
+                    .contains(&name.to_str().unwrap())
+            );
+        }
+    }
 }
 pub(crate) async fn handle(
     State(state): State<Arc<ApiState>>,

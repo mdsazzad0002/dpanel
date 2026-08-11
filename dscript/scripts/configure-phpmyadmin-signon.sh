@@ -135,7 +135,12 @@ if chown root:www-data "${TARGET_ROOT}/config.inc.php" 2>/dev/null; then
 else
     chmod 644 "${TARGET_ROOT}/config.inc.php"
 fi
-install -m 644 "${TEMPLATE_ROOT}/phpmyadminsignin.php" "${TARGET_ROOT}/phpmyadminsignin.php"
+install -o root -g www-data -m 640 "${TEMPLATE_ROOT}/phpmyadminsignin.php" "${TARGET_ROOT}/phpmyadminsignin.php"
+
+# Reassert sensitive-file permissions on every idempotent run. phpMyAdmin
+# deliberately refuses world-writable configuration files.
+chown root:www-data "${TARGET_ROOT}/config.inc.php" "${TARGET_ROOT}/phpmyadminsignin.php"
+chmod 640 "${TARGET_ROOT}/config.inc.php" "${TARGET_ROOT}/phpmyadminsignin.php"
 
 upsert_env "${PANEL_APP_DIR}/.env" PHPMYADMIN_URL "${PUBLIC_URL}/"
 if [[ -f "${PANEL_APP_DIR}/artisan" ]] && command -v php >/dev/null 2>&1; then

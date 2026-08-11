@@ -24,8 +24,8 @@ pub use server::{
 };
 pub use source::{DbSnapshotConfig, load_runtime_snapshot};
 pub use static_files::{
-    StaticAsset, StaticAssetBody, StaticFileConfig, clear_static_cache, load_static_asset,
-    resolve_static_path,
+    StaticAsset, StaticAssetBody, StaticFileConfig, clear_static_cache, clear_static_cache_under,
+    load_static_asset, resolve_static_path,
 };
 pub use tls::{
     TlsIdentity, TlsListenerConfig, TlsStore, build_tls_config, default_tls_runtime,

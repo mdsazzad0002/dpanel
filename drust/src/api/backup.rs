@@ -21,18 +21,33 @@ pub fn routes() -> Router<Arc<ApiState>> {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct DeleteBackupRequest { pub run_path: String }
+pub(crate) struct DeleteBackupRequest {
+    pub run_path: String,
+}
 
 pub(crate) async fn delete_handle(
-    State(state): State<Arc<ApiState>>, headers: HeaderMap, Json(request): Json<DeleteBackupRequest>,
+    State(state): State<Arc<ApiState>>,
+    headers: HeaderMap,
+    Json(request): Json<DeleteBackupRequest>,
 ) -> Response {
-    if let Err(error) = check_token(&state, &headers) { return error.into_response(); }
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
     let path = Path::new(request.run_path.trim());
     let root = Path::new("/var/www/dpanel/storage/app/backups");
-    let valid_name = path.file_name().and_then(|v| v.to_str())
-        .map(|v| v.len() == 15 && v.chars().enumerate().all(|(i, c)| if i == 8 { c == '_' } else { c.is_ascii_digit() }))
+    let valid_name = path
+        .file_name()
+        .and_then(|v| v.to_str())
+        .map(|v| {
+            v.len() == 15
+                && v.chars()
+                    .enumerate()
+                    .all(|(i, c)| if i == 8 { c == '_' } else { c.is_ascii_digit() })
+        })
         .unwrap_or(false);
-    if !valid_name || path.parent() != Some(root) { return ApiResponse::error("Invalid backup run path").into_response(); }
+    if !valid_name || path.parent() != Some(root) {
+        return ApiResponse::error("Invalid backup run path").into_response();
+    }
     match fs::remove_dir_all(path) {
         Ok(()) => ApiResponse::ok("Backup run deleted").into_response(),
         Err(error) => ApiResponse::error(&format!("Backup delete failed: {error}")).into_response(),
@@ -68,7 +83,8 @@ fn run_backup(only: &str) -> Result<String, String> {
         return Err("invalid backup type; use all, db, or files".into());
     }
 
-    let panel_root = std::env::var("DRUST_PANEL_ROOT").unwrap_or_else(|_| DEFAULT_PANEL_ROOT.into());
+    let panel_root =
+        std::env::var("DRUST_PANEL_ROOT").unwrap_or_else(|_| DEFAULT_PANEL_ROOT.into());
     let artisan = Path::new(&panel_root).join("artisan");
     if !artisan.is_file() {
         return Err(format!("artisan not found at {}", artisan.display()));

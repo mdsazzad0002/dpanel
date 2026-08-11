@@ -492,10 +492,7 @@ fn site_pool_max_children() -> u16 {
         .filter_map(|directory| directory.read_dir().ok())
         .flat_map(|entries| entries.filter_map(Result::ok))
         .filter(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("dpanel-")
+            entry.file_name().to_string_lossy().starts_with("dpanel-")
                 && entry.path().extension().and_then(|value| value.to_str()) == Some("conf")
         })
         .count()
@@ -650,7 +647,13 @@ mod tests {
     #[test]
     fn sizes_site_pools_from_a_bounded_shared_memory_budget() {
         assert_eq!(automatic_site_pool_max_children(16 * 1024 * 1024, 8, 96), 6);
-        assert_eq!(automatic_site_pool_max_children(2 * 1024 * 1024, 50, 128), 2);
-        assert_eq!(automatic_site_pool_max_children(128 * 1024 * 1024, 1, 32), 12);
+        assert_eq!(
+            automatic_site_pool_max_children(2 * 1024 * 1024, 50, 128),
+            2
+        );
+        assert_eq!(
+            automatic_site_pool_max_children(128 * 1024 * 1024, 1, 32),
+            12
+        );
     }
 }

@@ -1,3 +1,5 @@
+pub(crate) mod artisan;
+pub(crate) mod browse;
 pub(crate) mod chmod;
 mod common;
 pub(crate) mod create;
@@ -5,9 +7,12 @@ pub(crate) mod delete;
 pub(crate) mod exists;
 pub(crate) mod filemove;
 pub(crate) mod fix_permissions;
+pub(crate) mod inspect;
+pub(crate) mod read;
 pub(crate) mod remove;
 pub(crate) mod unzip;
 pub(crate) mod upload;
 pub(crate) mod user;
 pub(crate) mod wordpress;
 pub(crate) mod write;
+pub(crate) mod zip;

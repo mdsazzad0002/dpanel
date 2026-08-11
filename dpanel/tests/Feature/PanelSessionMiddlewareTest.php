@@ -54,4 +54,30 @@ class PanelSessionMiddlewareTest extends TestCase
         $this->assertNotSame(hash('sha256', ''), $session->cookie_hash);
         $this->assertSame(1, PanelSession::query()->where('user_id', $user->id)->count());
     }
+
+    public function test_panel_session_expiry_slides_but_never_exceeds_the_absolute_limit(): void
+    {
+        config()->set('serverpanel.panel_inactivity_timeout', 10);
+        config()->set('serverpanel.panel_token_lifetime', 60);
+        config()->set('serverpanel.panel_token_refresh_threshold', 4);
+
+        $session = new PanelSession(['expires_at' => now()->addMinutes(8)]);
+        $session->created_at = now()->subMinutes(20);
+        $this->assertTrue($session->refreshedExpiresAt()->between(
+            now()->addMinutes(7),
+            now()->addMinutes(8)->addSecond()
+        ));
+
+        $session->expires_at = now()->addMinutes(4);
+        $this->assertTrue($session->refreshedExpiresAt()->between(
+            now()->addMinutes(9),
+            now()->addMinutes(10)->addSecond()
+        ));
+
+        $session->created_at = now()->subMinutes(55);
+        $this->assertTrue($session->refreshedExpiresAt()->between(
+            now()->addMinutes(4),
+            now()->addMinutes(5)->addSecond()
+        ));
+    }
 }

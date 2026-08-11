@@ -25,6 +25,10 @@ export function useFileManager(props) {
     }
 
     const websiteLabel = computed(() => String(props.website?.domain || props.website?.name || props.website?.id || 'Website'));
+    const ownerRootLabel = computed(() => {
+        const parts = String(props.basePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
+        return parts.at(-1) || 'Home';
+    });
     const modalType = ref('');
     const sidebarOpen = ref(true);
     const sortBy = ref('name');
@@ -127,7 +131,10 @@ export function useFileManager(props) {
     }
 
     function openPath(path) {
-        router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ path })));
+        // Keep an explicit path parameter when navigating to the account root.
+        // An empty query value is dropped by the router, causing the controller
+        // to reopen the website's default directory instead of /home/{owner}.
+        router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ path: path || '.' })));
     }
 
     function goParent() {
@@ -138,8 +145,20 @@ export function useFileManager(props) {
     }
 
     function goFromPathInput() {
-        const val = String(pathInput.value || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
-        openPath(val);
+        const base = String(props.basePath || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+        const entered = String(pathInput.value || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+        let relative = entered;
+
+        if (entered === base) {
+            relative = '';
+        } else if (entered.startsWith(`${base}/`)) {
+            relative = entered.slice(base.length + 1);
+        } else if (entered.startsWith('/')) {
+            pushToast(`Path must stay inside ${base}.`);
+            return;
+        }
+
+        openPath(relative.replace(/^\/+/, ''));
     }
 
     function toggleHidden() {
@@ -388,8 +407,12 @@ export function useFileManager(props) {
         if (EDITABLE_EXTENSIONS.includes(ext)) return true;
 
         const basename = name.split('/').pop() || '';
-        if (basename === '.env' || basename === '.htaccess' || basename === 'makefile' || basename === 'dockerfile') return true;
-        return false;
+        if (basename.startsWith('.env') || basename.startsWith('.htaccess')) return true;
+
+        // Unknown extensions and extension-less config files are allowed to
+        // reach the Rust reader. It performs the authoritative UTF-8/binary
+        // check; only known binary formats are blocked client-side.
+        return true;
     }
 
     function openFileInEditor(path) {
@@ -1000,6 +1023,9 @@ export function useFileManager(props) {
         fileManagerRouteParams,
         fileManagerRoot,
         websiteLabel,
+        ownerRootLabel,
+        basePath: computed(() => props.basePath || ''),
+        currentPath: computed(() => props.currentPath || ''),
         // ui state
         modalType,
         sidebarOpen,

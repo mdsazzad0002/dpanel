@@ -9,6 +9,7 @@ const props = defineProps({
     imports: { type: Array, default: () => [] },
     website: { type: Object, default: null },
     panelToken: { type: String, default: '' },
+    databaseConnection: { type: Object, default: () => ({ available: false, database_name: null }) },
 });
 const archive = ref(null);
 const uploading = ref(false);
@@ -17,6 +18,7 @@ const message = ref('');
 const error = ref('');
 const choices = reactive({});
 const services = [
+    { id: 'cyberpanel-ssh', name: 'CyberPanel via SSH', description: 'Connect to CyberPanel and discover websites with their databases.', icon: 'bi bi-terminal', available: true, formats: 'SSH password or private key' },
     { id: 'cpanel-full', name: 'cPanel Full Backup', description: 'Restore a complete cpmove account or selected resources.', icon: 'bi bi-server', available: true, formats: 'cpmove-USER.tar.gz, .tgz' },
     { id: 'cpanel-partial', name: 'cPanel Partial Backup', description: 'Import Home Directory, MySQL, or domain backups separately.', icon: 'bi bi-ui-checks-grid', available: false, formats: 'Coming soon' },
     { id: 'directadmin', name: 'DirectAdmin Backup', description: 'Migrate users and selected domains from DirectAdmin.', icon: 'bi bi-hdd-rack', available: false, formats: 'Coming soon' },
@@ -25,21 +27,26 @@ const services = [
 ];
 const openService = (service) => {
     if (service.id === 'cpanel-full') router.visit(route('migrations.cpanel'));
+    if (service.id === 'cyberpanel-ssh') router.visit(route('migrations.cyberpanel-ssh'));
 };
-const websiteDomainPart = String(props.website?.domain || '').split('.')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '').slice(0, 16) || 'site';
-const generic = reactive({ database_host: '127.0.0.1', database_port: 3306, database_name: `${websiteDomainPart}_db`, database_user: `${websiteDomainPart}_user`, database_password: '', archive: null, database: null });
-const websiteDatabasePrefix = computed(() => `${props.website?.site_owner || 'site'}_`);
-const showDatabasePassword = ref(false);
+const ssh = reactive({ host: '', port: 22, username: 'root', auth_type: 'password', password: '', private_key: '', key_passphrase: '' });
+const sshInspecting = ref(false);
+const remoteInventory = ref(null);
+const inspectCyberPanel = async () => {
+    sshInspecting.value = true; error.value = ''; message.value = ''; remoteInventory.value = null;
+    try {
+        const response = await axios.post(route('migrations.cyberpanel-ssh.inspect'), ssh);
+        remoteInventory.value = response.data.inventory;
+        message.value = `Connected to ${response.data.inventory.hostname}. ${response.data.inventory.websites.length} website(s) found.`;
+    } catch (e) { error.value = e.response?.data?.message || 'Could not inspect the CyberPanel server.'; }
+    finally { sshInspecting.value = false; }
+};
+const generic = reactive({ archive: null, database: null });
 const trackingId = ref('');
 const uploadStages = reactive({ database: { progress: 0, status: 'waiting' }, archive: { progress: 0, status: 'waiting' }, connect: { progress: 0, status: 'waiting' } });
-const generateDatabasePassword = () => {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%_-';
-    const random = new Uint32Array(24);
-    window.crypto.getRandomValues(random);
-    generic.database_password = Array.from(random, value => alphabet[value % alphabet.length]).join('');
-    showDatabasePassword.value = true;
-};
 const submitGeneric = async () => {
+    const overwriteDatabase = !!generic.database && !!props.databaseConnection?.available;
+    if (overwriteDatabase && !window.confirm(`Database ${props.databaseConnection.database_name || ''} already exists. A backup will be created first. Continue and overwrite it?`)) return;
     uploading.value = true; error.value = ''; message.value = '';
     Object.values(uploadStages).forEach(stage => { stage.progress = 0; stage.status = 'waiting'; });
     const routeParams = { token: props.panelToken, id: props.website.id };
@@ -47,8 +54,7 @@ const submitGeneric = async () => {
         const response = await axios.post(route('websites.import.store', routeParams), {
             archive_name: generic.archive.name, archive_size: generic.archive.size,
             database_name_file: generic.database?.name || null, database_size: generic.database?.size || null,
-            database_host: generic.database_host, database_port: generic.database_port, database_name: generic.database_name,
-            database_user: generic.database_user, database_password: generic.database_password,
+            overwrite_database: overwriteDatabase,
         });
         trackingId.value = response.data.tracking_id;
         if (generic.database) await uploadTrackedFile(generic.database, 'database', trackingId.value);
@@ -122,10 +128,10 @@ const remove = async (item) => {
 </script>
 
 <template>
-  <Head :title="props.provider === 'cpanel' ? 'cPanel Migration' : 'Migration Import'" />
+  <Head :title="props.provider === 'cpanel' ? 'cPanel Migration' : props.provider === 'cyberpanel-ssh' ? 'CyberPanel SSH Migration' : 'Migration Import'" />
   <AuthenticatedLayout>
-    <template #header><h2 class="text-xl font-semibold text-slate-800 dark:text-slate-100">{{ props.provider === 'cpanel' ? 'cPanel Migration' : 'Migration Import' }}</h2></template>
-    <div class="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+    <template #header><h2 class="text-xl font-semibold text-slate-800 dark:text-slate-100">{{ props.provider === 'cpanel' ? 'cPanel Migration' : props.provider === 'cyberpanel-ssh' ? 'CyberPanel SSH Migration' : 'Migration Import' }}</h2></template>
+    <div class="mx-auto space-y-6 p-4 sm:p-6">
       <section v-if="!props.provider">
         <div class="mb-4"><h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Choose migration service</h3><p class="text-sm text-slate-500 dark:text-slate-400">Select where the backup came from and what kind of package you have.</p></div>
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -139,6 +145,32 @@ const remove = async (item) => {
         </div>
       </section>
 
+      <template v-else-if="props.provider === 'cyberpanel-ssh'">
+        <button type="button" class="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400" @click="router.visit(route('migrations.index'))"><i class="bi bi-arrow-left"></i> All migration services</button>
+        <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+          <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Connect to CyberPanel</h3>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Credentials are used only for this request and are not stored by DPanel.</p>
+          <form class="mt-6 grid gap-4 md:grid-cols-2" @submit.prevent="inspectCyberPanel">
+            <label class="text-sm font-medium dark:text-slate-300">Host<input v-model.trim="ssh.host" required placeholder="server.example.com" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label>
+            <label class="text-sm font-medium dark:text-slate-300">SSH port<input v-model.number="ssh.port" required type="number" min="1" max="65535" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label>
+            <label class="text-sm font-medium dark:text-slate-300">Username<input v-model.trim="ssh.username" required class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label>
+            <label class="text-sm font-medium dark:text-slate-300">Authentication<select v-model="ssh.auth_type" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800"><option value="password">Password</option><option value="key">Private key</option></select></label>
+            <label v-if="ssh.auth_type === 'password'" class="text-sm font-medium dark:text-slate-300 md:col-span-2">Password<input v-model="ssh.password" required type="password" autocomplete="off" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label>
+            <template v-else><label class="text-sm font-medium dark:text-slate-300 md:col-span-2">Private key<textarea v-model="ssh.private_key" required rows="7" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" class="mt-1 block w-full rounded-lg border-slate-300 font-mono text-xs dark:border-slate-700 dark:bg-slate-800"></textarea></label><label class="text-sm font-medium dark:text-slate-300 md:col-span-2">Key passphrase <span class="font-normal text-slate-400">(optional)</span><input v-model="ssh.key_passphrase" type="password" autocomplete="off" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label></template>
+            <div class="md:col-span-2"><button :disabled="sshInspecting" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><i class="bi bi-search mr-2"></i>{{ sshInspecting ? 'Connecting…' : 'Connect & discover' }}</button></div>
+          </form>
+        </section>
+        <div v-if="message" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{{ message }}</div>
+        <div v-if="error" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300">{{ error }}</div>
+        <section v-if="remoteInventory" class="space-y-4">
+          <div><h3 class="text-lg font-semibold dark:text-slate-100">Remote websites</h3><p class="text-sm text-slate-500">{{ remoteInventory.panel }} · {{ remoteInventory.hostname }}</p></div>
+          <div v-if="!remoteInventory.websites.length" class="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500 dark:border-slate-800 dark:bg-slate-900/50">No websites were returned by CyberPanel.</div>
+          <article v-for="website in remoteInventory.websites" :key="website.domain" class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/50">
+            <div class="flex flex-wrap items-start justify-between gap-3"><div><h4 class="font-semibold text-slate-900 dark:text-slate-100">{{ website.domain }}</h4><p class="mt-1 break-all text-xs text-slate-500">{{ website.path }}</p></div><span v-if="website.php_version" class="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400">PHP {{ website.php_version }}</span></div>
+            <div class="mt-4"><h5 class="text-xs font-bold uppercase tracking-wide text-slate-400">Databases ({{ website.databases.length }})</h5><div v-if="website.databases.length" class="mt-2 grid gap-2 sm:grid-cols-2"><div v-for="database in website.databases" :key="database.name" class="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800"><span class="font-mono text-slate-700 dark:text-slate-200">{{ database.name }}</span><span v-if="database.user" class="ml-2 text-xs text-slate-400">{{ database.user }}</span></div></div><p v-else class="mt-2 text-sm text-slate-400">No database found.</p></div>
+          </article>
+        </section>
+      </template>
       <template v-else-if="props.provider === 'cpanel'">
       <button type="button" class="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300" @click="router.visit(route('migrations.index'))"><i class="bi bi-arrow-left"></i> All migration services</button>
       <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
@@ -179,21 +211,14 @@ const remove = async (item) => {
         <button type="button" class="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400" @click="router.visit(route('websites.manage', { token: props.panelToken, id: props.website.id }))"><i class="bi bi-arrow-left"></i> Back to {{ props.website.domain }}</button>
         <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
           <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Import into {{ props.website.domain }}</h3>
-          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Files will be imported for {{ props.website.site_owner }}. Database fields are optional; omitted credentials are generated automatically.</p>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Upload website files and an optional SQL dump. Existing database credentials for this website are selected automatically—no connection form is required.</p>
           <form class="mt-6 grid gap-4 md:grid-cols-2" @submit.prevent="submitGeneric">
             <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Website files<input required type="file" accept=".zip,.gz,.tgz,application/zip,application/gzip" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.archive = $event.target.files[0]" /></label>
-            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Database dump <span class="font-normal text-slate-400">(optional)</span><input type="file" accept=".sql,application/sql,text/plain" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.database = $event.target.files[0]" /></label>
-            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Database host<input v-model="generic.database_host" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label>
-            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Database port<input v-model.number="generic.database_port" type="number" min="1" max="65535" class="mt-1 block w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800" /></label>
-            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Database name<div class="mt-1 flex rounded-lg border border-slate-300 bg-white focus-within:border-indigo-500 dark:border-slate-700 dark:bg-slate-800"><span class="flex items-center border-r border-slate-300 bg-slate-50 px-3 font-mono text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">{{ websiteDatabasePrefix }}</span><input v-model="generic.database_name" maxlength="31" placeholder="domain_db" class="min-w-0 flex-1 border-0 bg-transparent focus:ring-0" /></div></label>
-            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Database user<div class="mt-1 flex rounded-lg border border-slate-300 bg-white focus-within:border-indigo-500 dark:border-slate-700 dark:bg-slate-800"><span class="flex items-center border-r border-slate-300 bg-slate-50 px-3 font-mono text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">{{ websiteDatabasePrefix }}</span><input v-model="generic.database_user" maxlength="31" placeholder="domain_user" class="min-w-0 flex-1 border-0 bg-transparent focus:ring-0" /></div></label>
-            <label class="text-sm font-medium text-slate-700 dark:text-slate-300 md:col-span-2">Database password
-              <div class="mt-1 flex rounded-lg border border-slate-300 bg-white focus-within:border-indigo-500 dark:border-slate-700 dark:bg-slate-800">
-                <input v-model="generic.database_password" :type="showDatabasePassword ? 'text' : 'password'" autocomplete="new-password" placeholder="Secure password generated when empty" class="min-w-0 flex-1 border-0 bg-transparent focus:ring-0" />
-                <button type="button" class="grid w-11 place-items-center border-l border-slate-200 text-slate-500 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-400" :aria-label="showDatabasePassword ? 'Hide password' : 'Show password'" @click="showDatabasePassword = !showDatabasePassword"><i :class="showDatabasePassword ? 'bi-eye-slash' : 'bi-eye'" class="bi"></i></button>
-                <button type="button" class="inline-flex items-center gap-1.5 border-l border-slate-200 px-3 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:text-indigo-400 dark:hover:bg-indigo-500/10" @click="generateDatabasePassword"><i class="bi bi-stars"></i> Generate</button>
-              </div>
-            </label>
+            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Database dump <span class="font-normal text-slate-400">(optional)</span><input type="file" accept=".sql,application/sql,text/plain" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.database = $event.target.files[0]" /><span class="mt-1 block text-xs font-normal text-slate-500">Automatically imports into this website's active database.</span></label>
+            <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 md:col-span-2">
+              <template v-if="props.databaseConnection?.available"><i class="bi bi-database-check mr-1 text-emerald-500"></i>Existing database <b>{{ props.databaseConnection.database_name }}</b> requires confirmation and will be backed up before overwrite.</template>
+              <template v-else><i class="bi bi-database-add mr-1 text-indigo-500"></i>No active database exists. Uploading SQL will automatically create and connect one.</template>
+            </div>
             <div v-if="uploading || trackingId" class="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50 md:col-span-2">
               <div class="flex flex-wrap items-center justify-between gap-2"><h4 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Tracked import pipeline</h4><code v-if="trackingId" class="rounded bg-slate-200 px-2 py-1 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">{{ trackingId }}</code></div>
               <div v-for="(stage, key) in uploadStages" :key="key">
