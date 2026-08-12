@@ -2,11 +2,9 @@
 
 namespace App\Services\AiGateway;
 
-use App\Models\AiGatewayAgent;
 use App\Models\AiGatewayModel;
 use App\Models\AiGatewayProvider;
 use App\Models\AiGatewayRequestLog;
-use App\Models\AiGatewayTask;
 use App\Models\AiGatewayUsageRecord;
 use App\Services\AiGateway\Contracts\ProviderAdapter;
 use App\Services\AiGateway\Providers\AnthropicAdapter;
@@ -23,6 +21,8 @@ class RegisteredAdapter
     public function __construct(
         public readonly string $driver,
         public readonly string $label,
+        public readonly string $baseUrl,
+        public readonly string $apiKeyUrl,
     ) {
     }
 }
@@ -54,8 +54,15 @@ class AiGatewayService
         $drivers = [];
 
         foreach ($this->adapters as $adapter) {
+            $meta = $adapter::driverMeta();
+
             foreach ($adapter::drivers() as $driver => $label) {
-                $drivers[$driver] = new RegisteredAdapter($driver, $label);
+                $drivers[$driver] = new RegisteredAdapter(
+                    $driver,
+                    $label,
+                    $meta[$driver]['base_url'] ?? '',
+                    $meta[$driver]['api_key_url'] ?? '',
+                );
             }
         }
 
@@ -79,28 +86,29 @@ class AiGatewayService
     }
 
     /**
-     * Perform a chat completion through the gateway, applying routing rules
-     * and recording usage + audit logs automatically.
+     * Perform a chat completion, auto-routing to the highest-weight active
+     * provider (or the owner of a specific requested model), recording
+     * usage + audit logs automatically.
      *
      * @param  array<int, array{role:string, content:string}>  $messages
-     * @param  array{model?: string, agent?: AiGatewayAgent|null, task?: AiGatewayTask|null, temperature?: float, max_tokens?: int, system?: string, channel?: string, operation?: string, created_by?: int|null}  $options
+     * @param  array{model?: string, temperature?: float, max_tokens?: int, system?: string, channel?: string, operation?: string, created_by?: int|null}  $options
      */
     public function chat(array $messages, array $options = []): array
     {
-        $agent = $options['agent'] ?? null;
-        $task = $options['task'] ?? null;
+        $resolved = $this->router->resolve(['model' => $options['model'] ?? null]);
 
-        $resolved = $this->router->resolve([
-            'model' => $options['model'] ?? null,
-            'agent' => $agent,
-            'taskType' => $task?->type,
-            'taskTitle' => $task?->title,
-        ]);
+        return $this->chatWithProvider($resolved['provider'], $resolved['model'], $resolved['modelName'], $messages, $options);
+    }
 
-        $provider = $resolved['provider'];
-        $modelRecord = $resolved['model'];
-        $modelName = $resolved['modelName'];
-
+    /**
+     * Perform a chat completion against a specific provider + model,
+     * bypassing auto-routing, while still recording usage + audit logs.
+     *
+     * @param  array<int, array{role:string, content:string}>  $messages
+     * @param  array{temperature?: float, max_tokens?: int, system?: string, channel?: string, operation?: string, created_by?: int|null}  $options
+     */
+    public function chatWithProvider(AiGatewayProvider $provider, ?AiGatewayModel $modelRecord, string $modelName, array $messages, array $options = []): array
+    {
         $adapter = $this->adapterFor($provider->driver);
         $traceId = (string) Str::uuid();
 
@@ -109,12 +117,11 @@ class AiGatewayService
         try {
             $result = $adapter->chat($provider, $modelName, $messages, [
                 'system' => $options['system'] ?? null,
-                'temperature' => $options['temperature'] ?? ($agent?->temperature)
-                    ?? config('aigateway.default_temperature', 0.3),
-                'max_tokens' => $options['max_tokens'] ?? $agent?->max_tokens,
+                'temperature' => $options['temperature'] ?? config('aigateway.default_temperature', 0.3),
+                'max_tokens' => $options['max_tokens'] ?? config('aigateway.default_max_tokens', 2048),
             ]);
         } catch (\Throwable $e) {
-            $this->recordFailure($provider, $modelRecord, $modelName, $traceId, $options, $task, $e);
+            $this->recordFailure($provider, $modelRecord, $modelName, $traceId, $options, $e);
 
             throw $e;
         }
@@ -134,13 +141,11 @@ class AiGatewayService
             $cost
         );
 
-        $log = AiGatewayRequestLog::create([
+        AiGatewayRequestLog::create([
             'trace_id' => $traceId,
             'channel' => $options['channel'] ?? 'gateway',
             'provider_id' => $provider->id,
             'model_id' => $modelRecord?->id,
-            'agent_id' => $agent?->id,
-            'task_id' => $task?->id,
             'operation' => $options['operation'] ?? 'chat',
             'model' => $modelName,
             'status' => 'success',
@@ -163,74 +168,164 @@ class AiGatewayService
             'provider' => $provider,
             'latency_ms' => $latencyMs,
             'trace_id' => $traceId,
-            'task_id' => $task?->id,
             'raw' => $result['raw'],
         ];
     }
 
     /**
-     * Run a chat through an agent, merging its system prompt / options.
+     * Perform a streaming chat completion against a specific provider +
+     * model, invoking $onDelta with each text chunk as it arrives. Records
+     * usage + audit logs once the stream completes, same as chatWithProvider.
      *
      * @param  array<int, array{role:string, content:string}>  $messages
+     * @param  array{temperature?: float, max_tokens?: int, system?: string, channel?: string, operation?: string, created_by?: int|null}  $options
+     * @param  \Closure(string):void  $onDelta
      */
-    public function completeAgent(AiGatewayAgent $agent, array $messages, array $options = []): array
+    public function chatStreamWithProvider(AiGatewayProvider $provider, ?AiGatewayModel $modelRecord, string $modelName, array $messages, array $options, \Closure $onDelta): array
     {
-        $options['agent'] = $agent;
-        $options['channel'] = 'agent';
-        $options['operation'] = 'agent';
-        $options['created_by'] = $options['created_by'] ?? auth()->id() ?? $agent->created_by;
+        $adapter = $this->adapterFor($provider->driver);
+        $traceId = (string) Str::uuid();
 
-        return $this->chat($messages, $options);
+        $start = microtime(true);
+
+        try {
+            $result = $adapter->stream($provider, $modelName, $messages, [
+                'system' => $options['system'] ?? null,
+                'temperature' => $options['temperature'] ?? config('aigateway.default_temperature', 0.3),
+                'max_tokens' => $options['max_tokens'] ?? config('aigateway.default_max_tokens', 2048),
+            ], $onDelta);
+        } catch (\Throwable $e) {
+            $this->recordFailure($provider, $modelRecord, $modelName, $traceId, $options, $e);
+
+            throw $e;
+        }
+
+        $latencyMs = (int) round((microtime(true) - $start) * 1000);
+        $cost = $this->calculateCost(
+            $modelRecord,
+            $result['input_tokens'],
+            $result['output_tokens']
+        );
+
+        AiGatewayUsageRecord::record(
+            $provider->id,
+            $modelRecord?->id,
+            $result['input_tokens'],
+            $result['output_tokens'],
+            $cost
+        );
+
+        AiGatewayRequestLog::create([
+            'trace_id' => $traceId,
+            'channel' => $options['channel'] ?? 'gateway',
+            'provider_id' => $provider->id,
+            'model_id' => $modelRecord?->id,
+            'operation' => $options['operation'] ?? 'chat',
+            'model' => $modelName,
+            'status' => 'success',
+            'request_payload' => config('aigateway.log_payloads', true) ? $this->trimForLog($messages) : null,
+            'response_snippet' => config('aigateway.log_payloads', true) ? $this->trimForLog($result['content']) : null,
+            'input_tokens' => $result['input_tokens'],
+            'output_tokens' => $result['output_tokens'],
+            'cost' => $cost,
+            'latency_ms' => $latencyMs,
+            'created_by' => $options['created_by'] ?? auth()->id() ?? null,
+        ]);
+
+        return [
+            'content' => $result['content'],
+            'input_tokens' => $result['input_tokens'],
+            'output_tokens' => $result['output_tokens'],
+            'cost' => $cost,
+            'model' => $result['model'],
+            'model_id' => $modelRecord?->id,
+            'provider' => $provider,
+            'latency_ms' => $latencyMs,
+            'trace_id' => $traceId,
+            'raw' => $result['raw'],
+        ];
     }
 
     /**
-     * Run (or re-run) a queued/failed task synchronously.
+     * Perform a chat completion picking the provider automatically: tries
+     * every active, non-cooldown model matching $modelName (any active
+     * model if null) in weighted order, failing over to the next candidate
+     * when a provider hits a rate-limit/quota error. Other error types
+     * (auth, bad request) are not worth failing over and surface directly.
+     *
+     * @param  array<int, array{role:string, content:string}>  $messages
      */
-    public function runTask(AiGatewayTask $task, ?int $userId = null): AiGatewayTask
+    public function chatAuto(?string $modelName, array $messages, array $options = [], ?int $providerId = null): array
     {
-        $payload = $task->payload;
-        $messages = is_array($payload) && isset($payload['messages']) ? $payload['messages'] : [];
+        $candidates = $this->router->candidates($modelName, $providerId);
 
-        $task->update([
-            'status' => AiGatewayTask::STATUS_RUNNING,
-            'error' => null,
-            'started_at' => Carbon::now(),
-            'completed_at' => null,
-        ]);
-
-        try {
-            $options = [
-                'task' => $task,
-                'agent' => $task->agent,
-                'channel' => 'task',
-                'operation' => $task->type,
-                'created_by' => $userId ?? $task->created_by,
-                'model' => $task->model?->name,
-                'temperature' => is_array($payload) ? ($payload['temperature'] ?? null) : null,
-                'max_tokens' => is_array($payload) ? ($payload['max_tokens'] ?? null) : null,
-                'system' => is_array($payload) ? ($payload['system'] ?? null) : null,
-            ];
-
-            $result = $this->chat($messages, $options);
-
-            $task->update([
-                'status' => AiGatewayTask::STATUS_SUCCEEDED,
-                'response' => $result['content'],
-                'input_tokens' => $result['input_tokens'],
-                'output_tokens' => $result['output_tokens'],
-                'cost' => $result['cost'],
-                'latency_ms' => $result['latency_ms'],
-                'completed_at' => Carbon::now(),
-            ]);
-        } catch (\Throwable $e) {
-            $task->update([
-                'status' => AiGatewayTask::STATUS_FAILED,
-                'error' => $e->getMessage(),
-                'completed_at' => Carbon::now(),
-            ]);
+        if ($candidates->isEmpty()) {
+            throw Exceptions\AiGatewayException::noActiveProvider();
         }
 
-        return $task->fresh();
+        $lastException = null;
+
+        foreach ($candidates as $modelRecord) {
+            try {
+                $result = $this->chatWithProvider($modelRecord->provider, $modelRecord, $modelRecord->name, $messages, $options);
+                $modelRecord->recordSuccess();
+
+                return $result;
+            } catch (\Throwable $e) {
+                $lastException = $e;
+
+                if ($e instanceof Exceptions\AiGatewayException && $e->isRateLimitOrQuota()) {
+                    $modelRecord->recordFailure();
+
+                    continue;
+                }
+
+                throw $e;
+            }
+        }
+
+        throw $lastException;
+    }
+
+    /**
+     * Streaming counterpart to chatAuto(). $onDelta may be invoked for a
+     * candidate that ultimately fails over (partial output before the
+     * failure) — callers should treat delta text as provisional until this
+     * call returns.
+     *
+     * @param  array<int, array{role:string, content:string}>  $messages
+     * @param  \Closure(string):void  $onDelta
+     */
+    public function chatStreamAuto(?string $modelName, array $messages, array $options, \Closure $onDelta, ?int $providerId = null): array
+    {
+        $candidates = $this->router->candidates($modelName, $providerId);
+
+        if ($candidates->isEmpty()) {
+            throw Exceptions\AiGatewayException::noActiveProvider();
+        }
+
+        $lastException = null;
+
+        foreach ($candidates as $modelRecord) {
+            try {
+                $result = $this->chatStreamWithProvider($modelRecord->provider, $modelRecord, $modelRecord->name, $messages, $options, $onDelta);
+                $modelRecord->recordSuccess();
+
+                return $result;
+            } catch (\Throwable $e) {
+                $lastException = $e;
+
+                if ($e instanceof Exceptions\AiGatewayException && $e->isRateLimitOrQuota()) {
+                    $modelRecord->recordFailure();
+
+                    continue;
+                }
+
+                throw $e;
+            }
+        }
+
+        throw $lastException;
     }
 
     /**
@@ -269,7 +364,6 @@ class AiGatewayService
         string $modelName,
         string $traceId,
         array $options,
-        ?AiGatewayTask $task,
         \Throwable $e
     ): void {
         AiGatewayUsageRecord::record($provider->id, $model?->id, 0, 0, 0, 1);
@@ -279,8 +373,6 @@ class AiGatewayService
             'channel' => $options['channel'] ?? 'gateway',
             'provider_id' => $provider->id,
             'model_id' => $model?->id,
-            'agent_id' => isset($options['agent']) && $options['agent'] instanceof AiGatewayAgent ? $options['agent']->id : null,
-            'task_id' => $task?->id,
             'operation' => $options['operation'] ?? 'chat',
             'model' => $modelName,
             'status' => 'error',

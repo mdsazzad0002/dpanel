@@ -8,19 +8,57 @@ use App\Services\AiGateway\Exceptions\AiGatewayException;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Handles OpenAI and any OpenAI-compatible endpoint (used for Codex and
- * local model servers such as Ollama / vLLM / LM Studio).
+ * Handles OpenAI and every other provider that speaks the OpenAI
+ * chat-completions wire format (OpenRouter, Groq, DeepSeek, Mistral,
+ * Cerebras). Each driver has a fixed, well-known base URL — there is no
+ * free-text base URL field in the UI.
  */
 class OpenAiAdapter implements ProviderAdapter
 {
+    /**
+     * driver => [label, base_url, api_key_url].
+     */
+    private const DRIVERS = [
+        'openai' => ['OpenAI', 'https://api.openai.com/v1', 'https://platform.openai.com/api-keys'],
+        'openrouter' => ['OpenRouter (many free models)', 'https://openrouter.ai/api/v1', 'https://openrouter.ai/keys'],
+        'groq' => ['Groq (fast, generous free tier)', 'https://api.groq.com/openai/v1', 'https://console.groq.com/keys'],
+        'deepseek' => ['DeepSeek', 'https://api.deepseek.com', 'https://platform.deepseek.com/api_keys'],
+        'mistral' => ['Mistral', 'https://api.mistral.ai/v1', 'https://console.mistral.ai/api-keys'],
+        'cerebras' => ['Cerebras (fast, free tier)', 'https://api.cerebras.ai/v1', 'https://cloud.cerebras.ai/'],
+    ];
+
     public function supportsDriver(string $driver): bool
     {
-        return in_array($driver, ['openai', 'openai_compatible'], true);
+        return array_key_exists($driver, self::DRIVERS);
     }
 
     public static function drivers(): array
     {
-        return ['openai' => 'OpenAI', 'openai_compatible' => 'OpenAI-compatible'];
+        return array_map(fn (array $meta) => $meta[0], self::DRIVERS);
+    }
+
+    public static function driverMeta(): array
+    {
+        return array_map(fn (array $meta) => ['base_url' => $meta[1], 'api_key_url' => $meta[2]], self::DRIVERS);
+    }
+
+    private function baseUrlFor(AiGatewayProvider $provider): string
+    {
+        return self::DRIVERS[$provider->driver][1] ?? self::DRIVERS['openai'][1];
+    }
+
+    private function requestFor(AiGatewayProvider $provider, string $apiKey, ?int $timeout = null)
+    {
+        $request = Http::withToken($apiKey)->timeout($timeout ?? config('aigateway.timeout', 90));
+
+        if ($provider->driver === 'openrouter') {
+            $request = $request->withHeaders([
+                'HTTP-Referer' => config('app.url'),
+                'X-Title' => config('app.name', 'DPanel'),
+            ]);
+        }
+
+        return $request;
     }
 
     public function chat(AiGatewayProvider $provider, string $model, array $messages, array $options = []): array
@@ -31,7 +69,7 @@ class OpenAiAdapter implements ProviderAdapter
             throw AiGatewayException::missingCredentials($provider->name);
         }
 
-        $base = rtrim((string) ($provider->base_url ?: 'https://api.openai.com'), '/');
+        $base = rtrim($this->baseUrlFor($provider), '/');
 
         $system = $options['system'] ?? null;
         $chatMessages = $messages;
@@ -53,14 +91,12 @@ class OpenAiAdapter implements ProviderAdapter
             $body['max_tokens'] = (int) $options['max_tokens'];
         }
 
-        $request = Http::withToken($apiKey)
-            ->timeout($options['timeout'] ?? config('aigateway.timeout', 90));
+        $request = $this->requestFor($provider, $apiKey, $options['timeout'] ?? null);
 
         $response = $request->post($base.'/chat/completions', $body);
 
         if ($response->failed()) {
-            $message = $response->json('error.message') ?: (string) $response->body();
-            throw AiGatewayException::upstream($provider->name, $message);
+            throw AiGatewayException::upstream($provider->name, $this->extractErrorMessage($response), $response->status());
         }
 
         $json = $response->json();
@@ -76,6 +112,123 @@ class OpenAiAdapter implements ProviderAdapter
         ];
     }
 
+    public function stream(AiGatewayProvider $provider, string $model, array $messages, array $options, \Closure $onDelta): array
+    {
+        $apiKey = $provider->getApiKey();
+
+        if (! $apiKey) {
+            throw AiGatewayException::missingCredentials($provider->name);
+        }
+
+        $base = rtrim($this->baseUrlFor($provider), '/');
+
+        $system = $options['system'] ?? null;
+        $chatMessages = $messages;
+
+        if ($system !== null && $system !== '' && ! collect($messages)->first(fn ($m) => $m['role'] === 'system')) {
+            array_unshift($chatMessages, ['role' => 'system', 'content' => (string) $system]);
+        }
+
+        $body = [
+            'model' => $model,
+            'messages' => $chatMessages,
+            'stream' => true,
+            'stream_options' => ['include_usage' => true],
+        ];
+
+        if (isset($options['temperature'])) {
+            $body['temperature'] = (float) $options['temperature'];
+        }
+
+        if (isset($options['max_tokens'])) {
+            $body['max_tokens'] = (int) $options['max_tokens'];
+        }
+
+        $response = $this->requestFor($provider, $apiKey, $options['timeout'] ?? null)
+            ->withOptions(['stream' => true])
+            ->post($base.'/chat/completions', $body);
+
+        if ($response->failed()) {
+            throw AiGatewayException::upstream($provider->name, $this->extractErrorMessage($response), $response->status());
+        }
+
+        $content = '';
+        $inputTokens = 0;
+        $outputTokens = 0;
+        $finalModel = $model;
+        $raw = [];
+
+        $this->eachSseEvent($response, function (array $json) use (&$content, &$inputTokens, &$outputTokens, &$finalModel, &$raw, $onDelta): void {
+            $raw = $json;
+            $finalModel = $json['model'] ?? $finalModel;
+
+            $delta = $json['choices'][0]['delta']['content'] ?? null;
+            if ($delta !== null && $delta !== '') {
+                $content .= $delta;
+                $onDelta($delta);
+            }
+
+            if (isset($json['usage'])) {
+                $inputTokens = (int) ($json['usage']['prompt_tokens'] ?? $inputTokens);
+                $outputTokens = (int) ($json['usage']['completion_tokens'] ?? $outputTokens);
+            }
+        });
+
+        return [
+            'content' => $content,
+            'input_tokens' => $inputTokens,
+            'output_tokens' => $outputTokens,
+            'model' => $finalModel,
+            'raw' => $raw,
+        ];
+    }
+
+    /**
+     * Read a "data: {json}" SSE body, invoking $onEvent for each decoded
+     * JSON payload. Skips "[DONE]" sentinels and non-JSON lines.
+     */
+    /**
+     * Providers in this family don't all agree on where the error text
+     * lives: most nest it under "error.message" (OpenAI shape), but some
+     * (Cerebras) put a flat top-level "message". Try both before falling
+     * back to the raw body, and never return a blank string.
+     */
+    private function extractErrorMessage($response): string
+    {
+        $message = $response->json('error.message') ?: $response->json('message') ?: (string) $response->body();
+
+        return $message !== '' ? $message : 'HTTP '.$response->status().' with no error details.';
+    }
+
+    private function eachSseEvent($response, \Closure $onEvent): void
+    {
+        $stream = $response->toPsrResponse()->getBody();
+        $buffer = '';
+
+        while (! $stream->eof()) {
+            $buffer .= $stream->read(1024);
+
+            while (($pos = strpos($buffer, "\n")) !== false) {
+                $line = trim(substr($buffer, 0, $pos));
+                $buffer = substr($buffer, $pos + 1);
+
+                if ($line === '' || ! str_starts_with($line, 'data:')) {
+                    continue;
+                }
+
+                $data = trim(substr($line, 5));
+                if ($data === '[DONE]') {
+                    continue;
+                }
+
+                $json = json_decode($data, true);
+                if (is_array($json)) {
+                    $onEvent($json);
+                }
+            }
+        }
+    }
+
     public function ping(AiGatewayProvider $provider): array
     {
         $model = $provider->default_model;
@@ -83,9 +236,8 @@ class OpenAiAdapter implements ProviderAdapter
         try {
             $payload = ['model' => $model ?? 'gpt-4.1-mini', 'messages' => [['role' => 'user', 'content' => 'Say OK']], 'max_tokens' => 8];
 
-            $base = rtrim((string) ($provider->base_url ?: 'https://api.openai.com'), '/');
-            $response = Http::withToken((string) $provider->getApiKey())
-                ->timeout(config('aigateway.timeout', 30))
+            $base = rtrim($this->baseUrlFor($provider), '/');
+            $response = $this->requestFor($provider, (string) $provider->getApiKey(), config('aigateway.timeout', 30))
                 ->post($base.'/models', []);
 
             // Some local servers (Ollama) don't implement /models; fall back to a tiny chat.

@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AiGatewayAgent;
 use App\Models\AiGatewayProvider;
 use App\Models\AiGatewayRequestLog;
 use Illuminate\Http\RedirectResponse;
@@ -19,7 +18,7 @@ class AiGatewayLogController extends Controller
         $q = trim((string) $request->input('q'));
 
         $logs = AiGatewayRequestLog::query()
-            ->with(['provider:id,name', 'model:id,name,display_name', 'agent:id,name'])
+            ->with(['provider:id,name', 'model:id,name,display_name'])
             ->when($status && $status !== 'all', fn ($query) => $query->where('status', $status))
             ->when($provider, fn ($query) => $query->where('provider_id', $provider))
             ->when($q !== '', function ($query) use ($q) {
@@ -41,7 +40,6 @@ class AiGatewayLogController extends Controller
                     'status' => $log->status,
                     'model' => $log->model,
                     'provider_name' => $log->provider?->name,
-                    'agent_name' => $log->agent?->name,
                     'input_tokens' => $log->input_tokens,
                     'output_tokens' => $log->output_tokens,
                     'cost' => $log->cost,
@@ -51,7 +49,7 @@ class AiGatewayLogController extends Controller
                 ];
             });
 
-        return Inertia::render('AiGateway/Logs', [
+        return Inertia::render('AiGateway/Logs/Index', [
             'logs' => $logs,
             'filters' => ['status' => $status ?? 'all', 'provider' => $provider, 'q' => $q],
             'providers' => AiGatewayProvider::query()->orderBy('name')->get(['id', 'name']),
@@ -60,7 +58,7 @@ class AiGatewayLogController extends Controller
 
     public function show(AiGatewayRequestLog $log): Response
     {
-        $log->load(['provider:id,name', 'model:id,name,display_name', 'agent:id,name']);
+        $log->load(['provider:id,name', 'model:id,name,display_name']);
 
         return Inertia::render('AiGateway/Logs/Show', [
             'log' => [
@@ -71,7 +69,6 @@ class AiGatewayLogController extends Controller
                 'status' => $log->status,
                 'model' => $log->model,
                 'provider_name' => $log->provider?->name,
-                'agent_name' => $log->agent?->name,
                 'request_payload' => $log->request_payload,
                 'response_snippet' => $log->response_snippet,
                 'error_message' => $log->error_message,

@@ -58,20 +58,34 @@ class AiGatewayUsageRecord extends Model
         float $cost,
         int $failures = 0
     ): void {
-        self::query()->updateOrCreate(
-            [
-                'provider_id' => $providerId,
-                'model_id' => $modelId,
-                'usage_date' => now()->toDateString(),
-            ],
-            [
-                'requests' => DB::raw('requests + 1'),
-                'input_tokens' => DB::raw('input_tokens + '.(int) $inputTokens),
-                'output_tokens' => DB::raw('output_tokens + '.(int) $outputTokens),
-                'cost' => DB::raw('cost + '.(float) $cost),
-                'failures' => DB::raw('failures + '.(int) $failures),
-            ]
-        );
+        DB::transaction(function () use ($providerId, $modelId, $inputTokens, $outputTokens, $cost, $failures): void {
+            $row = self::query()
+                ->where('provider_id', $providerId)
+                ->where('model_id', $modelId)
+                ->where('usage_date', now()->toDateString())
+                ->lockForUpdate()
+                ->first();
+
+            if (! $row) {
+                $row = new self([
+                    'provider_id' => $providerId,
+                    'model_id' => $modelId,
+                    'usage_date' => now()->toDateString(),
+                    'requests' => 0,
+                    'input_tokens' => 0,
+                    'output_tokens' => 0,
+                    'cost' => 0,
+                    'failures' => 0,
+                ]);
+            }
+
+            $row->requests += 1;
+            $row->input_tokens += (int) $inputTokens;
+            $row->output_tokens += (int) $outputTokens;
+            $row->cost += (float) $cost;
+            $row->failures += $failures;
+            $row->save();
+        });
     }
 
     /**

@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Casts\AsEncryptedArrayObject;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,7 +31,7 @@ class AiGatewayProvider extends Model
     protected function casts(): array
     {
         return [
-            'credentials' => AsEncryptedArrayObject::class,
+            'credentials' => 'array',
             'config' => 'array',
             'is_active' => 'boolean',
             'weight' => 'integer',
@@ -55,7 +54,7 @@ class AiGatewayProvider extends Model
     {
         $credentials = $this->credentials;
 
-        return is_object($credentials) ? ($credentials['api_key'] ?? null) : null;
+        return is_array($credentials) ? ($credentials['api_key'] ?? null) : null;
     }
 
     public function getDriverLabel(): string
@@ -63,7 +62,11 @@ class AiGatewayProvider extends Model
         return match ($this->driver) {
             'anthropic' => 'Claude (Anthropic)',
             'openai' => 'OpenAI',
-            'openai_compatible' => $this->name.' (OpenAI-compatible)',
+            'openrouter' => 'OpenRouter',
+            'groq' => 'Groq',
+            'deepseek' => 'DeepSeek',
+            'mistral' => 'Mistral',
+            'cerebras' => 'Cerebras',
             'gemini' => 'Google Gemini',
             default => ucfirst($this->driver),
         };

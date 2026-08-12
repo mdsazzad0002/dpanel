@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { computed, reactive } from 'vue';
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -13,13 +13,30 @@ const props = defineProps({
     stats: { type: Object, default: () => ({}) },
     series: { type: Array, default: () => [] },
     providers: { type: Array, default: () => [] },
-    perProviderUsage: { type: Array, default: () => [] },
+    perProviderRequests: { type: Array, default: () => [] },
     recentLogs: { type: Array, default: () => [] },
+    usage: { type: Object, default: () => ({}) },
 });
 
+const filters = reactive({
+    from: props.usage.filters?.from || '',
+    to: props.usage.filters?.to || '',
+    model: props.usage.filters?.model || '',
+    provider: props.usage.filters?.provider || '',
+});
+
+const applyUsageFilters = () => {
+    router.get(panelRoute('ai-gateway.dashboard'), {
+        from: filters.from,
+        to: filters.to,
+        model: filters.model || '',
+        provider: filters.provider || '',
+    }, { preserveState: true, preserveScroll: true });
+};
+
 const fmt = (n) => Number(n || 0).toLocaleString();
-const fmtCost = (c) => `$${(Number(c) || 0).toFixed(4)}`;
 const maxSeries = computed(() => Math.max(1, ...props.series.map((s) => s.requests)));
+const maxDaily = computed(() => Math.max(1, ...(props.usage.daily || []).map((d) => d.tokens)));
 
 const statusBadge = (status) => ({
     success: 'bg-emerald-100 text-emerald-700',
@@ -57,7 +74,23 @@ const statusBadge = (status) => ({
                 <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
                     <div class="text-xs text-slate-500">Requests (7d)</div>
                     <div class="mt-1 text-2xl font-bold">{{ fmt(stats.period?.requests) }}</div>
-                    <div class="text-xs text-slate-400">{{ fmt(stats.tasksToday) }} tasks today</div>
+                    <div class="text-xs text-slate-400">{{ fmt(stats.month?.requests) }} this month</div>
+                </div>
+                <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                    <div class="text-xs text-slate-500">Tokens (7d)</div>
+                    <div class="mt-1 text-2xl font-bold">{{ fmt((stats.period?.input_tokens || 0) + (stats.period?.output_tokens || 0)) }}</div>
+                    <div class="text-xs text-slate-400">{{ fmt(stats.period?.input_tokens) }} in / {{ fmt(stats.period?.output_tokens) }} out</div>
+                </div>
+                <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                    <div class="text-xs text-slate-500">Active Providers</div>
+                    <div class="mt-1 text-2xl font-bold">{{ stats.activeProviders }} <span class="text-base text-slate-400">/ {{ stats.totalProviders }}</span></div>
+                    <div class="text-xs text-slate-400">{{ stats.models }} models</div>
+                </div>
+                <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                    <div class="text-xs text-slate-500">Failures (range)</div>
+                    <div class="mt-1 text-2xl font-bold">{{ fmt(usage.totals?.failures) }}</div>
+                </div>
+            </div>
 
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <!-- 7 day bar chart -->
@@ -97,12 +130,12 @@ const statusBadge = (status) => ({
 
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                    <h2 class="mb-3 text-sm font-semibold">Cost by provider (7d)</h2>
-                    <div v-if="!perProviderUsage.length" class="text-sm text-slate-500">No usage recorded yet.</div>
+                    <h2 class="mb-3 text-sm font-semibold">Requests by provider (7d)</h2>
+                    <div v-if="!perProviderRequests.length" class="text-sm text-slate-500">No usage recorded yet.</div>
                     <ul v-else class="space-y-2">
-                        <li v-for="row in perProviderUsage" :key="row.name" class="flex items-center justify-between text-sm">
+                        <li v-for="row in perProviderRequests" :key="row.name" class="flex items-center justify-between text-sm">
                             <span>{{ row.name }}</span>
-                            <span class="text-slate-500">{{ fmt(row.requests) }} req · <span class="font-medium">{{ fmtCost(row.cost) }}</span></span>
+                            <span class="text-slate-500">{{ fmt(row.requests) }} req</span>
                         </li>
                     </ul>
                 </div>
@@ -124,26 +157,87 @@ const statusBadge = (status) => ({
                     </ul>
                 </div>
             </div>
-            </div>
-                <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                    <div class="text-xs text-slate-500">Tokens (7d)</div>
-                    <div class="mt-1 text-2xl font-bold">{{ fmt((stats.period?.input_tokens || 0) + (stats.period?.output_tokens || 0)) }}</div>
-                    <div class="text-xs text-slate-400">{{ fmt(stats.period?.input_tokens) }} in / {{ fmt(stats.period?.output_tokens) }} out</div>
+
+            <!-- Usage explorer -->
+            <div class="space-y-4 border-t border-slate-200 pt-6 dark:border-slate-700">
+                <h2 class="text-sm font-semibold">Usage explorer</h2>
+
+                <div class="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                    <div>
+                        <label class="mb-1 block text-xs font-medium">From</label>
+                        <input v-model="filters.from" type="date" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-xs font-medium">To</label>
+                        <input v-model="filters.to" type="date" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-xs font-medium">Model</label>
+                        <select v-model="filters.model" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
+                            <option value="">All</option>
+                            <option v-for="m in usage.models" :key="m.id" :value="m.id">{{ m.display_name || m.name }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-xs font-medium">Provider</label>
+                        <select v-model="filters.provider" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
+                            <option value="">All</option>
+                            <option v-for="p in usage.providers" :key="p.id" :value="p.id">{{ p.name }}</option>
+                        </select>
+                    </div>
+                    <button @click="applyUsageFilters" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">Apply</button>
                 </div>
-                <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                    <div class="text-xs text-slate-500">Cost (7d)</div>
-                    <div class="mt-1 text-2xl font-bold">{{ fmtCost(stats.period?.cost) }}</div>
-                    <div class="text-xs text-slate-400">{{ fmtCost(stats.month?.cost) }} this month</div>
+
+                <div class="grid grid-cols-2 gap-4 md:grid-cols-3">
+                    <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                        <div class="text-xs text-slate-500">Requests</div>
+                        <div class="mt-1 text-2xl font-bold">{{ fmt(usage.totals?.requests) }}</div>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                        <div class="text-xs text-slate-500">Tokens</div>
+                        <div class="mt-1 text-2xl font-bold">{{ fmt((usage.totals?.input_tokens || 0) + (usage.totals?.output_tokens || 0)) }}</div>
+                        <div class="text-xs text-slate-400">{{ fmt(usage.totals?.input_tokens) }} in / {{ fmt(usage.totals?.output_tokens) }} out</div>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                        <div class="text-xs text-slate-500">Failures</div>
+                        <div class="mt-1 text-2xl font-bold">{{ fmt(usage.totals?.failures) }}</div>
+                    </div>
                 </div>
+
                 <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                    <div class="text-xs text-slate-500">Active Providers</div>
-                    <div class="mt-1 text-2xl font-bold">{{ stats.activeProviders }} <span class="text-base text-slate-400">/ {{ stats.totalProviders }}</span></div>
-                    <div class="text-xs text-slate-400">{{ stats.models }} models · {{ stats.agents }} agents · {{ stats.rules }} rules</div>
+                    <h3 class="mb-3 text-sm font-semibold">Daily tokens</h3>
+                    <div class="flex h-40 items-end gap-1">
+                        <div v-for="d in usage.daily" :key="d.date" class="flex flex-1 flex-col items-center gap-1">
+                            <span class="text-[10px] text-slate-400">{{ fmt(d.tokens) }}</span>
+                            <div class="w-full rounded-t bg-blue-500" :style="{ height: `${Math.max(2, (d.tokens / maxDaily) * 100)}px` }"></div>
+                            <span class="text-[10px] text-slate-500">{{ d.date.slice(5) }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                        <h3 class="mb-2 text-sm font-semibold">By model</h3>
+                        <div v-if="!usage.byModel?.length" class="text-sm text-slate-500">No usage in range.</div>
+                        <table v-else class="w-full text-sm">
+                            <thead><tr class="text-left text-xs text-slate-500"><th class="py-1">Model</th><th class="py-1">Requests</th><th class="py-1">Tokens</th></tr></thead>
+                            <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
+                                <tr v-for="row in usage.byModel" :key="row.model_id"><td class="py-1.5">{{ row.model_name }}</td><td class="py-1.5">{{ row.requests }}</td><td class="py-1.5">{{ fmt(row.tokens) }}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                        <h3 class="mb-2 text-sm font-semibold">By provider</h3>
+                        <div v-if="!usage.byProvider?.length" class="text-sm text-slate-500">No usage in range.</div>
+                        <table v-else class="w-full text-sm">
+                            <thead><tr class="text-left text-xs text-slate-500"><th class="py-1">Provider</th><th class="py-1">Requests</th><th class="py-1">Tokens</th></tr></thead>
+                            <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
+                                <tr v-for="row in usage.byProvider" :key="row.provider_id"><td class="py-1.5">{{ row.provider_name }}</td><td class="py-1.5">{{ row.requests }}</td><td class="py-1.5">{{ fmt(row.tokens) }}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
-
     </AuthenticatedLayout>
 </template>
-
-

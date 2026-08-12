@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 
 const page = usePage();
@@ -16,8 +16,7 @@ const props = defineProps({
 
 const form = useForm({
     name: '',
-    driver: 'openai_compatible',
-    base_url: '',
+    driver: props.drivers[0]?.driver || 'openrouter',
     api_key: '',
     organization: '',
     project: '',
@@ -27,14 +26,28 @@ const form = useForm({
     rate_limit_per_minute: 0,
 });
 
-const placeholderFor = (driver) => ({
-    anthropic: 'https://api.anthropic.com',
-    openai: 'https://api.openai.com',
-    openai_compatible: 'http://127.0.0.1:11434/v1',
-    gemini: 'https://generativelanguage.googleapis.com',
-}[driver] || '');
-
+const currentDriver = computed(() => props.drivers.find((d) => d.driver === form.driver));
 const suggestedModels = computed(() => props.defaultModelSeed?.[form.driver] || []);
+const currentAutoName = computed(() => {
+    const label = currentDriver.value?.label?.replace(/\s*\(.*\)$/, '');
+    return label ? `${label} Provider` : 'AI Provider';
+});
+
+watch(
+    suggestedModels,
+    (models) => {
+        if (!models.some((model) => model.name === form.default_model)) {
+            form.default_model = '';
+        }
+    },
+    { immediate: true },
+);
+
+watch(currentAutoName, (value) => {
+    if (!form.name || form.name === currentAutoName.value) {
+        form.name = value;
+    }
+}, { immediate: true });
 </script>
 
 <template>
@@ -66,14 +79,17 @@ const suggestedModels = computed(() => props.defaultModelSeed?.[form.driver] || 
                     <div v-if="form.errors.driver" class="mt-1 text-xs text-red-600">{{ form.errors.driver }}</div>
                 </div>
 
-                <div>
-                    <label class="mb-1 block text-sm font-medium">Base URL <span class="text-slate-400">(optional)</span></label>
-                    <input v-model="form.base_url" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" :placeholder="placeholderFor(form.driver)" />
-                    <div v-if="form.errors.base_url" class="mt-1 text-xs text-red-600">{{ form.errors.base_url }}</div>
+                <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                    <div class="font-medium text-slate-900 dark:text-slate-100">Base URL</div>
+                    <div>{{ currentDriver?.base_url }}</div>
+                    <div class="mt-1 text-xs text-slate-500">Fixed per driver — not user-editable.</div>
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm font-medium">API Key</label>
+                    <div class="mb-1 flex items-center justify-between gap-3">
+                        <label class="block text-sm font-medium">API Key</label>
+                        <a v-if="currentDriver?.api_key_url" :href="currentDriver.api_key_url" target="_blank" rel="noopener" class="text-xs text-blue-600 hover:underline dark:text-blue-400">Get an API key &rarr;</a>
+                    </div>
                     <input v-model="form.api_key" type="password" autocomplete="new-password" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" />
                     <div v-if="form.errors.api_key" class="mt-1 text-xs text-red-600">{{ form.errors.api_key }}</div>
                 </div>
@@ -81,10 +97,13 @@ const suggestedModels = computed(() => props.defaultModelSeed?.[form.driver] || 
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                         <label class="mb-1 block text-sm font-medium">Default Model</label>
-                        <input v-model="form.default_model" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" list="suggested-models" />
-                        <datalist id="suggested-models">
-                            <option v-for="m in suggestedModels" :key="m.name" :value="m.name">{{ m.display_name }}</option>
-                        </datalist>
+                        <select v-model="form.default_model" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
+                            <option value="">Auto select</option>
+                            <option v-for="m in suggestedModels" :key="m.name" :value="m.name">
+                                {{ m.display_name || m.name }}
+                            </option>
+                        </select>
+                        <div class="mt-1 text-xs text-slate-400">Auto select uses the provider's seeded model map for the selected driver.</div>
                     </div>
                     <div>
                         <label class="mb-1 block text-sm font-medium">Weight</label>
@@ -113,4 +132,3 @@ const suggestedModels = computed(() => props.defaultModelSeed?.[form.driver] || 
         </div>
     </AuthenticatedLayout>
 </template>
-

@@ -17,8 +17,6 @@ class AiGatewayRequestLog extends Model
         'channel',
         'provider_id',
         'model_id',
-        'agent_id',
-        'task_id',
         'operation',
         'model',
         'status',
@@ -50,16 +48,6 @@ class AiGatewayRequestLog extends Model
     public function model(): BelongsTo
     {
         return $this->belongsTo(AiGatewayModel::class, 'model_id');
-    }
-
-    public function agent(): BelongsTo
-    {
-        return $this->belongsTo(AiGatewayAgent::class, 'agent_id');
-    }
-
-    public function task(): BelongsTo
-    {
-        return $this->belongsTo(AiGatewayTask::class, 'task_id');
     }
 
     public function createdBy(): BelongsTo

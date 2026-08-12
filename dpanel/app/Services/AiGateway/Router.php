@@ -2,46 +2,24 @@
 
 namespace App\Services\AiGateway;
 
-use App\Models\AiGatewayAgent;
 use App\Models\AiGatewayModel;
 use App\Models\AiGatewayProvider;
-use App\Models\AiGatewayRoutingRule;
-use Illuminate\Support\Str;
 
 /**
- * Resolves which provider + model should serve a given gateway request based
- * on the configured routing rules (evaluated by priority), falling back to
- * the highest-weight active provider when nothing matches.
+ * Resolves which provider + model should serve a given gateway request:
+ * the owner of a specifically requested model, falling back to the
+ * highest-weight active provider when no model is requested (or found).
  */
 class Router
 {
     /**
-     * @param  array{model?: string, agent?: AiGatewayAgent|null, taskType?: string|null, taskTitle?: string|null}  $context
+     * @param  array{model?: string|null}  $context
      * @return array{provider: AiGatewayProvider, model: AiGatewayModel|null, modelName: string}
      */
     public function resolve(array $context = []): array
     {
-        $context = array_merge(['model' => null, 'agent' => null, 'taskType' => null, 'taskTitle' => null], $context);
+        $context = array_merge(['model' => null], $context);
 
-        $query = AiGatewayRoutingRule::query()
-            ->where('is_active', true)
-            ->with(['provider', 'model'])
-            ->orderByDesc('priority')
-            ->orderBy('id');
-
-        foreach ($query->get() as $rule) {
-            if (! $this->matches($rule, $context)) {
-                continue;
-            }
-
-            $provider = $rule->provider ?: $rule->model?->provider;
-
-            if ($provider && $provider->is_active) {
-                return $this->finalise($provider, $rule->model, $context['model']);
-            }
-        }
-
-        // Fallback: a specific model was requested — route to its owner provider.
         if (! empty($context['model'])) {
             $model = AiGatewayModel::query()
                 ->where('name', $context['model'])
@@ -54,7 +32,6 @@ class Router
             }
         }
 
-        // Fallback: prefer the highest-weight active provider.
         if (config('aigateway.fallback_to_first_active_provider', true)) {
             $provider = AiGatewayProvider::query()
                 ->where('is_active', true)
@@ -70,27 +47,27 @@ class Router
         throw Exceptions\AiGatewayException::noActiveProvider();
     }
 
-    private function matches(AiGatewayRoutingRule $rule, array $context): bool
+    /**
+     * Eligible failover candidates for a model name (or, if null, any
+     * active model), optionally pinned to one provider: active model,
+     * active provider, not in cooldown. Ordered by provider weight with
+     * random jitter within equal weights, so equally-weighted providers
+     * get a random combination each call.
+     *
+     * @return \Illuminate\Support\Collection<int, AiGatewayModel>
+     */
+    public function candidates(?string $modelName = null, ?int $providerId = null): \Illuminate\Support\Collection
     {
-        return match ($rule->match_type) {
-            'always' => true,
-            'model' => $this->valueMatches($rule->match_value, $context['model']),
-            'agent' => $this->valueMatches($rule->match_value, $context['agent']?->slug),
-            'task' => $this->valueMatches($rule->match_value, $context['taskType'])
-                || $this->valueMatches($rule->match_value, $context['taskTitle']),
-            default => false,
-        };
-    }
-
-    private function valueMatches(?string $pattern, ?string $value): bool
-    {
-        if ($pattern === null || $pattern === '' || $value === null || $value === '') {
-            return false;
-        }
-
-        $value = strtolower(trim($value));
-
-        return $pattern === '*' || Str::is(strtolower($pattern), $value);
+        return AiGatewayModel::query()
+            ->where('is_active', true)
+            ->whereHas('provider', fn ($q) => $q->where('is_active', true))
+            ->when($modelName, fn ($q) => $q->where('name', $modelName))
+            ->when($providerId, fn ($q) => $q->where('provider_id', $providerId))
+            ->with('provider')
+            ->get()
+            ->filter(fn (AiGatewayModel $m) => ! $m->isInCooldown())
+            ->sortByDesc(fn (AiGatewayModel $m) => $m->provider->weight * 1000 + random_int(0, 999))
+            ->values();
     }
 
     private function finalise(AiGatewayProvider $provider, ?AiGatewayModel $model, ?string $requestedModel): array

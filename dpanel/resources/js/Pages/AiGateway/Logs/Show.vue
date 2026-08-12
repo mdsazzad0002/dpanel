@@ -49,7 +49,6 @@ const fmtCost = (c) => `$${Number(c || 0).toFixed(4)}`;
             <div class="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-800">
                 <span class="rounded bg-slate-100 px-2 py-0.5 text-xs dark:bg-slate-700">Operation: {{ log.operation }}</span>
                 <span class="rounded bg-slate-100 px-2 py-0.5 text-xs dark:bg-slate-700">Channel: {{ log.channel }}</span>
-                <span class="rounded bg-slate-100 px-2 py-0.5 text-xs dark:bg-slate-700">Agent: {{ log.agent_name || 'N/A' }}</span>
             </div>
 
             <div v-if="log.error_message" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-700 dark:bg-red-900/40">

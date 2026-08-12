@@ -1,6 +1,8 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { reactive } from 'vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import axios from 'axios';
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -16,7 +18,6 @@ const props = defineProps({
 
 const toggleForm = useForm({});
 const deleteForm = useForm({});
-const testForm = useForm({});
 
 const driverLabel = (driver) => props.drivers.find((d) => d.driver === driver)?.label || driver;
 
@@ -31,8 +32,19 @@ const remove = (p) => {
     deleteForm.delete(panelRoute('ai-gateway.providers.destroy', { provider: p.id }));
 };
 
-const test = (p) => {
-    testForm.post(panelRoute('ai-gateway.providers.test', { provider: p.id }));
+const testing = reactive({});
+const testResults = reactive({});
+
+const test = async (p) => {
+    testing[p.id] = true;
+    try {
+        const { data } = await axios.post(panelRoute('ai-gateway.providers.test', { provider: p.id }));
+        testResults[p.id] = data;
+    } catch (e) {
+        testResults[p.id] = { ok: false, message: e.response?.data?.message || 'Request failed.' };
+    } finally {
+        testing[p.id] = false;
+    }
 };
 </script>
 
@@ -77,19 +89,29 @@ const test = (p) => {
                             <td class="px-4 py-3 font-medium">{{ p.name }}</td>
                             <td class="px-4 py-3 text-slate-500">{{ driverLabel(p.driver) }}</td>
                             <td class="px-4 py-3 text-slate-500">{{ p.default_model || '—' }}</td>
-                            <td class="px-4 py-3 text-slate-500">{{ p.models_count }}</td>
+                            <td class="px-4 py-3">
+                                <Link :href="panelRoute('ai-gateway.models.index', { provider: p.id })" class="text-slate-600 hover:underline dark:text-slate-300">{{ p.models_count }}</Link>
+                            </td>
                             <td class="px-4 py-3">
                                 <button @click="toggle(p)" class="rounded px-2 py-0.5 text-xs font-medium" :class="p.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'">
                                     {{ p.is_active ? 'Active' : 'Inactive' }}
                                 </button>
                             </td>
                             <td class="px-4 py-3">
-                                <span v-if="p.last_test_status" class="text-xs" :class="p.last_test_status === 'ok' ? 'text-emerald-600' : 'text-red-500'">{{ p.last_test_status }}</span>
+                                <span v-if="testing[p.id]" class="text-xs text-slate-400">testing…</span>
+                                <span v-else-if="testResults[p.id]" class="text-xs" :class="testResults[p.id].ok ? 'text-emerald-600' : 'text-red-500'" :title="testResults[p.id].message">{{ testResults[p.id].ok ? 'ok' : 'fail' }}</span>
+                                <span v-else-if="p.last_test_status" class="text-xs" :class="p.last_test_status === 'ok' ? 'text-emerald-600' : 'text-red-500'" :title="p.last_test_message">{{ p.last_test_status }}</span>
                                 <span v-else class="text-xs text-slate-400">untested</span>
                             </td>
                             <td class="space-x-1 px-4 py-3 text-right">
                                 <Link :href="panelRoute('ai-gateway.providers.edit', { provider: p.id })" class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Edit</Link>
-                                <button @click="test(p)" class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Test</button>
+                                <Link
+                                    v-if="p.models_count > 0"
+                                    :href="panelRoute('ai-gateway.chat', { provider: p.id })"
+                                    class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"
+                                >Chat</Link>
+                                <span v-else class="rounded border border-slate-200 px-2 py-1 text-xs text-slate-300 dark:border-slate-700 dark:text-slate-600" title="Add a model to this provider first">Chat</span>
+                                <button @click="test(p)" :disabled="testing[p.id]" class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">Test</button>
                                 <button @click="remove(p)" class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-700">Delete</button>
                             </td>
                         </tr>

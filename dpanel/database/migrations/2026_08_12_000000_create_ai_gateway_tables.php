@@ -17,7 +17,6 @@ return new class extends Migration
             $table->string('name');
             $table->string('driver', 40); // anthropic | openai | openai_compatible | gemini
             $table->string('slug', 80)->unique();
-            $table->string('base_url')->nullable();
             $table->longText('credentials')->nullable(); // encrypted json (api key, org, project)
             $table->string('default_model')->nullable();
             $table->boolean('is_active')->default(true);

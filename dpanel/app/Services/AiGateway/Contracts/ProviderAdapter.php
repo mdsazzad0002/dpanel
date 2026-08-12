@@ -19,6 +19,13 @@ interface ProviderAdapter
     public static function drivers(): array;
 
     /**
+     * Fixed connection metadata per driver (no user-editable base URL).
+     *
+     * @return array<string, array{base_url: string, api_key_url: string}>
+     */
+    public static function driverMeta(): array;
+
+    /**
      * Perform a chat completion against the provider.
      *
      * @param  array<int, array{role:string, content:string}>  $messages
@@ -33,4 +40,16 @@ interface ProviderAdapter
      * @return array{ok:bool, message:string}
      */
     public function ping(AiGatewayProvider $provider): array;
+
+    /**
+     * Perform a streaming chat completion, invoking $onDelta with each text
+     * chunk as it arrives. Returns the same aggregate shape as chat() once
+     * the stream ends.
+     *
+     * @param  array<int, array{role:string, content:string}>  $messages
+     * @param  array{max_tokens?:int, temperature?:float, system?:string}  $options
+     * @param  \Closure(string):void  $onDelta
+     * @return array{content:string, input_tokens:int, output_tokens:int, model:string, raw:array}
+     */
+    public function stream(AiGatewayProvider $provider, string $model, array $messages, array $options, \Closure $onDelta): array;
 }

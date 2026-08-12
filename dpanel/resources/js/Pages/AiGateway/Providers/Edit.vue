@@ -1,7 +1,8 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import axios from 'axios';
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -17,9 +18,8 @@ const props = defineProps({
 
 const form = useForm({
     name: props.provider.name || '',
-    driver: props.provider.driver || 'openai_compatible',
-    base_url: props.provider.base_url || '',
-    api_key: '',
+    driver: props.provider.driver || props.drivers[0]?.driver || 'openrouter',
+    api_key: props.provider.api_key || '',
     organization: '',
     project: '',
     default_model: props.provider.default_model || '',
@@ -28,9 +28,23 @@ const form = useForm({
     rate_limit_per_minute: props.provider.rate_limit_per_minute ?? 0,
 });
 
-const testForm = useForm({});
-const syncForm = useForm({});
-const suggestedModels = computed(() => props.defaultModelSeed?.[form.driver] || []);
+const currentDriver = computed(() => props.drivers.find((d) => d.driver === form.driver));
+
+const testing = ref(false);
+const testResult = ref(null);
+
+const runTest = async () => {
+    testing.value = true;
+    testResult.value = null;
+    try {
+        const { data } = await axios.post(panelRoute('ai-gateway.providers.test', { provider: provider.id }));
+        testResult.value = data;
+    } catch (e) {
+        testResult.value = { ok: false, message: e.response?.data?.message || 'Request failed.' };
+    } finally {
+        testing.value = false;
+    }
+};
 </script>
 
 <template>
@@ -48,9 +62,20 @@ const suggestedModels = computed(() => props.defaultModelSeed?.[form.driver] || 
             <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ page.props.flash.success }}</div>
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ page.props.flash.error }}</div>
 
-            <div class="flex gap-2">
-                <button @click="testForm.post(panelRoute('ai-gateway.providers.test', { provider: provider.id }))" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Test Connection</button>
-                <button @click="syncForm.post(panelRoute('ai-gateway.providers.sync-models', { provider: provider.id }))" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Sync Default Models</button>
+            <div class="flex flex-wrap items-center gap-2">
+                <button @click="runTest" :disabled="testing" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">
+                    {{ testing ? 'Testing…' : 'Test Connection' }}
+                </button>
+                <Link
+                    v-if="provider.models?.length"
+                    :href="panelRoute('ai-gateway.chat', { provider: provider.id })"
+                    class="rounded-md bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                >Open Chat</Link>
+                <span v-else class="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-400 dark:bg-slate-700 dark:text-slate-500" title="Add a model first">Open Chat</span>
+            </div>
+
+            <div v-if="testResult" class="rounded-md border px-4 py-3 text-sm" :class="testResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'">
+                {{ testResult.message }}
             </div>
 
 
@@ -69,23 +94,33 @@ const suggestedModels = computed(() => props.defaultModelSeed?.[form.driver] || 
                     <div v-if="form.errors.driver" class="mt-1 text-xs text-red-600">{{ form.errors.driver }}</div>
                 </div>
 
-                <div>
-                    <label class="mb-1 block text-sm font-medium">Base URL</label>
-                    <input v-model="form.base_url" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" />
-                    <div v-if="form.errors.base_url" class="mt-1 text-xs text-red-600">{{ form.errors.base_url }}</div>
+                <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                    <div class="font-medium text-slate-900 dark:text-slate-100">Base URL</div>
+                    <div>{{ currentDriver?.base_url }}</div>
+                    <div class="mt-1 text-xs text-slate-500">Fixed per driver — not user-editable.</div>
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm font-medium">API Key <span v-if="provider.has_credentials" class="text-xs text-emerald-600">(configured — leave blank to keep)</span></label>
-                    <input v-model="form.api_key" type="password" autocomplete="new-password" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" />
+                    <div class="mb-1 flex items-center justify-between gap-3">
+                        <label class="block text-sm font-medium">API Key <span v-if="provider.has_credentials" class="text-xs text-emerald-600">(configured)</span></label>
+                        <a v-if="currentDriver?.api_key_url" :href="currentDriver.api_key_url" target="_blank" rel="noopener" class="text-xs text-blue-600 hover:underline dark:text-blue-400">Get an API key &rarr;</a>
+                    </div>
+                    <input v-model="form.api_key" type="text" autocomplete="off" spellcheck="false" class="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm dark:border-slate-600 dark:bg-slate-900" />
                     <div v-if="form.errors.api_key" class="mt-1 text-xs text-red-600">{{ form.errors.api_key }}</div>
                 </div>
 
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                         <label class="mb-1 block text-sm font-medium">Default Model</label>
-                        <input v-model="form.default_model" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" list="suggested-models" />
-                        <datalist id="suggested-models"><option v-for="m in suggestedModels" :key="m.name" :value="m.name">{{ m.display_name }}</option></datalist>
+                        <select v-model="form.default_model" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
+                            <option value="">Auto (first active model)</option>
+                            <option v-for="m in provider.models" :key="m.name" :value="m.name">{{ m.display_name || m.name }}</option>
+                        </select>
+                        <div v-if="!provider.models?.length" class="mt-1 text-xs text-amber-600">
+                            No models linked yet —
+                            <Link :href="panelRoute('ai-gateway.models.index', { provider: provider.id })" class="hover:underline">add one</Link>.
+                        </div>
+                        <div v-if="form.errors.default_model" class="mt-1 text-xs text-red-600">{{ form.errors.default_model }}</div>
                     </div>
                     <div>
                         <label class="mb-1 block text-sm font-medium">Weight</label>

@@ -2,15 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AiGatewayAgent;
 use App\Models\AiGatewayModel;
 use App\Models\AiGatewayProvider;
 use App\Models\AiGatewayRequestLog;
-use App\Models\AiGatewayRoutingRule;
-use App\Models\AiGatewayTask;
 use App\Models\AiGatewayUsageRecord;
 use App\Services\AiGateway\AiGatewayService;
-use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -20,16 +17,16 @@ class AiGatewayController extends Controller
     {
     }
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $today = now()->toDateString();
         $last7d = now()->subDays(6)->toDateString();
         $monthStart = now()->startOfMonth()->toDateString();
 
-        $period = AiGatewayUsageRecord::summarise($last7d, $today);
-        $month = AiGatewayUsageRecord::summarise($monthStart, $today);
+        $period = $this->withoutCost(AiGatewayUsageRecord::summarise($last7d, $today));
+        $month = $this->withoutCost(AiGatewayUsageRecord::summarise($monthStart, $today));
 
-        // 7-day series for the dashboard chart.
+        // 7-day series for the top requests chart.
         $series = [];
         for ($i = 6; $i >= 0; $i--) {
             $date = now()->subDays($i)->toDateString();
@@ -38,7 +35,6 @@ class AiGatewayController extends Controller
                 'date' => $date,
                 'requests' => $sum['requests'],
                 'tokens' => $sum['input_tokens'] + $sum['output_tokens'],
-                'cost' => $sum['cost'],
             ];
         }
 
@@ -59,9 +55,9 @@ class AiGatewayController extends Controller
                 'last_test_status' => $p->last_test_status,
             ]);
 
-        $perProviderUsage = AiGatewayUsageRecord::query()
+        $perProviderRequests = AiGatewayUsageRecord::query()
             ->whereBetween('usage_date', [$last7d, $today])
-            ->selectRaw('provider_id, SUM(requests) as requests, SUM(cost) as cost')
+            ->selectRaw('provider_id, SUM(requests) as requests')
             ->groupBy('provider_id')
             ->with('provider:id,name,driver')
             ->get()
@@ -69,7 +65,6 @@ class AiGatewayController extends Controller
                 'name' => $row->provider->name ?? 'Unknown',
                 'driver' => $row->provider->driver ?? null,
                 'requests' => (int) $row->requests,
-                'cost' => round((float) $row->cost, 4),
             ] : null)
             ->filter()
             ->values();
@@ -87,24 +82,98 @@ class AiGatewayController extends Controller
                 'model' => $l->model,
                 'operation' => $l->operation,
                 'latency_ms' => $l->latency_ms,
-                'cost' => $l->cost,
             ]);
+
+        // ------------------------------------------------------------------
+        // Usage explorer (filterable range, folded into the same page).
+        // ------------------------------------------------------------------
+        $from = $request->input('from', $monthStart);
+        $to = $request->input('to', $today);
+        $modelId = $request->integer('model') ?: null;
+        $providerId = $request->integer('provider') ?: null;
+
+        $usageTotals = $this->withoutCost(AiGatewayUsageRecord::summarise($from, $to, $modelId, $providerId));
+
+        $usageDaily = AiGatewayUsageRecord::query()
+            ->whereBetween('usage_date', [$from, $to])
+            ->when($modelId, fn ($q) => $q->where('model_id', $modelId))
+            ->when($providerId, fn ($q) => $q->where('provider_id', $providerId))
+            ->selectRaw('usage_date, SUM(requests) as requests, SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens')
+            ->groupBy('usage_date')
+            ->orderBy('usage_date')
+            ->get()
+            ->map(fn ($row): array => [
+                'date' => $row->usage_date,
+                'requests' => (int) $row->requests,
+                'tokens' => (int) $row->input_tokens + (int) $row->output_tokens,
+            ])
+            ->values();
+
+        $usageByModel = AiGatewayUsageRecord::query()
+            ->whereBetween('usage_date', [$from, $to])
+            ->when($providerId, fn ($q) => $q->where('provider_id', $providerId))
+            ->selectRaw('model_id, SUM(requests) as requests, SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens')
+            ->groupBy('model_id')
+            ->with('model:id,name,display_name,provider_id')
+            ->with('model.provider:id,name')
+            ->get()
+            ->map(fn ($row): array => [
+                'model_id' => $row->model_id,
+                'model_name' => $row->model?->display_name ?: $row->model?->name,
+                'provider' => $row->model?->provider?->name,
+                'requests' => (int) $row->requests,
+                'tokens' => (int) $row->input_tokens + (int) $row->output_tokens,
+            ])
+            ->values();
+
+        $usageByProvider = AiGatewayUsageRecord::query()
+            ->whereBetween('usage_date', [$from, $to])
+            ->when($modelId, fn ($q) => $q->where('model_id', $modelId))
+            ->selectRaw('provider_id, SUM(requests) as requests, SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens')
+            ->groupBy('provider_id')
+            ->with('provider:id,name,driver')
+            ->get()
+            ->map(fn ($row): array => [
+                'provider_id' => $row->provider_id,
+                'provider_name' => $row->provider?->name,
+                'driver' => $row->provider?->driver,
+                'requests' => (int) $row->requests,
+                'tokens' => (int) $row->input_tokens + (int) $row->output_tokens,
+            ])
+            ->values();
 
         return Inertia::render('AiGateway/Dashboard', [
             'stats' => [
                 'activeProviders' => AiGatewayProvider::where('is_active', true)->count(),
                 'totalProviders' => AiGatewayProvider::count(),
                 'models' => AiGatewayModel::count(),
-                'agents' => AiGatewayAgent::where('is_active', true)->count(),
-                'rules' => AiGatewayRoutingRule::where('is_active', true)->count(),
-                'tasksToday' => AiGatewayTask::whereDate('created_at', $today)->count(),
                 'period' => $period,
                 'month' => $month,
             ],
             'series' => $series,
             'providers' => $providers,
-            'perProviderUsage' => $perProviderUsage,
+            'perProviderRequests' => $perProviderRequests,
             'recentLogs' => $recentLogs,
+            'usage' => [
+                'filters' => ['from' => $from, 'to' => $to, 'model' => $modelId, 'provider' => $providerId],
+                'totals' => $usageTotals,
+                'daily' => $usageDaily,
+                'byModel' => $usageByModel,
+                'byProvider' => $usageByProvider,
+                'models' => AiGatewayModel::query()->with('provider:id,name')->orderBy('name')->get(['id', 'name', 'display_name', 'provider_id']),
+                'providers' => AiGatewayProvider::query()->orderBy('name')->get(['id', 'name']),
+            ],
         ]);
+    }
+
+    /**
+     * Dashboard shows no payment/pricing information — strip the cost
+     * figure out of usage summaries before they reach the page props.
+     */
+    private function withoutCost(array $summary): array
+    {
+        unset($summary['cost']);
+
+        return $summary;
     }
 }
