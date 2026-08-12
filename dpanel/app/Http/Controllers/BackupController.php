@@ -6,14 +6,16 @@ use App\Models\DatabaseRequest;
 use App\Models\Website;
 use App\Support\BackupSettings;
 use Carbon\Carbon;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use ZipArchive;
 
 class BackupController extends Controller
 {
@@ -181,6 +183,89 @@ class BackupController extends Controller
         }
     }
 
+    public function quickExport(Request $request, string $token, string $id): BinaryFileResponse|JsonResponse
+    {
+        $validated = $request->validate(['type' => ['required', 'in:files,database']]);
+
+        $website = $this->backupWebsites($request)->firstWhere('id', $id);
+        if (! $website instanceof Website) {
+            return response()->json(['ok' => false, 'message' => 'Website account not found.'], 404);
+        }
+
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($baseUrl === '' || $apiToken === '') {
+            return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
+        }
+
+        $safeDomain = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $website->domain) ?: 'website';
+        $fileName = $safeDomain.'-files-'.now()->format('Y-m-d_H-i-s').'.zip';
+        $targetPath = storage_path('app/quick-exports/'.Str::uuid().'.zip');
+        $content = (string) $validated['type'];
+        // "quick_files" produces a flat zip of the project root (no homedir/public_html
+        // wrapper or restore manifest) — full backups still use "files" for that layout.
+        $archiveContent = $content === 'files' ? 'quick_files' : $content;
+
+        try {
+            $result = $this->createWebsiteArchive($request, $website, $archiveContent, $baseUrl, $apiToken, $targetPath);
+        } catch (\Throwable $e) {
+            File::delete($targetPath);
+
+            return response()->json(['ok' => false, 'message' => 'Quick export failed: '.$e->getMessage()], 500);
+        }
+
+        if (! $result['ok'] || ! is_file($targetPath)) {
+            File::delete($targetPath);
+
+            return response()->json([
+                'ok' => false,
+                'message' => $result['message'] ?: 'The export archive was not created.',
+            ], 500);
+        }
+
+        if ($content === 'database') {
+            $archive = new ZipArchive;
+            if ($archive->open($targetPath) !== true) {
+                File::delete($targetPath);
+
+                return response()->json(['ok' => false, 'message' => 'The SQL export could not be opened.'], 500);
+            }
+
+            $sql = null;
+            for ($index = 0; $index < $archive->numFiles; $index++) {
+                $entry = (string) $archive->getNameIndex($index);
+                if (str_ends_with(strtolower($entry), '.sql')) {
+                    $sql = $archive->getFromIndex($index);
+                    break;
+                }
+            }
+            $archive->close();
+            File::delete($targetPath);
+
+            if (! is_string($sql)) {
+                return response()->json(['ok' => false, 'message' => 'No SQL file was produced for this website.'], 500);
+            }
+
+            $databaseName = DatabaseRequest::query()
+                ->visibleTo($request->user())
+                ->where('domain', $website->domain)
+                ->where('status', 'active')
+                ->latest()
+                ->value('database_name');
+            $safeDatabase = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $databaseName) ?: $safeDomain.'-database';
+            $sqlPath = storage_path('app/quick-exports/'.Str::uuid().'.sql');
+            File::put($sqlPath, $sql);
+
+            return response()->download($sqlPath, $safeDatabase.'-'.now()->format('Y-m-d_H-i-s').'.sql', [
+                'Content-Type' => 'application/sql',
+            ])->deleteFileAfterSend(true);
+        }
+
+        return response()->download($targetPath, $fileName, [
+            'Content-Type' => 'application/zip',
+        ])->deleteFileAfterSend(true);
+    }
+
     private function runWebsiteBackup(Request $request, string $websiteId, string $content, string $baseUrl, string $token): JsonResponse
     {
         $website = $this->backupWebsites($request)->firstWhere('id', $websiteId);
@@ -197,13 +282,12 @@ class BackupController extends Controller
     }
 
     /** @return array{ok:bool,message:string} */
-    private function createWebsiteArchive(Request $request, Website $website, string $content, string $baseUrl, string $token): array
+    private function createWebsiteArchive(Request $request, Website $website, string $content, string $baseUrl, string $token, ?string $targetPath = null): array
     {
         $timestamp = now()->format('Ymd_His');
         $runDirectory = storage_path('app/backups/'.$timestamp);
-        $safeDomain = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $website->domain) ?: 'website';
         $safeOwner = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) ($website->site_owner ?: 'account')) ?: 'account';
-        $zipPath = $runDirectory.DIRECTORY_SEPARATOR.'backup-'.now()->format('m.d.Y_H-i-s').'_'.$safeOwner.'.tar.gz';
+        $zipPath = $targetPath ?: $runDirectory.DIRECTORY_SEPARATOR.'backup-'.now()->format('m.d.Y_H-i-s').'_'.$safeOwner.'.tar.gz';
         $databases = DatabaseRequest::query()
             ->visibleTo($request->user())
             ->where('domain', $website->domain)
@@ -380,15 +464,15 @@ class BackupController extends Controller
                     $databaseRecord->id = (string) str()->uuid();
                 }
                 $databaseRecord->fill([
-                        'domain' => (string) $website['domain'],
-                        'database_user' => (string) ($database['user'] ?? ''),
-                        'database_password' => (string) ($database['password'] ?? ''),
-                        'database_host' => (string) ($database['host'] ?? '127.0.0.1'),
-                        'charset' => 'utf8mb4',
-                        'collation' => 'utf8mb4_unicode_ci',
-                        'status' => 'active',
-                        'assigned_user_id' => $website['assigned_user_id'] ?? $request->user()?->id,
-                    ])->save();
+                    'domain' => (string) $website['domain'],
+                    'database_user' => (string) ($database['user'] ?? ''),
+                    'database_password' => (string) ($database['password'] ?? ''),
+                    'database_host' => (string) ($database['host'] ?? '127.0.0.1'),
+                    'charset' => 'utf8mb4',
+                    'collation' => 'utf8mb4_unicode_ci',
+                    'status' => 'active',
+                    'assigned_user_id' => $website['assigned_user_id'] ?? $request->user()?->id,
+                ])->save();
             }
         }
 

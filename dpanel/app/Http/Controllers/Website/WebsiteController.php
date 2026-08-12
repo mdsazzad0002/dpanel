@@ -294,6 +294,26 @@ class WebsiteController extends Controller
         ]);
     }
 
+    public function quickExportPage(string $token, string $id): Response
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+        $databaseRequest = DatabaseRequest::query()
+            ->visibleTo(request()->user())
+            ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
+            ->where('status', 'active')
+            ->latest()
+            ->first();
+
+        return Inertia::render('Websites/QuickExport', [
+            'website' => $website,
+            'databaseConnection' => [
+                'available' => $databaseRequest !== null,
+                'database_name' => $databaseRequest?->database_name,
+                'status' => $databaseRequest?->status,
+            ],
+        ]);
+    }
+
     /**
      * Update the settings that determine the website's public entry point.
      */

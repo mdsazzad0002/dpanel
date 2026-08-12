@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BackupController;
 use App\Http\Controllers\CronJobController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\RedisCacheController;
@@ -58,6 +59,12 @@ Route::post('/websites/{id}/status/check', [WebsiteController::class, 'refreshRu
 Route::get('/websites/{id}/manage', [WebsiteOperationsController::class, 'manage'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.manage');
+Route::get('/websites/{id}/quick-export', [WebsiteOperationsController::class, 'quickExportPage'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.quick-export.page');
+Route::post('/websites/{id}/quick-export', [BackupController::class, 'quickExport'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->name('websites.quick-export');
 Route::get('/websites/{id}/ip-rules', [WebsiteOperationsController::class, 'ipRules'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ip-rules.index');

@@ -209,8 +209,11 @@ pub(crate) async fn handle(
 }
 
 fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_json::Value, String> {
-    if !matches!(website.content.as_str(), "all" | "files" | "database") {
-        return Err("invalid archive content; use all, files, or database".into());
+    if !matches!(
+        website.content.as_str(),
+        "all" | "files" | "database" | "quick_files"
+    ) {
+        return Err("invalid archive content; use all, files, database, or quick_files".into());
     }
     let zip_path = normalize_path(zip_path);
     if zip_path.as_os_str().is_empty() {
@@ -236,38 +239,53 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     let system_uid = numeric_account_id("-u", owner);
     let system_gid = numeric_account_id("-g", owner);
 
-    let manifest = serde_json::json!({
-        "website": {
-            "id": website.id,
-            "domain": website.domain,
-            "root_path": website.root_path,
-            "project_root": website.project_root,
-            "start_directory": website.start_directory,
-            "site_owner": website.site_owner,
-            "system_uid": system_uid,
-            "system_gid": system_gid,
-            "php_version": website.php_version,
-            "status": website.status,
-            "type": website.type_field,
-            "enable_ssl": website.enable_ssl.unwrap_or(false),
-            "assigned_user_id": website.assigned_user_id,
-            "assigned_reseller_id": website.assigned_reseller_id,
-            "content": website.content,
-            "databases": website.database_requests.iter().map(|database| serde_json::json!({
-                "name": database.name,
-                "user": database.user,
-                "password": database.password,
-                "host": database.host,
-            })).collect::<Vec<_>>(),
-            "archived_at": chrono_like_now(),
+    let is_quick_files = website.content.as_str() == "quick_files";
+
+    if !is_quick_files {
+        let manifest = serde_json::json!({
+            "website": {
+                "id": website.id,
+                "domain": website.domain,
+                "root_path": website.root_path,
+                "project_root": website.project_root,
+                "start_directory": website.start_directory,
+                "site_owner": website.site_owner,
+                "system_uid": system_uid,
+                "system_gid": system_gid,
+                "php_version": website.php_version,
+                "status": website.status,
+                "type": website.type_field,
+                "enable_ssl": website.enable_ssl.unwrap_or(false),
+                "assigned_user_id": website.assigned_user_id,
+                "assigned_reseller_id": website.assigned_reseller_id,
+                "content": website.content,
+                "databases": website.database_requests.iter().map(|database| serde_json::json!({
+                    "name": database.name,
+                    "user": database.user,
+                    "password": database.password,
+                    "host": database.host,
+                })).collect::<Vec<_>>(),
+                "archived_at": chrono_like_now(),
+            }
+        });
+        writer
+            .start_file("meta/manifest.json", options)
+            .map_err(|e| format!("failed to write manifest: {e}"))?;
+        writer
+            .write_all(manifest.to_string().as_bytes())
+            .map_err(|e| format!("failed to write manifest: {e}"))?;
+    }
+
+    if is_quick_files {
+        let source_path = normalize_path(if website.project_root.trim().is_empty() {
+            website.root_path.as_str()
+        } else {
+            website.project_root.as_str()
+        });
+        if source_path.exists() && source_path.is_dir() {
+            add_dir(&mut writer, &source_path, "", options)?;
         }
-    });
-    writer
-        .start_file("meta/manifest.json", options)
-        .map_err(|e| format!("failed to write manifest: {e}"))?;
-    writer
-        .write_all(manifest.to_string().as_bytes())
-        .map_err(|e| format!("failed to write manifest: {e}"))?;
+    }
 
     if matches!(website.content.as_str(), "all" | "files") {
         let source_path = normalize_path(if website.project_root.trim().is_empty() {
@@ -1024,8 +1042,12 @@ fn add_dir(
         return Ok(());
     }
 
-    let entries = fs::read_dir(source)
-        .map_err(|e| format!("failed to read directory {}: {e}", source.display()))?;
+    let entries = match fs::read_dir(source) {
+        Ok(entries) => entries,
+        // A directory we can't list (permission denied, gone mid-walk, etc.)
+        // shouldn't fail the whole archive — just skip it.
+        Err(_) => return Ok(()),
+    };
     for entry in entries {
         let entry = match entry {
             Ok(item) => item,
@@ -1040,31 +1062,56 @@ fn add_dir(
             Some(v) => v.to_string(),
             None => continue,
         };
-        let archive_path = format!("{}/{}", zip_root.trim_matches('/'), name);
+        let archive_path = if zip_root.is_empty() {
+            name
+        } else {
+            format!("{}/{}", zip_root.trim_matches('/'), name)
+        };
 
         if path.is_dir() {
-            writer
+            if writer
                 .add_directory(format!("{}/", archive_path), options)
-                .map_err(|e| format!("failed to add directory {}: {e}", path.display()))?;
+                .is_err()
+            {
+                continue;
+            }
             add_dir(writer, &path, &archive_path, options)?;
             continue;
         }
 
         if path.is_file() {
-            if let Err(_) = fs::File::open(&path) {
+            let mut file = match fs::File::open(&path) {
+                Ok(file) => file,
+                // Unreadable file (permission denied, socket, etc.) — skip it,
+                // don't abort the entire export over one file.
+                Err(_) => continue,
+            };
+            let file_options = file_permissions(&path)
+                .map(|mode| options.unix_permissions(mode))
+                .unwrap_or(options);
+            if writer.start_file(&archive_path, file_options).is_err() {
                 continue;
             }
-            writer
-                .start_file(archive_path, options)
-                .map_err(|e| format!("failed to add file {}: {e}", path.display()))?;
-            let mut file = fs::File::open(&path)
-                .map_err(|e| format!("failed to open file {}: {e}", path.display()))?;
-            std::io::copy(&mut file, writer)
-                .map_err(|e| format!("failed to write file {}: {e}", path.display()))?;
+            if std::io::copy(&mut file, writer).is_err() {
+                continue;
+            }
         }
     }
 
     Ok(())
+}
+
+#[cfg(unix)]
+fn file_permissions(path: &Path) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path)
+        .ok()
+        .map(|meta| meta.permissions().mode() & 0o777)
+}
+
+#[cfg(not(unix))]
+fn file_permissions(_path: &Path) -> Option<u32> {
+    None
 }
 
 fn normalize_path(input: &str) -> PathBuf {

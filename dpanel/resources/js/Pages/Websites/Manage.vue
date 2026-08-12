@@ -919,6 +919,17 @@ const saveRuntimeSettings = async () => {
                                     serviceLinks.length }} tools</span>
                         </div>
                         <div class="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                            <Link v-if="!isSystemWebsite" :href="panelRoute('websites.quick-export.page', { id: website.id })"
+                                class="group flex items-center gap-3 rounded-xl border border-violet-100 bg-white p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-md dark:border-violet-900/60 dark:bg-slate-800/50 dark:hover:border-violet-800 dark:hover:shadow-lg">
+                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400">
+                                    <i class="bi bi-file-earmark-zip text-base"></i>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="truncate text-[13px] font-semibold text-slate-800 dark:text-slate-200">Quick Export</p>
+                                    <p class="mt-0.5 truncate text-[11px] text-slate-400 dark:text-slate-500">Choose files and database, each downloads separately</p>
+                                </div>
+                                <i class="bi bi-chevron-right text-sm text-slate-300 dark:text-slate-600"></i>
+                            </Link>
                             <Link v-for="service in serviceLinks" :key="service.label" :href="service.href"
                                 class="group flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:shadow-lg">
                                 <div
