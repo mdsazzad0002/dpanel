@@ -6,6 +6,14 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\DnsController;
 use App\Http\Controllers\EmailController;
+use App\Http\Controllers\AiGatewayAgentController;
+use App\Http\Controllers\AiGatewayController;
+use App\Http\Controllers\AiGatewayLogController;
+use App\Http\Controllers\AiGatewayModelController;
+use App\Http\Controllers\AiGatewayProviderController;
+use App\Http\Controllers\AiGatewayRoutingRuleController;
+use App\Http\Controllers\AiGatewayTaskController;
+use App\Http\Controllers\AiGatewayUsageController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\MailPlanController;
 use App\Http\Controllers\MigrationController;
@@ -296,6 +304,62 @@ Route::prefix('cpsess{token}')
             Route::get('/monitoring/snapshot', [MonitoringController::class, 'snapshot'])
                 ->middleware('role:admin|reseller')
                 ->name('monitoring.snapshot');
+
+            // ------------------------------------------------------------------
+            // AI Gateway
+            // ------------------------------------------------------------------
+            Route::prefix('ai-gateway')
+                ->middleware('role:admin|reseller')
+                ->group(function (): void {
+                    Route::get('/', [AiGatewayController::class, 'index'])->name('ai-gateway.dashboard');
+
+                    // Providers
+                    Route::get('providers', [AiGatewayProviderController::class, 'index'])->name('ai-gateway.providers.index');
+                    Route::get('providers/create', [AiGatewayProviderController::class, 'create'])->name('ai-gateway.providers.create');
+                    Route::post('providers', [AiGatewayProviderController::class, 'store'])->name('ai-gateway.providers.store');
+                    Route::get('providers/{provider}/edit', [AiGatewayProviderController::class, 'edit'])->name('ai-gateway.providers.edit');
+                    Route::patch('providers/{provider}', [AiGatewayProviderController::class, 'update'])->name('ai-gateway.providers.update');
+                    Route::delete('providers/{provider}', [AiGatewayProviderController::class, 'destroy'])->name('ai-gateway.providers.destroy');
+                    Route::patch('providers/{provider}/toggle', [AiGatewayProviderController::class, 'toggle'])->name('ai-gateway.providers.toggle');
+                    Route::post('providers/{provider}/test', [AiGatewayProviderController::class, 'test'])->name('ai-gateway.providers.test');
+                    Route::post('providers/{provider}/sync-models', [AiGatewayProviderController::class, 'syncModels'])->name('ai-gateway.providers.sync-models');
+
+                    // Models
+                    Route::get('models', [AiGatewayModelController::class, 'index'])->name('ai-gateway.models.index');
+                    Route::post('models', [AiGatewayModelController::class, 'store'])->name('ai-gateway.models.store');
+                    Route::patch('models/{model}', [AiGatewayModelController::class, 'update'])->name('ai-gateway.models.update');
+                    Route::post('models/{model}/default', [AiGatewayModelController::class, 'setDefault'])->name('ai-gateway.models.default');
+                    Route::delete('models/{model}', [AiGatewayModelController::class, 'destroy'])->name('ai-gateway.models.destroy');
+
+                    // Routing rules
+                    Route::get('routing', [AiGatewayRoutingRuleController::class, 'index'])->name('ai-gateway.routing.index');
+                    Route::post('routing', [AiGatewayRoutingRuleController::class, 'store'])->name('ai-gateway.routing.store');
+                    Route::patch('routing/{rule}', [AiGatewayRoutingRuleController::class, 'update'])->name('ai-gateway.routing.update');
+                    Route::delete('routing/{rule}', [AiGatewayRoutingRuleController::class, 'destroy'])->name('ai-gateway.routing.destroy');
+
+                    // Agents
+                    Route::get('agents', [AiGatewayAgentController::class, 'index'])->name('ai-gateway.agents.index');
+                    Route::get('agents/create', [AiGatewayAgentController::class, 'create'])->name('ai-gateway.agents.create');
+                    Route::post('agents', [AiGatewayAgentController::class, 'store'])->name('ai-gateway.agents.store');
+                    Route::get('agents/{agent}/edit', [AiGatewayAgentController::class, 'edit'])->name('ai-gateway.agents.edit');
+                    Route::patch('agents/{agent}', [AiGatewayAgentController::class, 'update'])->name('ai-gateway.agents.update');
+                    Route::delete('agents/{agent}', [AiGatewayAgentController::class, 'destroy'])->name('ai-gateway.agents.destroy');
+                    Route::post('agents/{agent}/test', [AiGatewayAgentController::class, 'test'])->name('ai-gateway.agents.test');
+
+                    // Tasks
+                    Route::get('tasks', [AiGatewayTaskController::class, 'index'])->name('ai-gateway.tasks.index');
+                    Route::get('tasks/create', [AiGatewayTaskController::class, 'create'])->name('ai-gateway.tasks.create');
+                    Route::post('tasks', [AiGatewayTaskController::class, 'store'])->name('ai-gateway.tasks.store');
+                    Route::get('tasks/{task}', [AiGatewayTaskController::class, 'show'])->name('ai-gateway.tasks.show');
+                    Route::post('tasks/{task}/run', [AiGatewayTaskController::class, 'run'])->name('ai-gateway.tasks.run');
+                    Route::delete('tasks/{task}', [AiGatewayTaskController::class, 'destroy'])->name('ai-gateway.tasks.destroy');
+
+                    // Usage & logs
+                    Route::get('usage', [AiGatewayUsageController::class, 'index'])->name('ai-gateway.usage.index');
+                    Route::get('logs', [AiGatewayLogController::class, 'index'])->name('ai-gateway.logs.index');
+                    Route::get('logs/{log}', [AiGatewayLogController::class, 'show'])->name('ai-gateway.logs.show');
+                    Route::delete('logs', [AiGatewayLogController::class, 'clear'])->name('ai-gateway.logs.clear');
+                });
 
             Route::get('/databases/create', [DatabaseController::class, 'create'])
                 ->middleware('role_or_permission:admin|reseller|manage_databases')

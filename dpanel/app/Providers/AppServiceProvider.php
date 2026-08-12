@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Services\ServerPanel\Contracts\AiSuggestionProvider;
 use App\Services\ServerPanel\HeuristicAiSuggestionProvider;
 use App\Services\ServerPanel\OpenAiSuggestionProvider;
+use App\Services\AiGateway\AiGatewayService;
 use App\Services\Dns\DnsRegistryService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Vite;
@@ -18,6 +19,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(DnsRegistryService::class);
+        $this->app->singleton(AiGatewayService::class);
         $this->app->bind(AiSuggestionProvider::class, function ($app) {
             $provider = (string) config('serverpanel.ai.provider', 'heuristic');
             $openAiKey = (string) config('services.openai.api_key', '');

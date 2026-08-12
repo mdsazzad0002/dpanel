@@ -183,6 +183,24 @@ const menuItems = computed(() => [
         color: 'pink',
         children: dynamicUserManagementChildren.value,
     },
+    {
+        id: 'ai-gateway',
+        label: 'AI Gateway',
+        hint: 'Providers, models and routing',
+        icon: 'AI',
+        iconClass: 'bi bi-robot',
+        color: 'indigo',
+        children: [
+            { label: 'Dashboard', hint: 'Gateway overview', icon: 'GD', iconClass: 'bi bi-speedometer2', routeName: 'ai-gateway.dashboard', activeRouteNames: ['ai-gateway.dashboard'], roles: ['admin', 'reseller'] },
+            { label: 'Providers', hint: 'Claude, Codex, OpenAI, Gemini, Local', icon: 'PV', iconClass: 'bi bi-hdd-network', routeName: 'ai-gateway.providers.index', activeRouteNames: ['ai-gateway.providers.index', 'ai-gateway.providers.create', 'ai-gateway.providers.edit'], roles: ['admin', 'reseller'] },
+            { label: 'Models', hint: 'Model catalog and pricing', icon: 'MD', iconClass: 'bi bi-cpu', routeName: 'ai-gateway.models.index', activeRouteNames: ['ai-gateway.models.index'], roles: ['admin', 'reseller'] },
+            { label: 'Routing Rules', hint: 'Model routing logic', icon: 'RR', iconClass: 'bi bi-shuffle', routeName: 'ai-gateway.routing.index', activeRouteNames: ['ai-gateway.routing.index'], roles: ['admin', 'reseller'] },
+            { label: 'Agents', hint: 'Prompt-tuned agents', icon: 'AG', iconClass: 'bi bi-person-badge', routeName: 'ai-gateway.agents.index', activeRouteNames: ['ai-gateway.agents.index', 'ai-gateway.agents.create', 'ai-gateway.agents.edit'], roles: ['admin', 'reseller'] },
+            { label: 'Tasks', hint: 'AI completion runs', icon: 'TK', iconClass: 'bi bi-list-check', routeName: 'ai-gateway.tasks.index', activeRouteNames: ['ai-gateway.tasks.index', 'ai-gateway.tasks.create', 'ai-gateway.tasks.show'], roles: ['admin', 'reseller'] },
+            { label: 'Usage & Cost', hint: 'Tokens and spend', icon: 'UC', iconClass: 'bi bi-graph-up', routeName: 'ai-gateway.usage.index', activeRouteNames: ['ai-gateway.usage.index'], roles: ['admin', 'reseller'] },
+            { label: 'Logs', hint: 'Request audit trail', icon: 'LG', iconClass: 'bi bi-journal-text', routeName: 'ai-gateway.logs.index', activeRouteNames: ['ai-gateway.logs.index', 'ai-gateway.logs.show'], roles: ['admin', 'reseller'] },
+        ],
+    },
 ]);
 
 const hasAccess = (item) => {
