@@ -33,7 +33,7 @@ class AnthropicAdapter implements ProviderAdapter
             throw \App\Services\AiGateway\Exceptions\AiGatewayException::missingCredentials($provider->name);
         }
 
-        $base = rtrim(self::BASE_URL, '/');
+        $base = rtrim($provider->base_url ?: self::BASE_URL, '/');
         $system = $options['system'] ?? null;
 
         // Anthropic wants system prompts as a top-level "system" field and only
@@ -102,7 +102,7 @@ class AnthropicAdapter implements ProviderAdapter
             throw \App\Services\AiGateway\Exceptions\AiGatewayException::missingCredentials($provider->name);
         }
 
-        $base = rtrim(self::BASE_URL, '/');
+        $base = rtrim($provider->base_url ?: self::BASE_URL, '/');
         $system = $options['system'] ?? null;
 
         $converted = [];
@@ -210,4 +210,45 @@ class AnthropicAdapter implements ProviderAdapter
             return ['ok' => false, 'message' => $e->getMessage()];
         }
     }
+
+    /**
+     * GET /v1/models — returns every model the account currently has access
+     * to, each with a human-readable "display_name" straight from Anthropic.
+     */
+    public function listModels(AiGatewayProvider $provider): array
+    {
+        $apiKey = $provider->getApiKey();
+
+        if (! $apiKey) {
+            throw \App\Services\AiGateway\Exceptions\AiGatewayException::missingCredentials($provider->name);
+        }
+
+        $base = rtrim($provider->base_url ?: self::BASE_URL, '/');
+
+        $response = Http::withToken($apiKey)
+            ->withHeaders(['anthropic-version' => '2023-06-01'])
+            ->timeout(config('aigateway.timeout', 30))
+            ->get($base.'/v1/models', ['limit' => 1000]);
+
+        if ($response->failed()) {
+            $message = $response->json('error.message') ?: (string) $response->body();
+            $message = $message !== '' ? $message : 'HTTP '.$response->status().' with no error details.';
+            throw \App\Services\AiGateway\Exceptions\AiGatewayException::upstream($provider->name, $message, $response->status());
+        }
+
+        return collect($response->json('data') ?? [])
+            ->filter(fn ($m) => is_array($m) && ! empty($m['id']))
+            ->map(fn (array $m): array => [
+                'name' => (string) $m['id'],
+                'display_name' => $m['display_name'] ?? null,
+                'context_window' => null,
+                'max_output_tokens' => null,
+                'input_price' => null,
+                'output_price' => null,
+            ])
+            ->sortBy('name')
+            ->values()
+            ->all();
+    }
 }
+

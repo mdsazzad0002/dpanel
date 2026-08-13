@@ -11,8 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('ai_gateway_providers', function (Blueprint $table) {
-            $table->text('last_test_message')->nullable()->change();
+        Schema::table('ai_gateway_providers', function (Blueprint $table): void {
+            $table->string('base_url')->nullable()->after('slug');
         });
     }
 
@@ -21,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('ai_gateway_providers', function (Blueprint $table) {
-            $table->string('last_test_message')->nullable()->change();
+        Schema::table('ai_gateway_providers', function (Blueprint $table): void {
+            $table->dropColumn('base_url');
         });
     }
 };

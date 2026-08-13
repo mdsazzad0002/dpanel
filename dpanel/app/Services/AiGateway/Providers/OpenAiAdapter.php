@@ -44,7 +44,7 @@ class OpenAiAdapter implements ProviderAdapter
 
     private function baseUrlFor(AiGatewayProvider $provider): string
     {
-        return self::DRIVERS[$provider->driver][1] ?? self::DRIVERS['openai'][1];
+        return $provider->base_url ?: (self::DRIVERS[$provider->driver][1] ?? self::DRIVERS['openai'][1]);
     }
 
     private function requestFor(AiGatewayProvider $provider, string $apiKey, ?int $timeout = null)
@@ -252,4 +252,42 @@ class OpenAiAdapter implements ProviderAdapter
             return ['ok' => false, 'message' => $e->getMessage()];
         }
     }
+
+    /**
+     * GET /models — the OpenAI-compatible list-models endpoint. Every
+     * driver in this family implements it (OpenRouter and Groq additionally
+     * report pricing/context data, which we surface when present).
+     */
+    public function listModels(AiGatewayProvider $provider): array
+    {
+        $apiKey = $provider->getApiKey();
+
+        if (! $apiKey) {
+            throw AiGatewayException::missingCredentials($provider->name);
+        }
+
+        $base = rtrim($this->baseUrlFor($provider), '/');
+
+        $response = $this->requestFor($provider, $apiKey, config('aigateway.timeout', 30))
+            ->get($base.'/models');
+
+        if ($response->failed()) {
+            throw AiGatewayException::upstream($provider->name, $this->extractErrorMessage($response), $response->status());
+        }
+
+        return collect($response->json('data') ?? [])
+            ->filter(fn ($m) => is_array($m) && ! empty($m['id']))
+            ->map(fn (array $m): array => [
+                'name' => (string) $m['id'],
+                'display_name' => null,
+                'context_window' => isset($m['context_length']) ? (int) $m['context_length'] : null,
+                'max_output_tokens' => null,
+                'input_price' => isset($m['pricing']['prompt']) ? round(((float) $m['pricing']['prompt']) * 1_000_000, 4) : null,
+                'output_price' => isset($m['pricing']['completion']) ? round(((float) $m['pricing']['completion']) * 1_000_000, 4) : null,
+            ])
+            ->sortBy('name')
+            ->values()
+            ->all();
+    }
 }
+

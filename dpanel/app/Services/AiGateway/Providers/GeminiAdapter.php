@@ -6,6 +6,7 @@ use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\Contracts\ProviderAdapter;
 use App\Services\AiGateway\Exceptions\AiGatewayException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class GeminiAdapter implements ProviderAdapter
 {
@@ -34,7 +35,7 @@ class GeminiAdapter implements ProviderAdapter
             throw AiGatewayException::missingCredentials($provider->name);
         }
 
-        $base = rtrim(self::BASE_URL, '/');
+        $base = rtrim($provider->base_url ?: self::BASE_URL, '/');
 
         $system = $options['system'] ?? null;
         foreach ($messages as $message) {
@@ -106,7 +107,7 @@ class GeminiAdapter implements ProviderAdapter
             throw AiGatewayException::missingCredentials($provider->name);
         }
 
-        $base = rtrim(self::BASE_URL, '/');
+        $base = rtrim($provider->base_url ?: self::BASE_URL, '/');
 
         $system = $options['system'] ?? null;
         foreach ($messages as $message) {
@@ -219,4 +220,45 @@ class GeminiAdapter implements ProviderAdapter
             return ['ok' => false, 'message' => $e->getMessage()];
         }
     }
+
+    /**
+     * GET /v1beta/models — model names come back prefixed with "models/",
+     * which is stripped so what we store/send matches the bare model IDs
+     * this adapter's chat()/stream() expect.
+     */
+    public function listModels(AiGatewayProvider $provider): array
+    {
+        $apiKey = $provider->getApiKey();
+
+        if (! $apiKey) {
+            throw AiGatewayException::missingCredentials($provider->name);
+        }
+
+        $base = rtrim($provider->base_url ?: self::BASE_URL, '/');
+
+        $response = Http::timeout(config('aigateway.timeout', 30))
+            ->acceptJson()
+            ->get($base.'/v1beta/models', ['pageSize' => 1000, 'key' => $apiKey]);
+
+        if ($response->failed()) {
+            $error = $response->json('error.message') ?: $response->json('error.status') ?: (string) $response->body();
+            $error = $error !== '' ? $error : 'HTTP '.$response->status().' with no error details.';
+            throw AiGatewayException::upstream($provider->name, $error, $response->status());
+        }
+
+        return collect($response->json('models') ?? [])
+            ->filter(fn ($m) => is_array($m) && ! empty($m['name']))
+            ->map(fn (array $m): array => [
+                'name' => Str::after($m['name'], 'models/'),
+                'display_name' => $m['displayName'] ?? null,
+                'context_window' => isset($m['inputTokenLimit']) ? (int) $m['inputTokenLimit'] : null,
+                'max_output_tokens' => isset($m['outputTokenLimit']) ? (int) $m['outputTokenLimit'] : null,
+                'input_price' => null,
+                'output_price' => null,
+            ])
+            ->sortBy('name')
+            ->values()
+            ->all();
+    }
 }
+

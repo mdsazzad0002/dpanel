@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\AiGatewayModel;
 use App\Models\AiGatewayProvider;
+use App\Services\AiGateway\AiGatewayService;
+use App\Services\AiGateway\Exceptions\AiGatewayException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -12,6 +15,11 @@ use Inertia\Response;
 
 class AiGatewayModelController extends Controller
 {
+    public function __construct(
+        private readonly AiGatewayService $gateway,
+    ) {
+    }
+
     public function index(Request $request): Response
     {
         $providerFilter = $request->integer('provider');
@@ -45,9 +53,36 @@ class AiGatewayModelController extends Controller
 
         return Inertia::render('AiGateway/Models/Index', [
             'models' => $models,
-            'providers' => AiGatewayProvider::query()->orderBy('name')->get(['id', 'name']),
+            'providers' => AiGatewayProvider::query()->orderBy('name')->get(['id', 'name', 'driver']),
             'providerFilter' => $providerFilter ?: null,
+            'defaultModelSeed' => config('aigateway.driver_default_models'),
         ]);
+    }
+
+    /**
+     * Live model list for a provider, called from the "Add/Edit Model"
+     * datalist so admins pick from what the account actually has access to
+     * instead of a static catalog. Falls back to the local seed list (same
+     * one used to pre-populate the datalist on first load) when the live
+     * call fails — missing credentials, network error, unsupported driver —
+     * so the picker still offers something useful.
+     */
+    public function remoteModels(Request $request, $token, AiGatewayProvider $provider): JsonResponse
+    {
+        try {
+            $adapter = $this->gateway->adapterFor($provider->driver);
+            $models = $adapter->listModels($provider);
+
+            return response()->json(['source' => 'live', 'models' => $models]);
+        } catch (AiGatewayException $e) {
+            $seed = config('aigateway.driver_default_models.'.$provider->driver, []);
+
+            return response()->json([
+                'source' => 'seed',
+                'models' => $seed,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function store(Request $request): RedirectResponse

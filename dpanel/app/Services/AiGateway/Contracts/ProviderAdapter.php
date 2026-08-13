@@ -35,6 +35,17 @@ interface ProviderAdapter
     public function chat(AiGatewayProvider $provider, string $model, array $messages, array $options = []): array;
 
     /**
+     * List the models actually available on the provider's account, by
+     * calling its live models endpoint. Used to populate the model picker
+     * with real data instead of a static, potentially stale catalog.
+     *
+     * @return array<int, array{name:string, display_name:?string}>
+     *
+     * @throws \App\Services\AiGateway\Exceptions\AiGatewayException
+     */
+    public function listModels(AiGatewayProvider $provider): array;
+
+    /**
      * Lightweight connectivity test for the provider.
      *
      * @return array{ok:bool, message:string}

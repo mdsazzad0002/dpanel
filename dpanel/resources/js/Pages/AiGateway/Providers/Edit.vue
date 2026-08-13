@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 
@@ -19,6 +19,7 @@ const props = defineProps({
 const form = useForm({
     name: props.provider.name || '',
     driver: props.provider.driver || props.drivers[0]?.driver || 'openrouter',
+    base_url: props.provider.base_url || '',
     api_key: props.provider.api_key || '',
     organization: '',
     project: '',
@@ -29,6 +30,16 @@ const form = useForm({
 });
 
 const currentDriver = computed(() => props.drivers.find((d) => d.driver === form.driver));
+
+// Base URL auto-fills from the driver's default (or the provider's saved
+// custom URL) but stays editable — switching drivers only overwrites it
+// while the field still matches the previous driver's default.
+watch(() => currentDriver.value?.base_url, (value, previous) => {
+    if (!form.base_url || form.base_url === previous) {
+        form.base_url = value || '';
+    }
+});
+
 
 const testing = ref(false);
 const testResult = ref(null);
@@ -94,10 +105,18 @@ const runTest = async () => {
                     <div v-if="form.errors.driver" class="mt-1 text-xs text-red-600">{{ form.errors.driver }}</div>
                 </div>
 
-                <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                    <div class="font-medium text-slate-900 dark:text-slate-100">Base URL</div>
-                    <div>{{ currentDriver?.base_url }}</div>
-                    <div class="mt-1 text-xs text-slate-500">Fixed per driver — not user-editable.</div>
+                <div>
+                    <div class="mb-1 flex items-center justify-between gap-3">
+                        <label class="block text-sm font-medium">Base URL</label>
+                        <button
+                            type="button"
+                            class="text-xs text-blue-600 hover:underline dark:text-blue-400"
+                            @click="form.base_url = currentDriver?.base_url || ''"
+                        >Reset to default</button>
+                    </div>
+                    <input v-model="form.base_url" type="text" placeholder="https://api.example.com/v1" class="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm dark:border-slate-600 dark:bg-slate-900" />
+                    <div class="mt-1 text-xs text-slate-500">Defaults to {{ currentDriver?.base_url }} for the selected driver — edit for a proxy or self-hosted endpoint.</div>
+                    <div v-if="form.errors.base_url" class="mt-1 text-xs text-red-600">{{ form.errors.base_url }}</div>
                 </div>
 
                 <div>

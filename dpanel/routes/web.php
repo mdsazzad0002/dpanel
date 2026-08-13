@@ -339,6 +339,7 @@ Route::prefix('cpsess{token}')
 
                     // Models
                     Route::get('models', [AiGatewayModelController::class, 'index'])->name('ai-gateway.models.index');
+                    Route::get('providers/{provider}/models/remote', [AiGatewayModelController::class, 'remoteModels'])->name('ai-gateway.models.remote');
                     Route::post('models', [AiGatewayModelController::class, 'store'])->name('ai-gateway.models.store');
                     Route::patch('models/{model}', [AiGatewayModelController::class, 'update'])->name('ai-gateway.models.update');
                     Route::post('models/{model}/default', [AiGatewayModelController::class, 'setDefault'])->name('ai-gateway.models.default');

@@ -79,7 +79,7 @@ class AiGatewayProviderController extends Controller
             'name' => $name,
             'driver' => $validated['driver'],
             'slug' => Str::slug($name).'-'.Str::lower(Str::random(4)),
-            'base_url' => null,
+            'base_url' => $validated['base_url'] ?: null,
             'credentials' => $credentials === [] ? null : $credentials,
             'default_model' => $validated['default_model'] ?: null,
             'is_active' => (bool) ($validated['is_active'] ?? true),
@@ -104,6 +104,7 @@ class AiGatewayProviderController extends Controller
                 'slug' => $provider->slug,
                 'driver' => $provider->driver,
                 'driver_label' => $provider->getDriverLabel(),
+                'base_url' => $provider->base_url,
                 'default_model' => $provider->default_model,
                 'is_active' => $provider->is_active,
                 'weight' => $provider->weight,
@@ -132,7 +133,7 @@ class AiGatewayProviderController extends Controller
         $data = [
             'name' => $name,
             'driver' => $validated['driver'],
-            'base_url' => null,
+            'base_url' => $validated['base_url'] ?: null,
             'default_model' => $validated['default_model'] ?: null,
             'is_active' => (bool) ($validated['is_active'] ?? true),
             'weight' => (int) ($validated['weight'] ?? 100),
@@ -574,6 +575,7 @@ class AiGatewayProviderController extends Controller
         return $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'driver' => ['required', Rule::in($drivers)],
+            'base_url' => ['nullable', 'string', 'max:255', 'url'],
             'api_key' => ['nullable', 'string', 'max:500'],
             'organization' => ['nullable', 'string', 'max:255'],
             'project' => ['nullable', 'string', 'max:255'],
