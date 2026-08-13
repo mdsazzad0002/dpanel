@@ -25,35 +25,82 @@ const SIDEBAR_SCROLL_KEY = 'layout.sidebar.scrollTop.v1';
 let searchDebounceTimer = null;
 let searchRequestSeq = 0;
 
-// Notification state
-const notifications = ref([
-    { id: 1, title: 'New website created', message: 'example.com has been added successfully', time: '5 min ago', read: false, type: 'success' },
-    { id: 2, title: 'SSL Certificate expiring', message: 'domain.com SSL expires in 7 days', time: '1 hour ago', read: false, type: 'warning' },
-    { id: 3, title: 'Backup completed', message: 'Daily backup finished successfully', time: '3 hours ago', read: true, type: 'info' },
-    { id: 4, title: 'Security alert', message: 'Failed login attempt detected', time: '5 hours ago', read: true, type: 'danger' },
-]);
+// AI-assisted search — a mode switch inside the same command palette rather
+// than a separate surface, so keyword search stays instant/cheap (no LLM call
+// per keystroke) and the AI Gateway is only hit on an explicit "Ask AI".
+// aiMessages accumulates for as long as the palette stays open, so follow-up
+// questions continue the same conversation (multi-turn), not a fresh one-shot.
+const aiMode = ref(false);
+const aiMessages = ref([]);
+const aiInput = ref('');
+const aiStreaming = ref(false);
+const aiError = ref('');
+const aiChatRef = ref(null);
+const aiInputRef = ref(null);
+let aiAbortController = null;
+
+// Notification state — backed by NotificationController (app/Http/Controllers/NotificationController.php),
+// polled periodically so background work (quick export, etc.) shows up without a manual refresh.
+const notifications = ref([]);
+const unreadNotificationsCount = ref(0);
 const isNotificationsOpen = ref(false);
 const notificationsRef = ref(null);
+let notificationsPollTimer = null;
 
-const unreadNotificationsCount = computed(() => notifications.value.filter(n => !n.read).length);
-
-const markAsRead = (id) => {
-    const notification = notifications.value.find(n => n.id === id);
-    if (notification) {
-        notification.read = true;
+const fetchNotifications = async () => {
+    try {
+        const { data } = await window.axios.get(panelRoute('notifications.index'));
+        notifications.value = data.notifications ?? [];
+        unreadNotificationsCount.value = data.unread_count ?? 0;
+    } catch {
+        // Silent — the bell just won't update this cycle; next poll retries.
     }
 };
 
-const markAllAsRead = () => {
-    notifications.value.forEach(n => n.read = true);
+const startNotificationsPolling = () => {
+    fetchNotifications();
+    notificationsPollTimer = window.setInterval(fetchNotifications, 30000);
 };
 
-const clearNotifications = () => {
+const stopNotificationsPolling = () => {
+    window.clearInterval(notificationsPollTimer);
+};
+
+const markAsRead = async (id) => {
+    const notification = notifications.value.find(n => n.id === id);
+    if (!notification || notification.read) return;
+    notification.read = true;
+    unreadNotificationsCount.value = Math.max(0, unreadNotificationsCount.value - 1);
+    try {
+        await window.axios.post(panelRoute('notifications.read', { id }));
+    } catch {
+        // Best-effort — next poll reconciles state if this failed.
+    }
+};
+
+const markAllAsRead = async () => {
+    notifications.value.forEach(n => n.read = true);
+    unreadNotificationsCount.value = 0;
+    try {
+        await window.axios.post(panelRoute('notifications.read-all'));
+    } catch {
+        // Best-effort — next poll reconciles state if this failed.
+    }
+};
+
+const clearNotifications = async () => {
     notifications.value = [];
+    unreadNotificationsCount.value = 0;
+    try {
+        await window.axios.delete(panelRoute('notifications.clear'));
+    } catch {
+        // Best-effort — next poll reconciles state if this failed.
+    }
 };
 
 const toggleNotifications = () => {
     isNotificationsOpen.value = !isNotificationsOpen.value;
+    if (isNotificationsOpen.value) fetchNotifications();
 };
 
 const closeNotifications = (event) => {
@@ -62,14 +109,39 @@ const closeNotifications = (event) => {
     }
 };
 
-const getNotificationIcon = (type) => {
-    const icons = {
-        success: 'bi-check-circle-fill text-emerald-500',
-        warning: 'bi-exclamation-triangle-fill text-amber-500',
-        info: 'bi-info-circle-fill text-blue-500',
-        danger: 'bi-x-circle-fill text-red-500',
-    };
-    return icons[type] || icons.info;
+const getNotificationIcon = (notification) => {
+    if (notification.status === 'completed') return 'bi-check-circle-fill text-emerald-500';
+    if (notification.status === 'blocked' || notification.status === 'failed') return 'bi-x-circle-fill text-red-500';
+    if (notification.status === 'processing') return 'bi-arrow-repeat text-amber-500';
+    return 'bi-info-circle-fill text-blue-500';
+};
+
+const openNotification = (notification) => {
+    markAsRead(notification.id);
+    isNotificationsOpen.value = false;
+    router.visit(panelRoute('notifications.show', { id: notification.id }));
+};
+
+const downloadNotification = (notification, event) => {
+    event.stopPropagation();
+    const url = notification.data?.download_url;
+    if (!url) return;
+    const link = document.createElement('a');
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+};
+
+const copyNotificationLink = async (notification, event) => {
+    event.stopPropagation();
+    const url = notification.data?.download_url;
+    if (!url) return;
+    try {
+        await navigator.clipboard.writeText(url);
+    } catch {
+        // Clipboard permissions can be denied silently — nothing actionable to show here in the dropdown.
+    }
 };
 
 const rolePanelConfig = {
@@ -80,9 +152,14 @@ const rolePanelConfig = {
 };
 
 const userRoles = computed(() => page.props.auth?.roles ?? []);
+// AI Gateway chat is admin|reseller only (see routes/web.php ai-gateway prefix
+// group) — the "Ask AI" affordance in the search panel mirrors that gate.
+const canUseAiSearch = computed(() => userRoles.value.includes('admin') || userRoles.value.includes('reseller'));
 const userRoleLabel = computed(() => userRoles.value.join(', ') || 'No role');
 const userPermissions = computed(() => page.props.auth?.permissions ?? []);
 const panelToken = computed(() => page.props.panel?.token ?? '');
+const appName = computed(() => page.props.app?.name ?? 'dPanel');
+const appVersion = computed(() => page.props.app?.version ?? '1.0');
 const panelSearchItems = computed(() => Array.isArray(page.props.panelSearch?.items) ? page.props.panelSearch.items : []);
 const currentUser = computed(() => page.props.auth?.user ?? {});
 const userName = computed(() => String(currentUser.value?.name ?? 'User'));
@@ -195,6 +272,8 @@ const menuItems = computed(() => [
             { label: 'Chat', hint: 'Test providers live', icon: 'CH', iconClass: 'bi bi-chat-dots', routeName: 'ai-gateway.chat', activeRouteNames: ['ai-gateway.chat'], roles: ['admin', 'reseller'] },
             { label: 'Providers', hint: 'Claude, Codex, OpenAI, Gemini, Local', icon: 'PV', iconClass: 'bi bi-hdd-network', routeName: 'ai-gateway.providers.index', activeRouteNames: ['ai-gateway.providers.index', 'ai-gateway.providers.create', 'ai-gateway.providers.edit'], roles: ['admin', 'reseller'] },
             { label: 'Models', hint: 'Model catalog and pricing', icon: 'MD', iconClass: 'bi bi-cpu', routeName: 'ai-gateway.models.index', activeRouteNames: ['ai-gateway.models.index'], roles: ['admin', 'reseller'] },
+            { label: 'API Keys', hint: 'External OpenAI/OpenRouter-compatible access', icon: 'AK', iconClass: 'bi bi-key', routeName: 'ai-gateway.api-keys.index', activeRouteNames: ['ai-gateway.api-keys.index'], roles: ['admin', 'reseller'] },
+            { label: 'API Docs', hint: 'How to call the gateway from outside', icon: 'DC', iconClass: 'bi bi-file-earmark-code', routeName: 'ai-gateway.docs', activeRouteNames: ['ai-gateway.docs'], roles: ['admin', 'reseller'] },
         ],
     },
 ]);
@@ -361,6 +440,7 @@ const openSearch = async () => {
 
 const closeSearch = () => {
     isSearchOpen.value = false;
+    resetAiChat();
 };
 
 const searchEndpoint = computed(() => (route().has('panel.search') ? route('panel.search', { token: panelToken.value }) : ''));
@@ -404,6 +484,127 @@ const queueSearchSuggestions = (delay = 220) => {
     }, delay);
 };
 
+const scrollAiChatToBottom = () => {
+    nextTick(() => {
+        if (aiChatRef.value) aiChatRef.value.scrollTop = aiChatRef.value.scrollHeight;
+    });
+};
+
+const resetAiChat = () => {
+    aiAbortController?.abort();
+    aiAbortController = null;
+    aiMode.value = false;
+    aiMessages.value = [];
+    aiInput.value = '';
+    aiError.value = '';
+    aiStreaming.value = false;
+};
+
+const backToKeywordSearch = () => {
+    aiMode.value = false;
+};
+
+// Mirrors Chat.vue's SSE parsing (AiGateway/Chat.vue) — same backend event
+// protocol (delta/done/error), reused here via axios + onDownloadProgress
+// since native EventSource can't POST a request body.
+const sendAiMessage = async (text) => {
+    const content = text.trim();
+    if (!content || aiStreaming.value) return;
+
+    aiMessages.value.push({ role: 'user', content });
+    const assistantMessage = { role: 'assistant', content: '' };
+    aiMessages.value.push(assistantMessage);
+    scrollAiChatToBottom();
+
+    const outgoingMessages = aiMessages.value.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
+
+    aiStreaming.value = true;
+    aiError.value = '';
+    aiAbortController = new AbortController();
+
+    let processedLength = 0;
+    let sseBuffer = '';
+
+    const handleStreamEvent = (eventName, payload) => {
+        if (eventName === 'delta') {
+            assistantMessage.content += payload.text;
+            scrollAiChatToBottom();
+        } else if (eventName === 'done') {
+            assistantMessage.content = payload.content;
+        } else if (eventName === 'error') {
+            aiError.value = payload.message || 'AI request failed.';
+            aiMessages.value = aiMessages.value.filter((m) => m !== assistantMessage);
+        }
+    };
+
+    const onDownloadProgress = (progressEvent) => {
+        const fullText = progressEvent.event?.target?.responseText ?? progressEvent.target?.responseText ?? '';
+        sseBuffer += fullText.slice(processedLength);
+        processedLength = fullText.length;
+
+        let boundary;
+        while ((boundary = sseBuffer.indexOf('\n\n')) !== -1) {
+            const rawEvent = sseBuffer.slice(0, boundary);
+            sseBuffer = sseBuffer.slice(boundary + 2);
+
+            let eventName = 'message';
+            let dataLine = '';
+            for (const line of rawEvent.split('\n')) {
+                if (line.startsWith('event:')) eventName = line.slice(6).trim();
+                if (line.startsWith('data:')) dataLine += line.slice(5).trim();
+            }
+            if (!dataLine) continue;
+            try {
+                handleStreamEvent(eventName, JSON.parse(dataLine));
+            } catch {
+                // Boundary landed mid-chunk — the rest arrives on the next tick.
+            }
+        }
+    };
+
+    try {
+        // Same endpoint the AI Gateway chat playground (Chat.vue) posts to —
+        // context is the only thing that distinguishes this call: it picks the
+        // command-palette persona/system-prompt and a separate usage-log tag,
+        // not a different route.
+        await window.axios.post(panelRoute('ai-gateway.chat.auto.stream'), {
+            model: null,
+            messages: outgoingMessages,
+            context: 'panel_search',
+        }, {
+            signal: aiAbortController.signal,
+            responseType: 'text',
+            headers: { Accept: 'text/event-stream' },
+            onDownloadProgress,
+        });
+    } catch (error) {
+        if (error?.code !== 'ERR_CANCELED' && !aiError.value) {
+            aiError.value = 'AI request failed.';
+        }
+    } finally {
+        aiStreaming.value = false;
+        // Disabling the input while streaming (see template) blurs it — bring
+        // the cursor back so the user can keep typing without reclicking.
+        nextTick(() => aiInputRef.value?.focus?.());
+    }
+};
+
+const startAiChat = () => {
+    const query = searchQuery.value.trim();
+    if (!query || !canUseAiSearch.value) return;
+    aiMode.value = true;
+    nextTick(() => aiInputRef.value?.focus?.());
+    sendAiMessage(query);
+};
+
+const sendAiFollowUp = () => {
+    if (aiStreaming.value) return;
+    const text = aiInput.value;
+    aiInput.value = '';
+    sendAiMessage(text);
+    nextTick(() => aiInputRef.value?.focus?.());
+};
+
 const openSearchResult = (item) => {
     if (!item?.href) return;
 
@@ -433,6 +634,12 @@ const handleSearchKeydown = (event) => {
         return;
     }
 
+    // While chatting, Enter/arrows are plain text-input behavior — the AI
+    // input's own @keydown.enter handles sending, not this palette-navigation logic.
+    if (aiMode.value) {
+        return;
+    }
+
     if (event.key === 'ArrowDown') {
         event.preventDefault();
         moveSearchSelection(1);
@@ -447,6 +654,10 @@ const handleSearchKeydown = (event) => {
 
     if (event.key === 'Enter') {
         event.preventDefault();
+        if (!filteredSearchResults.value.length && canUseAiSearch.value && searchQuery.value.trim()) {
+            startAiChat();
+            return;
+        }
         openSearchResult(filteredSearchResults.value[activeSearchIndex.value]);
     }
 };
@@ -490,12 +701,14 @@ onMounted(() => {
     restoreSidebarScrollTop();
     document.addEventListener('keydown', handleSearchKeydown);
     document.addEventListener('click', closeNotifications);
+    startNotificationsPolling();
 });
 
 onUnmounted(() => {
     document.removeEventListener('keydown', handleSearchKeydown);
     document.removeEventListener('click', closeNotifications);
     window.clearTimeout(searchDebounceTimer);
+    stopNotificationsPolling();
 });
 
 watch(sidebarOpen, (isOpen) => {
@@ -696,7 +909,7 @@ watch(isSearchOpen, async (open) => {
             <!-- Footer -->
             <div class="border-t border-slate-200/80 px-4 py-3 dark:border-slate-700/80">
                 <div :class="sidebarCollapsed ? 'justify-center' : 'justify-between'" class="flex items-center">
-                    <span v-if="!sidebarCollapsed" class="text-xs text-slate-400 dark:text-slate-500">dPanel v1.0</span>
+                    <span v-if="!sidebarCollapsed" class="text-xs text-slate-400 dark:text-slate-500">{{ appName }} v{{ appVersion }}</span>
                     <button
                         @click="toggleTheme"
                         class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
@@ -821,12 +1034,12 @@ watch(isSearchOpen, async (open) => {
                                             <div
                                                 v-for="notification in notifications"
                                                 :key="notification.id"
-                                                @click="markAsRead(notification.id)"
+                                                @click="openNotification(notification)"
                                                 class="flex cursor-pointer items-start gap-3 border-b border-slate-100 px-4 py-3 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50"
                                                 :class="{ 'bg-blue-50/50 dark:bg-blue-900/10': !notification.read }"
                                             >
                                                 <span class="mt-0.5">
-                                                    <i :class="['bi text-lg', getNotificationIcon(notification.type)]"></i>
+                                                    <i :class="['bi text-lg', getNotificationIcon(notification)]"></i>
                                                 </span>
                                                 <div class="min-w-0 flex-1">
                                                     <p class="text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -838,6 +1051,22 @@ watch(isSearchOpen, async (open) => {
                                                     <p class="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                                                         {{ notification.time }}
                                                     </p>
+                                                    <div v-if="notification.data?.download_url" class="mt-2 flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            class="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+                                                            @click="copyNotificationLink(notification, $event)"
+                                                        >
+                                                            <i class="bi bi-clipboard mr-1"></i>Copy
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            class="rounded-md bg-violet-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-violet-700"
+                                                            @click="downloadNotification(notification, $event)"
+                                                        >
+                                                            <i class="bi bi-download mr-1"></i>Download
+                                                        </button>
+                                                    </div>
                                                 </div>
                                                 <span
                                                     v-if="!notification.read"
@@ -979,13 +1208,13 @@ watch(isSearchOpen, async (open) => {
             </main>
 
             <footer class="border-t border-slate-200 px-4 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:px-6">
-                Server Panel v1.0 - Websites, Mail, Databases and more
+                {{ appName }} v{{ appVersion }} - Websites, Mail, Databases and more
             </footer>
         </div>
 
         <!-- Search Modal -->
         <Modal :show="isSearchOpen" maxWidth="2xl" @close="closeSearch">
-            <div class="border-b border-slate-200 px-4 py-4 dark:border-slate-800">
+            <div v-if="!aiMode" class="border-b border-slate-200 px-4 py-4 dark:border-slate-800">
                 <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-950/40">
                     <svg class="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M8.5 3a5.5 5.5 0 104.19 9.07l3.12 3.12a.75.75 0 101.06-1.06l-3.12-3.12A5.5 5.5 0 008.5 3zm-4 5.5a4 4 0 118 0 4 4 0 01-8 0z" clip-rule="evenodd" />
@@ -1007,7 +1236,45 @@ watch(isSearchOpen, async (open) => {
                 </div>
             </div>
 
-            <div ref="searchResultsRef" class="max-h-[60vh] overflow-y-auto p-3">
+            <!-- AI chat header -->
+            <div v-else class="flex items-center gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                <button
+                    type="button"
+                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                    title="Back to search"
+                    @click="backToKeywordSearch"
+                >
+                    <i class="bi bi-arrow-left"></i>
+                </button>
+                <div class="flex min-w-0 flex-1 items-center gap-2">
+                    <i class="bi bi-stars text-violet-500"></i>
+                    <span class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">Ask AI</span>
+                </div>
+                <button
+                    type="button"
+                    class="shrink-0 text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                    @click="resetAiChat"
+                >
+                    New chat
+                </button>
+            </div>
+
+            <div v-if="!aiMode" ref="searchResultsRef" class="max-h-[60vh] overflow-y-auto p-3">
+                <button
+                    v-if="canUseAiSearch && searchQuery.trim()"
+                    type="button"
+                    class="mb-2 flex w-full items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-left transition-all hover:bg-violet-100 dark:border-violet-800/60 dark:bg-violet-950/20 dark:hover:bg-violet-950/40"
+                    @click="startAiChat"
+                >
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300">
+                        <i class="bi bi-stars text-base"></i>
+                    </span>
+                    <span class="min-w-0 flex-1">
+                        <span class="block truncate text-sm font-semibold text-violet-900 dark:text-violet-200">Ask AI: "{{ searchQuery.trim() }}"</span>
+                        <span class="block truncate text-xs text-violet-600/80 dark:text-violet-400/80">Get an AI-generated answer and keep chatting</span>
+                    </span>
+                </button>
+
                 <div v-if="searchLoading && !filteredSearchResults.length" class="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
                     Searching...
                 </div>
@@ -1051,6 +1318,47 @@ watch(isSearchOpen, async (open) => {
                     No results found.
                 </div>
             </div>
+
+            <!-- AI chat body -->
+            <template v-else>
+                <div ref="aiChatRef" class="max-h-[50vh] min-h-[30vh] space-y-3 overflow-y-auto p-4">
+                    <div v-for="(message, index) in aiMessages" :key="index" class="flex" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
+                        <div
+                            class="max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm"
+                            :class="message.role === 'user'
+                                ? 'bg-violet-600 text-white'
+                                : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'"
+                        >
+                            <span v-if="message.role === 'assistant' && !message.content && aiStreaming" class="inline-flex items-center gap-1 text-slate-400">
+                                <i class="bi bi-three-dots animate-pulse"></i> Thinking…
+                            </span>
+                            <template v-else>{{ message.content }}</template>
+                        </div>
+                    </div>
+                    <p v-if="aiError" class="text-center text-xs text-red-600">{{ aiError }}</p>
+                </div>
+
+                <div class="border-t border-slate-200 px-4 py-3 dark:border-slate-800">
+                    <div class="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 dark:border-slate-700 dark:bg-slate-950/40">
+                        <input
+                            ref="aiInputRef"
+                            v-model="aiInput"
+                            type="text"
+                            class="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-100"
+                            placeholder="Ask a follow-up…"
+                            @keydown.enter.exact.prevent="sendAiFollowUp"
+                        />
+                        <button
+                            type="button"
+                            :disabled="aiStreaming || !aiInput.trim()"
+                            class="shrink-0 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            @click="sendAiFollowUp"
+                        >
+                            <i class="bi bi-send"></i>
+                        </button>
+                    </div>
+                </div>
+            </template>
         </Modal>
     </div>
 </template>

@@ -137,7 +137,7 @@ class MigrationController extends Controller
     {
         $data = $request->validate([
             'domain' => ['required', 'string', 'max:253', 'regex:/^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/'],
-            'source_path' => ['required', 'string', 'max:4096', 'regex:#^/home/(?!.*(?:^|/)\.\.(?:/|$)).+#'],
+            'source_path' => ['required', 'string', 'max:4096', 'regex:#^/(?:home|www/wwwroot|var/www/vhosts)/(?!.*(?:^|/)\.\.(?:/|$)).+#'],
             'database' => ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9_$-]+$/'],
             'php_version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
         ]);

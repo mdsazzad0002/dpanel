@@ -28,9 +28,15 @@ interface ProviderAdapter
     /**
      * Perform a chat completion against the provider.
      *
-     * @param  array<int, array{role:string, content:string}>  $messages
-     * @param  array{max_tokens?:int, temperature?:float, system?:string}  $options
-     * @return array{content:string, input_tokens:int, output_tokens:int, model:string, raw:array}
+     * Messages may include an assistant `tool_calls` array (OpenAI shape:
+     * `[{id, type:'function', function:{name, arguments}}]`, `arguments`
+     * JSON-encoded) and/or a `tool` role message with a `tool_call_id`
+     * (and, for Gemini, a `name`) carrying that call's result back — each
+     * adapter translates this to its own wire format.
+     *
+     * @param  array<int, array{role:string, content:?string, tool_calls?:array, tool_call_id?:string, name?:string}>  $messages
+     * @param  array{max_tokens?:int, temperature?:float, system?:string, tools?:array, tool_choice?:mixed}  $options
+     * @return array{content:string, input_tokens:int, output_tokens:int, model:string, raw:array, tool_calls?:?array, finish_reason?:string}
      */
     public function chat(AiGatewayProvider $provider, string $model, array $messages, array $options = []): array;
 
@@ -57,10 +63,14 @@ interface ProviderAdapter
      * chunk as it arrives. Returns the same aggregate shape as chat() once
      * the stream ends.
      *
-     * @param  array<int, array{role:string, content:string}>  $messages
-     * @param  array{max_tokens?:int, temperature?:float, system?:string}  $options
+     * Tool calling works the same as chat() (see its docblock); tool call
+     * arguments are not streamed incrementally — they arrive complete in
+     * the returned `tool_calls`, only text is streamed via $onDelta.
+     *
+     * @param  array<int, array{role:string, content:?string, tool_calls?:array, tool_call_id?:string, name?:string}>  $messages
+     * @param  array{max_tokens?:int, temperature?:float, system?:string, tools?:array, tool_choice?:mixed}  $options
      * @param  \Closure(string):void  $onDelta
-     * @return array{content:string, input_tokens:int, output_tokens:int, model:string, raw:array}
+     * @return array{content:string, input_tokens:int, output_tokens:int, model:string, raw:array, tool_calls?:?array, finish_reason?:string}
      */
     public function stream(AiGatewayProvider $provider, string $model, array $messages, array $options, \Closure $onDelta): array;
 }

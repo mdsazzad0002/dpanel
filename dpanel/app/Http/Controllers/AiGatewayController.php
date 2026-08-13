@@ -166,6 +166,13 @@ class AiGatewayController extends Controller
         ]);
     }
 
+    public function docs(): Response
+    {
+        return Inertia::render('AiGateway/Docs', [
+            'apiBaseUrl' => rtrim((string) config('app.url'), '/').'/api/v1',
+        ]);
+    }
+
     /**
      * Dashboard shows no payment/pricing information — strip the cost
      * figure out of usage summaries before they reach the page props.

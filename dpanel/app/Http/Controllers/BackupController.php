@@ -2,24 +2,27 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\QuickExportJob;
 use App\Models\DatabaseRequest;
 use App\Models\Website;
+use App\Services\Backup\QuickExportJobStatus;
+use App\Services\Backup\WebsiteArchiver;
 use App\Support\BackupSettings;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
-use ZipArchive;
 
 class BackupController extends Controller
 {
-    public function __construct(private readonly BackupSettings $settings) {}
+    public function __construct(private readonly BackupSettings $settings, private readonly WebsiteArchiver $archiver) {}
 
     public function index(): Response
     {
@@ -150,6 +153,11 @@ class BackupController extends Controller
             return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
         }
 
+        // php.ini's default max_execution_time (30s) would otherwise kill this
+        // worker mid-mysqldump/zip on any non-trivial site — this call blocks on
+        // dRust for as long as that same execution API timeout allows.
+        set_time_limit((int) config('serverpanel.execution_api_upload_timeout', 3600));
+
         try {
             if ($validated['filter'] === 'website') {
                 return $this->runWebsiteBackup($request, (string) $validated['website_id'], (string) $validated['content'], $baseUrl, $token);
@@ -183,11 +191,22 @@ class BackupController extends Controller
         }
     }
 
-    public function quickExport(Request $request, string $token, string $id): BinaryFileResponse|JsonResponse
+    /**
+     * Kicks off the export on the 'heavy' queue and returns immediately with an
+     * export_id — the zip/mysqldump can take minutes on a large site, and doing
+     * that inline blocked the request (and the browser tab) for just as long.
+     * QuickExport.vue polls quickExportStatus() every 5s for this id while the
+     * page stays open; if the user navigates away, the same job still raises a
+     * Notification on completion/failure so the export isn't lost track of.
+     */
+    public function quickExport(Request $request, string $token, string $id): JsonResponse
     {
-        $validated = $request->validate(['type' => ['required', 'in:files,database']]);
+        $validated = $request->validate([
+            'type' => ['required', 'in:files,database'],
+            'database_id' => ['nullable', 'string', 'required_if:type,database'],
+        ]);
 
-        $website = $this->backupWebsites($request)->firstWhere('id', $id);
+        $website = Website::query()->visibleTo($request->user())->find($id);
         if (! $website instanceof Website) {
             return response()->json(['ok' => false, 'message' => 'Website account not found.'], 404);
         }
@@ -198,72 +217,55 @@ class BackupController extends Controller
             return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
         }
 
-        $safeDomain = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $website->domain) ?: 'website';
-        $fileName = $safeDomain.'-files-'.now()->format('Y-m-d_H-i-s').'.zip';
-        $targetPath = storage_path('app/quick-exports/'.Str::uuid().'.zip');
         $content = (string) $validated['type'];
-        // "quick_files" produces a flat zip of the project root (no homedir/public_html
-        // wrapper or restore manifest) — full backups still use "files" for that layout.
-        $archiveContent = $content === 'files' ? 'quick_files' : $content;
-
-        try {
-            $result = $this->createWebsiteArchive($request, $website, $archiveContent, $baseUrl, $apiToken, $targetPath);
-        } catch (\Throwable $e) {
-            File::delete($targetPath);
-
-            return response()->json(['ok' => false, 'message' => 'Quick export failed: '.$e->getMessage()], 500);
-        }
-
-        if (! $result['ok'] || ! is_file($targetPath)) {
-            File::delete($targetPath);
-
-            return response()->json([
-                'ok' => false,
-                'message' => $result['message'] ?: 'The export archive was not created.',
-            ], 500);
-        }
-
         if ($content === 'database') {
-            $archive = new ZipArchive;
-            if ($archive->open($targetPath) !== true) {
-                File::delete($targetPath);
-
-                return response()->json(['ok' => false, 'message' => 'The SQL export could not be opened.'], 500);
-            }
-
-            $sql = null;
-            for ($index = 0; $index < $archive->numFiles; $index++) {
-                $entry = (string) $archive->getNameIndex($index);
-                if (str_ends_with(strtolower($entry), '.sql')) {
-                    $sql = $archive->getFromIndex($index);
-                    break;
-                }
-            }
-            $archive->close();
-            File::delete($targetPath);
-
-            if (! is_string($sql)) {
-                return response()->json(['ok' => false, 'message' => 'No SQL file was produced for this website.'], 500);
-            }
-
-            $databaseName = DatabaseRequest::query()
+            $exists = DatabaseRequest::query()
                 ->visibleTo($request->user())
                 ->where('domain', $website->domain)
                 ->where('status', 'active')
-                ->latest()
-                ->value('database_name');
-            $safeDatabase = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $databaseName) ?: $safeDomain.'-database';
-            $sqlPath = storage_path('app/quick-exports/'.Str::uuid().'.sql');
-            File::put($sqlPath, $sql);
-
-            return response()->download($sqlPath, $safeDatabase.'-'.now()->format('Y-m-d_H-i-s').'.sql', [
-                'Content-Type' => 'application/sql',
-            ])->deleteFileAfterSend(true);
+                ->where('id', (string) $validated['database_id'])
+                ->exists();
+            if (! $exists) {
+                return response()->json(['ok' => false, 'message' => 'Selected database was not found.'], 404);
+            }
         }
 
-        return response()->download($targetPath, $fileName, [
-            'Content-Type' => 'application/zip',
-        ])->deleteFileAfterSend(true);
+        $exportId = (string) Str::uuid();
+        QuickExportJobStatus::set($exportId, ['stage' => 'queued']);
+
+        QuickExportJob::dispatch($exportId, (string) $id, (int) $request->user()->id, $content, $validated['database_id'] ?? null);
+
+        return response()->json(['ok' => true, 'export_id' => $exportId]);
+    }
+
+    public function quickExportStatus(Request $request, string $token, string $id, string $exportId): JsonResponse
+    {
+        $website = Website::query()->visibleTo($request->user())->find($id);
+        if (! $website instanceof Website) {
+            return response()->json(['ok' => false, 'message' => 'Website account not found.'], 404);
+        }
+
+        $status = QuickExportJobStatus::get($exportId);
+        if ($status === null) {
+            return response()->json(['ok' => false, 'message' => 'Export job not found.'], 404);
+        }
+
+        return response()->json(['ok' => true, ...$status]);
+    }
+
+    public function quickExportDownload(Request $request, string $downloadToken): BinaryFileResponse|JsonResponse
+    {
+        $cacheKey = 'quick-export-download:'.$downloadToken;
+        $entry = Cache::get($cacheKey);
+
+        if (! is_array($entry) || ! is_file($entry['path'])) {
+            return response()->json(['ok' => false, 'message' => 'This download link has expired.'], 404);
+        }
+
+        // No forget/deleteFileAfterSend here — the link and file both stay usable for
+        // the full TTL so a missed auto-download or a manual retry keeps working; the
+        // queued DeleteQuickExportFileJob is solely responsible for cleanup.
+        return response()->download($entry['path'], $entry['file_name']);
     }
 
     private function runWebsiteBackup(Request $request, string $websiteId, string $content, string $baseUrl, string $token): JsonResponse
@@ -282,55 +284,9 @@ class BackupController extends Controller
     }
 
     /** @return array{ok:bool,message:string} */
-    private function createWebsiteArchive(Request $request, Website $website, string $content, string $baseUrl, string $token, ?string $targetPath = null): array
+    private function createWebsiteArchive(Request $request, Website $website, string $content, string $baseUrl, string $token, ?string $targetPath = null, ?string $onlyDatabaseId = null): array
     {
-        $timestamp = now()->format('Ymd_His');
-        $runDirectory = storage_path('app/backups/'.$timestamp);
-        $safeOwner = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) ($website->site_owner ?: 'account')) ?: 'account';
-        $zipPath = $targetPath ?: $runDirectory.DIRECTORY_SEPARATOR.'backup-'.now()->format('m.d.Y_H-i-s').'_'.$safeOwner.'.tar.gz';
-        $databases = DatabaseRequest::query()
-            ->visibleTo($request->user())
-            ->where('domain', $website->domain)
-            ->where('status', 'active')
-            ->get()
-            ->map(fn (DatabaseRequest $database): array => [
-                'name' => (string) $database->database_name,
-                'user' => (string) $database->database_user,
-                'password' => (string) $database->database_password,
-                'host' => (string) ($database->database_host ?: '127.0.0.1'),
-            ])->values()->all();
-
-        if ($content === 'database' && $databases === []) {
-            return ['ok' => false, 'message' => 'No approved database is linked to this main domain.'];
-        }
-
-        $response = Http::acceptJson()->asJson()->withToken($token)
-            ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
-            ->post(rtrim($baseUrl, '/').'/api/v1/website/archive', [
-                'zip_path' => $zipPath,
-                'website' => [
-                    'id' => (string) $website->id,
-                    'domain' => (string) $website->domain,
-                    'root_path' => (string) $website->root_path,
-                    'project_root' => (string) $website->project_root,
-                    'start_directory' => $website->start_directory,
-                    'site_owner' => $website->site_owner,
-                    'php_version' => $website->php_version,
-                    'status' => $website->status,
-                    'type_field' => $website->type,
-                    'enable_ssl' => (bool) $website->enable_ssl,
-                    'assigned_user_id' => $website->assigned_user_id,
-                    'assigned_reseller_id' => $website->assigned_reseller_id,
-                    'content' => $content,
-                    'database_requests' => $databases,
-                ],
-            ]);
-
-        if (! $response->successful() || ! (bool) $response->json('success')) {
-            return ['ok' => false, 'message' => (string) ($response->json('message') ?: 'Website backup failed.')];
-        }
-
-        return ['ok' => true, 'message' => ''];
+        return $this->archiver->archive($request->user(), $website, $content, $baseUrl, $token, $targetPath, $onlyDatabaseId);
     }
 
     private function backupWebsites(Request $request)
@@ -424,6 +380,10 @@ class BackupController extends Controller
 
         $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
         $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        // php.ini's default max_execution_time (30s) would otherwise kill this
+        // worker mid-restore on any non-trivial archive — this call blocks on
+        // dRust for as long as that same execution API timeout allows.
+        set_time_limit((int) config('serverpanel.execution_api_upload_timeout', 3600));
         try {
             $response = Http::acceptJson()->asJson()->withToken($apiToken)
                 ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))

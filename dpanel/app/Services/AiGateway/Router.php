@@ -4,6 +4,7 @@ namespace App\Services\AiGateway;
 
 use App\Models\AiGatewayModel;
 use App\Models\AiGatewayProvider;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Resolves which provider + model should serve a given gateway request:
@@ -50,15 +51,17 @@ class Router
     /**
      * Eligible failover candidates for a model name (or, if null, any
      * active model), optionally pinned to one provider: active model,
-     * active provider, not in cooldown. Ordered by provider weight with
-     * random jitter within equal weights, so equally-weighted providers
-     * get a random combination each call.
+     * active provider, not in cooldown. Base order is by provider weight
+     * with random jitter within equal weights; the list is then rotated
+     * so each call starts from the next candidate in turn (round-robin),
+     * spreading requests across providers instead of hammering the
+     * top-weight one until it hits its rate limit.
      *
      * @return \Illuminate\Support\Collection<int, AiGatewayModel>
      */
     public function candidates(?string $modelName = null, ?int $providerId = null): \Illuminate\Support\Collection
     {
-        return AiGatewayModel::query()
+        $base = AiGatewayModel::query()
             ->where('is_active', true)
             ->whereHas('provider', fn ($q) => $q->where('is_active', true))
             ->when($modelName, fn ($q) => $q->where('name', $modelName))
@@ -68,6 +71,17 @@ class Router
             ->filter(fn (AiGatewayModel $m) => ! $m->isInCooldown())
             ->sortByDesc(fn (AiGatewayModel $m) => $m->provider->weight * 1000 + random_int(0, 999))
             ->values();
+
+        $count = $base->count();
+        if ($count <= 1) {
+            return $base;
+        }
+
+        $cacheKey = 'aigateway:router:rr:'.($providerId ?: 'any').':'.($modelName ?: 'any');
+        $cursor = Cache::get($cacheKey, 0) % $count;
+        Cache::put($cacheKey, $cursor + 1, now()->addHours(6));
+
+        return $base->slice($cursor)->concat($base->slice(0, $cursor))->values();
     }
 
     private function finalise(AiGatewayProvider $provider, ?AiGatewayModel $model, ?string $requestedModel): array

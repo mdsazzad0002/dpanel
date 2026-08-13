@@ -104,8 +104,8 @@ class AiGatewayService
      * Perform a chat completion against a specific provider + model,
      * bypassing auto-routing, while still recording usage + audit logs.
      *
-     * @param  array<int, array{role:string, content:string}>  $messages
-     * @param  array{temperature?: float, max_tokens?: int, system?: string, channel?: string, operation?: string, created_by?: int|null}  $options
+     * @param  array<int, array{role:string, content:?string, tool_calls?:array, tool_call_id?:string, name?:string}>  $messages
+     * @param  array{temperature?: float, max_tokens?: int, system?: string, tools?: array, tool_choice?: mixed, channel?: string, operation?: string, created_by?: int|null}  $options
      */
     public function chatWithProvider(AiGatewayProvider $provider, ?AiGatewayModel $modelRecord, string $modelName, array $messages, array $options = []): array
     {
@@ -119,6 +119,8 @@ class AiGatewayService
                 'system' => $options['system'] ?? null,
                 'temperature' => $options['temperature'] ?? config('aigateway.default_temperature', 0.3),
                 'max_tokens' => $options['max_tokens'] ?? config('aigateway.default_max_tokens', 2048),
+                'tools' => $options['tools'] ?? null,
+                'tool_choice' => $options['tool_choice'] ?? null,
             ]);
         } catch (\Throwable $e) {
             $this->recordFailure($provider, $modelRecord, $modelName, $traceId, $options, $e);
@@ -169,6 +171,8 @@ class AiGatewayService
             'latency_ms' => $latencyMs,
             'trace_id' => $traceId,
             'raw' => $result['raw'],
+            'tool_calls' => $result['tool_calls'] ?? null,
+            'finish_reason' => $result['finish_reason'] ?? 'stop',
         ];
     }
 
@@ -177,8 +181,8 @@ class AiGatewayService
      * model, invoking $onDelta with each text chunk as it arrives. Records
      * usage + audit logs once the stream completes, same as chatWithProvider.
      *
-     * @param  array<int, array{role:string, content:string}>  $messages
-     * @param  array{temperature?: float, max_tokens?: int, system?: string, channel?: string, operation?: string, created_by?: int|null}  $options
+     * @param  array<int, array{role:string, content:?string, tool_calls?:array, tool_call_id?:string, name?:string}>  $messages
+     * @param  array{temperature?: float, max_tokens?: int, system?: string, tools?: array, tool_choice?: mixed, channel?: string, operation?: string, created_by?: int|null}  $options
      * @param  \Closure(string):void  $onDelta
      */
     public function chatStreamWithProvider(AiGatewayProvider $provider, ?AiGatewayModel $modelRecord, string $modelName, array $messages, array $options, \Closure $onDelta): array
@@ -193,6 +197,8 @@ class AiGatewayService
                 'system' => $options['system'] ?? null,
                 'temperature' => $options['temperature'] ?? config('aigateway.default_temperature', 0.3),
                 'max_tokens' => $options['max_tokens'] ?? config('aigateway.default_max_tokens', 2048),
+                'tools' => $options['tools'] ?? null,
+                'tool_choice' => $options['tool_choice'] ?? null,
             ], $onDelta);
         } catch (\Throwable $e) {
             $this->recordFailure($provider, $modelRecord, $modelName, $traceId, $options, $e);
@@ -243,6 +249,8 @@ class AiGatewayService
             'latency_ms' => $latencyMs,
             'trace_id' => $traceId,
             'raw' => $result['raw'],
+            'tool_calls' => $result['tool_calls'] ?? null,
+            'finish_reason' => $result['finish_reason'] ?? 'stop',
         ];
     }
 
@@ -250,8 +258,11 @@ class AiGatewayService
      * Perform a chat completion picking the provider automatically: tries
      * every active, non-cooldown model matching $modelName (any active
      * model if null) in weighted order, failing over to the next candidate
-     * when a provider hits a rate-limit/quota error. Other error types
-     * (auth, bad request) are not worth failing over and surface directly.
+     * whenever the current one returns an upstream error of any kind
+     * (rate-limit, auth, bad request, provider-side policy, ...) — the
+     * failing model is put in a short cooldown (skipped for a few minutes)
+     * so the next request doesn't retry it immediately either. Only a
+     * genuinely unexpected (non-gateway) exception aborts immediately.
      *
      * @param  array<int, array{role:string, content:string}>  $messages
      */
@@ -274,8 +285,8 @@ class AiGatewayService
             } catch (\Throwable $e) {
                 $lastException = $e;
 
-                if ($e instanceof Exceptions\AiGatewayException && $e->isRateLimitOrQuota()) {
-                    $modelRecord->recordFailure();
+                if ($e instanceof Exceptions\AiGatewayException) {
+                    $modelRecord->recordFailure($e->suggestedRetrySeconds());
 
                     continue;
                 }
@@ -291,7 +302,8 @@ class AiGatewayService
      * Streaming counterpart to chatAuto(). $onDelta may be invoked for a
      * candidate that ultimately fails over (partial output before the
      * failure) — callers should treat delta text as provisional until this
-     * call returns.
+     * call returns. Same blanket failover-on-any-upstream-error behavior
+     * as chatAuto() — see its docblock.
      *
      * @param  array<int, array{role:string, content:string}>  $messages
      * @param  \Closure(string):void  $onDelta
@@ -315,8 +327,8 @@ class AiGatewayService
             } catch (\Throwable $e) {
                 $lastException = $e;
 
-                if ($e instanceof Exceptions\AiGatewayException && $e->isRateLimitOrQuota()) {
-                    $modelRecord->recordFailure();
+                if ($e instanceof Exceptions\AiGatewayException) {
+                    $modelRecord->recordFailure($e->suggestedRetrySeconds());
 
                     continue;
                 }

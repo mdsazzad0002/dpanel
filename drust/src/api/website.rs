@@ -235,6 +235,10 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .unix_permissions(0o644);
+    // Directories need the execute bit or the extracted tree is unbrowsable
+    // (permission denied cd'ing in) for whoever unzips it — `options` above is
+    // file-only (0o644), so directories get their own mode.
+    let dir_options = options.unix_permissions(0o755);
     let owner = website.site_owner.as_deref().unwrap_or("");
     let system_uid = numeric_account_id("-u", owner);
     let system_gid = numeric_account_id("-g", owner);
@@ -277,13 +281,16 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     }
 
     if is_quick_files {
-        let source_path = normalize_path(if website.project_root.trim().is_empty() {
-            website.root_path.as_str()
-        } else {
+        // Quick export is scoped to this one website, so it must zip only its own
+        // docroot (root_path) — not project_root, which is the whole account home
+        // and would pull in sibling sites/other data sharing that account.
+        let source_path = normalize_path(if website.root_path.trim().is_empty() {
             website.project_root.as_str()
+        } else {
+            website.root_path.as_str()
         });
         if source_path.exists() && source_path.is_dir() {
-            add_dir(&mut writer, &source_path, "", options)?;
+            add_dir(&mut writer, &source_path, "", options, dir_options)?;
         }
     }
 
@@ -295,9 +302,9 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
         });
         if source_path.exists() && source_path.is_dir() {
             writer
-                .add_directory("homedir/public_html/", options)
+                .add_directory("homedir/public_html/", dir_options)
                 .map_err(|e| format!("failed to create homedir layout: {e}"))?;
-            add_dir(&mut writer, &source_path, "homedir/public_html", options)?;
+            add_dir(&mut writer, &source_path, "homedir/public_html", options, dir_options)?;
         }
     }
 
@@ -1037,6 +1044,7 @@ fn add_dir(
     source: &Path,
     zip_root: &str,
     options: SimpleFileOptions,
+    dir_options: SimpleFileOptions,
 ) -> Result<(), String> {
     if !source.exists() {
         return Ok(());
@@ -1070,12 +1078,12 @@ fn add_dir(
 
         if path.is_dir() {
             if writer
-                .add_directory(format!("{}/", archive_path), options)
+                .add_directory(format!("{}/", archive_path), dir_options)
                 .is_err()
             {
                 continue;
             }
-            add_dir(writer, &path, &archive_path, options)?;
+            add_dir(writer, &path, &archive_path, options, dir_options)?;
             continue;
         }
 
@@ -1101,12 +1109,17 @@ fn add_dir(
     Ok(())
 }
 
+// The archive doesn't store uid/gid, so a mode copied verbatim from the source
+// (e.g. 600/400 owned by root or another account) can leave the extracting user
+// unable to read/write their own files. Normalize instead: keep the executable
+// bit for scripts/binaries, otherwise use a standard owner-writable mode.
 #[cfg(unix)]
 fn file_permissions(path: &Path) -> Option<u32> {
     use std::os::unix::fs::PermissionsExt;
-    fs::metadata(path)
-        .ok()
-        .map(|meta| meta.permissions().mode() & 0o777)
+    fs::metadata(path).ok().map(|meta| {
+        let mode = meta.permissions().mode() & 0o777;
+        if mode & 0o100 != 0 { 0o755 } else { 0o644 }
+    })
 }
 
 #[cfg(not(unix))]

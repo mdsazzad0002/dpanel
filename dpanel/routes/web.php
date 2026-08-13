@@ -6,6 +6,8 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\DnsController;
 use App\Http\Controllers\EmailController;
+use App\Http\Controllers\Api\AiGatewayApiController;
+use App\Http\Controllers\AiGatewayApiKeyController;
 use App\Http\Controllers\AiGatewayController;
 use App\Http\Controllers\AiGatewayLogController;
 use App\Http\Controllers\AiGatewayModelController;
@@ -14,6 +16,7 @@ use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\MailPlanController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\MonitoringController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
 use App\Http\Controllers\PhpMyAdmin\PhpMyAdminController;
@@ -76,7 +79,23 @@ Route::post('/sso/webmail/consume', [SsoController::class, 'consumeWebmail'])
 
 Route::post('/telegram/webhook', [TelegramWebhookController::class, 'store'])
     ->name('telegram.webhook');
+
+// Deliberately outside the cpsess{token}/auth group — a quick-export download link
+// is meant to be shareable with someone who isn't logged into the panel at all.
+// The random, single-purpose downloadToken (see BackupController::quickExportDownload)
+// is the only credential; it's short-lived and tied to one file.
+Route::get('/quick-exports/download/{downloadToken}', [BackupController::class, 'quickExportDownload'])
+    ->middleware('throttle:30,1')
+    ->name('quick-exports.download');
 Route::post('/api/v1/alias', [RedisCacheController::class, 'aliasApiHandle'])->middleware('throttle:30,1')->name('api.alias');
+
+// External, OpenAI/OpenRouter-compatible AI Gateway API. Authenticated via
+// `Authorization: Bearer sk-ag-...` (see AiGatewayApiKeyController for issuing
+// keys), not the panel session — meant for use from outside the panel.
+Route::middleware(['ai_gateway.key', 'throttle:60,1'])->group(function (): void {
+    Route::get('/api/v1/models', [AiGatewayApiController::class, 'models'])->name('api.ai-gateway.models');
+    Route::post('/api/v1/chat/completions', [AiGatewayApiController::class, 'chatCompletions'])->name('api.ai-gateway.chat.completions');
+});
 Route::get('/telegram/webhook-url', [TelegramWebhookController::class, 'url'])
     ->name('telegram.webhook-url');
 
@@ -89,6 +108,17 @@ Route::prefix('cpsess{token}')
 
         Route::get('/search', [PanelSearchController::class, 'index'])
             ->name('panel.search');
+
+        Route::get('/notifications', [NotificationController::class, 'index'])
+            ->name('notifications.index');
+        Route::get('/notifications/{id}', [NotificationController::class, 'show'])
+            ->name('notifications.show');
+        Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead'])
+            ->name('notifications.read');
+        Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead'])
+            ->name('notifications.read-all');
+        Route::delete('/notifications', [NotificationController::class, 'destroyAll'])
+            ->name('notifications.clear');
 
         Route::middleware('auth')->group(function () {
             Route::redirect('/serverpanel', '/servers')
@@ -315,7 +345,12 @@ Route::prefix('cpsess{token}')
                     // Auto mode: gateway picks the provider automatically per model,
                     // with rate-limit failover across providers serving the same model.
                     Route::post('chat/send', [AiGatewayProviderController::class, 'chatAutoSend'])->name('ai-gateway.chat.auto.send');
-                    Route::post('chat/stream', [AiGatewayProviderController::class, 'chatAutoStream'])->name('ai-gateway.chat.auto.stream');
+                    // Shared by both the full-page playground (Chat.vue) and the
+                    // command-palette "Ask AI" modal — throttled since the palette
+                    // can now reach this same endpoint from anywhere in the panel.
+                    Route::post('chat/stream', [AiGatewayProviderController::class, 'chatAutoStream'])
+                        ->middleware('throttle:20,1')
+                        ->name('ai-gateway.chat.auto.stream');
                     Route::get('chat/history', [AiGatewayProviderController::class, 'chatHistoryIndexAuto'])->name('ai-gateway.chat.auto.history.index');
                     Route::post('chat/history', [AiGatewayProviderController::class, 'chatHistorySaveAuto'])->name('ai-gateway.chat.auto.history.save');
                     Route::get('chat/history/{session}', [AiGatewayProviderController::class, 'chatHistoryShowAuto'])->name('ai-gateway.chat.auto.history.show');
@@ -349,6 +384,17 @@ Route::prefix('cpsess{token}')
                     Route::get('logs', [AiGatewayLogController::class, 'index'])->name('ai-gateway.logs.index');
                     Route::get('logs/{log}', [AiGatewayLogController::class, 'show'])->name('ai-gateway.logs.show');
                     Route::delete('logs', [AiGatewayLogController::class, 'clear'])->name('ai-gateway.logs.clear');
+
+                    // API keys for the external, OpenAI/OpenRouter-compatible
+                    // /api/v1 endpoints (see below, outside the panel session).
+                    Route::get('api-keys', [AiGatewayApiKeyController::class, 'index'])->name('ai-gateway.api-keys.index');
+                    Route::post('api-keys', [AiGatewayApiKeyController::class, 'store'])->name('ai-gateway.api-keys.store');
+                    Route::patch('api-keys/{apiKey}/toggle', [AiGatewayApiKeyController::class, 'toggle'])->name('ai-gateway.api-keys.toggle');
+                    Route::post('api-keys/{apiKey}/regenerate', [AiGatewayApiKeyController::class, 'regenerate'])->name('ai-gateway.api-keys.regenerate');
+                    Route::delete('api-keys/{apiKey}', [AiGatewayApiKeyController::class, 'destroy'])->name('ai-gateway.api-keys.destroy');
+
+                    // API docs (how to call the external endpoints below)
+                    Route::get('docs', [AiGatewayController::class, 'docs'])->name('ai-gateway.docs');
                 });
 
             Route::get('/databases/create', [DatabaseController::class, 'create'])

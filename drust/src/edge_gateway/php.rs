@@ -101,8 +101,12 @@ pub async fn execute_php_front_controller(
             ));
         }
     }
+    // Most requests finish in milliseconds, but a few (website backup/quick-export,
+    // restore) block on a synchronous dRust archive call that can legitimately run
+    // for minutes on a large site/database. PHP-FPM's own request_terminate_timeout
+    // is disabled, so this wrapper is the only hard cap — keep it well above those.
     let (stdout, stderr) = timeout(
-        Duration::from_secs(60),
+        Duration::from_secs(3600),
         fastcgi_request(&socket, &params, &body),
     )
     .await

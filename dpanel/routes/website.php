@@ -65,6 +65,9 @@ Route::get('/websites/{id}/quick-export', [WebsiteOperationsController::class, '
 Route::post('/websites/{id}/quick-export', [BackupController::class, 'quickExport'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
     ->name('websites.quick-export');
+Route::get('/websites/{id}/quick-export/status/{exportId}', [BackupController::class, 'quickExportStatus'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.quick-export.status');
 Route::get('/websites/{id}/ip-rules', [WebsiteOperationsController::class, 'ipRules'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ip-rules.index');

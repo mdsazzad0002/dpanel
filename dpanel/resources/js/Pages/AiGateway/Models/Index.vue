@@ -20,7 +20,7 @@ const props = defineProps({
 
 const filteredProvider = props.providers.find((p) => p.id === props.providerFilter);
 
-const addForm = useForm({ provider_id: props.providerFilter || '', name: '', display_name: '', context_window: 0, max_output_tokens: 0, input_price: 0, output_price: 0, is_active: true });
+const addForm = useForm({ provider_id: props.providerFilter || '', name: '', display_name: '', context_window: 0, max_output_tokens: 0, is_active: true });
 const statusForm = useForm({});
 const delForm = useForm({});
 
@@ -81,8 +81,6 @@ const applyKnownModel = (form, suggestions) => {
     form.display_name = known.display_name || form.name;
     if (!form.context_window) form.context_window = known.context_window || 0;
     if (!form.max_output_tokens) form.max_output_tokens = known.max_output_tokens || 0;
-    if (!form.input_price) form.input_price = known.input_price ?? 0;
-    if (!form.output_price) form.output_price = known.output_price ?? 0;
 };
 
 const addModelInfo = computed(() => suggestionsFor(addForm.provider_id));
@@ -94,10 +92,9 @@ const add = () => addForm.post(panelRoute('ai-gateway.models.store'));
 const setDefault = (m) => statusForm.post(panelRoute('ai-gateway.models.default', { model: m.id }));
 const toggle = (m) => statusForm.patch(panelRoute('ai-gateway.models.update', { model: m.id }), { is_active: !m.is_active });
 const remove = (m) => { if (confirm(`Remove model "${m.name}"?`)) delForm.delete(panelRoute('ai-gateway.models.destroy', { model: m.id })); };
-const fmtPrice = (p) => `$${Number(p || 0).toFixed(2)}/1M`;
 
 const editingId = ref(null);
-const editForm = useForm({ provider_id: '', name: '', display_name: '', context_window: 0, max_output_tokens: 0, input_price: 0, output_price: 0 });
+const editForm = useForm({ provider_id: '', name: '', display_name: '', context_window: 0, max_output_tokens: 0 });
 const editModelInfo = computed(() => suggestionsFor(editForm.provider_id));
 const editSuggestions = computed(() => editModelInfo.value.models);
 const onEditModelInput = () => applyKnownModel(editForm, editSuggestions.value);
@@ -109,7 +106,14 @@ watch(() => editForm.provider_id, (id) => fetchRemoteModels(id));
 const pickerOpen = ref(false);
 const pickerTarget = ref('add');
 const pickerInfo = computed(() => (pickerTarget.value === 'edit' ? editModelInfo.value : addModelInfo.value));
-const pickerModels = computed(() => pickerInfo.value.models);
+const pickerSearch = ref('');
+const pickerModels = computed(() => {
+    const q = pickerSearch.value.trim().toLowerCase();
+    if (!q) return pickerInfo.value.models;
+    return pickerInfo.value.models.filter((m) =>
+        (m.name || '').toLowerCase().includes(q) || (m.display_name || '').toLowerCase().includes(q)
+    );
+});
 const pickerForm = computed(() => (pickerTarget.value === 'edit' ? editForm : addForm));
 
 const openPicker = (target) => {
@@ -117,6 +121,7 @@ const openPicker = (target) => {
     if (!form.provider_id) return;
 
     pickerTarget.value = target;
+    pickerSearch.value = '';
     pickerOpen.value = true;
     fetchRemoteModels(form.provider_id);
 };
@@ -130,8 +135,6 @@ const pickModel = (m) => {
     form.display_name = m.display_name || m.name;
     form.context_window = m.context_window || 0;
     form.max_output_tokens = m.max_output_tokens || 0;
-    form.input_price = m.input_price ?? 0;
-    form.output_price = m.output_price ?? 0;
     closePicker();
 };
 
@@ -144,8 +147,6 @@ const startEdit = (m) => {
     editForm.display_name = m.display_name || '';
     editForm.context_window = m.context_window || 0;
     editForm.max_output_tokens = m.max_output_tokens || 0;
-    editForm.input_price = m.input_price || 0;
-    editForm.output_price = m.output_price || 0;
 };
 
 const cancelEdit = () => {
@@ -168,7 +169,7 @@ const saveEdit = (m) => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">AI Models</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Model catalog with context limits and pricing per
+                <p class="text-sm text-slate-500 dark:text-slate-400">Model catalog with context limits per
                     provider.</p>
             </div>
         </template>
@@ -235,8 +236,6 @@ const saveEdit = (m) => {
                                 <th class="px-4 py-3 font-medium">Model</th>
                                 <th class="px-4 py-3 font-medium">Context</th>
                                 <th class="px-4 py-3 font-medium">Max Output</th>
-                                <th class="px-4 py-3 font-medium">Input $</th>
-                                <th class="px-4 py-3 font-medium">Output $</th>
                                 <th class="px-4 py-3 font-medium">Capabilities</th>
                                 <th class="px-4 py-3 font-medium">Default</th>
                                 <th class="px-4 py-3 text-right font-medium">Actions</th>
@@ -278,14 +277,6 @@ const saveEdit = (m) => {
                                         <input v-model.number="editForm.max_output_tokens" type="number"
                                             class="w-24 rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900" />
                                     </td>
-                                    <td class="px-4 py-3">
-                                        <input v-model.number="editForm.input_price" type="number" step="0.01"
-                                            class="w-20 rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900" />
-                                    </td>
-                                    <td class="px-4 py-3">
-                                        <input v-model.number="editForm.output_price" type="number" step="0.01"
-                                            class="w-20 rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900" />
-                                    </td>
                                     <td class="px-4 py-3 text-slate-500">{{ (m.capabilities || []).join(', ') || '—' }}</td>
                                     <td class="px-4 py-3">
                                         <button v-if="m.is_default"
@@ -308,8 +299,6 @@ const saveEdit = (m) => {
                                         m.context_window.toLocaleString() :
                                         '—' }}</td>
                                     <td class="px-4 py-3 text-slate-500">{{ m.max_output_tokens || '—' }}</td>
-                                    <td class="px-4 py-3 text-slate-500">{{ fmtPrice(m.input_price) }}</td>
-                                    <td class="px-4 py-3 text-slate-500">{{ fmtPrice(m.output_price) }}</td>
                                     <td class="px-4 py-3 text-slate-500">{{ (m.capabilities || []).join(', ') || '—' }}</td>
                                     <td class="px-4 py-3">
                                         <button v-if="m.is_default"
@@ -340,9 +329,14 @@ const saveEdit = (m) => {
                 <h2 class="text-sm font-semibold">Pick a model</h2>
                 <button @click="closePicker" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">&times;</button>
             </div>
+            <div class="border-b border-slate-200 px-5 py-2 dark:border-slate-700">
+                <input v-model="pickerSearch" type="text" placeholder="Search models…" autofocus
+                    class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
+            </div>
             <div class="max-h-96 overflow-y-auto px-2 py-2">
                 <div v-if="pickerInfo.loading" class="px-3 py-6 text-center text-sm text-slate-500">Loading models from provider…</div>
-                <div v-else-if="!pickerModels.length" class="px-3 py-6 text-center text-sm text-slate-500">No models found for this provider.</div>
+                <div v-else-if="!pickerInfo.models.length" class="px-3 py-6 text-center text-sm text-slate-500">No models found for this provider.</div>
+                <div v-else-if="!pickerModels.length" class="px-3 py-6 text-center text-sm text-slate-500">No models match "{{ pickerSearch }}".</div>
                 <table v-else class="w-full text-left text-sm">
                     <tbody>
                         <tr v-for="m in pickerModels" :key="m.name" @click="pickModel(m)"
@@ -358,6 +352,7 @@ const saveEdit = (m) => {
                 Showing local list — couldn't reach the provider.
             </div>
         </Modal>
+        
     </AuthenticatedLayout>
 </template>
 

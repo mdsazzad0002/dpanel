@@ -21,11 +21,11 @@ const message = ref('');
 const error = ref('');
 const choices = reactive({});
 const services = [
-    { id: 'cyberpanel-ssh', name: 'CyberPanel via SSH', description: 'Connect to CyberPanel and discover websites with their databases.', icon: 'bi bi-terminal', available: true, formats: 'SSH password or private key' },
+    { id: 'cyberpanel-ssh', name: 'CyberPanel / HestiaCP / aaPanel / Plesk via SSH', description: 'Connect over SSH and discover websites with their databases. Panel type is auto-detected.', icon: 'bi bi-terminal', available: true, formats: 'SSH password or private key' },
     { id: 'cpanel-full', name: 'cPanel Full Backup', description: 'Restore a complete cpmove account or selected resources.', icon: 'bi bi-server', available: true, formats: 'cpmove-USER.tar.gz, .tgz' },
     { id: 'cpanel-partial', name: 'cPanel Partial Backup', description: 'Import Home Directory, MySQL, or domain backups separately.', icon: 'bi bi-ui-checks-grid', available: false, formats: 'Coming soon' },
     { id: 'directadmin', name: 'DirectAdmin Backup', description: 'Migrate users and selected domains from DirectAdmin.', icon: 'bi bi-hdd-rack', available: false, formats: 'Coming soon' },
-    { id: 'plesk', name: 'Plesk Backup', description: 'Import subscriptions, websites, files, and databases.', icon: 'bi bi-boxes', available: false, formats: 'Coming soon' },
+    { id: 'plesk', name: 'Plesk Backup Archive', description: 'Import from an uploaded .tar Plesk backup file. For a live Plesk server, use CyberPanel / HestiaCP / aaPanel / Plesk via SSH above instead.', icon: 'bi bi-boxes', available: false, formats: 'Coming soon' },
     { id: 'wordpress', name: 'WordPress Migration', description: 'Import a WordPress archive and database package.', icon: 'bi bi-wordpress', available: false, formats: 'Coming soon' },
 ];
 const openService = (service) => {
@@ -119,9 +119,9 @@ const remove = async (item) => {
 </script>
 
 <template>
-  <Head :title="props.provider === 'cpanel' ? 'cPanel Migration' : props.provider === 'cyberpanel-ssh' ? 'CyberPanel SSH Migration' : 'Migration Import'" />
+  <Head :title="props.provider === 'cpanel' ? 'cPanel Migration' : props.provider === 'cyberpanel-ssh' ? 'CyberPanel / HestiaCP / aaPanel / Plesk SSH Migration' : 'Migration Import'" />
   <AuthenticatedLayout>
-    <template #header><h2 class="text-xl font-semibold text-slate-800 dark:text-slate-100">{{ props.provider === 'cpanel' ? 'cPanel Migration' : props.provider === 'cyberpanel-ssh' ? 'CyberPanel SSH Migration' : 'Migration Import' }}</h2></template>
+    <template #header><h2 class="text-xl font-semibold text-slate-800 dark:text-slate-100">{{ props.provider === 'cpanel' ? 'cPanel Migration' : props.provider === 'cyberpanel-ssh' ? 'CyberPanel / HestiaCP / aaPanel / Plesk SSH Migration' : 'Migration Import' }}</h2></template>
     <div class="mx-auto space-y-6 p-4 sm:p-6">
       <section v-if="!props.provider">
         <div class="mb-4"><h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Choose migration service</h3><p class="text-sm text-slate-500 dark:text-slate-400">Select where the backup came from and what kind of package you have.</p></div>

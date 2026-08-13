@@ -65,11 +65,21 @@ class AiGatewayModel extends Model
      * Record a rate-limit/quota failure: put the model in a short cooldown,
      * and once it has failed FAILURE_THRESHOLD times in a row, disable it
      * outright until an admin manually re-enables it.
+     *
+     * @param  ?int  $cooldownSeconds  When the provider told us how long to
+     *                                 wait (e.g. "try again in 7.725s"), pass
+     *                                 that instead of the blanket cooldown —
+     *                                 clamped to [5s, COOLDOWN_MINUTES] so a
+     *                                 short-lived TPM limit doesn't bench the
+     *                                 model for the full default window.
      */
-    public function recordFailure(): void
+    public function recordFailure(?int $cooldownSeconds = null): void
     {
         $this->failure_count += 1;
-        $this->cooldown_until = now()->addMinutes(self::COOLDOWN_MINUTES);
+        $seconds = $cooldownSeconds !== null
+            ? min(max($cooldownSeconds, 5), self::COOLDOWN_MINUTES * 60)
+            : self::COOLDOWN_MINUTES * 60;
+        $this->cooldown_until = now()->addSeconds($seconds);
 
         if ($this->failure_count >= self::FAILURE_THRESHOLD) {
             $this->is_active = false;

@@ -36,6 +36,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'telegram/webhook',
             'api/v1/alias',
+            'api/v1/chat/completions',
+            'api/v1/models',
         ]);
 
         $middleware->alias([
@@ -43,6 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+            'ai_gateway.key' => \App\Http\Middleware\AuthenticateAiGatewayApiKey::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

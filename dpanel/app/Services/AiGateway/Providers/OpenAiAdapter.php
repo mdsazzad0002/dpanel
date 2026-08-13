@@ -72,7 +72,7 @@ class OpenAiAdapter implements ProviderAdapter
         $base = rtrim($this->baseUrlFor($provider), '/');
 
         $system = $options['system'] ?? null;
-        $chatMessages = $messages;
+        $chatMessages = $this->normaliseMessages($messages);
 
         if ($system !== null && $system !== '' && ! collect($messages)->first(fn ($m) => $m['role'] === 'system')) {
             array_unshift($chatMessages, ['role' => 'system', 'content' => (string) $system]);
@@ -91,6 +91,14 @@ class OpenAiAdapter implements ProviderAdapter
             $body['max_tokens'] = (int) $options['max_tokens'];
         }
 
+        if (! empty($options['tools'])) {
+            $body['tools'] = $this->normaliseTools($options['tools']);
+
+            if (! empty($options['tool_choice'])) {
+                $body['tool_choice'] = $options['tool_choice'];
+            }
+        }
+
         $request = $this->requestFor($provider, $apiKey, $options['timeout'] ?? null);
 
         $response = $request->post($base.'/chat/completions', $body);
@@ -100,7 +108,8 @@ class OpenAiAdapter implements ProviderAdapter
         }
 
         $json = $response->json();
-        $content = $json['choices'][0]['message']['content'] ?? '';
+        $message = $json['choices'][0]['message'] ?? [];
+        $content = $message['content'] ?? '';
         $usage = $json['usage'] ?? [];
 
         return [
@@ -109,6 +118,8 @@ class OpenAiAdapter implements ProviderAdapter
             'output_tokens' => (int) ($usage['completion_tokens'] ?? 0),
             'model' => $json['model'] ?? $model,
             'raw' => $json,
+            'tool_calls' => $message['tool_calls'] ?? null,
+            'finish_reason' => $json['choices'][0]['finish_reason'] ?? 'stop',
         ];
     }
 
@@ -123,7 +134,7 @@ class OpenAiAdapter implements ProviderAdapter
         $base = rtrim($this->baseUrlFor($provider), '/');
 
         $system = $options['system'] ?? null;
-        $chatMessages = $messages;
+        $chatMessages = $this->normaliseMessages($messages);
 
         if ($system !== null && $system !== '' && ! collect($messages)->first(fn ($m) => $m['role'] === 'system')) {
             array_unshift($chatMessages, ['role' => 'system', 'content' => (string) $system]);
@@ -144,6 +155,14 @@ class OpenAiAdapter implements ProviderAdapter
             $body['max_tokens'] = (int) $options['max_tokens'];
         }
 
+        if (! empty($options['tools'])) {
+            $body['tools'] = $this->normaliseTools($options['tools']);
+
+            if (! empty($options['tool_choice'])) {
+                $body['tool_choice'] = $options['tool_choice'];
+            }
+        }
+
         $response = $this->requestFor($provider, $apiKey, $options['timeout'] ?? null)
             ->withOptions(['stream' => true])
             ->post($base.'/chat/completions', $body);
@@ -156,16 +175,40 @@ class OpenAiAdapter implements ProviderAdapter
         $inputTokens = 0;
         $outputTokens = 0;
         $finalModel = $model;
+        $finishReason = 'stop';
         $raw = [];
+        // Tool call arguments arrive as incremental string fragments, keyed
+        // by index — accumulated here and only exposed once complete.
+        $toolCalls = [];
 
-        $this->eachSseEvent($response, function (array $json) use (&$content, &$inputTokens, &$outputTokens, &$finalModel, &$raw, $onDelta): void {
+        $this->eachSseEvent($response, function (array $json) use (&$content, &$inputTokens, &$outputTokens, &$finalModel, &$finishReason, &$raw, &$toolCalls, $onDelta): void {
             $raw = $json;
             $finalModel = $json['model'] ?? $finalModel;
 
-            $delta = $json['choices'][0]['delta']['content'] ?? null;
+            $choice = $json['choices'][0] ?? [];
+            $delta = $choice['delta']['content'] ?? null;
             if ($delta !== null && $delta !== '') {
                 $content .= $delta;
                 $onDelta($delta);
+            }
+
+            foreach ($choice['delta']['tool_calls'] ?? [] as $tc) {
+                $i = $tc['index'] ?? 0;
+                $toolCalls[$i] ??= ['id' => '', 'type' => 'function', 'function' => ['name' => '', 'arguments' => '']];
+
+                if (! empty($tc['id'])) {
+                    $toolCalls[$i]['id'] = $tc['id'];
+                }
+                if (! empty($tc['function']['name'])) {
+                    $toolCalls[$i]['function']['name'] .= $tc['function']['name'];
+                }
+                if (isset($tc['function']['arguments'])) {
+                    $toolCalls[$i]['function']['arguments'] .= $tc['function']['arguments'];
+                }
+            }
+
+            if (! empty($choice['finish_reason'])) {
+                $finishReason = $choice['finish_reason'];
             }
 
             if (isset($json['usage'])) {
@@ -179,8 +222,35 @@ class OpenAiAdapter implements ProviderAdapter
             'input_tokens' => $inputTokens,
             'output_tokens' => $outputTokens,
             'model' => $finalModel,
+            'tool_calls' => $toolCalls !== [] ? array_values($toolCalls) : null,
+            'finish_reason' => $finishReason,
             'raw' => $raw,
         ];
+    }
+
+    /**
+     * The wire format requires "type": "function" on every tool — default
+     * it in rather than trust it survived request validation/the caller.
+     */
+    private function normaliseTools(array $tools): array
+    {
+        return array_map(fn (array $t): array => $t + ['type' => 'function'], $tools);
+    }
+
+    /**
+     * Same defaulting as normaliseTools(), but for the "type": "function"
+     * OpenAI requires on each entry of an assistant message's tool_calls
+     * when it's echoed back in a follow-up request.
+     */
+    private function normaliseMessages(array $messages): array
+    {
+        return array_map(function (array $m): array {
+            if (! empty($m['tool_calls'])) {
+                $m['tool_calls'] = array_map(fn (array $tc): array => $tc + ['type' => 'function'], $m['tool_calls']);
+            }
+
+            return $m;
+        }, $messages);
     }
 
     /**

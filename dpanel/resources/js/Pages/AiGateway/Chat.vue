@@ -112,7 +112,6 @@ const newChat = () => {
 };
 
 const onProviderChange = () => {
-    newChat();
     model.value = MODEL_AUTO;
     loadHistory();
 };

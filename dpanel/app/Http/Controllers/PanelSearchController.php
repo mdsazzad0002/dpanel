@@ -17,8 +17,23 @@ class PanelSearchController extends Controller
         $limit = max(1, min(20, (int) $request->query('limit', 12)));
 
         return response()->json([
-            'items' => $this->filterItems($this->buildItems($request), $query, $limit),
+            'items' => $this->matches($request, $query, $limit),
         ]);
+    }
+
+    /**
+     * Public wrapper around the same nav+website index/filter/scoring this
+     * controller's own index() uses — reused by the AI assistant (see
+     * AiGatewayProviderController::withAssistantPersona()) so it can ground
+     * "search"-type answers in the actual, permission-scoped panel index
+     * instead of guessing, and point to a real predefined page/link rather
+     * than describing a change it has no ability to make itself.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function matches(Request $request, string $query, int $limit = 12): array
+    {
+        return $this->filterItems($this->buildItems($request), trim($query), max(1, min(20, $limit)));
     }
 
     /**

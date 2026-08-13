@@ -39,6 +39,10 @@ class HandleInertiaRequests extends Middleware
 
         return [
             ...parent::share($request),
+            'app' => [
+                'name' => config('app.name'),
+                'version' => config('app.version'),
+            ],
             'panel' => [
                 'token' => $panelToken,
                 'domain' => config('serverpanel.panel_domain'),

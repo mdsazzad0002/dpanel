@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
@@ -15,13 +15,25 @@ const panelRoute = (name, params = {}) => (
 );
 const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '');
 
+const databases = computed(() => props.databaseConnection?.databases || []);
+const hasMultipleDatabases = computed(() => databases.value.length > 1);
+
 const exportFiles = ref(true);
-const exportDatabase = ref(Boolean(props.databaseConnection?.available));
-const exportProgress = ref(0);
+// Single-database sites keep the old one-click behavior (pre-checked); with
+// several databases linked to the same domain, nothing is pre-selected —
+// the user must explicitly choose which one(s) to export.
+const selectedDatabaseIds = ref(databases.value.length === 1 ? [databases.value[0].id] : []);
+// When checked, each step's download starts by itself the moment its link is
+// ready. The per-step Download button stays available either way, so a
+// blocked/missed auto-download can always be retried by hand.
+const autoDownload = ref(true);
+
 const exportPhase = ref('select');
 const exportLoading = ref(false);
 const activeExportItems = ref([]);
-const exportItemStatus = ref({});
+// Per-item state, keyed by item.key: stage ('pending'|'preparing'|'zipping'|'ready'|'downloaded'|'error'),
+// downloadUrl (set once the server responds), and message (error detail).
+const itemState = ref({});
 const toasts = ref([]);
 let toastSeq = 0;
 
@@ -33,120 +45,164 @@ const pushToast = (message, type = 'success') => {
     }, 4000);
 };
 
-const exportItemLabel = (type) => (type === 'database' ? 'SQL database' : 'Website files');
-const exportStatusLabel = (type, status) => {
-    const label = exportItemLabel(type);
-    switch (status) {
-        case 'preparing': return `Preparing ${label}…`;
-        case 'zipping': return `Creating ZIP for ${label}…`;
-        case 'downloading': return `Downloading ${label}…`;
-        case 'done': return `${label} downloaded`;
-        case 'error': return `${label} failed`;
-        default: return `${label} queued`;
+const exportItemLabel = (item) => (item.type === 'database' ? `SQL — ${item.databaseName}` : 'Website files');
+const stepStatusText = (item) => {
+    const state = itemState.value[item.key] || {};
+    switch (state.stage) {
+        case 'queued': return 'Step 1/2 — queued…';
+        case 'zipping': return 'Step 1/2 — preparing (zip/dump running in the background)…';
+        case 'ready': return 'Step 2/2 — download link generated';
+        case 'downloaded': return 'Download started';
+        case 'error': return state.message || 'Failed';
+        default: return 'Queued';
     }
 };
-const currentExportStatusText = computed(() => {
-    if (exportPhase.value === 'complete') return 'All selected items downloaded';
-    if (exportPhase.value === 'error') {
-        const failed = activeExportItems.value.find((type) => exportItemStatus.value[type] === 'error');
-        return failed ? exportStatusLabel(failed, 'error') : 'Export failed';
-    }
-    const inProgress = activeExportItems.value.find((type) => !['done', 'error'].includes(exportItemStatus.value[type]));
-    return inProgress ? exportStatusLabel(inProgress, exportItemStatus.value[inProgress]) : 'Preparing…';
-});
+
+let statusPollTimer = null;
+
+const stopStatusPolling = () => {
+    window.clearInterval(statusPollTimer);
+    statusPollTimer = null;
+};
 
 const resetExport = () => {
-    exportProgress.value = 0;
+    stopStatusPolling();
     exportPhase.value = 'select';
     activeExportItems.value = [];
-    exportItemStatus.value = {};
+    itemState.value = {};
+};
+
+onUnmounted(() => {
+    // Leaving the page stops polling — the export itself keeps running on the
+    // queue worker regardless, and a Notification covers completion/failure
+    // for whoever isn't watching this page anymore.
+    stopStatusPolling();
+});
+
+const triggerDownload = (item) => {
+    const url = itemState.value[item.key]?.downloadUrl;
+    if (!url) return;
+    // Plain same-origin navigation: the browser sends the session cookie itself
+    // and handles the download natively, instead of buffering the whole file as a JS blob.
+    const link = document.createElement('a');
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    itemState.value[item.key].stage = 'downloaded';
+};
+
+const copyDownloadLink = async (item) => {
+    const url = itemState.value[item.key]?.downloadUrl;
+    if (!url) return;
+    try {
+        await navigator.clipboard.writeText(url);
+        pushToast('Link copied to clipboard.');
+    } catch {
+        pushToast('Could not copy the link — copy it manually.', 'error');
+    }
+};
+
+// One shared 5s poll drives every still-running item's status. Runs only while
+// this page is open — the job itself is already running on the queue worker
+// independently, so closing the tab doesn't stop or lose the export; the
+// Notification bell picks up completion/failure instead.
+const pollExportStatuses = async () => {
+    const pending = activeExportItems.value.filter((item) => ['queued', 'zipping'].includes(itemState.value[item.key]?.stage));
+    if (pending.length === 0) {
+        stopStatusPolling();
+        return;
+    }
+
+    for (const item of pending) {
+        const exportId = itemState.value[item.key]?.exportId;
+        if (!exportId) continue;
+
+        try {
+            const response = await fetch(panelRoute('websites.quick-export.status', { id: props.website.id, exportId }), {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.ok) continue;
+
+            if (data.stage === 'ready') {
+                itemState.value[item.key].downloadUrl = data.download_url;
+                itemState.value[item.key].stage = 'ready';
+                if (autoDownload.value) {
+                    triggerDownload(item);
+                }
+            } else if (data.stage === 'failed') {
+                itemState.value[item.key].stage = 'error';
+                itemState.value[item.key].message = data.message || `Failed to export ${exportItemLabel(item)}.`;
+                pushToast(itemState.value[item.key].message, 'error');
+            } else if (data.stage) {
+                itemState.value[item.key].stage = data.stage;
+            }
+        } catch {
+            // Network hiccup — leave the item's stage as-is, next tick retries.
+        }
+    }
+
+    const stillRunning = activeExportItems.value.some((item) => ['queued', 'zipping'].includes(itemState.value[item.key]?.stage));
+    if (!stillRunning) {
+        stopStatusPolling();
+        exportLoading.value = false;
+        const anyFailed = activeExportItems.value.some((item) => itemState.value[item.key]?.stage === 'error');
+        exportPhase.value = anyFailed ? 'error' : 'complete';
+        if (!anyFailed) {
+            pushToast(autoDownload.value ? 'All downloads started.' : 'All links are ready — click Download on each step.', 'success');
+        }
+    }
 };
 
 const quickExport = async () => {
-    if (exportLoading.value || (!exportFiles.value && !exportDatabase.value)) return;
+    if (exportLoading.value || (!exportFiles.value && selectedDatabaseIds.value.length === 0)) return;
 
     const queue = [];
-    if (exportDatabase.value) queue.push('database');
-    if (exportFiles.value) queue.push('files');
+    if (exportFiles.value) queue.push({ type: 'files', key: 'files' });
+    selectedDatabaseIds.value.forEach((databaseId) => {
+        const database = databases.value.find((entry) => entry.id === databaseId);
+        queue.push({ type: 'database', databaseId, databaseName: database?.database_name || 'database', key: `database:${databaseId}` });
+    });
 
     activeExportItems.value = queue;
-    exportItemStatus.value = Object.fromEntries(queue.map((type) => [type, 'pending']));
+    itemState.value = Object.fromEntries(queue.map((item) => [item.key, { stage: 'queued', exportId: null, downloadUrl: null, message: '' }]));
     exportLoading.value = true;
     exportPhase.value = 'running';
-    exportProgress.value = 0;
 
-    const segment = 100 / queue.length;
-    let downloadedCount = 0;
-
-    for (let index = 0; index < queue.length; index += 1) {
-        const type = queue[index];
-        const base = index * segment;
-        exportItemStatus.value[type] = 'preparing';
-        exportProgress.value = Math.round(base + segment * 0.15);
-
-        let zipTimer = null;
-        if (type === 'files') {
-            zipTimer = window.setTimeout(() => {
-                exportItemStatus.value[type] = 'zipping';
-                exportProgress.value = Math.round(base + segment * 0.55);
-            }, 500);
-        }
-
+    // Fire off every selected item's job immediately — each one just enqueues
+    // and returns, so there's no reason to wait for one before starting the next.
+    await Promise.all(queue.map(async (item) => {
         try {
             const response = await fetch(panelRoute('websites.quick-export', { id: props.website.id }), {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {
-                    Accept: 'application/zip, application/sql, application/json',
+                    Accept: 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                     'X-CSRF-TOKEN': csrfToken.value,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ type }),
+                body: JSON.stringify(item.type === 'database' ? { type: 'database', database_id: item.databaseId } : { type: 'files' }),
             });
 
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data.message || `Failed to export ${exportItemLabel(type)}.`);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.ok || !data.export_id) {
+                throw new Error(data.message || `Failed to queue export for ${exportItemLabel(item)}.`);
             }
 
-            const disposition = response.headers.get('Content-Disposition') || '';
-            const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-            const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
-            const fallbackExt = type === 'database' ? 'sql' : 'zip';
-            const fileName = encodedName ? decodeURIComponent(encodedName) : (plainName || `${props.website.domain}-${type}-export.${fallbackExt}`);
-            const blob = await response.blob();
-
-            window.clearTimeout(zipTimer);
-            exportItemStatus.value[type] = 'downloading';
-            exportProgress.value = Math.round(base + segment * 0.9);
-
-            const downloadUrl = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = downloadUrl;
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(downloadUrl);
-
-            exportItemStatus.value[type] = 'done';
-            downloadedCount += 1;
-            exportProgress.value = Math.round((index + 1) * segment);
+            itemState.value[item.key].exportId = data.export_id;
         } catch (error) {
-            window.clearTimeout(zipTimer);
-            exportItemStatus.value[type] = 'error';
-            exportPhase.value = 'error';
-            pushToast(error?.message || `Failed to export ${exportItemLabel(type)}.`, 'error');
-            exportLoading.value = false;
-            return;
+            itemState.value[item.key].stage = 'error';
+            itemState.value[item.key].message = error?.message || `Failed to queue export for ${exportItemLabel(item)}.`;
+            pushToast(itemState.value[item.key].message, 'error');
         }
-    }
+    }));
 
-    exportProgress.value = 100;
-    exportPhase.value = 'complete';
-    exportLoading.value = false;
-    pushToast(`${downloadedCount} file${downloadedCount === 1 ? '' : 's'} downloaded separately.`, 'success');
+    stopStatusPolling();
+    statusPollTimer = window.setInterval(pollExportStatuses, 5000);
+    pollExportStatuses();
 };
 </script>
 
@@ -158,6 +214,7 @@ const quickExport = async () => {
                 <div>
                     <h1 class="text-lg font-semibold">Quick Export</h1>
                     <p class="text-sm text-slate-500">{{ website.domain }} — each selected item downloads separately</p>
+                    <p class="mt-0.5 text-xs text-slate-400">Runs in the background — stay on this page to watch live progress, or check the notification bell later.</p>
                 </div>
                 <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
                     <i class="bi bi-arrow-left mr-1"></i> Website dashboard
@@ -165,7 +222,7 @@ const quickExport = async () => {
             </div>
         </template>
 
-        <div class="mx-auto max-w-2xl space-y-6 p-4 sm:p-6">
+        <div class="mx-auto  space-y-6 p-4 sm:p-6">
             <section class="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <div class="grid gap-3 sm:grid-cols-2">
                     <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
@@ -175,40 +232,80 @@ const quickExport = async () => {
                             <span class="mt-1 block text-xs text-slate-500">Downloads as its own ZIP</span>
                         </span>
                     </label>
-                    <label class="flex items-start gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700" :class="databaseConnection.available ? 'cursor-pointer' : 'cursor-not-allowed opacity-55'">
-                        <input v-model="exportDatabase" type="checkbox" :disabled="exportLoading || !databaseConnection.available" class="mt-0.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
+
+                    <label v-if="!hasMultipleDatabases" class="flex items-start gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700" :class="databaseConnection.available ? 'cursor-pointer' : 'cursor-not-allowed opacity-55'">
+                        <input v-model="selectedDatabaseIds" :value="databases[0]?.id" type="checkbox" :disabled="exportLoading || !databaseConnection.available" class="mt-0.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
                         <span>
                             <span class="block text-sm font-semibold text-slate-800 dark:text-slate-100">SQL database</span>
                             <span class="mt-1 block text-xs text-slate-500">{{ databaseConnection.available ? `Downloads as its own .sql file (${databaseConnection.database_name})` : 'No active database linked' }}</span>
                         </span>
                     </label>
-                </div>
 
-                <div v-if="exportLoading || exportPhase === 'complete' || exportPhase === 'error'" class="mt-5 space-y-4">
-                    <div>
-                        <div class="mb-2 flex justify-between text-xs font-medium text-slate-500">
-                            <span>{{ currentExportStatusText }}</span>
-                            <span>{{ exportProgress }}%</span>
-                        </div>
-                        <div class="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                            <div class="h-full rounded-full transition-all duration-500" :class="exportPhase === 'error' ? 'bg-red-500' : 'bg-violet-600'" :style="{ width: `${exportProgress}%` }"></div>
+                    <div v-else class="rounded-xl border border-slate-200 p-4 dark:border-slate-700 sm:col-span-2">
+                        <span class="block text-sm font-semibold text-slate-800 dark:text-slate-100">SQL databases</span>
+                        <span class="mt-1 block text-xs text-slate-500">Multiple databases are linked to this domain — pick which ones to export (each downloads as its own .sql file)</span>
+                        <div class="mt-3 space-y-2">
+                            <label v-for="database in databases" :key="database.id" class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
+                                <input v-model="selectedDatabaseIds" :value="database.id" type="checkbox" :disabled="exportLoading" class="rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
+                                <span class="text-sm text-slate-700 dark:text-slate-200">{{ database.database_name }}</span>
+                            </label>
                         </div>
                     </div>
-                    <ol class="space-y-2 text-sm">
-                        <li v-for="type in activeExportItems" :key="type" class="flex items-center gap-2" :class="exportItemStatus[type] === 'done' ? 'text-emerald-600' : exportItemStatus[type] === 'error' ? 'text-red-600' : 'text-slate-500'">
-                            <i :class="exportItemStatus[type] === 'done' ? 'bi bi-check-circle-fill' : exportItemStatus[type] === 'error' ? 'bi bi-x-circle-fill' : 'bi bi-circle'"></i>
-                            {{ exportStatusLabel(type, exportItemStatus[type]) }}
-                        </li>
-                    </ol>
                 </div>
 
-                <p v-if="!exportFiles && !exportDatabase" class="mt-4 text-sm text-red-600">Select at least one item to export.</p>
+                <label class="mt-4 flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <input v-model="autoDownload" type="checkbox" class="rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
+                    Auto download when a link is ready
+                </label>
+
+                <div v-if="exportPhase === 'running' || exportPhase === 'complete' || exportPhase === 'error'" class="mt-5 space-y-3">
+                    <div v-for="(item, index) in activeExportItems" :key="item.key" class="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                    <i v-if="itemState[item.key]?.stage === 'downloaded'" class="bi bi-check-circle-fill text-emerald-600"></i>
+                                    <i v-else-if="itemState[item.key]?.stage === 'error'" class="bi bi-x-circle-fill text-red-600"></i>
+                                    <i v-else-if="['queued', 'zipping'].includes(itemState[item.key]?.stage)" class="bi bi-arrow-repeat animate-spin text-violet-600"></i>
+                                    <i v-else class="bi bi-circle text-slate-400"></i>
+                                    <span>Step {{ index + 1 }} — {{ exportItemLabel(item) }}</span>
+                                </div>
+                                <p class="mt-1 text-xs" :class="itemState[item.key]?.stage === 'error' ? 'text-red-600' : 'text-slate-500'">
+                                    {{ stepStatusText(item) }}
+                                </p>
+                            </div>
+                            <div v-if="itemState[item.key]?.downloadUrl" class="flex shrink-0 items-center gap-2">
+                                <button
+                                    type="button"
+                                    class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                                    @click="copyDownloadLink(item)"
+                                >
+                                    <i class="bi bi-clipboard mr-1"></i>Copy link
+                                </button>
+                                <button
+                                    type="button"
+                                    class="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700"
+                                    @click="triggerDownload(item)"
+                                >
+                                    {{ itemState[item.key]?.stage === 'downloaded' ? 'Download again' : 'Download' }}
+                                </button>
+                            </div>
+                        </div>
+                        <a v-if="itemState[item.key]?.downloadUrl" :href="itemState[item.key].downloadUrl" class="mt-2 block break-all text-xs text-blue-600 hover:underline dark:text-blue-400">
+                            {{ itemState[item.key].downloadUrl }}
+                        </a>
+                        <p v-if="itemState[item.key]?.downloadUrl" class="mt-1 text-[11px] text-slate-400">
+                            Link stays valid for 3 hours — no panel login needed, so it's safe to share with anyone.
+                        </p>
+                    </div>
+                </div>
+
+                <p v-if="!exportFiles && selectedDatabaseIds.length === 0" class="mt-4 text-sm text-red-600">Select at least one item to export.</p>
 
                 <div class="mt-5 flex justify-end gap-3">
                     <button v-if="exportPhase === 'complete' || exportPhase === 'error'" type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 dark:border-slate-600 dark:text-slate-200" @click="resetExport">
                         Export again
                     </button>
-                    <button v-else type="button" :disabled="exportLoading || (!exportFiles && !exportDatabase)" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50" @click="quickExport">
+                    <button v-else type="button" :disabled="exportLoading || (!exportFiles && selectedDatabaseIds.length === 0)" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50" @click="quickExport">
                         {{ exportLoading ? 'Preparing…' : 'Prepare & Download Selected' }}
                     </button>
                 </div>

@@ -45,4 +45,23 @@ class AiGatewayException extends RuntimeException
 
         return (bool) preg_match('/rate.?limit|quota|insufficient.{0,20}credit|too many requests/i', $this->getMessage());
     }
+
+    /**
+     * How many seconds the provider itself said to wait before retrying
+     * (e.g. Groq/OpenAI's "Please try again in 7.725s"), if it said so.
+     * Used to give a short, precise cooldown instead of a blanket one when
+     * the provider tells us it'll recover quickly.
+     */
+    public function suggestedRetrySeconds(): ?int
+    {
+        if (preg_match('/try again in\s+([\d.]+)\s*s\b/i', $this->getMessage(), $m)) {
+            return (int) ceil((float) $m[1]);
+        }
+
+        if (preg_match('/retry.?after[:\s]+([\d.]+)/i', $this->getMessage(), $m)) {
+            return (int) ceil((float) $m[1]);
+        }
+
+        return null;
+    }
 }

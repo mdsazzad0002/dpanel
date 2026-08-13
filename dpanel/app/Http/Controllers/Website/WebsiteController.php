@@ -297,19 +297,23 @@ class WebsiteController extends Controller
     public function quickExportPage(string $token, string $id): Response
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
-        $databaseRequest = DatabaseRequest::query()
+        $databaseRequests = DatabaseRequest::query()
             ->visibleTo(request()->user())
             ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
             ->where('status', 'active')
             ->latest()
-            ->first();
+            ->get();
 
         return Inertia::render('Websites/QuickExport', [
             'website' => $website,
             'databaseConnection' => [
-                'available' => $databaseRequest !== null,
-                'database_name' => $databaseRequest?->database_name,
-                'status' => $databaseRequest?->status,
+                'available' => $databaseRequests->isNotEmpty(),
+                'database_name' => $databaseRequests->first()?->database_name,
+                'status' => $databaseRequests->first()?->status,
+                'databases' => $databaseRequests->map(fn (DatabaseRequest $database): array => [
+                    'id' => $database->id,
+                    'database_name' => $database->database_name,
+                ])->values()->all(),
             ],
         ]);
     }

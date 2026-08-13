@@ -13,6 +13,14 @@ const accountSummary = computed(() => page.props.accountSummary ?? {});
 const canViewServerUsage = computed(() => page.props.canViewServerUsage === true);
 const userRoles = computed(() => page.props.auth?.roles ?? []);
 const userPermissions = computed(() => page.props.auth?.permissions ?? []);
+const userEmail = computed(() => page.props.auth?.user?.email ?? '');
+
+// TODO: replace with the real GitHub repo / company / docs URLs.
+const headerLinks = [
+    { label: 'GitHub', hint: 'View the source repo', href: 'https://github.com/mdsazzad0002/dpanel', icon: 'bi-github', color: 'bg-slate-800 text-white dark:bg-slate-700' },
+    { label: 'Company', hint: 'Visit our website', href: 'https://dengrweb.com', icon: 'bi-building', color: 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300' },
+    { label: 'Docs', hint: 'Read the documentation', href: 'https://dpanel.dengrweb.com', icon: 'bi-file-earmark-text', color: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300' },
+];
 
 const selectedService = ref(null);
 
@@ -203,7 +211,39 @@ const categoryColors = {
 
             <div class="grid grid-cols-1 items-start gap-6 md:grid-cols-12">
             <!-- Account package and usage -->
-            <aside class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 md:col-span-4 md:col-start-9 md:row-span-3 md:row-start-1 xl:col-span-3 xl:col-start-10">
+            <div class="flex flex-col gap-3 md:col-span-4 md:col-start-9 md:row-span-3 md:row-start-1 xl:col-span-3 xl:col-start-10">
+                <div class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                    <div class="divide-y divide-slate-100 dark:divide-slate-800">
+                        <a
+                            v-for="link in headerLinks"
+                            :key="link.label"
+                            :href="link.href"
+                            target="_blank"
+                            rel="noopener"
+                            class="group flex items-center gap-3 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                        >
+                            <span :class="['flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105', link.color]">
+                                <i :class="['bi', link.icon]"></i>
+                            </span>
+                            <span class="min-w-0 flex-1">
+                                <span class="block truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{{ link.label }}</span>
+                                <span class="block truncate text-xs text-slate-500 dark:text-slate-400">{{ link.hint }}</span>
+                            </span>
+                            <i class="bi bi-box-arrow-up-right shrink-0 text-xs text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 dark:text-slate-600"></i>
+                        </a>
+                    </div>
+                    <div v-if="userEmail" class="flex items-center gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/70">
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300">
+                            <i class="bi bi-envelope"></i>
+                        </span>
+                        <div class="min-w-0">
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Signed in as</p>
+                            <p class="truncate text-sm font-semibold text-slate-900 dark:text-white">{{ userEmail }}</p>
+                        </div>
+                    </div>
+                </div>
+
+            <aside class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
                 <div class="space-y-3 border-b border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-700 dark:bg-slate-800/70">
                     <div>
                         <p class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{{ accountSummary.scope }}</p>
@@ -254,6 +294,7 @@ const categoryColors = {
                     </div>
                 </div>
             </aside>
+            </div>
 
             <!-- Stats Cards (3 items) -->
             <section v-if="canViewServerUsage" class="grid gap-4 sm:grid-cols-3 md:col-span-8 md:col-start-1 md:row-start-1 xl:col-span-9">
