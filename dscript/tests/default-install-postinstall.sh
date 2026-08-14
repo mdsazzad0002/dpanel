@@ -33,6 +33,7 @@ export DPANEL_DUAL_LAUNCHER="$TEST_ROOT/bin/dpanel"
 export DRUST_API_TOKEN="demo-token"
 export PANEL_DOMAIN="installer.localhost"
 export PANEL_PORT="80"
+export PANEL_MAIL_SERVER_IP="203.0.113.25"
 
 # shellcheck disable=SC1091
 source "$ROOT/bootstrap/core.sh"
@@ -61,6 +62,10 @@ if ! grep -q '^SERVERPANEL_EXECUTION_API_TOKEN=demo-token$' "$TEST_ROOT/app/.env
 fi
 if ! grep -q '^PHPMYADMIN_URL=http://installer.localhost/phpmyadmin/$' "$TEST_ROOT/app/.env"; then
   echo 'missing PHPMYADMIN_URL' >&2
+  exit 1
+fi
+if ! grep -q '^SERVERPANEL_MAIL_SERVER_IP=203.0.113.25$' "$TEST_ROOT/app/.env"; then
+  echo 'missing SERVERPANEL_MAIL_SERVER_IP' >&2
   exit 1
 fi
 if [[ ! -f "$TEST_ROOT/marker" ]]; then

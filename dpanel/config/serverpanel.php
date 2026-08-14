@@ -5,6 +5,7 @@ return [
     'panel_domain' => env('PANEL_DOMAIN', ''),
     'panel_port' => (int) env('PANEL_PORT'),
     'mail' => [
+        'server_ip' => env('SERVERPANEL_MAIL_SERVER_IP', ''),
         'dkim_selector' => env('SERVERPANEL_DKIM_SELECTOR', 'default'),
         'dkim_domain' => env('SERVERPANEL_DKIM_DOMAIN', ''),
         'dkim_public_key' => env('SERVERPANEL_DKIM_PUBLIC_KEY', ''),
@@ -54,6 +55,10 @@ return [
     'edge_gateway_internal_url' => env('DRUST_EDGE_GATEWAY_INTERNAL_URL', 'http://127.0.0.1'),
     'edge_gateway_reload_channel' => env('DRUST_REDIS_RELOAD_CHANNEL', 'edge:reload'),
     'execution_api_upload_timeout' => (int) env('SERVERPANEL_EXECUTION_API_UPLOAD_TIMEOUT', 3600),
+    'ftp' => [
+        'port' => (int) env('SERVERPANEL_FTP_PORT', 21),
+        'tls' => (bool) env('SERVERPANEL_FTP_TLS', true),
+    ],
     'php_versions' => [
         '7.4',
         '8.0',

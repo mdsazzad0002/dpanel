@@ -69,8 +69,8 @@ dscript_chain_help() {
   cat <<'EOF'
 Usage: dpanel chain <install|update|verify|repair> [module,...]
 
-install   Install modules in order. Default: php,mariadb,ssl,supervisor,firewall,fail2ban.
-          supervisor,firewall,fail2ban.
+install   Install modules in order. Default:
+          php,mariadb,redis,ssl,supervisor,queue,firewall,fail2ban.
 update    Refresh the remote manifest and update changed modules.
 verify    Run read-only repository, dependency and runtime checks.
 repair    Apply safe local repairs, then verify again.
@@ -78,7 +78,7 @@ repair    Apply safe local repairs, then verify again.
 Module lists may be comma-separated or space-separated. Examples:
   sudo dpanel chain install php
 Useful environment variables: PANEL_MODULES, SKIP_FIREWALL, SKIP_SSL,
-SKIP_TEST, PANEL_DOMAIN, PANEL_PORT and DPANEL_BASE_URL.
+SKIP_TEST, PANEL_DOMAIN, PANEL_PORT, PANEL_MAIL_SERVER_IP and DPANEL_BASE_URL.
 EOF
 }
 
@@ -385,7 +385,7 @@ dscript_run_chain() {
         export PANEL_MODULES
       fi
       if [[ "$DSCRIPT_DRY_RUN" == "true" ]]; then
-        printf '[DRY-RUN] chain install: %s\n' "${PANEL_MODULES:-php,mariadb,ssl,supervisor,firewall,fail2ban}"
+        printf '[DRY-RUN] chain install: %s\n' "${PANEL_MODULES:-php,mariadb,redis,ssl,supervisor,queue,firewall,fail2ban}"
       else
         PANEL_BOOTSTRAP_MODE=install panel_bootstrap
       fi

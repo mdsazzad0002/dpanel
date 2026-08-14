@@ -3,18 +3,48 @@
 namespace App\Services\Mail;
 
 use App\Models\Mailbox;
+use App\Models\MailboxMessageMetadata;
+use App\Models\MailboxSyncState;
 use RuntimeException;
 
 class MailboxImapService
 {
+    /**
+     * Return the last database snapshot without opening an IMAP connection.
+     *
+     * @return array{folders: array<int, array<string, mixed>>, messages: array<int, array<string, mixed>>, message: null}|null
+     */
+    public function cachedMailbox(Mailbox $mailbox, string $folder = 'INBOX', int $limit = 40): ?array
+    {
+        $state = MailboxSyncState::query()
+            ->where('mailbox_id', $mailbox->id)
+            ->where('folder', $folder)
+            ->whereNotNull('folders_synced_at')
+            ->first();
+        if (! $state || ! is_array($state->folders)) {
+            return null;
+        }
+
+        $messages = MailboxMessageMetadata::query()
+            ->where('mailbox_id', $mailbox->id)
+            ->where('folder', $folder)
+            ->orderByDesc('uid')
+            ->limit(max(1, $limit))
+            ->get()
+            ->map(fn (MailboxMessageMetadata $metadata): array => $this->metadataRow($metadata))
+            ->all();
+
+        return ['folders' => $state->folders, 'messages' => $messages, 'message' => null];
+    }
+
     /**
      * @return array{folders: array<int, array{name: string, unread: int, exists: int}>, messages: array<int, array<string, mixed>>, message: array<string, mixed>|null}
      */
     public function loadMailbox(Mailbox $mailbox, string $folder = 'INBOX', ?int $uid = null, int $limit = 40): array
     {
         $stream = $this->open($mailbox, $folder);
-        $folders = $this->folders($stream);
-        $messages = $this->messages($stream, $folder, $limit);
+        $folders = $this->folders($stream, $mailbox, $folder);
+        $messages = $this->messages($stream, $mailbox, $folder, $limit);
         $message = $uid !== null ? $this->message($stream, $folder, $uid) : null;
         $this->close($stream);
 
@@ -35,6 +65,8 @@ class MailboxImapService
 
         @imap_expunge($stream);
         $this->close($stream);
+        MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)
+            ->where('folder', $folder)->where('uid', $uid)->delete();
     }
 
     public function sendMessage(Mailbox $mailbox, string $to, string $subject, string $body): void
@@ -76,6 +108,10 @@ class MailboxImapService
         if (! $result) {
             throw new RuntimeException(imap_last_error() ?: 'Unable to update message flag.');
         }
+
+        MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)
+            ->where('folder', $folder)->where('uid', $uid)
+            ->update(['seen' => $seen, 'synced_at' => now()]);
     }
 
     /**
@@ -104,11 +140,16 @@ class MailboxImapService
     }
 
     /**
-     * @param resource $stream
+     * @param  resource  $stream
      * @return array<int, array{name: string, unread: int, exists: int}>
      */
-    private function folders($stream): array
+    private function folders($stream, Mailbox $mailbox, string $selectedFolder): array
     {
+        $state = MailboxSyncState::query()->firstOrCreate(['mailbox_id' => $mailbox->id, 'folder' => $selectedFolder]);
+        if ($state->folders_synced_at?->isAfter(now()->subSeconds(60)) && is_array($state->folders) && $state->folders !== []) {
+            return $state->folders;
+        }
+
         $prefix = $this->mailboxPrefix();
         $mailboxes = @imap_getmailboxes($stream, $prefix, '*');
         if (! is_array($mailboxes)) {
@@ -160,32 +201,48 @@ class MailboxImapService
             return strcasecmp($left['name'], $right['name']);
         });
 
+        $state->forceFill(['folders' => $folders, 'folders_synced_at' => now()])->save();
+
         return $folders;
     }
 
     /**
-     * @param resource $stream
+     * @param  resource  $stream
      * @return array<int, array<string, mixed>>
      */
-    private function messages($stream, string $folder, int $limit): array
+    private function messages($stream, Mailbox $mailbox, string $folder, int $limit): array
     {
+        $this->guardUidValidity($stream, $mailbox, $folder);
         $uids = @imap_search($stream, 'ALL', SE_UID);
         if (! is_array($uids) || $uids === []) {
+            MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)
+                ->where('folder', $folder)->delete();
+
             return [];
         }
 
         rsort($uids);
         $uids = array_slice($uids, 0, max(1, $limit));
 
+        $cached = MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)
+            ->where('folder', $folder)->whereIn('uid', $uids)->get()->keyBy('uid');
         $messages = [];
+        $freshAfter = now()->subSeconds(60);
         foreach ($uids as $uid) {
+            $metadata = $cached->get((int) $uid);
+            if ($metadata && $metadata->synced_at?->isAfter($freshAfter)) {
+                $messages[] = $this->metadataRow($metadata);
+
+                continue;
+            }
+
             $overviewList = @imap_fetch_overview($stream, (string) $uid, FT_UID);
             $overview = is_array($overviewList) && isset($overviewList[0]) ? $overviewList[0] : null;
             if (! is_object($overview)) {
                 continue;
             }
 
-            $messages[] = [
+            $row = [
                 'uid' => (int) $uid,
                 'subject' => $this->decodeHeader((string) ($overview->subject ?? '(no subject)')),
                 'from' => $this->decodeHeader((string) ($overview->from ?? '')),
@@ -194,13 +251,49 @@ class MailboxImapService
                 'size' => (int) ($overview->size ?? 0),
                 'snippet' => $this->snippet($stream, (int) $uid),
             ];
+            MailboxMessageMetadata::query()->updateOrCreate(
+                ['mailbox_id' => $mailbox->id, 'folder' => $folder, 'uid' => (int) $uid],
+                ['subject' => $row['subject'], 'sender' => $row['from'], 'message_date' => $row['date'], 'seen' => $row['seen'], 'size' => $row['size'], 'snippet' => $row['snippet'], 'synced_at' => now()]
+            );
+            $messages[] = $row;
         }
+
+        MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)
+            ->where('folder', $folder)->whereNotIn('uid', $uids)->delete();
 
         return $messages;
     }
 
+    /** @return array<string, mixed> */
+    private function metadataRow(MailboxMessageMetadata $metadata): array
+    {
+        return [
+            'uid' => $metadata->uid,
+            'subject' => (string) ($metadata->subject ?: '(no subject)'),
+            'from' => (string) $metadata->sender,
+            'date' => (string) $metadata->message_date,
+            'seen' => $metadata->seen,
+            'size' => $metadata->size,
+            'snippet' => (string) $metadata->snippet,
+        ];
+    }
+
+    /** @param resource $stream */
+    private function guardUidValidity($stream, Mailbox $mailbox, string $folder): void
+    {
+        $status = @imap_status($stream, $this->mailboxPath($folder), SA_UIDVALIDITY);
+        $uidValidity = is_object($status) ? (int) ($status->uidvalidity ?? 0) : 0;
+        $state = MailboxSyncState::query()->firstOrCreate(['mailbox_id' => $mailbox->id, 'folder' => $folder]);
+        if ($uidValidity > 0 && $state->uid_validity && (int) $state->uid_validity !== $uidValidity) {
+            MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)->where('folder', $folder)->delete();
+        }
+        if ($uidValidity > 0 && (int) $state->uid_validity !== $uidValidity) {
+            $state->forceFill(['uid_validity' => $uidValidity])->save();
+        }
+    }
+
     /**
-     * @param resource $stream
+     * @param  resource  $stream
      * @return array<string, mixed>|null
      */
     private function message($stream, string $folder, int $uid): ?array
@@ -229,7 +322,7 @@ class MailboxImapService
     }
 
     /**
-     * @param resource $stream
+     * @param  resource  $stream
      */
     private function snippet($stream, int $uid): string
     {
@@ -242,7 +335,7 @@ class MailboxImapService
     }
 
     /**
-     * @param resource $stream
+     * @param  resource  $stream
      */
     private function extractText($stream, int $uid): string
     {
@@ -347,7 +440,7 @@ class MailboxImapService
     }
 
     /**
-     * @param resource $stream
+     * @param  resource  $stream
      */
     private function close($stream): void
     {

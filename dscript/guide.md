@@ -58,13 +58,13 @@ dpanel chain repair
 Default chain module order:
 
 ```text
-php -> mariadb -> redis -> supervisor -> firewall -> fail2ban
+php -> mariadb -> redis -> ssl -> supervisor -> queue -> firewall -> fail2ban
 ```
 
 The top-level default install adds non-module services around that chain:
 
 ```text
-php -> mariadb -> redis -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs
+php -> mariadb -> redis -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs -> queue
 ```
 
 Choose modules with either syntax:
@@ -397,6 +397,7 @@ systemctl status edge-gateway --no-pager
 | `PHP_VERSION` | detected/8.3 | Preferred PHP version |
 | `PANEL_DOMAIN` | `installer.dengrweb.com` | Panel hostname |
 | `PANEL_PORT` | `80` | Panel port |
+| `PANEL_MAIL_SERVER_IP` | prompted/empty | Public IPv4 written to `SERVERPANEL_MAIL_SERVER_IP` for mail DNS exports |
 
 ### Database
 

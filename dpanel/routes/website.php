@@ -6,6 +6,7 @@ use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\Website\WebsiteController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
+use App\Http\Controllers\Website\WebsiteFtpAccountController;
 use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
@@ -59,6 +60,14 @@ Route::post('/websites/{id}/status/check', [WebsiteController::class, 'refreshRu
 Route::get('/websites/{id}/manage', [WebsiteOperationsController::class, 'manage'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.manage');
+Route::get('/websites/{id}/ftp-accounts', [WebsiteFtpAccountController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.ftp.index');
+Route::post('/websites/{id}/ftp-accounts', [WebsiteFtpAccountController::class, 'store'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.ftp.store');
+Route::patch('/websites/{id}/ftp-accounts/{account}/password', [WebsiteFtpAccountController::class, 'updatePassword'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.ftp.password');
+Route::delete('/websites/{id}/ftp-accounts/{account}', [WebsiteFtpAccountController::class, 'destroy'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.ftp.destroy');
 Route::get('/websites/{id}/quick-export', [WebsiteOperationsController::class, 'quickExportPage'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.quick-export.page');

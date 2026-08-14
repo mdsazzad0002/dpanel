@@ -222,6 +222,19 @@ const menuItems = computed(() => [
     },
     { label: 'Resource Packages', hint: 'Manage user quotas', icon: 'PK', iconClass: 'bi bi-box-seam', routeName: 'packages.index', roles: ['admin', 'superadmin', 'reseller'], permissions: ['manage_packages'] },
     {
+        id: 'billing-system',
+        label: 'Billing System',
+        hint: 'Billing integrations and guides',
+        icon: 'BL',
+        iconClass: 'bi bi-credit-card',
+        color: 'emerald',
+        roles: ['admin', 'superadmin'],
+        children: [
+            { label: 'Services', hint: 'Available billing services', icon: 'BS', iconClass: 'bi bi-grid', routeName: 'billing.index', roles: ['admin', 'superadmin'] },
+            { label: 'Billing with WHMCS', hint: 'Setup and operations guide', icon: 'WH', iconClass: 'bi bi-arrow-left-right', routeName: 'billing.whmcs', roles: ['admin', 'superadmin'] },
+        ],
+    },
+    {
         id: 'database-management',
         label: 'Database Management',
         hint: 'Database operations and phpMyAdmin',

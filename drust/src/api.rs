@@ -12,6 +12,7 @@ mod database;
 mod database_config;
 mod dependencies;
 mod filemanager;
+mod ftp;
 mod git_deploy;
 mod health;
 mod laravel;
@@ -86,6 +87,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(admin::routes())
         .merge(backup::routes())
         .merge(filemanager::routes())
+        .merge(ftp::routes())
         .merge(git_deploy::routes())
         .merge(php::routes())
         .merge(redis_config::routes())

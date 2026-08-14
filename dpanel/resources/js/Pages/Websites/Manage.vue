@@ -177,6 +177,7 @@ const serviceLinks = computed(() => [
     { label: 'Usage Details', icon: 'bi-graph-up', color: 'violet', href: panelRoute('websites.usage', { id: props.website.id }), description: 'Detailed usage history' },
     { label: 'Redis Cache', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
     { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
+    { label: 'FTP Accounts', icon: 'bi-hdd-network', color: 'cyan', href: panelRoute('websites.ftp.index', { id: props.website.id }), description: 'Create client FTP access' },
     { label: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Scheduled tasks' },
     { label: 'Git Deployment', icon: 'bi-github', color: 'emerald', href: panelRoute('websites.git.index', { id: props.website.id }), description: 'Clone, pull, push & auto sync' },
     { label: 'Import Website', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and auto-connect an optional SQL database' },

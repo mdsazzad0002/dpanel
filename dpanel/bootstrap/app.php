@@ -38,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/v1/alias',
             'api/v1/chat/completions',
             'api/v1/models',
+            'api/whmcs/*',
         ]);
 
         $middleware->alias([
@@ -46,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'ai_gateway.key' => \App\Http\Middleware\AuthenticateAiGatewayApiKey::class,
+            'whmcs.auth' => \App\Http\Middleware\AuthenticateWhmcsRequest::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

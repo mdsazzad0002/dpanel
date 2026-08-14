@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\SyncMailboxMetadataJob;
 use App\Models\Mailbox;
 use App\Services\Mail\MailboxImapService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -63,6 +64,23 @@ class MailClientController extends Controller
         $folder = (string) $request->query('folder', 'INBOX');
         $uid = $request->integer('uid') ?: null;
 
+        if ($uid === null && ! $request->boolean('refresh')) {
+            $cached = $mailboxImapService->cachedMailbox($mailbox, $folder);
+            if ($cached !== null) {
+                SyncMailboxMetadataJob::dispatch((string) $mailbox->id, $folder)->afterResponse();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => null,
+                    'folders' => $cached['folders'],
+                    'messages' => $cached['messages'],
+                    'messageData' => null,
+                    'cached' => true,
+                    'syncing' => true,
+                ]);
+            }
+        }
+
         try {
             $data = $mailboxImapService->loadMailbox($mailbox, $folder, $uid);
         } catch (RuntimeException $e) {
@@ -81,6 +99,8 @@ class MailClientController extends Controller
             'folders' => $data['folders'],
             'messages' => $data['messages'],
             'messageData' => $data['message'],
+            'cached' => false,
+            'syncing' => false,
         ]);
     }
 

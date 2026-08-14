@@ -90,7 +90,7 @@ install_system_packages() {
 }
 
 install_mail_services() {
-  install_system_packages postfix dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql
+  install_system_packages postfix dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql opendkim opendkim-tools
 
   if [[ "${DSCRIPT_DRY_RUN:-false}" == "true" ]]; then
     printf '[DRY-RUN] configure dPanel Dovecot SQL backend and per-owner mail storage\n'
@@ -175,6 +175,7 @@ EOF
 
   doveconf -n >/dev/null
   systemctl enable --now dovecot
+  "${SCRIPT_DIR}/scripts/generate-dkim.sh" --configure-only
 }
 
 install_node_runtime() {
@@ -315,6 +316,9 @@ default_install_sequence() {
   install_mail_services
   install_node_runtime
   panel_finalize_default_install
+  # Install last so Composer, migrations, the application .env and writable
+  # storage directories are ready before Supervisor starts the workers.
+  dscript_cli module queue install
 }
 
 run_interactive_menu() {
@@ -324,7 +328,7 @@ run_interactive_menu() {
     printf '\n'
     printf 'dpanel interactive menu\n'
     printf '=======================\n'
-    printf '1) Default Install (php -> mariadb -> redis -> supervisor -> rust/drust -> firewall -> dns -> fail2ban -> ssl -> postfix -> dovecot -> nodejs) | dpanel default-install\n'
+    printf '1) Default Install (php -> mariadb -> redis -> supervisor -> rust/drust -> firewall -> dns -> fail2ban -> ssl -> postfix -> dovecot -> nodejs -> queue) | dpanel default-install\n'
     printf '2) Default Update | dpanel chain update\n'
     printf '3) Web stack menu | dpanel script run sync-vhost <action> <domain> <root-path> [php-version]\n'
     printf '4) PHP menu | dpanel php install all / dpanel php default <version>\n'
@@ -785,7 +789,7 @@ else
   mkdir -p "$downloaded_scripts" "$downloaded_templates"
   for script_name in \
     _drust-api create-admin-user create-first-laravel-user create-demo-site database-request disable-root-login \
-    configure-phpmyadmin-signon reconcile-system-records set-system-user-password set-panel-domain fix-dpanel-root fix-panel-web-stack fix-web-stack install-roundcube-dovecot-mysql \
+    configure-phpmyadmin-signon reconcile-system-records set-system-user-password set-panel-domain fix-dpanel-root fix-panel-web-stack fix-web-stack generate-dkim install-roundcube-dovecot-mysql \
     issue-ssl php-config-apply php-detect-config php-detect-extensions php-detect-versions \
     reset-drust reset-web-stack sync-vhost; do
     download_file "$DSCRIPT_BASE_URL/scripts/${script_name}.sh" "$downloaded_scripts/${script_name}.sh"

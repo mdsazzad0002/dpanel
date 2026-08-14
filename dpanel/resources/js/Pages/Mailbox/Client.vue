@@ -297,7 +297,7 @@ const clearSearch = () => {
 
 const refreshInbox = async () => {
     closeTopbarMenus();
-    await loadMailbox('INBOX');
+    await loadMailbox('INBOX', null, true);
 };
 
 const openMailbox = (id) => {
@@ -306,7 +306,7 @@ const openMailbox = (id) => {
     router.visit(mailboxRoute('mailbox.open', { id }));
 };
 
-const loadMailbox = async (folder = activeFolder.value, uid = null) => {
+const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = false) => {
     loading.value = true;
     errorMessage.value = '';
     statusMessage.value = '';
@@ -316,6 +316,7 @@ const loadMailbox = async (folder = activeFolder.value, uid = null) => {
             params: {
                 folder,
                 ...(uid ? { uid } : {}),
+                ...(forceSync ? { refresh: 1 } : {}),
             },
             headers: { Accept: 'application/json' },
         });
@@ -331,7 +332,7 @@ const loadMailbox = async (folder = activeFolder.value, uid = null) => {
         if (!data.success) {
             pushToast(data.message || 'Mailbox could not be loaded.');
         }
-        else if (!activeMessage.value && messages.value.length > 0 && !uid) {
+        else if (!data.cached && !activeMessage.value && messages.value.length > 0 && !uid) {
             const firstUid = messages.value[0]?.uid;
             if (firstUid) {
                 await loadMailbox(folder, firstUid);
@@ -394,7 +395,7 @@ const handleDocumentKeydown = (event) => {
 };
 
 const refreshMailbox = async () => {
-    await loadMailbox(activeFolder.value, currentMessage.value?.uid || null);
+    await loadMailbox(activeFolder.value, currentMessage.value?.uid || null, true);
 };
 
 const startCompose = () => {

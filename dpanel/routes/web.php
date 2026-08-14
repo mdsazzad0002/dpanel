@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\BackupController;
+use App\Http\Controllers\BillingSystemController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\DnsController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\Api\AiGatewayApiController;
+use App\Http\Controllers\Api\WhmcsController;
 use App\Http\Controllers\AiGatewayApiKeyController;
 use App\Http\Controllers\AiGatewayController;
 use App\Http\Controllers\AiGatewayLogController;
@@ -88,6 +90,14 @@ Route::get('/quick-exports/download/{downloadToken}', [BackupController::class, 
     ->middleware('throttle:30,1')
     ->name('quick-exports.download');
 Route::post('/api/v1/alias', [RedisCacheController::class, 'aliasApiHandle'])->middleware('throttle:30,1')->name('api.alias');
+Route::prefix('/api/whmcs/v1')->middleware(['whmcs.auth', 'throttle:120,1'])->group(function (): void {
+    Route::post('/handshake', [WhmcsController::class, 'handshake'])->name('api.whmcs.handshake');
+    Route::post('/plans', [WhmcsController::class, 'plans'])->name('api.whmcs.plans');
+    Route::post('/provision', [WhmcsController::class, 'provision'])->name('api.whmcs.provision');
+    Route::post('/account/{action}', [WhmcsController::class, 'lifecycle'])->whereIn('action', ['change-plan', 'suspend', 'unsuspend', 'terminate'])->name('api.whmcs.lifecycle');
+    Route::post('/sso', [WhmcsController::class, 'issueSso'])->name('api.whmcs.sso');
+});
+Route::get('/whmcs/sso/{token}', [WhmcsController::class, 'consumeSso'])->middleware('throttle:20,1')->name('whmcs.sso.consume');
 
 // External, OpenAI/OpenRouter-compatible AI Gateway API. Authenticated via
 // `Authorization: Bearer sk-ag-...` (see AiGatewayApiKeyController for issuing
@@ -105,6 +115,13 @@ Route::prefix('cpsess{token}')
     ->group(function (): void {
         Route::get('/dashboard', [DashboardController::class, 'index'])
             ->name('dashboard');
+
+        Route::get('/billing', [BillingSystemController::class, 'index'])
+            ->middleware('role:admin|superadmin')
+            ->name('billing.index');
+        Route::get('/billing/whmcs', [BillingSystemController::class, 'whmcs'])
+            ->middleware('role:admin|superadmin')
+            ->name('billing.whmcs');
 
         Route::get('/search', [PanelSearchController::class, 'index'])
             ->name('panel.search');
@@ -230,6 +247,17 @@ Route::prefix('cpsess{token}')
             Route::get('/emails/list', [EmailController::class, 'index'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.list');
+
+            Route::get('/emails/guide', [EmailController::class, 'dnsGuide'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.guide');
+            Route::post('/emails/guide/dkim', [EmailController::class, 'generateDkim'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:3,1'])
+                ->name('emails.guide.dkim');
+            Route::get('/emails/guide/export/{domain}', [EmailController::class, 'exportDnsZone'])
+                ->where('domain', '[A-Za-z0-9.-]+')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.guide.export');
 
             Route::post('/mail/{id}/mark-read', [MailClientController::class, 'markRead'])
                 ->middleware('role:admin|reseller')

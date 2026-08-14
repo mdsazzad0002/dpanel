@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\MailPlan;
+use App\Models\MailDomain;
 use App\Models\Mailbox;
 use App\Models\Website;
 use App\Services\ResourceQuotaService;
+use App\Services\ScriptExecutionGateway;
+use App\Services\ScriptPathResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response as HttpResponse;
@@ -50,6 +53,125 @@ class EmailController extends Controller
             'mailboxes' => $mailboxes,
             'setupCheck' => $setupCheck,
         ]);
+    }
+
+    public function dnsGuide(Request $request): Response
+    {
+        $domains = collect($this->readWebsiteDomains())
+            ->merge(Mailbox::query()->pluck('domain')->all())
+            ->filter(fn ($domain) => is_string($domain) && trim($domain) !== '')
+            ->map(fn ($domain) => strtolower(trim((string) $domain)))
+            ->unique()->sort()->values();
+
+        $requestedDomain = strtolower(trim((string) $request->query('domain', '')));
+        $domain = $domains->contains($requestedDomain) ? $requestedDomain : (string) ($domains->first() ?? '');
+        $mailDomain = $domain !== '' ? MailDomain::query()->where('domain', $domain)->first() : null;
+        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('serverpanel.mail.dkim_selector', 'default'))) ?: 'default';
+        $dkimDomain = trim((string) config('serverpanel.mail.dkim_domain', ''));
+        $dkimPublicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('serverpanel.mail.dkim_public_key', '')))) ?: '';
+        $serverIp = trim((string) config('serverpanel.mail.server_ip', ''));
+        $mailHost = $domain !== '' ? 'mail.'.$domain : '';
+        $dkimReady = ($dkimDomain === '' || $dkimDomain === $domain) && $dkimPublicKey !== '';
+
+        $records = $domain === '' ? [] : [
+            ['type' => 'A', 'name' => 'mail', 'value' => $serverIp, 'priority' => null, 'purpose' => 'Mail server hostname'],
+            ['type' => 'MX', 'name' => '@', 'value' => $mailHost, 'priority' => 10, 'purpose' => 'Receive email for '.$domain],
+            ['type' => 'TXT', 'name' => '@', 'value' => 'v=spf1 mx a:'.$mailHost.' ~all', 'priority' => null, 'purpose' => 'Authorize this server to send email'],
+            ['type' => 'TXT', 'name' => $selector.'._domainkey', 'value' => $dkimReady ? 'v=DKIM1; k=rsa; p='.$dkimPublicKey : '', 'priority' => null, 'purpose' => 'DKIM signature verification'],
+            ['type' => 'TXT', 'name' => '_dmarc', 'value' => 'v=DMARC1; p=none; rua=mailto:postmaster@'.$domain.'; adkim=s; aspf=s', 'priority' => null, 'purpose' => 'Monitor SPF/DKIM alignment'],
+        ];
+
+        return Inertia::render('EmailDnsGuide', [
+            'domains' => $domains->all(),
+            'selectedDomain' => $domain,
+            'mailHost' => $mailHost,
+            'serverIp' => $serverIp,
+            'dkimReady' => $dkimReady,
+            'dkimConfiguredDomain' => $dkimDomain,
+            'records' => $records,
+        ]);
+    }
+
+    public function generateDkim(Request $request, ScriptExecutionGateway $gateway): RedirectResponse
+    {
+        $validated = $request->validate([
+            'domain' => ['required', 'string', 'max:253', 'regex:/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/'],
+        ]);
+        $domain = strtolower(trim($validated['domain']));
+        abort_unless(in_array($domain, $this->readWebsiteDomains(), true) || Mailbox::query()->where('domain', $domain)->exists(), 403);
+        $selector = trim((string) config('serverpanel.mail.dkim_selector', 'default')) ?: 'default';
+        $script = ScriptPathResolver::resolveRepositoryRoot().'/scripts/generate-dkim.sh';
+        $result = $gateway->execute($script, [$domain, $selector], [], true);
+
+        if (! $result['success'] || ! preg_match('/^DKIM_PUBLIC_KEY=(.+)$/m', $result['output'], $match)) {
+            return redirect()->route('emails.guide', ['domain' => $domain])
+                ->with('error', trim($result['output']) ?: 'DKIM key generation failed.');
+        }
+
+        MailDomain::query()->updateOrCreate(['domain' => $domain], [
+            'enable_dkim' => true,
+            'dkim_selector' => $selector,
+            'dkim_public_key' => trim($match[1]),
+            'status' => 'active',
+        ]);
+
+        return redirect()->route('emails.guide', ['domain' => $domain])
+            ->with('success', "DKIM key generated and signing enabled for {$domain}.");
+    }
+
+    public function exportDnsZone(string $token, string $domain): HttpResponse
+    {
+        $domain = strtolower(trim($domain, " \t\n\r\0\x0B."));
+        abort_unless(
+            in_array($domain, $this->readWebsiteDomains(), true) || Mailbox::query()->where('domain', $domain)->exists(),
+            403
+        );
+
+        $mailDomain = MailDomain::query()->where('domain', $domain)->first();
+        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('serverpanel.mail.dkim_selector', 'default'))) ?: 'default';
+        $configuredDkimDomain = trim((string) config('serverpanel.mail.dkim_domain', ''));
+        $publicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('serverpanel.mail.dkim_public_key', '')))) ?: '';
+        $dkimReady = ($configuredDkimDomain === '' || $configuredDkimDomain === $domain) && $publicKey !== '';
+        $serverIp = trim((string) config('serverpanel.mail.server_ip', ''));
+        $mailHost = 'mail.'.$domain.'.';
+        $lines = [
+            '; Cloudflare BIND zone import generated by dPanel',
+            '; Domain: '.$domain,
+            '; Import in Cloudflare: DNS > Records > Import and Export > Import DNS records',
+            '$ORIGIN '.$domain.'.',
+            '$TTL 3600',
+            '',
+        ];
+
+        if (filter_var($serverIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $lines[] = 'mail 3600 IN A '.$serverIp;
+        } else {
+            $lines[] = '; A record omitted: SERVERPANEL_MAIL_SERVER_IP is not configured with a public IPv4 address.';
+        }
+
+        $lines[] = '@ 3600 IN MX 10 '.$mailHost;
+        $lines[] = '@ 3600 IN TXT '.$this->bindTxtValue('v=spf1 mx a:mail.'.$domain.' ~all');
+        if ($dkimReady) {
+            $lines[] = $selector.'._domainkey 3600 IN TXT '.$this->bindTxtValue('v=DKIM1; k=rsa; p='.$publicKey);
+        } else {
+            $lines[] = '; DKIM record omitted: generate a DKIM key in the Mail DNS Guide first.';
+        }
+        $lines[] = '_dmarc 3600 IN TXT '.$this->bindTxtValue('v=DMARC1; p=none; rua=mailto:postmaster@'.$domain.'; adkim=s; aspf=s');
+        $lines[] = '';
+        $lines[] = '; Keep the mail A record DNS-only (not proxied) after importing.';
+
+        return response(implode("\n", $lines)."\n", 200, [
+            'Content-Type' => 'text/plain; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$domain.'-mail-dns.txt"',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    private function bindTxtValue(string $value): string
+    {
+        return collect(str_split($value, 200))
+            ->map(fn (string $chunk): string => '"'.addcslashes($chunk, "\\\"").'"')
+            ->implode(' ');
     }
 
     public function store(Request $request): JsonResponse

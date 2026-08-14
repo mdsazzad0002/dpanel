@@ -137,7 +137,7 @@ composer require phpseclib/phpseclib
 ```ini
 [program:serverpanel-worker]
 process_name=%(program_name)s_%(process_num)02d
-command=php /path-to-project/artisan queue:work redis --queue=server-commands,default --sleep=2 --tries=1 --timeout=300
+command=php /path-to-project/artisan queue:work redis --queue=heavy,server-commands,default --sleep=2 --tries=1 --timeout=3600
 autostart=true
 autorestart=true
 user=www-data

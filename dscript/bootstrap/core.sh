@@ -529,6 +529,78 @@ PY
   PANEL_ADMIN_PASSWORD="$password"
 }
 
+panel_is_public_ipv4() {
+  local ip="$1" octet1 octet2
+  [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  IFS=. read -r octet1 octet2 _ _ <<< "$ip"
+  while IFS=. read -r -a octets <<< "$ip"; do
+    local octet
+    for octet in "${octets[@]}"; do
+      [[ "$octet" =~ ^[0-9]+$ ]] && (( octet >= 0 && octet <= 255 )) || return 1
+    done
+    break
+  done
+  (( octet1 == 10 || octet1 == 127 || octet1 == 0 )) && return 1
+  (( octet1 == 169 && octet2 == 254 )) && return 1
+  (( octet1 == 172 && octet2 >= 16 && octet2 <= 31 )) && return 1
+  (( octet1 == 192 && octet2 == 168 )) && return 1
+  (( octet1 >= 224 )) && return 1
+  return 0
+}
+
+panel_detect_public_ipv4() {
+  local candidate=""
+  if command -v ip >/dev/null 2>&1; then
+    candidate="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i == "src") {print $(i+1); exit}}')"
+  fi
+  panel_is_public_ipv4 "$candidate" && printf '%s' "$candidate"
+}
+
+panel_collect_mail_server_ip() {
+  local env_file existing="" detected="" entered=""
+  PANEL_MAIL_SERVER_IP="${PANEL_MAIL_SERVER_IP:-${SERVERPANEL_MAIL_SERVER_IP:-}}"
+
+  if [[ -z "$PANEL_MAIL_SERVER_IP" ]]; then
+    env_file="$(panel_resolve_app_env_file)"
+    if [[ -n "$env_file" && -f "$env_file" ]]; then
+      existing="$(sed -n 's/^SERVERPANEL_MAIL_SERVER_IP=//p' "$env_file" | tail -n1 | tr -d '"' | xargs)"
+      panel_is_public_ipv4 "$existing" && PANEL_MAIL_SERVER_IP="$existing"
+    fi
+  fi
+
+  if [[ -n "$PANEL_MAIL_SERVER_IP" ]]; then
+    panel_is_public_ipv4 "$PANEL_MAIL_SERVER_IP" || panel_die "PANEL_MAIL_SERVER_IP must be a public IPv4 address."
+  fi
+
+  if ! panel_is_interactive || [[ "${PANEL_SKIP_FIRST_INSTALL_PROMPTS:-false}" == "true" ]]; then
+    export PANEL_MAIL_SERVER_IP
+    return 0
+  fi
+
+  detected="$(panel_detect_public_ipv4)"
+  [[ -z "$PANEL_MAIL_SERVER_IP" ]] && PANEL_MAIL_SERVER_IP="$detected"
+  while true; do
+    if [[ -n "$PANEL_MAIL_SERVER_IP" ]]; then
+      read -rp "Mail server public IPv4 [${PANEL_MAIL_SERVER_IP}] (blank accepts, 'skip' leaves unset): " entered
+      entered="$(printf '%s' "$entered" | xargs)"
+      [[ -z "$entered" ]] && entered="$PANEL_MAIL_SERVER_IP"
+    else
+      read -rp "Mail server public IPv4 (blank to configure later): " entered
+      entered="$(printf '%s' "$entered" | xargs)"
+    fi
+    if [[ -z "$entered" || "${entered,,}" == "skip" ]]; then
+      PANEL_MAIL_SERVER_IP=""
+      break
+    fi
+    if panel_is_public_ipv4 "$entered"; then
+      PANEL_MAIL_SERVER_IP="$entered"
+      break
+    fi
+    panel_warn_log "Enter a valid public IPv4 address; private addresses such as 10.x, 172.16-31.x and 192.168.x are not allowed."
+  done
+  export PANEL_MAIL_SERVER_IP
+}
+
 panel_prompt_panel_reconfigure() {
   local domain="${PANEL_DOMAIN:-}"
   local username="${PANEL_ADMIN_USERNAME:-}"
@@ -644,8 +716,9 @@ PY
   fi
 
   panel_prompt_required PANEL_DOMAIN "Panel domain"
+  panel_collect_mail_server_ip
 
-  export PANEL_DOMAIN
+  export PANEL_DOMAIN PANEL_MAIL_SERVER_IP
 }
 
 panel_server_json_valid() {
@@ -1842,6 +1915,10 @@ panel_finalize_default_install() {
     panel_env_set "$env_file" PHPMYADMIN_URL "http://${panel_domain}/phpmyadmin/"
   fi
 
+  if [[ -n "${PANEL_MAIL_SERVER_IP:-}" ]]; then
+    panel_env_set "$env_file" SERVERPANEL_MAIL_SERVER_IP "$PANEL_MAIL_SERVER_IP"
+  fi
+
   panel_ensure_swap
   panel_install_app_dependencies
   panel_run_app_migrations
@@ -1894,7 +1971,7 @@ panel_install_cli_launcher() {
 }
 
 panel_bootstrap() {
-  local requested_modules="${PANEL_MODULES:-php,mariadb,ssl,supervisor,firewall,fail2ban}"
+  local requested_modules="${PANEL_MODULES:-php,mariadb,redis,ssl,supervisor,queue,firewall,fail2ban}"
   local skip_firewall="${SKIP_FIREWALL:-false}"
   local skip_ssl="${SKIP_SSL:-false}"
   local skip_test="${SKIP_TEST:-false}"
