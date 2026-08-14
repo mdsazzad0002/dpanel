@@ -96,7 +96,7 @@ class SecurityController extends Controller
     {
         $state = $this->settings->read();
 
-        return Inertia::render('SecurityManager', [
+        return Inertia::render('Security/SecurityManager', [
             'firewall' => $state['firewall'],
             'ssh' => $state['ssh'],
             'section' => $section,

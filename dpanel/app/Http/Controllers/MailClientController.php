@@ -31,7 +31,7 @@ class MailClientController extends Controller
             ])
             ->all();
 
-        return Inertia::render('Mailbox/Client', [
+        return Inertia::render('Email/Mailbox/Client', [
             'mailbox' => [
                 'id' => $mailbox->id,
                 'email' => $mailbox->email,

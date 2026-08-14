@@ -76,7 +76,7 @@ class PhpManagementController extends Controller
             ]);
         }
 
-        return Inertia::render('PhpManager', [
+        return Inertia::render('Php/PhpManager', [
             'versions' => $versions,
             'apiAvailable' => count($versions) > 0,
         ]);
@@ -113,7 +113,7 @@ class PhpManagementController extends Controller
             }
         }
 
-        return Inertia::render('PhpExtensions', [
+        return Inertia::render('Php/PhpExtensions', [
             'versions' => $versions,
             'selectedVersion' => $selectedVersion,
             'availableExtensions' => $availableExtensions,

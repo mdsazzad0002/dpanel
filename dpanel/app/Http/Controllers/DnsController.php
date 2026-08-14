@@ -27,7 +27,7 @@ class DnsController extends Controller
         $this->ensureDnsTables();
         $visibleDomains = DnsZone::query()->visibleTo(request()->user())->pluck('domain');
 
-        return Inertia::render('DnsNameservers', [
+        return Inertia::render('Dns/DnsNameservers', [
             'dnsEngine' => $dnsRegistry->engine(),
             'dnsProviderLabel' => $dnsRegistry->providerLabel(),
             'authoritativeMode' => $dnsRegistry->authoritativeMode(),
@@ -281,7 +281,7 @@ class DnsController extends Controller
             })
             ->all();
 
-        return Inertia::render('DnsZones', [
+        return Inertia::render('Dns/DnsZones', [
             'dnsEngine' => $dnsRegistry->engine(),
             'dnsProviderLabel' => $dnsRegistry->providerLabel(),
             'authoritativeMode' => $dnsRegistry->authoritativeMode(),
@@ -834,7 +834,7 @@ class DnsController extends Controller
             }
         }
 
-        return Inertia::render('DnsCloudflareReview', [
+        return Inertia::render('Dns/DnsCloudflareReview', [
             'records' => $records,
             'zoneDomains' => $zones->pluck('name')->map(fn ($name) => (string) $name)->values()->all(),
             'selectedDomain' => $domain,

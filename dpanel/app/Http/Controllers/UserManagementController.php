@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use App\Models\MailPlan;
+use App\Models\PackagePlan;
 use App\Support\UserAccessCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -128,7 +128,7 @@ class UserManagementController extends Controller
     {
         $actor = $request->user();
         $assignableRoles = $this->assignableRoles($actor);
-        $packageRule = Rule::exists('mail_plans', 'id');
+        $packageRule = Rule::exists('package_plans', 'id');
         if ($actor?->hasRole('reseller')) {
             $packageRule->where(fn ($query) => $query->where('owner_user_id', $actor->id));
         }
@@ -168,7 +168,7 @@ class UserManagementController extends Controller
     {
         $actor = $request->user();
         $assignableRoles = $this->assignableRoles($actor);
-        $packageRule = Rule::exists('mail_plans', 'id');
+        $packageRule = Rule::exists('package_plans', 'id');
         if ($actor?->hasRole('reseller')) {
             $packageRule->where(fn ($query) => $query->where('owner_user_id', $actor->id));
         }
@@ -268,7 +268,7 @@ class UserManagementController extends Controller
             return collect();
         }
 
-        return MailPlan::query()
+        return PackagePlan::query()
             ->when($actor?->hasRole('reseller'), fn ($query) => $query->where('owner_user_id', $actor->id))
             ->orderBy('sort_order')->orderBy('name')->get([
             'id', 'name', 'max_storage_mb', 'max_mailboxes', 'max_websites',

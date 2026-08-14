@@ -218,6 +218,8 @@ const menuItems = computed(() => [
         children: [
             { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
             { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+            { label: 'Mail DNS Guide', hint: 'Configure MX, SPF, DKIM and DMARC', icon: 'DG', iconClass: 'bi bi-diagram-3', routeName: 'emails.guide', activeRouteNames: ['emails.guide', 'emails.guide.dkim', 'emails.guide.export'], roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+            { label: 'Mail Health', hint: 'Failures, queue and spam signals', icon: 'MH', iconClass: 'bi bi-heart-pulse', routeName: 'mail-health.index', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
         ],
     },
     { label: 'Resource Packages', hint: 'Manage user quotas', icon: 'PK', iconClass: 'bi bi-box-seam', routeName: 'packages.index', roles: ['admin', 'superadmin', 'reseller'], permissions: ['manage_packages'] },

@@ -5,7 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
-class MailPlanSeeder extends Seeder
+class PackagePlanSeeder extends Seeder
 {
     public function run(): void
     {
@@ -43,7 +43,7 @@ class MailPlanSeeder extends Seeder
         ];
 
         foreach ($plans as $plan) {
-            \App\Models\MailPlan::updateOrCreate(
+            \App\Models\PackagePlan::updateOrCreate(
                 ['slug' => $plan['slug']],
                 array_merge($plan, ['id' => $plan['id'] ?? Str::uuid()])
             );

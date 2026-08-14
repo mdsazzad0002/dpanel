@@ -17,7 +17,7 @@ class UserPanelController extends Controller
     {
         $user = request()->user();
 
-        return Inertia::render('IndividualUserPanel', [
+        return Inertia::render('Users/IndividualUserPanel', [
             'panelUser' => [
                 'id' => $user?->id,
                 'name' => $user?->name,

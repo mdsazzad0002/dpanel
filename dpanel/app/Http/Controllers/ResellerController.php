@@ -49,7 +49,7 @@ class ResellerController extends Controller
             ->values()
             ->all();
 
-        return Inertia::render('ResellerPanel', [
+        return Inertia::render('Reseller/ResellerPanel', [
             'stats' => $stats,
             'recentWebsiteRequests' => $recentWebsiteRequests,
             'recentDatabaseRequests' => $recentDatabaseRequests,

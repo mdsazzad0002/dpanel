@@ -9,6 +9,10 @@ return [
         'dkim_selector' => env('SERVERPANEL_DKIM_SELECTOR', 'default'),
         'dkim_domain' => env('SERVERPANEL_DKIM_DOMAIN', ''),
         'dkim_public_key' => env('SERVERPANEL_DKIM_PUBLIC_KEY', ''),
+        'health_log_paths' => array_values(array_filter(array_map('trim', explode(',', env(
+            'SERVERPANEL_MAIL_HEALTH_LOG_PATHS',
+            '/var/log/mail.log,/var/log/maillog'
+        ))))),
     ],
     'panel_cookie_name' => env('SERVERPANEL_PANEL_COOKIE', 'panel_session_proof'),
     'panel_token_lifetime' => (int) env('SERVERPANEL_PANEL_TOKEN_LIFETIME', 60),

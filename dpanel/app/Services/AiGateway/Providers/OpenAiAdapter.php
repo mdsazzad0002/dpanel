@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Http;
 /**
  * Handles OpenAI and every other provider that speaks the OpenAI
  * chat-completions wire format (OpenRouter, Groq, DeepSeek, Mistral,
- * Cerebras). Each driver has a fixed, well-known base URL — there is no
+ * Cerebras, Kilo Code). Each driver has a fixed, well-known base URL — there is no
  * free-text base URL field in the UI.
  */
 class OpenAiAdapter implements ProviderAdapter
@@ -25,6 +25,7 @@ class OpenAiAdapter implements ProviderAdapter
         'deepseek' => ['DeepSeek', 'https://api.deepseek.com', 'https://platform.deepseek.com/api_keys'],
         'mistral' => ['Mistral', 'https://api.mistral.ai/v1', 'https://console.mistral.ai/api-keys'],
         'cerebras' => ['Cerebras (fast, free tier)', 'https://api.cerebras.ai/v1', 'https://cloud.cerebras.ai/'],
+        'kilo' => ['Kilo Code (500+ models)', 'https://api.kilo.ai/api/gateway', 'https://app.kilo.ai/'],
     ];
 
     public function supportsDriver(string $driver): bool
@@ -360,4 +361,3 @@ class OpenAiAdapter implements ProviderAdapter
             ->all();
     }
 }
-

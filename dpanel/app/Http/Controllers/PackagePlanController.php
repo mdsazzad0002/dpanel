@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\MailPlan;
+use App\Models\PackagePlan;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -10,12 +10,12 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Validation\Rule;
 
-class MailPlanController extends Controller
+class PackagePlanController extends Controller
 {
     public function index(Request $request): Response
     {
         $actor = $request->user();
-        $plans = MailPlan::query()
+        $plans = PackagePlan::query()
             ->when($actor?->hasRole('reseller'), fn ($query) => $query->where('owner_user_id', $actor->id))
             ->with('owner:id,name,email')
             ->withCount('mailboxes')
@@ -24,7 +24,7 @@ class MailPlanController extends Controller
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
-            ->map(fn (MailPlan $plan): array => [
+            ->map(fn (PackagePlan $plan): array => [
                 ...$plan->toArray(),
                 'mailbox_count' => (int) ($plan->mailboxes_count ?? 0),
                 'total_storage_mb' => (int) ($plan->mailboxes_sum_quota_mb ?? 0),
@@ -33,20 +33,20 @@ class MailPlanController extends Controller
             ])
             ->all();
 
-        return Inertia::render('MailPlans/List', [
+        return Inertia::render('PackagePlans/List', [
             'plans' => $plans,
         ]);
     }
 
     public function create(): Response
     {
-        return Inertia::render('MailPlans/Create');
+        return Inertia::render('PackagePlans/Create');
     }
 
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:64', Rule::unique('mail_plans', 'name')],
+            'name' => ['required', 'string', 'max:64', Rule::unique('package_plans', 'name')],
             'max_storage_mb' => ['required', 'integer', 'min:1', 'max:1048576'],
             'max_mailboxes' => ['required', 'integer', 'min:1', 'max:99999'],
             'max_websites' => ['required', 'integer', 'min:0', 'max:99999'],
@@ -60,13 +60,13 @@ class MailPlanController extends Controller
 
         $slug = $this->generateSlug($validated['name']);
 
-        $exists = MailPlan::query()->where('slug', $slug)->exists();
+        $exists = PackagePlan::query()->where('slug', $slug)->exists();
         if ($exists) {
             return redirect()->route('packages.create')
                 ->with('error', "A plan with the slug '{$slug}' already exists.");
         }
 
-        MailPlan::create([
+        PackagePlan::create([
             ...$validated,
             'id' => (string) Str::uuid(),
             'owner_user_id' => $request->user()?->hasRole('reseller') ? $request->user()->id : null,
@@ -83,11 +83,11 @@ class MailPlanController extends Controller
 
     public function edit(string $token, string $id): Response
     {
-        $plan = MailPlan::query()->find($id);
+        $plan = PackagePlan::query()->find($id);
         abort_if($plan === null, 404);
         $this->authorizePlan($plan);
 
-        return Inertia::render('MailPlans/Edit', [
+        return Inertia::render('PackagePlans/Edit', [
             'plan' => $plan->toArray(),
             'mailboxCount' => $plan->mailboxCount(),
             'totalStorageMb' => $plan->totalStorageMb(),
@@ -96,7 +96,7 @@ class MailPlanController extends Controller
 
     public function update(Request $request, string $token, string $id): RedirectResponse
     {
-        $plan = MailPlan::query()->find($id);
+        $plan = PackagePlan::query()->find($id);
         if ($plan === null) {
             return redirect()->route('packages.index')
                 ->with('error', 'Package not found.');
@@ -104,7 +104,7 @@ class MailPlanController extends Controller
         $this->authorizePlan($plan);
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:64', Rule::unique('mail_plans', 'name')->ignore($id)],
+            'name' => ['required', 'string', 'max:64', Rule::unique('package_plans', 'name')->ignore($id)],
             'max_storage_mb' => ['required', 'integer', 'min:1', 'max:1048576'],
             'max_mailboxes' => ['required', 'integer', 'min:1', 'max:99999'],
             'max_websites' => ['required', 'integer', 'min:0', 'max:99999'],
@@ -117,7 +117,7 @@ class MailPlanController extends Controller
         ]);
 
         $slug = $this->generateSlug($validated['name']);
-        $exists = MailPlan::query()->where('slug', $slug)->where('id', '!=', $id)->exists();
+        $exists = PackagePlan::query()->where('slug', $slug)->where('id', '!=', $id)->exists();
         if ($exists) {
             return redirect()->route('packages.edit', $id)
                 ->with('error', "A plan with the slug '{$slug}' already exists.");
@@ -150,7 +150,7 @@ class MailPlanController extends Controller
 
     public function destroy(string $token, string $id): RedirectResponse
     {
-        $plan = MailPlan::query()->find($id);
+        $plan = PackagePlan::query()->find($id);
         if ($plan === null) {
             return redirect()->route('packages.index')
                 ->with('error', 'Plan not found.');
@@ -186,7 +186,7 @@ class MailPlanController extends Controller
         return 'plan-'.substr(md5($name), 0, 8);
     }
 
-    private function authorizePlan(MailPlan $plan): void
+    private function authorizePlan(PackagePlan $plan): void
     {
         $actor = request()->user();
         if ($actor?->hasRole('reseller') && (int) $plan->owner_user_id !== (int) $actor->id) {

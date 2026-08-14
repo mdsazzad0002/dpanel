@@ -37,6 +37,6 @@ class Mailbox extends Model
 
     public function plan(): BelongsTo
     {
-        return $this->belongsTo(MailPlan::class, 'plan_id');
+        return $this->belongsTo(PackagePlan::class, 'plan_id');
     }
 }

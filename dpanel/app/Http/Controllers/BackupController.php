@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\QuickExportJob;
+use App\Jobs\RunAccountBackupsJob;
 use App\Models\DatabaseRequest;
 use App\Models\Website;
 use App\Services\Backup\QuickExportJobStatus;
@@ -22,6 +23,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class BackupController extends Controller
 {
+    private const STORAGE_DRIVERS = ['local', 'google_drive', 's3', 's3_compatible', 'sftp', 'custom'];
+
     public function __construct(private readonly BackupSettings $settings, private readonly WebsiteArchiver $archiver) {}
 
     public function index(): Response
@@ -35,7 +38,9 @@ class BackupController extends Controller
             'backupSchedule' => [
                 'enabled' => (bool) $state['schedule_enabled'],
                 'time' => (string) $state['schedule_time'],
+                'account_delay_seconds' => (int) $state['account_delay_seconds'],
             ],
+            'storageDriver' => (string) $state['storage_driver'],
             'remoteUpload' => [
                 'enabled' => (bool) $state['remote_upload_enabled'],
                 'host' => (string) $state['remote_host'],
@@ -73,7 +78,9 @@ class BackupController extends Controller
                 'enabled' => (bool) $state['schedule_enabled'],
                 'time' => (string) $state['schedule_time'],
                 'retention_days' => (int) $state['retention_days'],
+                'account_delay_seconds' => (int) $state['account_delay_seconds'],
             ],
+            'storageDriver' => (string) $state['storage_driver'],
             'remoteUpload' => [
                 'enabled' => (bool) $state['remote_upload_enabled'],
                 'host' => (string) $state['remote_host'],
@@ -87,6 +94,59 @@ class BackupController extends Controller
             ],
             'scpStatus' => $this->scpStatus(),
         ]);
+    }
+
+    public function storageIndex(): Response
+    {
+        $state = $this->settings->read();
+
+        return Inertia::render('Backups/Storage/Index', [
+            'activeDriver' => (string) $state['storage_driver'],
+        ]);
+    }
+
+    public function storageConfigure(string $token, string $driver): Response
+    {
+        abort_unless(in_array($driver, self::STORAGE_DRIVERS, true), 404);
+        $state = $this->settings->read();
+
+        return Inertia::render('Backups/Storage/Configure', [
+            'driver' => $driver,
+            'active' => $state['storage_driver'] === $driver,
+            'config' => (array) (($state['storage_configs'] ?? [])[$driver] ?? []),
+            'accountDelaySeconds' => (int) $state['account_delay_seconds'],
+        ]);
+    }
+
+    public function updateStorage(Request $request, string $token, string $driver): RedirectResponse
+    {
+        abort_unless(in_array($driver, self::STORAGE_DRIVERS, true), 404);
+        $validated = $request->validate([
+            'activate' => ['required', 'boolean'],
+            'path' => ['nullable', 'string', 'max:2000'],
+            'endpoint' => ['nullable', 'string', 'max:2000'],
+            'bucket' => ['nullable', 'string', 'max:255'],
+            'region' => ['nullable', 'string', 'max:100'],
+            'remote_name' => ['nullable', 'string', 'max:255'],
+            'host' => ['nullable', 'string', 'max:255'],
+            'port' => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'username' => ['nullable', 'string', 'max:255'],
+            'key_path' => ['nullable', 'string', 'max:2000'],
+            'account_delay_seconds' => ['required', 'integer', 'min:0', 'max:3600'],
+        ]);
+
+        $state = $this->settings->read();
+        $configs = (array) ($state['storage_configs'] ?? []);
+        $configs[$driver] = collect($validated)->except(['activate', 'account_delay_seconds'])->all();
+        $state['storage_configs'] = $configs;
+        $state['account_delay_seconds'] = $validated['account_delay_seconds'];
+        if ($validated['activate']) {
+            $state['storage_driver'] = $driver;
+        }
+        $this->settings->write($state);
+
+        return redirect()->route('backups.storage.configure', ['driver' => $driver])
+            ->with('success', 'Storage configuration saved'.($validated['activate'] ? ' and activated.' : '.'));
     }
 
     public function updateScpSettings(Request $request): RedirectResponse
@@ -123,6 +183,8 @@ class BackupController extends Controller
             'schedule_enabled' => ['required', 'boolean'],
             'schedule_time' => ['required', 'regex:/^\d{2}:\d{2}$/'],
             'retention_days' => ['required', 'integer', 'min:1', 'max:3650'],
+            'storage_driver' => ['sometimes', 'required', 'in:local,google_drive,s3,s3_compatible,sftp,custom'],
+            'account_delay_seconds' => ['sometimes', 'required', 'integer', 'min:0', 'max:3600'],
         ]);
 
         $this->settings->write(array_merge($this->settings->read(), $validated));
@@ -136,7 +198,11 @@ class BackupController extends Controller
     {
         $runs = $this->listRuns(storage_path('app/backups'));
 
-        return response()->json(['ok' => true, 'runs' => $runs]);
+        return response()->json([
+            'ok' => true,
+            'runs' => $runs,
+            'batch' => Cache::get('account-backup-batch:'.request()->user()->id),
+        ]);
     }
 
     public function runNow(Request $request): JsonResponse
@@ -168,24 +234,24 @@ class BackupController extends Controller
                 return response()->json(['ok' => false, 'message' => 'No website accounts are available to back up.'], 422);
             }
 
-            $completed = [];
-            foreach ($websites as $website) {
-                $result = $this->createWebsiteArchive($request, $website, (string) $validated['content'], $baseUrl, $token);
-                if (! $result['ok']) {
-                    return response()->json([
-                        'ok' => false,
-                        'message' => 'Backup stopped at '.$website->domain.': '.$result['message'],
-                        'completed' => $completed,
-                    ], 500);
-                }
-                $completed[] = (string) $website->domain;
-            }
+            $batchId = (string) Str::uuid();
+            $delay = (int) ($this->settings->read()['account_delay_seconds'] ?? 5);
+            Cache::put('account-backup-batch:'.$request->user()->id, [
+                'id' => $batchId, 'stage' => 'queued', 'completed' => 0,
+                'total' => $websites->count(), 'message' => 'Account backups are queued and will run one at a time.',
+            ], now()->addDay());
+            RunAccountBackupsJob::dispatch(
+                $batchId,
+                (int) $request->user()->id,
+                $websites->pluck('id')->map(fn ($id) => (string) $id)->all(),
+                (string) $validated['content'],
+                $delay,
+            );
 
             return response()->json([
-                'ok' => true,
-                'message' => count($completed).' website account backup(s) completed.',
-                'runs' => $this->listRuns(storage_path('app/backups')),
-            ]);
+                'ok' => true, 'queued' => true, 'batch_id' => $batchId,
+                'message' => $websites->count().' account backup(s) queued. They will run one at a time.',
+            ], 202);
         } catch (\Throwable $e) {
             return response()->json(['ok' => false, 'message' => 'dRust backup API request failed: '.$e->getMessage()], 500);
         }

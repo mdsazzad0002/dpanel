@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\MailPlan;
+use App\Models\PackagePlan;
 use App\Models\PanelSession;
 use App\Models\User;
 use App\Models\WhmcsAccount;
@@ -27,7 +27,7 @@ class WhmcsController extends Controller
 
     public function plans(): JsonResponse
     {
-        return $this->ok(['plans' => MailPlan::query()->whereNull('owner_user_id')->orderBy('sort_order')->get(['id', 'slug', 'name', 'max_storage_mb', 'max_mailboxes', 'max_websites', 'max_databases', 'max_bandwidth_gb'])]);
+        return $this->ok(['plans' => PackagePlan::query()->whereNull('owner_user_id')->orderBy('sort_order')->get(['id', 'slug', 'name', 'max_storage_mb', 'max_mailboxes', 'max_websites', 'max_databases', 'max_bandwidth_gb'])]);
     }
 
     public function provision(Request $request): JsonResponse
@@ -36,7 +36,7 @@ class WhmcsController extends Controller
             'external_id' => ['required', 'string', 'max:191'], 'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email:rfc', 'max:255'], 'plan_slug' => ['required', 'string', 'max:100'],
         ]);
-        $plan = MailPlan::query()->whereNull('owner_user_id')->where('slug', $data['plan_slug'])->first();
+        $plan = PackagePlan::query()->whereNull('owner_user_id')->where('slug', $data['plan_slug'])->first();
         if (! $plan) return $this->error('Unknown plan slug.', 422);
 
         try {
@@ -71,7 +71,7 @@ class WhmcsController extends Controller
         if (! $account) return $this->error('Account not found.', 404);
         $user = $account->user;
         if ($action === 'change-plan') {
-            $plan = MailPlan::query()->whereNull('owner_user_id')->where('slug', $data['plan_slug'] ?? '')->first();
+            $plan = PackagePlan::query()->whereNull('owner_user_id')->where('slug', $data['plan_slug'] ?? '')->first();
             if (! $plan) return $this->error('Unknown plan slug.', 422);
             $this->applyPlan($user, $plan);
         } elseif ($action === 'suspend' || $action === 'terminate') {
@@ -113,7 +113,7 @@ class WhmcsController extends Controller
         return redirect()->route('dashboard', ['token' => $panelToken])->withCookie($cookie);
     }
 
-    private function applyPlan(User $user, MailPlan $plan): void
+    private function applyPlan(User $user, PackagePlan $plan): void
     {
         $user->update(['package_id' => $plan->id, 'disk_space_mb_limit' => $plan->max_storage_mb, 'mail_accounts_limit' => $plan->max_mailboxes, 'websites_limit' => $plan->max_websites, 'databases_limit' => $plan->max_databases, 'bandwidth_gb_limit' => $plan->max_bandwidth_gb]);
     }

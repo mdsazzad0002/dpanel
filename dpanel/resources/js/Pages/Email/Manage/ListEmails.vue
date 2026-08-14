@@ -1,7 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
 
 const page = usePage();
 const deleteForm = useForm({});
@@ -17,17 +16,6 @@ const props = defineProps({
         default: () => [],
     },
 });
-
-const selectedMailboxId = ref(props.mailboxes[0]?.id || '');
-const selectedMailbox = computed(() => props.mailboxes.find((mailbox) => String(mailbox.id) === String(selectedMailboxId.value)) || props.mailboxes[0] || null);
-const guideEmail = computed(() => selectedMailbox.value?.email || 'you@example.com');
-const guideHost = computed(() => selectedMailbox.value?.domain ? `mail.${selectedMailbox.value.domain}` : 'mail.example.com');
-const copiedValue = ref('');
-const copyValue = async (value) => {
-    await navigator.clipboard?.writeText(String(value));
-    copiedValue.value = String(value);
-    window.setTimeout(() => { if (copiedValue.value === String(value)) copiedValue.value = ''; }, 1500);
-};
 
 const formatDate = (value) => {
     if (!value) return '-';
@@ -88,53 +76,6 @@ const deleteMailbox = (id) => {
                 </div>
             </div>
 
-            <section class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-                <div class="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h2 class="font-semibold text-slate-900 dark:text-white">Email client connection guide</h2>
-                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Use these settings in Outlook, Thunderbird, Apple Mail, Gmail, or a mobile mail app.</p>
-                    </div>
-                    <label v-if="mailboxes.length" class="text-sm text-slate-600 dark:text-slate-300">
-                        Mailbox
-                        <select v-model="selectedMailboxId" class="ml-2 rounded-md border-slate-300 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-950">
-                            <option v-for="mailbox in mailboxes" :key="mailbox.id" :value="mailbox.id">{{ mailbox.email }}</option>
-                        </select>
-                    </label>
-                </div>
-
-                <div class="grid gap-4 p-4 lg:grid-cols-2">
-                    <article class="rounded-xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900 dark:bg-blue-950/30">
-                        <div class="flex items-center gap-3"><span class="grid h-10 w-10 place-items-center rounded-lg bg-blue-600 text-white"><i class="bi bi-inbox"></i></span><div><h3 class="font-semibold text-blue-950 dark:text-blue-100">Incoming mail — IMAP</h3><p class="text-xs text-blue-700 dark:text-blue-300">Keeps email synchronized across devices</p></div></div>
-                        <dl class="mt-4 divide-y divide-blue-200 text-sm dark:divide-blue-900">
-                            <div v-for="row in [{ label: 'Server', value: guideHost }, { label: 'Port', value: '993' }, { label: 'Encryption', value: 'SSL/TLS' }, { label: 'Authentication', value: 'Normal password' }, { label: 'Username', value: guideEmail }]" :key="row.label" class="flex items-center justify-between gap-4 py-2.5">
-                                <dt class="text-blue-700 dark:text-blue-300">{{ row.label }}</dt>
-                                <dd class="flex min-w-0 items-center gap-2 font-mono font-medium text-blue-950 dark:text-blue-100"><span class="truncate">{{ row.value }}</span><button type="button" class="text-blue-600 hover:text-blue-800" :title="`Copy ${row.label}`" @click="copyValue(row.value)"><i :class="copiedValue === String(row.value) ? 'bi bi-check2' : 'bi bi-copy'"></i></button></dd>
-                            </div>
-                        </dl>
-                    </article>
-
-                    <article class="rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900 dark:bg-violet-950/30">
-                        <div class="flex items-center gap-3"><span class="grid h-10 w-10 place-items-center rounded-lg bg-violet-600 text-white"><i class="bi bi-send"></i></span><div><h3 class="font-semibold text-violet-950 dark:text-violet-100">Outgoing mail — SMTP</h3><p class="text-xs text-violet-700 dark:text-violet-300">Authentication is required for sending</p></div></div>
-                        <dl class="mt-4 divide-y divide-violet-200 text-sm dark:divide-violet-900">
-                            <div v-for="row in [{ label: 'Server', value: guideHost }, { label: 'Port', value: '465' }, { label: 'Encryption', value: 'SSL/TLS' }, { label: 'Alternative', value: '587 with STARTTLS' }, { label: 'Username', value: guideEmail }]" :key="row.label" class="flex items-center justify-between gap-4 py-2.5">
-                                <dt class="text-violet-700 dark:text-violet-300">{{ row.label }}</dt>
-                                <dd class="flex min-w-0 items-center gap-2 font-mono font-medium text-violet-950 dark:text-violet-100"><span class="truncate">{{ row.value }}</span><button type="button" class="text-violet-600 hover:text-violet-800" :title="`Copy ${row.label}`" @click="copyValue(row.value)"><i :class="copiedValue === String(row.value) ? 'bi bi-check2' : 'bi bi-copy'"></i></button></dd>
-                            </div>
-                        </dl>
-                    </article>
-                </div>
-
-                <div class="border-t border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-950/50">
-                    <h3 class="font-semibold">Setup steps</h3>
-                    <ol class="mt-2 list-decimal space-y-1.5 pl-5 text-slate-600 dark:text-slate-300">
-                        <li>Choose <strong>Add account</strong> and then <strong>IMAP</strong> or <strong>Manual setup</strong> in your mail app.</li>
-                        <li>Enter the complete email address as the username for both incoming and outgoing servers.</li>
-                        <li>Use the mailbox password created in dPanel. Enable SMTP authentication with the same username and password.</li>
-                        <li>Accept only a valid TLS certificate matching <span class="font-mono">{{ guideHost }}</span>; do not bypass certificate warnings.</li>
-                    </ol>
-                </div>
-            </section>
-
             <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800">
@@ -169,6 +110,9 @@ const deleteMailbox = (id) => {
                             <td class="px-4 py-3">{{ formatDate(item.created_at) }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
+                                    <Link :href="panelRoute('emails.connect-device', { id: item.id })" class="rounded-md border border-violet-300 px-2 py-1 text-xs text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20">
+                                        Connect Device
+                                    </Link>
                                     <Link
                                         v-if="item.autologin_ready"
                                         :href="panelRoute('mailbox.open', { id: item.id })"

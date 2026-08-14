@@ -88,5 +88,14 @@ return [
             ['name' => 'llama3.1-8b', 'display_name' => 'Llama 3.1 8B (free)', 'context_window' => 128000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
             ['name' => 'qwen-3-32b', 'display_name' => 'Qwen3 32B (free)', 'context_window' => 128000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
         ],
+        // Kilo's stable auto routes choose an upstream model based on the
+        // requested quality/cost tier. Prices are resolved by Kilo at request
+        // time, so the local estimates intentionally remain zero.
+        'kilo' => [
+            ['name' => 'kilo-auto/free', 'display_name' => 'Kilo Auto Free', 'context_window' => 128000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
+            ['name' => 'kilo-auto/efficient', 'display_name' => 'Kilo Auto Efficient', 'context_window' => 128000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
+            ['name' => 'kilo-auto/balanced', 'display_name' => 'Kilo Auto Balanced', 'context_window' => 128000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
+            ['name' => 'kilo-auto/frontier', 'display_name' => 'Kilo Auto Frontier', 'context_window' => 128000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
+        ],
     ],
 ];

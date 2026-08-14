@@ -84,11 +84,11 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function package(): BelongsTo
     {
-        return $this->belongsTo(MailPlan::class, 'package_id');
+        return $this->belongsTo(PackagePlan::class, 'package_id');
     }
 
     public function ownedPackages(): HasMany
     {
-        return $this->hasMany(MailPlan::class, 'owner_user_id');
+        return $this->hasMany(PackagePlan::class, 'owner_user_id');
     }
 }

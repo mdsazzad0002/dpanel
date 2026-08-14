@@ -10,6 +10,73 @@ dPanel is a Laravel/Vue hosting panel backed by local Rust services:
 This README is the single production and developer manual. The current stack
 uses the Rust edge gateway directly and does not generate legacy vhost files.
 
+## Product and Support Model
+
+> **Free forever. The same software for everyone. No license fee, no feature
+> lock, and no forced subscription. Users pay only when they request support.**
+
+```text
+                         dPanel
+                            │
+                   Free Core Software
+                            │
+          ┌─────────────────┴─────────────────┐
+          │                                   │
+   Self-Service User                    Supported User
+          │                                   │
+   Software: free                      Software: free
+   Updates: free                       Updates: free
+   Features: identical                 Features: identical
+   Community help                      Paid expert assistance
+          │                                   │
+          └──────── Optional donation ────────┘
+```
+
+### Operating Structure
+
+1. Maintain one public product and one release channel for every user.
+2. Include all software features and updates at no license cost.
+3. Charge for human work such as installation, migration, troubleshooting,
+   priority response, and managed operations.
+4. Keep donations optional and treat them as community contributions rather
+   than predictable operating revenue.
+
+This structure avoids customer-specific editions, license checks, and separate
+feature branches. Engineering effort stays focused on one codebase, while the
+commercial service remains independent from software access.
+
+### Revenue and Capacity Calculation
+
+Use support revenue—not downloads or active installations—for planning:
+
+```text
+Monthly support revenue
+  = one-time support jobs
+  + recurring support plans
+
+One-time support jobs
+  = completed jobs × average fee per job
+
+Recurring support plans
+  = active supported customers × average monthly support fee
+
+Available support hours
+  = support engineers × billable hours per engineer
+
+Required support hours
+  = total estimated hours across all accepted support requests
+
+Operating margin
+  = support revenue + donations - support cost - infrastructure cost
+```
+
+Before accepting more paid work, `Required support hours` should remain below
+`Available support hours`. Donations should be excluded from the baseline
+forecast because they are voluntary and may vary from month to month.
+
+Unlike a traditional per-server licensing model, dPanel monetizes optional
+expert service without restricting access to the software itself.
+
 ## Request Flow
 
 ```text

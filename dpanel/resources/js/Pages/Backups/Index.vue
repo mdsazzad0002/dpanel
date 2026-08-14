@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import axios from 'axios';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
@@ -8,6 +8,7 @@ const props = defineProps({
     backupRoot: { type: String, default: '' },
     retentionDays: { type: Number, default: 7 },
     backupSchedule: { type: Object, default: () => ({ enabled: true, time: '02:30' }) },
+    storageDriver: { type: String, default: 'local' },
     remoteUpload: { type: Object, default: () => ({ enabled: false, host: '', path: '', user: '', port: '22' }) },
     scpStatus: { type: Object, default: () => ({ status: 'never', updated_at: null }) },
     websites: { type: Array, default: () => [] },
@@ -21,6 +22,8 @@ const responseOk = ref(true);
 const deletingRun = ref('');
 const restoringFile = ref('');
 const runsLoading = ref(false);
+const batch = ref(null);
+let batchPoll = null;
 const runForm = useForm({
     filter: 'all',
     content: 'all',
@@ -65,6 +68,7 @@ const runBackup = async () => {
         responseOk.value = true;
         responseMessage.value = data.message;
         backupCanvasOpen.value = false;
+        if (data.queued) startBatchPolling();
     } catch (error) {
         showError(error, 'Backup could not be completed.');
     } finally {
@@ -106,6 +110,12 @@ const loadRuns = async () => {
     try {
         const { data } = await axios.get(route('backups.data'), { headers: { Accept: 'application/json' } });
         runs.value = data.runs || [];
+        batch.value = data.batch || null;
+        if (batch.value?.message) {
+            responseOk.value = batch.value.stage !== 'failed';
+            responseMessage.value = batch.value.message;
+        }
+        if (['completed', 'failed'].includes(batch.value?.stage)) stopBatchPolling();
     } catch (error) {
         showError(error, 'Backup list could not be loaded.');
     } finally {
@@ -113,7 +123,20 @@ const loadRuns = async () => {
     }
 };
 
-onMounted(loadRuns);
+const startBatchPolling = () => {
+    stopBatchPolling();
+    batchPoll = window.setInterval(loadRuns, 4000);
+};
+const stopBatchPolling = () => {
+    if (batchPoll) window.clearInterval(batchPoll);
+    batchPoll = null;
+};
+
+onMounted(async () => {
+    await loadRuns();
+    if (['queued', 'running'].includes(batch.value?.stage)) startBatchPolling();
+});
+onBeforeUnmount(stopBatchPolling);
 
 </script>
 
@@ -131,6 +154,7 @@ onMounted(loadRuns);
         <div class="space-y-4">
             <div v-if="responseMessage" :class="responseOk ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'" class="rounded-md border px-4 py-3 text-sm whitespace-pre-line">
                 {{ responseMessage }}
+                <span v-if="batch && ['queued', 'running'].includes(batch.stage)" class="ml-2 font-semibold">{{ batch.completed || 0 }}/{{ batch.total || 0 }}</span>
             </div>
 
             <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -165,16 +189,16 @@ onMounted(loadRuns);
             </section>
 
             <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Link :href="route('backups.scp')" class="group flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-800">
+            <Link :href="route('backups.storage.index')" class="group flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-800">
                     <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-100 text-lg text-indigo-600 transition group-hover:bg-indigo-600 group-hover:text-white dark:bg-indigo-950"><i class="itc bi bi-cloud-arrow-up"></i></span>
                     <div class="min-w-0 flex-1">
                         <div class="flex flex-wrap items-center gap-2">
-                            <h2 class="font-semibold">SCP Backup</h2>
+                            <h2 class="font-semibold">Backup Storage</h2>
                             <span :class="remoteUpload?.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'" class="rounded-full px-2 py-0.5 text-[11px] font-medium">
                                 {{ remoteUpload?.enabled ? 'Enabled' : 'Disabled' }}
                             </span>
                         </div>
-                        <p class="mt-1 text-sm text-slate-500">Configure remote backup transfer and credentials.</p>
+                        <p class="mt-1 text-sm capitalize text-slate-500">{{ storageDriver.replace('_', ' ') }} · Configure destination and sequential processing.</p>
                     </div>
                     <i class="itc bi bi-chevron-right shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-indigo-600"></i>
             </Link>
@@ -204,7 +228,7 @@ onMounted(loadRuns);
                     <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="runBackup">
                         <div class="flex-1 space-y-6 overflow-y-auto p-5">
                             <div class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
-                                Full backups create a portable cPanel-style <span class="font-mono">backup-*.tar.gz</span> migration package.
+                                Full backups create a portable cPanel-style <span class="font-mono">backup-*.tar.gz</span> migration package. All-account backups run in the background, one account at a time.
                             </div>
                     <div>
                         <div class="mb-3">

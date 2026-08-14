@@ -15,7 +15,8 @@ use App\Http\Controllers\AiGatewayLogController;
 use App\Http\Controllers\AiGatewayModelController;
 use App\Http\Controllers\AiGatewayProviderController;
 use App\Http\Controllers\MailClientController;
-use App\Http\Controllers\MailPlanController;
+use App\Http\Controllers\MailHealthController;
+use App\Http\Controllers\PackagePlanController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\MonitoringController;
 use App\Http\Controllers\NotificationController;
@@ -31,10 +32,8 @@ use App\Http\Controllers\ServerTaskController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WebsiteTrashBackupController;
-use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 Route::get('/', function () {
     if (Auth::check() && session('panel_session_token')) {
@@ -51,25 +50,6 @@ Route::get('/cpsess{token}/login', function () {
     // happens only after the user explicitly submits the login form.
     return redirect()->route('login');
 })->where('token', '[0-9a-fA-F]{64}');
-
-Route::get('/init', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-        'installerBaseUrl' => rtrim((string) url('/'), '/'),
-        'defaultPanelDomain' => (string) (parse_url((string) config('serverpanel.panel_domain', ''), PHP_URL_HOST)
-            ?: parse_url((string) config('app.url', 'http://localhost'), PHP_URL_HOST)
-            ?: config('serverpanel.panel_domain', 'localhost')),
-        'defaultServerBaseDir' => (string) config('app.server_base_dir', ''),
-        'defaultDbName' => (string) env('DB_DATABASE', 'serverpanel'),
-        'defaultDbUser' => (string) env('DB_USERNAME', 'serverpanel'),
-        'defaultDbHost' => (string) env('DB_HOST', '127.0.0.1'),
-        'defaultDbPort' => (string) env('DB_PORT', '3306'),
-        'defaultPanelEmail' => (string) env('MAIL_FROM_ADDRESS', 'admin@example.com'),
-
-    ]);
-})->name('init.docs');
 
 Route::middleware(['panel.session'])->group(function (): void {
     Route::match(['get', 'post'], '/webmail', [EmailController::class, 'webmailEntry'])
@@ -194,6 +174,15 @@ Route::prefix('cpsess{token}')
             Route::get('/emails/create', [EmailController::class, 'create'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.create');
+            Route::get('/emails/{id}/connect-device', [EmailController::class, 'connectionGuide'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.connect-device');
+            Route::post('/emails/{id}/connect-device/send', [EmailController::class, 'sendConnectionGuide'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:5,1'])
+                ->name('emails.connect-device.send');
+            Route::get('/mail-health', [MailHealthController::class, 'index'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('mail-health.index');
             Route::post('/emails', [EmailController::class, 'store'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.store');
@@ -263,23 +252,23 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->name('mailbox.mark-read');
 
-            Route::redirect('/mail-plans', '/packages');
-            Route::get('/packages', [MailPlanController::class, 'index'])
+            Route::redirect('/package-plans', '/packages');
+            Route::get('/packages', [PackagePlanController::class, 'index'])
                 ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
                 ->name('packages.index');
-            Route::get('/packages/create', [MailPlanController::class, 'create'])
+            Route::get('/packages/create', [PackagePlanController::class, 'create'])
                 ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
                 ->name('packages.create');
-            Route::post('/packages', [MailPlanController::class, 'store'])
+            Route::post('/packages', [PackagePlanController::class, 'store'])
                 ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
                 ->name('packages.store');
-            Route::get('/packages/{id}/edit', [MailPlanController::class, 'edit'])
+            Route::get('/packages/{id}/edit', [PackagePlanController::class, 'edit'])
                 ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
                 ->name('packages.edit');
-            Route::patch('/packages/{id}', [MailPlanController::class, 'update'])
+            Route::patch('/packages/{id}', [PackagePlanController::class, 'update'])
                 ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
                 ->name('packages.update');
-            Route::delete('/packages/{id}', [MailPlanController::class, 'destroy'])
+            Route::delete('/packages/{id}', [PackagePlanController::class, 'destroy'])
                 ->middleware('role_or_permission:admin|superadmin|reseller|manage_packages')
                 ->name('packages.destroy');
 
@@ -309,6 +298,17 @@ Route::prefix('cpsess{token}')
             Route::get('/backups/scp', [BackupController::class, 'scp'])
                 ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->name('backups.scp');
+            Route::get('/backups/storage', [BackupController::class, 'storageIndex'])
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
+                ->name('backups.storage.index');
+            Route::get('/backups/storage/{driver}', [BackupController::class, 'storageConfigure'])
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
+                ->where('driver', 'local|google_drive|s3|s3_compatible|sftp|custom')
+                ->name('backups.storage.configure');
+            Route::patch('/backups/storage/{driver}', [BackupController::class, 'updateStorage'])
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
+                ->where('driver', 'local|google_drive|s3|s3_compatible|sftp|custom')
+                ->name('backups.storage.update');
             Route::patch('/backups/scp/settings', [BackupController::class, 'updateScpSettings'])
                 ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->name('backups.scp.settings.update');

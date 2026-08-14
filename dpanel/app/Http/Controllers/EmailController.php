@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\MailPlan;
+use App\Models\PackagePlan;
 use App\Models\MailDomain;
 use App\Models\Mailbox;
 use App\Models\Website;
+use App\Services\Mail\MailboxImapService;
 use App\Services\ResourceQuotaService;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
 
 class EmailController extends Controller
 {
@@ -35,7 +37,7 @@ class EmailController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('CreateEmail', [
+        return Inertia::render('Email/Manage/CreateEmail', [
             'websiteDomains' => $this->readWebsiteDomains(),
         ]);
     }
@@ -49,10 +51,76 @@ class EmailController extends Controller
             ->map(fn (Mailbox $mailbox): array => $this->toMailboxListRow($mailbox, $setupCheck))
             ->all();
 
-        return Inertia::render('ListEmails', [
+        return Inertia::render('Email/Manage/ListEmails', [
             'mailboxes' => $mailboxes,
             'setupCheck' => $setupCheck,
         ]);
+    }
+
+    public function connectionGuide(string $token, string $id): Response
+    {
+        $mailbox = Mailbox::query()->findOrFail($id);
+
+        return Inertia::render('Email/Manage/EmailConnectionGuide', [
+            'mailbox' => $mailbox->only(['id', 'email', 'domain']),
+            'mailHost' => 'mail.'.trim((string) $mailbox->domain),
+        ]);
+    }
+
+    public function sendConnectionGuide(
+        Request $request,
+        string $token,
+        string $id,
+        MailboxImapService $mailboxImapService
+    ): RedirectResponse {
+        $mailbox = Mailbox::query()->findOrFail($id);
+        $validated = $request->validate([
+            'recipient' => ['required', 'email:rfc', 'max:254'],
+        ]);
+
+        $mailHost = 'mail.'.trim((string) $mailbox->domain);
+        $body = implode("\n", [
+            'Your dPanel email client configuration',
+            '',
+            'Mailbox: '.$mailbox->email,
+            '',
+            'Incoming mail (IMAP)',
+            'Server: '.$mailHost,
+            'Port: 993',
+            'Encryption: SSL/TLS',
+            'Authentication: Normal password',
+            'Username: '.$mailbox->email,
+            '',
+            'Outgoing mail (SMTP)',
+            'Server: '.$mailHost,
+            'Port: 465',
+            'Encryption: SSL/TLS',
+            'Alternative: Port 587 with STARTTLS',
+            'SMTP authentication: Required',
+            'Username: '.$mailbox->email,
+            '',
+            'Use the mailbox password created in dPanel. For security, the password is not included in this email.',
+            '',
+            'This message also confirms that outbound email delivery from this mailbox is working.',
+        ]);
+
+        try {
+            $mailboxImapService->sendMessage(
+                $mailbox,
+                (string) $validated['recipient'],
+                'Email configuration for '.$mailbox->email,
+                $body
+            );
+        } catch (RuntimeException $exception) {
+            return redirect()
+                ->route('emails.connect-device', ['token' => $token, 'id' => $id])
+                ->withInput()
+                ->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('emails.connect-device', ['token' => $token, 'id' => $id])
+            ->with('success', 'Test email and configuration sent to '.$validated['recipient'].'.');
     }
 
     public function dnsGuide(Request $request): Response
@@ -81,7 +149,7 @@ class EmailController extends Controller
             ['type' => 'TXT', 'name' => '_dmarc', 'value' => 'v=DMARC1; p=none; rua=mailto:postmaster@'.$domain.'; adkim=s; aspf=s', 'priority' => null, 'purpose' => 'Monitor SPF/DKIM alignment'],
         ];
 
-        return Inertia::render('EmailDnsGuide', [
+        return Inertia::render('Email/Manage/EmailDnsGuide', [
             'domains' => $domains->all(),
             'selectedDomain' => $domain,
             'mailHost' => $mailHost,
@@ -237,7 +305,7 @@ class EmailController extends Controller
         $mailbox = Mailbox::query()->find($id);
         abort_if($mailbox === null, 404);
 
-        return Inertia::render('EditEmail', [
+        return Inertia::render('Email/Manage/EditEmail', [
             'mailbox' => array_merge($mailbox->toArray(), ['password' => '']),
             'websiteDomains' => $this->readWebsiteDomains(),
         ]);
@@ -371,7 +439,7 @@ class EmailController extends Controller
         $row['autologin_message'] = $autoLoginCheck['message'];
 
         if (! empty($row['plan_id'])) {
-            $plan = MailPlan::query()->find($row['plan_id']);
+            $plan = PackagePlan::query()->find($row['plan_id']);
             $row['plan'] = $plan ? [
                 'id' => $plan->id,
                 'name' => $plan->name,
@@ -874,10 +942,10 @@ class EmailController extends Controller
     private function readPlans(): array
     {
         try {
-            return MailPlan::query()
+            return PackagePlan::query()
                 ->orderBy('sort_order')
                 ->get(['id', 'name', 'slug', 'max_storage_mb', 'max_mailboxes'])
-                ->map(fn (MailPlan $plan): array => $plan->toArray())
+                ->map(fn (PackagePlan $plan): array => $plan->toArray())
                 ->all();
         } catch (\Throwable $e) {
             return [];

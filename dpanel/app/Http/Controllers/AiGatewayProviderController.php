@@ -688,6 +688,7 @@ class AiGatewayProviderController extends Controller
             'deepseek' => 'DeepSeek Provider',
             'mistral' => 'Mistral Provider',
             'cerebras' => 'Cerebras Provider',
+            'kilo' => 'Kilo Code Provider',
             'gemini' => 'Gemini Provider',
             default => Str::headline(str_replace('_', ' ', $driver)).' Provider',
         };

@@ -15,7 +15,7 @@ class MonitoringController extends Controller
 {
     public function index(): Response
     {
-        return Inertia::render('Monitoring', [
+        return Inertia::render('Monitoring/Monitoring', [
             'snapshot' => $this->buildSnapshot(),
         ]);
     }

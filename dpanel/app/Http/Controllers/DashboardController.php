@@ -21,7 +21,7 @@ class DashboardController extends Controller
         $actor = $request->user();
         $stats = $this->buildStats($actor);
 
-        return Inertia::render('Dashboard', [
+        return Inertia::render('Dashboard/Dashboard', [
             'dashboardStats' => $stats,
             'websiteRecords' => $this->buildWebsiteRecords($actor),
             'websiteScopeLabel' => $this->websiteScopeLabel($actor),

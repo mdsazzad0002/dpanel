@@ -67,6 +67,7 @@ class AiGatewayProvider extends Model
             'deepseek' => 'DeepSeek',
             'mistral' => 'Mistral',
             'cerebras' => 'Cerebras',
+            'kilo' => 'Kilo Code',
             'gemini' => 'Google Gemini',
             default => ucfirst($this->driver),
         };
