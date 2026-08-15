@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasColumn('ai_gateway_providers', 'base_url')) {
+            return;
+        }
+
         Schema::table('ai_gateway_providers', function (Blueprint $table): void {
             $table->string('base_url')->nullable()->after('slug');
         });
@@ -21,6 +25,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (! Schema::hasColumn('ai_gateway_providers', 'base_url')) {
+            return;
+        }
+
         Schema::table('ai_gateway_providers', function (Blueprint $table): void {
             $table->dropColumn('base_url');
         });

@@ -219,6 +219,40 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     if zip_path.as_os_str().is_empty() {
         return Err("Missing zip path.".into());
     }
+    let backup_root = Path::new("/var/www/dpanel/storage/app/backups");
+    if !zip_path.starts_with(backup_root)
+        || zip_path
+            .components()
+            .any(|part| matches!(part, Component::ParentDir))
+    {
+        return Err("refusing to write archive outside the backup directory".into());
+    }
+
+    let owner = website.site_owner.as_deref().unwrap_or("").trim();
+    if owner.is_empty()
+        || !owner
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        return Err("invalid website owner".into());
+    }
+    let owner_home = PathBuf::from(format!("/home/{owner}"));
+    for candidate in [&website.root_path, &website.project_root] {
+        if candidate.trim().is_empty() {
+            continue;
+        }
+        let path = normalize_path(candidate);
+        if (path != owner_home && !path.starts_with(&owner_home))
+            || path
+                .components()
+                .any(|part| matches!(part, Component::ParentDir))
+        {
+            return Err(format!(
+                "refusing to archive path outside {}",
+                owner_home.display()
+            ));
+        }
+    }
 
     if let Some(parent) = zip_path.parent() {
         fs::create_dir_all(parent)

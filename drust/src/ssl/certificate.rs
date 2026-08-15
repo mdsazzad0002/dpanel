@@ -101,7 +101,15 @@ pub(super) fn ensure(
     if !valid_domain(&domain) {
         return Err("Invalid SSL domain.".into());
     }
-    if !Path::new(root_path).is_dir() {
+    let root_path_buf = Path::new(root_path);
+    if !root_path_buf.starts_with("/home/")
+        || root_path_buf
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Err("Website root path must be inside /home/<owner>.".into());
+    }
+    if !root_path_buf.is_dir() {
         return Err(format!("Website root path does not exist: {root_path}"));
     }
 

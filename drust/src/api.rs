@@ -116,10 +116,23 @@ pub(crate) fn check_token(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .unwrap_or("");
-    if token != state.api_token {
+    if !constant_time_eq(token.as_bytes(), state.api_token.as_bytes()) {
         return Err(ApiResponse::error("Unauthorized"));
     }
     Ok(())
+}
+
+/// Compares two byte strings in time independent of where they first differ,
+/// so a network attacker timing responses can't infer the token byte-by-byte.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff: u8 = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 pub(crate) fn operation_response(
