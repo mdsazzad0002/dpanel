@@ -232,18 +232,24 @@ class MigrationController extends Controller
     public function websiteImport(Request $request, string $token, string $id): Response
     {
         $website = \App\Models\Website::visibleTo($request->user())->findOrFail($id);
-        $database = DatabaseRequest::query()
+        $databases = DatabaseRequest::query()
             ->visibleTo($request->user())
             ->whereRaw('LOWER(domain) = ?', [strtolower((string) $website->domain)])
             ->where('status', 'active')
             ->latest()
-            ->first();
+            ->get();
 
-        return Inertia::render('Migrations/Index', [
-            'provider' => 'generic',
+        return Inertia::render('Websites/QuickImport', [
             'website' => $website,
-            'panelToken' => $token,
-            'databaseConnection' => ['available' => $database !== null, 'database_name' => $database?->database_name],
+            'databaseConnection' => [
+                'available' => $databases->isNotEmpty(),
+                'database_name' => $databases->first()?->database_name,
+                'databases' => $databases->map(fn (DatabaseRequest $database): array => [
+                    'id' => $database->id,
+                    'database_name' => $database->database_name,
+                ])->values()->all(),
+            ],
+            'suggestedDatabaseName' => $this->suggestedDatabaseName($website),
             'imports' => MigrationImport::visibleTo($request->user())->where('provider', 'generic')->where('inventory->domain', $website->domain)->latest()->get()
                 ->each(function (MigrationImport $import): void {
                     $inventory = (array) $import->inventory;
@@ -253,12 +259,24 @@ class MigrationController extends Controller
         ]);
     }
 
+    private function suggestedDatabaseName(\App\Models\Website $website): string
+    {
+        $owner = (string) $website->site_owner;
+        $domainPrefix = strtolower((string) preg_replace('/[^a-z0-9_]/i', '_', explode('.', (string) $website->domain)[0]));
+        $domainPrefix = substr(trim($domainPrefix, '_') ?: 'site', 0, 16);
+        $nameSuffix = $domainPrefix.'_db';
+
+        return substr($owner.'_', 0, 64 - strlen($nameSuffix)).$nameSuffix;
+    }
+
     public function storeWebsiteImport(Request $request, string $token, string $id): JsonResponse
     {
         $website = \App\Models\Website::visibleTo($request->user())->findOrFail($id);
         $data = $request->validate([
             'archive_name' => ['required', 'string', 'max:255'], 'archive_size' => ['required', 'integer', 'between:1,5368709120'],
             'database_name_file' => ['nullable', 'string', 'max:255'], 'database_size' => ['nullable', 'required_with:database_name_file', 'integer', 'between:1,2147483648'],
+            'database_id' => ['nullable', 'string'],
+            'new_database_name' => ['nullable', 'string', 'max:64'],
             'overwrite_database' => ['nullable', 'boolean'],
         ]);
         $archiveName = basename((string) $data['archive_name']);
@@ -267,14 +285,13 @@ class MigrationController extends Controller
         abort_if($databaseFileName !== null && preg_match('/\.sql$/i', $databaseFileName) !== 1, 422, 'Database dump must be a .sql file.');
 
         $database = null;
-        if ($databaseFileName !== null) {
+        if ($databaseFileName !== null && ! empty($data['database_id'])) {
             $database = DatabaseRequest::query()
                 ->visibleTo($request->user())
                 ->whereRaw('LOWER(domain) = ?', [strtolower((string) $website->domain)])
                 ->where('status', 'active')
-                ->latest()
-                ->first();
-            abort_if($database !== null && ! (bool) ($data['overwrite_database'] ?? false), 409, 'Confirm database overwrite before uploading the SQL dump.');
+                ->findOrFail($data['database_id']);
+            abort_unless((bool) ($data['overwrite_database'] ?? false), 409, 'Confirm database overwrite before uploading the SQL dump.');
         }
         $trackingId = (string) Str::uuid();
         $directory = storage_path('app/migrations/'.$trackingId);
@@ -288,12 +305,13 @@ class MigrationController extends Controller
         if ($databaseFileName !== null && $database === null) {
             $domainPrefix = strtolower((string) preg_replace('/[^a-z0-9_]/i', '_', explode('.', (string) $website->domain)[0]));
             $domainPrefix = substr(trim($domainPrefix, '_') ?: 'site', 0, 16);
-            $prefix = $owner.'_';
-            $nameSuffix = $domainPrefix.'_db';
             $userSuffix = $domainPrefix.'_user';
+            $customName = strtolower((string) preg_replace('/[^a-z0-9_]/i', '_', (string) ($data['new_database_name'] ?? '')));
+            $customName = trim($customName, '_');
+            $databaseName = $customName !== '' ? substr($customName, 0, 64) : $this->suggestedDatabaseName($website);
             $database = new DatabaseRequest([
-                'database_name' => substr($prefix, 0, 64 - strlen($nameSuffix)).$nameSuffix,
-                'database_user' => substr($prefix, 0, 64 - strlen($userSuffix)).$userSuffix,
+                'database_name' => $databaseName,
+                'database_user' => substr($owner.'_', 0, 64 - strlen($userSuffix)).$userSuffix,
                 'database_password' => Str::password(24),
                 'database_host' => '127.0.0.1',
             ]);

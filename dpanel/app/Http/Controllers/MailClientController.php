@@ -104,7 +104,7 @@ class MailClientController extends Controller
         ]);
     }
 
-    public function send(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): RedirectResponse
+    public function send(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): RedirectResponse|JsonResponse
     {
         $mailbox = Mailbox::query()->find($id);
         abort_if($mailbox === null, 404);
@@ -142,7 +142,7 @@ class MailClientController extends Controller
             ->with('success', 'Message sent successfully.');
     }
 
-    public function delete(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): RedirectResponse
+    public function delete(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): RedirectResponse|JsonResponse
     {
         $mailbox = Mailbox::query()->find($id);
         abort_if($mailbox === null, 404);

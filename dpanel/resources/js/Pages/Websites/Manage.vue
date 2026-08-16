@@ -173,6 +173,8 @@ const storageLinked = computed(() => Boolean(props.rootInspection?.storage_linke
 const isSystemWebsite = computed(() => String(props.website.id) === '1');
 
 const serviceLinks = computed(() => [
+    { label: 'Quick Export', icon: 'bi-file-earmark-zip', color: 'violet', href: panelRoute('websites.quick-export.page', { id: props.website.id }), description: 'Choose files and database, each downloads separately' },
+    { label: 'Import Website', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and auto-connect an optional SQL database' },
     { label: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress' },
     { label: 'Usage Details', icon: 'bi-graph-up', color: 'violet', href: panelRoute('websites.usage', { id: props.website.id }), description: 'Detailed usage history' },
     { label: 'Redis Cache', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
@@ -180,7 +182,6 @@ const serviceLinks = computed(() => [
     { label: 'FTP Accounts', icon: 'bi-hdd-network', color: 'cyan', href: panelRoute('websites.ftp.index', { id: props.website.id }), description: 'Create client FTP access' },
     { label: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Scheduled tasks' },
     { label: 'Git Deployment', icon: 'bi-github', color: 'emerald', href: panelRoute('websites.git.index', { id: props.website.id }), description: 'Clone, pull, push & auto sync' },
-    { label: 'Import Website', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and auto-connect an optional SQL database' },
     { label: 'SSH Key Generator', icon: 'bi-key', color: 'amber', href: panelRoute('websites.ssh-key.index', { id: props.website.id }), description: 'Create a GitHub deployment key' },
     { label: 'Website Terminal', icon: 'bi-terminal', color: 'emerald', href: panelRoute('websites.terminal.index', { id: props.website.id }), description: 'Open the isolated project shell' },
     { label: 'Alis API', icon: 'bi-code-slash', color: 'violet', href: panelRoute('websites.alias-api.index', { id: props.website.id }), description: 'Manage aliases and scoped API access' },
@@ -189,7 +190,13 @@ const serviceLinks = computed(() => [
     { label: 'DNS Zones', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.zones'), description: 'DNS entries' },
     { label: 'PHP Manager', icon: 'bi-braces', color: 'indigo', href: panelRoute('php.manager'), description: 'PHP versions & modules' },
     { label: 'IP Ban / Whitelist', icon: 'bi-shield-lock', color: 'red', href: panelRoute('websites.ip-rules.index', { id: props.website.id }), description: 'Control website IP access' },
-].filter((item) => !isSystemWebsite.value || !['WordPress Installer', 'File Manager'].includes(item.label)));
+// The system website is dpanel's own installation — hosting-management actions
+// that overwrite files/git/database or grant separate account access don't
+// apply to it and would risk breaking the panel itself, so hide them here.
+].filter((item) => !isSystemWebsite.value || ![
+    'WordPress Installer', 'File Manager', 'Import Website', 'FTP Accounts',
+    'Cron Jobs', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Quick Export',
+].includes(item.label)));
 
 const serviceColorClasses = {
     blue: 'bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400',
@@ -920,17 +927,6 @@ const saveRuntimeSettings = async () => {
                                     serviceLinks.length }} tools</span>
                         </div>
                         <div class="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                            <Link v-if="!isSystemWebsite" :href="panelRoute('websites.quick-export.page', { id: website.id })"
-                                class="group flex items-center gap-3 rounded-xl border border-violet-100 bg-white p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-md dark:border-violet-900/60 dark:bg-slate-800/50 dark:hover:border-violet-800 dark:hover:shadow-lg">
-                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400">
-                                    <i class="bi bi-file-earmark-zip text-base"></i>
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <p class="truncate text-[13px] font-semibold text-slate-800 dark:text-slate-200">Quick Export</p>
-                                    <p class="mt-0.5 truncate text-[11px] text-slate-400 dark:text-slate-500">Choose files and database, each downloads separately</p>
-                                </div>
-                                <i class="bi bi-chevron-right text-sm text-slate-300 dark:text-slate-600"></i>
-                            </Link>
                             <Link v-for="service in serviceLinks" :key="service.label" :href="service.href"
                                 class="group flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:shadow-lg">
                                 <div

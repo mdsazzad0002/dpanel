@@ -1142,8 +1142,7 @@ panel_php_install_versions() {
   for version in "${selected_versions[@]}"; do
     panel_php_version_supported "$version" || panel_die "Unsupported PHP version: ${version}"
     if [[ "$force" != "true" ]] && panel_php_version_installed "$version"; then
-      panel_info_log "php ${version} already installed; skipping."
-      continue
+      panel_info_log "php ${version} already installed; reconciling required extensions."
     fi
     panel_run_module php install "$version"
   done

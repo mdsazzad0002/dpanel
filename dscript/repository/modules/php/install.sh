@@ -94,6 +94,26 @@ php_reload_service() {
   fi
 }
 
+php_enable_and_verify_imap() {
+  local php_binary
+
+  case "$(pkg_distro_family)" in
+    debian) php_binary="php${php_version}" ;;
+    rpm) php_binary="php" ;;
+    *) panel_die "Unsupported distro for PHP IMAP verification." ;;
+  esac
+
+  if [[ "$(pkg_distro_family)" == "debian" ]] && command -v phpenmod >/dev/null 2>&1; then
+    phpenmod -v "$php_version" imap
+  fi
+
+  php_reload_service
+
+  command -v "$php_binary" >/dev/null 2>&1 || panel_die "PHP ${php_version} binary is unavailable after installation."
+  "$php_binary" -r 'exit(extension_loaded("imap") ? 0 : 1);' || \
+    panel_die "PHP ${php_version} IMAP extension failed to load after installation."
+}
+
 php_stop_service() {
   local service
   service="$(pkg_php_fpm_service "$php_version")"
@@ -111,7 +131,7 @@ php_install() {
   pkg_install_php_stack "$php_version"
   mapfile -t extension_packages < <(php_extension_packages)
   pkg_install_available "${extension_packages[@]}"
-  php_reload_service
+  php_enable_and_verify_imap
   panel_info_log "php ${php_version} installed."
 }
 
