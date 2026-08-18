@@ -27,10 +27,19 @@ fn execute(request: &Request) -> Result<serde_json::Value, String> {
         "view:clear",
         "storage:link",
         "storage:unlink",
+        "migrate",
     ];
-    if !ALLOWED.contains(&request.command.as_str()) {
+    const ALLOWED_FLAGS: &[&str] = &["--force"];
+
+    let parts: Vec<&str> = request.command.split_whitespace().collect();
+    let (base_command, flags) = parts.split_first().ok_or("Artisan command is required.")?;
+    if !ALLOWED.contains(base_command) {
         return Err("Artisan command is not allowed.".into());
     }
+    if flags.iter().any(|flag| !ALLOWED_FLAGS.contains(flag)) {
+        return Err("Artisan command flag is not allowed.".into());
+    }
+
     let (user_home, canonical_home, _) = validate_account(&request.username)?;
     let project = validate_user_path(&request.username, &request.project_path)?;
     let project = ensure_canonical_inside_home(&canonical_home, &project, "Laravel project")?;
@@ -55,7 +64,8 @@ fn execute(request: &Request) -> Result<serde_json::Value, String> {
         .arg("PATH=/usr/local/bin:/usr/bin:/bin")
         .arg(php)
         .arg("artisan")
-        .arg(&request.command)
+        .arg(base_command)
+        .args(flags)
         .current_dir(&project)
         .output()
         .map_err(|e| format!("Cannot start Artisan: {e}"))?;

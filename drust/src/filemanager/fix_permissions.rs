@@ -141,8 +141,7 @@ fn discover_public_html_targets() -> Result<Vec<Target>, String> {
 
 fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
     let path = root_path.to_string_lossy();
-    let site_group = user_group(username)?;
-    let owner = format!("{username}:{site_group}");
+    let owner = format!("{username}:www-data");
 
     run_status("chown", &["-R", &owner, path.as_ref()])?;
     if command_exists("setfacl") {
@@ -151,6 +150,24 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
     }
     run_status("chmod", &["-R", "u+rwX,g+rX,g-w,o-rwx", path.as_ref()])?;
     run_status("chmod", &["0750", path.as_ref()])?;
+
+    // root_path here is always the account home (see resolve_target). The
+    // terminal's bwrap sandbox drops CAP_DAC_OVERRIDE before it can create
+    // e.g. <home>/.ssh, so it needs "other" execute on the home dir itself
+    // to traverse into it. Re-assert that after the recursive chmod above.
+    run_status("chmod", &["711", path.as_ref()])?;
+
+    // The home directory is root:root 711 (traverse-only), so the sandboxed
+    // site-owner process has no write access to it and can't mkdir .ssh
+    // itself ("bwrap: Can't mkdir <home>/.ssh: Permission denied"). Pre-create
+    // it here, owned by the site user, so it already exists before any
+    // terminal session runs.
+    let ssh_path = root_path.join(".ssh");
+    let ssh_path_str = ssh_path.to_string_lossy();
+    run_status(
+        "install",
+        &["-d", "-m", "0700", "-o", username, "-g", username, ssh_path_str.as_ref()],
+    )?;
 
     Ok(())
 }

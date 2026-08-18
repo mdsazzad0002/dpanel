@@ -47,6 +47,7 @@ const permissionFixLoading = ref(false);
 const databaseConnectLoading = ref(false);
 const dependencyInstallLoading = ref('');
 const storageLinkLoading = ref('');
+const runProjectMigrationsLoading = ref(false);
 const toasts = ref([]);
 let toastSeq = 0;
 
@@ -392,6 +393,33 @@ const updateStorageLink = async (action) => {
         pushToast(error?.message || 'Storage link action failed.', 'error');
     } finally {
         storageLinkLoading.value = '';
+    }
+};
+
+const runProjectMigrations = async () => {
+    if (runProjectMigrationsLoading.value) return;
+    runProjectMigrationsLoading.value = true;
+
+    try {
+        const response = await fetch(panelRoute('websites.project-migrate.run', { id: props.website.id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(data.message || 'Migration failed.');
+
+        pushToast(data.message || 'Migrations ran successfully.', 'success');
+    } catch (error) {
+        pushToast(error?.message || 'Migration failed.', 'error');
+    } finally {
+        runProjectMigrationsLoading.value = false;
     }
 };
 
@@ -767,6 +795,13 @@ const saveRuntimeSettings = async () => {
                                     @click="connectProjectDatabase">
                                     <i class="bi bi-database-check text-base"></i>
                                     {{ databaseConnectLoading ? 'Connecting Database...' : databaseConnection.available ? `Connect ${detectedAppLabel} Database` : 'Create Database First' }}
+                                </button>
+                                <button v-if="isLaravelWebsite" type="button"
+                                    :disabled="runProjectMigrationsLoading"
+                                    class="flex w-full items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
+                                    @click="runProjectMigrations">
+                                    <i class="bi bi-database-gear text-base"></i>
+                                    {{ runProjectMigrationsLoading ? 'Running Migrations...' : 'Run Migrations' }}
                                 </button>
                                 <button v-if="rootInspection.has_composer_json" type="button"
                                     :disabled="Boolean(dependencyInstallLoading)"

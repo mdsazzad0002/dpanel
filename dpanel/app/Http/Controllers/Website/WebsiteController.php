@@ -780,6 +780,44 @@ class WebsiteController extends Controller
         return $respond(true, $action === 'refresh' ? 'Storage link refreshed successfully.' : 'Storage link created successfully.', true);
     }
 
+    public function runProjectMigration(Request $request, string $token, string $id): RedirectResponse|JsonResponse
+    {
+        $respond = function (bool $success, string $message, string $output = '', int $status = 200) use ($request, $id): RedirectResponse|JsonResponse {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => $success,
+                    'message' => $message,
+                    'output' => $output,
+                ], $status);
+            }
+
+            return redirect()
+                ->route('websites.manage', $id)
+                ->with($success ? 'success' : 'error', $message);
+        };
+
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+        $inspection = $this->inspectWebsiteApplication($website);
+        if (strtolower((string) ($inspection['detected_app'] ?? '')) !== 'laravel') {
+            return $respond(false, 'Migrations can only be run for detected Laravel websites.');
+        }
+
+        $projectPath = rtrim((string) ($inspection['root_path'] ?? $website['root_path'] ?? ''), '/');
+        if ($projectPath === '') {
+            return $respond(false, 'Laravel project root could not be resolved for this website.');
+        }
+
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath((string) ($website['root_path'] ?? '')));
+
+        $result = $this->runProjectArtisanCommand($projectPath, 'migrate --force', $siteOwner);
+        $output = trim((string) ($result['output'] ?? ''));
+        if (! $result['success']) {
+            return $respond(false, $output !== '' ? 'Migration failed: '.$output : 'Migration failed.', $output);
+        }
+
+        return $respond(true, 'Migrations ran successfully.', $output);
+    }
+
     /** @param array<string, mixed> $website */
     private function inspectWebsiteApplication(array $website): array
     {
@@ -1557,6 +1595,13 @@ class WebsiteController extends Controller
         $this->runSystemCommand('find '.escapeshellarg($projectRoot).' -type f -exec chmod 640 {} \\;');
         $this->runSystemCommand('mkdir -p '.escapeshellarg($publicRoot));
         $this->runSystemCommand('mkdir -p '.escapeshellarg($rootPath));
+
+        // The recursive chown/chmod above targets $projectRoot, which for
+        // some sites equals $homePath itself, clobbering the root:root 711
+        // set at line 1590-1591 that bwrap's capability-stripped setup phase
+        // needs to traverse into the home directory (e.g. to create .ssh).
+        $this->runSystemCommand('chown root:root '.escapeshellarg($homePath));
+        $this->runSystemCommand('chmod 711 '.escapeshellarg($homePath));
     }
 
     protected function runSystemCommand(string $command): void

@@ -152,9 +152,9 @@ const rolePanelConfig = {
 };
 
 const userRoles = computed(() => page.props.auth?.roles ?? []);
-// AI Gateway chat is admin|reseller only (see routes/web.php ai-gateway prefix
-// group) — the "Ask AI" affordance in the search panel mirrors that gate.
-const canUseAiSearch = computed(() => userRoles.value.includes('admin') || userRoles.value.includes('reseller'));
+// AI Gateway chat is open to all authenticated users (see routes/web.php
+// ai-gateway prefix group) — the "Ask AI" affordance mirrors that gate.
+const canUseAiSearch = computed(() => userRoles.value.length > 0);
 const userRoleLabel = computed(() => userRoles.value.join(', ') || 'No role');
 const userPermissions = computed(() => page.props.auth?.permissions ?? []);
 const panelToken = computed(() => page.props.panel?.token ?? '');

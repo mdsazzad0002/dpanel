@@ -126,6 +126,9 @@ Route::post('/websites/{id}/project-dependencies/install', [WebsiteOperationsCon
 Route::post('/websites/{id}/project-storage-link', [WebsiteOperationsController::class, 'updateProjectStorageLink'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.project-storage-link.update');
+Route::post('/websites/{id}/project-migrate/run', [WebsiteOperationsController::class, 'runProjectMigration'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:6,1'])
+    ->name('websites.project-migrate.run');
 Route::get('/websites/{id}/import', [MigrationController::class, 'websiteImport'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.import.index');
 Route::post('/websites/{id}/import', [MigrationController::class, 'storeWebsiteImport'])

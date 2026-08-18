@@ -362,11 +362,11 @@ Route::prefix('cpsess{token}')
             // ------------------------------------------------------------------
             // AI Gateway
             // ------------------------------------------------------------------
+            // "Ask AI" search (topbar command palette) is open to any
+            // authenticated user; AI Gateway administration below stays
+            // restricted to admin|reseller.
             Route::prefix('ai-gateway')
-                ->middleware('role:admin|reseller')
                 ->group(function (): void {
-                    Route::get('/', [AiGatewayController::class, 'index'])->name('ai-gateway.dashboard');
-
                     // Chat playground (provider-agnostic; provider is switched in-page)
                     Route::get('chat', [AiGatewayProviderController::class, 'chat'])->name('ai-gateway.chat');
 
@@ -383,6 +383,12 @@ Route::prefix('cpsess{token}')
                     Route::post('chat/history', [AiGatewayProviderController::class, 'chatHistorySaveAuto'])->name('ai-gateway.chat.auto.history.save');
                     Route::get('chat/history/{session}', [AiGatewayProviderController::class, 'chatHistoryShowAuto'])->name('ai-gateway.chat.auto.history.show');
                     Route::delete('chat/history/{session}', [AiGatewayProviderController::class, 'chatHistoryDestroyAuto'])->name('ai-gateway.chat.auto.history.destroy');
+                });
+
+            Route::prefix('ai-gateway')
+                ->middleware('role:admin|reseller')
+                ->group(function (): void {
+                    Route::get('/', [AiGatewayController::class, 'index'])->name('ai-gateway.dashboard');
 
                     // Providers
                     Route::get('providers', [AiGatewayProviderController::class, 'index'])->name('ai-gateway.providers.index');
