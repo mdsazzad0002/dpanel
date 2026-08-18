@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\BillingSystemController;
+use App\Http\Controllers\CloneShareController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\DnsController;
@@ -69,6 +70,12 @@ Route::post('/telegram/webhook', [TelegramWebhookController::class, 'store'])
 Route::get('/quick-exports/download/{downloadToken}', [BackupController::class, 'quickExportDownload'])
     ->middleware('throttle:30,1')
     ->name('quick-exports.download');
+// Deliberately outside the cpsess{token}/auth group — a Clone & Share package is
+// meant to be pulled by a *different* server that isn't logged into this panel at
+// all. Same single-purpose-token model as the quick-export download link above.
+Route::get('/clone-share/download/{downloadToken}', [CloneShareController::class, 'download'])
+    ->middleware('throttle:30,1')
+    ->name('clone-share.download');
 Route::post('/api/v1/alias', [RedisCacheController::class, 'aliasApiHandle'])->middleware('throttle:30,1')->name('api.alias');
 Route::prefix('/api/whmcs/v1')->middleware(['whmcs.auth', 'throttle:120,1'])->group(function (): void {
     Route::post('/handshake', [WhmcsController::class, 'handshake'])->name('api.whmcs.handshake');

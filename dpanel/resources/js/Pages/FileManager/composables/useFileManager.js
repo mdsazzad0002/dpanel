@@ -30,6 +30,9 @@ export function useFileManager(props) {
         return parts.at(-1) || 'Home';
     });
     const modalType = ref('');
+    const trashItems = ref([]);
+    const trashLoading = ref(false);
+    const trashActionId = ref('');
     const sidebarOpen = ref(true);
     const sortBy = ref('name');
     const sortDir = ref('asc');
@@ -438,7 +441,7 @@ export function useFileManager(props) {
         const paths = selectedPaths.value.length ? selectedPaths.value : (singleSelectedItem.value ? [singleSelectedItem.value.path] : []);
         if (!paths.length) return;
 
-        if (!confirm(`Delete ${paths.length} item(s)?`)) return;
+        if (!confirm(`Move ${paths.length} item(s) to trash?`)) return;
 
         deleteForm.item_paths = paths;
         deleteForm.current_path = props.currentPath;
@@ -521,6 +524,69 @@ export function useFileManager(props) {
                 closeModal();
             },
         });
+    }
+
+    function loadTrash() {
+        trashLoading.value = true;
+        window.axios
+            .get(panelRoute('websites.filemanager.trash.index', fileManagerRouteParams()), {
+                headers: { Accept: 'application/json' },
+            })
+            .then((response) => {
+                trashItems.value = Array.isArray(response?.data?.items) ? response.data.items : [];
+            })
+            .catch((error) => {
+                pushToast(error?.response?.data?.message || 'Failed to load trash.', 'error');
+            })
+            .finally(() => {
+                trashLoading.value = false;
+            });
+    }
+
+    function openTrash() {
+        openModal('trash');
+        loadTrash();
+    }
+
+    function restoreTrashItem(trashPath) {
+        if (trashActionId.value) return;
+        trashActionId.value = trashPath;
+        window.axios
+            .post(panelRoute('websites.filemanager.trash.restore', fileManagerRouteParams()), { trash_path: trashPath }, {
+                headers: { Accept: 'application/json' },
+            })
+            .then((response) => {
+                pushToast(response?.data?.message || 'Item(s) restored.', 'success');
+                trashItems.value = trashItems.value.filter((item) => item.trash_path !== trashPath);
+                router.reload({ only: ['items'] });
+            })
+            .catch((error) => {
+                pushToast(error?.response?.data?.message || 'Failed to restore.', 'error');
+            })
+            .finally(() => {
+                trashActionId.value = '';
+            });
+    }
+
+    function destroyTrashItem(trashPath) {
+        if (trashActionId.value) return;
+        if (!confirm('Permanently delete this trash item? This cannot be undone.')) return;
+        trashActionId.value = trashPath;
+        window.axios
+            .delete(panelRoute('websites.filemanager.trash.destroy', fileManagerRouteParams()), {
+                headers: { Accept: 'application/json' },
+                data: { trash_path: trashPath },
+            })
+            .then((response) => {
+                pushToast(response?.data?.message || 'Permanently deleted.', 'success');
+                trashItems.value = trashItems.value.filter((item) => item.trash_path !== trashPath);
+            })
+            .catch((error) => {
+                pushToast(error?.response?.data?.message || 'Failed to delete.', 'error');
+            })
+            .finally(() => {
+                trashActionId.value = '';
+            });
     }
 
     function submitZip() {
@@ -802,6 +868,7 @@ export function useFileManager(props) {
             items: [
                 { label: 'Up Level', hint: 'Go to parent folder', icon: 'bi-arrow-up', className: 'text-slate-500', action: () => goParent(), visible: !!props.currentPath },
                 { label: hiddenEnabled.value ? 'Hide Hidden' : 'Show Hidden', hint: 'Toggle dotfiles', icon: hiddenEnabled.value ? 'bi-eye-slash' : 'bi-eye', className: 'text-slate-500', action: () => toggleHidden(), visible: true },
+                { label: 'Trash', hint: 'Restore or permanently delete', icon: 'bi-trash3', className: 'text-slate-500', action: () => openTrash(), visible: true },
             ],
         },
         {
@@ -1053,6 +1120,9 @@ export function useFileManager(props) {
         saveInProgress,
         contextMenu,
         toasts,
+        trashItems,
+        trashLoading,
+        trashActionId,
         // forms
         createFolderForm,
         createFileForm,
@@ -1136,6 +1206,10 @@ export function useFileManager(props) {
         isEditableFile,
         deleteSelected,
         downloadSelected,
+        openTrash,
+        loadTrash,
+        restoreTrashItem,
+        destroyTrashItem,
         submitCreateFolder,
         submitCreateFile,
         submitRename,

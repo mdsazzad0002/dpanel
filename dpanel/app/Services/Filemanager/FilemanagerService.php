@@ -251,6 +251,11 @@ class FilemanagerService
         }
     }
 
+    public function ensureDirectoryExists(string $username, string $path): void
+    {
+        $this->createDirectoriesViaApi([$path], $username);
+    }
+
     public function deletePath(string $username, string $path): void
     {
         $username = $this->normalizeUsername($username);

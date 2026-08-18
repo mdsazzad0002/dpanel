@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Controllers\BackupController;
+use App\Http\Controllers\CloneShareController;
 use App\Http\Controllers\CronJobController;
+use App\Http\Controllers\FilemanagerTrashController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\Website\WebsiteController;
@@ -77,6 +79,21 @@ Route::post('/websites/{id}/quick-export', [BackupController::class, 'quickExpor
 Route::get('/websites/{id}/quick-export/status/{exportId}', [BackupController::class, 'quickExportStatus'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.quick-export.status');
+Route::get('/websites/{id}/clone-share', [CloneShareController::class, 'page'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.clone-share.page');
+Route::post('/websites/{id}/clone-share/clone', [CloneShareController::class, 'clone'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->name('websites.clone-share.clone');
+Route::post('/websites/{id}/clone-share/share', [CloneShareController::class, 'share'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->name('websites.clone-share.share');
+Route::post('/websites/{id}/clone-share/import', [CloneShareController::class, 'importFromUrl'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->name('websites.clone-share.import');
+Route::get('/websites/{id}/clone-share/status/{jobId}', [CloneShareController::class, 'status'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.clone-share.status');
 Route::get('/websites/{id}/ip-rules', [WebsiteOperationsController::class, 'ipRules'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ip-rules.index');
@@ -221,6 +238,15 @@ Route::post('/websites/{id}/filemanager/unzip', [WebsiteFileManagerController::c
 Route::delete('/websites/{id}/filemanager/item', [WebsiteFileManagerController::class, 'deleteItem'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.item.delete');
+Route::get('/websites/{id}/filemanager/trash', [FilemanagerTrashController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.filemanager.trash.index');
+Route::post('/websites/{id}/filemanager/trash/restore', [FilemanagerTrashController::class, 'restore'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.filemanager.trash.restore');
+Route::delete('/websites/{id}/filemanager/trash', [FilemanagerTrashController::class, 'destroy'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.filemanager.trash.destroy');
 Route::get('/websites/list', [WebsiteController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.list');

@@ -1455,16 +1455,32 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'No item selected to delete.');
         }
 
+        // Soft-delete: move (not zip) the selected items into a hidden .trash
+        // folder in the account home, so an accidental delete isn't instantly
+        // unrecoverable — cPanel-style, no database involved, no compression:
+        // a moved folder keeps its full internal tree exactly as it was. Each
+        // batch gets its own {site}_{timestamp} folder containing exactly one
+        // readable subfolder named after the original directory (slashes
+        // joined with "__", or the literal "_root") holding the item(s) — that
+        // fixed shape is what lets FilemanagerTrashController tell "the
+        // directory this came from" apart from "an actual trashed folder"
+        // without a database, since both would otherwise look identical.
+        $siteFolderName = basename(rtrim((string) ($website['root_path'] ?? ''), '/')) ?: (preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) ($website['domain'] ?? 'site')) ?: 'site');
+        $batchFolder = $siteFolderName.'_'.now()->format('d_m_Y__H_i_s').'__'.random_int(100000, 999999);
+        $originalDirectoryFolder = $currentPath !== '' ? str_replace('/', '__', $currentPath) : '_root';
+        $trashContainer = $this->resolvePathInsideBase($basePath, '.trash/'.$batchFolder.'/'.$originalDirectoryFolder);
+
         foreach ($allItems as $itemRelative) {
             $itemPath = $this->resolvePathInsideBase($basePath, $itemRelative);
+            $trashDestination = $trashContainer.'/'.basename($itemRelative);
             try {
-                $this->filemanagerService->deletePath($siteOwner, $itemPath);
+                $this->filemanagerService->movePath($siteOwner, $itemPath, $trashDestination);
             } catch (\Throwable $e) {
-                return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to delete '.basename($itemRelative).'. '.$e->getMessage());
+                return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to move '.basename($itemRelative).' to trash. '.$e->getMessage());
             }
         }
 
-        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Selected item(s) deleted.');
+        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Selected item(s) moved to trash.');
     }
 
     /**

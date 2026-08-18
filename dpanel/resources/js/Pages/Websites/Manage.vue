@@ -175,6 +175,7 @@ const isSystemWebsite = computed(() => String(props.website.id) === '1');
 
 const serviceLinks = computed(() => [
     { label: 'Quick Export', icon: 'bi-file-earmark-zip', color: 'violet', href: panelRoute('websites.quick-export.page', { id: props.website.id }), description: 'Choose files and database, each downloads separately' },
+    { label: 'Clone & Share', icon: 'bi-copy', color: 'cyan', href: panelRoute('websites.clone-share.page', { id: props.website.id }), description: 'Clone to another site on this server, or share a link to clone it on another' },
     { label: 'Import Website', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and auto-connect an optional SQL database' },
     { label: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress' },
     { label: 'Usage Details', icon: 'bi-graph-up', color: 'violet', href: panelRoute('websites.usage', { id: props.website.id }), description: 'Detailed usage history' },
@@ -196,7 +197,7 @@ const serviceLinks = computed(() => [
 // apply to it and would risk breaking the panel itself, so hide them here.
 ].filter((item) => !isSystemWebsite.value || ![
     'WordPress Installer', 'File Manager', 'Import Website', 'FTP Accounts',
-    'Cron Jobs', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Quick Export',
+    'Cron Jobs', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Quick Export', 'Clone & Share',
 ].includes(item.label)));
 
 const serviceColorClasses = {

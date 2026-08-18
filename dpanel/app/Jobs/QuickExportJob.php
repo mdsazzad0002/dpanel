@@ -74,7 +74,7 @@ class QuickExportJob implements ShouldQueue
 
         $safeDomain = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $website->domain) ?: 'website';
         $itemLabel = $this->content === 'database' ? 'SQL — '.$database->database_name : 'Website files';
-        $targetPath = storage_path('app/quick-exports/'.Str::uuid().'.zip');
+        $targetPath = storage_path('app/backups/quick-exports/'.Str::uuid().'.zip');
         // "quick_files" produces a flat zip of the project root (no homedir/public_html
         // wrapper or restore manifest) — full backups still use "files" for that layout.
         $archiveContent = $this->content === 'files' ? 'quick_files' : $this->content;
@@ -127,7 +127,7 @@ class QuickExportJob implements ShouldQueue
             }
 
             $safeDatabase = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $database->database_name) ?: $safeDomain.'-database';
-            $sqlPath = storage_path('app/quick-exports/'.Str::uuid().'.sql');
+            $sqlPath = storage_path('app/backups/quick-exports/'.Str::uuid().'.sql');
             File::put($sqlPath, $sql);
 
             $downloadUrl = $links->make($this->websiteId, $sqlPath, $safeDatabase.'-'.now()->format('Y-m-d_H-i-s').'.sql');

@@ -18,6 +18,7 @@ import PermissionModal from './components/PermissionModal.vue';
 import MoveModal from './components/MoveModal.vue';
 import ZipModal from './components/ZipModal.vue';
 import UnzipModal from './components/UnzipModal.vue';
+import TrashModal from './components/TrashModal.vue';
 import CreateFolderModal from './components/CreateFolderModal.vue';
 import CreateFileModal from './components/CreateFileModal.vue';
 
@@ -114,6 +115,7 @@ const fm = useFileManager(props);
                                 : fm.modalType === 'move' ? 'Move Item'
                                 : fm.modalType === 'zip' ? 'Create Zip'
                                 : fm.modalType === 'unzip' ? 'Extract Zip'
+                                : fm.modalType === 'trash' ? 'Trash'
                                 : 'Upload File'
                         }}
                     </h3>
@@ -129,6 +131,7 @@ const fm = useFileManager(props);
                 <MoveModal :fm="fm" />
                 <ZipModal :fm="fm" />
                 <UnzipModal :fm="fm" />
+                <TrashModal :fm="fm" />
                 <UploadModal :fm="fm" />
             </div>
 
