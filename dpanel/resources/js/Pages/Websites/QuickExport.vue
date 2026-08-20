@@ -77,6 +77,7 @@ onUnmounted(() => {
     // queue worker regardless, and a Notification covers completion/failure
     // for whoever isn't watching this page anymore.
     stopStatusPolling();
+    stopSharePoll();
 });
 
 const triggerDownload = (item) => {
@@ -156,6 +157,95 @@ const pollExportStatuses = async () => {
     }
 };
 
+// ---- Share (this website → another server) ----
+const shareRunning = ref(false);
+const shareStage = ref(null);
+const shareMessage = ref('');
+const shareUrl = ref('');
+const shareExpiresAt = ref('');
+let sharePollTimer = null;
+
+const shareStageText = (stage) => ({
+    queued: 'Queued…',
+    archiving: 'Archiving website files…',
+    exporting_database: 'Exporting database…',
+    packaging: 'Building package…',
+    ready: 'Done',
+    failed: 'Failed',
+}[stage] || 'Working…');
+
+const stopSharePoll = () => {
+    window.clearInterval(sharePollTimer);
+    sharePollTimer = null;
+};
+
+const pollShareStatus = async (shareId) => {
+    try {
+        const response = await fetch(panelRoute('websites.clone-share.status', { id: props.website.id, jobId: shareId }), {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) return;
+        shareStage.value = data.stage;
+        if (data.stage === 'ready') {
+            stopSharePoll();
+            shareRunning.value = false;
+            shareUrl.value = data.download_url || '';
+            shareExpiresAt.value = data.expires_at || '';
+            pushToast('Share link is ready.');
+        } else if (data.stage === 'failed') {
+            stopSharePoll();
+            shareRunning.value = false;
+            shareMessage.value = data.message || 'Share failed.';
+            pushToast(shareMessage.value, 'error');
+        }
+    } catch {
+        // Network hiccup — next tick retries.
+    }
+};
+
+const startShare = async () => {
+    if (shareRunning.value) return;
+    shareRunning.value = true;
+    shareStage.value = 'queued';
+    shareMessage.value = '';
+    shareUrl.value = '';
+    try {
+        const response = await fetch(panelRoute('websites.clone-share.share', { id: props.website.id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) throw new Error(data.message || 'Failed to start share.');
+        stopSharePoll();
+        sharePollTimer = window.setInterval(() => pollShareStatus(data.share_id), 5000);
+        pollShareStatus(data.share_id);
+    } catch (error) {
+        shareRunning.value = false;
+        shareStage.value = 'failed';
+        shareMessage.value = error?.message || 'Failed to start share.';
+        pushToast(shareMessage.value, 'error');
+    }
+};
+
+const copyShareUrl = async () => {
+    if (!shareUrl.value) return;
+    try {
+        await navigator.clipboard.writeText(shareUrl.value);
+        pushToast('Link copied to clipboard.');
+    } catch {
+        pushToast('Could not copy the link — copy it manually.', 'error');
+    }
+};
+
 const quickExport = async () => {
     if (exportLoading.value || (!exportFiles.value && selectedDatabaseIds.value.length === 0)) return;
 
@@ -207,12 +297,12 @@ const quickExport = async () => {
 </script>
 
 <template>
-    <Head :title="`Quick Export - ${website.domain}`" />
+    <Head :title="`Export & Share - ${website.domain}`" />
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between gap-4">
                 <div>
-                    <h1 class="text-lg font-semibold">Quick Export</h1>
+                    <h1 class="text-lg font-semibold">Export & Share</h1>
                     <p class="text-sm text-slate-500">{{ website.domain }} — each selected item downloads separately</p>
                     <p class="mt-0.5 text-xs text-slate-400">Runs in the background — stay on this page to watch live progress, or check the notification bell later.</p>
                 </div>
@@ -222,7 +312,7 @@ const quickExport = async () => {
             </div>
         </template>
 
-        <div class="mx-auto  space-y-6 p-4 sm:p-6">
+        <div class="mx-auto grid gap-6  lg:grid-cols-2">
             <section class="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <div class="grid gap-3 sm:grid-cols-2">
                     <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
@@ -307,6 +397,35 @@ const quickExport = async () => {
                     </button>
                     <button v-else type="button" :disabled="exportLoading || (!exportFiles && selectedDatabaseIds.length === 0)" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50" @click="quickExport">
                         {{ exportLoading ? 'Preparing…' : 'Prepare & Download Selected' }}
+                    </button>
+                </div>
+            </section>
+
+            <section class="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100"><i class="bi bi-share mr-1.5 text-cyan-600"></i>Share</h2>
+                <p class="mt-1 text-xs text-slate-500">Generate a one-time link for this website's files + database, to clone it on a different server.</p>
+
+                <div v-if="shareStage" class="mt-4 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
+                    <div class="flex items-center gap-2">
+                        <i v-if="shareStage === 'ready'" class="bi bi-check-circle-fill text-emerald-600"></i>
+                        <i v-else-if="shareStage === 'failed'" class="bi bi-x-circle-fill text-red-600"></i>
+                        <i v-else class="bi bi-arrow-repeat animate-spin text-cyan-600"></i>
+                        <span>{{ shareStageText(shareStage) }}</span>
+                    </div>
+                    <p v-if="shareStage === 'failed' && shareMessage" class="mt-1 text-red-600">{{ shareMessage }}</p>
+                </div>
+
+                <div v-if="shareUrl" class="mt-4 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs dark:border-emerald-900 dark:bg-emerald-950/30">
+                    <p class="break-all font-mono text-emerald-800 dark:text-emerald-300">{{ shareUrl }}</p>
+                    <p class="text-[11px] text-slate-500">Paste this into the destination server's Import & Clone → "Import from another server" field. Valid for 24 hours — no login needed on either side.</p>
+                    <button type="button" class="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/40" @click="copyShareUrl">
+                        <i class="bi bi-clipboard mr-1"></i>Copy link
+                    </button>
+                </div>
+
+                <div class="mt-5 flex justify-end">
+                    <button type="button" :disabled="shareRunning" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startShare">
+                        {{ shareRunning ? 'Preparing…' : 'Generate Share Link' }}
                     </button>
                 </div>
             </section>

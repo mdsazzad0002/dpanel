@@ -86,7 +86,7 @@ class DnsController extends Controller
         return redirect()->route('dns.nameservers')->with('success', 'Nameserver created.');
     }
 
-    public function updateNameserver(Request $request, string $id): RedirectResponse
+    public function updateNameserver(Request $request, string $token, string $id): RedirectResponse
     {
         $validated = $request->validate([
             'domain' => ['required', 'string', 'max:255'],
@@ -167,7 +167,7 @@ class DnsController extends Controller
         return redirect()->route('dns.nameservers')->with('success', 'Nameserver updated.');
     }
 
-    public function destroyNameserver(string $id): RedirectResponse
+    public function destroyNameserver(string $token, string $id): RedirectResponse
     {
         $this->ensureDnsTables();
 
@@ -342,7 +342,7 @@ class DnsController extends Controller
         return redirect()->route('dns.zones')->with('success', 'DNS zone created.');
     }
 
-    public function updateZone(Request $request, string $id): RedirectResponse
+    public function updateZone(Request $request, string $token,  string $id): RedirectResponse
     {
         $this->ensureDnsTables();
         $validated = $request->validate([
@@ -403,7 +403,7 @@ class DnsController extends Controller
         return redirect()->route('dns.zones')->with('success', 'DNS zone updated.');
     }
 
-    public function destroyZone(Request $request, string $id): RedirectResponse
+    public function destroyZone(Request $request,string $token, string $id): RedirectResponse
     {
         $this->ensureDnsTables();
         $profile = $this->authorizeZoneIdentifier($request, $id);
@@ -479,7 +479,7 @@ class DnsController extends Controller
         return redirect()->route('dns.zones')->with('success', 'DNS record created.');
     }
 
-    public function updateRecord(Request $request, string $id): RedirectResponse|JsonResponse
+    public function updateRecord(Request $request, string $token, string $id): RedirectResponse|JsonResponse
     {
         $this->ensureDnsTables();
         $validated = $request->validate([
@@ -568,7 +568,7 @@ class DnsController extends Controller
         return redirect()->route('dns.zones')->with('success', 'DNS record updated.');
     }
 
-    public function destroyRecord(Request $request, string $id): RedirectResponse
+    public function destroyRecord(Request $request,string $token, string $id): RedirectResponse
     {
         $this->ensureDnsTables();
         [$recordId, $record] = $this->resolvePowerDnsRecord($id);
@@ -580,7 +580,7 @@ class DnsController extends Controller
         return redirect()->route('dns.zones')->with('success', 'DNS record deleted.');
     }
 
-    public function transferZone(Request $request, string $id): RedirectResponse
+    public function transferZone(Request $request, string $token, string $id): RedirectResponse
     {
         $profile = $this->authorizeZoneIdentifier($request, $id);
         abort_unless($this->canTransferZone($request->user(), $profile), 403);

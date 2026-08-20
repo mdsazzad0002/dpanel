@@ -2,10 +2,12 @@
 import { computed, onUnmounted, ref } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 
 const props = defineProps({
     website: { type: Object, required: true },
     otherWebsites: { type: Array, default: () => [] },
+    databaseConnection: { type: Object, default: () => ({ available: false, database_name: null }) },
 });
 
 const page = usePage();
@@ -14,6 +16,8 @@ const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
 const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '');
+
+const otherWebsiteOptions = computed(() => props.otherWebsites.map((site) => ({ value: site.id, label: site.domain })));
 
 const toasts = ref([]);
 let toastSeq = 0;
@@ -55,19 +59,20 @@ const stageText = (stage) => ({
     failed: 'Failed',
 }[stage] || 'Working…');
 
-// ---- Clone (this server) ----
-const targetWebsiteId = ref('');
-const cloneRunning = ref(false);
-const cloneStage = ref(null);
-const cloneMessage = ref('');
-let clonePollTimer = null;
+// ---- Clone from (pull another website into this server) ----
+const sourceWebsiteId = ref('');
+const newDatabaseName = ref('');
+const pullRunning = ref(false);
+const pullStage = ref(null);
+const pullMessage = ref('');
+let pullPollTimer = null;
 
-const stopClonePoll = () => {
-    window.clearInterval(clonePollTimer);
-    clonePollTimer = null;
+const stopPullPoll = () => {
+    window.clearInterval(pullPollTimer);
+    pullPollTimer = null;
 };
 
-const pollCloneStatus = async (cloneId) => {
+const pollPullStatus = async (cloneId) => {
     try {
         const response = await fetch(panelRoute('websites.clone-share.status', { id: props.website.id, jobId: cloneId }), {
             credentials: 'same-origin',
@@ -75,37 +80,46 @@ const pollCloneStatus = async (cloneId) => {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.ok) return;
-        cloneStage.value = data.stage;
+        pullStage.value = data.stage;
         if (data.stage === 'ready') {
-            stopClonePoll();
-            cloneRunning.value = false;
-            pushToast('Clone completed.');
+            stopPullPoll();
+            pullRunning.value = false;
+            pushToast('Clone completed — this website now has the cloned content.');
         } else if (data.stage === 'failed') {
-            stopClonePoll();
-            cloneRunning.value = false;
-            cloneMessage.value = data.message || 'Clone failed.';
-            pushToast(cloneMessage.value, 'error');
+            stopPullPoll();
+            pullRunning.value = false;
+            pullMessage.value = data.message || 'Clone failed.';
+            pushToast(pullMessage.value, 'error');
         }
     } catch {
         // Network hiccup — next tick retries.
     }
 };
 
-const startClone = async () => {
-    if (cloneRunning.value || !targetWebsiteId.value) return;
-    cloneRunning.value = true;
-    cloneStage.value = 'queued';
-    cloneMessage.value = '';
+const startPull = async () => {
+    if (pullRunning.value || !sourceWebsiteId.value) return;
+    if (props.databaseConnection?.available) {
+        const confirmed = window.confirm(
+            `${props.website.domain} already has an active database (${props.databaseConnection.database_name}). Cloning will overwrite it with the source website's database. Continue?`,
+        );
+        if (!confirmed) return;
+    }
+    pullRunning.value = true;
+    pullStage.value = 'queued';
+    pullMessage.value = '';
     try {
-        const data = await postJson(panelRoute('websites.clone-share.clone', { id: props.website.id }), { target_website_id: targetWebsiteId.value });
-        stopClonePoll();
-        clonePollTimer = window.setInterval(() => pollCloneStatus(data.clone_id), 5000);
-        pollCloneStatus(data.clone_id);
+        const data = await postJson(panelRoute('websites.clone-share.clone', { id: sourceWebsiteId.value }), {
+            target_website_id: props.website.id,
+            new_database_name: props.databaseConnection?.available ? null : (newDatabaseName.value || null),
+        });
+        stopPullPoll();
+        pullPollTimer = window.setInterval(() => pollPullStatus(data.clone_id), 5000);
+        pollPullStatus(data.clone_id);
     } catch (error) {
-        cloneRunning.value = false;
-        cloneStage.value = 'failed';
-        cloneMessage.value = error?.message || 'Failed to start clone.';
-        pushToast(cloneMessage.value, 'error');
+        pullRunning.value = false;
+        pullStage.value = 'failed';
+        pullMessage.value = error?.message || 'Failed to start clone.';
+        pushToast(pullMessage.value, 'error');
     }
 };
 
@@ -232,7 +246,7 @@ const startImport = async () => {
 };
 
 onUnmounted(() => {
-    stopClonePoll();
+    stopPullPoll();
     stopSharePoll();
     stopImportPoll();
 });
@@ -254,32 +268,52 @@ onUnmounted(() => {
             </div>
         </template>
 
-        <div class="mx-auto grid gap-6 p-4 sm:p-6 lg:grid-cols-2">
+        <div class="mx-auto grid gap-6 lg:grid-cols-2">
             <!-- Clone: within this server -->
             <section class="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100"><i class="bi bi-copy mr-1.5 text-cyan-600"></i>Clone</h2>
-                <p class="mt-1 text-xs text-slate-500">Copy this website's files and database into another website already on this server.</p>
+                <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100"><i class="bi bi-copy mr-1.5 text-cyan-600"></i>Clone from</h2>
+                <p class="mt-1 text-xs text-slate-500">Pull another website's files and database from this server into {{ website.domain }} — {{ website.domain }} is always the destination. A separate database is created for {{ website.domain }}; it is never shared with the source.</p>
+                <p v-if="databaseConnection?.available" class="mt-1 text-xs text-amber-600">
+                    <i class="bi bi-exclamation-triangle-fill mr-1"></i>{{ website.domain }} already has an active database ({{ databaseConnection.database_name }}) — cloning will ask for confirmation before overwriting it.
+                </p>
 
-                <label class="mt-4 block text-xs font-medium text-slate-600 dark:text-slate-300">Target website</label>
-                <select v-model="targetWebsiteId" :disabled="cloneRunning" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800">
-                    <option value="" disabled>Select a website you own…</option>
-                    <option v-for="site in otherWebsites" :key="site.id" :value="site.id">{{ site.domain }}</option>
-                </select>
-                <p v-if="otherWebsites.length === 0" class="mt-1 text-xs text-amber-600">You need at least one other website on this server to clone into.</p>
+                <label class="mt-4 block text-xs font-medium text-slate-600 dark:text-slate-300">Clone from</label>
+                <SearchableSelect
+                    v-model="sourceWebsiteId"
+                    class="mt-1"
+                    :options="otherWebsiteOptions"
+                    :disabled="pullRunning"
+                    placeholder="Select a website you own…"
+                    search-placeholder="Search websites…"
+                />
+                <p v-if="otherWebsites.length === 0" class="mt-1 text-xs text-amber-600">You need at least one other website on this server to clone from.</p>
 
-                <div v-if="cloneStage" class="mt-4 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
+                <template v-if="!databaseConnection?.available">
+                    <label class="mt-4 block text-xs font-medium text-slate-600 dark:text-slate-300">New database name (optional)</label>
+                    <input
+                        v-model="newDatabaseName"
+                        type="text"
+                        maxlength="64"
+                        :disabled="pullRunning"
+                        placeholder="Leave blank to auto-generate a name"
+                        class="mt-1 block w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                    />
+                    <p class="mt-1 text-xs text-slate-400">{{ website.domain }} has no database yet — a new one is created for it. Name it yourself, or leave blank to auto-generate one.</p>
+                </template>
+
+                <div v-if="pullStage" class="mt-4 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
                     <div class="flex items-center gap-2">
-                        <i v-if="cloneStage === 'ready'" class="bi bi-check-circle-fill text-emerald-600"></i>
-                        <i v-else-if="cloneStage === 'failed'" class="bi bi-x-circle-fill text-red-600"></i>
+                        <i v-if="pullStage === 'ready'" class="bi bi-check-circle-fill text-emerald-600"></i>
+                        <i v-else-if="pullStage === 'failed'" class="bi bi-x-circle-fill text-red-600"></i>
                         <i v-else class="bi bi-arrow-repeat animate-spin text-cyan-600"></i>
-                        <span>{{ stageText(cloneStage) }}</span>
+                        <span>{{ stageText(pullStage) }}</span>
                     </div>
-                    <p v-if="cloneStage === 'failed' && cloneMessage" class="mt-1 text-red-600">{{ cloneMessage }}</p>
+                    <p v-if="pullStage === 'failed' && pullMessage" class="mt-1 text-red-600">{{ pullMessage }}</p>
                 </div>
 
                 <div class="mt-5 flex justify-end">
-                    <button type="button" :disabled="cloneRunning || !targetWebsiteId" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startClone">
-                        {{ cloneRunning ? 'Cloning…' : 'Clone Now' }}
+                    <button type="button" :disabled="pullRunning || !sourceWebsiteId" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startPull">
+                        {{ pullRunning ? 'Cloning…' : 'Clone Now' }}
                     </button>
                 </div>
 

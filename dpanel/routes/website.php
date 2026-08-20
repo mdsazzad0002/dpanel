@@ -79,9 +79,6 @@ Route::post('/websites/{id}/quick-export', [BackupController::class, 'quickExpor
 Route::get('/websites/{id}/quick-export/status/{exportId}', [BackupController::class, 'quickExportStatus'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.quick-export.status');
-Route::get('/websites/{id}/clone-share', [CloneShareController::class, 'page'])
-    ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('websites.clone-share.page');
 Route::post('/websites/{id}/clone-share/clone', [CloneShareController::class, 'clone'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
     ->name('websites.clone-share.clone');

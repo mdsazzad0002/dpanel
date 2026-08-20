@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
@@ -14,6 +15,12 @@ const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
+const websiteDomainOptions = computed(() => props.websiteDomains.map((domain) => ({ value: domain, label: domain })));
+const statusOptions = [
+    { value: 'active', label: 'active' },
+    { value: 'disabled', label: 'disabled' },
+];
+
 const editingId = ref(null);
 const deleteForm = useForm({});
 
@@ -83,10 +90,12 @@ const deleteItem = (id) => {
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-3 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div>
                     <label class="mb-1 block text-sm">Domain</label>
-                    <select v-model="form.domain" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Select domain</option>
-                        <option v-for="domain in websiteDomains" :key="domain" :value="domain">{{ domain }}</option>
-                    </select>
+                    <SearchableSelect
+                        v-model="form.domain"
+                        :options="websiteDomainOptions"
+                        placeholder="Select domain"
+                        search-placeholder="Search domains…"
+                    />
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Hostname</label>
@@ -106,10 +115,7 @@ const deleteItem = (id) => {
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Status</label>
-                    <select v-model="form.status" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="active">active</option>
-                        <option value="disabled">disabled</option>
-                    </select>
+                    <SearchableSelect v-model="form.status" :options="statusOptions" />
                 </div>
                 <div class="md:col-span-3 flex items-center gap-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">

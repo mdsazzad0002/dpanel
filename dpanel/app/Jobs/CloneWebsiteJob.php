@@ -6,6 +6,7 @@ use App\Models\DatabaseRequest;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Backup\CloneShareJobStatus;
+use App\Services\Backup\PreOverwriteBackupService;
 use App\Services\Backup\WebsiteArchiver;
 use App\Services\Migration\GenericWebsiteMigrationProvider;
 use App\Services\NotificationService;
@@ -38,11 +39,12 @@ class CloneWebsiteJob implements ShouldQueue
         public string $sourceWebsiteId,
         public string $targetWebsiteId,
         public int $userId,
+        public string $newDatabaseName = '',
     ) {
         $this->onQueue('heavy');
     }
 
-    public function handle(WebsiteArchiver $archiver, GenericWebsiteMigrationProvider $restorer, NotificationService $notifications): void
+    public function handle(WebsiteArchiver $archiver, GenericWebsiteMigrationProvider $restorer, NotificationService $notifications, PreOverwriteBackupService $trash): void
     {
         CloneShareJobStatus::set($this->cloneId, ['stage' => 'archiving']);
 
@@ -105,6 +107,9 @@ class CloneWebsiteJob implements ShouldQueue
                 File::delete($databasePackagePath);
             }
 
+            CloneShareJobStatus::set($this->cloneId, ['stage' => 'backing_up_target']);
+            $trashPaths = $trash->snapshot($target, 'clone_overwrite');
+
             CloneShareJobStatus::set($this->cloneId, ['stage' => 'restoring']);
 
             $owner = (string) $target->site_owner;
@@ -129,8 +134,11 @@ class CloneWebsiteJob implements ShouldQueue
                 $database = DatabaseRequest::query()->visibleTo($user)->where('domain', $target->domain)->where('status', 'active')->first();
                 if (! $database instanceof DatabaseRequest) {
                     $domainPrefix = substr(trim((string) preg_replace('/[^a-z0-9_]/i', '_', explode('.', (string) $target->domain)[0]), '_') ?: 'site', 0, 16);
+                    $customName = strtolower(trim((string) preg_replace('/[^a-z0-9_]/i', '_', $this->newDatabaseName)));
+                    $customName = trim($customName, '_');
+                    $databaseName = $customName !== '' ? substr($customName, 0, 64) : substr($owner.'_'.$domainPrefix.'_db', 0, 64);
                     $database = new DatabaseRequest([
-                        'database_name' => substr($owner.'_'.$domainPrefix.'_db', 0, 64),
+                        'database_name' => $databaseName,
                         'database_user' => substr($owner.'_'.$domainPrefix.'_user', 0, 64),
                         'database_password' => Str::password(24),
                         'database_host' => '127.0.0.1',
@@ -144,13 +152,15 @@ class CloneWebsiteJob implements ShouldQueue
                 'site_owner' => $owner,
                 'php_version' => $target->php_version,
                 'target_root' => (string) ($target->root_path ?: $target->project_root),
+                'target_project_root' => (string) $target->project_root,
                 'sql_path' => $sqlPath,
                 'database_host' => $database?->database_host ?? '127.0.0.1',
                 'database_port' => 3306,
                 'database_name' => $database?->database_name ?? '',
                 'database_user' => $database?->database_user ?? '',
                 'database_password' => $database?->database_password ?? '',
-                'overwrite_database' => $sqlPath !== null,
+                'overwrite_database' => $sqlPath !== null && $database instanceof DatabaseRequest && $database->exists,
+                'database_backup_dir' => $trashPaths['database'],
             ];
 
             $restorer->restore($payload);

@@ -326,6 +326,43 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
         if source_path.exists() && source_path.is_dir() {
             add_dir(&mut writer, &source_path, "", options, dir_options)?;
         }
+
+        // For frameworks (Laravel etc.) root_path is a docroot subdirectory
+        // (e.g. project_root/public) while .env, composer.json and similar
+        // top-level app config live one level up in project_root. Only the
+        // *files* sitting directly in project_root are pulled in — never its
+        // subdirectories — so sibling sites/data sharing that account home
+        // are never touched. They're archived under a marker directory so
+        // restore can place them in the target's project_root instead of
+        // flattening them into the docroot alongside root_path's contents.
+        let project_root = normalize_path(website.project_root.as_str());
+        if project_root.exists() && project_root.is_dir() && project_root != source_path {
+            if let Ok(entries) = fs::read_dir(&project_root) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if !path.is_file() {
+                        continue;
+                    }
+                    let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+                        continue;
+                    };
+                    if path == source_path.join(name) {
+                        continue;
+                    }
+                    let Ok(mut file) = fs::File::open(&path) else {
+                        continue;
+                    };
+                    let file_options = file_permissions(&path)
+                        .map(|mode| options.unix_permissions(mode))
+                        .unwrap_or(options);
+                    let archive_path = format!("__project_root_extras__/{name}");
+                    if writer.start_file(&archive_path, file_options).is_err() {
+                        continue;
+                    }
+                    let _ = std::io::copy(&mut file, &mut writer);
+                }
+            }
+        }
     }
 
     if matches!(website.content.as_str(), "all" | "files") {

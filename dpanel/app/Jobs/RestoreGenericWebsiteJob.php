@@ -4,6 +4,8 @@ namespace App\Jobs;
 
 use App\Models\DatabaseRequest;
 use App\Models\MigrationImport;
+use App\Models\Website;
+use App\Services\Backup\PreOverwriteBackupService;
 use App\Services\Migration\GenericWebsiteMigrationProvider;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -24,7 +26,7 @@ class RestoreGenericWebsiteJob implements ShouldQueue
         $this->onQueue('heavy');
     }
 
-    public function handle(GenericWebsiteMigrationProvider $provider): void
+    public function handle(GenericWebsiteMigrationProvider $provider, PreOverwriteBackupService $trash): void
     {
         $import = MigrationImport::find($this->importId);
         if (! $import) {
@@ -32,6 +34,13 @@ class RestoreGenericWebsiteJob implements ShouldQueue
         }
         try {
             $settings = (array) $import->inventory;
+
+            $website = Website::find($settings['website_id'] ?? null);
+            if ($website) {
+                $trashPaths = $trash->snapshot($website, 'import_overwrite');
+                $settings['database_backup_dir'] = $trashPaths['database'];
+            }
+
             $result = $provider->restore(['archive_path' => $import->archive_path] + $settings);
             DB::transaction(function () use ($settings): void {
                 if (! empty($settings['sql_path'])) {

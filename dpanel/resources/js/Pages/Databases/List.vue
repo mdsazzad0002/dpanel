@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -34,6 +35,15 @@ const props = defineProps({
 const searchedName = ref(String(props.filters?.name || ''));
 const selectedWebsite = ref(String(props.filters?.website || ''));
 const selectedUser = ref(String(props.filters?.user || ''));
+
+const websiteFilterOptions = computed(() => [
+    { value: '', label: 'All websites' },
+    ...props.websiteOptions.map((website) => ({ value: website, label: website })),
+]);
+const userFilterOptions = computed(() => [
+    { value: '', label: 'All users' },
+    ...props.userOptions.map((user) => ({ value: user.value, label: user.label })),
+]);
 
 const formatDate = (value) => {
     if (!value) return '-';
@@ -162,22 +172,12 @@ const openAllDatabaseStudio = () => {
 
                 <div>
                     <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Website</label>
-                    <select v-model="selectedWebsite" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">All websites</option>
-                        <option v-for="website in props.websiteOptions" :key="website" :value="website">
-                            {{ website }}
-                        </option>
-                    </select>
+                    <SearchableSelect v-model="selectedWebsite" :options="websiteFilterOptions" placeholder="All websites" search-placeholder="Search websites…" />
                 </div>
 
                 <div>
                     <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">User</label>
-                    <select v-model="selectedUser" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">All users</option>
-                        <option v-for="user in props.userOptions" :key="user.value" :value="user.value">
-                            {{ user.label }}
-                        </option>
-                    </select>
+                    <SearchableSelect v-model="selectedUser" :options="userFilterOptions" placeholder="All users" search-placeholder="Search users…" />
                 </div>
 
                 <button

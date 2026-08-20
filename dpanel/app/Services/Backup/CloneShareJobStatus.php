@@ -5,8 +5,10 @@ namespace App\Services\Backup;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Shared read/write for a queued CloneWebsiteJob/ShareWebsitePackageJob's progress,
- * polled by CloneShare.vue every 5s. Mirrors QuickExportJobStatus.
+ * Shared read/write for a queued CloneWebsiteJob/ShareWebsitePackageJob/
+ * ImportSharedWebsiteJob's progress, polled every 5s by the Clone/Share
+ * controls embedded in QuickImport.vue and QuickExport.vue. Mirrors
+ * QuickExportJobStatus.
  */
 class CloneShareJobStatus
 {

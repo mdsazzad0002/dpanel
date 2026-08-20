@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
@@ -34,6 +35,7 @@ const suggestedDatabaseName = ref('');
 const suggestedDatabaseUser = ref('');
 const selectedOwnerPrefix = computed(() => String(props.databasePrefixes[String(form.domain).trim().toLowerCase()] || ''));
 const selectedDomainPart = computed(() => String(form.domain).trim().toLowerCase().split('.')[0].replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '').slice(0, 16) || 'site');
+const websiteDomainOptions = computed(() => props.websiteDomains.map((domain) => ({ value: domain, label: domain })));
 const databaseUserSuggestions = computed(() => [
     `${selectedDomainPart.value}_user`,
     `${selectedDomainPart.value}_usr`,
@@ -104,12 +106,12 @@ watch(
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-2 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div class="md:col-span-2">
                     <label class="mb-1 block text-sm">Website Domain</label>
-                    <select v-model="form.domain" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Select domain</option>
-                        <option v-for="domain in websiteDomains" :key="domain" :value="domain">
-                            {{ domain }}
-                        </option>
-                    </select>
+                    <SearchableSelect
+                        v-model="form.domain"
+                        :options="websiteDomainOptions"
+                        placeholder="Select domain"
+                        search-placeholder="Search domains…"
+                    />
                     <p v-if="form.errors.domain" class="mt-1 text-xs text-red-600">{{ form.errors.domain }}</p>
                     <p v-if="websiteDomains.length === 0" class="mt-1 text-xs text-amber-600">
                         No website domains found. Create website first, or type domain manually below.

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -205,6 +206,17 @@ const deleteRecord = (id) => {
 };
 
 const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV'];
+const recordTypeOptions = recordTypes.map((type) => ({ value: type, label: type }));
+const statusOptions = [
+    { value: 'active', label: 'active' },
+    { value: 'disabled', label: 'disabled' },
+];
+const zoneTypeOptions = [
+    { value: 'master', label: 'master' },
+    { value: 'slave', label: 'slave' },
+];
+const displayedDomainOptions = computed(() => displayedDomains.value.map((domain) => ({ value: domain, label: domain })));
+const transferUserOptions = computed(() => props.transferUsers.map((user) => ({ value: user.id, label: `${user.name} · ${user.email}` })));
 const isInlineCreateRow = (domain) => creatingRecordFor.value === domain;
 const isInlineEditRow = (record) => recordEditingId.value === record.id;
 
@@ -287,10 +299,12 @@ watch(
 
                 <div class="mt-4 max-w-xl">
                     <label class="mb-1 block text-sm">Domain</label>
-                    <select v-model="selectedZone" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Select domain</option>
-                        <option v-for="domain in displayedDomains" :key="`zone-select-${domain}`" :value="domain">{{ domain }}</option>
-                    </select>
+                    <SearchableSelect
+                        v-model="selectedZone"
+                        :options="displayedDomainOptions"
+                        placeholder="Select domain"
+                        search-placeholder="Search domains…"
+                    />
                 </div>
             </div>
 
@@ -331,10 +345,7 @@ watch(
                     </div>
                     <div>
                         <label class="mb-1 block text-sm">Type</label>
-                        <select v-model="zoneForm.type" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                            <option value="master">master</option>
-                            <option value="slave">slave</option>
-                        </select>
+                        <SearchableSelect v-model="zoneForm.type" :options="zoneTypeOptions" />
                     </div>
                     <div>
                         <label class="mb-1 block text-sm">SOA Email</label>
@@ -342,10 +353,7 @@ watch(
                     </div>
                     <div>
                         <label class="mb-1 block text-sm">Status</label>
-                        <select v-model="zoneForm.status" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                            <option value="active">active</option>
-                            <option value="disabled">disabled</option>
-                        </select>
+                        <SearchableSelect v-model="zoneForm.status" :options="statusOptions" />
                     </div>
                     <div>
                         <label class="mb-1 block text-sm">Refresh</label>
@@ -374,10 +382,12 @@ watch(
                     <div v-if="zoneEditingId && selectedZoneObject?.can_transfer" class="mt-2 border-t border-slate-200 pt-5 dark:border-slate-700">
                         <h3 class="text-sm font-semibold">Transfer ownership</h3>
                         <p class="mb-3 text-xs text-slate-500">Creator history remains unchanged after transfer.</p>
-                        <select v-model="transferForm.owner_user_id" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                            <option value="">Select user</option>
-                            <option v-for="user in transferUsers" :key="user.id" :value="user.id">{{ user.name }} · {{ user.email }}</option>
-                        </select>
+                        <SearchableSelect
+                            v-model="transferForm.owner_user_id"
+                            :options="transferUserOptions"
+                            placeholder="Select user"
+                            search-placeholder="Search users…"
+                        />
                         <button type="button" :disabled="transferForm.processing || !transferForm.owner_user_id" class="mt-3 rounded-md border border-amber-400 px-4 py-2 text-sm font-medium text-amber-700 disabled:opacity-50 dark:text-amber-300" @click="transferZone">Transfer Zone</button>
                     </div>
                 </form>
@@ -413,9 +423,7 @@ watch(
                         <tbody>
                             <tr v-if="isInlineCreateRow(selectedZoneObject.domain)" class="border-t border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-800/60">
                                 <td class="px-4 py-3 align-top">
-                                    <select v-model="recordForm.type" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
-                                        <option v-for="type in recordTypes" :key="`create-type-${type}`" :value="type">{{ type }}</option>
-                                    </select>
+                                    <SearchableSelect v-model="recordForm.type" :options="recordTypeOptions" />
                                 </td>
                                 <td class="px-4 py-3 align-top">
                                     <input v-model="recordForm.name" type="text" placeholder="@ or www" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
@@ -430,10 +438,7 @@ watch(
                                     <input v-model.number="recordForm.priority" type="number" min="0" max="65535" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
                                 </td>
                                 <td class="px-4 py-3 align-top">
-                                    <select v-model="recordForm.status" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
-                                        <option value="active">active</option>
-                                        <option value="disabled">disabled</option>
-                                    </select>
+                                    <SearchableSelect v-model="recordForm.status" :options="statusOptions" />
                                 </td>
                                 <td class="px-4 py-3 align-top">
                                     <div class="flex flex-wrap items-center gap-2">
@@ -457,9 +462,7 @@ watch(
                             <tr v-for="record in recordRows" :key="record.id" class="border-t border-slate-200 dark:border-slate-800">
                                 <template v-if="isInlineEditRow(record)">
                                     <td class="px-4 py-3 align-top">
-                                        <select v-model="recordForm.type" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
-                                            <option v-for="type in recordTypes" :key="`edit-type-${record.id}-${type}`" :value="type">{{ type }}</option>
-                                        </select>
+                                        <SearchableSelect v-model="recordForm.type" :options="recordTypeOptions" />
                                     </td>
                                     <td class="px-4 py-3 align-top">
                                         <input v-model="recordForm.name" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
@@ -474,10 +477,7 @@ watch(
                                         <input v-model.number="recordForm.priority" type="number" min="0" max="65535" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
                                     </td>
                                     <td class="px-4 py-3 align-top">
-                                        <select v-model="recordForm.status" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
-                                            <option value="active">active</option>
-                                            <option value="disabled">disabled</option>
-                                        </select>
+                                        <SearchableSelect v-model="recordForm.status" :options="statusOptions" />
                                     </td>
                                     <td class="px-4 py-3 align-top">
                                         <div class="flex flex-wrap items-center gap-2">

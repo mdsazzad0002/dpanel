@@ -36,6 +36,19 @@ struct GenericRestoreRequest {
     site_owner: String,
     php_version: String,
     target_root: String,
+    // The app root one level above target_root's docroot (e.g. Laravel's base
+    // path when target_root is its "public" dir). Optional: only used to
+    // place the ".env"-and-friends bundle a "quick_files" archive carries
+    // under the "__project_root_extras__/" marker (see website.rs); ignored
+    // for archives that don't have one.
+    #[serde(default)]
+    target_project_root: Option<String>,
+    // Where to put the pre-overwrite mysqldump when overwrite_database is
+    // set — normally a .trash/{batch}/_database dir set up by dpanel so it
+    // sits next to the moved files from the same backup. Falls back to
+    // home/migration_uploads when absent or outside the site owner's home.
+    #[serde(default)]
+    database_backup_dir: Option<String>,
     sql_path: Option<String>,
     database_host: String,
     database_port: u16,
@@ -539,6 +552,36 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
         return Err("website import target is outside its system user home".into());
     }
     fs::create_dir_all(&project_root).map_err(|e| e.to_string())?;
+
+    // A "quick_files" clone archive may carry a "__project_root_extras__"
+    // marker directory (.env and other app-root files that live one level
+    // above the docroot — see website.rs's is_quick_files branch). Peel it
+    // off before the flat copy below, and place it in the target's actual
+    // project root instead of the docroot, so .env doesn't end up nested
+    // under the target's "public" dir where the app never looks for it.
+    let extras_dir = content_root.join("__project_root_extras__");
+    if extras_dir.is_dir() {
+        if let Some(target_project_root) = req.target_project_root.as_deref() {
+            let target_project_root = PathBuf::from(target_project_root);
+            if target_project_root.starts_with(&home)
+                && !target_project_root
+                    .components()
+                    .any(|part| matches!(part, Component::ParentDir))
+            {
+                fs::create_dir_all(&target_project_root).map_err(|e| e.to_string())?;
+                let extras_copy_source = format!("{}/.", extras_dir.display());
+                let _ = Command::new("cp")
+                    .args([
+                        "-a",
+                        &extras_copy_source,
+                        target_project_root.to_string_lossy().as_ref(),
+                    ])
+                    .status();
+            }
+        }
+        fs::remove_dir_all(&extras_dir).ok();
+    }
+
     let copy_source = format!("{}/.", content_root.display());
     if !Command::new("cp")
         .args(["-a", &copy_source, project_root.to_string_lossy().as_ref()])
@@ -577,7 +620,14 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
 }
 
 fn backup_generic_database(req: &GenericRestoreRequest, home: &Path) -> Result<PathBuf, String> {
-    let upload_directory = home.join("migration_uploads");
+    // When the caller set up a .trash batch for this overwrite (Clone/Import's
+    // PreOverwriteBackupService), drop the dump alongside the moved files
+    // instead of the unrelated migration_uploads folder, so both halves of
+    // the backup are restorable together.
+    let upload_directory = match req.database_backup_dir.as_deref().map(PathBuf::from) {
+        Some(dir) if dir.starts_with(home) && !dir.components().any(|c| matches!(c, Component::ParentDir)) => dir,
+        _ => home.join("migration_uploads"),
+    };
     fs::create_dir_all(&upload_directory)
         .map_err(|error| format!("cannot create migration upload folder: {error}"))?;
     let timestamp = SystemTime::now()

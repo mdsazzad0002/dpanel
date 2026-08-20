@@ -239,8 +239,15 @@ class MigrationController extends Controller
             ->latest()
             ->get();
 
+        $otherWebsites = \App\Models\Website::query()->visibleTo($request->user())
+            ->where('id', '!=', $id)
+            ->orderBy('domain')
+            ->get(['id', 'domain'])
+            ->values();
+
         return Inertia::render('Websites/QuickImport', [
             'website' => $website,
+            'otherWebsites' => $otherWebsites,
             'databaseConnection' => [
                 'available' => $databases->isNotEmpty(),
                 'database_name' => $databases->first()?->database_name,
@@ -322,6 +329,7 @@ class MigrationController extends Controller
             // the shared account home (especially for subdomains), so importing there
             // would unpack one site's files into every site owner's common directory.
             'target_root' => (string) ($website->root_path ?: $website->project_root),
+            'target_project_root' => (string) $website->project_root,
             'sql_path' => $sqlPath, 'database_host' => (string) ($database?->database_host ?: '127.0.0.1'), 'database_port' => 3306,
             'database_name' => (string) ($database?->database_name ?? ''), 'database_user' => (string) ($database?->database_user ?? ''),
             'database_password' => (string) ($database?->database_password ?? ''),

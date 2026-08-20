@@ -1,8 +1,9 @@
 <script setup>
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const page = usePage();
@@ -22,6 +23,7 @@ const form = useForm({
     quota_mb: 1024,
     forwarding_to: '',
 });
+const websiteDomainOptions = computed(() => props.websiteDomains.map((domain) => ({ value: domain, label: domain })));
 const responseMessage = ref('');
 const responseOk = ref(false);
 
@@ -104,10 +106,12 @@ watch(
                 </div>
                 <div class="md:col-span-2">
                     <label class="mb-1 block text-sm">Website Domain</label>
-                    <select v-model="form.domain" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Select domain</option>
-                        <option v-for="domain in websiteDomains" :key="domain" :value="domain">{{ domain }}</option>
-                    </select>
+                    <SearchableSelect
+                        v-model="form.domain"
+                        :options="websiteDomainOptions"
+                        placeholder="Select domain"
+                        search-placeholder="Search domains…"
+                    />
                     <p v-if="form.errors.domain" class="mt-1 text-xs text-red-600">{{ form.errors.domain }}</p>
                 </div>
                 <div>

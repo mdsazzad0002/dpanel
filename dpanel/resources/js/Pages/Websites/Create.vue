@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
@@ -30,6 +31,19 @@ const props = defineProps({
     },
 });
 
+const domainTypeOptions = [
+    { value: 'main', label: 'Main domain' },
+    { value: 'sub', label: 'Subdomain' },
+];
+
+const domainUserOptions = computed(() => [
+    { value: '', label: 'Unassigned' },
+    ...props.domainUsers.map((user) => ({
+        value: user.id,
+        label: `${user.name} (${user.email})${user.package_id ? ' · packaged' : ''}`,
+    })),
+]);
+
 const form = useForm({
     domain_type: props.aliasMode ? 'alis' : 'main',
     domain: '',
@@ -52,7 +66,6 @@ const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]
 const parentDomainSearch = ref('');
 const parentDomainOptions = ref([]);
 const parentDomainLoading = ref(false);
-const parentDomainOpen = ref(false);
 const selectedParentRootPath = ref('');
 const selectedParentStartDirectory = ref('');
 const submitMessage = ref('');
@@ -219,7 +232,6 @@ watch(
         }
 
         if (type === 'main') {
-            parentDomainOpen.value = false;
             form.parent_domain = '';
             selectedParentStartDirectory.value = '';
             return;
@@ -432,24 +444,20 @@ const fetchParentDomains = async (search = '') => {
     }
 };
 
-const openParentDomainSearch = async () => {
-    parentDomainOpen.value = true;
-    await fetchParentDomains(parentDomainSearch.value);
+const parentDomainSelectOptions = computed(() => parentDomainOptions.value.map((item) => ({ value: item.id, label: item.domain })));
+
+const onParentDomainSearch = (value) => {
+    parentDomainSearch.value = value;
 };
 
-const closeParentDomainSearch = () => {
-    setTimeout(() => {
-        parentDomainOpen.value = false;
-    }, 120);
-};
-
-const selectParentDomain = (id, domain, rootPath, startDirectory) => {
+const onSelectParentDomain = (id) => {
+    const item = parentDomainOptions.value.find((option) => option.id === id);
+    if (!item) return;
     form.parent_id = id;
-    parentDomainSearch.value = domain;
-    form.parent_domain = domain;
-    selectedParentRootPath.value = rootPath || '';
-    selectedParentStartDirectory.value = startDirectory || '';
-    parentDomainOpen.value = false;
+    parentDomainSearch.value = item.domain;
+    form.parent_domain = item.domain;
+    selectedParentRootPath.value = item.root_path || '';
+    selectedParentStartDirectory.value = item.start_directory || '';
 };
 
 onBeforeUnmount(() => {
@@ -492,10 +500,7 @@ onBeforeUnmount(() => {
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-2 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div v-if="!props.aliasMode">
                     <label class="mb-1 block text-sm">Domain Type</label>
-                    <select v-model="form.domain_type" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="main">Main domain</option>
-                        <option value="sub">Subdomain</option>
-                    </select>
+                    <SearchableSelect v-model="form.domain_type" :options="domainTypeOptions" />
                 </div>
                 <div v-else>
                     <label class="mb-1 block text-sm">Domain Type</label>
@@ -505,44 +510,28 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-if="!props.aliasMode">
                     <label class="mb-1 block text-sm">Domain User</label>
-                    <select v-model="form.assigned_user_id" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Unassigned</option>
-                        <option v-for="user in domainUsers" :key="user.id" :value="user.id">
-                            {{ user.name }} ({{ user.email }}){{ user.package_id ? ' · packaged' : '' }}
-                        </option>
-                    </select>
+                    <SearchableSelect
+                        v-model="form.assigned_user_id"
+                        :options="domainUserOptions"
+                        placeholder="Unassigned"
+                        search-placeholder="Search users…"
+                    />
                     <p class="mt-1 text-xs text-slate-500">The selected user's package website quota is enforced before creation.</p>
                     <p v-if="form.errors.assigned_user_id" class="mt-1 text-xs text-red-600">{{ form.errors.assigned_user_id }}</p>
                 </div>
                 <div v-if="form.domain_type !== 'main'">
                     <label class="mb-1 block text-sm">{{ form.domain_type === 'sub' ? 'Parent Domain' : 'Alias Target Domain' }}</label>
-                    <div class="relative">
-                        <input
-                            v-model="parentDomainSearch"
-                            type="text"
-                            :placeholder="form.domain_type === 'sub' ? 'Search parent domain...' : 'Search target website...'"
-                            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                            @focus="openParentDomainSearch"
-                            @blur="closeParentDomainSearch"
-                        />
-                        <div v-if="parentDomainOpen" class="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                            <div v-if="parentDomainLoading" class="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
-                                Loading...
-                            </div>
-                            <button
-                                v-for="item in parentDomainOptions"
-                                :key="item.domain"
-                                type="button"
-                                class="block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-                                @mousedown.prevent="selectParentDomain(item.id, item.domain, item.root_path, item.start_directory)"
-                            >
-                                {{ item.domain }}
-                            </button>
-                            <div v-if="!parentDomainLoading && parentDomainOptions.length === 0" class="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
-                                No domain found.
-                            </div>
-                        </div>
-                    </div>
+                    <SearchableSelect
+                        v-model="form.parent_id"
+                        remote
+                        :options="parentDomainSelectOptions"
+                        :loading="parentDomainLoading"
+                        :model-label="normalizedParentDomain"
+                        :placeholder="form.domain_type === 'sub' ? 'Search parent domain…' : 'Search target website…'"
+                        :search-placeholder="form.domain_type === 'sub' ? 'Search parent domain…' : 'Search target website…'"
+                        @search="onParentDomainSearch"
+                        @update:model-value="onSelectParentDomain"
+                    />
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                         <span v-if="form.domain_type === 'sub'">Searchable AJAX list (max 10). Choose the parent domain that the subdomain will be attached to.</span>
                         <span v-else>Searchable AJAX list (max 10). The alias will use the selected website's document root.</span>

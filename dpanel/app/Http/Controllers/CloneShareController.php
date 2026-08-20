@@ -11,31 +11,22 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
-use Inertia\Inertia;
-use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
+/**
+ * Background actions behind the Clone/Share controls embedded in the Quick
+ * Export (Share) and Quick Import (Clone from / Import from another server)
+ * pages — see WebsiteController::quickExportPage() and ::importIndex() for
+ * the pages that render these controls.
+ */
 class CloneShareController extends Controller
 {
-    public function page(Request $request, string $token, string $id): Response
-    {
-        $website = Website::query()->visibleTo($request->user())->findOrFail($id);
-
-        $otherWebsites = Website::query()->visibleTo($request->user())
-            ->where('id', '!=', $id)
-            ->orderBy('domain')
-            ->get(['id', 'domain'])
-            ->values();
-
-        return Inertia::render('Websites/CloneShare', [
-            'website' => $website,
-            'otherWebsites' => $otherWebsites,
-        ]);
-    }
-
     public function clone(Request $request, string $token, string $id): JsonResponse
     {
-        $data = $request->validate(['target_website_id' => ['required', 'uuid', 'different:id']]);
+        $data = $request->validate([
+            'target_website_id' => ['required', 'uuid', 'different:id'],
+            'new_database_name' => ['nullable', 'string', 'max:64'],
+        ]);
 
         $source = Website::query()->visibleTo($request->user())->find($id);
         $target = Website::query()->visibleTo($request->user())->find($data['target_website_id']);
@@ -52,7 +43,7 @@ class CloneShareController extends Controller
         $cloneId = (string) Str::uuid();
         CloneShareJobStatus::set($cloneId, ['stage' => 'queued']);
 
-        CloneWebsiteJob::dispatch($cloneId, (string) $id, (string) $data['target_website_id'], (int) $request->user()->id);
+        CloneWebsiteJob::dispatch($cloneId, (string) $id, (string) $data['target_website_id'], (int) $request->user()->id, (string) ($data['new_database_name'] ?? ''));
 
         return response()->json(['ok' => true, 'clone_id' => $cloneId]);
     }

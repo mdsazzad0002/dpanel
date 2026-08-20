@@ -1,12 +1,14 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 
 const props = defineProps({
     website: { type: Object, required: true },
     imports: { type: Array, default: () => [] },
+    otherWebsites: { type: Array, default: () => [] },
     databaseConnection: { type: Object, default: () => ({ available: false, database_name: null, databases: [] }) },
     suggestedDatabaseName: { type: String, default: '' },
 });
@@ -93,15 +95,176 @@ onMounted(() => {
     }, 3000);
 });
 onBeforeUnmount(() => window.clearInterval(refreshTimer));
+
+// ---- Clone from (pull another website on this server into this website) ----
+const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '');
+const toasts = ref([]);
+let toastSeq = 0;
+const pushToast = (toastMessage, type = 'success') => {
+    const id = ++toastSeq;
+    toasts.value.push({ id, message: toastMessage, type });
+    window.setTimeout(() => {
+        toasts.value = toasts.value.filter((toast) => toast.id !== id);
+    }, 4000);
+};
+
+const postJson = async (url, body) => {
+    const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': csrfToken.value,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+        throw new Error(data.message || 'Request failed.');
+    }
+    return data;
+};
+
+const cloneStageText = (stage) => ({
+    queued: 'Queued…',
+    archiving: 'Archiving website files…',
+    exporting_database: 'Exporting database…',
+    restoring: 'Restoring into this website…',
+    downloading: 'Downloading package…',
+    ready: 'Done',
+    failed: 'Failed',
+}[stage] || 'Working…');
+
+const otherWebsiteOptions = computed(() => props.otherWebsites.map((site) => ({ value: site.id, label: site.domain })));
+
+const sourceWebsiteId = ref('');
+const pullRunning = ref(false);
+const pullStage = ref(null);
+const pullMessage = ref('');
+let pullPollTimer = null;
+
+const stopPullPoll = () => {
+    window.clearInterval(pullPollTimer);
+    pullPollTimer = null;
+};
+
+const pollPullStatus = async (cloneId) => {
+    try {
+        const response = await fetch(panelRoute('websites.clone-share.status', { id: props.website.id, jobId: cloneId }), {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) return;
+        pullStage.value = data.stage;
+        if (data.stage === 'ready') {
+            stopPullPoll();
+            pullRunning.value = false;
+            pushToast('Clone completed — this website now has the cloned content.');
+        } else if (data.stage === 'failed') {
+            stopPullPoll();
+            pullRunning.value = false;
+            pullMessage.value = data.message || 'Clone failed.';
+            pushToast(pullMessage.value, 'error');
+        }
+    } catch {
+        // Network hiccup — next tick retries.
+    }
+};
+
+const startPull = async () => {
+    if (pullRunning.value || !sourceWebsiteId.value) return;
+    if (props.databaseConnection?.available) {
+        const confirmed = window.confirm(
+            `${props.website.domain} already has an active database (${props.databaseConnection.database_name}). Cloning will overwrite it with the source website's database. Continue?`,
+        );
+        if (!confirmed) return;
+    }
+    pullRunning.value = true;
+    pullStage.value = 'queued';
+    pullMessage.value = '';
+    try {
+        const data = await postJson(panelRoute('websites.clone-share.clone', { id: sourceWebsiteId.value }), { target_website_id: props.website.id });
+        stopPullPoll();
+        pullPollTimer = window.setInterval(() => pollPullStatus(data.clone_id), 5000);
+        pollPullStatus(data.clone_id);
+    } catch (error) {
+        pullRunning.value = false;
+        pullStage.value = 'failed';
+        pullMessage.value = error?.message || 'Failed to start clone.';
+        pushToast(pullMessage.value, 'error');
+    }
+};
+
+// ---- Import from another server's share link ----
+const importUrl = ref('');
+const importRunning = ref(false);
+const importStage = ref(null);
+const importMessage = ref('');
+let importPollTimer = null;
+
+const stopImportPoll = () => {
+    window.clearInterval(importPollTimer);
+    importPollTimer = null;
+};
+
+const pollImportStatus = async (cloneId) => {
+    try {
+        const response = await fetch(panelRoute('websites.clone-share.status', { id: props.website.id, jobId: cloneId }), {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) return;
+        importStage.value = data.stage;
+        if (data.stage === 'ready') {
+            stopImportPoll();
+            importRunning.value = false;
+            pushToast('Import completed — this website now has the cloned content.');
+        } else if (data.stage === 'failed') {
+            stopImportPoll();
+            importRunning.value = false;
+            importMessage.value = data.message || 'Import failed.';
+            pushToast(importMessage.value, 'error');
+        }
+    } catch {
+        // Network hiccup — next tick retries.
+    }
+};
+
+const startUrlImport = async () => {
+    if (importRunning.value || !importUrl.value) return;
+    importRunning.value = true;
+    importStage.value = 'queued';
+    importMessage.value = '';
+    try {
+        const data = await postJson(panelRoute('websites.clone-share.import', { id: props.website.id }), { source_url: importUrl.value });
+        stopImportPoll();
+        importPollTimer = window.setInterval(() => pollImportStatus(data.clone_id), 5000);
+        pollImportStatus(data.clone_id);
+    } catch (error) {
+        importRunning.value = false;
+        importStage.value = 'failed';
+        importMessage.value = error?.message || 'Failed to start import.';
+        pushToast(importMessage.value, 'error');
+    }
+};
+
+onUnmounted(() => {
+    stopPullPoll();
+    stopImportPoll();
+});
 </script>
 
 <template>
-    <Head :title="`Quick Import - ${website.domain}`" />
+    <Head :title="`Import & Clone - ${website.domain}`" />
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between gap-4">
                 <div>
-                    <h1 class="text-lg font-semibold">Quick Import</h1>
+                    <h1 class="text-lg font-semibold">Import & Clone</h1>
                     <p class="text-sm text-slate-500">{{ website.domain }} — files and database are restored into this website</p>
                 </div>
                 <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
@@ -110,7 +273,7 @@ onBeforeUnmount(() => window.clearInterval(refreshTimer));
             </div>
         </template>
 
-        <div class="mx-auto space-y-6 p-4 sm:p-6">
+        <div class="mx-auto grid gap-6  lg:grid-cols-2">
             <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Import into {{ website.domain }}</h3>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Upload website files and an optional SQL dump. Existing database credentials for this website are selected automatically—no connection form is required.</p>
@@ -146,14 +309,86 @@ onBeforeUnmount(() => window.clearInterval(refreshTimer));
                 </form>
             </section>
 
-            <div v-if="message" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{{ message }}</div>
-            <div v-if="error" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300">{{ error }}</div>
+            <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100"><i class="bi bi-copy mr-1.5 text-cyan-600"></i>Clone from another website</h3>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Pull another website's files and database from this server into {{ website.domain }} — {{ website.domain }} is always the destination. A separate database is created for {{ website.domain }}; it is never shared with the source.</p>
+                <p v-if="databaseConnection?.available" class="mt-1 text-xs text-amber-600">
+                    <i class="bi bi-exclamation-triangle-fill mr-1"></i>{{ website.domain }} already has an active database ({{ databaseConnection.database_name }}) — cloning will ask for confirmation before overwriting it.
+                </p>
 
-            <div v-if="total" class="pt-2"><h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Import history</h3></div>
-            <section v-for="item in imports" :key="item.id" class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50">
+                <label class="mt-4 block text-xs font-medium text-slate-600 dark:text-slate-300">Clone from</label>
+                <SearchableSelect
+                    v-model="sourceWebsiteId"
+                    class="mt-1"
+                    :options="otherWebsiteOptions"
+                    :disabled="pullRunning"
+                    placeholder="Select a website you own…"
+                    search-placeholder="Search websites…"
+                />
+                <p v-if="otherWebsites.length === 0" class="mt-1 text-xs text-amber-600">You need at least one other website on this server to clone from.</p>
+
+                <div v-if="pullStage" class="mt-4 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
+                    <div class="flex items-center gap-2">
+                        <i v-if="pullStage === 'ready'" class="bi bi-check-circle-fill text-emerald-600"></i>
+                        <i v-else-if="pullStage === 'failed'" class="bi bi-x-circle-fill text-red-600"></i>
+                        <i v-else class="bi bi-arrow-repeat animate-spin text-cyan-600"></i>
+                        <span>{{ cloneStageText(pullStage) }}</span>
+                    </div>
+                    <p v-if="pullStage === 'failed' && pullMessage" class="mt-1 text-red-600">{{ pullMessage }}</p>
+                </div>
+
+                <div class="mt-5 flex justify-end">
+                    <button type="button" :disabled="pullRunning || !sourceWebsiteId" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startPull">
+                        {{ pullRunning ? 'Cloning…' : 'Clone Now' }}
+                    </button>
+                </div>
+
+                <hr class="my-5 border-slate-200 dark:border-slate-700" />
+
+                <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Import from another server</h4>
+                <p class="mt-1 text-xs text-slate-500">Paste a share link generated on another server's Export & Share page to clone it into this website.</p>
+
+                <input
+                    v-model="importUrl"
+                    type="url"
+                    :disabled="importRunning"
+                    placeholder="https://other-server.example.com/clone-share/download/…"
+                    class="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
+                />
+
+                <div v-if="importStage" class="mt-4 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
+                    <div class="flex items-center gap-2">
+                        <i v-if="importStage === 'ready'" class="bi bi-check-circle-fill text-emerald-600"></i>
+                        <i v-else-if="importStage === 'failed'" class="bi bi-x-circle-fill text-red-600"></i>
+                        <i v-else class="bi bi-arrow-repeat animate-spin text-cyan-600"></i>
+                        <span>{{ cloneStageText(importStage) }}</span>
+                    </div>
+                    <p v-if="importStage === 'failed' && importMessage" class="mt-1 text-red-600">{{ importMessage }}</p>
+                </div>
+
+                <div class="mt-5 flex justify-end">
+                    <button type="button" :disabled="importRunning || !importUrl" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startUrlImport">
+                        {{ importRunning ? 'Importing…' : 'Import Now' }}
+                    </button>
+                </div>
+            </section>
+
+            <div v-if="message" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300 lg:col-span-2">{{ message }}</div>
+            <div v-if="error" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300 lg:col-span-2">{{ error }}</div>
+
+            <div v-if="total" class="pt-2 lg:col-span-2"><h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Import history</h3></div>
+            <section v-for="item in imports" :key="item.id" class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50 lg:col-span-2">
                 <div class="flex items-center justify-between gap-3"><div><h4 class="font-semibold dark:text-slate-100">{{ item.inventory?.domain || item.original_name }}</h4><p class="text-sm text-slate-500 dark:text-slate-400">{{ item.original_name }}</p></div><span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold dark:bg-slate-800">{{ item.status }}</span></div>
                 <p v-if="item.last_error" class="mt-3 text-sm text-red-600 dark:text-red-400">{{ item.last_error }}</p>
             </section>
         </div>
+
+        <Teleport to="body">
+            <div class="pointer-events-none fixed bottom-4 right-4 z-[80] flex flex-col gap-2">
+                <div v-for="toast in toasts" :key="toast.id" class="pointer-events-auto rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-lg" :class="toast.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'">
+                    {{ toast.message }}
+                </div>
+            </div>
+        </Teleport>
     </AuthenticatedLayout>
 </template>

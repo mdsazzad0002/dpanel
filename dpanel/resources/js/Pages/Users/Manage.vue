@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { computed, ref } from 'vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 
@@ -30,6 +31,9 @@ const props = defineProps({
     assignableRoles: { type: Array, default: () => [] },
     packages: { type: Array, default: () => [] },
 });
+
+const assignableRoleOptions = computed(() => props.assignableRoles.map((role) => ({ value: role, label: role })));
+const packageOptions = computed(() => props.packages.map((item) => ({ value: item.id, label: item.name })));
 
 const page = usePage();
 const actorRoles = computed(() => page.props.auth?.roles ?? []);
@@ -415,17 +419,17 @@ const deleteUser = (user) => {
                                 </div>
                                 <div>
                                     <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Role</label>
-                                    <select v-model="userForm.role" class="w-full rounded-md border-slate-300 bg-white text-slate-900 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-                                        <option v-for="role in assignableRoles" :key="role" :value="role">{{ role }}</option>
-                                    </select>
+                                    <SearchableSelect v-model="userForm.role" :options="assignableRoleOptions" />
                                     <p v-if="userForm.errors.role" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ userForm.errors.role }}</p>
                                 </div>
                                 <div>
                                     <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Resource Package <span v-if="userForm.role === 'general'" class="text-red-500 dark:text-red-400">*</span></label>
-                                    <select v-model="userForm.package_id" :required="userForm.role === 'general'" class="w-full rounded-md border-slate-300 bg-white text-slate-900 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-                                        <option value="">{{ userForm.role === 'general' ? 'Select package' : 'No package' }}</option>
-                                        <option v-for="item in packages" :key="item.id" :value="item.id">{{ item.name }}</option>
-                                    </select>
+                                    <SearchableSelect
+                                        v-model="userForm.package_id"
+                                        :options="packageOptions"
+                                        :placeholder="userForm.role === 'general' ? 'Select package' : 'No package'"
+                                        search-placeholder="Search packages…"
+                                    />
                                     <p v-if="userForm.errors.package_id" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ userForm.errors.package_id }}</p>
                                 </div>
                             </div>
