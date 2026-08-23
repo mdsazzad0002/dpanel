@@ -119,7 +119,7 @@ class AiGatewayModelController extends Controller
         return $this->toModelsIndex($request)->with('success', 'Model "'.$data['name'].'" added.');
     }
 
-    public function update(Request $request, $token, AiGatewayModel $model): RedirectResponse
+    public function update(Request $request, $token, AiGatewayModel $model): RedirectResponse|JsonResponse
     {
         $targetProviderId = $request->input('provider_id', $model->provider_id);
 
@@ -181,6 +181,10 @@ class AiGatewayModelController extends Controller
         }
 
         $model->save();
+
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true, 'model' => $model->fresh()]);
+        }
 
         return $this->toModelsIndex($request)->with('success', 'Model updated.');
     }

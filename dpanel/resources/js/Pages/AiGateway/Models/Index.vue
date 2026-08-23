@@ -90,7 +90,16 @@ watch(() => addForm.provider_id, (id) => fetchRemoteModels(id), { immediate: tru
 
 const add = () => addForm.post(panelRoute('ai-gateway.models.store'));
 const setDefault = (m) => statusForm.post(panelRoute('ai-gateway.models.default', { model: m.id }));
-const toggle = (m) => statusForm.patch(panelRoute('ai-gateway.models.update', { model: m.id }), { is_active: !m.is_active });
+const toggle = async (m) => {
+    try {
+        const { data } = await axios.patch(panelRoute('ai-gateway.models.update', { model: m.id }), { is_active: !m.is_active });
+        m.is_active = data.model.is_active;
+        m.auto_disabled = data.model.auto_disabled;
+        m.failure_count = data.model.failure_count;
+    } catch (e) {
+        alert(e.response?.data?.message || 'Could not update the model.');
+    }
+};
 const remove = (m) => { if (confirm(`Remove model "${m.name}"?`)) delForm.delete(panelRoute('ai-gateway.models.destroy', { model: m.id })); };
 
 const editingId = ref(null);

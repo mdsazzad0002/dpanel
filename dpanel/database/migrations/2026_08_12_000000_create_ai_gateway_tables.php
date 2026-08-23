@@ -37,7 +37,7 @@ return new class extends Migration
         // ------------------------------------------------------------------
         Schema::create('ai_gateway_models', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('provider_id')->constrained('ai_gateway_providers')->cascadeOnDelete();
+            $table->foreignId('provider_id')->nullable()->constrained('ai_gateway_providers')->nullOnDelete();
             $table->string('name'); // upstream model id
             $table->string('display_name')->nullable();
             $table->unsignedInteger('context_window')->default(0);
