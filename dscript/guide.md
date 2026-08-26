@@ -373,7 +373,7 @@ systemctl status edge-gateway --no-pager
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PANEL_INSTALL_BASE_URL` | `https://installer.dengrweb.com` | Installer website root |
+| `PANEL_INSTALL_BASE_URL` | `https://dpanel.dengrweb.com` | Installer website root |
 | `PANEL_DSCRIPT_BASE_URL` | `<site>/dscript` | Explicit dscript asset root |
 | `DPANEL_BASE_URL` | dscript asset root | Manifest/module download root |
 | `DPANEL_BASE_DIR` | `/opt/dpanel` | Preferred installed state root setting |
@@ -395,7 +395,7 @@ systemctl status edge-gateway --no-pager
 | `SKIP_TEST` | `false` | Skip completion test message |
 | `DSCRIPT_REFRESH_REMOTE` | `false` | Force remote manifest refresh during install |
 | `PHP_VERSION` | detected/8.3 | Preferred PHP version |
-| `PANEL_DOMAIN` | `installer.dengrweb.com` | Panel hostname |
+| `PANEL_DOMAIN` | `dpanel.dengrweb.com` | Panel hostname |
 | `PANEL_PORT` | `80` | Panel port |
 | `PANEL_MAIL_SERVER_IP` | prompted/empty | Public IPv4 written to `SERVERPANEL_MAIL_SERVER_IP` for mail DNS exports |
 
@@ -416,7 +416,7 @@ systemctl status edge-gateway --no-pager
 Public installation:
 
 ```bash
-curl -fsSL https://installer.dengrweb.com/installer.sh -o installer.sh
+curl -fsSL https://dpanel.dengrweb.com/installer.sh -o installer.sh
 chmod +x installer.sh
 sudo ./installer.sh
 ```
@@ -472,7 +472,7 @@ Use this flow when installing dPanel on a fresh device/server.
 1. Download and run the installer:
 
    ```bash
-   curl -fsSL https://installer.dengrweb.com/installer.sh -o installer.sh
+   curl -fsSL https://dpanel.dengrweb.com/installer.sh -o installer.sh
    chmod +x installer.sh
    sudo ./installer.sh
    ```

@@ -96,7 +96,7 @@ hostname.
 ## Installation
 
 ```bash
-curl -fsSL https://installer.dengrweb.com/installer.sh -o installer.sh
+curl -fsSL https://dpanel.dengrweb.com/installer.sh -o installer.sh
 chmod +x installer.sh
 sudo ./installer.sh
 ```

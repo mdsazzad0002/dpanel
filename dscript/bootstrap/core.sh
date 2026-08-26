@@ -153,7 +153,7 @@ PY
     [[ -n "$configured" ]] && { printf '%s' "$configured"; return 0; }
   fi
 
-  printf '%s' "https://installer.dengrweb.com/dscript"
+  printf '%s' "https://dpanel.dengrweb.com/dscript"
 }
 
 panel_fetch() {

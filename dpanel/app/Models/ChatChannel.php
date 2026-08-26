@@ -133,6 +133,7 @@ class ChatChannel extends Model
         return is_array($settings) ? (bool) ($settings['auto_reply_enabled'] ?? true) : true;
     }
 
+
     public function systemPrompt(): string
     {
         $settings = $this->settings;
