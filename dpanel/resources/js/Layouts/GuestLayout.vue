@@ -57,6 +57,12 @@ import { Link } from '@inertiajs/vue3';
                         <div class="">
                             <slot />
                         </div>
+
+                        <div class="mt-8 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                            <Link href="/privacy-policy" class="hover:text-slate-200">Privacy Policy</Link>
+                            <span>·</span>
+                            <Link href="/terms-and-conditions" class="hover:text-slate-200">Terms &amp; Conditions</Link>
+                        </div>
                     </div>
                 </div>
             </div>

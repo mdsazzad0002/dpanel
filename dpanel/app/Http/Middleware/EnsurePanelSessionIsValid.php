@@ -25,18 +25,32 @@ class EnsurePanelSessionIsValid
             $cookieToken = bin2hex(random_bytes(32));
         }
 
-        $token = (string) $request->route('token');
-        if ($token === '' && $request->hasSession()) {
-            $token = (string) $request->session()->get('panel_session_token', '');
+        $routeToken = (string) $request->route('token');
+        $sessionToken = $request->hasSession()
+            ? (string) $request->session()->get('panel_session_token', '')
+            : '';
+
+        // A previously-open tab can keep making requests with an older cpsess
+        // token after a fresh login rotates it. Show the login screen for that
+        // stale URL, but never overwrite/revoke the current valid session.
+        if ($routeToken !== '' && $sessionToken !== '' && ! hash_equals($sessionToken, $routeToken)) {
+            $currentSessionExists = PanelSession::query()
+                ->where('user_id', Auth::id())
+                ->where('token_hash', hash('sha256', $sessionToken))
+                ->when(! $missingProofCookie, fn ($query) => $query->where('cookie_hash', hash('sha256', $cookieToken)))
+                ->whereNull('revoked_at')
+                ->where('expires_at', '>', now())
+                ->where('created_at', '>', now()->subMinutes(PanelSession::maximumLifetimeMinutes()))
+                ->exists();
+
+            if ($currentSessionExists) {
+                return redirect()->route('login');
+            }
         }
 
-        if ($request->hasSession()) {
-            if ($token === '') {
-                $token = bin2hex(random_bytes(32));
-                $request->session()->put('panel_session_token', $token);
-            }
+        $token = $routeToken !== '' ? $routeToken : $sessionToken;
 
-            $request->session()->put('panel_session_token', $token);
+        if ($request->hasSession() && $token !== '') {
             URL::defaults(['token' => $token]);
         }
 
@@ -61,6 +75,9 @@ class EnsurePanelSessionIsValid
                 ->route('login')
                 ->withCookie(Cookie::forget($cookieName));
         }
+
+        // Persist only after the route token has been proven active.
+        $request->session()->put('panel_session_token', $token);
 
         if ($missingProofCookie) {
             PanelSession::query()

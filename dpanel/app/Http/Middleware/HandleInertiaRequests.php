@@ -36,6 +36,7 @@ class HandleInertiaRequests extends Middleware
         $panelToken = $request->hasSession() ? $request->session()->get('panel_session_token') : null;
         $flashSuccess = $request->hasSession() ? fn () => $request->session()->get('success') : fn () => null;
         $flashError = $request->hasSession() ? fn () => $request->session()->get('error') : fn () => null;
+        $facebookPostUrl = $request->hasSession() ? fn () => $request->session()->get('facebook_post_url') : fn () => null;
 
         return [
             ...parent::share($request),
@@ -54,6 +55,7 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'success' => $flashSuccess,
                 'error' => $flashError,
+                'facebook_post_url' => $facebookPostUrl,
             ],
             'auth' => [
                 'user' => $user,

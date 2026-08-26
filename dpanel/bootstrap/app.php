@@ -39,6 +39,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/v1/chat/completions',
             'api/v1/models',
             'api/whmcs/*',
+            'webhooks/chat/telegram/*',
+            'webhooks/chat/facebook',
+            'webhooks/chat/facebook/*',
+            'webhooks/chat/whatsapp/*',
+            'webhooks/chat/instagram/*',
+            'webhooks/chat/slack/*',
         ]);
 
         $middleware->alias([
@@ -48,6 +54,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'ai_gateway.key' => \App\Http\Middleware\AuthenticateAiGatewayApiKey::class,
             'whmcs.auth' => \App\Http\Middleware\AuthenticateWhmcsRequest::class,
+            'chatengine.telegram.webhook' => \App\Http\Middleware\VerifyTelegramChatWebhook::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -2,6 +2,17 @@
 
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\BackupController;
+use App\Http\Controllers\ChatEngineChannelController;
+use App\Http\Controllers\ChatEngineController;
+use App\Http\Controllers\ChatEngineConversationController;
+use App\Http\Controllers\ChatEngineFacebookAppController;
+use App\Http\Controllers\ChatEngineFacebookPostController;
+use App\Http\Controllers\ChatEngineScheduledMessageController;
+use App\Http\Controllers\Webhooks\FacebookChatWebhookController;
+use App\Http\Controllers\Webhooks\TelegramChatWebhookController;
+use App\Http\Controllers\Webhooks\WhatsAppChatWebhookController;
+use App\Http\Controllers\Webhooks\InstagramChatWebhookController;
+use App\Http\Controllers\Webhooks\SlackChatWebhookController;
 use App\Http\Controllers\BillingSystemController;
 use App\Http\Controllers\CloneShareController;
 use App\Http\Controllers\DashboardController;
@@ -21,6 +32,7 @@ use App\Http\Controllers\PackagePlanController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\MonitoringController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PageController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
 use App\Http\Controllers\PhpMyAdmin\PhpMyAdminController;
@@ -45,6 +57,11 @@ Route::get('/', function () {
 
     return redirect()->route('login');
 });
+
+// Public legal pages — no auth required, linked from the login screen and
+// the authenticated panel footer alike.
+Route::get('/privacy-policy', [PageController::class, 'privacyPolicy'])->name('privacy-policy');
+Route::get('/terms-and-conditions', [PageController::class, 'termsAndConditions'])->name('terms-and-conditions');
 
 Route::get('/cpsess{token}/login', function () {
     // Viewing the login screen must not revoke the current token. Rotation
@@ -96,6 +113,61 @@ Route::middleware(['ai_gateway.key', 'throttle:60,1'])->group(function (): void 
 Route::get('/telegram/webhook-url', [TelegramWebhookController::class, 'url'])
     ->name('telegram.webhook-url');
 
+// AI Chat Engine — inbound channel webhooks. Each channel's own secret token
+// (verified by the chatengine.telegram.webhook middleware) is the only
+// credential; deliberately outside the cpsess{token}/auth group since these
+// are called by the messaging platform, not a logged-in panel user.
+Route::post('/webhooks/chat/telegram/{channel}', [TelegramChatWebhookController::class, 'store'])
+    ->middleware(['chatengine.telegram.webhook', 'throttle:120,1'])
+    ->name('webhooks.chat.telegram');
+
+Route::get('/webhooks/chat/whatsapp/{channel}', [WhatsAppChatWebhookController::class, 'verify'])
+    ->middleware('throttle:60,1')
+    ->name('webhooks.chat.whatsapp.verify');
+Route::post('/webhooks/chat/whatsapp/{channel}', [WhatsAppChatWebhookController::class, 'store'])
+    ->middleware('throttle:120,1')
+    ->name('webhooks.chat.whatsapp');
+
+Route::get('/webhooks/chat/instagram/{channel}', [InstagramChatWebhookController::class, 'verify'])
+    ->middleware('throttle:60,1')
+    ->name('webhooks.chat.instagram.verify');
+Route::post('/webhooks/chat/instagram/{channel}', [InstagramChatWebhookController::class, 'store'])
+    ->middleware('throttle:120,1')
+    ->name('webhooks.chat.instagram');
+
+Route::post('/webhooks/chat/slack/{channel}', [SlackChatWebhookController::class, 'store'])
+    ->middleware('throttle:120,1')
+    ->name('webhooks.chat.slack');
+
+// Each registered Facebook App gets its own webhook URL (one callback per
+// app, covering every page connected through it) — so different
+// people/orgs each running their own Facebook App never share an endpoint
+// or a secret. GET handles Meta's one-time verification handshake, POST
+// verifies the X-Hub-Signature-256 against that specific app's secret.
+Route::get('/webhooks/chat/facebook/{facebookApp}', [FacebookChatWebhookController::class, 'verify'])
+    ->name('webhooks.chat.facebook.app.verify');
+Route::post('/webhooks/chat/facebook/{facebookApp}', [FacebookChatWebhookController::class, 'store'])
+    ->middleware('throttle:120,1')
+    ->name('webhooks.chat.facebook.app');
+
+// Legacy shared URL (no app id) kept for channels connected manually before
+// per-app webhook URLs existed — checks every active app's secret plus the
+// single .env-configured one.
+Route::get('/webhooks/chat/facebook', [FacebookChatWebhookController::class, 'verify'])
+    ->name('webhooks.chat.facebook.verify');
+Route::post('/webhooks/chat/facebook', [FacebookChatWebhookController::class, 'store'])
+    ->middleware('throttle:120,1')
+    ->name('webhooks.chat.facebook');
+
+// Facebook's OAuth redirect_uri must be a fixed, pre-registered URL — it
+// can't contain the panel's rotating cpsess token — so this stays outside
+// the auth group and instead relies on the browser session started when the
+// user clicked "Connect via Facebook" from inside the panel. See
+// ChatEngineFacebookAppController::connect()/callback().
+Route::get('/webhooks/chat/facebook/oauth/callback', [ChatEngineFacebookAppController::class, 'callback'])
+    ->middleware('throttle:30,1')
+    ->name('webhooks.chat.facebook.oauth.callback');
+
 Route::prefix('cpsess{token}')
     ->where(['token' => '[0-9a-fA-F]{64}'])
     ->middleware(['panel.session', 'auth'])
@@ -126,7 +198,7 @@ Route::prefix('cpsess{token}')
 
         Route::middleware('auth')->group(function () {
             Route::redirect('/serverpanel', '/servers')
-                ->middleware('role:admin|reseller')
+                ->middleware('role:admin|reseller|general|general_user')
                 ->name('serverpanel.index');
 
             Route::get('/servers', [ServerController::class, 'index'])
@@ -436,6 +508,48 @@ Route::prefix('cpsess{token}')
 
                     // API docs (how to call the external endpoints below)
                     Route::get('docs', [AiGatewayController::class, 'docs'])->name('ai-gateway.docs');
+                });
+
+            // ------------------------------------------------------------------
+            // AI Chat Engine — multi-channel conversations, AI auto-reply and
+            // scheduled/broadcast messages. Inbound webhooks live outside this
+            // group (see /webhooks/chat/telegram/{channel} above).
+            // ------------------------------------------------------------------
+            Route::prefix('chat-engine')
+                ->middleware('role:admin|reseller')
+                ->group(function (): void {
+                    Route::get('docs', [ChatEngineController::class, 'docs'])->name('chat-engine.docs');
+
+                    Route::get('facebook-apps', [ChatEngineFacebookAppController::class, 'index'])->name('chat-engine.facebook-apps.index');
+                    Route::post('facebook-apps', [ChatEngineFacebookAppController::class, 'store'])->name('chat-engine.facebook-apps.store');
+                    Route::patch('facebook-apps/{facebookApp}/toggle', [ChatEngineFacebookAppController::class, 'toggle'])->name('chat-engine.facebook-apps.toggle');
+                    Route::patch('facebook-apps/{facebookApp}/owner', [ChatEngineFacebookAppController::class, 'transferOwnership'])->name('chat-engine.facebook-apps.owner');
+                    Route::delete('facebook-apps/{facebookApp}', [ChatEngineFacebookAppController::class, 'destroy'])->name('chat-engine.facebook-apps.destroy');
+                    Route::get('facebook-apps/{facebookApp}/connect', [ChatEngineFacebookAppController::class, 'connect'])->name('chat-engine.facebook-apps.connect');
+
+                    Route::get('facebook-posts', [ChatEngineFacebookPostController::class, 'index'])->name('chat-engine.facebook-posts.index');
+                    Route::post('facebook-posts', [ChatEngineFacebookPostController::class, 'store'])->name('chat-engine.facebook-posts.store');
+                    Route::post('facebook-posts/comments', [ChatEngineFacebookPostController::class, 'comment'])->name('chat-engine.facebook-posts.comments.store');
+
+                    Route::get('channels', [ChatEngineChannelController::class, 'index'])->name('chat-engine.channels.index');
+                    Route::get('channels/create', [ChatEngineChannelController::class, 'create'])->name('chat-engine.channels.create');
+                    Route::post('channels', [ChatEngineChannelController::class, 'store'])->name('chat-engine.channels.store');
+                    Route::get('channels/{channel}/edit', [ChatEngineChannelController::class, 'edit'])->name('chat-engine.channels.edit');
+                    Route::patch('channels/{channel}', [ChatEngineChannelController::class, 'update'])->name('chat-engine.channels.update');
+                    Route::post('channels/{channel}/reconnect', [ChatEngineChannelController::class, 'reconnect'])->name('chat-engine.channels.reconnect');
+                    Route::patch('channels/{channel}/toggle', [ChatEngineChannelController::class, 'toggle'])->name('chat-engine.channels.toggle');
+                    Route::patch('channels/{channel}/owner', [ChatEngineChannelController::class, 'transferOwnership'])->name('chat-engine.channels.owner');
+                    Route::delete('channels/{channel}', [ChatEngineChannelController::class, 'destroy'])->name('chat-engine.channels.destroy');
+
+                    Route::get('conversations', [ChatEngineConversationController::class, 'index'])->name('chat-engine.conversations.index');
+                    Route::get('conversations/{conversation}', [ChatEngineConversationController::class, 'show'])->name('chat-engine.conversations.show');
+                    Route::patch('conversations/{conversation}/toggle-ai', [ChatEngineConversationController::class, 'toggleAi'])->name('chat-engine.conversations.toggle-ai');
+                    Route::post('conversations/{conversation}/reply', [ChatEngineConversationController::class, 'reply'])->name('chat-engine.conversations.reply');
+
+                    Route::get('scheduled-messages', [ChatEngineScheduledMessageController::class, 'index'])->name('chat-engine.scheduled-messages.index');
+                    Route::get('scheduled-messages/create', [ChatEngineScheduledMessageController::class, 'create'])->name('chat-engine.scheduled-messages.create');
+                    Route::post('scheduled-messages', [ChatEngineScheduledMessageController::class, 'store'])->name('chat-engine.scheduled-messages.store');
+                    Route::delete('scheduled-messages/{scheduledMessage}', [ChatEngineScheduledMessageController::class, 'destroy'])->name('chat-engine.scheduled-messages.destroy');
                 });
 
             Route::get('/databases/create', [DatabaseController::class, 'create'])

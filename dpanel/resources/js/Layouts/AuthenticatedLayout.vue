@@ -291,6 +291,22 @@ const menuItems = computed(() => [
             { label: 'API Docs', hint: 'How to call the gateway from outside', icon: 'DC', iconClass: 'bi bi-file-earmark-code', routeName: 'ai-gateway.docs', activeRouteNames: ['ai-gateway.docs'], roles: ['admin', 'reseller'] },
         ],
     },
+    {
+        id: 'chat-engine',
+        label: 'AI Chat Engine',
+        hint: 'Channels, conversations and broadcasts',
+        icon: 'CE',
+        iconClass: 'bi bi-chat-square-text',
+        color: 'teal',
+        children: [
+            { label: 'Channels', hint: 'Telegram, Facebook, WhatsApp', icon: 'CN', iconClass: 'bi bi-broadcast', routeName: 'chat-engine.channels.index', activeRouteNames: ['chat-engine.channels.index', 'chat-engine.channels.create'], roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Facebook Apps', hint: 'Auto-connect Pages via Facebook Login', icon: 'FB', iconClass: 'bi bi-facebook', routeName: 'chat-engine.facebook-apps.index', activeRouteNames: ['chat-engine.facebook-apps.index'], roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Facebook Posts', hint: 'Publish content to connected Pages', icon: 'FP', iconClass: 'bi bi-file-post', routeName: 'chat-engine.facebook-posts.index', activeRouteNames: ['chat-engine.facebook-posts.index'], roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Conversations', hint: 'Inbox and AI auto-reply', icon: 'CV', iconClass: 'bi bi-chat-dots', routeName: 'chat-engine.conversations.index', activeRouteNames: ['chat-engine.conversations.index', 'chat-engine.conversations.show'], roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Scheduled Messages', hint: 'Broadcasts and one-off sends', icon: 'SM', iconClass: 'bi bi-calendar2-event', routeName: 'chat-engine.scheduled-messages.index', activeRouteNames: ['chat-engine.scheduled-messages.index', 'chat-engine.scheduled-messages.create'], roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Docs', hint: 'Setup guide and how replies work', icon: 'DC', iconClass: 'bi bi-file-earmark-code', routeName: 'chat-engine.docs', activeRouteNames: ['chat-engine.docs'], roles: ['admin', 'reseller', 'general', 'general_user'] },
+        ],
+    },
 ]);
 
 const hasAccess = (item) => {
@@ -1222,8 +1238,12 @@ watch(isSearchOpen, async (open) => {
                 <slot />
             </main>
 
-            <footer class="border-t border-slate-200 px-4 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:px-6">
-                {{ appName }} v{{ appVersion }} - Websites, Mail, Databases and more
+            <footer class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:px-6">
+                <span>{{ appName }} v{{ appVersion }} - Websites, Mail, Databases and more</span>
+                <span class="flex items-center gap-3">
+                    <a href="/privacy-policy" target="_blank" class="hover:text-slate-700 dark:hover:text-slate-200">Privacy Policy</a>
+                    <a href="/terms-and-conditions" target="_blank" class="hover:text-slate-700 dark:hover:text-slate-200">Terms &amp; Conditions</a>
+                </span>
             </footer>
         </div>
 

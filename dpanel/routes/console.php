@@ -27,3 +27,21 @@ Schedule::command('dns:reconcile-websites')
 Schedule::command('websites:git-sync')
     ->everyMinute()
     ->withoutOverlapping();
+
+Schedule::command('chatengine:dispatch-scheduled')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+Schedule::call(fn () => \App\Models\FacebookPagePost::query()
+    ->where('published_at', '<', now()->subDays(30))
+    ->delete())
+    ->name('chatengine:prune-facebook-post-history')
+    ->daily()
+    ->withoutOverlapping();
+
+Schedule::call(fn () => \App\Models\FacebookPageActivity::query()
+    ->where('occurred_at', '<', now()->subDays(30))
+    ->delete())
+    ->name('chatengine:prune-facebook-webhook-activity')
+    ->daily()
+    ->withoutOverlapping();
