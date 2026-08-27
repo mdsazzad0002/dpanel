@@ -416,10 +416,16 @@ systemctl status edge-gateway --no-pager
 Public installation:
 
 ```bash
-curl -fsSL https://dpanel.dengrweb.com/installer.sh -o installer.sh
+curl -fsSL https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh -o installer.sh
 chmod +x installer.sh
 sudo ./installer.sh
 ```
+
+`https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh` 302-redirects to
+`https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh`
+(edge-gateway dispatcher, `drust/src/edge_gateway/dispatcher.rs`). Pushing
+`installer.sh` to `main` is enough to update the public URL — no separate
+deploy/upload step to the server is needed.
 
 Forward any dscript command:
 
@@ -472,7 +478,7 @@ Use this flow when installing dPanel on a fresh device/server.
 1. Download and run the installer:
 
    ```bash
-   curl -fsSL https://dpanel.dengrweb.com/installer.sh -o installer.sh
+   curl -fsSL https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh -o installer.sh
    chmod +x installer.sh
    sudo ./installer.sh
    ```

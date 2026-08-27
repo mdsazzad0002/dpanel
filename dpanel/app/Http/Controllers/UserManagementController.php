@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
 use App\Models\PackagePlan;
+use App\Models\PanelSession;
+use App\Models\User;
 use App\Support\UserAccessCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -81,32 +84,32 @@ class UserManagementController extends Controller
             ->withQueryString();
 
         $users->getCollection()->transform(fn (User $user): array => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'roles' => $user->roles
-                    ->pluck('name')
-                    ->map(fn (string $role): string => $this->normalizeRoleName($role))
-                    ->unique()
-                    ->values()
-                    ->all(),
-                'reseller_id' => $user->reseller_id,
-                'package_id' => $user->package_id,
-                'package' => $user->package ? ['id' => $user->package->id, 'name' => $user->package->name] : null,
-                'is_suspended' => (bool) $user->is_suspended,
-                'suspended_at' => optional($user->suspended_at)->toDateTimeString(),
-                'disk_space_mb_limit' => $user->disk_space_mb_limit,
-                'mail_accounts_limit' => $user->mail_accounts_limit,
-                'databases_limit' => $user->databases_limit,
-                'bandwidth_gb_limit' => $user->bandwidth_gb_limit,
-                'websites_limit' => $user->websites_limit,
-                'reseller' => $user->reseller ? [
-                    'id' => $user->reseller->id,
-                    'name' => $user->reseller->name,
-                    'email' => $user->reseller->email,
-                ] : null,
-                'created_at' => optional($user->created_at)->toDateTimeString(),
-            ]);
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'roles' => $user->roles
+                ->pluck('name')
+                ->map(fn (string $role): string => $this->normalizeRoleName($role))
+                ->unique()
+                ->values()
+                ->all(),
+            'reseller_id' => $user->reseller_id,
+            'package_id' => $user->package_id,
+            'package' => $user->package ? ['id' => $user->package->id, 'name' => $user->package->name] : null,
+            'is_suspended' => (bool) $user->is_suspended,
+            'suspended_at' => optional($user->suspended_at)->toDateTimeString(),
+            'disk_space_mb_limit' => $user->disk_space_mb_limit,
+            'mail_accounts_limit' => $user->mail_accounts_limit,
+            'databases_limit' => $user->databases_limit,
+            'bandwidth_gb_limit' => $user->bandwidth_gb_limit,
+            'websites_limit' => $user->websites_limit,
+            'reseller' => $user->reseller ? [
+                'id' => $user->reseller->id,
+                'name' => $user->reseller->name,
+                'email' => $user->reseller->email,
+            ] : null,
+            'created_at' => optional($user->created_at)->toDateTimeString(),
+        ]);
 
         return Inertia::render('Users/Manage', [
             'users' => $users,
@@ -246,6 +249,74 @@ class UserManagementController extends Controller
     }
 
     /**
+     * Temporarily enter another user's account. Only a real admin may start
+     * impersonation; the original admin identity is retained in the session.
+     */
+    public function impersonate(Request $request, string $token, User $user): RedirectResponse
+    {
+        $admin = $request->user();
+
+        abort_unless($admin?->hasRole('admin'), 403);
+        abort_if($request->session()->has('impersonation.admin_id'), 403, 'Nested impersonation is not allowed.');
+
+        if ((int) $admin->id === (int) $user->id) {
+            return back()->with('error', 'You are already signed in as this user.');
+        }
+
+        if ($user->is_suspended) {
+            return back()->with('error', 'A suspended user cannot be impersonated.');
+        }
+
+        $this->transferPanelSession($token, $admin, $user);
+
+        $request->session()->put([
+            'impersonation.admin_id' => $admin->id,
+            'impersonation.admin_name' => $admin->name,
+        ]);
+        Auth::guard('web')->login($user);
+        $request->session()->regenerate();
+
+        return redirect()->route('dashboard')->with('success', "You are now signed in as {$user->name}.");
+    }
+
+    /** Return from an impersonated account to the original admin account. */
+    public function stopImpersonating(Request $request, string $token): RedirectResponse
+    {
+        $adminId = (int) $request->session()->get('impersonation.admin_id', 0);
+        abort_if($adminId < 1, 403);
+
+        $currentUser = $request->user();
+        $admin = User::query()->findOrFail($adminId);
+        abort_unless($admin->hasRole('admin') && ! $admin->is_suspended, 403);
+
+        $this->transferPanelSession($token, $currentUser, $admin);
+
+        Auth::guard('web')->login($admin);
+        $request->session()->forget(['impersonation.admin_id', 'impersonation.admin_name']);
+        $request->session()->regenerate();
+
+        return redirect()->route('users.manage')->with('success', 'Returned to your admin account.');
+    }
+
+    private function transferPanelSession(string $token, ?User $from, User $to): void
+    {
+        abort_unless($from, 403);
+
+        DB::transaction(function () use ($token, $from, $to): void {
+            $panelSession = PanelSession::query()
+                ->where('user_id', $from->id)
+                ->where('token_hash', hash('sha256', $token))
+                ->whereNull('revoked_at')
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($panelSession, 403, 'The active panel session could not be verified.');
+
+            $panelSession->forceFill(['user_id' => $to->id])->save();
+        });
+    }
+
+    /**
      * @return array<int, string>
      */
     private function assignableRoles(?User $actor): array
@@ -271,9 +342,9 @@ class UserManagementController extends Controller
         return PackagePlan::query()
             ->when($actor?->hasRole('reseller'), fn ($query) => $query->where('owner_user_id', $actor->id))
             ->orderBy('sort_order')->orderBy('name')->get([
-            'id', 'name', 'max_storage_mb', 'max_mailboxes', 'max_websites',
-            'max_databases', 'max_bandwidth_gb',
-        ]);
+                'id', 'name', 'max_storage_mb', 'max_mailboxes', 'max_websites',
+                'max_databases', 'max_bandwidth_gb',
+            ]);
     }
 
     private function applyPackageLimits(User $user): void
@@ -287,6 +358,7 @@ class UserManagementController extends Controller
                 'databases_limit' => null,
                 'bandwidth_gb_limit' => null,
             ])->save();
+
             return;
         }
 

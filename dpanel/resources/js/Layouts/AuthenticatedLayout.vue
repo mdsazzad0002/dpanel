@@ -162,6 +162,7 @@ const appName = computed(() => page.props.app?.name ?? 'dPanel');
 const appVersion = computed(() => page.props.app?.version ?? '1.0');
 const panelSearchItems = computed(() => Array.isArray(page.props.panelSearch?.items) ? page.props.panelSearch.items : []);
 const currentUser = computed(() => page.props.auth?.user ?? {});
+const impersonation = computed(() => page.props.auth?.impersonation ?? null);
 const userName = computed(() => String(currentUser.value?.name ?? 'User'));
 const userEmail = computed(() => String(currentUser.value?.email ?? ''));
 const userInitials = computed(() => userName.value
@@ -1221,6 +1222,23 @@ watch(isSearchOpen, async (open) => {
             </header>
 
             <main class="px-4 py-6 sm:px-6">
+                <div
+                    v-if="impersonation?.active"
+                    class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200"
+                >
+                    <span>
+                        <i class="bi bi-person-bounding-box mr-2"></i>
+                        Viewing as <strong>{{ userName }}</strong>. Admin: {{ impersonation.admin_name }}
+                    </span>
+                    <Link
+                        :href="panelRoute('impersonation.stop')"
+                        method="post"
+                        as="button"
+                        class="rounded-md bg-indigo-600 px-3 py-2 font-medium text-white hover:bg-indigo-700"
+                    >
+                        Back to Admin
+                    </Link>
+                </div>
                 <!-- Page Header with Breadcrumb -->
                 <div class="mb-6">
                     <slot name="header">

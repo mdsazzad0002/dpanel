@@ -47,6 +47,7 @@ const canManageUsers = computed(() =>
     actorPermissions.value.includes('manage_users'),
 );
 const canOpenAdminUsers = computed(() => actorRoles.value.includes('admin'));
+const canImpersonate = computed(() => actorRoles.value.includes('admin'));
 const canOpenResellerPanel = computed(() =>
     actorRoles.value.includes('admin') || actorRoles.value.includes('reseller'),
 );
@@ -191,6 +192,13 @@ const deleteUser = (user) => {
         preserveScroll: true,
     });
 };
+
+const impersonateUser = (user) => {
+    if (!canImpersonate.value || isCurrentUser(user) || user.is_suspended) return;
+    if (!confirm(`Sign in as "${user.name}"? You can return to your admin account at any time.`)) return;
+
+    router.post(route('users.manage.impersonate', user.id));
+};
 </script>
 
 <template>
@@ -319,6 +327,16 @@ const deleteUser = (user) => {
                             <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ formatDate(user.created_at) }}</td>
                             <td class="px-4 py-3">
                                 <div v-if="canManageUsers" class="flex items-center gap-2">
+                                    <button
+                                        v-if="canImpersonate"
+                                        type="button"
+                                        :disabled="isCurrentUser(user) || user.is_suspended"
+                                        :title="user.is_suspended ? 'Suspended users cannot be accessed.' : (isCurrentUser(user) ? 'This is your current account.' : 'Sign in as this user')"
+                                        class="rounded-md border border-indigo-300 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                                        @click="impersonateUser(user)"
+                                    >
+                                        Login as user
+                                    </button>
                                     <button
                                         type="button"
                                         class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"

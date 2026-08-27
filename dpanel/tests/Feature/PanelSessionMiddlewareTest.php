@@ -80,4 +80,43 @@ class PanelSessionMiddlewareTest extends TestCase
             now()->addMinutes(5)->addSecond()
         ));
     }
+
+    public function test_malformed_panel_token_redirects_to_login_instead_of_404(): void
+    {
+        $this->get('/cpsess-invalid-token/dashboard')
+            ->assertRedirect(route('login'));
+    }
+
+    public function test_mismatched_well_formed_panel_token_redirects_to_login(): void
+    {
+        $user = User::factory()->create();
+        $currentToken = bin2hex(random_bytes(32));
+        $wrongToken = bin2hex(random_bytes(32));
+
+        PanelSession::create([
+            'user_id' => $user->id,
+            'token_hash' => hash('sha256', $currentToken),
+            'cookie_hash' => hash('sha256', 'existing-cookie'),
+            'ip_address' => '127.0.0.1',
+            'user_agent_hash' => hash('sha256', 'phpunit'),
+            'expires_at' => now()->addHour(),
+            'last_seen_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->withSession(['panel_session_token' => $currentToken])
+            ->get("/cpsess{$wrongToken}/dashboard")
+            ->assertRedirect(route('login'));
+    }
+
+    public function test_unknown_path_with_the_current_valid_token_still_returns_404(): void
+    {
+        $user = User::factory()->create();
+        $token = bin2hex(random_bytes(32));
+
+        $this->actingAs($user)
+            ->withSession(['panel_session_token' => $token])
+            ->get("/cpsess{$token}/not-a-real-panel-page")
+            ->assertNotFound();
+    }
 }

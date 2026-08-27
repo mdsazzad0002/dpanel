@@ -2,8 +2,8 @@
 
 namespace Tests\Feature\Auth;
 
-use App\Models\User;
 use App\Http\Middleware\EnsurePanelSessionIsValid;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -75,5 +75,39 @@ class AuthenticationTest extends TestCase
         $this->assertNotSame($oldToken, $newToken);
         $response->assertRedirect('/cpsess'.$newToken.'/emails/create');
         $response->assertSessionMissing('panel.last_path');
+    }
+
+    public function test_login_screen_remains_visible_when_a_user_is_already_authenticated(): void
+    {
+        $user = User::factory()->create();
+        $token = bin2hex(random_bytes(32));
+
+        $this->actingAs($user)
+            ->withSession(['panel_session_token' => $token])
+            ->get('/login')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->component('Auth/Login'));
+    }
+
+    public function test_new_login_forgets_an_existing_impersonation_session(): void
+    {
+        $previousUser = User::factory()->create();
+        $newUser = User::factory()->create();
+        $oldToken = bin2hex(random_bytes(32));
+
+        $this->actingAs($previousUser)
+            ->withSession([
+                'panel_session_token' => $oldToken,
+                'impersonation.admin_id' => 123,
+                'impersonation.admin_name' => 'Old Admin',
+            ])
+            ->post('/login', [
+                'email' => $newUser->email,
+                'password' => 'password',
+            ])
+            ->assertSessionMissing('impersonation.admin_id')
+            ->assertSessionMissing('impersonation.admin_name');
+
+        $this->assertAuthenticatedAs($newUser);
     }
 }

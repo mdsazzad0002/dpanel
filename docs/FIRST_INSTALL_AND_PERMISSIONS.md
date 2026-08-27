@@ -8,10 +8,14 @@ repair website filesystem permissions.
 Run the installer on a supported server as a user with `sudo` access:
 
 ```bash
-curl -fsSL https://dpanel.dengrweb.com/installer.sh -o installer.sh
+curl -fsSL https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh -o installer.sh
 chmod +x installer.sh
 sudo ./installer.sh
 ```
+
+This URL redirects to the `installer.sh` on the `main` branch of the dPanel
+GitHub repo, so editing the local file alone does not change what this
+command downloads — push to `main` to publish installer changes.
 
 Install or refresh the Rust services, then verify that they are running:
 

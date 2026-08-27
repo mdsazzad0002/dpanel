@@ -96,10 +96,14 @@ hostname.
 ## Installation
 
 ```bash
-curl -fsSL https://dpanel.dengrweb.com/installer.sh -o installer.sh
+curl -fsSL https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh -o installer.sh
 chmod +x installer.sh
 sudo ./installer.sh
 ```
+
+This URL 302-redirects to the `installer.sh` on the `main` branch of this
+repo, so a push to `main` is the only step needed to publish installer
+changes.
 
 Install or refresh the Rust services:
 

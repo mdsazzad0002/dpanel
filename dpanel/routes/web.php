@@ -1,37 +1,32 @@
 <?php
 
+use App\Http\Controllers\AiGatewayApiKeyController;
+use App\Http\Controllers\AiGatewayController;
+use App\Http\Controllers\AiGatewayLogController;
+use App\Http\Controllers\AiGatewayModelController;
+use App\Http\Controllers\AiGatewayProviderController;
+use App\Http\Controllers\Api\AiGatewayApiController;
+use App\Http\Controllers\Api\WhmcsController;
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\BackupController;
+use App\Http\Controllers\BillingSystemController;
 use App\Http\Controllers\ChatEngineChannelController;
 use App\Http\Controllers\ChatEngineController;
 use App\Http\Controllers\ChatEngineConversationController;
 use App\Http\Controllers\ChatEngineFacebookAppController;
 use App\Http\Controllers\ChatEngineFacebookPostController;
 use App\Http\Controllers\ChatEngineScheduledMessageController;
-use App\Http\Controllers\Webhooks\FacebookChatWebhookController;
-use App\Http\Controllers\Webhooks\TelegramChatWebhookController;
-use App\Http\Controllers\Webhooks\WhatsAppChatWebhookController;
-use App\Http\Controllers\Webhooks\InstagramChatWebhookController;
-use App\Http\Controllers\Webhooks\SlackChatWebhookController;
-use App\Http\Controllers\BillingSystemController;
 use App\Http\Controllers\CloneShareController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\DnsController;
 use App\Http\Controllers\EmailController;
-use App\Http\Controllers\Api\AiGatewayApiController;
-use App\Http\Controllers\Api\WhmcsController;
-use App\Http\Controllers\AiGatewayApiKeyController;
-use App\Http\Controllers\AiGatewayController;
-use App\Http\Controllers\AiGatewayLogController;
-use App\Http\Controllers\AiGatewayModelController;
-use App\Http\Controllers\AiGatewayProviderController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\MailHealthController;
-use App\Http\Controllers\PackagePlanController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\MonitoringController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PackagePlanController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
@@ -44,6 +39,11 @@ use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerTaskController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\UserManagementController;
+use App\Http\Controllers\Webhooks\FacebookChatWebhookController;
+use App\Http\Controllers\Webhooks\InstagramChatWebhookController;
+use App\Http\Controllers\Webhooks\SlackChatWebhookController;
+use App\Http\Controllers\Webhooks\TelegramChatWebhookController;
+use App\Http\Controllers\Webhooks\WhatsAppChatWebhookController;
 use App\Http\Controllers\WebsiteTrashBackupController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -797,6 +797,12 @@ Route::prefix('cpsess{token}')
             Route::delete('/users/manage/{user}', [UserManagementController::class, 'destroy'])
                 ->middleware('role:admin|reseller')
                 ->name('users.manage.destroy');
+            Route::post('/users/manage/{user}/impersonate', [UserManagementController::class, 'impersonate'])
+                ->middleware(['role:admin', 'throttle:10,1'])
+                ->name('users.manage.impersonate');
+            Route::post('/impersonation/stop', [UserManagementController::class, 'stopImpersonating'])
+                ->middleware('throttle:10,1')
+                ->name('impersonation.stop');
             Route::get('/roles/manage', [RoleManagementController::class, 'index'])
                 ->middleware('role:admin')
                 ->name('roles.manage');
@@ -822,5 +828,23 @@ Route::prefix('cpsess{token}')
             Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
         });
     });
+
+// The strict cpsess route group above only accepts a 64-character hex token.
+// Catch malformed or mismatched tokenized URLs so they return to login instead
+// of exposing a generic 404. A valid current token with an unknown inner path
+// remains a genuine 404.
+Route::any('/cpsess{token}/{path?}', function (string $token, ?string $path = null) {
+    $sessionToken = (string) session('panel_session_token', '');
+    $isValidCurrentToken = Auth::check()
+        && preg_match('/\A[0-9a-f]{64}\z/i', $token) === 1
+        && hash_equals($sessionToken, $token);
+
+    abort_if($isValidCurrentToken, 404);
+
+    return redirect()->route('login');
+})->where([
+    'token' => '[^/]+',
+    'path' => '.*',
+])->name('panel.invalid-token');
 
 require __DIR__.'/auth.php';

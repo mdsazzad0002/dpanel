@@ -75,6 +75,10 @@ class AuthenticatedSessionController extends Controller
             return redirect()->route('two-factor.challenge');
         }
 
+        $request->session()->forget([
+            'impersonation.admin_id',
+            'impersonation.admin_name',
+        ]);
         Auth::login($user, $request->boolean('remember'));
         $request->session()->regenerate();
         // An explicit login always rotates the URL token, even when an older

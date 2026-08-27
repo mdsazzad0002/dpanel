@@ -120,6 +120,10 @@ class TwoFactorChallengeController extends Controller
         $request->session()->forget('two_factor.challenge');
         $request->session()->regenerate();
 
+        $request->session()->forget([
+            'impersonation.admin_id',
+            'impersonation.admin_name',
+        ]);
         Auth::loginUsingId($user->id, (bool) ($pending['remember'] ?? false));
         $panelCookie = $this->issuePanelSessionProof($request);
 

@@ -61,6 +61,12 @@ class HandleInertiaRequests extends Middleware
                 'user' => $user,
                 'roles' => $userAccess['roles'],
                 'permissions' => $userAccess['permissions'],
+                'impersonation' => $request->hasSession() && $request->session()->has('impersonation.admin_id')
+                    ? [
+                        'active' => true,
+                        'admin_name' => $request->session()->get('impersonation.admin_name'),
+                    ]
+                    : null,
             ],
         ];
     }

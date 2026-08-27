@@ -524,6 +524,7 @@ class BackupController extends Controller
         }
 
         return collect(File::directories($backupRoot))
+            ->filter(fn (string $directory): bool => preg_match('/^\d{8}_\d{6}$/', basename($directory)) === 1)
             ->map(function (string $directory): ?array {
                 $realDirectory = realpath($directory);
                 if (! is_string($realDirectory) || $realDirectory === '' || ! is_dir($realDirectory)) {

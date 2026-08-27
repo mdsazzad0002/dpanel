@@ -45,6 +45,12 @@ pub async fn dispatch(
     if path == "/__dpanel/favicon.ico" {
         return favicon_response();
     }
+    if path == "/installer.sh" {
+        return redirect_response(
+            302,
+            "https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh",
+        );
+    }
 
     let Some(site) = site else {
         return annotated_response(

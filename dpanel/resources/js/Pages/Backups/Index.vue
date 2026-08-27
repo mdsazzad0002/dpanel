@@ -24,15 +24,16 @@ const restoringFile = ref('');
 const runsLoading = ref(false);
 const batch = ref(null);
 let batchPoll = null;
+const backupRuns = computed(() => runs.value.filter((run) => /^\d{8}_\d{6}$/.test(String(run?.name ?? ''))));
 const runForm = useForm({
     filter: 'all',
     content: 'all',
     website_id: '',
 });
 const totals = computed(() => ({
-    runs: runs.value.length,
-    files: runs.value.reduce((carry, run) => carry + Number(run.file_count ?? 0), 0),
-    size: runs.value.reduce((carry, run) => carry + Number(run.total_size_bytes ?? 0), 0),
+    runs: backupRuns.value.length,
+    files: backupRuns.value.reduce((carry, run) => carry + Number(run.file_count ?? 0), 0),
+    size: backupRuns.value.reduce((carry, run) => carry + Number(run.total_size_bytes ?? 0), 0),
 }));
 
 const bytesToLabel = (bytes) => {
@@ -300,7 +301,7 @@ onBeforeUnmount(stopBatchPolling);
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="run in runs" :key="run.name" class="border-t border-slate-200 align-top dark:border-slate-800">
+                        <tr v-for="run in backupRuns" :key="run.name" class="border-t border-slate-200 align-top dark:border-slate-800">
                             <td class="px-4 py-3">
                                 <p class="font-mono text-xs">{{ run.name }}</p>
                                 <ul class="mt-2 space-y-1">
@@ -331,7 +332,7 @@ onBeforeUnmount(stopBatchPolling);
                         <tr v-if="runsLoading">
                             <td colspan="5" class="px-4 py-8 text-center text-slate-500"><i class="itc bi bi-arrow-repeat mr-2 animate-spin"></i>Loading backups...</td>
                         </tr>
-                        <tr v-else-if="runs.length === 0">
+                        <tr v-else-if="backupRuns.length === 0">
                             <td colspan="5" class="px-4 py-8 text-center text-slate-500">No backup runs found.</td>
                         </tr>
                     </tbody>
