@@ -179,6 +179,16 @@ Route::post('/widget/chat/{channel}', [WebsiteChatWidgetController::class, 'send
     ->middleware('throttle:20,1')
     ->name('widget.chat.send');
 
+Route::post('/widget/chat/{channel}/media', [WebsiteChatWidgetController::class, 'media'])
+    ->middleware('throttle:10,1')
+    ->name('widget.chat.media');
+
+// Not under widget/* — this is fetched server-side by drust, not the
+// browser, so it doesn't need (or want) the wide-open CORS policy above.
+Route::get('/widget-media/{token}', [WebsiteChatWidgetController::class, 'showMedia'])
+    ->middleware('throttle:30,1')
+    ->name('widget.media.show');
+
 Route::prefix('cpsess{token}')
     ->where(['token' => '[0-9a-fA-F]{64}'])
     ->middleware(['panel.session', 'auth'])
@@ -198,6 +208,8 @@ Route::prefix('cpsess{token}')
 
         Route::get('/notifications', [NotificationController::class, 'index'])
             ->name('notifications.index');
+        Route::get('/notifications/all', [NotificationController::class, 'all'])
+            ->name('notifications.all');
         Route::get('/notifications/{id}', [NotificationController::class, 'show'])
             ->name('notifications.show');
         Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead'])

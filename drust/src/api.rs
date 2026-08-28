@@ -17,6 +17,7 @@ mod git_deploy;
 mod health;
 mod laravel;
 mod mailbox_storage;
+mod media;
 mod migration;
 mod migration_ssh;
 mod php;
@@ -102,6 +103,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(cron::routes())
         .merge(laravel::routes())
         .merge(mailbox_storage::routes())
+        .merge(media::routes())
         .merge(migration::routes())
         .merge(migration_ssh::routes())
         .with_state(Arc::new(state))

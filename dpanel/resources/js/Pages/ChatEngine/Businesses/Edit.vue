@@ -215,7 +215,7 @@ const dismissSuggestion = (product, index) => {
                         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Client integration (optional)</label>
                         <p class="mb-2 text-xs text-slate-400">
                             One endpoint, implemented on your own site, covers everything below — click "Docs" above for the exact contract.
-                            We POST <code>{"tool": "search"|"place_order"|"send_email"|"send_sms", ...}</code> as JSON to this one URL and expect back <code>{"result": "..."}</code>.
+                            We POST <code>{"tool": "search"|"place_order"|"send_email"|"send_sms", ...}</code> as JSON to this one URL. <code>search</code> takes multiple <code>queries</code> and expects back <code>{"results": [{"title","link","description"}, ...]}</code>; the other tools expect back <code>{"result": "..."}</code>.
                         </p>
                         <input v-model="detailsForm.integration_base_url" type="url" placeholder="https://yoursite.com/api/dpanel-integration" class="w-full rounded-md border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
                         <p v-if="detailsForm.errors.integration_base_url" class="mt-1 text-xs text-red-600">{{ detailsForm.errors.integration_base_url }}</p>

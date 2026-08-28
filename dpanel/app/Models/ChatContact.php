@@ -16,6 +16,8 @@ class ChatContact extends Model
         'external_id',
         'name',
         'username',
+        'phone',
+        'email',
         'meta',
         'last_message_at',
     ];

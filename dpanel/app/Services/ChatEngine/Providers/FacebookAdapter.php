@@ -7,6 +7,7 @@ use App\Models\ChatFacebookApp;
 use App\Services\ChatEngine\Contracts\ChannelAdapter;
 use App\Services\ChatEngine\DTO\InboundMessage;
 use App\Services\ChatEngine\Exceptions\ChatEngineException;
+use App\Services\ChatEngine\MediaUnderstandingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -23,6 +24,10 @@ use Illuminate\Support\Facades\Http;
  */
 class FacebookAdapter implements ChannelAdapter
 {
+    public function __construct(private readonly MediaUnderstandingService $media)
+    {
+    }
+
     public function driver(): string
     {
         return 'facebook';
@@ -99,8 +104,14 @@ class FacebookAdapter implements ChannelAdapter
         $text = $data['message']['text'] ?? null;
 
         // Skip echoes of the page's own sent messages, delivery/read
-        // receipts, and anything without a psid or text.
-        if (! $text || ($data['message']['is_echo'] ?? false) || empty($data['sender']['id'])) {
+        // receipts, and anything without a psid.
+        if (($data['message']['is_echo'] ?? false) || empty($data['sender']['id'])) {
+            return null;
+        }
+
+        $text = $this->resolveAttachmentText($data['message']['attachments'] ?? null, $text);
+
+        if (! $text) {
             return null;
         }
 
@@ -114,6 +125,44 @@ class FacebookAdapter implements ChannelAdapter
             kind: 'message',
             replyContext: ['kind' => 'message'],
         );
+    }
+
+    /**
+     * Messenger attachment URLs (image/audio/video/file) are already
+     * public, pre-signed CDN links — unlike WhatsApp/Slack, no bearer
+     * token is needed to fetch them.
+     */
+    private function resolveAttachmentText(?array $attachments, ?string $text): ?string
+    {
+        if (! is_array($attachments)) {
+            return $text;
+        }
+
+        foreach ($attachments as $attachment) {
+            $url = $attachment['payload']['url'] ?? null;
+
+            if (! is_string($url) || $url === '') {
+                continue;
+            }
+
+            if (($attachment['type'] ?? null) === 'audio') {
+                $transcript = $this->media->transcribeAudio($url);
+
+                return $transcript ?: '[The customer sent a voice message that could not be transcribed. Ask them to type their message instead.]';
+            }
+
+            if (($attachment['type'] ?? null) === 'image') {
+                $extracted = $this->media->extractTextFromImage($url);
+
+                if ($extracted === null) {
+                    return $text ?: '[The customer sent an image with no readable text in it. This assistant cannot see image contents, only read text within them — ask the customer to describe what they need.]';
+                }
+
+                return $text ? "{$text}\n\n[Text found in the image]: {$extracted}" : $extracted;
+            }
+        }
+
+        return $text;
     }
 
     private function normalizeComment(ChatChannel $channel, array $data): ?InboundMessage

@@ -26,3 +26,7 @@ futures-util = "0.3"
 bytes = "1"
 tokio-util = { version = "0.7", features = ["io"] }
 redis = { version = "0.32", features = ["tokio-comp"] }
+whisper-rs = "0.14"
+tesseract = "0.15"
+hound = "3"
+tempfile = "3"

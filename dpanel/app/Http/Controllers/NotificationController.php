@@ -27,6 +27,21 @@ class NotificationController extends Controller
         ]);
     }
 
+    public function all(Request $request): Response
+    {
+        $notifications = Notification::query()
+            ->visibleTo($request->user())
+            ->latest()
+            ->paginate(20)
+            ->withQueryString()
+            ->through(fn (Notification $notification): array => $this->present($notification));
+
+        return Inertia::render('Notifications/Index', [
+            'notifications' => $notifications,
+            'unreadCount' => Notification::query()->visibleTo($request->user())->whereNull('read_at')->count(),
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $notifications = Notification::query()

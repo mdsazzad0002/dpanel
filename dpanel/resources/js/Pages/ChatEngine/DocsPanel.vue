@@ -310,22 +310,240 @@ Verified via:        X-Telegram-Bot-Api-Secret-Token header (unique per channel,
                     On a business's edit page, beyond static Q&A, you can connect <strong>one</strong> integration endpoint on your own site that covers search, orders, email, and SMS — no separate URL per capability. Set the base URL and (optionally) an API key once, then tick which capabilities are enabled.
                 </p>
                 <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    Every enabled capability calls the <strong>same URL</strong>. We <code>POST</code> JSON with a <code>tool</code> field telling you which one was invoked — you route internally on your side:
+                    Every enabled capability calls the <strong>same URL</strong> with the <strong>same HTTP contract</strong>. We <code>POST</code> JSON with a <code>tool</code> field telling you which one was invoked — you route internally on your side and always reply with the same response shape.
                 </p>
-                <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>POST {your integration_base_url}
-Authorization: Bearer {your api key, if set}
 
-{"tool": "search",      "query": "..."}
-{"tool": "place_order",  "items": [{"name":"...","quantity":1}], "customer_name": "...", "customer_phone": "...", "customer_address": "...", "notes": "..."}
-{"tool": "send_email",   "to": "...", "subject": "...", "body": "..."}
-{"tool": "send_sms",     "to": "...", "message": "..."}
+                <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Request</h3>
+                <pre class="mt-2 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>POST {your integration_base_url}
+Content-Type: application/json
+Authorization: Bearer {your api key, if set}</code></pre>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">The JSON body's <code>tool</code> field tells you which capability fired; every other field depends on which tool it is, per the tables below.</p>
 
-Response (all tools): {"result": "plain text the AI relays to the customer"}</code></pre>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    <strong>Search</strong> is called on demand when a customer's question isn't answered by trained Q&A. <strong>Order / Email / SMS</strong> are only called after the AI has confirmed the details with the customer.
-                </p>
-                <p class="mt-2 text-xs text-slate-400">
-                    The URL must be a public https address — localhost and private/internal IPs are rejected. A capability only becomes active when its checkbox is on <em>and</em> the URL is set; leave the URL blank to disable everything.
+                <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Response — place_order / send_email / send_sms</h3>
+                <p class="mt-1 text-xs text-slate-400"><code>search</code> responds differently — see its own section below.</p>
+                <pre class="mt-2 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>HTTP 200 OK
+Content-Type: application/json
+
+{"result": "plain text the AI relays to the customer"}</code></pre>
+                <div class="mt-2 overflow-x-auto">
+                    <table class="w-full min-w-[24rem] border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-left text-slate-400 dark:border-slate-600">
+                                <th class="py-1 pr-3 font-medium">Field</th>
+                                <th class="py-1 pr-3 font-medium">Type</th>
+                                <th class="py-1 font-medium">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-600 dark:text-slate-300">
+                            <tr class="border-b border-slate-100 dark:border-slate-700">
+                                <td class="py-1 pr-3"><code>result</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Required. Plain text (not HTML/Markdown) — the AI relays this verbatim to the customer. Truncated at 2000 chars. Return a 2xx status within 8 seconds or the call is treated as failed.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3 class="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">tool: "search"</h3>
+                <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">Called on demand when a customer's question isn't answered by trained Q&A — e.g. live price or stock lookups. The AI may send several keywords at once instead of calling this repeatedly, and the response is a <strong>structured list</strong> (not plain text) so the AI can cite specific links/titles back to the customer.</p>
+                <p class="mt-2 text-xs font-medium text-slate-500 dark:text-slate-400">Request</p>
+                <div class="mt-2 overflow-x-auto">
+                    <table class="w-full min-w-[24rem] border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-left text-slate-400 dark:border-slate-600">
+                                <th class="py-1 pr-3 font-medium">Field</th>
+                                <th class="py-1 pr-3 font-medium">Type</th>
+                                <th class="py-1 font-medium">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-600 dark:text-slate-300">
+                            <tr>
+                                <td class="py-1 pr-3"><code>tool</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Always <code>"search"</code>.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>queries</code></td>
+                                <td class="py-1 pr-3">array&lt;string&gt;</td>
+                                <td class="py-1">Required. One or more keywords/phrases to search for in a single call.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <pre class="mt-2 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{"tool": "search", "queries": ["red roses", "wedding bouquet"]}</code></pre>
+
+                <p class="mt-3 text-xs font-medium text-slate-500 dark:text-slate-400">Response (search only — different from every other tool)</p>
+                <div class="mt-2 overflow-x-auto">
+                    <table class="w-full min-w-[24rem] border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-left text-slate-400 dark:border-slate-600">
+                                <th class="py-1 pr-3 font-medium">Field</th>
+                                <th class="py-1 pr-3 font-medium">Type</th>
+                                <th class="py-1 font-medium">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-600 dark:text-slate-300">
+                            <tr>
+                                <td class="py-1 pr-3"><code>results</code></td>
+                                <td class="py-1 pr-3">array&lt;object&gt;</td>
+                                <td class="py-1">Required. Up to 10 are used; the rest are ignored.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>results[].title</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Optional. e.g. product/page name.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>results[].link</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Optional. URL the AI can share with the customer.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>results[].description</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Optional. Short summary — price, stock status, etc.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <pre class="mt-2 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{
+  "results": [
+    {
+      "title": "Red Rose Bouquet (12 stems)",
+      "link": "https://yoursite.com/products/red-rose-bouquet",
+      "description": "In stock — 1200 BDT, same-day delivery in Dhaka."
+    },
+    {
+      "title": "Wedding Bouquet — White & Red",
+      "link": "https://yoursite.com/products/wedding-bouquet",
+      "description": "Made to order, 3 days lead time — from 3500 BDT."
+    }
+  ]
+}</code></pre>
+
+                <h3 class="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">tool: "place_order"</h3>
+                <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">Only called after the AI has confirmed the order details with the customer.</p>
+                <div class="mt-2 overflow-x-auto">
+                    <table class="w-full min-w-[24rem] border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-left text-slate-400 dark:border-slate-600">
+                                <th class="py-1 pr-3 font-medium">Field</th>
+                                <th class="py-1 pr-3 font-medium">Type</th>
+                                <th class="py-1 font-medium">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-600 dark:text-slate-300">
+                            <tr>
+                                <td class="py-1 pr-3"><code>tool</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Always <code>"place_order"</code>.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>items</code></td>
+                                <td class="py-1 pr-3">array&lt;object&gt;</td>
+                                <td class="py-1">Required. Each item: <code>{ name: string, quantity: integer }</code> (both required).</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>customer_name</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Required.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>customer_phone</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Required.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>customer_address</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Optional. Delivery address, if applicable.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>notes</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Optional.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <pre class="mt-2 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{
+  "tool": "place_order",
+  "items": [{ "name": "Red Rose Bouquet", "quantity": 1 }],
+  "customer_name": "Rahim Uddin",
+  "customer_phone": "+8801XXXXXXXXX",
+  "customer_address": "House 12, Road 5, Dhaka",
+  "notes": "Deliver after 5pm"
+}</code></pre>
+
+                <h3 class="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">tool: "send_email"</h3>
+                <div class="mt-2 overflow-x-auto">
+                    <table class="w-full min-w-[24rem] border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-left text-slate-400 dark:border-slate-600">
+                                <th class="py-1 pr-3 font-medium">Field</th>
+                                <th class="py-1 pr-3 font-medium">Type</th>
+                                <th class="py-1 font-medium">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-600 dark:text-slate-300">
+                            <tr>
+                                <td class="py-1 pr-3"><code>tool</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Always <code>"send_email"</code>.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>to</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Required. Recipient email address.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>subject</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Required.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>body</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Required.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <pre class="mt-2 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{"tool": "send_email", "to": "customer@example.com", "subject": "Your order confirmation", "body": "Thanks for your order..."}</code></pre>
+
+                <h3 class="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">tool: "send_sms"</h3>
+                <div class="mt-2 overflow-x-auto">
+                    <table class="w-full min-w-[24rem] border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-left text-slate-400 dark:border-slate-600">
+                                <th class="py-1 pr-3 font-medium">Field</th>
+                                <th class="py-1 pr-3 font-medium">Type</th>
+                                <th class="py-1 font-medium">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-600 dark:text-slate-300">
+                            <tr>
+                                <td class="py-1 pr-3"><code>tool</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Always <code>"send_sms"</code>.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>to</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Required. Recipient phone number.</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1 pr-3"><code>message</code></td>
+                                <td class="py-1 pr-3">string</td>
+                                <td class="py-1">Required.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <pre class="mt-2 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{"tool": "send_sms", "to": "+8801XXXXXXXXX", "message": "Your order has shipped."}</code></pre>
+
+                <p class="mt-4 text-xs text-slate-400">
+                    The URL must be a public https address — localhost and private/internal IPs are rejected. A capability only becomes active when its checkbox is on <em>and</em> the URL is set; leave the URL blank to disable everything. On any non-2xx response, timeout, or malformed body, the AI is told the action failed and asked to let the customer know rather than guessing.
                 </p>
             </section>
 
@@ -375,6 +593,7 @@ php artisan queue:work --queue=chat
                     <li>Facebook webhook verification (step 2b) failing? Check <code>CHATENGINE_FACEBOOK_APP_SECRET</code> and <code>CHATENGINE_FACEBOOK_VERIFY_TOKEN</code> are set and match exactly what's in the Meta dashboard.</li>
                     <li>Facebook events arriving but ignored? Confirm the Page ID entered when connecting the channel matches the Page's actual numeric ID, and that <code>messages</code>/<code>feed</code> are both subscribed in the Meta dashboard.</li>
                     <li>Order/Email/SMS action not happening? Confirm the corresponding URL is saved on the business, is a public https address, and that your endpoint returns <code>{"result": "..."}</code> with a 2xx status within 8 seconds.</li>
+                    <li>Search not returning anything? Confirm your endpoint returns <code>{"results": [...]}</code> (not <code>{"result": "..."}</code>) — that's the one tool with a different response shape.</li>
                     <li>Want a human to take over? Open the conversation and switch "AI Auto-reply" to Off — messages still arrive, but no AI reply is generated until you turn it back on.</li>
                 </ul>
             </section>

@@ -54,6 +54,8 @@ return [
     'database_api_url' => env('SERVERPANEL_DATABASE_API_URL', rtrim((string) env('SERVERPANEL_EXECUTION_API_BASE_URL', env('SERVERPANEL_API_BASE_URL', 'http://127.0.0.1:9500')), '/').'/api/v1/database-request'),
     'database_api_token' => env('SERVERPANEL_DATABASE_API_TOKEN', env('SERVERPANEL_EXECUTION_API_TOKEN', '')),
     'filemanager_api_url' => env('SERVERPANEL_FILEMANAGER_API_URL', rtrim((string) env('SERVERPANEL_EXECUTION_API_BASE_URL', env('SERVERPANEL_API_BASE_URL', 'http://127.0.0.1:9500')), '/').'/api/v1/filemanager'),
+    'media_transcribe_api_url' => env('SERVERPANEL_MEDIA_TRANSCRIBE_API_URL', rtrim((string) env('SERVERPANEL_EXECUTION_API_BASE_URL', env('SERVERPANEL_API_BASE_URL', 'http://127.0.0.1:9500')), '/').'/api/v1/media/transcribe'),
+    'media_ocr_api_url' => env('SERVERPANEL_MEDIA_OCR_API_URL', rtrim((string) env('SERVERPANEL_EXECUTION_API_BASE_URL', env('SERVERPANEL_API_BASE_URL', 'http://127.0.0.1:9500')), '/').'/api/v1/media/ocr'),
     'execution_api_token' => env('SERVERPANEL_EXECUTION_API_TOKEN', ''),
     'execution_api_timeout' => (int) env('SERVERPANEL_EXECUTION_API_TIMEOUT', 60),
     'edge_gateway_internal_url' => env('DRUST_EDGE_GATEWAY_INTERNAL_URL', 'http://127.0.0.1'),

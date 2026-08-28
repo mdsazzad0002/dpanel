@@ -29,13 +29,16 @@ class ChatEngineService
         private readonly AiGatewayService $aiGateway,
         private readonly BusinessKnowledgeService $businessKnowledge,
         private readonly BusinessToolService $businessTools,
+        private readonly ContactCaptureService $contactCapture,
     ) {
+        $media = app(MediaUnderstandingService::class);
+
         $this->adapters = [
-            new TelegramAdapter(),
-            new FacebookAdapter(),
-            new WhatsAppAdapter(),
-            new InstagramAdapter(),
-            new SlackAdapter(),
+            new TelegramAdapter($media),
+            new FacebookAdapter($media),
+            new WhatsAppAdapter($media),
+            new InstagramAdapter($media),
+            new SlackAdapter($media),
             new WebsiteAdapter(),
         ];
     }
@@ -101,11 +104,22 @@ class ChatEngineService
 
     private function replyWithAi(ChatChannel $channel, ChatConversation $conversation, array $replyContext): void
     {
+        // ChatConversation::messages() bakes in ->orderBy('created_at')
+        // (oldest first), so limit()-ing that directly always returns the
+        // SAME oldest N messages no matter how long the conversation has
+        // grown — the AI never saw anything past the first
+        // context_message_limit messages ever exchanged. reorder() clears
+        // that before applying our own newest-first order (by id, a
+        // time-ordered UUIDv7 — created_at alone ties within the same
+        // second in a fast exchange, which has silently reordered the
+        // just-created inbound message before an earlier outbound reply;
+        // for providers like Gemini that reject a transcript ending on a
+        // model turn, that tie has caused the request to fail outright).
         $messages = $conversation->messages()
-            ->latest('created_at')
+            ->reorder('id', 'desc')
             ->limit(config('chatengine.context_message_limit'))
             ->get()
-            ->sortBy('created_at')
+            ->sortBy('id')
             ->map(fn (ChatMessage $m): array => [
                 'role' => $m->role === 'user' ? 'user' : 'assistant',
                 'content' => (string) $m->content,
@@ -115,9 +129,10 @@ class ChatEngineService
 
         $system = $this->businessKnowledge->buildSystemPrompt($channel);
         $business = $channel->business;
-        $tools = $business ? $this->businessTools->availableTools($business) : [];
-        $hasSearchTools = collect($tools)->contains(fn (array $t): bool => $t['function']['name'] === 'search');
-        $hasActionTools = collect($tools)->contains(fn (array $t): bool => $t['function']['name'] !== 'search');
+        $businessToolList = $business ? $this->businessTools->availableTools($business) : [];
+        $tools = [...$businessToolList, $this->contactCapture->tool()];
+        $hasSearchTools = collect($businessToolList)->contains(fn (array $t): bool => $t['function']['name'] === 'search');
+        $hasActionTools = collect($businessToolList)->contains(fn (array $t): bool => $t['function']['name'] !== 'search');
 
         if ($hasSearchTools) {
             $system .= "\n\nYou also have search tools available that look up live information directly on this business's own site. "
@@ -128,6 +143,16 @@ class ChatEngineService
             $system .= "\n\nYou also have tools available to take real actions (place an order, send an email, send an SMS). "
                 .'Only call a tool when the customer has clearly asked for that action and you have all the required details — confirm details with the customer first if anything is missing or ambiguous.';
         }
+
+        $system .= "\n\nYou also have a save_contact_info tool. When you can't fully resolve something yourself — the answer isn't in the business "
+            .'knowledge, the customer wants a quote/callback, or a team member needs to follow up — the professional move is to get the '
+            .'*customer\'s own* phone number so your team can reach them, not to just hand them the business\'s number and end the conversation there. '
+            .'Ask for it naturally as part of handing them off (e.g. "Could I get a contact number so our team can reach you about this?"), '
+            .'call save_contact_info the moment they give their name, phone, or email — even if the others are still missing — and don\'t ask again '
+            .'once you have it. Never interrogate the customer for contact details when nothing in the conversation actually requires them yet. '
+            .'Whenever you call save_contact_info, your reply must acknowledge it — thank them by name and confirm a team member will follow up — '
+            ."instead of repeating your previous message. If the customer's actual question also isn't covered by the business knowledge below, "
+            .'fold that acknowledgment together with the fallback line rather than sending the fallback on its own.';
 
         $workingMessages = $messages;
         $result = null;
@@ -154,7 +179,10 @@ class ChatEngineService
 
             foreach ($result['tool_calls'] as $call) {
                 $arguments = json_decode($call['function']['arguments'] ?? '{}', true) ?: [];
-                $toolResult = $this->businessTools->execute($business, $call['function']['name'] ?? '', $arguments);
+                $toolName = $call['function']['name'] ?? '';
+                $toolResult = $toolName === 'save_contact_info'
+                    ? $this->contactCapture->execute($conversation->contact, $arguments)
+                    : $this->businessTools->execute($business, $toolName, $arguments);
 
                 $workingMessages[] = [
                     'role' => 'tool',

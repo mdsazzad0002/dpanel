@@ -6,11 +6,16 @@ use App\Models\ChatChannel;
 use App\Services\ChatEngine\Contracts\ChannelAdapter;
 use App\Services\ChatEngine\DTO\InboundMessage;
 use App\Services\ChatEngine\Exceptions\ChatEngineException;
+use App\Services\ChatEngine\MediaUnderstandingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 
 class SlackAdapter implements ChannelAdapter
 {
+    public function __construct(private readonly MediaUnderstandingService $media)
+    {
+    }
+
     public function driver(): string
     {
         return 'slack';
@@ -33,12 +38,21 @@ class SlackAdapter implements ChannelAdapter
 
     public function normalizeInbound(ChatChannel $channel, array $payload): ?InboundMessage
     {
-        $text = $payload['text'] ?? null;
         $userId = $payload['user'] ?? null;
         $slackChannel = $payload['channel'] ?? null;
+        $subtype = $payload['subtype'] ?? null;
 
-        if (! $userId || ! $slackChannel || ! is_string($text) || trim($text) === ''
-            || isset($payload['bot_id']) || isset($payload['subtype'])) {
+        // file_share is a real user message (with an attached file) — every
+        // other subtype (message_changed, channel_join, ...) isn't.
+        if (! $userId || ! $slackChannel || isset($payload['bot_id'])
+            || ($subtype !== null && $subtype !== 'file_share')) {
+            return null;
+        }
+
+        $text = $payload['text'] ?? null;
+        $text = $this->resolveAttachmentText($channel, $payload['files'] ?? null, is_string($text) ? $text : null);
+
+        if (! $text || trim($text) === '') {
             return null;
         }
 
@@ -51,6 +65,53 @@ class SlackAdapter implements ChannelAdapter
             raw: $payload,
             replyContext: ['slack_channel' => $slackChannel],
         );
+    }
+
+    /**
+     * Slack's file URLs (url_private) require the same bot token used to
+     * talk to Slack's API, unlike Telegram/Facebook/Instagram whose
+     * attachment URLs are already public.
+     */
+    private function resolveAttachmentText(ChatChannel $channel, ?array $files, ?string $text): ?string
+    {
+        if (! is_array($files)) {
+            return $text;
+        }
+
+        foreach ($files as $file) {
+            $url = $file['url_private'] ?? null;
+            $mimetype = (string) ($file['mimetype'] ?? '');
+
+            if (! is_string($url) || $url === '') {
+                continue;
+            }
+
+            if (str_starts_with($mimetype, 'audio/')) {
+                $transcript = $this->media->transcribeAudio($url, null, $this->authHeaders($channel));
+
+                return $transcript ?: '[The customer sent a voice message that could not be transcribed. Ask them to type their message instead.]';
+            }
+
+            if (str_starts_with($mimetype, 'image/')) {
+                $extracted = $this->media->extractTextFromImage($url, $this->authHeaders($channel));
+
+                if ($extracted === null) {
+                    return $text ?: '[The customer sent an image with no readable text in it. This assistant cannot see image contents, only read text within them — ask the customer to describe what they need.]';
+                }
+
+                return $text ? "{$text}\n\n[Text found in the image]: {$extracted}" : $extracted;
+            }
+        }
+
+        return $text;
+    }
+
+    /** @return array<string,string> */
+    private function authHeaders(ChatChannel $channel): array
+    {
+        $token = (string) $channel->getSlackBotToken();
+
+        return $token !== '' ? ['Authorization' => "Bearer {$token}"] : [];
     }
 
     public function sendMessage(ChatChannel $channel, string $externalContactId, string $content, array $context = []): array

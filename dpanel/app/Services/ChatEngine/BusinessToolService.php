@@ -36,9 +36,13 @@ class BusinessToolService
         $tools = [];
 
         if ($business->search_enabled) {
-            $tools[] = $this->tool('search', 'Search for live information directly on this business\'s own site (e.g. product availability, price, order status).', [
-                'query' => ['type' => 'string', 'description' => 'What to search for.'],
-            ], ['query']);
+            $tools[] = $this->tool('search', 'Search for live information directly on this business\'s own site (e.g. product availability, price, order status). Pass one or more keywords/phrases at once instead of calling this repeatedly.', [
+                'queries' => [
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                    'description' => 'One or more search keywords or phrases.',
+                ],
+            ], ['queries']);
         }
 
         if ($business->order_enabled) {
@@ -100,6 +104,10 @@ class BusinessToolService
                 return "The {$name} action failed. Let the customer know and suggest they try again later or contact support directly.";
             }
 
+            if ($name === 'search') {
+                return $this->formatSearchResults($response->json('results'));
+            }
+
             $result = $response->json('result');
 
             return is_string($result) && $result !== '' ? mb_substr($result, 0, self::MAX_RESULT_LENGTH) : 'Action completed.';
@@ -112,6 +120,40 @@ class BusinessToolService
 
             return "The {$name} action failed due to a technical issue. Let the customer know and suggest they try again later.";
         }
+    }
+
+    /**
+     * The search tool's response is structured ({"results": [{title, link,
+     * description}, ...]}) rather than the plain-text {"result": "..."}
+     * every other tool returns, so the AI can cite specific links/titles
+     * instead of a single opaque blob. Flattened to a string here anyway
+     * because that's what the function-call output contract expects.
+     */
+    private function formatSearchResults(mixed $results): string
+    {
+        if (! is_array($results) || $results === []) {
+            return 'No results found.';
+        }
+
+        $lines = [];
+
+        foreach (array_slice($results, 0, 10) as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $title = trim((string) ($item['title'] ?? ''));
+            $link = trim((string) ($item['link'] ?? ''));
+            $description = trim((string) ($item['description'] ?? ''));
+
+            $line = trim(implode("\n", array_filter([$title, $link, $description], fn ($v) => $v !== '')));
+
+            if ($line !== '') {
+                $lines[] = $line;
+            }
+        }
+
+        return $lines === [] ? 'No results found.' : mb_substr(implode("\n\n", $lines), 0, self::MAX_RESULT_LENGTH);
     }
 
     private function tool(string $name, string $description, array $properties, array $required): array
