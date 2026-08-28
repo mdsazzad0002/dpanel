@@ -15,7 +15,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
-use Spatie\Permission\Models\Role;
+use App\Models\Role;
 
 class UserManagementController extends Controller
 {
@@ -55,21 +55,22 @@ class UserManagementController extends Controller
 
         $roleCounts = [
             'all' => (clone $filteredScopeQuery)->count(),
-            'admin' => (clone $filteredScopeQuery)->whereHas('roles', fn ($q) => $q->where('name', 'admin'))->count(),
-            'reseller' => (clone $filteredScopeQuery)->whereHas('roles', fn ($q) => $q->where('name', 'reseller'))->count(),
-            'general' => (clone $filteredScopeQuery)->whereHas('roles', fn ($q) => $q->whereIn('name', ['general', 'general_user']))->count(),
+            'admin' => (clone $filteredScopeQuery)->where('role', 'admin')->count(),
+            'reseller' => (clone $filteredScopeQuery)->where('role', 'reseller')->count(),
+            'general' => (clone $filteredScopeQuery)->whereIn('role', ['general', 'general_user'])->count(),
         ];
 
         $users = (clone $filteredScopeQuery)
-            ->with(['roles:id,name', 'reseller:id,name,email', 'package:id,name'])
-            ->when($roleFilter === 'admin', fn ($query) => $query->whereHas('roles', fn ($q) => $q->where('name', 'admin')))
-            ->when($roleFilter === 'reseller', fn ($query) => $query->whereHas('roles', fn ($q) => $q->where('name', 'reseller')))
-            ->when($roleFilter === 'general', fn ($query) => $query->whereHas('roles', fn ($q) => $q->whereIn('name', ['general', 'general_user'])))
+            ->with(['reseller:id,name,email', 'package:id,name'])
+            ->when($roleFilter === 'admin', fn ($query) => $query->where('role', 'admin'))
+            ->when($roleFilter === 'reseller', fn ($query) => $query->where('role', 'reseller'))
+            ->when($roleFilter === 'general', fn ($query) => $query->whereIn('role', ['general', 'general_user']))
             ->latest('id')
             ->paginate(30, [
                 'id',
                 'name',
                 'email',
+                'role',
                 'reseller_id',
                 'package_id',
                 'is_suspended',
@@ -87,12 +88,7 @@ class UserManagementController extends Controller
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
-            'roles' => $user->roles
-                ->pluck('name')
-                ->map(fn (string $role): string => $this->normalizeRoleName($role))
-                ->unique()
-                ->values()
-                ->all(),
+            'roles' => $user->role ? [$this->normalizeRoleName($user->role)] : [],
             'reseller_id' => $user->reseller_id,
             'package_id' => $user->package_id,
             'package' => $user->package ? ['id' => $user->package->id, 'name' => $user->package->name] : null,

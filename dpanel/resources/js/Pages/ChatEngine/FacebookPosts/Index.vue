@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
+import ChatEngineDocsButton from '@/Components/ChatEngineDocsButton.vue';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -80,7 +81,10 @@ const sendComment = () => commentForm.post(panelRoute('chat-engine.facebook-post
                         </div>
                     </div>
                 </div>
-                <button v-if="pages.length" type="button" @click="composerOpen = true" class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5 hover:shadow-xl"><i class="bi bi-plus-lg"></i> Create Post</button>
+                <div class="flex items-center gap-2">
+                    <ChatEngineDocsButton title="Facebook Publisher — Guide" :sections="['facebook-posts', 'facebook-pages']" />
+                    <button v-if="pages.length" type="button" @click="composerOpen = true" class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5 hover:shadow-xl"><i class="bi bi-plus-lg"></i> Create Post</button>
+                </div>
             </div>
         </template>
 

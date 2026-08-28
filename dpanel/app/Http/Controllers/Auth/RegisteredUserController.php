@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 use Inertia\Response;
-use Spatie\Permission\Models\Role;
+use App\Models\Role;
 
 class RegisteredUserController extends Controller
 {

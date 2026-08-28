@@ -15,6 +15,7 @@ use App\Services\ChatEngine\Providers\TelegramAdapter;
 use App\Services\ChatEngine\Providers\WhatsAppAdapter;
 use App\Services\ChatEngine\Providers\InstagramAdapter;
 use App\Services\ChatEngine\Providers\SlackAdapter;
+use App\Services\ChatEngine\Providers\WebsiteAdapter;
 use Illuminate\Support\Facades\Log;
 
 class ChatEngineService
@@ -26,6 +27,8 @@ class ChatEngineService
 
     public function __construct(
         private readonly AiGatewayService $aiGateway,
+        private readonly BusinessKnowledgeService $businessKnowledge,
+        private readonly BusinessToolService $businessTools,
     ) {
         $this->adapters = [
             new TelegramAdapter(),
@@ -33,6 +36,7 @@ class ChatEngineService
             new WhatsAppAdapter(),
             new InstagramAdapter(),
             new SlackAdapter(),
+            new WebsiteAdapter(),
         ];
     }
 
@@ -66,6 +70,7 @@ class ChatEngineService
 
         $conversation = ChatConversation::firstOrCreate(
             ['chat_channel_id' => $channel->id, 'chat_contact_id' => $contact->id],
+            ['is_ai_enabled' => true],
         );
         $conversation->update(['last_message_at' => now()]);
 
@@ -108,13 +113,58 @@ class ChatEngineService
             ->values()
             ->all();
 
-        $result = $this->aiGateway->chatAuto(null, $messages, [
-            'system' => $channel->systemPrompt(),
-            'channel' => $channel->type,
-            'operation' => 'chat',
-        ]);
+        $system = $this->businessKnowledge->buildSystemPrompt($channel);
+        $business = $channel->business;
+        $tools = $business ? $this->businessTools->availableTools($business) : [];
+        $hasSearchTools = collect($tools)->contains(fn (array $t): bool => $t['function']['name'] === 'search');
+        $hasActionTools = collect($tools)->contains(fn (array $t): bool => $t['function']['name'] !== 'search');
 
-        $reply = trim((string) $result['content']);
+        if ($hasSearchTools) {
+            $system .= "\n\nYou also have search tools available that look up live information directly on this business's own site. "
+                .'Before telling the customer you don\'t have information, check whether a search tool could answer it and use one if relevant.';
+        }
+
+        if ($hasActionTools) {
+            $system .= "\n\nYou also have tools available to take real actions (place an order, send an email, send an SMS). "
+                .'Only call a tool when the customer has clearly asked for that action and you have all the required details — confirm details with the customer first if anything is missing or ambiguous.';
+        }
+
+        $workingMessages = $messages;
+        $result = null;
+
+        // Up to 3 tool-calling rounds: the model may need one order/email/sms
+        // action, or a couple in sequence, before it has a final answer.
+        for ($round = 0; $round < 3; $round++) {
+            $result = $this->aiGateway->chatAuto(null, $workingMessages, [
+                'system' => $system,
+                'channel' => $channel->type,
+                'operation' => 'chat',
+                'tools' => $tools ?: null,
+            ]);
+
+            if (empty($result['tool_calls'])) {
+                break;
+            }
+
+            $workingMessages[] = [
+                'role' => 'assistant',
+                'content' => $result['content'] ?? '',
+                'tool_calls' => $result['tool_calls'],
+            ];
+
+            foreach ($result['tool_calls'] as $call) {
+                $arguments = json_decode($call['function']['arguments'] ?? '{}', true) ?: [];
+                $toolResult = $this->businessTools->execute($business, $call['function']['name'] ?? '', $arguments);
+
+                $workingMessages[] = [
+                    'role' => 'tool',
+                    'tool_call_id' => $call['id'] ?? '',
+                    'content' => $toolResult,
+                ];
+            }
+        }
+
+        $reply = trim((string) ($result['content'] ?? ''));
 
         if ($reply === '') {
             return;

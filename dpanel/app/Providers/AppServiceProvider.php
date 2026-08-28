@@ -7,6 +7,7 @@ use App\Services\ServerPanel\HeuristicAiSuggestionProvider;
 use App\Services\ServerPanel\OpenAiSuggestionProvider;
 use App\Services\AiGateway\AiGatewayService;
 use App\Services\Dns\DnsRegistryService;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
@@ -44,6 +45,12 @@ class AppServiceProvider extends ServiceProvider
 
         Vite::prefetch(concurrency: 3);
         Schema::defaultStringLength(120);
+
+        // Let $user->can('some_permission_name') resolve against our custom
+        // role/permission system, replacing Spatie's equivalent Gate hook.
+        Gate::before(function ($user, string $ability) {
+            return method_exists($user, 'hasAccess') && $user->hasAccess($ability) ? true : null;
+        });
     }
 
     private function shouldBypassLoopbackViteHotFile(): bool

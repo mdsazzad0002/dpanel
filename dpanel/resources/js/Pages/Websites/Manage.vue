@@ -186,6 +186,7 @@ const serviceLinks = computed(() => [
     { label: 'SSH Key Generator', icon: 'bi-key', color: 'amber', href: panelRoute('websites.ssh-key.index', { id: props.website.id }), description: 'Create a GitHub deployment key' },
     { label: 'Website Terminal', icon: 'bi-terminal', color: 'emerald', href: panelRoute('websites.terminal.index', { id: props.website.id }), description: 'Open the isolated project shell' },
     { label: 'Alis API', icon: 'bi-code-slash', color: 'violet', href: panelRoute('websites.alias-api.index', { id: props.website.id }), description: 'Manage aliases and scoped API access' },
+    { label: 'AI Chat Widget', icon: 'bi-chat-dots', color: 'indigo', href: panelRoute('websites.chat-widget.index', { id: props.website.id }), description: 'Generate a paste-ready embed script' },
     { label: 'Email Accounts', icon: 'bi-envelope', color: 'pink', href: panelRoute('emails.list'), description: 'Mailbox services' },
     { label: 'Databases', icon: 'bi-database', color: 'orange', href: panelRoute('databases.list', { website: props.website.domain }), description: `Databases for ${props.website.domain}` },
     { label: 'DNS Zones', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.zones'), description: 'DNS entries' },

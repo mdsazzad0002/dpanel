@@ -17,6 +17,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
 
+        // CORS: only applies to paths listed in config/cors.php (the public
+        // website chat widget) — every other route is unaffected.
+        $middleware->prepend(\Illuminate\Http\Middleware\HandleCors::class);
+
         // Without this the panel builds http:// asset/redirect URLs on an https page.
         $middleware->trustProxies(
             at: ['127.0.0.1', '::1'],
@@ -45,13 +49,14 @@ return Application::configure(basePath: dirname(__DIR__))
             'webhooks/chat/whatsapp/*',
             'webhooks/chat/instagram/*',
             'webhooks/chat/slack/*',
+            'widget/chat/*',
         ]);
 
         $middleware->alias([
             'panel.session' => \App\Http\Middleware\EnsurePanelSessionIsValid::class,
-            'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
-            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
-            'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+            'role' => \App\Http\Middleware\CheckRole::class,
+            'permission' => \App\Http\Middleware\CheckPermission::class,
+            'role_or_permission' => \App\Http\Middleware\CheckRoleOrPermission::class,
             'ai_gateway.key' => \App\Http\Middleware\AuthenticateAiGatewayApiKey::class,
             'whmcs.auth' => \App\Http\Middleware\AuthenticateWhmcsRequest::class,
             'chatengine.telegram.webhook' => \App\Http\Middleware\VerifyTelegramChatWebhook::class,

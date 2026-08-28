@@ -14,9 +14,11 @@ class ChatChannel extends Model
 
     protected $fillable = [
         'type',
+        'website_id',
         'name',
         'external_account_id',
         'chat_facebook_app_id',
+        'business_id',
         'credentials',
         'webhook_secret',
         'settings',
@@ -75,6 +77,16 @@ class ChatChannel extends Model
     public function facebookApp(): BelongsTo
     {
         return $this->belongsTo(ChatFacebookApp::class, 'chat_facebook_app_id');
+    }
+
+    public function business(): BelongsTo
+    {
+        return $this->belongsTo(Business::class);
+    }
+
+    public function website(): BelongsTo
+    {
+        return $this->belongsTo(Website::class);
     }
 
     public function getBotToken(): ?string

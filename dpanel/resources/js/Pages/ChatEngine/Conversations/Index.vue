@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import ChatEngineDocsButton from '@/Components/ChatEngineDocsButton.vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -41,9 +42,12 @@ const filteredConversations = computed(() => {
 
     <AuthenticatedLayout>
         <template #header>
-            <div>
-                <h1 class="text-lg font-semibold">Conversations</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Inbox across all connected channels.</p>
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-lg font-semibold">Conversations</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">Inbox across all connected channels.</p>
+                </div>
+                <ChatEngineDocsButton title="Conversations — Guide" :sections="['reply-flow', 'worker', 'troubleshooting']" />
             </div>
         </template>
 

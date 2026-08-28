@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
+import ChatEngineDocsButton from '@/Components/ChatEngineDocsButton.vue';
 import ChannelForm from './ChannelForm.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -98,7 +99,10 @@ const typeIcon = (type) => ({
                     <h1 class="text-lg font-semibold">Chat Channels</h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">Connect Telegram, Facebook and WhatsApp for AI auto-reply.</p>
                 </div>
-                <button @click="openCreate" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">+ Connect Channel</button>
+                <div class="flex items-center gap-2">
+                    <ChatEngineDocsButton title="Channels — Guide" :sections="['telegram-bot', 'connect-channel', 'facebook-pages', 'whatsapp-cloud', 'instagram-dm', 'slack-app', 'website-widget']" />
+                    <button @click="openCreate" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">+ Connect Channel</button>
+                </div>
             </div>
         </template>
 

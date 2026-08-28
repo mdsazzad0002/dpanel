@@ -22,7 +22,7 @@ class ChatEngineChannelController extends Controller
     {
         $channels = ChatChannel::query()
             ->visibleTo($request->user())
-            ->with('createdBy:id,name,email')
+            ->with(['createdBy:id,name,email', 'business:id,name'])
             ->withCount(['contacts', 'conversations'])
             ->orderByDesc('created_at')
             ->get()
@@ -46,8 +46,10 @@ class ChatEngineChannelController extends Controller
                 'has_slack_bot_token' => (bool) $c->getSlackBotToken(),
                 'has_slack_signing_secret' => (bool) $c->getSlackSigningSecret(),
                 'slack_webhook_url' => $c->type === 'slack' ? route('webhooks.chat.slack', ['channel' => $c->id]) : null,
+                'widget_script_url' => $c->type === 'website' ? url('/widget/chat.js') : null,
                 'is_active' => $c->is_active,
                 'auto_reply_enabled' => $c->isAutoReplyEnabled(),
+                'business' => $c->business ? ['id' => $c->business->id, 'name' => $c->business->name] : null,
                 'contacts_count' => $c->contacts_count,
                 'conversations_count' => $c->conversations_count,
                 'created_at' => $c->created_at?->toDateTimeString(),
@@ -72,7 +74,7 @@ class ChatEngineChannelController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'type' => ['required', Rule::in(['telegram', 'facebook', 'whatsapp', 'instagram', 'slack'])],
+            'type' => ['required', Rule::in(['telegram', 'facebook', 'whatsapp', 'instagram', 'slack', 'website'])],
             'name' => ['required', 'string', 'max:255'],
             'bot_token' => ['required_if:type,telegram', 'nullable', 'string', 'max:255'],
             'page_id' => ['required_if:type,facebook', 'nullable', 'string', 'max:255'],
@@ -118,6 +120,7 @@ class ChatEngineChannelController extends Controller
                     'bot_token' => $validated['slack_bot_token'],
                     'signing_secret' => $validated['slack_signing_secret'],
                 ],
+                'website' => null,
                 default => ['bot_token' => $validated['bot_token']],
             },
             'webhook_secret' => Str::random(40),
@@ -129,12 +132,14 @@ class ChatEngineChannelController extends Controller
             'created_by' => $request->user()?->id,
         ]);
 
-        try {
-            $this->reconnectWebhook($channel);
-        } catch (\Throwable $e) {
-            return redirect()
-                ->route('chat-engine.channels.index')
-                ->with('error', 'Channel saved, but registering the webhook failed: '.$e->getMessage());
+        if ($type !== 'website') {
+            try {
+                $this->reconnectWebhook($channel);
+            } catch (\Throwable $e) {
+                return redirect()
+                    ->route('chat-engine.channels.index')
+                    ->with('error', 'Channel saved, but registering the webhook failed: '.$e->getMessage());
+            }
         }
 
         return redirect()
@@ -154,6 +159,7 @@ class ChatEngineChannelController extends Controller
                 'system_prompt' => ($channel->settings ?? [])['system_prompt'] ?? null,
                 'auto_reply_enabled' => $channel->isAutoReplyEnabled(),
                 'is_active' => $channel->is_active,
+                'business' => $channel->business ? ['id' => $channel->business->id, 'name' => $channel->business->name] : null,
                 'has_bot_token' => (bool) $channel->getBotToken(),
                 'has_page_access_token' => (bool) $channel->getPageAccessToken(),
                 'has_whatsapp_access_token' => (bool) $channel->getWhatsAppAccessToken(),
@@ -168,6 +174,7 @@ class ChatEngineChannelController extends Controller
                 'has_slack_bot_token' => (bool) $channel->getSlackBotToken(),
                 'has_slack_signing_secret' => (bool) $channel->getSlackSigningSecret(),
                 'slack_webhook_url' => $channel->type === 'slack' ? route('webhooks.chat.slack', ['channel' => $channel->id]) : null,
+                'widget_script_url' => $channel->type === 'website' ? url('/widget/chat.js') : null,
             ],
             'facebookWebhookUrl' => route('webhooks.chat.facebook'),
         ]);

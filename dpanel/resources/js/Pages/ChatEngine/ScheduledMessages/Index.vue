@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import ChatEngineDocsButton from '@/Components/ChatEngineDocsButton.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 
 const page = usePage();
@@ -30,7 +31,10 @@ const cancel = (s) => {
                     <h1 class="text-lg font-semibold">Scheduled Messages</h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">Broadcast to every contact on a channel, or schedule a single send.</p>
                 </div>
-                <Link :href="panelRoute('chat-engine.scheduled-messages.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">+ Schedule Message</Link>
+                <div class="flex items-center gap-2">
+                    <ChatEngineDocsButton title="Scheduled Messages — Guide" :sections="['scheduled', 'worker']" />
+                    <Link :href="panelRoute('chat-engine.scheduled-messages.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">+ Schedule Message</Link>
+                </div>
             </div>
         </template>
 

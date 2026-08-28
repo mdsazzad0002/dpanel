@@ -142,14 +142,13 @@ class WebsiteController extends Controller
             'canChangeReseller' => (bool) $actor?->hasRole('admin'),
             'ownershipUsers' => $actor?->hasAnyRole(['admin', 'reseller'])
                 ? User::query()
-                    ->whereHas('roles', fn ($query) => $query->whereIn('name', ['reseller', 'general', 'general_user']))
+                    ->whereIn('role', ['reseller', 'general', 'general_user'])
                     ->when($actor?->hasRole('reseller'), function ($query) use ($actor): void {
                         $query->where('reseller_id', $actor->id)
-                            ->whereHas('roles', fn ($roleQuery) => $roleQuery->whereIn('name', ['general', 'general_user']));
+                            ->whereIn('role', ['general', 'general_user']);
                     })
-                    ->with('roles:id,name')
                     ->orderBy('name')
-                    ->get(['id', 'name', 'email', 'reseller_id'])
+                    ->get(['id', 'name', 'email', 'role', 'reseller_id'])
                     ->map(fn (User $user): array => [
                         'id' => $user->id,
                         'name' => $user->name,
@@ -177,10 +176,10 @@ class WebsiteController extends Controller
         $this->findAuthorizedWebsiteOrFail($id, $actor);
         $website = Website::query()->findOrFail($id);
         $owner = isset($validated['owner_user_id'])
-            ? User::query()->with('roles:id,name')->findOrFail((int) $validated['owner_user_id'])
+            ? User::query()->findOrFail((int) $validated['owner_user_id'])
             : null;
         $reseller = $actor->hasRole('admin') && isset($validated['reseller_user_id'])
-            ? User::query()->with('roles:id,name')->findOrFail((int) $validated['reseller_user_id'])
+            ? User::query()->findOrFail((int) $validated['reseller_user_id'])
             : ($website->assigned_reseller_id ? User::query()->find($website->assigned_reseller_id) : null);
 
         if ($owner && ! $owner->hasAnyRole(['general', 'general_user'])) {

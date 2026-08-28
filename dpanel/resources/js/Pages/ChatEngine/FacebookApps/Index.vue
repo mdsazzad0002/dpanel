@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
+import ChatEngineDocsButton from '@/Components/ChatEngineDocsButton.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -83,7 +84,10 @@ const copy = async (text, key) => {
                     <h1 class="text-lg font-semibold">Facebook Apps</h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">Register a Facebook App once, then auto-connect every Page you manage under it.</p>
                 </div>
-                <button @click="panelOpen = true" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">+ Register App</button>
+                <div class="flex items-center gap-2">
+                    <ChatEngineDocsButton title="Facebook Apps — Guide" :sections="['facebook-pages']" />
+                    <button @click="panelOpen = true" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">+ Register App</button>
+                </div>
             </div>
         </template>
 

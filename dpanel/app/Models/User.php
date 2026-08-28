@@ -8,12 +8,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Spatie\Permission\Traits\HasRoles;
+use Illuminate\Support\Collection;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasRoles;
+    use HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -26,6 +26,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'password',
         'is_suspended',
         'suspended_at',
+        'role',
         'reseller_id',
         'package_id',
         'disk_space_mb_limit',
@@ -90,5 +91,80 @@ class User extends Authenticatable implements MustVerifyEmail
     public function ownedPackages(): HasMany
     {
         return $this->hasMany(PackagePlan::class, 'owner_user_id');
+    }
+
+    /**
+     * Custom role/permission system (no Spatie). A user has a single
+     * role name in the `role` column; the role's permissions live in
+     * roles.permissions_csv, hardcoded/synced from App\Support\RolePermissions.
+     */
+    public function hasRole(string $role): bool
+    {
+        return $this->role === $role;
+    }
+
+    /**
+     * @param array<int, string> $roles
+     */
+    public function hasAnyRole(array $roles): bool
+    {
+        return $this->role !== null && in_array($this->role, $roles, true);
+    }
+
+    /**
+     * @return Collection<int, string>
+     */
+    public function getRoleNames(): Collection
+    {
+        return $this->role ? collect([$this->role]) : collect();
+    }
+
+    public function assignRole(?string $role): void
+    {
+        $this->role = $role;
+        $this->save();
+    }
+
+    /**
+     * @param array<int, string> $roles
+     */
+    public function syncRoles(array $roles): void
+    {
+        $this->assignRole($roles[0] ?? null);
+    }
+
+    /**
+     * Permission names granted to this user's role, read from the
+     * hardcoded static map in App\Support\RolePermissions (self-healing
+     * if the role row is missing).
+     *
+     * @return array<int, string>
+     */
+    public function allPermissionNames(): array
+    {
+        if (! $this->role) {
+            return [];
+        }
+
+        $role = \App\Support\RolePermissions::ensureRole($this->role);
+
+        if (! $role || ! $role->permissions_csv) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('trim', explode(',', $role->permissions_csv))));
+    }
+
+    /**
+     * @return Collection<int, array{name: string}>
+     */
+    public function getAllPermissions(): Collection
+    {
+        return collect($this->allPermissionNames())->map(fn (string $name): array => ['name' => $name]);
+    }
+
+    public function hasAccess(string $permission): bool
+    {
+        return in_array($permission, $this->allPermissionNames(), true);
     }
 }

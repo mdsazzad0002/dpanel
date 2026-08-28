@@ -184,7 +184,7 @@ const dynamicUserManagementChildren = computed(() => {
 
     const adminRuleChildren = userRoles.value.includes('admin')
         ? [
-            { label: 'Manage Roles', hint: 'Edit existing roles', icon: 'MR', iconClass: 'bi bi-shield-check', routeName: 'roles.manage', activeRouteNames: ['roles.manage', 'roles.manage.edit', 'roles.create'], roles: ['admin'] },
+            { label: 'Manage Roles', hint: 'View role permissions', icon: 'MR', iconClass: 'bi bi-shield-check', routeName: 'roles.manage', activeRouteNames: ['roles.manage'], roles: ['admin'] },
         ]
         : [];
 
@@ -300,12 +300,12 @@ const menuItems = computed(() => [
         iconClass: 'bi bi-chat-square-text',
         color: 'teal',
         children: [
-            { label: 'Channels', hint: 'Telegram, Facebook, WhatsApp', icon: 'CN', iconClass: 'bi bi-broadcast', routeName: 'chat-engine.channels.index', activeRouteNames: ['chat-engine.channels.index', 'chat-engine.channels.create'], roles: ['admin', 'reseller', 'general', 'general_user'] },
-            { label: 'Facebook Apps', hint: 'Auto-connect Pages via Facebook Login', icon: 'FB', iconClass: 'bi bi-facebook', routeName: 'chat-engine.facebook-apps.index', activeRouteNames: ['chat-engine.facebook-apps.index'], roles: ['admin', 'reseller', 'general', 'general_user'] },
-            { label: 'Facebook Posts', hint: 'Publish content to connected Pages', icon: 'FP', iconClass: 'bi bi-file-post', routeName: 'chat-engine.facebook-posts.index', activeRouteNames: ['chat-engine.facebook-posts.index'], roles: ['admin', 'reseller', 'general', 'general_user'] },
-            { label: 'Conversations', hint: 'Inbox and AI auto-reply', icon: 'CV', iconClass: 'bi bi-chat-dots', routeName: 'chat-engine.conversations.index', activeRouteNames: ['chat-engine.conversations.index', 'chat-engine.conversations.show'], roles: ['admin', 'reseller', 'general', 'general_user'] },
-            { label: 'Scheduled Messages', hint: 'Broadcasts and one-off sends', icon: 'SM', iconClass: 'bi bi-calendar2-event', routeName: 'chat-engine.scheduled-messages.index', activeRouteNames: ['chat-engine.scheduled-messages.index', 'chat-engine.scheduled-messages.create'], roles: ['admin', 'reseller', 'general', 'general_user'] },
-            { label: 'Docs', hint: 'Setup guide and how replies work', icon: 'DC', iconClass: 'bi bi-file-earmark-code', routeName: 'chat-engine.docs', activeRouteNames: ['chat-engine.docs'], roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Channels', hint: 'Telegram, Facebook, WhatsApp', icon: 'CN', iconClass: 'bi bi-broadcast', routeName: 'chat-engine.channels.index', activeRouteNames: ['chat-engine.channels.index', 'chat-engine.channels.create'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
+            { label: 'Businesses', hint: 'Products, Q&A and channel assignment', icon: 'BZ', iconClass: 'bi bi-briefcase', routeName: 'chat-engine.businesses.index', activeRouteNames: ['chat-engine.businesses.index', 'chat-engine.businesses.create', 'chat-engine.businesses.edit'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
+            { label: 'Facebook Apps', hint: 'Auto-connect Pages via Facebook Login', icon: 'FB', iconClass: 'bi bi-facebook', routeName: 'chat-engine.facebook-apps.index', activeRouteNames: ['chat-engine.facebook-apps.index'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
+            { label: 'Facebook Posts', hint: 'Publish content to connected Pages', icon: 'FP', iconClass: 'bi bi-file-post', routeName: 'chat-engine.facebook-posts.index', activeRouteNames: ['chat-engine.facebook-posts.index'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
+            { label: 'Conversations', hint: 'Inbox and AI auto-reply', icon: 'CV', iconClass: 'bi bi-chat-dots', routeName: 'chat-engine.conversations.index', activeRouteNames: ['chat-engine.conversations.index', 'chat-engine.conversations.show'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
+            { label: 'Scheduled Messages', hint: 'Broadcasts and one-off sends', icon: 'SM', iconClass: 'bi bi-calendar2-event', routeName: 'chat-engine.scheduled-messages.index', activeRouteNames: ['chat-engine.scheduled-messages.index', 'chat-engine.scheduled-messages.create'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
         ],
     },
 ]);

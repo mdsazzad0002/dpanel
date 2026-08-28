@@ -21,7 +21,7 @@ class UserAccessCache
             now()->addDay(),
             static fn (): array => [
                 'roles' => $user->getRoleNames()->values()->all(),
-                'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
+                'permissions' => $user->allPermissionNames(),
             ],
         );
     }

@@ -10,8 +10,10 @@ use App\Http\Controllers\Api\WhmcsController;
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\BillingSystemController;
+use App\Http\Controllers\ChatEngineBusinessController;
+use App\Http\Controllers\ChatEngineBusinessProductController;
+use App\Http\Controllers\ChatEngineBusinessQnaController;
 use App\Http\Controllers\ChatEngineChannelController;
-use App\Http\Controllers\ChatEngineController;
 use App\Http\Controllers\ChatEngineConversationController;
 use App\Http\Controllers\ChatEngineFacebookAppController;
 use App\Http\Controllers\ChatEngineFacebookPostController;
@@ -39,6 +41,7 @@ use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerTaskController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\UserManagementController;
+use App\Http\Controllers\Public\WebsiteChatWidgetController;
 use App\Http\Controllers\Webhooks\FacebookChatWebhookController;
 use App\Http\Controllers\Webhooks\InstagramChatWebhookController;
 use App\Http\Controllers\Webhooks\SlackChatWebhookController;
@@ -167,6 +170,14 @@ Route::post('/webhooks/chat/facebook', [FacebookChatWebhookController::class, 's
 Route::get('/webhooks/chat/facebook/oauth/callback', [ChatEngineFacebookAppController::class, 'callback'])
     ->middleware('throttle:30,1')
     ->name('webhooks.chat.facebook.oauth.callback');
+
+// Public, cross-origin, unauthenticated endpoint the embeddable website
+// widget (public/widget/chat.js) calls from an arbitrary customer domain —
+// see config/cors.php and WebsiteChatWidgetController for the synchronous
+// (no push-back) reply contract.
+Route::post('/widget/chat/{channel}', [WebsiteChatWidgetController::class, 'send'])
+    ->middleware('throttle:20,1')
+    ->name('widget.chat.send');
 
 Route::prefix('cpsess{token}')
     ->where(['token' => '[0-9a-fA-F]{64}'])
@@ -516,10 +527,8 @@ Route::prefix('cpsess{token}')
             // group (see /webhooks/chat/telegram/{channel} above).
             // ------------------------------------------------------------------
             Route::prefix('chat-engine')
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_chat_engine')
                 ->group(function (): void {
-                    Route::get('docs', [ChatEngineController::class, 'docs'])->name('chat-engine.docs');
-
                     Route::get('facebook-apps', [ChatEngineFacebookAppController::class, 'index'])->name('chat-engine.facebook-apps.index');
                     Route::post('facebook-apps', [ChatEngineFacebookAppController::class, 'store'])->name('chat-engine.facebook-apps.store');
                     Route::patch('facebook-apps/{facebookApp}/toggle', [ChatEngineFacebookAppController::class, 'toggle'])->name('chat-engine.facebook-apps.toggle');
@@ -550,6 +559,26 @@ Route::prefix('cpsess{token}')
                     Route::get('scheduled-messages/create', [ChatEngineScheduledMessageController::class, 'create'])->name('chat-engine.scheduled-messages.create');
                     Route::post('scheduled-messages', [ChatEngineScheduledMessageController::class, 'store'])->name('chat-engine.scheduled-messages.store');
                     Route::delete('scheduled-messages/{scheduledMessage}', [ChatEngineScheduledMessageController::class, 'destroy'])->name('chat-engine.scheduled-messages.destroy');
+
+                    Route::get('businesses', [ChatEngineBusinessController::class, 'index'])->name('chat-engine.businesses.index');
+                    Route::get('businesses/create', [ChatEngineBusinessController::class, 'create'])->name('chat-engine.businesses.create');
+                    Route::post('businesses', [ChatEngineBusinessController::class, 'store'])->name('chat-engine.businesses.store');
+                    Route::get('businesses/{business}/edit', [ChatEngineBusinessController::class, 'edit'])->name('chat-engine.businesses.edit');
+                    Route::patch('businesses/{business}', [ChatEngineBusinessController::class, 'update'])->name('chat-engine.businesses.update');
+                    Route::post('businesses/{business}/description/generate', [ChatEngineBusinessController::class, 'generateDescription'])->name('chat-engine.businesses.description.generate');
+                    Route::delete('businesses/{business}', [ChatEngineBusinessController::class, 'destroy'])->name('chat-engine.businesses.destroy');
+                    Route::post('businesses/{business}/channels', [ChatEngineBusinessController::class, 'assignChannel'])->name('chat-engine.businesses.channels.assign');
+                    Route::delete('businesses/{business}/channels/{channel}', [ChatEngineBusinessController::class, 'unassignChannel'])->name('chat-engine.businesses.channels.unassign');
+
+                    Route::post('businesses/{business}/products', [ChatEngineBusinessProductController::class, 'store'])->name('chat-engine.businesses.products.store');
+                    Route::patch('businesses/{business}/products/{product}', [ChatEngineBusinessProductController::class, 'update'])->name('chat-engine.businesses.products.update');
+                    Route::delete('businesses/{business}/products/{product}', [ChatEngineBusinessProductController::class, 'destroy'])->name('chat-engine.businesses.products.destroy');
+
+                    Route::post('businesses/{business}/products/{product}/qnas/suggest', [ChatEngineBusinessQnaController::class, 'suggest'])->name('chat-engine.businesses.qnas.suggest');
+                    Route::post('businesses/{business}/products/{product}/qnas', [ChatEngineBusinessQnaController::class, 'store'])->name('chat-engine.businesses.qnas.store');
+                    Route::patch('businesses/{business}/products/{product}/qnas/{qna}', [ChatEngineBusinessQnaController::class, 'update'])->name('chat-engine.businesses.qnas.update');
+                    Route::delete('businesses/{business}/products/{product}/qnas/{qna}', [ChatEngineBusinessQnaController::class, 'destroy'])->name('chat-engine.businesses.qnas.destroy');
+
                 });
 
             Route::get('/databases/create', [DatabaseController::class, 'create'])
@@ -806,12 +835,6 @@ Route::prefix('cpsess{token}')
             Route::get('/roles/manage', [RoleManagementController::class, 'index'])
                 ->middleware('role:admin')
                 ->name('roles.manage');
-            Route::get('/roles/create', [RoleManagementController::class, 'create'])
-                ->middleware('role:admin')
-                ->name('roles.create');
-            Route::get('/roles/manage/{role}/edit', [RoleManagementController::class, 'edit'])
-                ->middleware('role:admin')
-                ->name('roles.manage.edit');
             Route::post('/roles/manage', [RoleManagementController::class, 'store'])
                 ->middleware('role:admin')
                 ->name('roles.manage.store');

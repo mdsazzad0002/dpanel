@@ -2,156 +2,114 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Role;
+use App\Models\User;
+use App\Support\RolePermissions;
 use App\Support\UserAccessCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Spatie\Permission\Models\Permission;
-use Spatie\Permission\Models\Role;
-use Illuminate\Validation\ValidationException;
 
 class RoleManagementController extends Controller
 {
     /**
-     * Role create page.
-     */
-    public function create(): Response
-    {
-        $assignerPermissions = request()->user()->getAllPermissions()->pluck('name');
-
-        return Inertia::render('Roles/Create', [
-            'permissions' => Permission::query()
-                ->whereIn('name', $assignerPermissions)
-                ->orderBy('priority')
-                ->orderBy('name')
-                ->pluck('name')
-                ->values()
-                ->all(),
-        ]);
-    }
-
-    /**
-     * Roles and permissions management page.
+     * Roles and permissions management page. The permission pool itself is
+     * fixed/hardcoded (App\Support\RolePermissions::PERMISSIONS) — the UI
+     * only lets an admin pick which of those apply to a role, and create
+     * new roles, via an offcanvas panel.
      */
     public function index(): Response
     {
+        foreach (RolePermissions::ROLES as $roleName) {
+            RolePermissions::ensureRole($roleName);
+        }
+
+        $userCounts = User::query()
+            ->whereNotNull('role')
+            ->selectRaw('role, count(*) as aggregate')
+            ->groupBy('role')
+            ->pluck('aggregate', 'role');
+
         $roles = Role::query()
-            ->with(['permissions:id,name', 'users:id'])
+            ->orderByRaw('name IN ("admin","reseller","general") DESC')
             ->orderBy('name')
             ->get()
             ->map(fn (Role $role): array => [
                 'id' => $role->id,
                 'name' => $role->name,
-                'permissions' => $role->permissions->pluck('name')->values()->all(),
-                'users_count' => $role->users->count(),
-                'is_system' => in_array($role->name, $this->systemRoles(), true),
+                'permissions' => $role->permissions_csv
+                    ? array_values(array_filter(array_map('trim', explode(',', $role->permissions_csv))))
+                    : [],
+                'users_count' => (int) ($userCounts[$role->name] ?? 0),
+                'is_system' => in_array($role->name, RolePermissions::ROLES, true),
             ])
             ->values()
             ->all();
 
         return Inertia::render('Roles/Manage', [
             'roles' => $roles,
-            'systemRoles' => $this->systemRoles(),
+            'systemRoles' => RolePermissions::ROLES,
+            'permissionGroups' => RolePermissions::GROUPS,
         ]);
     }
 
     /**
-     * Role edit page.
-     */
-    public function edit(string $token, Role $role): Response
-    {
-        $role->load('permissions:id,name');
-        $permissions = Permission::query()->orderBy('priority')->orderBy('name')->get(['name', 'priority']);
-
-        return Inertia::render('Roles/Edit', [
-            'role' => [
-                'id' => $role->id,
-                'name' => $role->name,
-                'permissions' => $role->permissions->pluck('name')->values()->all(),
-                'is_system' => in_array($role->name, $this->systemRoles(), true),
-            ],
-            'permissions' => $permissions->pluck('name')->values()->all(),
-            'permissionPriorities' => $permissions->pluck('priority', 'name')->all(),
-            'assignablePermissions' => request()->user()->getAllPermissions()->pluck('name')->values()->all(),
-            'systemRoles' => $this->systemRoles(),
-        ]);
-    }
-
-    /**
-     * Create a new role and assign permissions.
+     * Create a new role with a chosen subset of the hardcoded permissions.
      */
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:roles,name'],
+            'name' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:roles,name'],
             'permissions' => ['nullable', 'array'],
-            'permissions.*' => ['string', 'exists:permissions,name'],
+            'permissions.*' => ['string', 'in:'.implode(',', RolePermissions::PERMISSIONS)],
         ]);
 
-        $selectedPermissions = $validated['permissions'] ?? [];
-        $assignerPermissions = $request->user()->getAllPermissions()->pluck('name')->all();
-        $unownedPermissions = array_values(array_diff($selectedPermissions, $assignerPermissions));
+        Role::create([
+            'name' => $validated['name'],
+            'permissions_csv' => implode(',', $validated['permissions'] ?? []),
+        ]);
 
-        if ($unownedPermissions !== []) {
-            throw ValidationException::withMessages([
-                'permissions' => 'You can only assign permissions that you already have: '.implode(', ', $unownedPermissions),
-            ]);
-        }
-
-        $role = Role::create(['name' => $validated['name']]);
-        $role->syncPermissions($selectedPermissions);
         UserAccessCache::invalidate();
 
         return back()->with('success', 'Role created successfully.');
     }
 
     /**
-     * Update role and its permissions.
+     * Update a role's permission set (and name, for non-system roles).
      */
-    public function update(Request $request, string $token, Role $role): RedirectResponse
+    public function update(Request $request, string $token, string $roleId): RedirectResponse
     {
+        $role = Role::findOrFail($roleId);
+        $isSystem = in_array($role->name, RolePermissions::ROLES, true);
+
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:roles,name,'.$role->id],
+            'name' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:roles,name,'.$role->id],
             'permissions' => ['nullable', 'array'],
-            'permissions.*' => ['string', 'exists:permissions,name'],
+            'permissions.*' => ['string', 'in:'.implode(',', RolePermissions::PERMISSIONS)],
         ]);
 
-        if ($validated['name'] !== $role->name) {
-            return back()->with('error', 'Role names cannot be changed after creation.');
-        }
-
-        $selectedPermissions = $validated['permissions'] ?? [];
-        $currentPermissions = $role->permissions()->pluck('name')->all();
-        $newPermissions = array_values(array_diff($selectedPermissions, $currentPermissions));
-        $assignerPermissions = $request->user()->getAllPermissions()->pluck('name')->all();
-        $unownedPermissions = array_values(array_diff($newPermissions, $assignerPermissions));
-
-        if ($unownedPermissions !== []) {
-            throw ValidationException::withMessages([
-                'permissions' => 'You can only assign permissions that you already have: '.implode(', ', $unownedPermissions),
-            ]);
-        }
-
-        // The admin system role always retains the complete permission set.
-        if ($role->name === 'admin') {
-            $selectedPermissions = Permission::query()->pluck('name')->all();
+        if ($isSystem && $validated['name'] !== $role->name) {
+            return back()->with('error', 'System role names cannot be changed.');
         }
 
         $role->name = $validated['name'];
+        $role->permissions_csv = implode(',', $validated['permissions'] ?? []);
         $role->save();
-        $role->syncPermissions($selectedPermissions);
+
         UserAccessCache::invalidate();
 
         return back()->with('success', 'Role updated successfully.');
     }
 
     /**
-     * Delete role.
+     * Delete a custom (non-system) role.
      */
-    public function destroy(string $token, Role $role): RedirectResponse
+    public function destroy(string $token, string $roleId): RedirectResponse
     {
-        if (in_array($role->name, $this->systemRoles(), true)) {
+        $role = Role::findOrFail($roleId);
+
+        if (in_array($role->name, RolePermissions::ROLES, true)) {
             return back()->with('error', 'System roles cannot be deleted.');
         }
 
@@ -164,13 +122,4 @@ class RoleManagementController extends Controller
 
         return back()->with('success', 'Role deleted successfully.');
     }
-
-    /**
-     * @return array<int, string>
-     */
-    private function systemRoles(): array
-    {
-        return ['admin', 'reseller', 'general'];
-    }
-
 }

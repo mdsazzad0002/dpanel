@@ -83,6 +83,12 @@ const submit = () => {
                 class="flex-1 rounded-md border px-4 py-2 text-sm font-medium"
                 :class="form.type === 'slack' ? 'border-violet-500 bg-violet-50 text-violet-700 dark:border-violet-500 dark:bg-violet-950/60 dark:text-violet-300' : 'border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800'"
             >Slack</button>
+            <button
+                type="button"
+                @click="form.type = 'website'"
+                class="flex-1 rounded-md border px-4 py-2 text-sm font-medium"
+                :class="form.type === 'website' ? 'border-amber-500 bg-amber-50 text-amber-700 dark:border-amber-500 dark:bg-amber-950/60 dark:text-amber-300' : 'border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800'"
+            >Website Widget</button>
         </div>
         <p v-else class="text-xs font-medium uppercase tracking-wide text-slate-400">{{ form.type }} channel</p>
 
@@ -219,6 +225,23 @@ const submit = () => {
                 <p v-if="form.errors.whatsapp_app_secret" class="mt-1 text-xs text-red-600">{{ form.errors.whatsapp_app_secret }}</p>
             </div>
         </template>
+
+        <template v-else-if="form.type === 'website'">
+            <div v-if="isEdit" class="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                <p class="font-semibold">Embed on your website</p>
+                <p>Paste this before <code>&lt;/body&gt;</code> on any page of your site — it auto-connects, no other setup needed.</p>
+                <code class="mt-1 block break-all rounded bg-white/70 p-2 dark:bg-slate-900">&lt;script src="{{ channel.widget_script_url }}" data-channel="{{ channel.id }}" async&gt;&lt;/script&gt;</code>
+            </div>
+            <div v-else class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                No credentials needed. Save first, then copy the embed snippet from here to add the chat widget to your site.
+            </div>
+        </template>
+
+        <div v-if="isEdit" class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+            Business:
+            <span v-if="channel.business" class="font-medium">{{ channel.business.name }}</span>
+            <span v-else>Not assigned — manage assignment from <a :href="panelRoute('chat-engine.businesses.index')" class="text-blue-600 hover:underline">Businesses</a>.</span>
+        </div>
 
         <div>
             <label class="mb-1 block text-sm font-medium">System Prompt (optional)</label>

@@ -52,7 +52,7 @@ class MainWebsiteController extends Controller
             'phpVersions' => PhpService::getPhpVersions(),
             'domainUsers' => User::query()
                 ->when($request->user()?->hasRole('reseller'), fn ($query) => $query->where('reseller_id', $request->user()->id))
-                ->whereHas('roles', fn ($query) => $query->whereIn('name', ['general', 'general_user']))
+                ->whereIn('role', ['general', 'general_user'])
                 ->orderBy('name')->get(['id', 'name', 'email', 'package_id'])]
         );
     }

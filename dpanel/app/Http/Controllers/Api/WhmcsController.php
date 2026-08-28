@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Spatie\Permission\Models\Role;
+use App\Models\Role;
 
 class WhmcsController extends Controller
 {
