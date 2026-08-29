@@ -16,6 +16,7 @@ class Business extends Model
         'name',
         'industry',
         'description',
+        'reply_language',
         'integration_base_url',
         'integration_api_key',
         'search_enabled',

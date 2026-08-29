@@ -77,6 +77,7 @@ class ChatEngineBusinessController extends Controller
                 'name' => $business->name,
                 'industry' => $business->industry,
                 'description' => $business->description,
+                'reply_language' => $business->reply_language,
                 'integration_base_url' => $business->integration_base_url,
                 'has_integration_api_key' => (bool) $business->integration_api_key,
                 'search_enabled' => $business->search_enabled,
@@ -104,7 +105,7 @@ class ChatEngineBusinessController extends Controller
         ]);
     }
 
-    public function update(Request $request, $token, Business $business): RedirectResponse
+    public function update(Request $request, $token, Business $business): RedirectResponse|JsonResponse
     {
         $this->authorizeBusiness($request, $business);
 
@@ -112,6 +113,7 @@ class ChatEngineBusinessController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'industry' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:4000'],
+            'reply_language' => ['nullable', 'string', 'max:100'],
             'integration_base_url' => ['nullable', 'string', 'max:255', 'url', $this->safeUrlRule()],
             'integration_api_key' => ['nullable', 'string', 'max:255'],
             'search_enabled' => ['nullable', 'boolean'],
@@ -124,6 +126,7 @@ class ChatEngineBusinessController extends Controller
             'name' => $validated['name'],
             'industry' => $validated['industry'] ?? null,
             'description' => $validated['description'] ?? null,
+            'reply_language' => $validated['reply_language'] ?? null,
             'integration_base_url' => $validated['integration_base_url'] ?? null,
             'integration_api_key' => $validated['integration_api_key'] ?: $business->integration_api_key,
             'search_enabled' => (bool) ($validated['search_enabled'] ?? false),
@@ -131,6 +134,10 @@ class ChatEngineBusinessController extends Controller
             'email_enabled' => (bool) ($validated['email_enabled'] ?? false),
             'sms_enabled' => (bool) ($validated['sms_enabled'] ?? false),
         ]);
+
+        if ($request->wantsJson()) {
+            return response()->json(['message' => 'Business updated.']);
+        }
 
         return back()->with('success', 'Business updated.');
     }

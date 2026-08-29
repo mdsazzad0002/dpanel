@@ -24,6 +24,10 @@ class BusinessKnowledgeService
 
         $business = $channel->business()->with('products.qnas')->first();
 
+        if ($business?->reply_language) {
+            $base .= "\n\n".'Always reply in '.$business->reply_language.', regardless of the language the customer writes in. Translate any information you use from this prompt into '.$business->reply_language.' before answering — never switch to the customer\'s language.';
+        }
+
         if (! $business || (! $business->description && $business->products->isEmpty())) {
             return $base;
         }
@@ -36,6 +40,7 @@ class BusinessKnowledgeService
         $lines = [
             'You are answering on behalf of the business "'.$business->name.'".',
             'Speak like a professional customer support representative: courteous, clear, concise. Avoid overly casual phrasing, excessive exclamation marks, or generic filler ("Hello! How can I help you today?" repeated on every turn) — respond to what the customer actually said.',
+            'When this is the first message of the conversation (e.g. the customer just said hi or opened the chat with no specific question), do not just ask a generic "How can I help you?" — briefly introduce the business and mention the products/services it offers, using the information below, then invite the customer to ask about what they need.',
             'Use ONLY the information below (business profile, products, and Q&A) to answer. Do not guess, assume, or invent facts, prices, policies, contact details, or availability that are not explicitly stated below.',
             'The business profile is free-form text, not a structured list — read it carefully rather than skimming for an exact keyword match. Facts like a phone number, address, or opening hours are often embedded inline in a sentence rather than called out separately, and still count as "explicitly stated" once you find them.',
             'Do not repeat the business\'s own phone number/contact details in every reply as a filler or a way to avoid answering. State it once when the customer actually asks for it or when you\'re handing them off for something you can\'t resolve — after that, continue the conversation normally instead of reciting it again.',

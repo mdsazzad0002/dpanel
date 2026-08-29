@@ -23,6 +23,7 @@ const detailsForm = useForm({
     name: props.business.name,
     industry: props.business.industry || '',
     description: props.business.description || '',
+    reply_language: props.business.reply_language || '',
     integration_base_url: props.business.integration_base_url || '',
     integration_api_key: '',
     search_enabled: props.business.search_enabled,
@@ -30,8 +31,36 @@ const detailsForm = useForm({
     email_enabled: props.business.email_enabled,
     sms_enabled: props.business.sms_enabled,
 });
-const saveDetails = () => {
-    detailsForm.patch(panelRoute('chat-engine.businesses.update', { business: props.business.id }), { preserveScroll: true });
+const detailsSuccess = ref('');
+const detailsError = ref('');
+const saveDetails = async () => {
+    detailsSuccess.value = '';
+    detailsError.value = '';
+    detailsForm.clearErrors();
+    detailsForm.processing = true;
+    try {
+        await axios.patch(panelRoute('chat-engine.businesses.update', { business: props.business.id }), {
+            name: detailsForm.name,
+            industry: detailsForm.industry,
+            description: detailsForm.description,
+            reply_language: detailsForm.reply_language,
+            integration_base_url: detailsForm.integration_base_url,
+            integration_api_key: detailsForm.integration_api_key,
+            search_enabled: detailsForm.search_enabled,
+            order_enabled: detailsForm.order_enabled,
+            email_enabled: detailsForm.email_enabled,
+            sms_enabled: detailsForm.sms_enabled,
+        });
+        detailsForm.integration_api_key = '';
+        detailsSuccess.value = 'Business updated.';
+    } catch (e) {
+        if (e.response?.status === 422) {
+            detailsForm.setError(e.response.data.errors ? Object.fromEntries(Object.entries(e.response.data.errors).map(([k, v]) => [k, v[0]])) : {});
+        }
+        detailsError.value = e.response?.data?.message || 'Failed to update business.';
+    } finally {
+        detailsForm.processing = false;
+    }
 };
 
 // --- AI-drafted description (primary knowledge) ---
@@ -182,6 +211,8 @@ const dismissSuggestion = (product, index) => {
             <!-- Business details -->
             <div class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
                 <h2 class="mb-3 text-sm font-semibold">Business details</h2>
+                <p v-if="detailsSuccess" class="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{{ detailsSuccess }}</p>
+                <p v-if="detailsError" class="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{{ detailsError }}</p>
                 <form @submit.prevent="saveDetails" class="space-y-3 text-slate-800 dark:text-slate-100">
                     <div class="grid gap-3 sm:grid-cols-2">
                         <div>
@@ -197,6 +228,12 @@ const dismissSuggestion = (product, index) => {
                         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Description</label>
                         <p class="mb-2 text-xs text-slate-400">This is the AI's primary knowledge about the business — who it is, what it does, and how to contact it. It's sent to the AI on every reply, so keep it accurate.</p>
                         <textarea v-model="detailsForm.description" rows="4" class="w-full rounded-md border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Reply language (optional)</label>
+                        <p class="mb-2 text-xs text-slate-400">When set, the AI always replies in this language, no matter what language the customer writes in. Leave blank to let it match the customer's own language.</p>
+                        <input v-model="detailsForm.reply_language" type="text" placeholder="e.g. Bengali, English, Hindi" class="w-full rounded-md border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
                     </div>
 
                     <div class="rounded-md border border-dashed border-slate-300 p-3 dark:border-slate-600">
