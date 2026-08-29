@@ -17,6 +17,7 @@ const form = useForm({
     max_websites: 1,
     max_databases: 1,
     max_bandwidth_gb: 10,
+    max_ai_replies: null,
     allow_forwarding: true,
     allow_aliases: false,
     priority_support: false,
@@ -24,7 +25,10 @@ const form = useForm({
 });
 
 const submit = () => {
-    form.post(panelRoute('packages.store'));
+    form.transform((data) => ({
+        ...data,
+        max_ai_replies: data.max_ai_replies === '' ? null : data.max_ai_replies,
+    })).post(panelRoute('packages.store'));
 };
 </script>
 
@@ -80,6 +84,13 @@ const submit = () => {
                     <label class="mb-1 block text-sm">Bandwidth Limit (GB)</label>
                     <input v-model.number="form.max_bandwidth_gb" type="number" min="0" max="1048576" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.max_bandwidth_gb" class="mt-1 text-xs text-red-600">{{ form.errors.max_bandwidth_gb }}</p>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm">Max AI Replies (Chat Engine)</label>
+                    <input v-model.number="form.max_ai_replies" type="number" min="0" max="100000000" placeholder="Leave blank for unlimited" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p class="mt-1 text-xs text-slate-500">Total AI replies a business on this package may send before auto-reply pauses — used for usage-based billing. Blank = unlimited.</p>
+                    <p v-if="form.errors.max_ai_replies" class="mt-1 text-xs text-red-600">{{ form.errors.max_ai_replies }}</p>
                 </div>
 
                 <div>

@@ -18,6 +18,7 @@ class PackagePlan extends Model
         'max_websites',
         'max_databases',
         'max_bandwidth_gb',
+        'max_ai_replies',
         'allow_forwarding',
         'allow_aliases',
         'priority_support',
@@ -37,6 +38,7 @@ class PackagePlan extends Model
         'max_websites' => 'integer',
         'max_databases' => 'integer',
         'max_bandwidth_gb' => 'integer',
+        'max_ai_replies' => 'integer',
         'sort_order' => 'integer',
     ];
 

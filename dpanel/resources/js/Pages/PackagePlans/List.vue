@@ -89,6 +89,7 @@ const formatMailboxes = (count) => {
                                 <div>{{ formatMailboxes(plan.max_mailboxes) }} mailboxes</div>
                                 <div>{{ plan.max_websites }} websites · {{ plan.max_databases }} databases</div>
                                 <div>{{ plan.max_bandwidth_gb }} GB bandwidth</div>
+                                <div>{{ plan.max_ai_replies ?? 'Unlimited' }} AI replies</div>
                             </td>
                             <td class="px-4 py-3">
                                 <div class="flex flex-wrap gap-1">

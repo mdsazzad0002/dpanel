@@ -91,6 +91,15 @@ class ChatEngineService
             return;
         }
 
+        if ($channel->business?->hasReachedAiReplyLimit()) {
+            Log::warning('ChatEngine: AI reply skipped, business reply credit exhausted', [
+                'channel_id' => $channel->id,
+                'business_id' => $channel->business->id,
+            ]);
+
+            return;
+        }
+
         try {
             $this->replyWithAi($channel, $conversation, $inbound->replyContext);
         } catch (\Throwable $e) {
@@ -207,6 +216,8 @@ class ChatEngineService
             'ai_trace_id' => $result['trace_id'],
             'meta' => ['reply_context' => $replyContext],
         ]);
+
+        $business?->recordAiReply();
 
         $this->sendReply($channel, $conversation, $message);
     }

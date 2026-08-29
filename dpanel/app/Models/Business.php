@@ -51,6 +51,29 @@ class Business extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /**
+     * The AI-reply cap comes from the owner's package plan (null = unlimited),
+     * so upgrading/downgrading a client's package immediately changes what
+     * every one of their businesses is allowed to use, with no per-business
+     * duplicate setting to keep in sync.
+     */
+    public function aiReplyLimit(): ?int
+    {
+        return $this->createdBy?->package?->max_ai_replies;
+    }
+
+    public function hasReachedAiReplyLimit(): bool
+    {
+        $limit = $this->aiReplyLimit();
+
+        return $limit !== null && $this->ai_replies_used >= $limit;
+    }
+
+    public function recordAiReply(): void
+    {
+        $this->increment('ai_replies_used');
+    }
+
     public function scopeVisibleTo(Builder $query, ?User $actor): Builder
     {
         if (! $actor) {

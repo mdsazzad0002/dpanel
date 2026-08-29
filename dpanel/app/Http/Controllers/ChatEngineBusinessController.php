@@ -69,7 +69,7 @@ class ChatEngineBusinessController extends Controller
     {
         $this->authorizeBusiness($request, $business);
 
-        $business->load('products.qnas');
+        $business->load('products.qnas', 'createdBy.package');
 
         return Inertia::render('ChatEngine/Businesses/Edit', [
             'business' => [
@@ -78,6 +78,8 @@ class ChatEngineBusinessController extends Controller
                 'industry' => $business->industry,
                 'description' => $business->description,
                 'reply_language' => $business->reply_language,
+                'ai_replies_used' => $business->ai_replies_used,
+                'ai_reply_limit' => $business->aiReplyLimit(),
                 'integration_base_url' => $business->integration_base_url,
                 'has_integration_api_key' => (bool) $business->integration_api_key,
                 'search_enabled' => $business->search_enabled,
