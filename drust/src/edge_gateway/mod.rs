@@ -2,6 +2,7 @@ mod bandwidth;
 mod config;
 mod dispatcher;
 mod matching;
+mod node_process;
 mod php;
 mod proxy;
 mod server;
@@ -17,6 +18,10 @@ pub use config::{
 };
 pub use dispatcher::{DispatchContext, dispatch};
 pub use matching::{normalize_request_path, resolve_route, resolve_site};
+pub use node_process::{
+    NodeProcessStatus, ensure_node_process_running, node_process_status, restart_node_process,
+    stop_node_process,
+};
 pub use php::execute_php_front_controller;
 pub use proxy::{ProxyConfig, build_client, health_check_upstream, proxy_request};
 pub use server::{

@@ -57,6 +57,11 @@ mod tests {
                 hostnames: Arc::from(["example.com".to_string(), "www.example.com".to_string()]),
                 document_root: Some(PathBuf::from("/var/www/example/public")),
                 php_version: None,
+                runtime: "php".to_string(),
+                project_root: None,
+                node_entry_file: None,
+                node_start_command: None,
+                node_version: None,
                 enable_ssl: false,
                 spa_fallback: true,
                 routes: Arc::from([RouteConfig {
@@ -88,6 +93,11 @@ mod tests {
             hostnames: Arc::from(["example.com".to_string()]),
             document_root: None,
             php_version: None,
+            runtime: "php".to_string(),
+            project_root: None,
+            node_entry_file: None,
+            node_start_command: None,
+            node_version: None,
             enable_ssl: false,
             spa_fallback: false,
             routes: Arc::from([

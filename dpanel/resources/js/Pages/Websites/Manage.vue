@@ -48,13 +48,20 @@ const databaseConnectLoading = ref(false);
 const dependencyInstallLoading = ref('');
 const storageLinkLoading = ref('');
 const runProjectMigrationsLoading = ref(false);
+const nodeControlLoading = ref('');
+const nodeStatus = ref(null);
 const toasts = ref([]);
 let toastSeq = 0;
 
 const editingRuntimeSettings = ref(false);
 const startDirectoryInput = ref('');
 const phpVersionInput = ref('');
+const runtimeInput = ref('php');
+const nodeEntryFileInput = ref('');
+const nodeStartCommandInput = ref('');
+const nodeVersionInput = ref('20');
 const updateLoading = ref(false);
+const nodeVersionOptions = ['18', '20', '22'];
 
 const toNumber = (value) => {
     const parsed = Number(value);
@@ -424,6 +431,54 @@ const runProjectMigrations = async () => {
     }
 };
 
+const isNodeWebsite = computed(() => String(props.website?.runtime || 'php') === 'node');
+const nodeProcessStatusLabel = computed(() => {
+    const status = String(props.website?.node_process_status || 'pending');
+    if (status === 'running') return 'Running';
+    if (status === 'stopped') return 'Stopped';
+    if (status === 'error') return 'Error';
+    return 'Starting…';
+});
+const nodeProcessStatusClass = computed(() => {
+    const status = String(props.website?.node_process_status || 'pending');
+    if (status === 'running') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
+    if (status === 'stopped') return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+    if (status === 'error') return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
+});
+
+const controlNodeProcess = async (action) => {
+    if (nodeControlLoading.value) return;
+    nodeControlLoading.value = action;
+
+    try {
+        const response = await fetch(panelRoute('websites.node.control', { id: props.website.id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({ action }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(data.message || 'Node.js process action failed.');
+
+        if (action === 'status') {
+            nodeStatus.value = data.data || null;
+        } else {
+            pushToast(data.message || 'Node.js process updated successfully.', 'success');
+            router.reload({ only: ['website'], preserveScroll: true });
+        }
+    } catch (error) {
+        pushToast(error?.message || 'Node.js process action failed.', 'error');
+    } finally {
+        nodeControlLoading.value = '';
+    }
+};
+
 const checkWebsiteStatus = async () => {
     if (statusCheckLoading.value) {
         return;
@@ -505,6 +560,10 @@ const issueWebsiteSsl = async () => {
 const openRuntimeSettings = () => {
     startDirectoryInput.value = String(props.website?.start_directory ?? '');
     phpVersionInput.value = String(props.website?.php_version || '');
+    runtimeInput.value = String(props.website?.runtime || 'php');
+    nodeEntryFileInput.value = String(props.website?.node_entry_file || 'server.js');
+    nodeStartCommandInput.value = String(props.website?.node_start_command || '');
+    nodeVersionInput.value = String(props.website?.node_version || '20');
     editingRuntimeSettings.value = true;
 };
 
@@ -512,8 +571,14 @@ const saveRuntimeSettings = async () => {
     if (updateLoading.value) return;
     const startDirectory = String(startDirectoryInput.value || '').trim();
     const phpVersion = String(phpVersionInput.value || '').trim();
+    const runtime = String(runtimeInput.value || 'php').trim();
+    const nodeEntryFile = String(nodeEntryFileInput.value || '').trim();
     if (!phpVersion) {
         pushToast('Select a PHP version.', 'error');
+        return;
+    }
+    if (runtime === 'node' && !nodeEntryFile) {
+        pushToast('Enter an entry file for the Node.js runtime.', 'error');
         return;
     }
     updateLoading.value = true;
@@ -527,7 +592,14 @@ const saveRuntimeSettings = async () => {
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': csrfToken.value,
             },
-            body: JSON.stringify({ start_directory: startDirectory, php_version: phpVersion }),
+            body: JSON.stringify({
+                start_directory: startDirectory,
+                php_version: phpVersion,
+                runtime,
+                node_entry_file: nodeEntryFile,
+                node_start_command: String(nodeStartCommandInput.value || '').trim(),
+                node_version: String(nodeVersionInput.value || '').trim(),
+            }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.message || 'Failed to update website settings.');
@@ -855,6 +927,61 @@ const saveRuntimeSettings = async () => {
         </div>
             </section>
 
+            <!-- Node.js Service -->
+            <section v-if="isNodeWebsite" class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h3 class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                            <i class="bi bi-node-plus text-base text-emerald-600 dark:text-emerald-400"></i>
+                            Node.js Service
+                        </h3>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {{ website.node_start_command || `node ${website.node_entry_file || 'server.js'}` }}
+                            · port {{ website.node_port || '-' }}
+                            · Node {{ website.node_version || 'default' }}
+                        </p>
+                    </div>
+                    <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium" :class="nodeProcessStatusClass">
+                        <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
+                        {{ nodeProcessStatusLabel }}
+                    </span>
+                </div>
+
+                <div v-if="nodeStatus" class="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
+                    systemd: {{ nodeStatus.active_state || 'unknown' }} · listening: {{ nodeStatus.listening ? 'yes' : 'no' }}
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <button type="button" :disabled="Boolean(nodeControlLoading)"
+                        class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
+                        @click="controlNodeProcess('start')">
+                        <i class="bi bi-play-fill"></i>
+                        {{ nodeControlLoading === 'start' ? 'Starting…' : 'Start' }}
+                    </button>
+                    <button type="button" :disabled="Boolean(nodeControlLoading)"
+                        class="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-medium text-amber-700 transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400"
+                        @click="controlNodeProcess('restart')">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        {{ nodeControlLoading === 'restart' ? 'Restarting…' : 'Restart' }}
+                    </button>
+                    <button type="button" :disabled="Boolean(nodeControlLoading)"
+                        class="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2 text-xs font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400"
+                        @click="controlNodeProcess('stop')">
+                        <i class="bi bi-stop-fill"></i>
+                        {{ nodeControlLoading === 'stop' ? 'Stopping…' : 'Stop' }}
+                    </button>
+                    <button type="button" :disabled="Boolean(nodeControlLoading)"
+                        class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        @click="controlNodeProcess('status')">
+                        <i class="bi bi-arrow-repeat"></i>
+                        {{ nodeControlLoading === 'status' ? 'Checking…' : 'Refresh Status' }}
+                    </button>
+                </div>
+                <p class="mt-3 text-xs text-slate-400 dark:text-slate-500">
+                    The app must read the <code>PORT</code> environment variable and call <code>listen()</code> on it. Install dependencies first from Quick Actions (Install &amp; Build NPM) if this is a fresh deployment.
+                </p>
+            </section>
+
             <!-- Metrics Cards -->
 
 
@@ -1064,12 +1191,38 @@ const saveRuntimeSettings = async () => {
                                 <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Leave blank to serve the root path directly, or enter a relative directory such as <code>public</code>.</p>
                             </div>
                             <div>
+                                <label for="runtime" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Runtime</label>
+                                <select id="runtime" v-model="runtimeInput" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
+                                    <option value="php">PHP</option>
+                                    <option value="node">Node.js (Next.js, Express, …)</option>
+                                </select>
+                                <p v-if="runtimeInput === 'node'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Switching to Node.js stops PHP handling for this domain; requests will be reverse-proxied to your Node process instead.</p>
+                            </div>
+                            <div v-if="runtimeInput === 'php'">
                                 <label for="php-version" class="block text-sm font-medium text-slate-700 dark:text-slate-200">PHP version</label>
                                 <select id="php-version" v-model="phpVersionInput" required class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
                                     <option value="" disabled>Select a PHP version</option>
                                     <option v-for="version in phpVersions" :key="version" :value="version">PHP {{ version }}</option>
                                 </select>
                             </div>
+                            <template v-else>
+                                <div>
+                                    <label for="node-version" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Node version</label>
+                                    <select id="node-version" v-model="nodeVersionInput" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
+                                        <option v-for="version in nodeVersionOptions" :key="version" :value="version">{{ version }}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="node-entry-file" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Entry file</label>
+                                    <input id="node-entry-file" v-model="nodeEntryFileInput" type="text" required placeholder="server.js" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
+                                    <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">The file dPanel runs, relative to the project root. It must read the <code>PORT</code> env var and call <code>listen()</code> on it.</p>
+                                </div>
+                                <div>
+                                    <label for="node-start-command" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Start command (optional)</label>
+                                    <input id="node-start-command" v-model="nodeStartCommandInput" type="text" placeholder="npm run start" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
+                                    <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Overrides <code>node {{ nodeEntryFileInput || 'server.js' }}</code>, e.g. for <code>next start</code>.</p>
+                                </div>
+                            </template>
                         </div>
                         <div class="mt-auto flex justify-end gap-3 border-t border-slate-200 pt-5 dark:border-slate-800">
                             <button type="button" :disabled="updateLoading" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800" @click="editingRuntimeSettings = false">Cancel</button>

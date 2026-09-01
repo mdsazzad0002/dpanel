@@ -674,6 +674,11 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
             hostnames: Arc::from([primary_domain.clone(), www_domain.clone()]),
             document_root: Some(PathBuf::from(format!("/var/www/{primary_domain}/public"))),
             php_version: None,
+            runtime: "php".to_string(),
+            project_root: None,
+            node_entry_file: None,
+            node_start_command: None,
+            node_version: None,
             enable_ssl: false,
             spa_fallback: true,
             routes: Arc::from([

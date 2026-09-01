@@ -20,6 +20,7 @@ mod mailbox_storage;
 mod media;
 mod migration;
 mod migration_ssh;
+mod node;
 mod php;
 mod redis_config;
 mod script;
@@ -106,6 +107,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(media::routes())
         .merge(migration::routes())
         .merge(migration_ssh::routes())
+        .merge(node::routes())
         .with_state(Arc::new(state))
 }
 

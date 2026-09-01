@@ -16,8 +16,8 @@ use std::{
 
 use super::{
     RouteAction, RuntimeSnapshot, StaticAsset, StaticAssetBody, StaticFileConfig,
-    execute_php_front_controller, load_static_asset, normalize_request_path, proxy_request,
-    resolve_route, resolve_static_path,
+    ensure_node_process_running, execute_php_front_controller, load_static_asset,
+    normalize_request_path, proxy_request, resolve_route, resolve_static_path,
 };
 
 #[derive(Clone, Debug)]
@@ -90,6 +90,24 @@ pub async fn dispatch(
         // global compression layer.
         response.headers_mut().remove(header::CONTENT_ENCODING);
         return response;
+    }
+    // Certbot's webroot authenticator writes its token to the site's root
+    // path regardless of runtime. Node sites route "/" through a reverse
+    // proxy, so serve this one path straight off disk or SSL issuance breaks.
+    if site.runtime == "node" && path.starts_with("/.well-known/acme-challenge/") {
+        if let Some(document_root) = site.document_root.as_ref() {
+            if let Some(path_on_disk) =
+                resolve_static_path(document_root, &path, "index.html", false)
+            {
+                if let Ok(asset) = load_static_asset(&path_on_disk) {
+                    return annotated_response(
+                        static_response(asset, snapshot.cache.ttl, request.headers()).await,
+                        site.hostnames.first().map(String::as_str).unwrap_or(""),
+                        "acme-challenge",
+                    );
+                }
+            }
+        }
     }
     let Some(route) = resolve_route(site, &path) else {
         return annotated_response(
@@ -224,6 +242,35 @@ pub async fn dispatch(
             );
         }
         RouteAction::Proxy(upstream) => {
+            if site.runtime == "node" {
+                if let (Some(owner), Some(project_root)) =
+                    (site.site_owner.as_deref(), site.project_root.as_deref())
+                {
+                    if let Err(error) = ensure_node_process_running(
+                        &site.id,
+                        owner,
+                        project_root,
+                        site.node_entry_file.as_deref(),
+                        site.node_start_command.as_deref(),
+                        site.node_version.as_deref(),
+                        match upstream {
+                            super::UpstreamConfig::Http(addr) => addr.port(),
+                            super::UpstreamConfig::Unix(_) => 0,
+                        },
+                    )
+                    .await
+                    {
+                        return annotated_response(
+                            simple_response(
+                                StatusCode::BAD_GATEWAY,
+                                &format!("Node application unavailable: {error}"),
+                            ),
+                            site_match,
+                            route_match,
+                        );
+                    }
+                }
+            }
             let response = proxy_request(proxy_client, upstream, request)
                 .await
                 .unwrap_or_else(|error| simple_response(StatusCode::BAD_GATEWAY, &error));

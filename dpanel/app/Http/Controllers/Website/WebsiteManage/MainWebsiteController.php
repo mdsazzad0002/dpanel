@@ -123,7 +123,11 @@ class MainWebsiteController extends Controller
                 },
             ],
             'start_directory' => ['nullable', 'string', 'max:255'],
-            'php_version' => [$domainType === 'alis' ? 'nullable' : 'required', 'string', 'max:10'],
+            'runtime' => ['nullable', 'string', 'in:php,node'],
+            'php_version' => [$domainType === 'alis' || $request->input('runtime') === 'node' ? 'nullable' : 'required', 'string', 'max:10'],
+            'node_version' => ['nullable', 'string', 'max:10'],
+            'node_entry_file' => [$domainType !== 'alis' && $request->input('runtime') === 'node' ? 'required' : 'nullable', 'string', 'max:255'],
+            'node_start_command' => ['nullable', 'string', 'max:255'],
             'domain_type' => ['required', 'string', 'in:main,alis,sub'],
             'enable_ssl' => ['boolean'],
             'manage_dns' => ['boolean'],
@@ -209,19 +213,32 @@ class MainWebsiteController extends Controller
             ? $this->paths->normalizeSiteDirectory((string) ($validated['subdomain_prefix'] ?? ''), 'blog')
             : 'public_html';
 
+        $runtime = $validated['runtime'] ?? 'php';
+        $nodePort = null;
         if ($parentWebsite !== null) {
             $siteOwner = (string) $parentWebsite->site_owner;
             $projectRoot = (string) $parentWebsite->project_root;
             $rootPath = (string) $parentWebsite->root_path;
             $startDirectory = $parentWebsite->start_directory;
             $phpVersion = (string) $parentWebsite->php_version;
+            $runtime = (string) $parentWebsite->runtime;
+            $nodeVersion = $parentWebsite->node_version;
+            $nodeEntryFile = $parentWebsite->node_entry_file;
+            $nodeStartCommand = $parentWebsite->node_start_command;
+            $nodePort = $parentWebsite->node_port;
             $demoFiles = [];
         } else {
             $homeSetup = $this->filemanagerService->createAccountHome($siteOwner, null, '/bin/bash', $siteDirectory);
             $projectRoot = $homeSetup['project_root'];
             $rootPath = $homeSetup['root_path'] ?? $homeSetup['public_html'];
             $startDirectory = array_key_exists('start_directory', $validated) ? trim((string) $validated['start_directory']) : null;
-            $phpVersion = (string) $validated['php_version'];
+            $phpVersion = $runtime === 'node' ? '' : (string) $validated['php_version'];
+            $nodeVersion = $validated['node_version'] ?? null;
+            $nodeEntryFile = $validated['node_entry_file'] ?? null;
+            $nodeStartCommand = $validated['node_start_command'] ?? null;
+            if ($runtime === 'node') {
+                $nodePort = $this->websiteService->allocateNodePort();
+            }
         }
 
         // Folder Check
@@ -243,13 +260,15 @@ class MainWebsiteController extends Controller
                 if ($startDirectory === '') {
                     $startDirectory = null;
                 }
-                $demoFiles = $this->websiteService->createDemoSitePage(
-                    $rootPath,
-                    (string) $validated['domain'],
-                    $phpVersion,
-                    $startDirectory,
-                    $siteOwner,
-                );
+                $demoFiles = $runtime === 'node'
+                    ? []
+                    : $this->websiteService->createDemoSitePage(
+                        $rootPath,
+                        (string) $validated['domain'],
+                        $phpVersion,
+                        $startDirectory,
+                        $siteOwner,
+                    );
             }
         } catch (\Throwable $e) {
             return response()->json([
@@ -273,6 +292,12 @@ class MainWebsiteController extends Controller
             'start_directory' => $startDirectory,
             'site_owner' => $siteOwner,
             'php_version' => $phpVersion,
+            'runtime' => $runtime,
+            'node_version' => $nodeVersion,
+            'node_entry_file' => $nodeEntryFile,
+            'node_start_command' => $nodeStartCommand,
+            'node_port' => $nodePort,
+            'node_process_status' => $runtime === 'node' ? 'pending' : null,
             'enable_ssl' => $parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false),
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),
             'filemanager_show_hidden' => false,

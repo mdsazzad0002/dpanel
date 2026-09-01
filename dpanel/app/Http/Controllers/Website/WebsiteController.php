@@ -326,6 +326,10 @@ class WebsiteController extends Controller
         $validated = $request->validate([
             'start_directory' => ['nullable', 'string', 'max:255'],
             'php_version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
+            'runtime' => ['nullable', 'string', 'in:php,node'],
+            'node_entry_file' => ['nullable', 'string', 'max:255'],
+            'node_start_command' => ['nullable', 'string', 'max:255'],
+            'node_version' => ['nullable', 'string', 'max:10'],
         ]);
 
         $phpVersion = trim((string) $validated['php_version']);
@@ -334,6 +338,14 @@ class WebsiteController extends Controller
             return response()->json([
                 'message' => 'The selected PHP version is not available on this server.',
                 'errors' => ['php_version' => ['The selected PHP version is not available on this server.']],
+            ], 422);
+        }
+
+        $runtime = $validated['runtime'] ?? (string) ($website['runtime'] ?? 'php');
+        if ($runtime === 'node' && trim((string) ($validated['node_entry_file'] ?? '')) === '') {
+            return response()->json([
+                'message' => 'An entry file is required for the Node.js runtime.',
+                'errors' => ['node_entry_file' => ['An entry file is required for the Node.js runtime.']],
             ], 422);
         }
 
@@ -351,12 +363,25 @@ class WebsiteController extends Controller
             ->pluck('domain')
             ->all();
 
-        DB::transaction(function () use ($website, $startDirectory, $phpVersion): void {
+        DB::transaction(function () use ($website, $startDirectory, $phpVersion, $runtime, $validated): void {
             $runtimeSettings = [
                 'start_directory' => $startDirectory,
                 'php_version' => $phpVersion,
+                'runtime' => $runtime,
                 'updated_at' => now(),
             ];
+
+            if ($runtime === 'node') {
+                $runtimeSettings['node_entry_file'] = trim((string) ($validated['node_entry_file'] ?? '')) ?: null;
+                $runtimeSettings['node_start_command'] = trim((string) ($validated['node_start_command'] ?? '')) ?: null;
+                $runtimeSettings['node_version'] = trim((string) ($validated['node_version'] ?? '')) ?: null;
+                if (empty($website['node_port'])) {
+                    $runtimeSettings['node_port'] = app(\App\Services\Website\WebsiteService::class)->allocateNodePort();
+                }
+                if (empty($website['node_process_status']) || $website['node_process_status'] === 'stopped') {
+                    $runtimeSettings['node_process_status'] = 'pending';
+                }
+            }
 
             Website::query()->whereKey($website['id'])->update($runtimeSettings);
 
@@ -717,6 +742,31 @@ class WebsiteController extends Controller
         };
 
         return response()->json(['success' => true, 'message' => $message]);
+    }
+
+    public function nodeProcessControl(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->findAuthorizedWebsiteOrFail($id);
+        $validated = $request->validate(['action' => ['required', 'string', 'in:start,stop,restart,status']]);
+        $website = Website::query()->findOrFail($id);
+
+        try {
+            $data = app(\App\Services\Website\NodeProcessService::class)->control($website, $validated['action']);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => match ($validated['action']) {
+                'start' => 'Node.js process started.',
+                'stop' => 'Node.js process stopped.',
+                'restart' => 'Node.js process restarted.',
+                default => 'Node.js process status refreshed.',
+            },
+            'data' => $data,
+            'node_process_status' => $website->fresh()->node_process_status,
+        ]);
     }
 
     public function updateProjectStorageLink(Request $request, string $token, string $id): RedirectResponse|JsonResponse

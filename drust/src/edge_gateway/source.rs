@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs, path::Path, path::PathBuf, process::Command, time::Duration};
 
-use super::{CachePolicy, RouteAction, RouteConfig, RuntimeSnapshot, SiteConfig};
+use super::{CachePolicy, RouteAction, RouteConfig, RuntimeSnapshot, SiteConfig, UpstreamConfig};
 
 #[derive(Clone, Debug)]
 pub struct DbSnapshotConfig {
@@ -49,7 +49,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         .arg("--skip-column-names")
         .arg(database.clone())
         .arg("-e")
-        .arg("SELECT w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='ban' THEN r.ip_address END),''),COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='allow' THEN r.ip_address END),'') FROM websites w LEFT JOIN website_ip_rules r ON r.website_id=w.id GROUP BY w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,w.updated_at ORDER BY w.updated_at DESC");
+        .arg("SELECT w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='ban' THEN r.ip_address END),''),COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='allow' THEN r.ip_address END),''),COALESCE(w.runtime,'php'),w.node_port,COALESCE(w.node_entry_file,''),COALESCE(w.node_start_command,''),COALESCE(w.node_version,''),COALESCE(w.node_process_status,'') FROM websites w LEFT JOIN website_ip_rules r ON r.website_id=w.id GROUP BY w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,w.updated_at,w.runtime,w.node_port,w.node_entry_file,w.node_start_command,w.node_version,w.node_process_status ORDER BY w.updated_at DESC");
     if !password.is_empty() {
         cmd.env("MYSQL_PWD", password);
     }
@@ -64,7 +64,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
     let mut tls = Vec::new();
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let cols: Vec<&str> = line.split('\t').collect();
-        if cols.len() < 13 {
+        if cols.len() < 19 {
             continue;
         }
         let domain = normalize_domain(cols[1]);
@@ -90,6 +90,34 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
             scope == "system",
             site_owner.as_deref(),
         );
+        let runtime = cols[13].trim().to_ascii_lowercase();
+        let node_port = cols[14].trim().parse::<u16>().ok();
+        let node_entry_file = optional_string(cols[15]);
+        let node_start_command = optional_string(cols[16]);
+        let node_version = optional_string(cols[17]);
+        let node_process_status = cols[18].trim().to_ascii_lowercase();
+        let routes = if runtime == "node" && node_process_status != "stopped" {
+            match node_port {
+                Some(port) => std::sync::Arc::from([RouteConfig {
+                    path_prefix: "/".to_string(),
+                    action: RouteAction::Proxy(UpstreamConfig::Http(std::net::SocketAddr::from((
+                        [127, 0, 0, 1],
+                        port,
+                    )))),
+                }]),
+                // No port allocated yet (e.g. mid-provisioning): fall back to
+                // static so the site at least resolves instead of 502ing.
+                None => std::sync::Arc::from([RouteConfig {
+                    path_prefix: "/".to_string(),
+                    action: RouteAction::Static,
+                }]),
+            }
+        } else {
+            std::sync::Arc::from([RouteConfig {
+                path_prefix: "/".to_string(),
+                action: RouteAction::Static,
+            }])
+        };
         sites.push(SiteConfig {
             id: cols[0].trim().to_string(),
             scope,
@@ -97,12 +125,14 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
             hostnames: std::sync::Arc::from([domain.clone(), format!("www.{domain}")]),
             document_root,
             php_version,
+            runtime,
+            project_root: optional_path(project_root),
+            node_entry_file,
+            node_start_command,
+            node_version,
             enable_ssl,
             spa_fallback: true,
-            routes: std::sync::Arc::from([RouteConfig {
-                path_prefix: "/".to_string(),
-                action: RouteAction::Static,
-            }]),
+            routes,
             banned_ips: parse_ip_list(cols[11]),
             allowed_ips: parse_ip_list(cols[12]),
         });
@@ -250,6 +280,15 @@ fn resolve_document_root(
         .or_else(|| candidates.iter().find(|path| path.is_dir()))
         .cloned()
         .or_else(|| candidates.into_iter().next())
+}
+
+fn optional_string(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn optional_path(path: &str) -> Option<PathBuf> {

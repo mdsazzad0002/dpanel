@@ -53,10 +53,21 @@ const form = useForm({
     start_directory: 'public',
     root_path: '',
     php_version: props.defaultPhpVersion || '',
+    runtime: 'php',
+    node_version: '20',
+    node_entry_file: 'server.js',
+    node_start_command: '',
     enable_ssl: true,
     manage_dns: false,
     assigned_user_id: '',
 });
+
+const runtimeOptions = [
+    { value: 'php', label: 'PHP' },
+    { value: 'node', label: 'Node.js (Next.js, Express, …)' },
+];
+
+const nodeVersionOptions = ['18', '20', '22'];
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
@@ -596,6 +607,11 @@ onBeforeUnmount(() => {
                     <p v-if="form.errors.root_path" class="mt-1 text-xs text-red-600">{{ form.errors.root_path }}</p>
                 </div>
                 <div v-if="!props.aliasMode">
+                    <label class="mb-1 block text-sm">Runtime</label>
+                    <SearchableSelect v-model="form.runtime" :options="runtimeOptions" />
+                    <p v-if="form.errors.runtime" class="mt-1 text-xs text-red-600">{{ form.errors.runtime }}</p>
+                </div>
+                <div v-if="!props.aliasMode && form.runtime === 'php'">
                     <label class="mb-1 block text-sm">PHP Version </label>
                     <select v-model="form.php_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option v-for="version in availablePhpVersions" :key="version" :value="version">
@@ -604,6 +620,27 @@ onBeforeUnmount(() => {
                     </select>
                     <p v-if="form.errors.php_version" class="mt-1 text-xs text-red-600">{{ form.errors.php_version }}</p>
                 </div>
+                <template v-if="!props.aliasMode && form.runtime === 'node'">
+                    <div>
+                        <label class="mb-1 block text-sm">Node Version</label>
+                        <select v-model="form.node_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                            <option v-for="version in nodeVersionOptions" :key="version" :value="version">{{ version }}</option>
+                        </select>
+                        <p v-if="form.errors.node_version" class="mt-1 text-xs text-red-600">{{ form.errors.node_version }}</p>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm">Entry File</label>
+                        <input v-model="form.node_entry_file" type="text" placeholder="server.js" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <p class="mt-1 text-xs text-slate-500">The file dPanel runs to start your app, e.g. server.js for a custom Next.js server, or app.js for Express. It must call listen() on the port dPanel assigns via the PORT environment variable.</p>
+                        <p v-if="form.errors.node_entry_file" class="mt-1 text-xs text-red-600">{{ form.errors.node_entry_file }}</p>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="mb-1 block text-sm">Start Command (optional)</label>
+                        <input v-model="form.node_start_command" type="text" placeholder="npm run start" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <p class="mt-1 text-xs text-slate-500">Overrides the default `node {{ form.node_entry_file || 'server.js' }}` command, e.g. for `next start`.</p>
+                        <p v-if="form.errors.node_start_command" class="mt-1 text-xs text-red-600">{{ form.errors.node_start_command }}</p>
+                    </div>
+                </template>
                 <div v-if="!props.aliasMode" class="flex items-center gap-2 pt-7">
                     <input id="enable_ssl" v-model="form.enable_ssl" type="checkbox" class="rounded border-slate-300" />
                     <label for="enable_ssl" class="text-sm">Enable SSL</label>

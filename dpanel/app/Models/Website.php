@@ -35,6 +35,12 @@ class Website extends Model
         'project_root',
         'site_owner',
         'php_version',
+        'runtime',
+        'node_entry_file',
+        'node_port',
+        'node_version',
+        'node_start_command',
+        'node_process_status',
         'client_max_body_size',
         'wordpress_db_prefix',
         'enable_ssl',
@@ -53,7 +59,13 @@ class Website extends Model
         'filemanager_show_hidden' => 'boolean',
         'assigned_user_id' => 'integer',
         'assigned_reseller_id' => 'integer',
+        'node_port' => 'integer',
     ];
+
+    public function isNodeRuntime(): bool
+    {
+        return $this->runtime === 'node';
+    }
 
     public function parent(): BelongsTo
     {
