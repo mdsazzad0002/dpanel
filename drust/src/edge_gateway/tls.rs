@@ -1,12 +1,17 @@
 #![allow(dead_code)]
 
-use std::{fs::File, io::BufReader, path::PathBuf, sync::Arc};
+use std::{
+    fs::File,
+    io::BufReader,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 
 use rustls::{
     ServerConfig,
     crypto::ring::default_provider,
     pki_types::{CertificateDer, PrivateKeyDer},
-    server::ResolvesServerCertUsingSni,
+    server::{ClientHello, ResolvesServerCert, ResolvesServerCertUsingSni},
     sign::CertifiedKey,
 };
 use rustls_pemfile::{certs, private_key};
@@ -84,7 +89,7 @@ pub fn load_tls_identity(identity: &TlsIdentity) -> Result<CertifiedKey, String>
     Ok(CertifiedKey::new(certs, signing_key))
 }
 
-pub fn build_tls_config(store: &TlsStore) -> Result<ServerConfig, String> {
+fn build_sni_resolver(store: &TlsStore) -> Result<ResolvesServerCertUsingSni, String> {
     let mut resolver = ResolvesServerCertUsingSni::new();
     for identity in store.identities.iter() {
         let certified = load_tls_identity(identity)?;
@@ -94,14 +99,55 @@ pub fn build_tls_config(store: &TlsStore) -> Result<ServerConfig, String> {
                 .map_err(|error| format!("tls hostname add failed: {error}"))?;
         }
     }
+    Ok(resolver)
+}
+
+/// SNI cert resolver whose underlying certificate set can be swapped in
+/// place while the TLS listener keeps running. Certificate issuance/renewal
+/// calls `update()` (via a gateway reload) instead of requiring a process
+/// restart, so in-flight HTTPS connections for every other site are
+/// undisturbed.
+#[derive(Debug)]
+pub struct DynamicCertResolver {
+    inner: RwLock<Arc<ResolvesServerCertUsingSni>>,
+}
+
+impl DynamicCertResolver {
+    pub fn new(store: &TlsStore) -> Result<Self, String> {
+        Ok(Self {
+            inner: RwLock::new(Arc::new(build_sni_resolver(store)?)),
+        })
+    }
+
+    pub fn update(&self, store: &TlsStore) -> Result<(), String> {
+        let resolver = build_sni_resolver(store)?;
+        let mut guard = self
+            .inner
+            .write()
+            .map_err(|_| "tls resolver lock poisoned".to_string())?;
+        *guard = Arc::new(resolver);
+        Ok(())
+    }
+}
+
+impl ResolvesServerCert for DynamicCertResolver {
+    fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
+        let resolver = self.inner.read().ok()?.clone();
+        resolver.resolve(client_hello)
+    }
+}
+
+pub fn build_tls_config(store: &TlsStore) -> Result<(ServerConfig, Arc<DynamicCertResolver>), String> {
+    let resolver = Arc::new(DynamicCertResolver::new(store)?);
 
     let builder = ServerConfig::builder_with_provider(default_provider().into());
     let builder = builder
         .with_safe_default_protocol_versions()
         .map_err(|error| format!("tls versions failed: {error}"))?;
-    Ok(builder
+    let config = builder
         .with_no_client_auth()
-        .with_cert_resolver(Arc::new(resolver)))
+        .with_cert_resolver(resolver.clone());
+    Ok((config, resolver))
 }
 
 fn load_certs(path: &PathBuf) -> Result<Vec<CertificateDer<'static>>, String> {

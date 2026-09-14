@@ -51,6 +51,10 @@ defineProps({
             <i class="bi bi-arrows-move text-xs text-slate-400"></i>
             Move
         </button>
+        <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('copy')">
+            <i class="bi bi-files text-xs text-slate-400"></i>
+            Copy
+        </button>
         <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('zip')">
             <i class="bi bi-file-earmark-zip text-xs text-slate-400"></i>
             Create Zip

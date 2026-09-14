@@ -16,6 +16,7 @@ import UploadModal from './components/UploadModal.vue';
 import RenameModal from './components/RenameModal.vue';
 import PermissionModal from './components/PermissionModal.vue';
 import MoveModal from './components/MoveModal.vue';
+import CopyModal from './components/CopyModal.vue';
 import ZipModal from './components/ZipModal.vue';
 import UnzipModal from './components/UnzipModal.vue';
 import TrashModal from './components/TrashModal.vue';
@@ -113,6 +114,7 @@ const fm = useFileManager(props);
                                 : fm.modalType === 'rename' ? 'Rename Item'
                                 : fm.modalType === 'permissions' ? 'Change Permissions'
                                 : fm.modalType === 'move' ? 'Move Item'
+                                : fm.modalType === 'copy' ? 'Copy Item'
                                 : fm.modalType === 'zip' ? 'Create Zip'
                                 : fm.modalType === 'unzip' ? 'Extract Zip'
                                 : fm.modalType === 'trash' ? 'Trash'
@@ -129,6 +131,7 @@ const fm = useFileManager(props);
                 <RenameModal :fm="fm" />
                 <PermissionModal :fm="fm" />
                 <MoveModal :fm="fm" />
+                <CopyModal :fm="fm" />
                 <ZipModal :fm="fm" />
                 <UnzipModal :fm="fm" />
                 <TrashModal :fm="fm" />

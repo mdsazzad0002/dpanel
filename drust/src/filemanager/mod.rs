@@ -3,6 +3,7 @@ pub(crate) mod browse;
 pub(crate) mod chmod;
 mod common;
 pub(crate) mod create;
+pub(crate) mod filecopy;
 pub(crate) mod delete;
 pub(crate) mod exists;
 pub(crate) mod filemove;

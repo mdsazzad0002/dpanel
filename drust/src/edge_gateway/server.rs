@@ -15,6 +15,7 @@ use futures_util::StreamExt;
 use hyper::body::Body as HttpBody;
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
+use rustls::ServerConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
@@ -23,10 +24,11 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use super::{
-    BandwidthTracker, CachePolicy, DbSnapshotConfig, DispatchContext, ProxyConfig, RouteAction,
-    RouteConfig, RuntimeSnapshot, SiteConfig, SnapshotCacheConfig, StaticFileConfig, TlsConfig,
-    TlsIdentity, TlsListenerConfig, TlsStore, UpstreamConfig, build_client, build_tls_config,
-    dispatch, health_check_upstream, load_runtime_snapshot, scaffold_tls_listener_config,
+    BandwidthTracker, CachePolicy, DbSnapshotConfig, DispatchContext, DynamicCertResolver,
+    ProxyConfig, RouteAction, RouteConfig, RuntimeSnapshot, SiteConfig, SnapshotCacheConfig,
+    StaticFileConfig, TlsConfig, TlsIdentity, TlsListenerConfig, TlsStore, UpstreamConfig,
+    build_client, build_tls_config, dispatch, health_check_upstream, load_runtime_snapshot,
+    scaffold_tls_listener_config,
 };
 
 #[derive(Clone)]
@@ -37,6 +39,9 @@ pub struct DemoServerState {
     pub proxy_client: Arc<reqwest::Client>,
     pub bandwidth: BandwidthTracker,
     pub terminal_tickets: Arc<Mutex<HashMap<String, super::terminal_ws::TerminalTicket>>>,
+    /// Live-swappable SNI cert store. `None` when the process has no HTTPS
+    /// listener (no TLS identities configured at startup).
+    pub tls_resolver: Option<Arc<DynamicCertResolver>>,
 }
 
 pub fn serve_gateway(bind: &str) -> Result<(), String> {
@@ -93,7 +98,15 @@ pub fn serve_gateway_with_tls(
     tls_config: TlsListenerConfig,
     redirect_to: Option<String>,
 ) -> Result<(), String> {
-    let state = make_demo_state(snapshot, dispatch, cache_config, source_config)?;
+    let tls_bind = tls_config.bind.clone();
+    let https_enabled = !tls_config.store.identities.is_empty();
+    let tls_built = if https_enabled {
+        Some(build_tls_config(&tls_config.store)?)
+    } else {
+        None
+    };
+    let tls_resolver = tls_built.as_ref().map(|(_, resolver)| resolver.clone());
+    let state = make_demo_state_with_tls(snapshot, dispatch, cache_config, source_config, tls_resolver)?;
     let runtime =
         tokio::runtime::Runtime::new().map_err(|error| format!("runtime build failed: {error}"))?;
     runtime.block_on(async move {
@@ -121,11 +134,15 @@ pub fn serve_gateway_with_tls(
                 .map_err(|error| format!("http server failed: {error}"))
         });
 
-        let https_task = if tls_config.store.identities.is_empty() {
-            info!(bind = %tls_config.bind, "HTTPS listener skipped because no TLS identities are configured");
-            None
+        let https_task = if let Some((server_config, _)) = tls_built {
+            Some(tokio::spawn(run_https_listener(
+                https_router,
+                tls_bind,
+                server_config,
+            )))
         } else {
-            Some(tokio::spawn(run_https_listener(https_router, tls_config)))
+            info!(bind = %tls_bind, "HTTPS listener skipped because no TLS identities are configured");
+            None
         };
 
         if let Some(task) = https_task {
@@ -310,6 +327,12 @@ async fn reload_snapshot(state: &Arc<DemoServerState>) -> Result<u64, (String, u
     match loaded {
         Ok(Ok(next)) => {
             let version = next.version;
+            if let Some(resolver) = &state.tls_resolver {
+                let store = tls_store_from_snapshot(&next);
+                if let Err(error) = resolver.update(&store) {
+                    warn!(%error, version, "TLS certificate reload failed; keeping previously loaded certificates");
+                }
+            }
             *state.snapshot.write().await = Arc::new(next);
             super::clear_static_cache();
             Ok(version)
@@ -478,6 +501,16 @@ pub fn make_demo_state(
     _cache_config: SnapshotCacheConfig,
     source_config: DbSnapshotConfig,
 ) -> Result<DemoServerState, String> {
+    make_demo_state_with_tls(snapshot, dispatch, _cache_config, source_config, None)
+}
+
+pub fn make_demo_state_with_tls(
+    snapshot: RuntimeSnapshot,
+    dispatch: DispatchContext,
+    _cache_config: SnapshotCacheConfig,
+    source_config: DbSnapshotConfig,
+    tls_resolver: Option<Arc<DynamicCertResolver>>,
+) -> Result<DemoServerState, String> {
     let client = build_client(&ProxyConfig::default())?;
     Ok(DemoServerState {
         snapshot: Arc::new(RwLock::new(Arc::new(snapshot))),
@@ -486,6 +519,7 @@ pub fn make_demo_state(
         proxy_client: Arc::new(client),
         bandwidth: BandwidthTracker::from_env(),
         terminal_tickets: Arc::new(Mutex::new(HashMap::new())),
+        tls_resolver,
     })
 }
 
@@ -513,7 +547,15 @@ pub fn serve_demo_with_tls(
     http_bind: &str,
     tls_config: TlsListenerConfig,
 ) -> Result<(), String> {
-    let state = make_demo_state(snapshot, dispatch, cache_config, source_config)?;
+    let tls_bind = tls_config.bind.clone();
+    let https_enabled = !tls_config.store.identities.is_empty();
+    let tls_built = if https_enabled {
+        Some(build_tls_config(&tls_config.store)?)
+    } else {
+        None
+    };
+    let tls_resolver = tls_built.as_ref().map(|(_, resolver)| resolver.clone());
+    let state = make_demo_state_with_tls(snapshot, dispatch, cache_config, source_config, tls_resolver)?;
     let runtime =
         tokio::runtime::Runtime::new().map_err(|error| format!("runtime build failed: {error}"))?;
     runtime.block_on(async move {
@@ -537,11 +579,15 @@ pub fn serve_demo_with_tls(
             }
         });
 
-        let https_task = if tls_config.store.identities.is_empty() {
-            info!(bind = %tls_config.bind, "HTTPS listener skipped because no TLS identities are configured");
-            None
+        let https_task = if let Some((server_config, _)) = tls_built {
+            Some(tokio::spawn(run_https_listener(
+                router.clone(),
+                tls_bind,
+                server_config,
+            )))
         } else {
-            Some(tokio::spawn(run_https_listener(router.clone(), tls_config)))
+            info!(bind = %tls_bind, "HTTPS listener skipped because no TLS identities are configured");
+            None
         };
 
         if let Some(task) = https_task {
@@ -577,20 +623,16 @@ async fn refresh_cache(state: &Arc<DemoServerState>) {
     *state.snapshot.write().await = Arc::new(snapshot);
 }
 
-async fn run_https_listener(router: Router, tls_config: TlsListenerConfig) -> Result<(), String> {
-    let server_config = build_tls_config(&tls_config.store)?;
+async fn run_https_listener(
+    router: Router,
+    bind: String,
+    server_config: ServerConfig,
+) -> Result<(), String> {
     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
-    if let Some(identity) = tls_config.store.resolve("demo.local") {
-        info!(
-            bind = %tls_config.bind,
-            cert = %identity.cert_path.display(),
-            "TLS identity resolved"
-        );
-    }
-    let listener = tokio::net::TcpListener::bind(&tls_config.bind)
+    let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .map_err(|error| format!("https bind failed: {error}"))?;
-    info!(bind = %tls_config.bind, "HTTPS listener ready");
+    info!(bind = %bind, "HTTPS listener ready");
 
     loop {
         let (stream, peer) = listener

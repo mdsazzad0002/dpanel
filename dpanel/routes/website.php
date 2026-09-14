@@ -230,6 +230,9 @@ Route::patch('/websites/{id}/filemanager/rename', [WebsiteFileManagerController:
 Route::patch('/websites/{id}/filemanager/move', [WebsiteFileManagerController::class, 'moveItems'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.item.move');
+Route::patch('/websites/{id}/filemanager/copy', [WebsiteFileManagerController::class, 'copyItems'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.filemanager.item.copy');
 Route::get('/websites/{id}/filemanager/download', [WebsiteFileManagerController::class, 'downloadFile'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.file.download');

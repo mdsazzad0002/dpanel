@@ -270,12 +270,13 @@ class WebsiteController extends Controller
         $autoRenewNotice = $this->autoRenewWebsiteSslIfNeeded($website);
         $sslStatus = $this->inspectWebsiteSslStatus($website);
         $rootInspection = $this->inspectWebsiteApplication($website);
-        $databaseRequest = DatabaseRequest::query()
+        $databaseRequests = DatabaseRequest::query()
             ->visibleTo(request()->user())
             ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
             ->where('status', 'active')
             ->latest()
-            ->first();
+            ->get();
+        $databaseRequest = $databaseRequests->first();
 
         return Inertia::render('Websites/Manage', [
             'website' => $website,
@@ -289,6 +290,10 @@ class WebsiteController extends Controller
                 'available' => $databaseRequest !== null,
                 'database_name' => $databaseRequest?->database_name,
                 'status' => $databaseRequest?->status,
+                'databases' => $databaseRequests->map(fn (DatabaseRequest $database): array => [
+                    'id' => $database->id,
+                    'database_name' => $database->database_name,
+                ])->values()->all(),
             ],
         ]);
     }
@@ -477,8 +482,13 @@ class WebsiteController extends Controller
                 : back()->with('error', $message);
         }
 
+        $childErrors = $this->cascadeSslToChildren($website, true);
+
         $action = ! empty($result['renewed']) ? 'renewed' : (! empty($result['issued']) ? 'issued' : 'verified');
         $message = "SSL certificate {$action} successfully.";
+        if ($childErrors !== []) {
+            $message .= ' Some child domains failed to follow: '.implode('; ', $childErrors);
+        }
 
         return $request->expectsJson()
             ? response()->json(['type' => 'success', 'message' => $message, 'ssl' => $result])
@@ -495,9 +505,7 @@ class WebsiteController extends Controller
 
         try {
             $website->forceFill(['enable_ssl' => $enabled])->save();
-            if (! $enabled) {
-                $this->sslLifecycleService->ensureForWebsite($website->fresh());
-            }
+            $this->sslLifecycleService->ensureForWebsite($website->fresh());
         } catch (\Throwable $e) {
             $website->forceFill(['enable_ssl' => $originalStatus])->save();
 
@@ -507,11 +515,47 @@ class WebsiteController extends Controller
             ], 422);
         }
 
+        $childErrors = $this->cascadeSslToChildren($website, $enabled);
+
+        $message = $enabled ? 'SSL enabled successfully.' : 'SSL disabled successfully.';
+        if ($childErrors !== []) {
+            $message .= ' Some child domains failed to follow: '.implode('; ', $childErrors);
+        }
+
         return response()->json([
             'type' => 'success',
             'enabled' => $enabled,
-            'message' => $enabled ? 'SSL enabled successfully.' : 'SSL disabled successfully.',
+            'message' => $message,
         ]);
+    }
+
+    /**
+     * Apply the same SSL enable/disable state to every child (alias) domain
+     * of $website, so toggling SSL on the main domain isn't left half-applied
+     * across its subdomains. Returns a list of "<domain>: <error>" strings
+     * for any child that failed; the parent's own SSL change already
+     * succeeded by the time this runs, so a child failure is reported but
+     * does not roll back the parent.
+     *
+     * @return array<int, string>
+     */
+    private function cascadeSslToChildren(Website $website, bool $enabled): array
+    {
+        $errors = [];
+        $children = Website::query()->where('parent_id', $website->id)->get();
+        foreach ($children as $child) {
+            if ((bool) $child->enable_ssl === $enabled) {
+                continue;
+            }
+            try {
+                $child->forceFill(['enable_ssl' => $enabled])->save();
+                $this->sslLifecycleService->ensureForWebsite($child->fresh());
+            } catch (\Throwable $e) {
+                $errors[] = "{$child->domain}: {$e->getMessage()}";
+            }
+        }
+
+        return $errors;
     }
 
     public function Usage(string $token, string $id): Response
@@ -668,12 +712,14 @@ class WebsiteController extends Controller
             'wordpress' => $root.'/wp-config.php',
             'codeigniter3' => $root.'/application/config/database.php',
         };
-        $database = DatabaseRequest::query()
+        $validated = $request->validate(['database_id' => ['nullable', 'string']]);
+        $databaseQuery = DatabaseRequest::query()
             ->visibleTo($request->user())
             ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
-            ->where('status', 'active')
-            ->latest()
-            ->first();
+            ->where('status', 'active');
+        $database = ! empty($validated['database_id'])
+            ? (clone $databaseQuery)->whereKey($validated['database_id'])->first()
+            : (clone $databaseQuery)->latest()->first();
         if ($database === null) {
             return response()->json(['success' => false, 'message' => 'No active database is assigned to this website domain.'], 422);
         }
@@ -1359,6 +1405,89 @@ class WebsiteController extends Controller
         }
 
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', "Moved {$movedCount} item(s).");
+    }
+
+    public function copyItems(Request $request, string $token, string $id): RedirectResponse
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+
+        $validated = $request->validate([
+            'item_path' => ['nullable', 'string', 'max:1500'],
+            'item_paths' => ['nullable', 'array', 'min:1'],
+            'item_paths.*' => ['required', 'string', 'max:1500'],
+            'current_path' => ['nullable', 'string', 'max:1500'],
+            'destination_path' => ['nullable', 'string', 'max:1500'],
+            'new_name' => ['nullable', 'string', 'max:255', 'regex:/^[^\\\\\\/:*?\"<>|]+$/'],
+        ]);
+
+        $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
+        $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+        $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
+        $destinationPathRelative = $this->sanitizeRelativePath((string) ($validated['destination_path'] ?? ''));
+        $this->resolvePathInsideBase($basePath, $destinationPathRelative);
+
+        $allItems = [];
+        if (! empty($validated['item_path'])) {
+            $allItems[] = $this->sanitizeRelativePath((string) $validated['item_path']);
+        }
+        foreach ((array) ($validated['item_paths'] ?? []) as $multiItem) {
+            $allItems[] = $this->sanitizeRelativePath((string) $multiItem);
+        }
+
+        $allItems = array_values(array_unique(array_filter($allItems)));
+        if (count($allItems) === 0) {
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'No item selected to copy.');
+        }
+
+        // A new name only makes sense for a single selected item — copying
+        // several items to the same name would just collide.
+        $newName = count($allItems) === 1 ? $this->sanitizeFilename((string) ($validated['new_name'] ?? '')) : '';
+
+        $copiedCount = 0;
+        $errors = [];
+
+        foreach ($allItems as $itemRelative) {
+            $itemPath = $this->resolvePathInsideBase($basePath, $itemRelative);
+            $targetName = $newName !== '' ? $newName : basename($itemRelative);
+            $targetRelative = $this->sanitizeRelativePath(trim($destinationPathRelative.'/'.$targetName, '/'));
+            if ($targetRelative === $itemRelative) {
+                $errors[] = basename($itemRelative).': source and destination are the same';
+
+                continue;
+            }
+
+            if (str_starts_with($targetRelative.'/', $itemRelative.'/')) {
+                $errors[] = "Cannot copy folder into itself: {$itemRelative}";
+
+                continue;
+            }
+
+            $targetPath = $this->resolvePathInsideBase($basePath, $targetRelative);
+            try {
+                $this->filemanagerService->copyPath($siteOwner, $itemPath, $targetPath);
+            } catch (\Throwable $e) {
+                $errors[] = basename($itemRelative).': '.$e->getMessage();
+
+                continue;
+            }
+
+            $copiedCount++;
+        }
+
+        if ($copiedCount === 0) {
+            $details = implode(' | ', array_slice($errors, 0, 3));
+
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', $details !== '' ? "Copy failed. {$details}" : 'Copy failed.');
+        }
+
+        if (count($errors) > 0) {
+            $details = implode(' | ', array_slice($errors, 0, 2));
+
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', "Copied {$copiedCount} item(s). Skipped: {$details}");
+        }
+
+        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', "Copied {$copiedCount} item(s).");
     }
 
     public function downloadFile(Request $request, string $token, string $id): BinaryFileResponse|RedirectResponse

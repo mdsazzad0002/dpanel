@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 
@@ -338,6 +338,14 @@ const fixProjectPermissions = async () => {
     }
 };
 
+const availableDatabases = computed(() => props.databaseConnection?.databases || []);
+const selectedDatabaseId = ref('');
+watch(availableDatabases, (list) => {
+    if (!list.some((db) => String(db.id) === selectedDatabaseId.value)) {
+        selectedDatabaseId.value = list.length ? String(list[0].id) : '';
+    }
+}, { immediate: true });
+
 const connectProjectDatabase = async () => {
     if (databaseConnectLoading.value || !props.databaseConnection?.available) return;
     databaseConnectLoading.value = true;
@@ -345,7 +353,7 @@ const connectProjectDatabase = async () => {
         const response = await fetch(panelRoute('websites.project-database.connect', { id: props.website.id }), {
             method: 'POST', credentials: 'same-origin',
             headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken.value },
-            body: JSON.stringify({}),
+            body: JSON.stringify(availableDatabases.value.length > 1 ? { database_id: selectedDatabaseId.value } : {}),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.message || 'Database connection failed.');
@@ -861,14 +869,39 @@ const saveRuntimeSettings = async () => {
                                 </button>
 
 
-                                <button v-if="supportsDatabaseAutoConnect" type="button"
-                                    :disabled="databaseConnectLoading || !databaseConnection.available"
-                                    :title="databaseConnection.available ? `Connect ${databaseConnection.database_name}` : 'Create an active database for this domain first'"
-                                    class="flex w-full items-center gap-3 rounded-xl border border-cyan-200 bg-cyan-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-800 dark:bg-cyan-500/10 dark:text-cyan-400"
-                                    @click="connectProjectDatabase">
-                                    <i class="bi bi-database-check text-base"></i>
-                                    {{ databaseConnectLoading ? 'Connecting Database...' : databaseConnection.available ? `Connect ${detectedAppLabel} Database` : 'Create Database First' }}
-                                </button>
+                                <template v-if="supportsDatabaseAutoConnect">
+                                    <Link v-if="!databaseConnection.available"
+                                        :href="panelRoute('databases.create') + '?domain=' + encodeURIComponent(website.domain)"
+                                        class="flex w-full items-center gap-3 rounded-xl border border-cyan-200 bg-cyan-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-50 dark:border-cyan-800 dark:bg-cyan-500/10 dark:text-cyan-400"
+                                    >
+                                        <i class="bi bi-database-add text-base"></i>
+                                        Create Database
+                                    </Link>
+                                    <div v-else-if="availableDatabases.length > 1" class="space-y-1.5 rounded-xl border border-cyan-200 bg-cyan-50/50 p-2.5 dark:border-cyan-800 dark:bg-cyan-500/10">
+                                        <select v-model="selectedDatabaseId" class="w-full rounded-lg border border-cyan-200 bg-white px-2 py-1.5 text-[13px] text-cyan-700 dark:border-cyan-800 dark:bg-slate-900 dark:text-cyan-400">
+                                            <option v-for="db in availableDatabases" :key="db.id" :value="String(db.id)">{{ db.database_name }}</option>
+                                        </select>
+                                        <div class="flex items-center gap-2">
+                                            <button type="button" :disabled="databaseConnectLoading"
+                                                class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-cyan-200 bg-white px-3 py-1.5 text-[12px] font-medium text-cyan-700 transition hover:border-cyan-300 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-800 dark:bg-slate-900 dark:text-cyan-400"
+                                                @click="connectProjectDatabase">
+                                                <i class="bi bi-database-check"></i>
+                                                {{ databaseConnectLoading ? 'Connecting...' : `Connect ${detectedAppLabel}` }}
+                                            </button>
+                                            <Link :href="panelRoute('databases.create') + '?domain=' + encodeURIComponent(website.domain)" class="shrink-0 text-[11px] font-medium text-cyan-700 underline decoration-dotted hover:text-cyan-900 dark:text-cyan-400">
+                                                + New
+                                            </Link>
+                                        </div>
+                                    </div>
+                                    <button v-else type="button"
+                                        :disabled="databaseConnectLoading"
+                                        :title="`Connect ${databaseConnection.database_name}`"
+                                        class="flex w-full items-center gap-3 rounded-xl border border-cyan-200 bg-cyan-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-800 dark:bg-cyan-500/10 dark:text-cyan-400"
+                                        @click="connectProjectDatabase">
+                                        <i class="bi bi-database-check text-base"></i>
+                                        {{ databaseConnectLoading ? 'Connecting Database...' : `Connect ${detectedAppLabel} Database` }}
+                                    </button>
+                                </template>
                                 <button v-if="isLaravelWebsite" type="button"
                                     :disabled="runProjectMigrationsLoading"
                                     class="flex w-full items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"

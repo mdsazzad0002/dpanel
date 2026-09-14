@@ -16,6 +16,7 @@ use serde::Deserialize;
 use sha1::{Digest, Sha1};
 
 use crate::api::{ApiResponse, ApiState, check_token};
+use crate::app::{run_status, user_group};
 
 pub fn routes() -> Router<Arc<ApiState>> {
     Router::new().route("/api/v1/git-deploy", post(handle))
@@ -219,8 +220,23 @@ fn clone_repository(request: &Request, target: &Path, auth: &Auth) -> Result<Str
     if target.join(".git").is_dir() {
         return Ok("Repository is already connected.".into());
     }
+    let existed = target.is_dir();
     fs::create_dir_all(target)
         .map_err(|error| format!("Unable to prepare deployment folder: {error}"))?;
+    if !existed {
+        // create_dir_all runs as root (this process's euid); the site owner
+        // then runs `git clone` into it via runuser and needs write access,
+        // or clone fails with "<target>/.git: Permission denied" the moment
+        // it tries to create the repo's .git folder.
+        let group = user_group(&request.site_owner).unwrap_or_else(|_| request.site_owner.clone());
+        run_status(
+            "chown",
+            &[
+                &format!("{}:{group}", request.site_owner),
+                &target.to_string_lossy(),
+            ],
+        )?;
+    }
     if fs::read_dir(target)
         .map_err(|error| error.to_string())?
         .next()
@@ -236,6 +252,8 @@ fn clone_repository(request: &Request, target: &Path, auth: &Auth) -> Result<Str
             "--branch",
             &request.branch,
             "--single-branch",
+            "--depth",
+            "1",
             "--",
             &request.repository,
             &request.target,

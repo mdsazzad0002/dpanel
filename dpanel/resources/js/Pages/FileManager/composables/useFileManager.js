@@ -323,6 +323,31 @@ export function useFileManager(props) {
         });
     }
 
+    function openCopyForSelection() {
+        const paths = selectedPathList.value.length
+            ? selectedPathList.value
+            : (singleSelectedItem.value ? [singleSelectedItem.value.path] : []);
+        if (!paths.length) return;
+
+        copyForm.item_path = paths[0];
+        copyForm.item_paths = paths;
+        copyForm.destination_path = props.currentPath;
+        copyForm.new_name = paths.length === 1 ? String(paths[0]).split('/').pop() : '';
+        openModal('copy');
+    }
+
+    function submitCopy() {
+        copyForm.current_path = props.currentPath;
+        copyForm.patch(panelRoute('websites.filemanager.item.copy', fileManagerRouteParams()), {
+            onSuccess: () => {
+                copyForm.destination_path = props.currentPath;
+                copyForm.new_name = '';
+                selectedPaths.value = [];
+                closeModal();
+            },
+        });
+    }
+
     function handleFolderTargetDrop(path, event) {
         event.preventDefault();
         event.stopPropagation();
@@ -747,6 +772,15 @@ export function useFileManager(props) {
                 moveForm.destination_path = props.currentPath;
                 openModal('move');
                 break;
+            case 'copy': {
+                const copyPaths = selectedPaths.value.length ? selectedPaths.value : [item.path];
+                copyForm.item_path = item.path;
+                copyForm.item_paths = copyPaths;
+                copyForm.destination_path = props.currentPath;
+                copyForm.new_name = copyPaths.length === 1 ? item.name : '';
+                openModal('copy');
+                break;
+            }
             case 'zip':
                 zipForm.item_paths = selectedPaths.value.length ? selectedPaths.value : [item.path];
                 zipForm.zip_name = item.type === 'dir' ? `${item.name}.zip` : `${item.name.replace(/\.[^.]+$/, '')}.zip`;
@@ -827,6 +861,7 @@ export function useFileManager(props) {
     const zipForm = useForm({ current_path: props.currentPath, item_paths: [], zip_name: '' });
     const unzipForm = useForm({ zip_path: '', current_path: props.currentPath });
     const moveForm = useForm({ item_path: '', item_paths: [], current_path: props.currentPath, destination_path: props.currentPath });
+    const copyForm = useForm({ item_path: '', item_paths: [], current_path: props.currentPath, destination_path: props.currentPath, new_name: '' });
 
     const selectedCount = computed(() => selectedPaths.value.length);
     const selectedPathList = computed(() => Array.isArray(selectedPaths.value) ? selectedPaths.value : []);
@@ -973,7 +1008,8 @@ export function useFileManager(props) {
     const isBusy = computed(() =>
         createFolderForm.processing || createFileForm.processing || saveInProgress.value ||
         deleteForm.processing || uploadForm.processing || permissionForm.processing ||
-        renameInProgress.value || zipForm.processing || unzipForm.processing || moveForm.processing
+        renameInProgress.value || zipForm.processing || unzipForm.processing || moveForm.processing ||
+        copyForm.processing
     );
 
     function handleEditorBeforeUnload(event) {
@@ -1135,6 +1171,7 @@ export function useFileManager(props) {
         zipForm,
         unzipForm,
         moveForm,
+        copyForm,
         // computed
         selectedCount,
         selectedPathList,
@@ -1184,6 +1221,7 @@ export function useFileManager(props) {
         triggerContextAction,
         openPermissionsForSelection,
         openZipForSelection,
+        openCopyForSelection,
         openUnzipForSelection,
         setPermissionPreset,
         sanitizePermissionInput,
@@ -1215,6 +1253,7 @@ export function useFileManager(props) {
         submitRename,
         submitPermissions,
         submitMove,
+        submitCopy,
         submitZip,
         submitUnzip,
         submitUpload,

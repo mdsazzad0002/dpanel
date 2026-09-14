@@ -12,8 +12,26 @@ use App\Services\Website\WebsiteService;
 
 class SslLifecycleService
 {
+    /** Suffixes that are never publicly resolvable, so a CA can never issue for them. */
+    private const RESERVED_SSL_SUFFIXES = ['.localhost', '.local', '.test', '.example', '.invalid'];
+
     public function __construct(protected WebsiteService $websiteService)
     {
+    }
+
+    public static function isReservedSslDomain(string $domainName): bool
+    {
+        $domainName = strtolower(trim($domainName));
+        if ($domainName === 'localhost') {
+            return true;
+        }
+        foreach (self::RESERVED_SSL_SUFFIXES as $suffix) {
+            if (str_ends_with($domainName, $suffix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return array<string, mixed> */
@@ -36,6 +54,15 @@ class SslLifecycleService
             $domain->ssl_checked_at = now();
             $domain->save();
             return ['status' => 'disabled'];
+        }
+
+        if (self::isReservedSslDomain($domainName)) {
+            $domain->ssl_status = 'ineligible';
+            $domain->ssl_checked_at = now();
+            $domain->save();
+            throw new \RuntimeException(
+                "SSL cannot be issued for \"{$domainName}\": it is not a publicly resolvable domain."
+            );
         }
 
         $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));

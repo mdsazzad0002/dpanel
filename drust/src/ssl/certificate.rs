@@ -6,6 +6,13 @@ use serde_json::{Value, json};
 
 use crate::app::ensure_root;
 
+/// Suffixes that are never publicly resolvable, so a CA can never issue a
+/// certificate for them. Kept in sync with
+/// `SslLifecycleService::RESERVED_SSL_SUFFIXES` on the dpanel side, which
+/// filters these out before ever calling this API; this is defense-in-depth
+/// for any other caller.
+const RESERVED_SSL_SUFFIXES: [&str; 5] = [".localhost", ".local", ".test", ".example", ".invalid"];
+
 fn valid_domain(domain: &str) -> bool {
     !domain.is_empty()
         && domain.len() <= 253
@@ -13,6 +20,10 @@ fn valid_domain(domain: &str) -> bool {
         && domain.bytes().all(|character| {
             character.is_ascii_alphanumeric() || character == b'.' || character == b'-'
         })
+        && domain != "localhost"
+        && !RESERVED_SSL_SUFFIXES
+            .iter()
+            .any(|suffix| domain.ends_with(suffix))
 }
 
 fn command_success(program: &str, args: &[&str]) -> bool {
@@ -23,22 +34,18 @@ fn command_success(program: &str, args: &[&str]) -> bool {
         .unwrap_or(false)
 }
 
-fn schedule_gateway_restart() -> bool {
-    // SSL issuance can be requested through the edge gateway itself. Restarting
-    // it synchronously here drops that in-flight HTTP response, which browsers
-    // report as a network error even though the certificate was issued. A
-    // transient timer lets the API response finish before the gateway restarts.
-    command_success(
-        "systemd-run",
-        &[
-            "--quiet",
-            "--collect",
-            "--on-active=2s",
-            "systemctl",
-            "restart",
-            "edge-gateway.service",
-        ],
-    )
+fn trigger_gateway_reload() -> bool {
+    // The gateway keeps a live-swappable SNI cert store and already listens
+    // for reload events on this Redis channel (the same one dpanel's
+    // EdgeGatewayReloader publishes to for vhost changes). Publishing here
+    // picks up the new/renewed certificate in place, without dropping
+    // in-flight HTTPS connections for every other site the way a
+    // `systemctl restart edge-gateway.service` used to.
+    let url =
+        std::env::var("DRUST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string());
+    let channel = std::env::var("DRUST_REDIS_RELOAD_CHANNEL")
+        .unwrap_or_else(|_| "dpanel_database_edge:reload".to_string());
+    command_success("redis-cli", &["-u", &url, "PUBLISH", &channel, "{}"])
 }
 
 fn shell_single_quote(value: &str) -> String {
@@ -188,13 +195,11 @@ pub(super) fn ensure(
         );
     }
 
-    // The gateway builds its SNI certificate store when it starts. Only a
-    // changed certificate requires a restart; schedule it so this request can
-    // return its JSON response through the gateway first.
-    let gateway_reload_scheduled = if needs_issue {
-        if !schedule_gateway_restart() {
+    // Only a changed certificate requires the gateway to pick up new files.
+    let gateway_reloaded = if needs_issue {
+        if !trigger_gateway_reload() {
             return Err(
-                "Certificate is valid, but the edge gateway restart could not be scheduled.".into(),
+                "Certificate is valid, but notifying the edge gateway to reload it failed.".into(),
             );
         }
         true
@@ -210,7 +215,7 @@ pub(super) fn ensure(
         "certificate_path": certificate_path,
         "private_key_path": private_key_path,
         "expires_at": certificate_expiry(&certificate_path),
-        "gateway_reloaded": false,
-        "gateway_reload_scheduled": gateway_reload_scheduled,
+        "gateway_reloaded": gateway_reloaded,
+        "gateway_reload_scheduled": false,
     }))
 }

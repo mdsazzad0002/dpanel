@@ -16,6 +16,9 @@ defineProps({
             <button type="button" class="rounded-md px-2.5 py-1 text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30" @click="fm.openModal('move')">
                 <i class="bi bi-arrows-move mr-1"></i>Move
             </button>
+            <button type="button" class="rounded-md px-2.5 py-1 text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30" @click="fm.openCopyForSelection()">
+                <i class="bi bi-files mr-1"></i>Copy
+            </button>
             <button type="button" class="rounded-md px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" @click="fm.deleteSelected">
                 <i class="bi bi-trash mr-1"></i>Delete
             </button>

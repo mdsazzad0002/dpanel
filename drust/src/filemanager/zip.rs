@@ -80,6 +80,7 @@ pub fn create_user_zip(username: &str, paths: &[String], destination: &str) -> R
             .map_err(|e| format!("failed to create temporary zip: {e}"))?;
         let mut writer = zip::ZipWriter::new(output);
         let mut buffer = vec![0_u8; 128 * 1024];
+        let mut file_count = 0_u64;
 
         for source in &sources {
             let name = source
@@ -91,7 +92,14 @@ pub fn create_user_zip(username: &str, paths: &[String], destination: &str) -> R
                 Path::new(name),
                 &temporary,
                 &mut buffer,
+                &mut file_count,
             )?;
+        }
+
+        if file_count == 0 {
+            return Err(
+                "Nothing to zip: the selected item(s) contain no files.".into(),
+            );
         }
 
         writer
@@ -118,6 +126,7 @@ fn add_path(
     archive_path: &Path,
     temporary: &Path,
     buffer: &mut [u8],
+    file_count: &mut u64,
 ) -> Result<(), String> {
     let metadata = fs::symlink_metadata(source)
         .map_err(|e| format!("failed to inspect {}: {e}", source.display()))?;
@@ -143,6 +152,7 @@ fn add_path(
                 &archive_path.join(entry.file_name()),
                 temporary,
                 buffer,
+                file_count,
             )?;
         }
         return Ok(());
@@ -170,6 +180,7 @@ fn add_path(
             .write_all(&buffer[..count])
             .map_err(|e| format!("failed to compress {}: {e}", source.display()))?;
     }
+    *file_count += 1;
     Ok(())
 }
 
@@ -217,14 +228,17 @@ mod tests {
         let output = fs::File::create(&archive_path).unwrap();
         let mut writer = zip::ZipWriter::new(output);
         let mut buffer = vec![0_u8; 4096];
+        let mut file_count = 0_u64;
         add_path(
             &mut writer,
             &root,
             std::path::Path::new("project"),
             &archive_path,
             &mut buffer,
+            &mut file_count,
         )
         .unwrap();
+        assert_eq!(file_count, 4);
         writer.finish().unwrap();
 
         let input = fs::File::open(&archive_path).unwrap();
@@ -240,6 +254,40 @@ mod tests {
             entry.read_to_string(&mut content).unwrap();
             assert!(!content.is_empty());
         }
+
+        fs::remove_file(archive_path).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn counts_zero_files_for_an_empty_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "drust-zip-empty-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+
+        let archive_path = root.with_extension("zip");
+        let output = fs::File::create(&archive_path).unwrap();
+        let mut writer = zip::ZipWriter::new(output);
+        let mut buffer = vec![0_u8; 4096];
+        let mut file_count = 0_u64;
+        add_path(
+            &mut writer,
+            &root,
+            std::path::Path::new("project"),
+            &archive_path,
+            &mut buffer,
+            &mut file_count,
+        )
+        .unwrap();
+        writer.finish().unwrap();
+
+        assert_eq!(file_count, 0);
 
         fs::remove_file(archive_path).unwrap();
         fs::remove_dir_all(root).unwrap();

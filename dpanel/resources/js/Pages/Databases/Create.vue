@@ -16,8 +16,10 @@ const props = defineProps({
     },
 });
 
+const prefillDomain = new URLSearchParams(window.location.search).get('domain') || '';
+
 const form = useForm({
-    domain: '',
+    domain: props.websiteDomains.includes(prefillDomain) ? prefillDomain : '',
     database_name: '',
     database_user: '',
     database_password: '',
@@ -31,6 +33,7 @@ const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
 const showPassword = ref(false);
+const useRemoteHost = ref(false);
 const suggestedDatabaseName = ref('');
 const suggestedDatabaseUser = ref('');
 const selectedOwnerPrefix = computed(() => String(props.databasePrefixes[String(form.domain).trim().toLowerCase()] || ''));
@@ -44,6 +47,13 @@ const databaseUserSuggestions = computed(() => [
 
 const submit = () => {
     form.post(panelRoute('databases.store'));
+};
+
+const toggleRemoteHost = () => {
+    useRemoteHost.value = !useRemoteHost.value;
+    if (!useRemoteHost.value) {
+        form.database_host = '127.0.0.1';
+    }
 };
 
 const generatePassword = () => {
@@ -162,8 +172,23 @@ watch(
                     <p v-if="form.errors.database_password" class="mt-1 text-xs text-red-600">{{ form.errors.database_password }}</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Host</label>
-                    <input v-model="form.database_host" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <div class="mb-1 flex items-center justify-between">
+                        <label class="block text-sm">Host</label>
+                        <label class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                            <input type="checkbox" :checked="useRemoteHost" @change="toggleRemoteHost" />
+                            Use remote database host
+                        </label>
+                    </div>
+                    <input
+                        v-model="form.database_host"
+                        type="text"
+                        :disabled="!useRemoteHost"
+                        placeholder="203.0.113.10 or db.example.com"
+                        class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
+                    />
+                    <p v-if="useRemoteHost" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                        The remote server must accept connections from this panel's IP, and a database API (SERVERPANEL_DATABASE_API_URL) must be configured to actually create the database there.
+                    </p>
                     <p v-if="form.errors.database_host" class="mt-1 text-xs text-red-600">{{ form.errors.database_host }}</p>
                 </div>
                 <div>

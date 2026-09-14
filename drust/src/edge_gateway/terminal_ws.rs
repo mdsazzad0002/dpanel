@@ -22,6 +22,8 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+use crate::app::run_status;
+
 use super::server::DemoServerState;
 
 #[derive(Clone, Deserialize)]
@@ -217,10 +219,20 @@ fn create_identity_files(ticket: &TerminalTicket, uid: &str, gid: &str) -> Resul
         fs::create_dir(&path).map_err(|e| e.to_string())?;
         fs::set_permissions(path, fs::Permissions::from_mode(0o500)).map_err(|e| e.to_string())?;
     }
+    // bwrap now runs as the site owner (see spawn_pty), not root, so it needs
+    // read/traverse access to these files itself in order to bind-mount them.
+    run_status(
+        "chown",
+        &["-R", &format!("{}:{}", ticket.site_owner, ticket.site_owner), &dir.to_string_lossy()],
+    )
+    .map_err(|e| {
+        let _ = fs::remove_dir_all(&dir);
+        e
+    })?;
     Ok(dir)
 }
 
-fn ensure_protected_mountpoint(root: &Path, name: &str) -> Result<(), String> {
+fn ensure_protected_mountpoint(owner: &str, root: &Path, name: &str) -> Result<(), String> {
     let path = root.join(name);
     match fs::symlink_metadata(&path) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
@@ -235,7 +247,11 @@ fn ensure_protected_mountpoint(root: &Path, name: &str) -> Result<(), String> {
         }
         Err(error) => return Err(error.to_string()),
     }
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    // bwrap binds onto this as the unprivileged site owner (see spawn_pty),
+    // so it must own the mountpoint — re-assert this every call in case a
+    // leftover mountpoint from before this fix is still root-owned.
+    run_status("chown", &[&format!("{owner}:{owner}"), &path.to_string_lossy()])
 }
 
 fn spawn_pty(
@@ -253,8 +269,8 @@ fn spawn_pty(
     let uid = account_id("-u", &ticket.site_owner)?;
     let gid = account_id("-g", &ticket.site_owner)?;
     let root = Path::new(&ticket.project_root);
-    ensure_protected_mountpoint(root, ".ssh")?;
-    ensure_protected_mountpoint(root, ".dpanel")?;
+    ensure_protected_mountpoint(&ticket.site_owner, root, ".ssh")?;
+    ensure_protected_mountpoint(&ticket.site_owner, root, ".dpanel")?;
     let identity_dir = create_identity_files(ticket, &uid, &gid)?;
     let passwd_path = identity_dir.join("passwd").to_string_lossy().into_owned();
     let group_path = identity_dir.join("group").to_string_lossy().into_owned();
@@ -277,11 +293,21 @@ fn spawn_pty(
             pixel_height: 0,
         })
         .map_err(|e| e.to_string())?;
-    let mut cmd = CommandBuilder::new("prlimit");
-    // Let bubblewrap switch the final process identity while it still has the
-    // privileges needed to build the sandbox. A setpriv process *inside* the
-    // sandbox cannot call setresuid after bubblewrap has dropped capabilities.
+    let mut cmd = CommandBuilder::new("runuser");
+    // Drop to the site owner's real uid/gid *before* bubblewrap runs, so the
+    // unprivileged user namespace bubblewrap creates (--unshare-user) maps
+    // that one real uid to itself. Unprivileged user namespaces still get
+    // full mount/namespace capability inside themselves, so the sandbox
+    // builds the same either way — but if bwrap is launched as root instead,
+    // its uid map only has an entry for root's own real uid, so every file
+    // actually owned by the site owner (not root) resolves to the "nobody"
+    // overflow uid inside the sandbox and every access is denied.
     for arg in [
+        "--preserve-environment",
+        "-u",
+        &ticket.site_owner,
+        "--",
+        "prlimit",
         "--as=1073741824",
         "--nproc=128",
         "--nofile=256",

@@ -4,11 +4,16 @@ namespace App\Services\Website;
 
 use App\Models\WebsiteGitDeployment;
 use App\Models\WebsiteGitLog;
+use App\Services\Backup\PreOverwriteBackupService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class WebsiteGitService
 {
+    public function __construct(private PreOverwriteBackupService $preOverwriteBackup)
+    {
+    }
+
     /** @return array{success: bool, output: string, exit_code: int} */
     public function run(WebsiteGitDeployment $deployment, string $action, ?int $actorId = null, string $message = 'Automated website update'): array
     {
@@ -24,6 +29,14 @@ class WebsiteGitService
         }
 
         try {
+            // A fresh git clone onto an existing document root would otherwise
+            // just be rejected by dRust ("Target folder is not empty."). Move
+            // whatever is there into the File Manager trash first, the same
+            // safety net Clone/Import already rely on, so a clone deploy never
+            // silently destroys files and is always restorable.
+            if ($action === 'clone') {
+                $this->preOverwriteBackup->snapshot($website, 'git_clone');
+            }
             $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
             $token = trim((string) config('serverpanel.execution_api_token', ''));
             if ($token !== '') $request = $request->withToken($token);

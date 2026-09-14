@@ -35,8 +35,10 @@ use App\Http\Controllers\PhpManagementController;
 use App\Http\Controllers\PhpMyAdmin\PhpMyAdminController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RedisCacheController;
+use App\Http\Controllers\RemoteMysqlAccessController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SecurityController;
+use App\Http\Controllers\SelfConnectionController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerTaskController;
 use App\Http\Controllers\SsoController;
@@ -811,6 +813,38 @@ Route::prefix('cpsess{token}')
             Route::get('/security/firewall-guide', [SecurityController::class, 'firewallGuide'])
                 ->middleware('role:admin|reseller')
                 ->name('security.firewall.guide');
+
+            Route::get('/settings/self-connection', [SelfConnectionController::class, 'manager'])
+                ->middleware('role:admin')
+                ->name('self-connection.manager');
+            Route::post('/settings/self-connection/database/test', [SelfConnectionController::class, 'testDatabase'])
+                ->middleware('role:admin')
+                ->name('self-connection.database.test');
+            Route::post('/settings/self-connection/database/apply', [SelfConnectionController::class, 'applyDatabase'])
+                ->middleware('role:admin')
+                ->name('self-connection.database.apply');
+            Route::post('/settings/self-connection/redis/test', [SelfConnectionController::class, 'testRedis'])
+                ->middleware('role:admin')
+                ->name('self-connection.redis.test');
+            Route::post('/settings/self-connection/redis/apply', [SelfConnectionController::class, 'applyRedis'])
+                ->middleware('role:admin')
+                ->name('self-connection.redis.apply');
+
+            Route::get('/databases/remote-access', [RemoteMysqlAccessController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('databases.remote-access');
+            Route::post('/databases/remote-access', [RemoteMysqlAccessController::class, 'store'])
+                ->middleware('role:admin')
+                ->name('databases.remote-access.store');
+            Route::delete('/databases/remote-access/{id}', [RemoteMysqlAccessController::class, 'destroy'])
+                ->middleware('role:admin')
+                ->name('databases.remote-access.destroy');
+            Route::post('/databases/remote-access/restrict-wildcard', [RemoteMysqlAccessController::class, 'restrictWildcard'])
+                ->middleware('role:admin')
+                ->name('databases.remote-access.restrict-wildcard');
+            Route::post('/databases/remote-access/refresh', [RemoteMysqlAccessController::class, 'refresh'])
+                ->middleware('role:admin')
+                ->name('databases.remote-access.refresh');
 
             Route::get('/admin', [UserManagementController::class, 'index'])
                 ->middleware('role:admin')

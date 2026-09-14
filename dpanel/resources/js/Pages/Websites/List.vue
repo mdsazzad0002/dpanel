@@ -626,6 +626,18 @@ const saveOwnership = async () => {
                                 Files
                             </Link>
                             <button
+                                type="button"
+                                :disabled="Boolean(sslLoadingId)"
+                                class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition disabled:opacity-50"
+                                :class="item.enable_ssl
+                                    ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'
+                                    : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400'"
+                                :title="item.aliases?.length ? 'Also applies to alias child domains' : ''"
+                                @click="toggleAliasSsl(item)"
+                            >
+                                {{ sslLoadingId === String(item.id) ? 'Updating...' : (item.enable_ssl ? 'Disable SSL' : 'Enable SSL') }}
+                            </button>
+                            <button
                                 v-if="String(item.id) !== '1'"
                                 type="button"
                                 :disabled="statusForm.processing"

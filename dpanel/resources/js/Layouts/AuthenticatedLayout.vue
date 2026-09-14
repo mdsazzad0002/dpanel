@@ -247,6 +247,7 @@ const menuItems = computed(() => [
         children: [
             { label: 'Create Database', hint: 'Create a new database', icon: 'CD', iconClass: 'bi bi-database-add', routeName: 'databases.create', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
             { label: 'List Databases', hint: 'View all databases', icon: 'LD', iconClass: 'bi bi-table', routeName: 'databases.list', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
+            { label: 'Remote Access', hint: 'Allow specific IPs to reach MySQL', icon: 'RA', iconClass: 'bi bi-globe2', routeName: 'databases.remote-access', roles: ['admin'] },
         ],
     },
     {
@@ -263,6 +264,7 @@ const menuItems = computed(() => [
     },
     { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], permissions: ['manage_php'], color: 'indigo' },
     { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], permissions: ['manage_security'], color: 'red' },
+    { label: 'Database & Redis', hint: 'Point dpanel at a remote DB/Redis', icon: 'DB', iconClass: 'bi bi-hdd-network', routeName: 'self-connection.manager', roles: ['admin'], color: 'rose' },
     { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'], permissions: ['manage_backups'], color: 'teal' },
     { label: 'Migrate', hint: 'Import cPanel accounts', icon: 'MG', iconClass: 'bi bi-box-arrow-in-down', routeName: 'migrations.index', roles: ['admin', 'reseller'], permissions: ['manage_migrations'], color: 'cyan' },
     { label: 'Trash Backup', hint: 'Deleted website archives', icon: 'TB', iconClass: 'bi bi-trash3', routeName: 'trash-backups.index', roles: ['admin', 'reseller', 'general', 'general_user'], permissions: ['manage_backups'], color: 'orange' },
@@ -1203,6 +1205,10 @@ watch(isSearchOpen, async (open) => {
                                     <DropdownLink v-if="route().has('security.manager')" :href="panelRoute('security.manager')">
                                         <i class="bi bi-shield-lock mr-3 text-slate-400"></i>
                                         <span>Security</span>
+                                    </DropdownLink>
+                                    <DropdownLink v-if="route().has('self-connection.manager')" :href="panelRoute('self-connection.manager')">
+                                        <i class="bi bi-hdd-network mr-3 text-slate-400"></i>
+                                        <span>Database & Redis</span>
                                     </DropdownLink>
                                 </div>
 

@@ -33,6 +33,6 @@ pub use static_files::{
     load_static_asset, resolve_static_path,
 };
 pub use tls::{
-    TlsIdentity, TlsListenerConfig, TlsStore, build_tls_config, default_tls_runtime,
-    scaffold_tls_listener_config,
+    DynamicCertResolver, TlsIdentity, TlsListenerConfig, TlsStore, build_tls_config,
+    default_tls_runtime, scaffold_tls_listener_config,
 };

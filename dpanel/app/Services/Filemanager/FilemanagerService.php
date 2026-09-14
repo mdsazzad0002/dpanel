@@ -251,6 +251,26 @@ class FilemanagerService
         }
     }
 
+    public function copyPath(string $username, string $source, string $destination): void
+    {
+        $username = $this->normalizeUsername($username);
+        $source = $this->normalizeAbsolutePath($source);
+        $destination = $this->normalizeAbsolutePath($destination);
+        if ($source === '' || $destination === '') {
+            throw new \InvalidArgumentException('Source and destination paths are required.');
+        }
+
+        $result = $this->filemanagerApiRequest('copy', [
+            'username' => $username,
+            'source' => $source,
+            'destination' => $destination,
+        ]);
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Failed to copy path through the filemanager API.');
+        }
+    }
+
     public function ensureDirectoryExists(string $username, string $path): void
     {
         $this->createDirectoriesViaApi([$path], $username);
