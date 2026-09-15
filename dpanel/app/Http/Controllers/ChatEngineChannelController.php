@@ -49,6 +49,7 @@ class ChatEngineChannelController extends Controller
                 'widget_script_url' => $c->type === 'website' ? url('/widget/chat.js') : null,
                 'is_active' => $c->is_active,
                 'auto_reply_enabled' => $c->isAutoReplyEnabled(),
+                'internal_access' => $c->isInternal(),
                 'business' => $c->business ? ['id' => $c->business->id, 'name' => $c->business->name] : null,
                 'contacts_count' => $c->contacts_count,
                 'conversations_count' => $c->conversations_count,
@@ -91,6 +92,7 @@ class ChatEngineChannelController extends Controller
             'slack_signing_secret' => ['required_if:type,slack', 'nullable', 'string', 'max:255'],
             'system_prompt' => ['nullable', 'string', 'max:4000'],
             'auto_reply_enabled' => ['nullable', 'boolean'],
+            'internal_access' => ['nullable', 'boolean'],
         ]);
 
         $type = $validated['type'];
@@ -127,6 +129,11 @@ class ChatEngineChannelController extends Controller
             'settings' => [
                 'system_prompt' => $validated['system_prompt'] ?? null,
                 'auto_reply_enabled' => (bool) ($validated['auto_reply_enabled'] ?? true),
+                // Only meaningful for a website channel that is never embedded
+                // publicly, e.g. the staff-only Assistant page — see
+                // ChatChannel::isInternal()'s docblock and
+                // ChatEngineAssistantController.
+                'internal_access' => (bool) ($validated['internal_access'] ?? false),
             ],
             'is_active' => true,
             'created_by' => $request->user()?->id,
@@ -158,6 +165,7 @@ class ChatEngineChannelController extends Controller
                 'external_account_id' => $channel->external_account_id,
                 'system_prompt' => ($channel->settings ?? [])['system_prompt'] ?? null,
                 'auto_reply_enabled' => $channel->isAutoReplyEnabled(),
+                'internal_access' => $channel->isInternal(),
                 'is_active' => $channel->is_active,
                 'business' => $channel->business ? ['id' => $channel->business->id, 'name' => $channel->business->name] : null,
                 'has_bot_token' => (bool) $channel->getBotToken(),
@@ -200,6 +208,7 @@ class ChatEngineChannelController extends Controller
             'slack_signing_secret' => ['nullable', 'string', 'max:255'],
             'system_prompt' => ['nullable', 'string', 'max:4000'],
             'auto_reply_enabled' => ['nullable', 'boolean'],
+            'internal_access' => ['nullable', 'boolean'],
         ]);
 
         $channel->update([
@@ -214,6 +223,7 @@ class ChatEngineChannelController extends Controller
             'settings' => [
                 'system_prompt' => $validated['system_prompt'] ?? null,
                 'auto_reply_enabled' => (bool) ($validated['auto_reply_enabled'] ?? true),
+                'internal_access' => (bool) ($validated['internal_access'] ?? false),
             ],
         ]);
 

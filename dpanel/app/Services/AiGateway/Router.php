@@ -57,9 +57,16 @@ class Router
      * spreading requests across providers instead of hammering the
      * top-weight one until it hits its rate limit.
      *
+     * @param  array<int, string>  $requireCapabilities  When non-empty (e.g.
+     *   ["tools"] for a request carrying function-calling tools), candidates
+     *   are preferred in order: models whose `capabilities` array explicitly
+     *   lists every required tag first, then everything else (including
+     *   models with capabilities left unset, since most of the fleet hasn't
+     *   been tagged yet) — a soft preference, not a hard filter, so a request
+     *   never fails outright just because no model happens to be tagged.
      * @return \Illuminate\Support\Collection<int, AiGatewayModel>
      */
-    public function candidates(?string $modelName = null, ?int $providerId = null): \Illuminate\Support\Collection
+    public function candidates(?string $modelName = null, ?int $providerId = null, array $requireCapabilities = []): \Illuminate\Support\Collection
     {
         $base = AiGatewayModel::query()
             ->where('is_active', true)
@@ -72,16 +79,36 @@ class Router
             ->sortByDesc(fn (AiGatewayModel $m) => $m->provider->weight * 1000 + random_int(0, 999))
             ->values();
 
-        $count = $base->count();
-        if ($count <= 1) {
-            return $base;
+        $fallbackTail = collect();
+
+        if (! empty($requireCapabilities)) {
+            $capable = $base->filter(function (AiGatewayModel $m) use ($requireCapabilities) {
+                $caps = $m->capabilities ?? [];
+
+                return count(array_intersect($requireCapabilities, $caps)) === count($requireCapabilities);
+            })->values();
+
+            // Rotate only within the capable subset so it doesn't get diluted
+            // back out by round-robin on the next call — the incapable models
+            // are kept only as a last-resort failover tail (unrotated), for
+            // the rare case every capable model is down this request.
+            if ($capable->isNotEmpty()) {
+                $capableIds = $capable->pluck('id')->all();
+                $fallbackTail = $base->reject(fn (AiGatewayModel $m) => in_array($m->id, $capableIds, true))->values();
+                $base = $capable;
+            }
         }
 
-        $cacheKey = 'aigateway:router:rr:'.($providerId ?: 'any').':'.($modelName ?: 'any');
+        $count = $base->count();
+        if ($count <= 1) {
+            return $base->concat($fallbackTail)->values();
+        }
+
+        $cacheKey = 'aigateway:router:rr:'.($providerId ?: 'any').':'.($modelName ?: 'any').':'.implode(',', $requireCapabilities);
         $cursor = Cache::get($cacheKey, 0) % $count;
         Cache::put($cacheKey, $cursor + 1, now()->addHours(6));
 
-        return $base->slice($cursor)->concat($base->slice(0, $cursor))->values();
+        return $base->slice($cursor)->concat($base->slice(0, $cursor))->concat($fallbackTail)->values();
     }
 
     private function finalise(AiGatewayProvider $provider, ?AiGatewayModel $model, ?string $requestedModel): array

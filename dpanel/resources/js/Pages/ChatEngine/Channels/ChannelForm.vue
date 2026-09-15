@@ -34,6 +34,7 @@ const form = useForm({
     slack_signing_secret: '',
     system_prompt: props.channel?.system_prompt || '',
     auto_reply_enabled: props.channel?.auto_reply_enabled ?? true,
+    internal_access: props.channel?.internal_access ?? false,
 });
 
 const submit = () => {
@@ -234,6 +235,21 @@ const submit = () => {
             </div>
             <div v-else class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
                 No credentials needed. Save first, then copy the embed snippet from here to add the chat widget to your site.
+            </div>
+
+            <label class="flex items-start gap-2 rounded-md border border-slate-200 p-3 text-sm dark:border-slate-700">
+                <input v-model="form.internal_access" type="checkbox" class="mt-0.5 rounded border-slate-300" />
+                <span>
+                    <span class="font-medium">Internal / staff-only channel</span>
+                    <span class="block text-xs text-slate-500 dark:text-slate-400">
+                        Unlocks tools that expose customer data and take real actions (send SMS, bulk due reminders, full search). Only turn this on for a channel used from the "Assistant" page below — never for one whose embed snippet is pasted onto a public website, since anyone who can reach that script tag reaches these tools too.
+                    </span>
+                </span>
+            </label>
+
+            <div v-if="isEdit && form.internal_access" class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200">
+                <a :href="panelRoute('chat-engine.channels.assistant', { channel: channel.id })" class="font-medium underline">Open Assistant →</a>
+                Chat with this business's AI here, from inside the panel, to trigger internal-only actions.
             </div>
         </template>
 

@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers\Public;
 
+use App\Models\Business;
 use App\Models\ChatChannel;
 use App\Models\ChatContact;
 use App\Models\ChatConversation;
+use App\Models\Domain as ManagedDomain;
+use App\Models\Website;
 use App\Http\Controllers\Controller;
 use App\Services\ChatEngine\ChatEngineService;
 use App\Services\ChatEngine\MediaUnderstandingService;
+use App\Support\SafeUrlValidator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -36,9 +40,10 @@ class WebsiteChatWidgetController extends Controller
         $validated = $request->validate([
             'contact_token' => ['nullable', 'string', 'max:64'],
             'message' => ['required', 'string', 'max:2000'],
+            'page_origin' => ['nullable', 'string', 'max:255'],
         ]);
 
-        return $this->reply($channel, $validated['contact_token'] ?? null, $validated['message']);
+        return $this->reply($channel, $validated['contact_token'] ?? null, $validated['message'], $validated['page_origin'] ?? null);
     }
 
     /**
@@ -61,6 +66,7 @@ class WebsiteChatWidgetController extends Controller
         $validated = $request->validate([
             'contact_token' => ['nullable', 'string', 'max:64'],
             'type' => ['required', 'string', 'in:image,audio'],
+            'page_origin' => ['nullable', 'string', 'max:255'],
             'file' => $isAudio
                 ? ['required', 'file', 'mimetypes:audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/ogg,audio/webm,audio/aac,audio/mp4,audio/x-m4a,audio/3gpp,audio/amr', 'max:'.self::MAX_MEDIA_BYTES_KB]
                 : ['required', 'image', 'max:'.self::MAX_MEDIA_BYTES_KB],
@@ -89,13 +95,50 @@ class WebsiteChatWidgetController extends Controller
             @unlink($tempPath);
         }
 
-        return $this->reply($channel, $validated['contact_token'] ?? null, $text);
+        return $this->reply($channel, $validated['contact_token'] ?? null, $text, $validated['page_origin'] ?? null);
     }
 
     /**
      * One-shot fetch target for the token media() just created — drust is
      * the only expected caller, within seconds of the upload.
      */
+    /**
+     * Turns the widget's self-reported `page_origin` into a search API base
+     * URL, but only if that origin is actually a domain this business's
+     * owner (or their reseller) hosts here — otherwise a script tag dropped
+     * onto an unrelated site could make dpanel act as an outbound request
+     * proxy to arbitrary public hosts. Convention over configuration: the
+     * search endpoint always lives at /api/v1/integration on that domain,
+     * matching the contract IntegrationController already implements.
+     */
+    private function resolveDynamicIntegrationBaseUrl(Business $business, ?string $pageOrigin): ?string
+    {
+        if (! $pageOrigin || ! $business->search_enabled || ! $business->created_by) {
+            return null;
+        }
+
+        $host = parse_url($pageOrigin, PHP_URL_HOST);
+        if (! $host) {
+            return null;
+        }
+
+        $candidate = 'https://'.$host.'/api/v1/integration';
+        if (! SafeUrlValidator::isSafePublicUrl($candidate)) {
+            return null;
+        }
+
+        $ownerId = $business->created_by;
+
+        $ownedByOwner = fn ($query) => $query->where('assigned_user_id', $ownerId)->orWhere('assigned_reseller_id', $ownerId);
+
+        $owned = Website::where(fn ($q) => $q->where('domain', $host)->orWhere('hostname', $host))
+            ->where($ownedByOwner)
+            ->exists()
+            || ManagedDomain::where('name', $host)->where($ownedByOwner)->exists();
+
+        return $owned ? $candidate : null;
+    }
+
     public function showMedia(string $token): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $path = Cache::get('widget-media:'.$token);
@@ -105,9 +148,23 @@ class WebsiteChatWidgetController extends Controller
         return response()->file($path);
     }
 
-    private function reply(ChatChannel $channel, ?string $contactToken, string $messageText): JsonResponse
+    private function reply(ChatChannel $channel, ?string $contactToken, string $messageText, ?string $pageOrigin = null): JsonResponse
     {
         $contactToken = $contactToken ?: Str::random(40);
+
+        // No per-business integration_base_url configured yet, but search is
+        // switched on: fall back to the page the widget is embedded on as the
+        // search target, so the same script tag works unmodified across every
+        // site a business (or its customers) hosts here, instead of each one
+        // needing manual setup first. Not attempted for any other channel —
+        // Telegram/WhatsApp/etc. have no "current page" to fall back to, and
+        // already require the base URL to be configured explicitly.
+        if ($channel->business && ! $channel->business->integration_base_url) {
+            $dynamicUrl = $this->resolveDynamicIntegrationBaseUrl($channel->business, $pageOrigin);
+            if ($dynamicUrl) {
+                $channel->business->integration_base_url = $dynamicUrl;
+            }
+        }
 
         $adapter = $this->chatEngine->adapterFor('website');
         $inbound = $adapter->normalizeInbound($channel, [

@@ -315,10 +315,15 @@ fn spawn_pty(
         "bwrap",
         "--unshare-user",
         "--unshare-pid",
-        "--unshare-net",
         "--unshare-ipc",
         "--unshare-uts",
         "--unshare-cgroup-try",
+        // Deliberately not --unshare-net: this terminal exists to run
+        // composer/npm/git for the site, all of which need real outbound
+        // network access. The site owner already has that access outside
+        // this sandbox anyway (cron, SSH if enabled), so isolating it here
+        // would only break the terminal's own purpose without adding
+        // meaningful containment.
         "--die-with-parent",
         "--uid",
         &uid,
@@ -344,6 +349,18 @@ fn spawn_pty(
         "/tmp",
         "--dir",
         "/etc",
+        "--ro-bind",
+        "/etc/alternatives",
+        "/etc/alternatives",
+        "--ro-bind",
+        "/etc/resolv.conf",
+        "/etc/resolv.conf",
+        "--ro-bind",
+        "/etc/ssl",
+        "/etc/ssl",
+        "--ro-bind",
+        "/etc/php",
+        "/etc/php",
         "--ro-bind",
         &passwd_path,
         "/etc/passwd",

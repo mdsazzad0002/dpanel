@@ -44,6 +44,10 @@ class MediaUnderstandingService
     private function call(string $apiUrl, string $url, ?string $language = null, array $mediaHeaders = []): ?string
     {
         if ($apiUrl === '') {
+            Log::warning('ChatEngine: media understanding skipped, no API URL configured', [
+                'url' => $url,
+            ]);
+
             return null;
         }
 
@@ -62,12 +66,28 @@ class MediaUnderstandingService
             ], fn ($value) => $value !== null));
 
             if (! $response->successful() || ! $response->json('success')) {
+                Log::warning('ChatEngine: media understanding call did not succeed', [
+                    'api_url' => $apiUrl,
+                    'media_url' => $url,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
                 return null;
             }
 
             $text = trim((string) $response->json('data.text'));
 
-            return $text !== '' ? $text : null;
+            if ($text === '') {
+                Log::warning('ChatEngine: media understanding returned an empty transcript', [
+                    'api_url' => $apiUrl,
+                    'media_url' => $url,
+                ]);
+
+                return null;
+            }
+
+            return $text;
         } catch (\Throwable $e) {
             Log::warning('ChatEngine: media understanding call failed', [
                 'api_url' => $apiUrl,

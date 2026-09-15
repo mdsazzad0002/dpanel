@@ -138,23 +138,62 @@ class ChatEngineService
 
         $system = $this->businessKnowledge->buildSystemPrompt($channel);
         $business = $channel->business;
-        $businessToolList = $business ? $this->businessTools->availableTools($business) : [];
+        $internal = $channel->isInternal();
+        $businessToolList = $business ? $this->businessTools->availableTools($business, $internal) : [];
         $tools = [...$businessToolList, $this->contactCapture->tool()];
+
+        if (! $internal) {
+            $system .= "\n\nThis is a public, unauthenticated conversation (e.g. a website visitor, not someone logged into the business's own "
+                .'panel). Never reveal another person\'s private details here — a customer\'s phone number, outstanding due, order history, or '
+                .'similar — even if directly asked or if a tool happens to return it. Only discuss the current requester\'s own order/details '
+                .'once they themselves have provided enough to identify it (e.g. their own order number or phone number they just gave you).';
+        }
         $hasSearchTools = collect($businessToolList)->contains(fn (array $t): bool => $t['function']['name'] === 'search');
         $hasActionTools = collect($businessToolList)->contains(fn (array $t): bool => $t['function']['name'] !== 'search');
 
         if ($hasSearchTools) {
             $system .= "\n\nYou also have search tools available that look up live information directly on this business's own site. "
-                .'Before telling the customer you don\'t have information, check whether a search tool could answer it and use one if relevant.';
+                .'Before telling the customer you don\'t have information, check whether a search tool could answer it and use one if relevant. '
+                .'This is a real function call you make yourself in the background, invisible to the requester — it is never something you ask '
+                .'them to do or wait for permission for. If a name, phone number, product, or invoice is mentioned and you don\'t already know '
+                .'its details, call the search tool with it BEFORE writing any reply — do not ask the requester a question that a search call '
+                .'could answer instead.';
         }
 
         if ($hasActionTools) {
             $system .= "\n\nYou also have tools available to take real actions (place an order, send an email, send an SMS). "
-                .'Only call a tool when the customer has clearly asked for that action and you have all the required details — confirm details with the customer first if anything is missing or ambiguous.';
+                .'Only call a tool when the requester has clearly asked for that action and you have all the required details. '
+                .'If a detail is about someone already in the business\'s own records (e.g. an existing customer\'s phone number for an SMS), '
+                .'use a search tool to look it up yourself before asking anyone to repeat information the business already has — only ask '
+                .'the requester directly for details nobody else could know, like the message text to send or a brand-new customer\'s contact '
+                .'info. Never ask the requester for their own name/phone/email just to carry out an action tool — that\'s only for save_contact_info below. '
+                ."Example: requester says \"send Sazzad an SMS about their due\" and you have a search tool. Do NOT reply asking for Sazzad's "
+                .'phone number — call search with "Sazzad" FIRST in this same turn. If it returns a phone number and due amount, either call '
+                .'send_sms immediately with a reasonable due-reminder message, or if you need the exact wording, ask the requester ONLY for '
+                .'the message text (never the phone number you already found). Only ask for the phone number if search genuinely found no match. '
+                .'If YOU asked the requester for a specific missing detail to complete an action (a phone number, the message text, an address, '
+                .'...) and their very next message supplies just that — a bare phone number, a short line of text — treat it as the answer to '
+                .'your own question and immediately call the action tool with it. Do not call save_contact_info instead, and do not just '
+                .'acknowledge it and say your team will handle it later — you have the tool, use it now, in this same turn.';
+        }
+
+        if (collect($businessToolList)->contains(fn (array $t): bool => $t['function']['name'] === 'list_due_customers')) {
+            $system .= "\n\nWhen asked to remind/notify everyone (or a whole group) who has an outstanding due, rather than one named customer, "
+                .'this is a two-step process using two different tools — never call both in the same turn: '
+                ."Step 1 — call list_due_customers, then reply summarizing what you'd send: how many customers, and the exact reminder wording "
+                .'you plan to use as a template (e.g. "Priyo {name}, apnar baki {due} taka." — {name} and {due} are placeholders send_due_reminders '
+                .'fills in per customer, so describe it to the requester in plain language, not with the literal placeholders). Ask the requester '
+                .'to confirm before anything goes out. Do not call send_due_reminders in this reply. '
+                .'Step 2 — only once the requester clearly confirms (e.g. "yes", "send it", "go ahead") in a later message, call send_due_reminders '
+                .'ONCE with that message template — it texts every customer who currently has a due itself, you do not call send_sms for this. '
+                .'If the list was empty at step 1, say so and stop — do not invent customers, and do not call send_due_reminders for an empty list. '
+                .'This is only ever available on an internal/authenticated conversation.';
         }
 
         $system .= "\n\nYou also have a save_contact_info tool. When you can't fully resolve something yourself — the answer isn't in the business "
-            .'knowledge, the customer wants a quote/callback, or a team member needs to follow up — the professional move is to get the '
+            .'knowledge, the customer wants a quote/callback, or a team member needs to follow up (not when an action tool above can already fully '
+            .'carry out what was asked, and not when a phone/email/name you just received was the answer to something YOU asked for to complete '
+            .'an action tool call — that value belongs to that action tool, not to save_contact_info) — the professional move is to get the '
             .'*customer\'s own* phone number so your team can reach them, not to just hand them the business\'s number and end the conversation there. '
             .'Ask for it naturally as part of handing them off (e.g. "Could I get a contact number so our team can reach you about this?"), '
             .'call save_contact_info the moment they give their name, phone, or email — even if the others are still missing — and don\'t ask again '
@@ -191,7 +230,7 @@ class ChatEngineService
                 $toolName = $call['function']['name'] ?? '';
                 $toolResult = $toolName === 'save_contact_info'
                     ? $this->contactCapture->execute($conversation->contact, $arguments)
-                    : $this->businessTools->execute($business, $toolName, $arguments);
+                    : $this->businessTools->execute($business, $toolName, $arguments, (string) $conversation->id, $internal);
 
                 $workingMessages[] = [
                     'role' => 'tool',
@@ -203,7 +242,26 @@ class ChatEngineService
 
         $reply = trim((string) ($result['content'] ?? ''));
 
+        if ($reply === '' && ! empty($result['tool_calls'])) {
+            // The model was still requesting tool calls when the round cap
+            // was hit — force one last text-only completion instead of
+            // silently dropping the reply (the customer would otherwise
+            // never hear back even though every tool call succeeded).
+            $result = $this->aiGateway->chatAuto(null, $workingMessages, [
+                'system' => $system,
+                'channel' => $channel->type,
+                'operation' => 'chat',
+            ]);
+
+            $reply = trim((string) ($result['content'] ?? ''));
+        }
+
         if ($reply === '') {
+            Log::warning('ChatEngine: AI produced an empty reply', [
+                'channel_id' => $channel->id,
+                'conversation_id' => $conversation->id,
+            ]);
+
             return;
         }
 

@@ -13,6 +13,7 @@ use App\Http\Controllers\BillingSystemController;
 use App\Http\Controllers\ChatEngineBusinessController;
 use App\Http\Controllers\ChatEngineBusinessProductController;
 use App\Http\Controllers\ChatEngineBusinessQnaController;
+use App\Http\Controllers\ChatEngineAssistantController;
 use App\Http\Controllers\ChatEngineChannelController;
 use App\Http\Controllers\ChatEngineConversationController;
 use App\Http\Controllers\ChatEngineFacebookAppController;
@@ -563,6 +564,9 @@ Route::prefix('cpsess{token}')
                     Route::patch('channels/{channel}/toggle', [ChatEngineChannelController::class, 'toggle'])->name('chat-engine.channels.toggle');
                     Route::patch('channels/{channel}/owner', [ChatEngineChannelController::class, 'transferOwnership'])->name('chat-engine.channels.owner');
                     Route::delete('channels/{channel}', [ChatEngineChannelController::class, 'destroy'])->name('chat-engine.channels.destroy');
+
+                    Route::get('channels/{channel}/assistant', [ChatEngineAssistantController::class, 'show'])->name('chat-engine.channels.assistant');
+                    Route::post('channels/{channel}/assistant', [ChatEngineAssistantController::class, 'send'])->name('chat-engine.channels.assistant.send');
 
                     Route::get('conversations', [ChatEngineConversationController::class, 'index'])->name('chat-engine.conversations.index');
                     Route::get('conversations/{conversation}', [ChatEngineConversationController::class, 'show'])->name('chat-engine.conversations.show');

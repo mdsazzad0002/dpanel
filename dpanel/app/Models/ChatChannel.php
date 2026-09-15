@@ -145,6 +145,24 @@ class ChatChannel extends Model
         return is_array($settings) ? (bool) ($settings['auto_reply_enabled'] ?? true) : true;
     }
 
+    /**
+     * Whether this embed is only ever reachable by someone already logged
+     * into the business's own panel (e.g. an internal/admin-only page),
+     * as opposed to a public, unauthenticated surface like a storefront.
+     * There is no per-message login check — access is enforced entirely by
+     * WHERE the channel's script tag/embed is placed: an internal channel's
+     * embed must only ever appear behind the business's own login wall.
+     * Gates whether customer-identifying data (phone numbers, due amounts)
+     * and action tools (send_sms, place_order, send_email) are ever offered
+     * to the AI for this channel — see BusinessToolService::availableTools().
+     */
+    public function isInternal(): bool
+    {
+        $settings = $this->settings;
+
+        return is_array($settings) && (bool) ($settings['internal_access'] ?? false);
+    }
+
 
     public function systemPrompt(): string
     {

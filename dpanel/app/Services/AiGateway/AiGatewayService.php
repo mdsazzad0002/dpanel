@@ -268,7 +268,7 @@ class AiGatewayService
      */
     public function chatAuto(?string $modelName, array $messages, array $options = [], ?int $providerId = null): array
     {
-        $candidates = $this->router->candidates($modelName, $providerId);
+        $candidates = $this->router->candidates($modelName, $providerId, empty($options['tools']) ? [] : ['tools']);
 
         if ($candidates->isEmpty()) {
             throw Exceptions\AiGatewayException::noActiveProvider();
@@ -310,7 +310,7 @@ class AiGatewayService
      */
     public function chatStreamAuto(?string $modelName, array $messages, array $options, \Closure $onDelta, ?int $providerId = null): array
     {
-        $candidates = $this->router->candidates($modelName, $providerId);
+        $candidates = $this->router->candidates($modelName, $providerId, empty($options['tools']) ? [] : ['tools']);
 
         if ($candidates->isEmpty()) {
             throw Exceptions\AiGatewayException::noActiveProvider();

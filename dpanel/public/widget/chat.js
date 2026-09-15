@@ -26,6 +26,8 @@
         send: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-8-8 18-2.5-7.5L3 11z"/></svg>',
         trash: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1L4 6"/></svg>',
         check: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+        maximize: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m11-5v3a2 2 0 0 1-2 2h-3"/></svg>',
+        minimize: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v3a2 2 0 0 1-2 2H4m16-5v3a2 2 0 0 0 2 2h3M4 16h3a2 2 0 0 1 2 2v3m10-5h3a2 2 0 0 1 2 2v3"/></svg>',
     };
 
     var style = document.createElement('style');
@@ -34,18 +36,22 @@
         '#dpanel-chat-bubble:hover{transform:translateY(-2px) scale(1.04);box-shadow:0 10px 28px rgba(37,99,235,.5);}',
         '#dpanel-chat-bubble svg{transition:opacity .15s ease,transform .15s ease;}',
         '#dpanel-chat-bubble .dpanel-icon-close{position:absolute;opacity:0;transform:rotate(-45deg) scale(.6);}',
-        '#dpanel-chat-bubble.open .dpanel-icon-chat{opacity:0;transform:rotate(45deg) scale(.6);}',
+        '#dpanel-chat-bubble.open .dpanel-icon-chat{opacity:0;display:none;transform:rotate(45deg) scale(.6);}',
         '#dpanel-chat-bubble.open .dpanel-icon-close{opacity:1;transform:rotate(0) scale(1);position:static;}',
         '#dpanel-chat-bubble:not(.open) .dpanel-icon-close{position:absolute;}',
         '#dpanel-chat-badge{position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #fff;}',
-        '#dpanel-chat-panel{position:fixed;bottom:90px;right:20px;width:340px;max-width:92vw;height:480px;max-height:75vh;background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(15,23,42,.25);display:none;flex-direction:column;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;z-index:2147483000;opacity:0;transform:translateY(12px) scale(.98);transition:opacity .18s ease,transform .18s ease;}',
+        '#dpanel-chat-panel{position:fixed;bottom:90px;right:20px;width:340px;max-width:92vw;height:480px;max-height:75vh;background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(15,23,42,.25);display:none;flex-direction:column;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;z-index:2147483000;opacity:0;transform:translateY(12px) scale(.98);transition:opacity .18s ease,transform .18s ease,width .18s ease,height .18s ease,bottom .18s ease,right .18s ease,border-radius .18s ease;}',
         '#dpanel-chat-panel.open{display:flex;}',
         '#dpanel-chat-panel.visible{opacity:1;transform:translateY(0) scale(1);}',
+        '#dpanel-chat-panel.maximized{width:min(480px,94vw);height:min(760px,90vh);max-height:90vh;bottom:20px;right:20px;}',
         '#dpanel-chat-header{background:linear-gradient(135deg,#4f46e5,#2563eb);color:#fff;padding:16px 16px;font-size:14px;font-weight:600;display:flex;align-items:center;gap:10px;flex-shrink:0;}',
         '#dpanel-chat-header-avatar{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0;}',
-        '#dpanel-chat-header-text{display:flex;flex-direction:column;gap:1px;}',
+        '#dpanel-chat-header-text{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0;}',
         '#dpanel-chat-header-sub{font-size:11px;font-weight:400;opacity:.85;display:flex;align-items:center;gap:5px;}',
         '#dpanel-chat-header-sub .dpanel-dot{width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 2px rgba(74,222,128,.35);}',
+        '#dpanel-chat-maximize{background:rgba(255,255,255,.16);border:0;color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background .12s ease;}',
+        '#dpanel-chat-maximize:hover{background:rgba(255,255,255,.28);}',
+        '@media (max-width:420px){#dpanel-chat-panel.maximized{right:10px;left:10px;width:auto;bottom:10px;height:calc(100vh - 20px);max-height:calc(100vh - 20px);}}',
         '#dpanel-chat-messages{flex:1;overflow-y:auto;padding:14px 12px;font-size:13.5px;background:#f5f7fb;display:flex;flex-direction:column;gap:10px;}',
         '.dpanel-chat-row{display:flex;max-width:88%;animation:dpanel-fade-in .18s ease;}',
         '.dpanel-chat-row.user{align-self:flex-end;flex-direction:row-reverse;}',
@@ -57,6 +63,21 @@
         '.dpanel-chat-msg img.dpanel-chat-image{display:block;max-width:190px;max-height:190px;border-radius:10px;margin-bottom:4px;cursor:zoom-in;object-fit:cover;}',
         '.dpanel-chat-msg audio.dpanel-chat-audio{display:block;width:210px;max-width:100%;height:34px;}',
         '.dpanel-chat-caption{margin-top:4px;}',
+        '.dpanel-chat-text{word-wrap:break-word;}',
+        '.dpanel-chat-text code{background:rgba(15,23,42,.08);padding:1px 5px;border-radius:4px;font-size:.9em;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}',
+        '.dpanel-chat-row.user .dpanel-chat-text code{background:rgba(255,255,255,.22);}',
+        '.dpanel-chat-text pre{background:rgba(15,23,42,.06);padding:8px 10px;border-radius:8px;overflow-x:auto;margin:6px 0;}',
+        '.dpanel-chat-row.user .dpanel-chat-text pre{background:rgba(255,255,255,.18);}',
+        '.dpanel-chat-text pre code{background:none;padding:0;}',
+        '.dpanel-chat-text ul,.dpanel-chat-text ol{margin:4px 0;padding-left:20px;}',
+        '.dpanel-chat-text a{color:inherit;text-decoration:underline;}',
+        '.dpanel-chat-text strong{font-weight:700;}',
+        '.dpanel-chat-text h1,.dpanel-chat-text h2,.dpanel-chat-text h3,.dpanel-chat-text h4,.dpanel-chat-text h5,.dpanel-chat-text h6{margin:8px 0 4px;font-size:1em;font-weight:700;}',
+        '.dpanel-chat-text table{border-collapse:collapse;width:100%;margin:6px 0;font-size:.92em;display:block;overflow-x:auto;}',
+        '.dpanel-chat-text th,.dpanel-chat-text td{border:1px solid rgba(15,23,42,.15);padding:5px 8px;text-align:left;}',
+        '.dpanel-chat-row.user .dpanel-chat-text th,.dpanel-chat-row.user .dpanel-chat-text td{border-color:rgba(255,255,255,.3);}',
+        '.dpanel-chat-text th{background:rgba(15,23,42,.06);font-weight:700;}',
+        '.dpanel-chat-row.user .dpanel-chat-text th{background:rgba(255,255,255,.18);}',
         '.dpanel-typing{display:flex;align-items:center;gap:4px;padding:11px 14px;background:#fff;border-radius:14px;border-bottom-left-radius:4px;box-shadow:0 1px 2px rgba(15,23,42,.06);width:fit-content;}',
         '.dpanel-typing span{width:6px;height:6px;border-radius:50%;background:#94a3b8;animation:dpanel-bounce 1.2s infinite ease-in-out;}',
         '.dpanel-typing span:nth-child(2){animation-delay:.15s;}',
@@ -116,6 +137,7 @@
         '<div>Chat with us</div>' +
         '<div id="dpanel-chat-header-sub"><span class="dpanel-dot"></span>Usually replies instantly</div>' +
         '</div>' +
+        '<button id="dpanel-chat-maximize" type="button" title="Maximize" aria-label="Maximize chat">' + ICONS.maximize + '</button>' +
         '</div>' +
         '<div id="dpanel-chat-messages"></div>' +
         '<div id="dpanel-chat-composer">' +
@@ -156,9 +178,19 @@
     var recStopBtn = panel.querySelector('#dpanel-rec-stop');
     var lightboxImg = lightbox.querySelector('img');
     var badge = bubble.querySelector('#dpanel-chat-badge');
+    var maximizeBtn = panel.querySelector('#dpanel-chat-maximize');
 
     var unreadCount = 0;
     var isOpen = false;
+    var isMaximized = false;
+
+    maximizeBtn.addEventListener('click', function () {
+        isMaximized = !isMaximized;
+        panel.classList.toggle('maximized', isMaximized);
+        maximizeBtn.innerHTML = isMaximized ? ICONS.minimize : ICONS.maximize;
+        maximizeBtn.title = isMaximized ? 'Minimize' : 'Maximize';
+        maximizeBtn.setAttribute('aria-label', isMaximized ? 'Minimize chat' : 'Maximize chat');
+    });
 
     function updateBadge() {
         if (unreadCount > 0 && !isOpen) {
@@ -179,6 +211,104 @@
 
     function scrollToBottom() {
         messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    function isSafeUrl(url) {
+        return /^(https?:|mailto:|tel:|\/|#)/i.test(url.trim());
+    }
+
+    // Minimal, safe-by-default markdown renderer: escapes HTML first, then
+    // applies formatting on top, so no raw HTML from the source can execute.
+    function renderMarkdown(text) {
+        var codeBlocks = [];
+        var withoutFences = text.replace(/```([\s\S]*?)```/g, function (_, code) {
+            codeBlocks.push(code.replace(/^\n/, '').replace(/\n$/, ''));
+            return ' CODEBLOCK' + (codeBlocks.length - 1) + ' ';
+        });
+
+        var lines = escapeHtml(withoutFences).split('\n');
+        var html = '';
+        var listType = null;
+
+        function closeList() {
+            if (listType) { html += listType === 'ol' ? '</ol>' : '</ul>'; listType = null; }
+        }
+
+        function isTableSeparator(line) {
+            var t = line.trim();
+            return /^[\-:|\s]+$/.test(t) && /-/.test(t) && /\|/.test(t);
+        }
+        function splitTableRow(line) {
+            var t = line.trim();
+            if (t.charAt(0) === '|') t = t.slice(1);
+            if (t.charAt(t.length - 1) === '|') t = t.slice(0, -1);
+            return t.split('|').map(function (c) { return c.trim(); });
+        }
+
+        var i = 0;
+        while (i < lines.length) {
+            var line = lines[i];
+
+            if (/\|/.test(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+                closeList();
+                var headerCells = splitTableRow(line);
+                html += '<table><thead><tr>' + headerCells.map(function (c) {
+                    return '<th>' + inlineMarkdown(c) + '</th>';
+                }).join('') + '</tr></thead><tbody>';
+                i += 2;
+                while (i < lines.length && /\|/.test(lines[i]) && lines[i].trim() !== '') {
+                    var cells = splitTableRow(lines[i]);
+                    html += '<tr>' + cells.map(function (c) { return '<td>' + inlineMarkdown(c) + '</td>'; }).join('') + '</tr>';
+                    i++;
+                }
+                html += '</tbody></table>';
+                continue;
+            }
+
+            var heading = /^\s*(#{1,6})\s+(.*)$/.exec(line);
+            if (heading) {
+                closeList();
+                html += '<h' + heading[1].length + '>' + inlineMarkdown(heading[2]) + '</h' + heading[1].length + '>';
+                i++;
+                continue;
+            }
+
+            var ordered = /^\s*\d+\.\s+(.*)$/.exec(line);
+            var unordered = /^\s*[-*]\s+(.*)$/.exec(line);
+            if (ordered || unordered) {
+                var type = ordered ? 'ol' : 'ul';
+                if (listType !== type) { closeList(); html += type === 'ol' ? '<ol>' : '<ul>'; listType = type; }
+                html += '<li>' + inlineMarkdown(ordered ? ordered[1] : unordered[1]) + '</li>';
+            } else {
+                closeList();
+                if (line.trim() === '') { html += '<br>'; }
+                else { html += '<div>' + inlineMarkdown(line) + '</div>'; }
+            }
+            i++;
+        }
+        closeList();
+
+        html = html.replace(/ CODEBLOCK(\d+) /g, function (_, i) {
+            return '<pre><code>' + escapeHtml(codeBlocks[i]) + '</code></pre>';
+        });
+
+        return html;
+    }
+
+    function inlineMarkdown(str) {
+        str = str.replace(/`([^`]+)`/g, '<code>$1</code>');
+        str = str.replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, function (_, a, b) { return '<strong>' + (a || b) + '</strong>'; });
+        str = str.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, function (_, pre, inner) { return pre + '<em>' + inner + '</em>'; });
+        str = str.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (_, label, url) {
+            return isSafeUrl(url) ? '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + label + '</a>' : label;
+        });
+        return str;
     }
 
     /**
@@ -212,7 +342,8 @@
         if (text) {
             var textEl = document.createElement('div');
             if (kind === 'image' || kind === 'audio') textEl.className = 'dpanel-chat-caption';
-            textEl.textContent = text;
+            textEl.className = (textEl.className ? textEl.className + ' ' : '') + 'dpanel-chat-text';
+            textEl.innerHTML = renderMarkdown(text);
             bubbleEl.appendChild(textEl);
         }
 
@@ -287,7 +418,7 @@
         handleReply(fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contact_token: getToken(), message: text }),
+            body: JSON.stringify({ contact_token: getToken(), message: text, page_origin: window.location.origin }),
         })).finally(function () {
             setControlsDisabled(false);
         });
@@ -300,6 +431,7 @@
         var body = new FormData();
         body.append('type', type);
         body.append('file', blob, fileName);
+        body.append('page_origin', window.location.origin);
         if (getToken()) body.append('contact_token', getToken());
 
         handleReply(fetch(mediaEndpoint, { method: 'POST', body: body })).finally(function () {
