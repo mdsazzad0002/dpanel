@@ -19,7 +19,7 @@ Read these files first:
 - `README.md` - project overview and install commands
 - `SECURITY.md` - vulnerability reporting policy
 - `LICENSE` - custom free-use license
-- `docs/FIRST_INSTALL_AND_PERMISSIONS.md` - first install and permission repair guide
+- [License](FIRST_INSTALL_AND_PERMISSIONS) - first install and permission repair guide
 
 ## Contribution Rules
 
