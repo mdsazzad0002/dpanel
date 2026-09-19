@@ -24,14 +24,6 @@ defineProps({
             <i class="bi bi-box-arrow-in-right text-xs text-slate-400"></i>
             {{ fm.contextItem?.type === 'dir' ? 'Open Folder' : (fm.isEditableFile(fm.contextItem?.name) ? 'Edit File' : 'Open File') }}
         </button>
-        <button v-if="fm.contextItem?.type === 'dir'" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('set-root')">
-            <i class="bi bi-pin-angle text-xs text-slate-400"></i>
-            Set as Root Folder
-        </button>
-        <button v-if="fm.contextItem?.type === 'file' && fm.isEditableFile(fm.contextItem?.name)" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('open-tab')">
-            <i class="bi bi-window-stack text-xs text-slate-400"></i>
-            Edit in New Tab
-        </button>
         <button v-if="fm.contextItem?.type === 'file'" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('download')">
             <i class="bi bi-download text-xs text-slate-400"></i>
             Download

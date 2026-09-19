@@ -125,14 +125,6 @@ export function useFileManager(props) {
         openPath('');
     }
 
-    function resetRootScope() {
-        router.get(panelRoute('websites.filemanager', { id: props.website.id }));
-    }
-
-    function setScopeRoot(path) {
-        router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ root: path || '' })));
-    }
-
     function openPath(path) {
         // Keep an explicit path parameter when navigating to the account root.
         // An empty query value is dropped by the router, causing the controller
@@ -738,21 +730,6 @@ export function useFileManager(props) {
             case 'open':
                 item.type === 'dir' ? openPath(item.path) : openFileInEditor(item.path);
                 break;
-            case 'open-tab':
-                if (isEditableFile(item.name)) {
-                    window.open(panelRoute('websites.filemanager', fileManagerRouteParams({
-                        path: props.currentPath,
-                        file_path: item.path,
-                    })), '_blank');
-                } else {
-                    pushToast(`Cannot edit "${item.name}". This file type is not supported for editing.`, 'info');
-                }
-                break;
-            case 'set-root':
-                if (item.type === 'dir') {
-                    setScopeRoot(item.path);
-                }
-                break;
             case 'download':
                 downloadSelected();
                 break;
@@ -1206,8 +1183,6 @@ export function useFileManager(props) {
         clearSelection,
         openModal,
         goRoot,
-        resetRootScope,
-        setScopeRoot,
         openPath,
         goParent,
         goFromPathInput,
