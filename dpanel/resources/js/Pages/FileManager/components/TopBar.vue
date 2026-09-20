@@ -1,28 +1,32 @@
 <script setup>
 import { Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
-defineProps({
+const props = defineProps({
     fm: {
         type: Object,
         required: true,
     },
 });
+
+const liveSiteUrl = computed(() => {
+    const domain = String(props.fm.props.website?.domain || '').trim();
+    if (!domain) return '';
+    return `${props.fm.props.website?.enable_ssl ? 'https' : 'http'}://${domain}`;
+});
 </script>
 
 <template>
     <header class="relative z-10 flex items-center gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-2 shadow-sm backdrop-blur-xl dark:border-slate-800/70 dark:bg-slate-950/70">
-        <div class="flex items-center gap-2">
-            <Link :href="fm.panelRoute('websites.manage', { id: fm.props.website.id })" class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white/70 px-2 py-1 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-white dark:border-slate-700 dark:bg-slate-800/70 dark:hover:bg-slate-800">
-                <img src="/sm_logo.png" alt="dPanel" class="h-6 w-auto" />
-                <div class="flex h-6 w-6 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/30">
-                    <i class="bi bi-folder-fill text-xs text-blue-600 dark:text-blue-400"></i>
-                </div>
-            </Link>
-        </div>
-
-        <div class="h-5 w-px bg-slate-200 dark:bg-slate-700"></div>
-
         <div class="flex min-w-0 flex-1 items-center gap-2">
+            <Link
+                :href="fm.panelRoute('websites.manage', { id: fm.props.website.id })"
+                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 transition-all hover:border-red-300 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+                title="Exit file manager"
+            >
+                <i class="bi bi-box-arrow-left text-sm"></i>
+            </Link>
+
             <button
                 type="button"
                 class="rounded-lg border border-slate-300/80 bg-white/70 px-2 py-1.5 shadow-sm transition hover:-translate-y-0.5 hover:bg-white lg:hidden dark:border-slate-700 dark:bg-slate-800/70 dark:hover:bg-slate-700"
@@ -84,13 +88,17 @@ defineProps({
                 </template>
             </div>
 
-            <Link
-                :href="fm.panelRoute('websites.manage', { id: fm.props.website.id })"
-                class="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-all hover:border-red-300 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+            <a
+                v-if="liveSiteUrl"
+                :href="liveSiteUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-600 transition-all hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+                title="Visit website"
             >
-                <i class="bi bi-box-arrow-left text-sm"></i>
-                <span class="hidden sm:inline">Exit</span>
-            </Link>
+                <i class="bi bi-globe2 text-sm"></i>
+                <span class="hidden sm:inline">Browse</span>
+            </a>
         </div>
     </header>
 </template>

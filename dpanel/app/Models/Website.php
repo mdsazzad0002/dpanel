@@ -12,7 +12,14 @@ class Website extends Model
 {
     protected static function booted(): void
     {
-        $reload = static fn () => DB::afterCommit(static fn () => app(\App\Services\EdgeGatewayReloader::class)->reload());
+        $reload = static function (self $website): void {
+            $domains = array_values(array_unique(array_filter([
+                strtolower((string) $website->domain),
+                strtolower((string) ($website->getOriginal('domain') ?? '')),
+            ])));
+
+            DB::afterCommit(static fn () => app(\App\Services\EdgeGatewayReloader::class)->reloadDomains($domains));
+        };
         static::saved($reload);
         static::deleted($reload);
     }

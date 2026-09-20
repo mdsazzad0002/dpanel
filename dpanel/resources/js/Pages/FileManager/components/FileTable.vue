@@ -66,7 +66,12 @@ defineProps({
                                 <span v-if="fm.unsavedFilePath === item.path" class="text-[10px] font-semibold text-amber-600">*</span>
                             </div>
                             <div class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 sm:hidden">
-                                {{ fm.typeLabelForItem(item) }} &middot; {{ fm.formatBytes(item.size) }}
+                                {{ fm.typeLabelForItem(item) }} &middot;
+                                <span v-if="item.type === 'dir' && item.size == null">
+                                    <button v-if="fm.folderSizeLoadingPath !== item.path" type="button" class="underline decoration-dotted" @click.stop="fm.calculateFolderSize(item)">Calculate</button>
+                                    <span v-else>Calculating…</span>
+                                </span>
+                                <span v-else>{{ fm.formatBytes(item.size) }}</span>
                             </div>
                         </td>
                         <td class="hidden px-3 py-0.5 sm:table-cell">
@@ -74,7 +79,20 @@ defineProps({
                                 {{ fm.typeLabelForItem(item) }}
                             </span>
                         </td>
-                        <td class="hidden px-3 py-0.5 text-slate-600 md:table-cell dark:text-slate-400">{{ fm.formatBytes(item.size) }}</td>
+                        <td class="hidden px-3 py-0.5 text-slate-600 md:table-cell dark:text-slate-400">
+                            <span v-if="item.type === 'dir' && item.size == null">
+                                <button
+                                    v-if="fm.folderSizeLoadingPath !== item.path"
+                                    type="button"
+                                    class="text-xs text-sky-600 underline decoration-dotted hover:text-sky-700 dark:text-sky-400"
+                                    @click.stop="fm.calculateFolderSize(item)"
+                                >
+                                    Calculate
+                                </button>
+                                <span v-else class="text-xs text-slate-400">Calculating…</span>
+                            </span>
+                            <span v-else>{{ fm.formatBytes(item.size) }}</span>
+                        </td>
                         <td class="hidden px-3 py-0.5 font-mono text-xs text-slate-500 lg:table-cell">{{ item.permissions }}</td>
                         <td class="hidden px-3 py-0.5 text-xs text-slate-500 xl:table-cell">{{ item.modified_at ? new Date(item.modified_at).toLocaleString() : '-' }}</td>
                     </tr>

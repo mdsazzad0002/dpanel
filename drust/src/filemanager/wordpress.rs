@@ -1,4 +1,11 @@
-use std::{fs, io, io::Write, path::Path, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    fs, io,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use axum::{
     extract::{Json, State},
@@ -12,7 +19,7 @@ use crate::api::{ApiResponse, ApiState, check_token, operation_response};
 use super::{
     common::{ensure_directory_inside_home, validate_account, validate_user_path},
     unzip::{
-        ensure_directory_tree, fix_extracted_tree, is_symlink_entry, safe_entry_path,
+        ensure_directory_tree, fix_touched_permissions, is_symlink_entry, safe_entry_path,
         validate_archive, validate_replaceable_existing_target,
     },
 };
@@ -154,6 +161,8 @@ fn install_package(username: &str, target: &str, package: &[u8]) -> Result<(), S
     validate_archive(&mut archive, MAX_ENTRIES, MAX_EXPANDED_BYTES)?;
     remove_managed_demo(&target)?;
 
+    let mut touched_dirs: HashSet<PathBuf> = HashSet::new();
+    let mut touched_files: Vec<PathBuf> = Vec::new();
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
@@ -166,11 +175,14 @@ fn install_package(username: &str, target: &str, package: &[u8]) -> Result<(), S
             continue;
         }
         if entry.is_dir() {
-            ensure_directory_tree(&target, relative)?;
+            ensure_directory_tree(&target, relative, &mut touched_dirs)?;
             continue;
         }
-        let parent =
-            ensure_directory_tree(&target, relative.parent().unwrap_or_else(|| Path::new("")))?;
+        let parent = ensure_directory_tree(
+            &target,
+            relative.parent().unwrap_or_else(|| Path::new("")),
+            &mut touched_dirs,
+        )?;
         let destination = target.join(relative);
         validate_replaceable_existing_target(&destination)?;
         let temporary = parent.join(format!(".dpanel-wordpress-{}-{index}", std::process::id()));
@@ -183,8 +195,9 @@ fn install_package(username: &str, target: &str, package: &[u8]) -> Result<(), S
             .map_err(|error| format!("Failed to flush WordPress file: {error}"))?;
         fs::rename(&temporary, &destination)
             .map_err(|error| format!("Failed to install WordPress file: {error}"))?;
+        touched_files.push(destination);
     }
-    fix_extracted_tree(username, &group, &target)
+    fix_touched_permissions(username, &group, &touched_dirs, &touched_files)
 }
 
 fn ensure_installable_target(target: &Path) -> Result<(), String> {

@@ -224,6 +224,9 @@ Route::post('/websites/{id}/filemanager/upload', [WebsiteFileManagerController::
 Route::patch('/websites/{id}/filemanager/permissions', [WebsiteFileManagerController::class, 'changePermissions'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.permissions');
+Route::get('/websites/{id}/filemanager/folder-size', [WebsiteFileManagerController::class, 'calculateFolderSize'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.filemanager.folder-size');
 Route::patch('/websites/{id}/filemanager/rename', [WebsiteFileManagerController::class, 'renameItem'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.item.rename');

@@ -33,6 +33,9 @@ export function useFileManager(props) {
     const trashItems = ref([]);
     const trashLoading = ref(false);
     const trashActionId = ref('');
+    const trashSelectedPaths = ref([]);
+    const trashBulkActionLoading = ref(false);
+    const folderSizeLoadingPath = ref('');
     const sidebarOpen = ref(true);
     const sortBy = ref('name');
     const sortDir = ref('asc');
@@ -454,6 +457,25 @@ export function useFileManager(props) {
         window.location.href = panelRoute('websites.filemanager.file.download', fileManagerRouteParams({ file_path: singleSelectedItem.value.path }));
     }
 
+    function calculateFolderSize(item) {
+        if (!item || item.type !== 'dir' || folderSizeLoadingPath.value === item.path) return;
+        folderSizeLoadingPath.value = item.path;
+        window.axios
+            .get(panelRoute('websites.filemanager.folder-size', fileManagerRouteParams({ item_path: item.path })), {
+                headers: { Accept: 'application/json' },
+            })
+            .then((response) => {
+                const size = Number(response?.data?.size ?? 0);
+                localItems.value = localItems.value.map((entry) => (entry.path === item.path ? { ...entry, size } : entry));
+            })
+            .catch((error) => {
+                pushToast(error?.response?.data?.message || 'Failed to calculate folder size.', 'error');
+            })
+            .finally(() => {
+                folderSizeLoadingPath.value = '';
+            });
+    }
+
     function deleteSelected() {
         const paths = selectedPaths.value.length ? selectedPaths.value : (singleSelectedItem.value ? [singleSelectedItem.value.path] : []);
         if (!paths.length) return;
@@ -545,6 +567,7 @@ export function useFileManager(props) {
 
     function loadTrash() {
         trashLoading.value = true;
+        trashSelectedPaths.value = [];
         window.axios
             .get(panelRoute('websites.filemanager.trash.index', fileManagerRouteParams()), {
                 headers: { Accept: 'application/json' },
@@ -597,12 +620,50 @@ export function useFileManager(props) {
             .then((response) => {
                 pushToast(response?.data?.message || 'Permanently deleted.', 'success');
                 trashItems.value = trashItems.value.filter((item) => item.trash_path !== trashPath);
+                trashSelectedPaths.value = trashSelectedPaths.value.filter((path) => path !== trashPath);
             })
             .catch((error) => {
                 pushToast(error?.response?.data?.message || 'Failed to delete.', 'error');
             })
             .finally(() => {
                 trashActionId.value = '';
+            });
+    }
+
+    function toggleTrashSelection(trashPath) {
+        trashSelectedPaths.value = trashSelectedPaths.value.includes(trashPath)
+            ? trashSelectedPaths.value.filter((path) => path !== trashPath)
+            : [...trashSelectedPaths.value, trashPath];
+    }
+
+    function toggleSelectAllTrash() {
+        trashSelectedPaths.value = trashSelectedPaths.value.length === trashItems.value.length
+            ? []
+            : trashItems.value.map((item) => item.trash_path);
+    }
+
+    function destroySelectedTrashItems() {
+        if (trashBulkActionLoading.value || !trashSelectedPaths.value.length) return;
+        const paths = trashSelectedPaths.value;
+        if (!confirm(`Permanently delete ${paths.length} item(s)? This cannot be undone.`)) return;
+
+        trashBulkActionLoading.value = true;
+        window.axios
+            .delete(panelRoute('websites.filemanager.trash.destroy', fileManagerRouteParams()), {
+                headers: { Accept: 'application/json' },
+                data: { trash_paths: paths },
+            })
+            .then((response) => {
+                pushToast(response?.data?.message || 'Permanently deleted.', 'success');
+                const deleted = Array.isArray(response?.data?.deleted) ? response.data.deleted : paths;
+                trashItems.value = trashItems.value.filter((item) => !deleted.includes(item.trash_path));
+                trashSelectedPaths.value = trashSelectedPaths.value.filter((path) => !deleted.includes(path));
+            })
+            .catch((error) => {
+                pushToast(error?.response?.data?.message || 'Failed to delete selected item(s).', 'error');
+            })
+            .finally(() => {
+                trashBulkActionLoading.value = false;
             });
     }
 
@@ -1136,6 +1197,9 @@ export function useFileManager(props) {
         trashItems,
         trashLoading,
         trashActionId,
+        trashSelectedPaths,
+        trashBulkActionLoading,
+        folderSizeLoadingPath,
         // forms
         createFolderForm,
         createFileForm,
@@ -1223,6 +1287,10 @@ export function useFileManager(props) {
         loadTrash,
         restoreTrashItem,
         destroyTrashItem,
+        toggleTrashSelection,
+        toggleSelectAllTrash,
+        destroySelectedTrashItems,
+        calculateFolderSize,
         submitCreateFolder,
         submitCreateFile,
         submitRename,

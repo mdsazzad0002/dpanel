@@ -383,6 +383,26 @@ class FilemanagerService
         }
     }
 
+    public function calculateFolderSize(string $username, string $path): int
+    {
+        $username = $this->normalizeUsername($username);
+        $path = $this->normalizeAbsolutePath($path);
+        if ($path === '') {
+            throw new \InvalidArgumentException('Folder path is required.');
+        }
+
+        $result = $this->filemanagerApiRequest('size', [
+            'username' => $username,
+            'path' => $path,
+        ], 120);
+        if (! $result['success']) {
+            $output = trim((string) $result['output']);
+            throw new \RuntimeException($output !== '' ? $output : 'Failed to calculate folder size.');
+        }
+
+        return (int) ($result['data']['size'] ?? 0);
+    }
+
     public function installWordPress(string $username, string $path, string $version = 'latest'): void
     {
         $username = $this->normalizeUsername($username);

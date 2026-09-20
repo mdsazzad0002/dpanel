@@ -1022,6 +1022,7 @@ class WebsiteController extends Controller
                 'domain' => $website['domain'] ?? '',
                 'root_path' => $website['root_path'] ?? '',
                 'project_root' => $website['project_root'] ?? '',
+                'enable_ssl' => (bool) ($website['enable_ssl'] ?? false),
             ],
             'basePath' => $basePath,
             'rootFolder' => $scopeRoot,
@@ -1268,6 +1269,33 @@ class WebsiteController extends Controller
             : 'Permissions updated.';
 
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', $message);
+    }
+
+    public function calculateFolderSize(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+
+        $validated = $request->validate([
+            'item_path' => ['required', 'string', 'max:1500'],
+        ]);
+
+        $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
+        $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
+        $itemRelative = $this->sanitizeRelativePath((string) $validated['item_path']);
+        $itemPath = $this->resolvePathInsideBase($basePath, $itemRelative);
+
+        if (! is_dir($itemPath)) {
+            return response()->json(['message' => 'Folder not found.'], 404);
+        }
+
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+        try {
+            $size = $this->filemanagerService->calculateFolderSize($siteOwner, $itemPath);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Failed to calculate folder size. '.$e->getMessage()], 422);
+        }
+
+        return response()->json(['size' => $size]);
     }
 
     public function renameItem(Request $request, string $token, string $id): RedirectResponse|JsonResponse
@@ -1554,6 +1582,7 @@ class WebsiteController extends Controller
                 $itemPaths
             );
             $this->filemanagerService->zipPaths($siteOwner, $sourcePaths, $zipPath);
+            $this->filemanagerService->changePermissions($siteOwner, $zipPath, '644', false);
         } catch (\Throwable $e) {
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create zip. '.$e->getMessage());
         }

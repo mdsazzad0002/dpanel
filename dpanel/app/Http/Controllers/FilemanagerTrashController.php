@@ -67,27 +67,56 @@ class FilemanagerTrashController extends Controller
     public function destroy(Request $request, string $token, string $id): JsonResponse
     {
         $website = $this->resolver->findAuthorizedWebsiteOrFail($id, $request->user());
-        $data = $request->validate(['trash_path' => ['required', 'string', 'max:1500']]);
+        $data = $request->validate([
+            'trash_path' => ['nullable', 'string', 'max:1500'],
+            'trash_paths' => ['nullable', 'array', 'min:1'],
+            'trash_paths.*' => ['string', 'max:1500'],
+        ]);
+
+        $paths = array_values(array_unique(array_filter(array_merge(
+            [(string) ($data['trash_path'] ?? '')],
+            (array) ($data['trash_paths'] ?? []),
+        ), fn (string $path): bool => $path !== '')));
+
+        if ($paths === []) {
+            return response()->json(['ok' => false, 'message' => 'No trash item selected.'], 422);
+        }
 
         $basePath = $this->basePath($website);
         $siteOwner = (string) ($website['site_owner'] ?? '');
-        [, , $name, $trashPath] = $this->parseTrashPath((string) $data['trash_path']);
-        $sourcePath = rtrim($basePath, '/').'/'.self::TRASH_FOLDER.'/'.$trashPath;
 
-        if ($name === '' || ! file_exists($sourcePath)) {
-            return response()->json(['ok' => false, 'message' => 'Trash item was not found.'], 404);
+        $deleted = [];
+        $failed = [];
+        foreach ($paths as $path) {
+            [, , $name, $trashPath] = $this->parseTrashPath($path);
+            $sourcePath = rtrim($basePath, '/').'/'.self::TRASH_FOLDER.'/'.$trashPath;
+
+            if ($name === '' || ! file_exists($sourcePath)) {
+                $failed[] = $path;
+                continue;
+            }
+
+            try {
+                $this->filemanagerService->deletePath($siteOwner, $sourcePath);
+            } catch (\Throwable) {
+                $failed[] = $path;
+                continue;
+            }
+
+            $this->cleanupIfEmpty($siteOwner, dirname($sourcePath));
+            $this->cleanupIfEmpty($siteOwner, dirname(dirname($sourcePath)));
+            $deleted[] = $path;
         }
 
-        try {
-            $this->filemanagerService->deletePath($siteOwner, $sourcePath);
-        } catch (\Throwable $e) {
-            return response()->json(['ok' => false, 'message' => 'Failed to permanently delete. '.$e->getMessage()], 422);
+        if ($deleted === []) {
+            return response()->json(['ok' => false, 'message' => 'Failed to permanently delete the selected item(s).', 'deleted' => [], 'failed' => $failed], 422);
         }
 
-        $this->cleanupIfEmpty($siteOwner, dirname($sourcePath));
-        $this->cleanupIfEmpty($siteOwner, dirname(dirname($sourcePath)));
+        $message = count($paths) > 1
+            ? 'Permanently deleted '.count($deleted).' item(s).'.($failed !== [] ? ' '.count($failed).' failed.' : '')
+            : 'Permanently deleted.';
 
-        return response()->json(['ok' => true, 'message' => 'Permanently deleted.']);
+        return response()->json(['ok' => true, 'message' => $message, 'deleted' => $deleted, 'failed' => $failed]);
     }
 
     private function basePath(array $website): string

@@ -42,7 +42,7 @@ class NodeProcessService
             $website->forceFill(['node_process_status' => 'running'])->saveQuietly();
         } elseif ($action === 'stop') {
             $website->forceFill(['node_process_status' => 'stopped'])->saveQuietly();
-            $this->reloadGateway();
+            $this->reloadGateway($website);
         }
 
         return is_array($json['data'] ?? null) ? $json['data'] : [];
@@ -66,8 +66,8 @@ class NodeProcessService
         return rtrim($baseUrl, '/').'/api/v1/node/control';
     }
 
-    protected function reloadGateway(): void
+    protected function reloadGateway(Website $website): void
     {
-        app(\App\Services\EdgeGatewayReloader::class)->reload();
+        app(\App\Services\EdgeGatewayReloader::class)->reloadDomains([(string) $website->domain]);
     }
 }

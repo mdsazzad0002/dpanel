@@ -76,6 +76,10 @@ pub fn routes() -> Router<Arc<ApiState>> {
             post(crate::filemanager::fix_permissions::handle),
         )
         .route(
+            "/api/v1/filemanager/size",
+            post(crate::filemanager::size::handle),
+        )
+        .route(
             "/api/v1/filemanager/wordpress-install",
             post(crate::filemanager::wordpress::handle),
         )

@@ -192,10 +192,17 @@ pub(crate) async fn handle(
     if let Err(error) = check_token(&state, &headers) {
         return error.into_response();
     }
-    operation_response(
-        create_user_zip(&request.username, &request.paths, &request.destination),
-        "Zip created",
-    )
+
+    let result = tokio::task::spawn_blocking(move || {
+        create_user_zip(&request.username, &request.paths, &request.destination)
+    })
+    .await;
+    match result {
+        Ok(result) => operation_response(result, "Zip created"),
+        Err(error) => axum::response::IntoResponse::into_response(
+            crate::api::ApiResponse::error(&format!("Zip worker failed: {error}")),
+        ),
+    }
 }
 
 #[cfg(test)]

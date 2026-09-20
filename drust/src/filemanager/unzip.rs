@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -83,6 +84,8 @@ pub fn unzip_user_archive(
     validate_archive(&mut zip, max_entries, max_expanded_bytes)?;
 
     let mut expanded_bytes = 0_u64;
+    let mut touched_dirs: HashSet<PathBuf> = HashSet::new();
+    let mut touched_files: Vec<PathBuf> = Vec::new();
     for index in 0..zip.len() {
         let mut entry = zip
             .by_index(index)
@@ -96,12 +99,12 @@ pub fn unzip_user_archive(
         }
 
         if entry.is_dir() {
-            ensure_directory_tree(&canonical_root, &relative)?;
+            ensure_directory_tree(&canonical_root, &relative, &mut touched_dirs)?;
             continue;
         }
 
         let parent_relative = relative.parent().unwrap_or_else(|| Path::new(""));
-        let parent = ensure_directory_tree(&canonical_root, parent_relative)?;
+        let parent = ensure_directory_tree(&canonical_root, parent_relative, &mut touched_dirs)?;
         let target = canonical_root.join(&relative);
         if target == canonical_archive {
             return Err("Zip archive cannot overwrite itself during extraction.".into());
@@ -141,9 +144,11 @@ pub fn unzip_user_archive(
             let _ = fs::remove_file(&temporary);
         }
         extract_result?;
+        touched_files.push(target);
     }
 
-    fix_extracted_tree(username, &group, &canonical_root)?;
+    fix_touched_permissions(username, &group, &touched_dirs, &touched_files)?;
+    fix_laravel_writable_dirs(&canonical_root.to_string_lossy())?;
 
     info(&format!(
         "zip extracted: {} -> {}",
@@ -202,7 +207,11 @@ pub(super) fn is_symlink_entry<R: io::Read>(entry: &zip::read::ZipFile<'_, R>) -
         .unwrap_or(false)
 }
 
-pub(super) fn ensure_directory_tree(root: &Path, relative: &Path) -> Result<PathBuf, String> {
+pub(super) fn ensure_directory_tree(
+    root: &Path,
+    relative: &Path,
+    touched_dirs: &mut HashSet<PathBuf>,
+) -> Result<PathBuf, String> {
     let mut current = root.to_path_buf();
     for component in relative.components() {
         let Component::Normal(name) = component else {
@@ -229,6 +238,7 @@ pub(super) fn ensure_directory_tree(root: &Path, relative: &Path) -> Result<Path
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 fs::create_dir(&current)
                     .map_err(|e| format!("failed to create {}: {e}", current.display()))?;
+                touched_dirs.insert(current.clone());
             }
             Err(e) => return Err(format!("failed to inspect {}: {e}", current.display())),
         }
@@ -236,40 +246,50 @@ pub(super) fn ensure_directory_tree(root: &Path, relative: &Path) -> Result<Path
     Ok(current)
 }
 
-pub(super) fn fix_extracted_tree(username: &str, group: &str, root: &Path) -> Result<(), String> {
-    let root = root.to_string_lossy();
-    run_status(
-        "chown",
-        &["-R", &format!("{username}:{group}"), root.as_ref()],
-    )?;
-    run_status(
-        "find",
-        &[
-            root.as_ref(),
-            "-type",
-            "d",
-            "-exec",
-            "chmod",
-            "0755",
-            "{}",
-            "+",
-        ],
-    )?;
-    run_status(
-        "find",
-        &[
-            root.as_ref(),
-            "-type",
-            "f",
-            "-exec",
-            "chmod",
-            "0644",
-            "{}",
-            "+",
-        ],
-    )?;
+/// Fixes ownership/mode only on the directories and files this extraction actually
+/// created, instead of walking the whole destination tree (which used to dominate
+/// unzip time when extracting into a folder that already held many files, e.g. an
+/// existing `vendor/` or `node_modules/`).
+pub(super) fn fix_touched_permissions(
+    username: &str,
+    group: &str,
+    touched_dirs: &HashSet<PathBuf>,
+    touched_files: &[PathBuf],
+) -> Result<(), String> {
+    let owner = format!("{username}:{group}");
+    let dir_paths: Vec<String> = touched_dirs
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    let file_paths: Vec<String> = touched_files
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
 
-    fix_laravel_writable_dirs(root.as_ref())?;
+    let all_paths: Vec<&str> = dir_paths
+        .iter()
+        .chain(file_paths.iter())
+        .map(String::as_str)
+        .collect();
+    for chunk in all_paths.chunks(500) {
+        let mut args = vec![owner.as_str()];
+        args.extend_from_slice(chunk);
+        run_status("chown", &args)?;
+    }
+
+    let dir_refs: Vec<&str> = dir_paths.iter().map(String::as_str).collect();
+    for chunk in dir_refs.chunks(500) {
+        let mut args = vec!["0755"];
+        args.extend_from_slice(chunk);
+        run_status("chmod", &args)?;
+    }
+
+    let file_refs: Vec<&str> = file_paths.iter().map(String::as_str).collect();
+    for chunk in file_refs.chunks(500) {
+        let mut args = vec!["0644"];
+        args.extend_from_slice(chunk);
+        run_status("chmod", &args)?;
+    }
 
     Ok(())
 }
