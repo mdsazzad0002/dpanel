@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     website: {
@@ -745,12 +745,17 @@ const saveRuntimeSettings = async () => {
                                     PHP {{ website.php_version || '-' }}
                                     <span class="border-l border-blue-200 pl-1.5 font-semibold dark:border-blue-800">Edit</span>
                                 </button>
-                                <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium" :class="sslCompactValidityClass">
-                                    <i class="bi bi-shield-check"></i>
-                                    <span>SSL</span>
-                                    <span class="opacity-40">|</span>
-                                    <span>{{ sslEnabled ? sslValidityLabel : 'Disabled' }}</span>
-                                </span>
+                                <Deferred data="sslStatus">
+                                    <template #fallback>
+                                        <span class="inline-flex h-[26px] w-24 animate-pulse items-center rounded-full border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></span>
+                                    </template>
+                                    <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium" :class="sslCompactValidityClass">
+                                        <i class="bi bi-shield-check"></i>
+                                        <span>SSL</span>
+                                        <span class="opacity-40">|</span>
+                                        <span>{{ sslEnabled ? sslValidityLabel : 'Disabled' }}</span>
+                                    </span>
+                                </Deferred>
                             </div>
 
                             <!-- Domain -->
@@ -823,7 +828,12 @@ const saveRuntimeSettings = async () => {
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 dark:border-slate-700/80 dark:bg-slate-800/30">
                                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Project Type</p>
-                                    <p class="mt-1.5 text-sm font-semibold capitalize text-slate-700 dark:text-slate-200">{{ detectedApp || 'Generic website' }}</p>
+                                    <Deferred data="rootInspection">
+                                        <template #fallback>
+                                            <div class="mt-2 h-4 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                                        </template>
+                                        <p class="mt-1.5 text-sm font-semibold capitalize text-slate-700 dark:text-slate-200">{{ detectedApp || 'Generic website' }}</p>
+                                    </Deferred>
                                 </div>
                                 <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 dark:border-slate-700/80 dark:bg-slate-800/30">
                                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Database Connection</p>
@@ -847,6 +857,10 @@ const saveRuntimeSettings = async () => {
                                     </svg>
                                     {{ action.label }}
                                 </Link>
+                                <Deferred data="rootInspection">
+                                    <template #fallback>
+                                        <div class="h-[42px] w-full animate-pulse rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></div>
+                                    </template>
                                 <div v-if="isLaravelWebsite" class="grid gap-2" :class="storageLinked ? 'grid-cols-2' : 'grid-cols-1'">
                                     <button type="button" :disabled="Boolean(storageLinkLoading)"
                                         class="flex w-full items-center gap-2 rounded-xl border border-blue-200 bg-blue-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:border-blue-700"
@@ -861,6 +875,7 @@ const saveRuntimeSettings = async () => {
                                         {{ storageLinkLoading === 'unlink' ? 'Unlinking...' : 'Unlink' }}
                                     </button>
                                 </div>
+                                </Deferred>
                                 <button type="button" :disabled="permissionFixLoading"
                                     class="flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/50 px-3.5 py-2.5 text-left text-[13px] font-medium text-amber-700 transition hover:border-amber-300 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400"
                                     @click="fixProjectPermissions">
@@ -868,7 +883,11 @@ const saveRuntimeSettings = async () => {
                                     {{ permissionFixLoading ? 'Fixing Permissions...' : 'Fix Permissions' }}
                                 </button>
 
-
+                                <Deferred data="rootInspection">
+                                    <template #fallback>
+                                        <div v-for="n in 3" :key="n"
+                                            class="h-[42px] w-full animate-pulse rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></div>
+                                    </template>
                                 <template v-if="supportsDatabaseAutoConnect">
                                     <Link v-if="!databaseConnection.available"
                                         :href="panelRoute('databases.create') + '?domain=' + encodeURIComponent(website.domain)"
@@ -945,6 +964,7 @@ const saveRuntimeSettings = async () => {
                                     </svg>
                                     {{ statusCheckLoading ? 'Checking...' : action.label }}
                                 </button>
+                                </Deferred>
                     </div>
                     <div class="mt-2">
                                 <Link :href="panelRoute('websites.list')" as="button"
@@ -1025,27 +1045,41 @@ const saveRuntimeSettings = async () => {
                 <div class="contents">
 
                     <section class="order-2 grid gap-3 sm:grid-cols-2 xl:col-start-2 xl:row-start-1 xl:grid-cols-1">
-                        <div v-for="metric in metrics" :key="metric.label"
-                            class="group rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-slate-800/80 dark:bg-slate-900/50">
-                            <div class="flex items-start justify-between">
-                                <div>
-                                    <p
-                                        class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                                        {{ metric.label }}</p>
-                                    <p class="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{{
-                                        metric.value }}</p>
-                                    <p v-if="metric.sub" class="mt-1 text-[11px] text-slate-400 dark:text-slate-500">{{
-                                        metric.sub }}</p>
+                        <Deferred data="metrics">
+                            <template #fallback>
+                                <div v-for="n in 4" :key="n"
+                                    class="animate-pulse rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                                    <div class="flex items-start justify-between">
+                                        <div class="space-y-2">
+                                            <div class="h-2.5 w-16 rounded bg-slate-200 dark:bg-slate-700"></div>
+                                            <div class="h-6 w-12 rounded bg-slate-200 dark:bg-slate-700"></div>
+                                        </div>
+                                        <div class="h-10 w-10 rounded-xl bg-slate-200 dark:bg-slate-700"></div>
+                                    </div>
                                 </div>
-                                <div
-                                    :class="['flex h-10 w-10 items-center justify-center rounded-xl transition', metricColorClasses[metric.color]]">
-                                    <svg viewBox="0 0 24 24" class="h-5 w-5 fill-current opacity-80">
-                                        <path
-                                            d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" />
-                                    </svg>
+                            </template>
+                            <div v-for="metric in metrics" :key="metric.label"
+                                class="group rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-slate-800/80 dark:bg-slate-900/50">
+                                <div class="flex items-start justify-between">
+                                    <div>
+                                        <p
+                                            class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                                            {{ metric.label }}</p>
+                                        <p class="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{{
+                                            metric.value }}</p>
+                                        <p v-if="metric.sub" class="mt-1 text-[11px] text-slate-400 dark:text-slate-500">{{
+                                            metric.sub }}</p>
+                                    </div>
+                                    <div
+                                        :class="['flex h-10 w-10 items-center justify-center rounded-xl transition', metricColorClasses[metric.color]]">
+                                        <svg viewBox="0 0 24 24" class="h-5 w-5 fill-current opacity-80">
+                                            <path
+                                                d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" />
+                                        </svg>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        </Deferred>
                     </section>
 
 

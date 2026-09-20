@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\Mailbox;
 use App\Models\MailDomain;
@@ -19,13 +18,13 @@ class DashboardController extends Controller
     public function index(Request $request): Response
     {
         $actor = $request->user();
-        $stats = $this->buildStats($actor);
 
         return Inertia::render('Dashboard/Dashboard', [
-            'dashboardStats' => $stats,
-            'websiteRecords' => $this->buildWebsiteRecords($actor),
-            'websiteScopeLabel' => $this->websiteScopeLabel($actor),
-            'accountSummary' => $this->buildAccountSummary($actor),
+            // Every field here comes from a `systemctl`/`du`/`redis-cli` shell-out,
+            // which is what makes the dashboard feel slow — deferred so the page
+            // renders immediately and these fill in via background requests.
+            'dashboardStats' => Inertia::defer(fn () => $this->buildStats($actor), 'system'),
+            'accountSummary' => Inertia::defer(fn () => $this->buildAccountSummary($actor), 'account'),
             'canViewServerUsage' => (bool) $actor?->hasRole('admin'),
         ]);
     }
@@ -87,14 +86,28 @@ class DashboardController extends Controller
     /** @param array<int, mixed> $paths */
     private function websiteDiskUsageMb(array $paths): float
     {
+        $validPaths = collect($paths)
+            ->map(fn ($path) => trim((string) $path))
+            ->filter(fn ($path) => $path !== '' && is_dir($path))
+            ->unique()
+            ->values();
+
+        if ($validPaths->isEmpty()) {
+            return 0.0;
+        }
+
+        // One `du` invocation covering every path instead of spawning a
+        // subprocess per website — this is what was slowing dashboard loads
+        // down for accounts with several sites.
+        $command = 'du -sb -- '.$validPaths->map(fn ($path) => escapeshellarg($path))->implode(' ').' 2>/dev/null';
+        $output = @shell_exec($command);
+
         $bytes = 0;
-        foreach (collect($paths)->map(fn ($path) => trim((string) $path))->filter()->unique() as $path) {
-            if ($path === '' || ! is_dir($path)) {
-                continue;
-            }
-            $output = @shell_exec('du -sb -- '.escapeshellarg($path).' 2>/dev/null');
-            if (is_string($output) && preg_match('/^(\d+)/', trim($output), $matches) === 1) {
-                $bytes += (int) $matches[1];
+        if (is_string($output)) {
+            foreach (preg_split('/\R/', trim($output)) ?: [] as $line) {
+                if (preg_match('/^(\d+)/', trim($line), $matches) === 1) {
+                    $bytes += (int) $matches[1];
+                }
             }
         }
 
@@ -140,177 +153,65 @@ class DashboardController extends Controller
      */
     private function buildStats(?User $actor): array
     {
-        $websites = $this->safeCountWebsites($actor);
-        $websitePending = $this->safeCountWebsitesPending($actor);
-        $databaseRequests = $this->safeCountDatabaseRequests();
-        $cronJobs = $this->safeCountActiveCronJobs();
-
-        $mailboxes = $this->safeCountMailboxes();
-        $mailQueue = $this->mailQueueCount();
         $canViewServerUsage = (bool) $actor?->hasRole('admin');
-        $system = $canViewServerUsage ? $this->systemSnapshot() : null;
+        $cpuCores = $this->cpuCoreCount();
+        $system = $canViewServerUsage ? $this->systemSnapshot($cpuCores) : null;
+
+        $serviceStates = $this->batchServiceStatuses([
+            'edge-gateway', 'drust', 'postfix', 'dovecot', 'mariadb', 'mysql', 'mysqld', 'redis-server', 'redis',
+        ]);
 
         return [
             'hostname' => $this->serverHostname(),
             'server_ip' => $this->serverIpAddress(),
             'os' => $this->serverOsName(),
             'uptime' => $this->serverUptime(),
-            'cpu_cores' => $canViewServerUsage ? $this->cpuCoreCount() : null,
+            'cpu_cores' => $canViewServerUsage ? $cpuCores : null,
             'cpu_load_percent' => $system['cpu_load_percent'] ?? null,
             'memory_used_mb' => $system['memory_used_mb'] ?? null,
             'memory_total_mb' => $system['memory_total_mb'] ?? null,
             'disk_used_gb' => $system['disk_used_gb'] ?? null,
             'disk_total_gb' => $system['disk_total_gb'] ?? null,
-            'websites_total' => $websites,
-            'websites_pending' => $websitePending,
-            'mailboxes_total' => $mailboxes,
-            'mail_queue' => $mailQueue,
-            'database_requests_total' => $databaseRequests,
-            'cron_jobs_active' => $cronJobs,
             'services' => [
-                'drust_gateway' => $this->serviceStatus('edge-gateway'),
-                'drust_api' => $this->serviceStatus('drust'),
-                'mail' => $this->serviceStatus('postfix'),
-                'dovecot' => $this->serviceStatus('dovecot'),
-                'database' => $this->databaseServiceStatus(),
-                'redis' => $this->redisServiceStatus(),
+                'drust_gateway' => $serviceStates['edge-gateway'],
+                'drust_api' => $serviceStates['drust'],
+                'mail' => $serviceStates['postfix'],
+                'dovecot' => $serviceStates['dovecot'],
+                'database' => $this->databaseServiceStatus($serviceStates),
+                'redis' => $this->redisServiceStatus($serviceStates),
             ],
         ];
     }
 
-    private function safeCountMailboxes(): int
+    /**
+     * Check several systemd units in a single `systemctl` invocation instead
+     * of spawning one process per unit.
+     *
+     * @param  array<int, string>  $services
+     * @return array<string, string> service name => 'running'|'down'|'unknown'
+     */
+    private function batchServiceStatuses(array $services): array
     {
-        try {
-            if (! DB::getSchemaBuilder()->hasTable('mailboxes')) {
-                return 0;
-            }
-
-            return Mailbox::count();
-        } catch (\Throwable $e) {
-            return 0;
+        if ($services === [] || str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+            return array_fill_keys($services, 'unknown');
         }
-    }
 
-    private function safeCountWebsites(?User $actor): int
-    {
-        try {
-            if (! DB::getSchemaBuilder()->hasTable('websites')) {
-                return 0;
-            }
+        $command = 'systemctl is-active '.implode(' ', array_map('escapeshellarg', $services)).' 2>/dev/null';
+        $output = @shell_exec($command);
+        $lines = is_string($output) ? preg_split('/\R/', trim($output)) : [];
 
-            return Website::query()
-                ->whereRaw("LOWER(TRIM(domain)) <> 'dashboard'")
-                ->visibleTo($actor)
-                ->count();
-        } catch (\Throwable $e) {
-            return 0;
+        $states = [];
+        foreach ($services as $index => $service) {
+            $states[$service] = trim((string) ($lines[$index] ?? '')) === 'active' ? 'running' : 'down';
         }
-    }
 
-    private function safeCountWebsitesPending(?User $actor): int
-    {
-        try {
-            if (! DB::getSchemaBuilder()->hasTable('websites')) {
-                return 0;
-            }
-
-            return Website::query()
-                ->whereRaw("LOWER(TRIM(domain)) <> 'dashboard'")
-                ->visibleTo($actor)
-                ->where('status', 'pending')
-                ->count();
-        } catch (\Throwable $e) {
-            return 0;
-        }
+        return $states;
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * @param  array<string, string>  $serviceStates
      */
-    private function buildWebsiteRecords(?User $actor): array
-    {
-        try {
-            if (! DB::getSchemaBuilder()->hasTable('websites')) {
-                return [];
-            }
-
-            return Website::query()
-                ->with([
-                    'assignedReseller:id,name,email',
-                    'assignedUser:id,name,email',
-                ])
-                ->whereRaw("LOWER(TRIM(domain)) <> 'dashboard'")
-                ->visibleTo($actor)
-                ->latest('created_at')
-                ->get()
-                ->map(function (Website $website): array {
-                    $assignedResellerName = $website->assignedReseller?->name;
-                    $assignedUserName = $website->assignedUser?->name;
-
-                    return [
-                        'id' => (string) $website->id,
-                        'domain' => strtolower(trim((string) ($website->domain ?? ''))),
-                        'root_path' => str_replace('\\', '/', trim((string) ($website->root_path ?? ''))),
-                        'php_version' => (string) ($website->php_version ?? ''),
-                        'enable_ssl' => (bool) ($website->enable_ssl ?? false),
-                        'status' => strtolower(trim((string) ($website->status ?? 'pending'))) ?: 'pending',
-                        'assigned_reseller_name' => $assignedResellerName,
-                        'assigned_user_name' => $assignedUserName,
-                        'created_by_label' => $assignedResellerName ?? $assignedUserName ?? 'Admin',
-                        'created_at' => $website->created_at?->toIso8601String(),
-                    ];
-                })
-                ->values()
-                ->all();
-        } catch (\Throwable $e) {
-            return [];
-        }
-    }
-
-    private function websiteScopeLabel(?User $actor): string
-    {
-        if ($actor?->hasRole('admin')) {
-            return 'All websites';
-        }
-
-        if ($actor?->hasRole('reseller')) {
-            return 'Your reseller websites';
-        }
-
-        if ($actor && ($actor->hasRole('general') || $actor->hasRole('general_user'))) {
-            return 'Your assigned websites';
-        }
-
-        return 'Websites';
-    }
-
-    private function safeCountDatabaseRequests(): int
-    {
-        try {
-            if (! DB::getSchemaBuilder()->hasTable('database_requests')) {
-                return 0;
-            }
-
-            return DatabaseRequest::query()->count();
-        } catch (\Throwable $e) {
-            return 0;
-        }
-    }
-
-    private function safeCountActiveCronJobs(): int
-    {
-        try {
-            if (! DB::getSchemaBuilder()->hasTable('cron_jobs')) {
-                return 0;
-            }
-
-            return CronJob::query()->where('status', 'active')->count();
-        } catch (\Throwable $e) {
-            return 0;
-        }
-    }
-
-    private function databaseServiceStatus(): string
+    private function databaseServiceStatus(array $serviceStates): string
     {
         $default = (string) config('database.default', 'unknown');
 
@@ -318,7 +219,7 @@ class DashboardController extends Controller
             return 'sqlite';
         }
 
-        if ($this->databaseServiceIsRunning(['mariadb', 'mysql', 'mysqld'])) {
+        if ($this->databaseServiceIsRunning($serviceStates, ['mariadb', 'mysql', 'mysqld'])) {
             return 'mariadb';
         }
 
@@ -335,12 +236,13 @@ class DashboardController extends Controller
     }
 
     /**
-     * @param array<int, string> $services
+     * @param  array<string, string>  $serviceStates
+     * @param  array<int, string>  $services
      */
-    private function databaseServiceIsRunning(array $services): bool
+    private function databaseServiceIsRunning(array $serviceStates, array $services): bool
     {
         foreach ($services as $service) {
-            if ($this->serviceStatus($service) === 'running') {
+            if (($serviceStates[$service] ?? null) === 'running') {
                 return true;
             }
         }
@@ -354,27 +256,16 @@ class DashboardController extends Controller
         return is_string($socket) && trim($socket) === '0';
     }
 
-    private function serviceStatus(string $service): string
+    /**
+     * @param  array<string, string>  $serviceStates
+     */
+    private function redisServiceStatus(array $serviceStates): string
     {
         if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
             return 'unknown';
         }
 
-        $out = @shell_exec('systemctl is-active '.escapeshellarg($service).' 2>/dev/null');
-        if (! is_string($out)) {
-            return 'unknown';
-        }
-
-        return trim($out) === 'active' ? 'running' : 'down';
-    }
-
-    private function redisServiceStatus(): string
-    {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return 'unknown';
-        }
-
-        if ($this->serviceStatus('redis-server') === 'running' || $this->serviceStatus('redis') === 'running') {
+        if (($serviceStates['redis-server'] ?? null) === 'running' || ($serviceStates['redis'] ?? null) === 'running') {
             return 'running';
         }
 
@@ -384,20 +275,6 @@ class DashboardController extends Controller
         }
 
         return 'down';
-    }
-
-    private function mailQueueCount(): int
-    {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return 0;
-        }
-
-        $out = @shell_exec("mailq 2>/dev/null | grep -E '^[A-F0-9]' | wc -l");
-        if (! is_string($out)) {
-            return 0;
-        }
-
-        return max(0, (int) trim($out));
     }
 
     private function serverHostname(): string
@@ -484,7 +361,7 @@ class DashboardController extends Controller
     /**
      * @return array{cpu_load_percent:float,memory_used_mb:int,memory_total_mb:int,disk_used_gb:float,disk_total_gb:float}
      */
-    private function systemSnapshot(): array
+    private function systemSnapshot(int $cpuCores): array
     {
         if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
             return [
@@ -499,9 +376,7 @@ class DashboardController extends Controller
         $cpu = 0.0;
         if (function_exists('sys_getloadavg')) {
             $load = sys_getloadavg();
-            $cores = (int) trim((string) @shell_exec('nproc 2>/dev/null'));
-            $cores = $cores > 0 ? $cores : 1;
-            $cpu = round(min(100, max(0, ((float) ($load[0] ?? 0.0) / $cores) * 100)), 2);
+            $cpu = round(min(100, max(0, ((float) ($load[0] ?? 0.0) / $cpuCores) * 100)), 2);
         }
 
         $memoryUsed = 0;

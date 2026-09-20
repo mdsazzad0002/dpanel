@@ -25,8 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - run: test -f docs/index.html
-      - run: test -f docs/FIRST_INSTALL_AND_PERMISSIONS.md
+      - run: test -f FIRST_INSTALL_AND_PERMISSIONS.md
       - run: test -f README.md
       - run: test -f LICENSE
       - run: test -f SECURITY.md

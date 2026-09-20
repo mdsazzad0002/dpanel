@@ -243,7 +243,6 @@ class WebsiteController extends Controller
     public function manage(string $token, string $id): Response
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
-        $metrics = $this->safeBuildDynamicMetrics($website);
         $runtimeStatus = strtolower(trim((string) ($website['status'] ?? 'pending'))) === 'live'
             ? 'live'
             : $this->detectRuntimeStatus($website);
@@ -267,9 +266,6 @@ class WebsiteController extends Controller
             ],
         ];
 
-        $autoRenewNotice = $this->autoRenewWebsiteSslIfNeeded($website);
-        $sslStatus = $this->inspectWebsiteSslStatus($website);
-        $rootInspection = $this->inspectWebsiteApplication($website);
         $databaseRequests = DatabaseRequest::query()
             ->visibleTo(request()->user())
             ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
@@ -278,14 +274,27 @@ class WebsiteController extends Controller
             ->get();
         $databaseRequest = $databaseRequests->first();
 
+        // sslStatus/autoRenewNotice share one TLS handshake; autoRenewNotice's
+        // closure reuses the status the sslStatus closure already resolved
+        // instead of inspecting the certificate a second time.
+        $sslStatus = null;
+
         return Inertia::render('Websites/Manage', [
             'website' => $website,
             'phpVersions' => $this->getPhpVersionsForWebsites(),
-            'metrics' => $metrics,
             'activities' => $activities,
-            'sslStatus' => $sslStatus,
-            'autoRenewNotice' => $autoRenewNotice,
-            'rootInspection' => $rootInspection,
+            // These involve a recursive filesystem scan, a `du` shell-out, and a
+            // live TLS handshake to the domain — deferred so the page itself
+            // renders immediately and the heavy checks load in via background
+            // requests afterwards.
+            'metrics' => Inertia::defer(fn () => $this->safeBuildDynamicMetrics($website), 'diagnostics'),
+            'rootInspection' => Inertia::defer(fn () => $this->inspectWebsiteApplication($website), 'diagnostics'),
+            'sslStatus' => Inertia::defer(function () use ($website, &$sslStatus) {
+                return $sslStatus = $this->inspectWebsiteSslStatus($website);
+            }, 'ssl'),
+            'autoRenewNotice' => Inertia::defer(function () use ($website, &$sslStatus) {
+                return $this->autoRenewWebsiteSslIfNeeded($website, $sslStatus);
+            }, 'ssl'),
             'databaseConnection' => [
                 'available' => $databaseRequest !== null,
                 'database_name' => $databaseRequest?->database_name,
@@ -2895,7 +2904,7 @@ class WebsiteController extends Controller
         ];
     }
 
-    protected function autoRenewWebsiteSslIfNeeded(array $website): ?string
+    protected function autoRenewWebsiteSslIfNeeded(array $website, ?array $status = null): ?string
     {
         if (! (bool) config('serverpanel.ssl_auto_renew_enabled', true)) {
             return null;
@@ -2907,7 +2916,7 @@ class WebsiteController extends Controller
             return null;
         }
 
-        $status = $this->inspectWebsiteSslStatus($website);
+        $status ??= $this->inspectWebsiteSslStatus($website);
         $daysRemaining = isset($status['days_remaining']) ? (int) $status['days_remaining'] : null;
         $isExpired = (string) ($status['status'] ?? '') === 'expired';
         $renewThreshold = max(0, (int) config('serverpanel.ssl_auto_renew_days', 30));
