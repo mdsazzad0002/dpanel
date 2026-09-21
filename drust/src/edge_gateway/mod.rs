@@ -1,6 +1,7 @@
 mod bandwidth;
 mod config;
 mod dispatcher;
+mod h3_listener;
 mod matching;
 mod node_process;
 mod php;
@@ -17,6 +18,7 @@ pub use config::{
     TlsConfig, UpstreamConfig,
 };
 pub use dispatcher::{DispatchContext, dispatch};
+pub use h3_listener::run_h3_listener;
 pub use matching::{normalize_request_path, resolve_route, resolve_site};
 pub use node_process::{
     NodeProcessStatus, ensure_node_process_running, node_process_status, restart_node_process,

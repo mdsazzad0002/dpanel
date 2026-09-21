@@ -15,6 +15,7 @@ firewall_install() {
         ufw allow 22/tcp || true
         ufw allow 80/tcp || true
         ufw allow 443/tcp || true
+        ufw allow 443/udp || true
         ufw allow 53/tcp || true
         ufw allow 53/udp || true
         ufw --force enable || true

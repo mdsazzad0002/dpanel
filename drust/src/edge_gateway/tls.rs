@@ -151,6 +151,25 @@ pub fn build_tls_config(store: &TlsStore) -> Result<(ServerConfig, Arc<DynamicCe
     Ok((config, resolver))
 }
 
+/// QUIC transport config for the HTTP/3 (UDP) listener. Shares the same
+/// [`DynamicCertResolver`] as the TCP/TLS listener (h1/h2) so a certificate
+/// reload updates both listeners together — no separate cert lifecycle to
+/// keep in sync.
+pub fn build_quic_server_config(
+    resolver: Arc<DynamicCertResolver>,
+) -> Result<quinn::ServerConfig, String> {
+    let builder = ServerConfig::builder_with_provider(default_provider().into());
+    let builder = builder
+        .with_safe_default_protocol_versions()
+        .map_err(|error| format!("quic tls versions failed: {error}"))?;
+    let mut tls_config = builder.with_no_client_auth().with_cert_resolver(resolver);
+    tls_config.alpn_protocols = vec![b"h3".to_vec()];
+
+    let quic_crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls_config)
+        .map_err(|error| format!("quic crypto config failed: {error}"))?;
+    Ok(quinn::ServerConfig::with_crypto(Arc::new(quic_crypto)))
+}
+
 fn load_certs(path: &PathBuf) -> Result<Vec<CertificateDer<'static>>, String> {
     let file = File::open(path).map_err(|error| format!("open cert failed: {error}"))?;
     let mut reader = BufReader::new(file);

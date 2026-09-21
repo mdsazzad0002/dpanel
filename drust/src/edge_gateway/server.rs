@@ -7,7 +7,7 @@ use axum::{
     body::Body,
     extract::State,
     http::{HeaderMap, HeaderValue, Request, StatusCode},
-    middleware::map_request,
+    middleware::{map_request, map_response},
     response::{IntoResponse, Response},
     routing::{any, post},
 };
@@ -28,7 +28,7 @@ use super::{
     ProxyConfig, RouteAction, RouteConfig, RuntimeSnapshot, SiteConfig, SnapshotCacheConfig,
     StaticFileConfig, TlsConfig, TlsIdentity, TlsListenerConfig, TlsStore, UpstreamConfig,
     build_client, build_tls_config, dispatch, health_check_upstream, load_runtime_snapshot,
-    scaffold_tls_listener_config,
+    run_h3_listener, scaffold_tls_listener_config,
 };
 
 #[derive(Clone)]
@@ -134,7 +134,29 @@ pub fn serve_gateway_with_tls(
                 .map_err(|error| format!("http server failed: {error}"))
         });
 
-        let https_task = if let Some((server_config, _)) = tls_built {
+        let https_task = if let Some((server_config, resolver)) = tls_built {
+            let https_router = https_router.layer(map_response({
+                let alt_svc = alt_svc_header_value(&tls_bind);
+                move |mut response: Response| {
+                    let alt_svc = alt_svc.clone();
+                    async move {
+                        if let Some(value) = alt_svc {
+                            response.headers_mut().insert("alt-svc", value);
+                        }
+                        response
+                    }
+                }
+            }));
+            let h3_task = tokio::spawn(run_h3_listener(
+                https_router.clone(),
+                tls_bind.clone(),
+                resolver,
+            ));
+            tokio::spawn(async move {
+                if let Err(error) = h3_task.await {
+                    warn!(%error, "HTTP/3 listener task join failed");
+                }
+            });
             Some(tokio::spawn(run_https_listener(
                 https_router,
                 tls_bind,
@@ -161,6 +183,15 @@ pub fn serve_gateway_with_tls(
         }
         Ok(())
     })
+}
+
+/// Advertises HTTP/3 availability to h1/h2 clients so browsers upgrade to
+/// QUIC on a later connection, per RFC 9114 §3.1.1. `tls_bind` is the same
+/// "host:port" the TCP TLS listener and the UDP QUIC listener both bind, so
+/// the advertised port always matches what's actually listening.
+fn alt_svc_header_value(tls_bind: &str) -> Option<HeaderValue> {
+    let port = tls_bind.rsplit(':').next()?;
+    HeaderValue::from_str(&format!("h3=\":{port}\"; ma=86400")).ok()
 }
 
 /// HTTP/2 (negotiated by default now that TLS advertises ALPN "h2") carries
