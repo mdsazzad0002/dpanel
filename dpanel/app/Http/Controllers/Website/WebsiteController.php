@@ -340,10 +340,13 @@ class WebsiteController extends Controller
         $validated = $request->validate([
             'start_directory' => ['nullable', 'string', 'max:255'],
             'php_version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
-            'runtime' => ['nullable', 'string', 'in:php,node'],
+            'runtime' => ['nullable', 'string', 'in:php,node,python'],
             'node_entry_file' => ['nullable', 'string', 'max:255'],
             'node_start_command' => ['nullable', 'string', 'max:255'],
             'node_version' => ['nullable', 'string', 'max:10'],
+            'python_entry_file' => ['nullable', 'string', 'max:255'],
+            'python_start_command' => ['nullable', 'string', 'max:255'],
+            'python_version' => ['nullable', 'string', 'max:10'],
         ]);
 
         $phpVersion = trim((string) $validated['php_version']);
@@ -360,6 +363,12 @@ class WebsiteController extends Controller
             return response()->json([
                 'message' => 'An entry file is required for the Node.js runtime.',
                 'errors' => ['node_entry_file' => ['An entry file is required for the Node.js runtime.']],
+            ], 422);
+        }
+        if ($runtime === 'python' && trim((string) ($validated['python_entry_file'] ?? '')) === '') {
+            return response()->json([
+                'message' => 'A WSGI entry module is required for the Python runtime.',
+                'errors' => ['python_entry_file' => ['A WSGI entry module is required for the Python runtime.']],
             ], 422);
         }
 
@@ -394,6 +403,18 @@ class WebsiteController extends Controller
                 }
                 if (empty($website['node_process_status']) || $website['node_process_status'] === 'stopped') {
                     $runtimeSettings['node_process_status'] = 'pending';
+                }
+            }
+
+            if ($runtime === 'python') {
+                $runtimeSettings['python_entry_file'] = trim((string) ($validated['python_entry_file'] ?? '')) ?: null;
+                $runtimeSettings['python_start_command'] = trim((string) ($validated['python_start_command'] ?? '')) ?: null;
+                $runtimeSettings['python_version'] = trim((string) ($validated['python_version'] ?? '')) ?: null;
+                if (empty($website['python_port'])) {
+                    $runtimeSettings['python_port'] = app(\App\Services\Website\WebsiteService::class)->allocatePythonPort();
+                }
+                if (empty($website['python_process_status']) || $website['python_process_status'] === 'stopped') {
+                    $runtimeSettings['python_process_status'] = 'pending';
                 }
             }
 
@@ -821,6 +842,31 @@ class WebsiteController extends Controller
             },
             'data' => $data,
             'node_process_status' => $website->fresh()->node_process_status,
+        ]);
+    }
+
+    public function pythonProcessControl(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->findAuthorizedWebsiteOrFail($id);
+        $validated = $request->validate(['action' => ['required', 'string', 'in:start,stop,restart,status']]);
+        $website = Website::query()->findOrFail($id);
+
+        try {
+            $data = app(\App\Services\Website\PythonProcessService::class)->control($website, $validated['action']);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => match ($validated['action']) {
+                'start' => 'Python process started.',
+                'stop' => 'Python process stopped.',
+                'restart' => 'Python process restarted.',
+                default => 'Python process status refreshed.',
+            },
+            'data' => $data,
+            'python_process_status' => $website->fresh()->python_process_status,
         ]);
     }
 

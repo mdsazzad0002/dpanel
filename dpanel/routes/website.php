@@ -141,6 +141,9 @@ Route::post('/websites/{id}/project-dependencies/install', [WebsiteOperationsCon
 Route::post('/websites/{id}/node/control', [WebsiteOperationsController::class, 'nodeProcessControl'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
     ->name('websites.node.control');
+Route::post('/websites/{id}/python/control', [WebsiteOperationsController::class, 'pythonProcessControl'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
+    ->name('websites.python.control');
 Route::post('/websites/{id}/project-storage-link', [WebsiteOperationsController::class, 'updateProjectStorageLink'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.project-storage-link.update');

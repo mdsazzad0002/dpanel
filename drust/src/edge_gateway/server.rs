@@ -790,6 +790,9 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
             node_entry_file: None,
             node_start_command: None,
             node_version: None,
+            python_entry_file: None,
+            python_start_command: None,
+            python_version: None,
             enable_ssl: false,
             spa_fallback: true,
             routes: Arc::from([

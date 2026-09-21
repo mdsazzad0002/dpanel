@@ -44,6 +44,34 @@ class WebsiteService
         throw new \RuntimeException('No free Node.js ports are available in the configured range.');
     }
 
+    public const PYTHON_PORT_RANGE_START = 40000;
+
+    public const PYTHON_PORT_RANGE_END = 49999;
+
+    /**
+     * Reserve the next free TCP port for a Python site's process to listen on.
+     */
+    public function allocatePythonPort(): int
+    {
+        $usedPorts = Website::query()
+            ->whereNotNull('node_port')
+            ->pluck('node_port')
+            ->merge(
+                Website::query()->whereNotNull('python_port')->pluck('python_port')
+            )
+            ->map(static fn ($port): int => (int) $port)
+            ->all();
+        $usedPorts = array_flip($usedPorts);
+
+        for ($port = self::PYTHON_PORT_RANGE_START; $port <= self::PYTHON_PORT_RANGE_END; $port++) {
+            if (! isset($usedPorts[$port])) {
+                return $port;
+            }
+        }
+
+        throw new \RuntimeException('No free Python ports are available in the configured range.');
+    }
+
     /**
      * Create or refresh a lightweight demo site page inside the website root.
      *

@@ -123,11 +123,14 @@ class MainWebsiteController extends Controller
                 },
             ],
             'start_directory' => ['nullable', 'string', 'max:255'],
-            'runtime' => ['nullable', 'string', 'in:php,node'],
-            'php_version' => [$domainType === 'alis' || $request->input('runtime') === 'node' ? 'nullable' : 'required', 'string', 'max:10'],
+            'runtime' => ['nullable', 'string', 'in:php,node,python'],
+            'php_version' => [$domainType === 'alis' || in_array($request->input('runtime'), ['node', 'python'], true) ? 'nullable' : 'required', 'string', 'max:10'],
             'node_version' => ['nullable', 'string', 'max:10'],
             'node_entry_file' => [$domainType !== 'alis' && $request->input('runtime') === 'node' ? 'required' : 'nullable', 'string', 'max:255'],
             'node_start_command' => ['nullable', 'string', 'max:255'],
+            'python_version' => ['nullable', 'string', 'max:10'],
+            'python_entry_file' => [$domainType !== 'alis' && $request->input('runtime') === 'python' ? 'required' : 'nullable', 'string', 'max:255'],
+            'python_start_command' => ['nullable', 'string', 'max:255'],
             'domain_type' => ['required', 'string', 'in:main,alis,sub'],
             'enable_ssl' => ['boolean'],
             'manage_dns' => ['boolean'],
@@ -215,6 +218,7 @@ class MainWebsiteController extends Controller
 
         $runtime = $validated['runtime'] ?? 'php';
         $nodePort = null;
+        $pythonPort = null;
         if ($parentWebsite !== null) {
             $siteOwner = (string) $parentWebsite->site_owner;
             $projectRoot = (string) $parentWebsite->project_root;
@@ -226,18 +230,28 @@ class MainWebsiteController extends Controller
             $nodeEntryFile = $parentWebsite->node_entry_file;
             $nodeStartCommand = $parentWebsite->node_start_command;
             $nodePort = $parentWebsite->node_port;
+            $pythonVersion = $parentWebsite->python_version;
+            $pythonEntryFile = $parentWebsite->python_entry_file;
+            $pythonStartCommand = $parentWebsite->python_start_command;
+            $pythonPort = $parentWebsite->python_port;
             $demoFiles = [];
         } else {
             $homeSetup = $this->filemanagerService->createAccountHome($siteOwner, null, '/bin/bash', $siteDirectory);
             $projectRoot = $homeSetup['project_root'];
             $rootPath = $homeSetup['root_path'] ?? $homeSetup['public_html'];
             $startDirectory = array_key_exists('start_directory', $validated) ? trim((string) $validated['start_directory']) : null;
-            $phpVersion = $runtime === 'node' ? '' : (string) $validated['php_version'];
+            $phpVersion = in_array($runtime, ['node', 'python'], true) ? '' : (string) $validated['php_version'];
             $nodeVersion = $validated['node_version'] ?? null;
             $nodeEntryFile = $validated['node_entry_file'] ?? null;
             $nodeStartCommand = $validated['node_start_command'] ?? null;
+            $pythonVersion = $validated['python_version'] ?? null;
+            $pythonEntryFile = $validated['python_entry_file'] ?? null;
+            $pythonStartCommand = $validated['python_start_command'] ?? null;
             if ($runtime === 'node') {
                 $nodePort = $this->websiteService->allocateNodePort();
+            }
+            if ($runtime === 'python') {
+                $pythonPort = $this->websiteService->allocatePythonPort();
             }
         }
 
@@ -260,7 +274,7 @@ class MainWebsiteController extends Controller
                 if ($startDirectory === '') {
                     $startDirectory = null;
                 }
-                $demoFiles = $runtime === 'node'
+                $demoFiles = in_array($runtime, ['node', 'python'], true)
                     ? []
                     : $this->websiteService->createDemoSitePage(
                         $rootPath,
@@ -298,6 +312,11 @@ class MainWebsiteController extends Controller
             'node_start_command' => $nodeStartCommand,
             'node_port' => $nodePort,
             'node_process_status' => $runtime === 'node' ? 'pending' : null,
+            'python_version' => $pythonVersion,
+            'python_entry_file' => $pythonEntryFile,
+            'python_start_command' => $pythonStartCommand,
+            'python_port' => $pythonPort,
+            'python_process_status' => $runtime === 'python' ? 'pending' : null,
             'enable_ssl' => $parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false),
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),
             'filemanager_show_hidden' => false,

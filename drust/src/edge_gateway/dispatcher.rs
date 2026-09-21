@@ -16,8 +16,8 @@ use std::{
 
 use super::{
     RouteAction, RuntimeSnapshot, StaticAsset, StaticAssetBody, StaticFileConfig,
-    ensure_node_process_running, execute_php_front_controller, load_static_asset,
-    normalize_request_path, proxy_request, resolve_route, resolve_static_path,
+    ensure_node_process_running, ensure_python_process_running, execute_php_front_controller,
+    load_static_asset, normalize_request_path, proxy_request, resolve_route, resolve_static_path,
 };
 
 #[derive(Clone, Debug)]
@@ -92,9 +92,12 @@ pub async fn dispatch(
         return response;
     }
     // Certbot's webroot authenticator writes its token to the site's root
-    // path regardless of runtime. Node sites route "/" through a reverse
-    // proxy, so serve this one path straight off disk or SSL issuance breaks.
-    if site.runtime == "node" && path.starts_with("/.well-known/acme-challenge/") {
+    // path regardless of runtime. Node/Python sites route "/" through a
+    // reverse proxy, so serve this one path straight off disk or SSL
+    // issuance breaks.
+    if (site.runtime == "node" || site.runtime == "python")
+        && path.starts_with("/.well-known/acme-challenge/")
+    {
         if let Some(document_root) = site.document_root.as_ref() {
             if let Some(path_on_disk) =
                 resolve_static_path(document_root, &path, "index.html", false)
@@ -264,6 +267,34 @@ pub async fn dispatch(
                             simple_response(
                                 StatusCode::BAD_GATEWAY,
                                 &format!("Node application unavailable: {error}"),
+                            ),
+                            site_match,
+                            route_match,
+                        );
+                    }
+                }
+            } else if site.runtime == "python" {
+                if let (Some(owner), Some(project_root)) =
+                    (site.site_owner.as_deref(), site.project_root.as_deref())
+                {
+                    if let Err(error) = ensure_python_process_running(
+                        &site.id,
+                        owner,
+                        project_root,
+                        site.python_entry_file.as_deref(),
+                        site.python_start_command.as_deref(),
+                        site.python_version.as_deref(),
+                        match upstream {
+                            super::UpstreamConfig::Http(addr) => addr.port(),
+                            super::UpstreamConfig::Unix(_) => 0,
+                        },
+                    )
+                    .await
+                    {
+                        return annotated_response(
+                            simple_response(
+                                StatusCode::BAD_GATEWAY,
+                                &format!("Python application unavailable: {error}"),
                             ),
                             site_match,
                             route_match,

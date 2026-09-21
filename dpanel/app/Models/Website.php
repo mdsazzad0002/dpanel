@@ -49,6 +49,11 @@ class Website extends Model
         'node_version',
         'node_start_command',
         'node_process_status',
+        'python_entry_file',
+        'python_port',
+        'python_version',
+        'python_start_command',
+        'python_process_status',
         'client_max_body_size',
         'wordpress_db_prefix',
         'enable_ssl',
@@ -68,11 +73,17 @@ class Website extends Model
         'assigned_user_id' => 'integer',
         'assigned_reseller_id' => 'integer',
         'node_port' => 'integer',
+        'python_port' => 'integer',
     ];
 
     public function isNodeRuntime(): bool
     {
         return $this->runtime === 'node';
+    }
+
+    public function isPythonRuntime(): bool
+    {
+        return $this->runtime === 'python';
     }
 
     public function parent(): BelongsTo

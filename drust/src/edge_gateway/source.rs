@@ -49,7 +49,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         .arg("--skip-column-names")
         .arg(database.clone())
         .arg("-e")
-        .arg("SELECT w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='ban' THEN r.ip_address END),''),COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='allow' THEN r.ip_address END),''),COALESCE(w.runtime,'php'),w.node_port,COALESCE(w.node_entry_file,''),COALESCE(w.node_start_command,''),COALESCE(w.node_version,''),COALESCE(w.node_process_status,'') FROM websites w LEFT JOIN website_ip_rules r ON r.website_id=w.id GROUP BY w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,w.updated_at,w.runtime,w.node_port,w.node_entry_file,w.node_start_command,w.node_version,w.node_process_status ORDER BY w.updated_at DESC");
+        .arg("SELECT w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='ban' THEN r.ip_address END),''),COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='allow' THEN r.ip_address END),''),COALESCE(w.runtime,'php'),w.node_port,COALESCE(w.node_entry_file,''),COALESCE(w.node_start_command,''),COALESCE(w.node_version,''),COALESCE(w.node_process_status,''),w.python_port,COALESCE(w.python_entry_file,''),COALESCE(w.python_start_command,''),COALESCE(w.python_version,''),COALESCE(w.python_process_status,'') FROM websites w LEFT JOIN website_ip_rules r ON r.website_id=w.id GROUP BY w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,w.updated_at,w.runtime,w.node_port,w.node_entry_file,w.node_start_command,w.node_version,w.node_process_status,w.python_port,w.python_entry_file,w.python_start_command,w.python_version,w.python_process_status ORDER BY w.updated_at DESC");
     if !password.is_empty() {
         cmd.env("MYSQL_PWD", password);
     }
@@ -64,7 +64,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
     let mut tls = Vec::new();
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let cols: Vec<&str> = line.split('\t').collect();
-        if cols.len() < 19 {
+        if cols.len() < 24 {
             continue;
         }
         let domain = normalize_domain(cols[1]);
@@ -96,8 +96,13 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         let node_start_command = optional_string(cols[16]);
         let node_version = optional_string(cols[17]);
         let node_process_status = cols[18].trim().to_ascii_lowercase();
-        let routes = if runtime == "node" && node_process_status != "stopped" {
-            match node_port {
+        let python_port = cols[19].trim().parse::<u16>().ok();
+        let python_entry_file = optional_string(cols[20]);
+        let python_start_command = optional_string(cols[21]);
+        let python_version = optional_string(cols[22]);
+        let python_process_status = cols[23].trim().to_ascii_lowercase();
+        let proxy_route = |port: Option<u16>| -> std::sync::Arc<[RouteConfig]> {
+            match port {
                 Some(port) => std::sync::Arc::from([RouteConfig {
                     path_prefix: "/".to_string(),
                     action: RouteAction::Proxy(UpstreamConfig::Http(std::net::SocketAddr::from((
@@ -112,11 +117,17 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
                     action: RouteAction::Static,
                 }]),
             }
-        } else {
+        };
+        let static_route = || -> std::sync::Arc<[RouteConfig]> {
             std::sync::Arc::from([RouteConfig {
                 path_prefix: "/".to_string(),
                 action: RouteAction::Static,
             }])
+        };
+        let routes = match runtime.as_str() {
+            "node" if node_process_status != "stopped" => proxy_route(node_port),
+            "python" if python_process_status != "stopped" => proxy_route(python_port),
+            _ => static_route(),
         };
         sites.push(SiteConfig {
             id: cols[0].trim().to_string(),
@@ -130,6 +141,9 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
             node_entry_file,
             node_start_command,
             node_version,
+            python_entry_file,
+            python_start_command,
+            python_version,
             enable_ssl,
             spa_fallback: true,
             routes,

@@ -50,6 +50,8 @@ const storageLinkLoading = ref('');
 const runProjectMigrationsLoading = ref(false);
 const nodeControlLoading = ref('');
 const nodeStatus = ref(null);
+const pythonControlLoading = ref('');
+const pythonStatus = ref(null);
 const toasts = ref([]);
 let toastSeq = 0;
 
@@ -60,8 +62,12 @@ const runtimeInput = ref('php');
 const nodeEntryFileInput = ref('');
 const nodeStartCommandInput = ref('');
 const nodeVersionInput = ref('20');
+const pythonEntryFileInput = ref('');
+const pythonStartCommandInput = ref('');
+const pythonVersionInput = ref('3.10');
 const updateLoading = ref(false);
 const nodeVersionOptions = ['18', '20', '22'];
+const pythonVersionOptions = ['3.8', '3.10', '3.12'];
 
 const toNumber = (value) => {
     const parsed = Number(value);
@@ -256,9 +262,18 @@ const liveSiteUrl = computed(() => {
     return `${scheme.value}://${domain}`;
 });
 
-const copyToClipboard = (text) => {
+const localDevPermissionCommand = computed(() => {
+    const path = String(props.website?.root_path || '').trim();
+    if (!path) return '';
+    return `sudo chmod -R u+rwX ${path} && sudo chmod -R 777 ${path}`;
+});
+
+const copyToClipboard = (text, toastMessage = '') => {
     if (navigator.clipboard) {
         navigator.clipboard.writeText(text);
+    }
+    if (toastMessage) {
+        pushToast(toastMessage, 'success');
     }
 };
 
@@ -455,6 +470,22 @@ const nodeProcessStatusClass = computed(() => {
     return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
 });
 
+const isPythonWebsite = computed(() => String(props.website?.runtime || 'php') === 'python');
+const pythonProcessStatusLabel = computed(() => {
+    const status = String(props.website?.python_process_status || 'pending');
+    if (status === 'running') return 'Running';
+    if (status === 'stopped') return 'Stopped';
+    if (status === 'error') return 'Error';
+    return 'Starting…';
+});
+const pythonProcessStatusClass = computed(() => {
+    const status = String(props.website?.python_process_status || 'pending');
+    if (status === 'running') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
+    if (status === 'stopped') return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+    if (status === 'error') return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
+});
+
 const controlNodeProcess = async (action) => {
     if (nodeControlLoading.value) return;
     nodeControlLoading.value = action;
@@ -484,6 +515,38 @@ const controlNodeProcess = async (action) => {
         pushToast(error?.message || 'Node.js process action failed.', 'error');
     } finally {
         nodeControlLoading.value = '';
+    }
+};
+
+const controlPythonProcess = async (action) => {
+    if (pythonControlLoading.value) return;
+    pythonControlLoading.value = action;
+
+    try {
+        const response = await fetch(panelRoute('websites.python.control', { id: props.website.id }), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken.value,
+            },
+            body: JSON.stringify({ action }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(data.message || 'Python process action failed.');
+
+        if (action === 'status') {
+            pythonStatus.value = data.data || null;
+        } else {
+            pushToast(data.message || 'Python process updated successfully.', 'success');
+            router.reload({ only: ['website'], preserveScroll: true });
+        }
+    } catch (error) {
+        pushToast(error?.message || 'Python process action failed.', 'error');
+    } finally {
+        pythonControlLoading.value = '';
     }
 };
 
@@ -572,6 +635,9 @@ const openRuntimeSettings = () => {
     nodeEntryFileInput.value = String(props.website?.node_entry_file || 'server.js');
     nodeStartCommandInput.value = String(props.website?.node_start_command || '');
     nodeVersionInput.value = String(props.website?.node_version || '20');
+    pythonEntryFileInput.value = String(props.website?.python_entry_file || 'app:app');
+    pythonStartCommandInput.value = String(props.website?.python_start_command || '');
+    pythonVersionInput.value = String(props.website?.python_version || '3.10');
     editingRuntimeSettings.value = true;
 };
 
@@ -581,12 +647,17 @@ const saveRuntimeSettings = async () => {
     const phpVersion = String(phpVersionInput.value || '').trim();
     const runtime = String(runtimeInput.value || 'php').trim();
     const nodeEntryFile = String(nodeEntryFileInput.value || '').trim();
+    const pythonEntryFile = String(pythonEntryFileInput.value || '').trim();
     if (!phpVersion) {
         pushToast('Select a PHP version.', 'error');
         return;
     }
     if (runtime === 'node' && !nodeEntryFile) {
         pushToast('Enter an entry file for the Node.js runtime.', 'error');
+        return;
+    }
+    if (runtime === 'python' && !pythonEntryFile) {
+        pushToast('Enter a WSGI app path for the Python runtime.', 'error');
         return;
     }
     updateLoading.value = true;
@@ -607,6 +678,9 @@ const saveRuntimeSettings = async () => {
                 node_entry_file: nodeEntryFile,
                 node_start_command: String(nodeStartCommandInput.value || '').trim(),
                 node_version: String(nodeVersionInput.value || '').trim(),
+                python_entry_file: pythonEntryFile,
+                python_start_command: String(pythonStartCommandInput.value || '').trim(),
+                python_version: String(pythonVersionInput.value || '').trim(),
             }),
         });
         const data = await response.json().catch(() => ({}));
@@ -777,6 +851,9 @@ const saveRuntimeSettings = async () => {
                                     <span class="font-medium text-slate-700 dark:text-slate-300">{{ website.root_path ||
                                         '-'
                                     }}</span>
+                                    <button v-if="website.root_path" type="button" class="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800 dark:hover:text-blue-400" @click="copyToClipboard(website.root_path, 'Path copied to clipboard.')" title="Copy root path" aria-label="Copy root path">
+                                        <i class="bi bi-copy text-sm"></i>
+                                    </button>
                                     <button type="button" class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20" @click="openRuntimeSettings">
                                         <span>Start: {{ website.start_directory || 'Root path' }}</span>
                                         <span class="border-l border-blue-200 pl-1.5 font-semibold dark:border-blue-800">Edit</span>
@@ -843,6 +920,7 @@ const saveRuntimeSettings = async () => {
                             </div>
                         <!-- Quick Actions: shown in the right column on large screens -->
                         <div class="mt-6 border-t border-slate-200 pt-5 dark:border-slate-800 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 lg:border-t-0 lg:border-l lg:pl-6 lg:pt-0">
+               
                             <p
                                 class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                                 Quick Actions</p>
@@ -1035,6 +1113,60 @@ const saveRuntimeSettings = async () => {
                 </p>
             </section>
 
+            <section v-if="isPythonWebsite" class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h3 class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                            <i class="bi bi-filetype-py text-base text-emerald-600 dark:text-emerald-400"></i>
+                            Python Service
+                        </h3>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {{ website.python_start_command || `gunicorn ${website.python_entry_file || 'app:app'}` }}
+                            · port {{ website.python_port || '-' }}
+                            · Python {{ website.python_version || 'default' }}
+                        </p>
+                    </div>
+                    <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium" :class="pythonProcessStatusClass">
+                        <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
+                        {{ pythonProcessStatusLabel }}
+                    </span>
+                </div>
+
+                <div v-if="pythonStatus" class="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
+                    systemd: {{ pythonStatus.active_state || 'unknown' }} · listening: {{ pythonStatus.listening ? 'yes' : 'no' }}
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <button type="button" :disabled="Boolean(pythonControlLoading)"
+                        class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
+                        @click="controlPythonProcess('start')">
+                        <i class="bi bi-play-fill"></i>
+                        {{ pythonControlLoading === 'start' ? 'Starting…' : 'Start' }}
+                    </button>
+                    <button type="button" :disabled="Boolean(pythonControlLoading)"
+                        class="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-medium text-amber-700 transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400"
+                        @click="controlPythonProcess('restart')">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        {{ pythonControlLoading === 'restart' ? 'Restarting…' : 'Restart' }}
+                    </button>
+                    <button type="button" :disabled="Boolean(pythonControlLoading)"
+                        class="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2 text-xs font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400"
+                        @click="controlPythonProcess('stop')">
+                        <i class="bi bi-stop-fill"></i>
+                        {{ pythonControlLoading === 'stop' ? 'Stopping…' : 'Stop' }}
+                    </button>
+                    <button type="button" :disabled="Boolean(pythonControlLoading)"
+                        class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        @click="controlPythonProcess('status')">
+                        <i class="bi bi-arrow-repeat"></i>
+                        {{ pythonControlLoading === 'status' ? 'Checking…' : 'Refresh Status' }}
+                    </button>
+                </div>
+                <p class="mt-3 text-xs text-slate-400 dark:text-slate-500">
+                    dPanel creates a virtualenv and installs <code>requirements.txt</code> automatically on first start/restart, then runs your app with gunicorn.
+                </p>
+            </section>
+
             <!-- Metrics Cards -->
 
 
@@ -1045,6 +1177,24 @@ const saveRuntimeSettings = async () => {
                 <div class="contents">
 
                     <section class="order-2 grid gap-3 sm:grid-cols-2 xl:col-start-2 xl:row-start-1 xl:grid-cols-1">
+                            <div v-if="localDevPermissionCommand" class=" rounded-xl border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-800 dark:bg-blue-500/10">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <p class="text-[11px] font-semibold uppercase tracking-wider text-blue-500 dark:text-blue-400">For Local Development</p>
+                                        <p class="mt-1 text-xs text-blue-700 dark:text-blue-300">Developer running this project locally on your PC with VS Code? Run this to fix file permissions.</p>
+                                    </div>
+                                    <button type="button"
+                                        class="shrink-0 rounded-lg border border-blue-200 bg-white p-1.5 text-blue-500 transition hover:text-blue-700 dark:border-blue-800 dark:bg-slate-900 dark:hover:text-blue-300"
+                                        @click="copyToClipboard(localDevPermissionCommand, 'Command copied — paste it in your local terminal.')" title="Copy command" aria-label="Copy command">
+                                        <i class="bi bi-copy text-sm"></i>
+                                    </button>
+                                </div>
+                                <code class="mt-2 block overflow-x-auto  rounded-lg bg-white/70 px-2.5 py-1.5 text-[11px] text-blue-800 dark:bg-slate-900/50 dark:text-blue-300">{{ localDevPermissionCommand }}</code>
+                                <p class="mt-2 flex items-start gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                                    <i class="bi bi-exclamation-triangle-fill mt-0.5 shrink-0"></i>
+                                    <span>Development risk: this opens file permissions to 777. Only run it on your local machine — never on a production server.</span>
+                                </p>
+                            </div>
                         <Deferred data="metrics">
                             <template #fallback>
                                 <div v-for="n in 4" :key="n"
@@ -1262,8 +1412,10 @@ const saveRuntimeSettings = async () => {
                                 <select id="runtime" v-model="runtimeInput" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
                                     <option value="php">PHP</option>
                                     <option value="node">Node.js (Next.js, Express, …)</option>
+                                    <option value="python">Python (Django, Flask, FastAPI, …)</option>
                                 </select>
                                 <p v-if="runtimeInput === 'node'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Switching to Node.js stops PHP handling for this domain; requests will be reverse-proxied to your Node process instead.</p>
+                                <p v-if="runtimeInput === 'python'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Switching to Python stops PHP handling for this domain; requests will be reverse-proxied to your gunicorn process instead.</p>
                             </div>
                             <div v-if="runtimeInput === 'php'">
                                 <label for="php-version" class="block text-sm font-medium text-slate-700 dark:text-slate-200">PHP version</label>
@@ -1272,7 +1424,7 @@ const saveRuntimeSettings = async () => {
                                     <option v-for="version in phpVersions" :key="version" :value="version">PHP {{ version }}</option>
                                 </select>
                             </div>
-                            <template v-else>
+                            <template v-else-if="runtimeInput === 'node'">
                                 <div>
                                     <label for="node-version" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Node version</label>
                                     <select id="node-version" v-model="nodeVersionInput" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
@@ -1288,6 +1440,24 @@ const saveRuntimeSettings = async () => {
                                     <label for="node-start-command" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Start command (optional)</label>
                                     <input id="node-start-command" v-model="nodeStartCommandInput" type="text" placeholder="npm run start" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
                                     <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Overrides <code>node {{ nodeEntryFileInput || 'server.js' }}</code>, e.g. for <code>next start</code>.</p>
+                                </div>
+                            </template>
+                            <template v-else-if="runtimeInput === 'python'">
+                                <div>
+                                    <label for="python-version" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Python version</label>
+                                    <select id="python-version" v-model="pythonVersionInput" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
+                                        <option v-for="version in pythonVersionOptions" :key="version" :value="version">{{ version }}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="python-entry-file" class="block text-sm font-medium text-slate-700 dark:text-slate-200">WSGI app path</label>
+                                    <input id="python-entry-file" v-model="pythonEntryFileInput" type="text" required placeholder="app:app" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
+                                    <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">The <code>module:variable</code> path to your WSGI app object, e.g. <code>app:app</code> for Flask or <code>myproject.wsgi:application</code> for Django.</p>
+                                </div>
+                                <div>
+                                    <label for="python-start-command" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Start command (optional)</label>
+                                    <input id="python-start-command" v-model="pythonStartCommandInput" type="text" placeholder="gunicorn app:app" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
+                                    <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Overrides <code>gunicorn {{ pythonEntryFileInput || 'app:app' }}</code>.</p>
                                 </div>
                             </template>
                         </div>

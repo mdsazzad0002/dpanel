@@ -57,6 +57,9 @@ const form = useForm({
     node_version: '20',
     node_entry_file: 'server.js',
     node_start_command: '',
+    python_version: '3.10',
+    python_entry_file: 'app:app',
+    python_start_command: '',
     enable_ssl: true,
     manage_dns: false,
     assigned_user_id: '',
@@ -65,9 +68,11 @@ const form = useForm({
 const runtimeOptions = [
     { value: 'php', label: 'PHP' },
     { value: 'node', label: 'Node.js (Next.js, Express, …)' },
+    { value: 'python', label: 'Python (Django, Flask, FastAPI, …)' },
 ];
 
 const nodeVersionOptions = ['18', '20', '22'];
+const pythonVersionOptions = ['3.8', '3.10', '3.12'];
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
@@ -639,6 +644,27 @@ onBeforeUnmount(() => {
                         <input v-model="form.node_start_command" type="text" placeholder="npm run start" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                         <p class="mt-1 text-xs text-slate-500">Overrides the default `node {{ form.node_entry_file || 'server.js' }}` command, e.g. for `next start`.</p>
                         <p v-if="form.errors.node_start_command" class="mt-1 text-xs text-red-600">{{ form.errors.node_start_command }}</p>
+                    </div>
+                </template>
+                <template v-if="!props.aliasMode && form.runtime === 'python'">
+                    <div>
+                        <label class="mb-1 block text-sm">Python Version</label>
+                        <select v-model="form.python_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                            <option v-for="version in pythonVersionOptions" :key="version" :value="version">{{ version }}</option>
+                        </select>
+                        <p v-if="form.errors.python_version" class="mt-1 text-xs text-red-600">{{ form.errors.python_version }}</p>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm">WSGI App Path</label>
+                        <input v-model="form.python_entry_file" type="text" placeholder="app:app" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <p class="mt-1 text-xs text-slate-500">The `module:variable` path to your WSGI application object that dPanel runs with gunicorn, e.g. `app:app` for Flask or `myproject.wsgi:application` for Django.</p>
+                        <p v-if="form.errors.python_entry_file" class="mt-1 text-xs text-red-600">{{ form.errors.python_entry_file }}</p>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="mb-1 block text-sm">Start Command (optional)</label>
+                        <input v-model="form.python_start_command" type="text" placeholder="gunicorn app:app" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <p class="mt-1 text-xs text-slate-500">Overrides the default `gunicorn {{ form.python_entry_file || 'app:app' }}` command.</p>
+                        <p v-if="form.errors.python_start_command" class="mt-1 text-xs text-red-600">{{ form.errors.python_start_command }}</p>
                     </div>
                 </template>
                 <div v-if="!props.aliasMode" class="flex items-center gap-2 pt-7">

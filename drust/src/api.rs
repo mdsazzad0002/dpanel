@@ -22,6 +22,7 @@ mod migration;
 mod migration_ssh;
 mod node;
 mod php;
+mod python;
 mod redis_config;
 mod script;
 mod security;
@@ -108,6 +109,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(migration::routes())
         .merge(migration_ssh::routes())
         .merge(node::routes())
+        .merge(python::routes())
         .with_state(Arc::new(state))
 }
 
