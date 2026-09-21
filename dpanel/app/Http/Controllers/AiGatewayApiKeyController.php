@@ -15,7 +15,7 @@ class AiGatewayApiKeyController extends Controller
     {
         return Inertia::render('AiGateway/ApiKeys/Index', [
             'keys' => $this->serialisedKeys(),
-            'apiBaseUrl' => rtrim((string) config('app.url'), '/').'/api/v1',
+            'apiBaseUrl' => rtrim($request->getSchemeAndHttpHost(), '/').'/api/v1',
         ]);
     }
 

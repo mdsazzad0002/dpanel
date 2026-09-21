@@ -1,5 +1,5 @@
 <?php
-
+use Illuminate\Http\Request;
 use App\Http\Controllers\AiGatewayApiKeyController;
 use App\Http\Controllers\AiGatewayController;
 use App\Http\Controllers\AiGatewayLogController;
@@ -63,6 +63,15 @@ Route::get('/', function () {
 
     return redirect()->route('login');
 });
+
+Route::get('/test-https', function (Request $request) {
+    return [
+        'secure' => $request->isSecure(),
+        'scheme' => $request->getScheme(),
+        'url' => $request->fullUrl(),
+    ];
+});
+
 
 // Public legal pages — no auth required, linked from the login screen and
 // the authenticated panel footer alike.

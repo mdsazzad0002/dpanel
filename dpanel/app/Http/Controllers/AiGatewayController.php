@@ -166,10 +166,10 @@ class AiGatewayController extends Controller
         ]);
     }
 
-    public function docs(): Response
+    public function docs(Request $request): Response
     {
         return Inertia::render('AiGateway/Docs', [
-            'apiBaseUrl' => rtrim((string) config('app.url'), '/').'/api/v1',
+            'apiBaseUrl' => rtrim($request->getSchemeAndHttpHost(), '/').'/api/v1',
         ]);
     }
 

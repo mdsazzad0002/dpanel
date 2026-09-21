@@ -263,6 +263,43 @@ fn update_codeigniter4(mut text: String, request: &Request, host: &str, port: &s
     text
 }
 
+/// CodeIgniter 3's own default config template (shipped since CI 3.0) writes
+/// `$db['default'] = array('hostname' => '...', ...)`, not the older exploded
+/// `$db['default']['hostname'] = '...';` form. Real-world CI3 sites overwhelmingly
+/// use the array-literal style, so both are matched here.
+fn replace_ci3_setting(text: &str, key: &str, value: &str) -> Option<String> {
+    let exploded_needle = format!("$db['default']['{key}']");
+    if let Some(old) = text
+        .lines()
+        .find(|line| line.trim_start().starts_with(&exploded_needle))
+        .map(str::to_owned)
+    {
+        let replacement = format!("{exploded_needle} = '{}';", php_string(value));
+        return Some(text.replacen(&old, &replacement, 1));
+    }
+
+    for quote in ['\'', '"'] {
+        let key_needle = format!("{quote}{key}{quote}");
+        if let Some(old) = text
+            .lines()
+            .find(|line| {
+                line.trim_start()
+                    .strip_prefix(&key_needle)
+                    .is_some_and(|rest| rest.trim_start().starts_with("=>"))
+            })
+            .map(str::to_owned)
+        {
+            let indent: String = old.chars().take_while(|c| c.is_whitespace()).collect();
+            let terminator = if old.trim_end().ends_with(',') { "," } else { "" };
+            let replacement =
+                format!("{indent}{quote}{key}{quote} => '{}'{terminator}", php_string(value));
+            return Some(text.replacen(&old, &replacement, 1));
+        }
+    }
+
+    None
+}
+
 fn update_codeigniter3(
     mut text: String,
     request: &Request,
@@ -276,31 +313,25 @@ fn update_codeigniter3(
         ("database", request.database_name.as_str()),
         ("dbdriver", "mysqli"),
     ] {
-        let needle = format!("$db['default']['{key}']");
-        let replacement = format!("{needle} = '{}';", php_string(value));
-        let old = text
-            .lines()
-            .find(|line| line.trim_start().starts_with(&needle))
-            .map(str::to_owned)
+        text = replace_ci3_setting(&text, key, value)
             .ok_or_else(|| format!("CodeIgniter database setting {key} was not found."))?;
-        text = text.replacen(&old, &replacement, 1);
     }
-    let port_line = format!("$db['default']['port'] = '{}';", php_string(port));
-    if let Some(old) = text
-        .lines()
-        .find(|line| line.trim_start().starts_with("$db['default']['port']"))
-        .map(str::to_owned)
-    {
-        text = text.replacen(&old, &port_line, 1);
-    } else if let Some(position) = text.rfind("?>") {
-        text.insert_str(position, &format!("{port_line}\n"));
-    } else {
-        if !text.ends_with('\n') {
-            text.push('\n');
+    text = match replace_ci3_setting(&text, "port", port) {
+        Some(updated) => updated,
+        None => {
+            let port_line = format!("$db['default']['port'] = '{}';", php_string(port));
+            if let Some(position) = text.rfind("?>") {
+                text.insert_str(position, &format!("{port_line}\n"));
+            } else {
+                if !text.ends_with('\n') {
+                    text.push('\n');
+                }
+                text.push_str(&port_line);
+                text.push('\n');
+            }
+            text
         }
-        text.push_str(&port_line);
-        text.push('\n');
-    }
+    };
     Ok(text)
 }
 
@@ -343,5 +374,32 @@ mod tests {
         let output = update_codeigniter3(input, &request("codeigniter3"), "db", "3306").unwrap();
         assert!(output.contains("$db['default']['database'] = 'app_db';"));
         assert!(output.contains("$db['default']['password'] = 's\\'ecret';"));
+    }
+
+    #[test]
+    fn updates_codeigniter3_array_literal_connection() {
+        // This is CodeIgniter 3's own shipped default config template, and
+        // what real-world CI3 sites overwhelmingly use in practice.
+        let input = "<?php\n\
+            $active_group = 'default';\n\
+            $query_builder = TRUE;\n\
+            \n\
+            $db['default'] = array(\n\
+            \t'dsn'\t=> '',\n\
+            \t'hostname' => '127.0.0.1',\n\
+            \t'username' => 'old_user',\n\
+            \t'password' => 'old_pass',\n\
+            \t'database' => 'old_db',\n\
+            \t'dbdriver' => 'mysqli',\n\
+            \t'port' => 3306,\n\
+            );\n";
+        let output =
+            update_codeigniter3(input.into(), &request("codeigniter3"), "db", "3307").unwrap();
+        assert!(output.contains("'hostname' => 'db',"));
+        assert!(output.contains("'database' => 'app_db',"));
+        assert!(output.contains("'username' => 'app_user',"));
+        assert!(output.contains("'password' => 's\\'ecret',"));
+        assert!(output.contains("'dbdriver' => 'mysqli',"));
+        assert!(output.contains("'port' => '3307',"));
     }
 }

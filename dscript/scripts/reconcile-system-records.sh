@@ -214,7 +214,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-use Spatie\Permission\Models\Role;
+use App\Support\RolePermissions;
 
 $name = trim((string) getenv("DPANEL_SYSTEM_USER_NAME"));
 $email = strtolower(trim((string) getenv("DPANEL_SYSTEM_USER_EMAIL")));
@@ -233,7 +233,7 @@ DB::transaction(function () use ($name, $email, $password) {
         $values["password"] = Hash::make($password !== "" ? $password : Str::password(32));
     }
     $user->forceFill($values)->save();
-    Role::findOrCreate("admin");
+    RolePermissions::ensureRole("admin");
     $user->syncRoles(["admin"]);
 });
 echo "Reserved system user configured: {$email} (id 1)\n";

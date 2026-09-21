@@ -144,9 +144,10 @@ pub fn build_tls_config(store: &TlsStore) -> Result<(ServerConfig, Arc<DynamicCe
     let builder = builder
         .with_safe_default_protocol_versions()
         .map_err(|error| format!("tls versions failed: {error}"))?;
-    let config = builder
+    let mut config = builder
         .with_no_client_auth()
         .with_cert_resolver(resolver.clone());
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     Ok((config, resolver))
 }
 

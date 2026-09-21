@@ -7,6 +7,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cookie;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -29,6 +30,17 @@ class EnsurePanelSessionIsValid
         $sessionToken = $request->hasSession()
             ? (string) $request->session()->get('panel_session_token', '')
             : '';
+
+        Log::info('DEBUG_PANEL_SESSION entry', [
+            'scheme' => $request->getScheme(),
+            'secure' => $request->isSecure(),
+            'host' => $request->getHost(),
+            'path' => $request->path(),
+            'missingProofCookie' => $missingProofCookie,
+            'routeToken' => $routeToken,
+            'sessionToken' => $sessionToken,
+            'all_cookie_names' => array_keys($request->cookies->all()),
+        ]);
 
         // A previously-open tab can keep making requests with an older cpsess
         // token after a fresh login rotates it. Show the login screen for that
@@ -66,6 +78,11 @@ class EnsurePanelSessionIsValid
             : null;
 
         if (! $activeSession) {
+            Log::info('DEBUG_PANEL_SESSION force_logout', [
+                'token' => $token,
+                'cookieToken_present' => $cookieToken !== '',
+                'missingProofCookie' => $missingProofCookie,
+            ]);
             Auth::guard('web')->logout();
             $request->session()->forget('panel_session_token');
             $request->session()->invalidate();

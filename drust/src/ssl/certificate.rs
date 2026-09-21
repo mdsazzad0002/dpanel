@@ -13,6 +13,11 @@ use crate::app::ensure_root;
 /// for any other caller.
 const RESERVED_SSL_SUFFIXES: [&str; 5] = [".localhost", ".local", ".test", ".example", ".invalid"];
 
+/// The panel's own application directory. Website roots must otherwise live
+/// under `/home/<owner>/...`, but the panel's own reserved website (id 1)
+/// is deployed here instead, so it needs an explicit, fixed exception.
+const PANEL_APP_ROOT: &str = "/var/www/dpanel";
+
 fn valid_domain(domain: &str) -> bool {
     !domain.is_empty()
         && domain.len() <= 253
@@ -109,12 +114,15 @@ pub(super) fn ensure(
         return Err("Invalid SSL domain.".into());
     }
     let root_path_buf = Path::new(root_path);
-    if !root_path_buf.starts_with("/home/")
-        || root_path_buf
-            .components()
-            .any(|part| matches!(part, std::path::Component::ParentDir))
-    {
-        return Err("Website root path must be inside /home/<owner>.".into());
+    let has_parent_dir_component = root_path_buf
+        .components()
+        .any(|part| matches!(part, std::path::Component::ParentDir));
+    let is_panel_app_root = root_path_buf == Path::new(PANEL_APP_ROOT)
+        || root_path_buf.starts_with(format!("{PANEL_APP_ROOT}/"));
+    if has_parent_dir_component || (!root_path_buf.starts_with("/home/") && !is_panel_app_root) {
+        return Err(format!(
+            "Website root path must be inside /home/<owner> (or {PANEL_APP_ROOT} for the panel itself)."
+        ));
     }
     if !root_path_buf.is_dir() {
         return Err(format!("Website root path does not exist: {root_path}"));

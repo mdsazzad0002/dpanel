@@ -611,7 +611,7 @@ class SecurityController extends Controller
             if (! $mkdir->successful()) {
                 return $this->commandError($mkdir, 'Unable to access the SSH configuration directory.');
             }
-            $install = $this->runPrivileged(['install', '-m', '0644', $temporary, '/etc/ssh/sshd_config.d/99-dpanel.conf']);
+            $install = $this->runPrivileged(['/usr/local/sbin/dpanel-install-sshd-config', $temporary]);
             if (! $install->successful()) {
                 return $this->commandError($install, 'Unable to write the SSH configuration.');
             }

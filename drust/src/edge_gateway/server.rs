@@ -13,7 +13,7 @@ use axum::{
 };
 use futures_util::StreamExt;
 use hyper::body::Body as HttpBody;
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::service::TowerToHyperService;
 use rustls::ServerConfig;
 use serde::{Deserialize, Serialize};
@@ -112,7 +112,7 @@ pub fn serve_gateway_with_tls(
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
         spawn_redis_reload_listener(state.clone());
-        let app_router = build_demo_router(state);
+        let app_router = build_demo_router(state).layer(map_request(ensure_host_header));
         let https_router = app_router.clone().layer(map_request(mark_https_request));
 
         let http_listener = tokio::net::TcpListener::bind(http_bind)
@@ -161,6 +161,31 @@ pub fn serve_gateway_with_tls(
         }
         Ok(())
     })
+}
+
+/// HTTP/2 (negotiated by default now that TLS advertises ALPN "h2") carries
+/// the request's origin in the ":authority" pseudo-header, not a literal
+/// "host" header — hyper/h2 surface that as `request.uri().authority()`, but
+/// every site-matching/proxy/PHP-FPM code path in this gateway reads a plain
+/// "host" header. Without this, h2 requests silently fail to resolve to any
+/// site and fall through to the "Site not found" response. Applied once at
+/// the router's edge so every downstream consumer sees a normal header.
+async fn ensure_host_header(mut request: Request<Body>) -> Request<Body> {
+    let has_host = request
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| !value.is_empty());
+    if !has_host {
+        if let Some(authority) = request.uri().authority().cloned() {
+            if let Ok(value) = HeaderValue::from_str(authority.as_str()) {
+                request
+                    .headers_mut()
+                    .insert(axum::http::header::HOST, value);
+            }
+        }
+    }
+    request
 }
 
 async fn mark_https_request(mut request: Request<Body>) -> Request<Body> {
@@ -335,6 +360,7 @@ async fn reload_snapshot(state: &Arc<DemoServerState>) -> Result<u64, (String, u
             }
             *state.snapshot.write().await = Arc::new(next);
             super::clear_static_cache();
+            super::clear_canonical_root_cache();
             Ok(version)
         }
         Ok(Err(error)) => Err((error, state.snapshot.read().await.version)),
@@ -400,6 +426,7 @@ async fn reload_domains(
             );
             *state.snapshot.write().await = Arc::new(updated);
             super::clear_static_cache_under(&roots);
+            super::clear_canonical_root_cache_under(&roots);
             Ok(next.version)
         }
         Ok(Err(error)) => Err((error, state.snapshot.read().await.version)),
@@ -652,8 +679,19 @@ async fn run_https_listener(
                             request
                         },
                     ));
-                    if let Err(error) = hyper::server::conn::http1::Builder::new()
-                        .serve_connection(io, TowerToHyperService::new(router.into_service()))
+                    let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+                    // hyper's HTTP/2 default max_header_list_size is 16KB. Real
+                    // browsers routinely exceed that once several large
+                    // encrypted Laravel cookies (session, XSRF-TOKEN, panel
+                    // proof, plus other same-domain app cookies) stack up
+                    // alongside normal browser headers — h2 then silently
+                    // drops the headers that don't fit, which showed up as
+                    // requests arriving at PHP missing their session/XSRF
+                    // cookies (CSRF mismatch) on HTTPS (h2) but not on HTTP/1.1
+                    // (no such limit), even with a fresh/incognito browser.
+                    builder.http2().max_header_list_size(256 * 1024);
+                    if let Err(error) = builder
+                        .serve_connection_with_upgrades(io, TowerToHyperService::new(router.into_service()))
                         .await
                     {
                         tracing::error!(peer = %peer, error = %error, "HTTPS connection failed");

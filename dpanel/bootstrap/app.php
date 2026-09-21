@@ -4,6 +4,8 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
+use Illuminate\Support\Facades\Log;
 
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -63,5 +65,23 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->stopIgnoring(TokenMismatchException::class);
+        $exceptions->reportable(function (TokenMismatchException $e) {
+            $request = request();
+            Log::info('DEBUG_CSRF_MISMATCH', [
+                'scheme' => $request->getScheme(),
+                'secure' => $request->isSecure(),
+                'host' => $request->getHost(),
+                'path' => $request->path(),
+                'method' => $request->method(),
+                'session_id' => $request->hasSession() ? $request->session()->getId() : null,
+                'session_token' => $request->hasSession() ? $request->session()->token() : null,
+                'header_x_xsrf_token' => $request->header('X-XSRF-TOKEN'),
+                'cookie_xsrf_token' => $request->cookie('XSRF-TOKEN'),
+                'input_token' => $request->input('_token'),
+                'all_cookie_names' => array_keys($request->cookies->all()),
+                'session_cookie_name' => config('session.cookie'),
+                'session_cookie_value_present' => $request->cookies->has(config('session.cookie')),
+            ]);
+        });
     })->create();

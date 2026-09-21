@@ -68,7 +68,7 @@ class RemoteMysqlAccessService
         }
 
         try {
-            $install = $this->runPrivileged(['install', '-m', '0644', $temporary, $path]);
+            $install = $this->runPrivileged(['/usr/local/sbin/dpanel-install-mysql-bind-config', $temporary]);
             if (! $install->successful()) {
                 return ['success' => false, 'stage' => 'write', 'error' => $this->tail($install), 'backup' => $backupPath];
             }
@@ -183,7 +183,7 @@ class RemoteMysqlAccessService
     private function rollback(string $path, string $backupPath): void
     {
         try {
-            $restore = $this->runPrivileged(['install', '-m', '0644', $backupPath, $path]);
+            $restore = $this->runPrivileged(['/usr/local/sbin/dpanel-install-mysql-bind-config', $backupPath]);
             if ($restore->successful()) {
                 $this->runPrivileged(['systemctl', 'reload-or-restart', (string) config('remotemysql.service_name')]);
             }

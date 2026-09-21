@@ -22,7 +22,9 @@ pub use node_process::{
     NodeProcessStatus, ensure_node_process_running, node_process_status, restart_node_process,
     stop_node_process,
 };
-pub use php::execute_php_front_controller;
+pub use php::{
+    clear_canonical_root_cache, clear_canonical_root_cache_under, execute_php_front_controller,
+};
 pub use proxy::{ProxyConfig, build_client, health_check_upstream, proxy_request};
 pub use server::{
     sample_dispatch_context, sample_snapshot, sample_tls_store, serve_demo_with_tls, serve_gateway,

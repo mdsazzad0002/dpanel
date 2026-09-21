@@ -577,7 +577,7 @@ panel_collect_mail_server_ip() {
     return 0
   fi
 
-  detected="$(panel_detect_public_ipv4)"
+  detected="$(panel_detect_public_ipv4)" || detected=""
   [[ -z "$PANEL_MAIL_SERVER_IP" ]] && PANEL_MAIL_SERVER_IP="$detected"
   while true; do
     if [[ -n "$PANEL_MAIL_SERVER_IP" ]]; then

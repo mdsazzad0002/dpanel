@@ -85,12 +85,31 @@ pub async fn execute_php_front_controller(
     {
         params.push(("CONTENT_TYPE".into(), content_type.into()));
     }
+    // HTTP/2 allows (and browsers routinely use) multiple separate "cookie"
+    // header lines instead of one combined line, for HPACK compression
+    // efficiency (RFC 7540 8.1.2.5 requires the recipient to join them with
+    // "; " before treating them as a single Cookie header). The generic loop
+    // below pushes one FastCGI param per header line, and duplicate param
+    // names silently overwrite each other for PHP-FPM — so without this,
+    // only the last cookie line survives and the rest (session, XSRF-TOKEN,
+    // etc.) vanish before PHP ever sees them.
+    let cookie_values: Vec<&str> = parts
+        .headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .collect();
+    if !cookie_values.is_empty() {
+        params.push(("HTTP_COOKIE".into(), cookie_values.join("; ")));
+    }
+
     for (name, value) in &parts.headers {
         // Let the gateway own compression. Forwarding browser encodings to
         // PHP-FPM can produce compressed empty redirects that Firefox rejects.
+        // "cookie" is handled separately above (see comment there).
         if matches!(
             name.as_str(),
-            "host" | "content-type" | "content-length" | "accept-encoding"
+            "host" | "content-type" | "content-length" | "accept-encoding" | "cookie"
         ) {
             continue;
         }
@@ -262,12 +281,53 @@ fn normalize_site_owner(value: &str) -> Option<String> {
     }
 }
 
+static CANONICAL_ROOT_CACHE: OnceLock<Mutex<std::collections::HashMap<PathBuf, PathBuf>>> =
+    OnceLock::new();
+
+/// Cleared on every snapshot reload (see `clear_canonical_root_cache` /
+/// `clear_canonical_root_cache_under`), never on a timer: a document root's
+/// resolved location must never lag behind the config a reload just applied,
+/// since the security path-traversal check in `resolve_php_script` trusts
+/// this value.
+fn canonicalize_document_root(document_root: &Path) -> Result<PathBuf, String> {
+    let cache = CANONICAL_ROOT_CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    if let Ok(guard) = cache.lock() {
+        if let Some(canonical) = guard.get(document_root) {
+            return Ok(canonical.clone());
+        }
+    }
+    let canonical = std::fs::canonicalize(document_root)
+        .map_err(|error| format!("PHP document root is unavailable: {error}"))?;
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(document_root.to_path_buf(), canonical.clone());
+    }
+    Ok(canonical)
+}
+
+pub fn clear_canonical_root_cache() {
+    if let Some(cache) = CANONICAL_ROOT_CACHE.get() {
+        if let Ok(mut guard) = cache.lock() {
+            guard.clear();
+        }
+    }
+}
+
+pub fn clear_canonical_root_cache_under(roots: &[PathBuf]) {
+    if roots.is_empty() {
+        return;
+    }
+    if let Some(cache) = CANONICAL_ROOT_CACHE.get() {
+        if let Ok(mut guard) = cache.lock() {
+            guard.retain(|path, _| !roots.iter().any(|root| path.starts_with(root)));
+        }
+    }
+}
+
 fn resolve_php_script(
     document_root: &Path,
     request_path: &str,
 ) -> Result<(PathBuf, String), String> {
-    let canonical_root = std::fs::canonicalize(document_root)
-        .map_err(|error| format!("PHP document root is unavailable: {error}"))?;
+    let canonical_root = canonicalize_document_root(document_root)?;
     let requested_name = request_path.trim_start_matches('/');
     if request_path.ends_with('/') && !requested_name.is_empty() {
         let index_name = format!("{requested_name}index.php");

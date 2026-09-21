@@ -92,7 +92,7 @@ class SelfConnectionOrchestrator
                 continue;
             }
 
-            $result = $this->runPrivileged(['supervisorctl', 'restart', $program.':*']);
+            $result = $this->runPrivileged(['/usr/local/sbin/dpanel-supervisor-restart', $program]);
             if (! $result->successful()) {
                 Log::warning('SelfConnectionOrchestrator: failed to restart queue program '.$program.': '.$this->tail($result));
             }
