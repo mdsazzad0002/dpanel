@@ -49,7 +49,7 @@ fn trigger_gateway_reload() -> bool {
     let url =
         std::env::var("DRUST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string());
     let channel = std::env::var("DRUST_REDIS_RELOAD_CHANNEL")
-        .unwrap_or_else(|_| "dpanel_database_edge:reload".to_string());
+        .unwrap_or_else(|_| "edge:reload".to_string());
     command_success("redis-cli", &["-u", &url, "PUBLISH", &channel, "{}"])
 }
 

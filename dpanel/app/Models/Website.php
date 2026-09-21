@@ -56,6 +56,7 @@ class Website extends Model
         'python_process_status',
         'client_max_body_size',
         'wordpress_db_prefix',
+        'wordpress_sso_secret',
         'enable_ssl',
         'manage_dns',
         'filemanager_show_hidden',

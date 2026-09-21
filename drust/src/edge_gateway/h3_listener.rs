@@ -9,7 +9,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
     body::{Body, Bytes},
-    extract::Request,
+    extract::{ConnectInfo, Request},
     response::Response,
 };
 use bytes::Buf;
@@ -60,7 +60,7 @@ pub async fn run_h3_listener(
                         tokio::spawn(async move {
                             match resolver.resolve_request().await {
                                 Ok((request, stream)) => {
-                                    handle_h3_request(router, request, stream).await;
+                                    handle_h3_request(router, request, stream, peer).await;
                                 }
                                 Err(error) => {
                                     warn!(%peer, %error, "HTTP/3 request resolve failed");
@@ -84,13 +84,15 @@ async fn handle_h3_request<S>(
     router: axum::Router,
     request: http::Request<()>,
     stream: RequestStream<S, Bytes>,
+    peer: SocketAddr,
 ) where
     S: BidiStream<Bytes> + Send + 'static,
     S::SendStream: Send,
     S::RecvStream: Send,
 {
     let (mut send, recv) = stream.split();
-    let (parts, _) = request.into_parts();
+    let (mut parts, _) = request.into_parts();
+    parts.extensions.insert(ConnectInfo(peer));
     let body = Body::from_stream(recv_data_stream(recv));
     let axum_request = Request::from_parts(parts, body);
 

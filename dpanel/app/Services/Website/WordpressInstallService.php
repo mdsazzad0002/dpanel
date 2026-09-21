@@ -4,10 +4,13 @@ namespace App\Services\Website;
 
 use App\Models\DatabaseRequest;
 use App\Models\User;
+use App\Models\Website;
+use App\Services\Backup\PreOverwriteBackupService;
 use App\Services\Filemanager\FilemanagerService;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use ZipArchive;
 
@@ -16,6 +19,7 @@ class WordpressInstallService
     public function __construct(
         private readonly WebsiteResolverService $resolver,
         private readonly FilemanagerService $filemanagerService,
+        private readonly PreOverwriteBackupService $preOverwriteBackup,
     ) {
     }
 
@@ -208,13 +212,37 @@ class WordpressInstallService
         return $rootPath.'/'.$startDirectory;
     }
 
+    /** @param array<string, mixed> $website */
+    private function backupExistingRoot(array $website, string $reason): void
+    {
+        $model = Website::query()->find($website['id'] ?? null);
+        if (! $model) {
+            Log::warning('Skipped pre-install backup: website model not found', [
+                'website_id' => (string) ($website['id'] ?? ''),
+                'reason' => $reason,
+            ]);
+
+            return;
+        }
+
+        $this->preOverwriteBackup->snapshot($model, $reason);
+    }
+
     /**
      * @param array<string, mixed> $website
      * @param array<string, mixed> $input
+     * @param (\Closure(string): void)|null $onStage optional progress callback, invoked with
+     *        'downloading', 'creating_database', 'connecting_database' as the install advances
      * @return array{success: bool, message: string, website: array<string, mixed>|null, database_request: array<string, mixed>|null}
      */
-    public function install(array $website, array $input, ?User $actor = null): array
+    public function install(array $website, array $input, ?User $actor = null, ?\Closure $onStage = null): array
     {
+        $report = static function (string $stage) use ($onStage): void {
+            if ($onStage !== null) {
+                $onStage($stage);
+            }
+        };
+
         $domain = $this->resolver->normalizeDomain((string) ($website['domain'] ?? ''));
         $rootPath = $this->resolveInstallationRoot($website);
         $projectRoot = (string) ($website['project_root'] ?? $this->resolver->deriveProjectRootPath($rootPath, $domain));
@@ -236,6 +264,17 @@ class WordpressInstallService
             }
 
             if (! $this->hasWordPressFiles($rootPath)) {
+                // WordPress install requires an empty document root; a non-empty
+                // root (leftover files, a placeholder README, a previous app)
+                // would otherwise be rejected outright. Move whatever is there
+                // into the File Manager trash first, the same safety net
+                // Clone/Import/Git-clone already rely on, so nothing is
+                // silently destroyed and it stays restorable.
+                if (! ($this->inspectRootDirectory($rootPath)['is_empty'] ?? true)) {
+                    $this->backupExistingRoot($website, 'wordpress_install');
+                }
+
+                $report('downloading');
                 $installerResult = $this->installWordPressApplication($rootPath, $wordpressVersion, $siteOwner);
                 if (! $installerResult['installed']) {
                     $message = trim((string) ($installerResult['message'] ?? ''));
@@ -244,6 +283,7 @@ class WordpressInstallService
                 }
             }
 
+            $report('creating_database');
             $existingDatabaseRequest = DatabaseRequest::query()->where('domain', $domain)->first();
             $databaseConfig = $this->resolveWordPressDatabaseConfig($databasePrefix, $domain, $existingDatabaseRequest);
             $databaseProvisionResult = $this->provisionWordPressDatabase($databaseConfig);
@@ -251,6 +291,7 @@ class WordpressInstallService
                 return $this->fail(trim((string) ($databaseProvisionResult['output'] ?? '')) ?: 'WordPress database provisioning failed.');
             }
 
+            $report('connecting_database');
             $configResult = $this->writeWordPressConfig($rootPath, $databaseConfig, $databaseConfig['table_prefix'], $siteOwner);
             if (! $configResult['success']) {
                 return $this->fail(trim((string) ($configResult['message'] ?? '')) ?: 'WordPress wp-config.php update failed.');

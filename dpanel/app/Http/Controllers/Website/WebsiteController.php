@@ -441,18 +441,37 @@ class WebsiteController extends Controller
 
     public function storeIpRule(Request $request, string $token, string $id): JsonResponse
     {
-        $this->findAuthorizedWebsiteOrFail($id);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
         $validated = $request->validate([
             'rule_type' => ['required', 'string', 'in:ban,allow'],
             'ip_address' => ['required', 'string', 'max:45', 'ip'],
         ]);
         $ip = (string) filter_var(trim((string) $validated['ip_address']), FILTER_VALIDATE_IP);
         $type = (string) $validated['rule_type'];
+        $oppositeType = $type === 'allow' ? 'ban' : 'allow';
+
+        $hasOppositeRule = WebsiteIpRule::query()
+            ->where('website_id', $id)
+            ->where('rule_type', $oppositeType)
+            ->where('ip_address', $ip)
+            ->exists();
+        if ($hasOppositeRule) {
+            $oppositeLabel = $oppositeType === 'allow' ? 'whitelist' : 'ban';
+
+            return response()->json([
+                'message' => "This IP is already on the {$oppositeLabel} for this website. Remove it from there first.",
+                'errors' => ['ip_address' => ["This IP is already on the {$oppositeLabel} for this website."]],
+            ], 422);
+        }
 
         $rule = WebsiteIpRule::query()->firstOrCreate(
             ['website_id' => $id, 'rule_type' => $type, 'ip_address' => $ip],
             ['id' => (string) str()->uuid(), 'created_by' => $request->user()?->id],
         );
+
+        if ($rule->wasRecentlyCreated) {
+            app(EdgeGatewayReloader::class)->reloadDomains([(string) $website['domain']]);
+        }
 
         return response()->json([
             'success' => true,
@@ -483,8 +502,10 @@ class WebsiteController extends Controller
 
     public function destroyIpRule(Request $request, string $token, string $id, string $rule): JsonResponse
     {
-        $this->findAuthorizedWebsiteOrFail($id);
+        $website = $this->findAuthorizedWebsiteOrFail($id);
         WebsiteIpRule::query()->where('website_id', $id)->findOrFail($rule)->delete();
+
+        app(EdgeGatewayReloader::class)->reloadDomains([(string) $website['domain']]);
 
         return response()->json(['success' => true, 'message' => 'IP rule removed successfully.']);
     }

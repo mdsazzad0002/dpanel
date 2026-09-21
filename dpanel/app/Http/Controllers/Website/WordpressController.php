@@ -3,15 +3,19 @@
 namespace App\Http\Controllers\Website;
 
 use App\Http\Requests\Website\WordpressInstallRequest;
+use App\Jobs\WordpressInstallJob;
 use App\Models\Website;
+use App\Services\Backup\WordpressInstallJobStatus;
 use App\Services\Filemanager\FilemanagerService;
 use App\Services\Ssl\SslLifecycleService;
 use App\Services\Website\WebsiteCreateEditService;
 use App\Services\Website\WebsiteResolverService;
 use App\Services\Website\WebsiteTemplateCatalogService;
 use App\Services\Website\WordpressInstallService;
+use App\Services\Website\WordpressSsoService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -24,6 +28,7 @@ class WordpressController extends WebsiteController
         SslLifecycleService $sslLifecycleService,
         FilemanagerService $filemanagerService,
         WordpressInstallService $wordpressInstallService,
+        protected WordpressSsoService $wordpressSsoService,
     ) {
         parent::__construct(
             $websiteResolver,
@@ -38,77 +43,67 @@ class WordpressController extends WebsiteController
     public function wordpressManager(string $token, string $id): Response
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
-        $rootInspection = $this->wordpressInstallService->inspectRootDirectory(
-            $this->wordpressInstallService->resolveInstallationRoot($website),
-        );
 
         return Inertia::render('Websites/WordPressInstaller', [
             'website' => $website,
-            'wordpressVersions' => $this->wordpressInstallService->getWordPressVersionOptions(),
-            'rootInspection' => $rootInspection,
+            'rootInspection' => Inertia::defer(
+                fn () => $this->wordpressInstallService->inspectRootDirectory(
+                    $this->wordpressInstallService->resolveInstallationRoot($website),
+                ),
+                'diagnostics',
+            ),
+            'wordpressVersions' => Inertia::defer(
+                fn () => $this->wordpressInstallService->getWordPressVersionOptions(),
+                'remote',
+            ),
         ]);
     }
 
-    public function installWordPress(WordpressInstallRequest $request, string $token, string $id): RedirectResponse|JsonResponse
+    /**
+     * Dispatches the install to the queue instead of running it inline, so
+     * the frontend can poll installStatus() for a step-by-step progress bar
+     * (downloading → creating database → connecting database) rather than
+     * blocking on one long request.
+     */
+    public function installWordPress(WordpressInstallRequest $request, string $token, string $id): JsonResponse
     {
         $validated = $request->validated();
-        $returnToWordPress = (string) ($validated['return_to'] ?? '') === 'wordpress';
+        $this->findAuthorizedWebsiteOrFail($id);
 
-        $redirectTarget = function () use ($id, $returnToWordPress): RedirectResponse {
-            if ($returnToWordPress) {
-                return redirect()->route('websites.wordpress.manager', $id);
-            }
+        $installId = (string) Str::uuid();
+        WordpressInstallJobStatus::set($installId, ['stage' => 'queued']);
 
-            return redirect()->route('websites.manage', $id);
-        };
+        WordpressInstallJob::dispatch($installId, $id, $validated, (int) $request->user()->id);
 
-        $fail = function (string $message) use ($request, $redirectTarget): RedirectResponse|JsonResponse {
-            if ($request->expectsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $message,
-                ], 422);
-            }
+        return response()->json(['success' => true, 'install_id' => $installId]);
+    }
 
-            return $redirectTarget()->with('error', $message);
-        };
+    public function installStatus(Request $request, string $token, string $id, string $installId): JsonResponse
+    {
+        $this->findAuthorizedWebsiteOrFail($id);
 
-        $succeed = function (string $message, array $payload = []) use ($request, $redirectTarget): RedirectResponse|JsonResponse {
-            if ($request->expectsJson()) {
-                return response()->json(array_merge([
-                    'success' => true,
-                    'message' => $message,
-                ], $payload));
-            }
-
-            return $redirectTarget()->with('success', $message);
-        };
-
-        $website = $this->findAuthorizedWebsiteOrFail($id);
-        $result = $this->wordpressInstallService->install($website, $validated, $request->user());
-
-        if (! ($result['success'] ?? false)) {
-            return $fail((string) ($result['message'] ?? 'WordPress installation failed.'));
+        $status = WordpressInstallJobStatus::get($installId);
+        if ($status === null) {
+            return response()->json(['success' => false, 'message' => 'Install job not found.'], 404);
         }
 
-        $updatedWebsite = (array) ($result['website'] ?? $website);
-        $requests = collect($this->readRequests());
-        $updated = $requests->map(function (array $item) use ($id, $updatedWebsite): array {
-            if ((string) ($item['id'] ?? '') !== $id) {
-                return $item;
-            }
+        return response()->json(['success' => true, ...$status]);
+    }
 
-            $item['wordpress_db_prefix'] = (string) ($updatedWebsite['wordpress_db_prefix'] ?? '');
-            $item['status'] = (string) ($updatedWebsite['status'] ?? ($item['status'] ?? 'pending'));
-            $item['updated_at'] = now()->toIso8601String();
+    /**
+     * Issues a one-time WordPress auto-login link (see WordpressSsoService)
+     * so the panel user can jump into wp-admin without WordPress credentials.
+     */
+    public function wordpressSsoLogin(string $token, string $id): JsonResponse
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
 
-            return $item;
-        })->values()->all();
-        $this->writeRequests($updated);
+        try {
+            $url = $this->wordpressSsoService->generateLoginUrl($website);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
 
-        return $succeed((string) ($result['message'] ?? 'WordPress installed successfully.'), [
-            'website' => $this->findAuthorizedWebsiteOrFail($id),
-            'database_request' => $result['database_request'] ?? null,
-        ]);
+        return response()->json(['success' => true, 'url' => $url]);
     }
 }

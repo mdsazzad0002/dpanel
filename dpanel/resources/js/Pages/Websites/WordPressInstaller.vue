@@ -1,7 +1,8 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import WordpressSsoLogin from '@/Pages/Websites/SSOlogin/WordpressSsoLogin.vue';
+import { Deferred, Head, Link, usePage } from '@inertiajs/vue3';
+import { computed, onUnmounted, ref, watch } from 'vue';
 
 const props = defineProps({
     website: {
@@ -11,6 +12,10 @@ const props = defineProps({
     wordpressVersions: {
         type: Array,
         default: () => ['latest'],
+    },
+    rootInspection: {
+        type: Object,
+        default: () => null,
     },
 });
 
@@ -76,6 +81,69 @@ const installMessageClass = computed(() => (
         : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400'
 ));
 
+// Ordered so the progress bar can compute "how far along" from the stage's
+// index — 'queued' isn't in here since it maps to 0% (nothing has started).
+const INSTALL_STAGES = ['downloading', 'creating_database', 'connecting_database', 'ready'];
+const INSTALL_STAGE_LABELS = {
+    queued: 'Queued…',
+    downloading: 'Downloading WordPress…',
+    creating_database: 'Creating database…',
+    connecting_database: 'Connecting database…',
+    ready: 'Done',
+};
+
+const installStage = ref('');
+const installProgress = computed(() => {
+    if (!installStage.value || installStage.value === 'failed') return 0;
+    if (installStage.value === 'queued') return 5;
+
+    const index = INSTALL_STAGES.indexOf(installStage.value);
+    if (index === -1) return 5;
+
+    return Math.round(((index + 1) / INSTALL_STAGES.length) * 100);
+});
+const installStageLabel = computed(() => INSTALL_STAGE_LABELS[installStage.value] || 'Working…');
+
+let installPollTimer = null;
+const stopInstallPoll = () => {
+    window.clearInterval(installPollTimer);
+    installPollTimer = null;
+};
+onUnmounted(stopInstallPoll);
+
+const pollInstallStatus = async (installId, prefix) => {
+    try {
+        const response = await window.axios.get(
+            panelRoute('websites.wordpress.install.status', { id: website.value.id, installId }),
+            { headers: { Accept: 'application/json' } },
+        );
+        const payload = response?.data || {};
+        if (!payload.success) return;
+
+        installStage.value = payload.stage || installStage.value;
+
+        if (payload.stage === 'ready') {
+            stopInstallPoll();
+            installBusy.value = false;
+
+            if (payload.website) {
+                websiteState.value = { ...payload.website };
+                databasePrefix.value = normalizePrefix(payload.website.wordpress_db_prefix || prefix) || prefix;
+            }
+
+            installFeedbackType.value = 'success';
+            installFeedback.value = payload.message || 'WordPress installed and configured successfully.';
+        } else if (payload.stage === 'failed') {
+            stopInstallPoll();
+            installBusy.value = false;
+            installFeedbackType.value = 'error';
+            installFeedback.value = payload.message || 'WordPress installation failed.';
+        }
+    } catch {
+        // Network hiccup — next tick retries.
+    }
+};
+
 const installWordPress = async () => {
     if (installBusy.value) return;
 
@@ -84,6 +152,7 @@ const installWordPress = async () => {
 
     installBusy.value = true;
     installFeedback.value = '';
+    installStage.value = 'queued';
 
     try {
         const response = await window.axios.post(
@@ -91,7 +160,6 @@ const installWordPress = async () => {
             {
                 wordpress_version: version,
                 database_prefix: prefix,
-                return_to: 'wordpress',
             },
             {
                 headers: {
@@ -101,27 +169,16 @@ const installWordPress = async () => {
         );
 
         const payload = response?.data || {};
-        if (payload.website) {
-            websiteState.value = { ...payload.website };
-            databasePrefix.value = normalizePrefix(payload.website.wordpress_db_prefix || prefix) || prefix;
-        }
-
-        if (payload.database_request) {
-            websiteState.value = {
-                ...websiteState.value,
-                wordpress_db_prefix: normalizePrefix(payload.website?.wordpress_db_prefix || prefix) || prefix,
-            };
-        }
-
-        installFeedbackType.value = 'success';
-        installFeedback.value = payload.message || 'WordPress installed and configured successfully.';
+        stopInstallPoll();
+        installPollTimer = window.setInterval(() => pollInstallStatus(payload.install_id, prefix), 1500);
+        pollInstallStatus(payload.install_id, prefix);
     } catch (error) {
+        installBusy.value = false;
+        installStage.value = 'failed';
         installFeedbackType.value = 'error';
         installFeedback.value = error?.response?.data?.message
             || error?.response?.data?.error
             || 'WordPress installation failed.';
-    } finally {
-        installBusy.value = false;
     }
 };
 </script>
@@ -171,14 +228,23 @@ const installWordPress = async () => {
                 </div>
 
                 <div class="mt-3">
-                    <span
-                        class="rounded-full border px-3 py-1 text-xs font-medium"
-                        :class="isWordPressDetected
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-                            : 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'"
-                    >
-                        {{ isWordPressDetected ? 'WordPress detected' : 'Not Installed' }}
-                    </span>
+                    <Deferred data="rootInspection">
+                        <template #fallback>
+                            <span class="inline-flex h-[26px] w-32 animate-pulse rounded-full border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></span>
+                        </template>
+                        <span
+                            class="rounded-full border px-3 py-1 text-xs font-medium"
+                            :class="isWordPressDetected
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                                : 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'"
+                        >
+                            {{ isWordPressDetected ? 'WordPress detected' : 'Not Installed' }}
+                        </span>
+                    </Deferred>
+                </div>
+
+                <div v-if="isWordPressDetected" class="mt-4">
+                    <WordpressSsoLogin :website-id="website.id" />
                 </div>
 
                 <div class="mt-5 grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
@@ -199,14 +265,19 @@ const installWordPress = async () => {
 
                     <div>
                         <label class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">WordPress Version</label>
-                        <select
-                            v-model="selectedWordPressVersion"
-                            class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                        >
-                            <option v-for="version in availableWordPressVersions" :key="version" :value="version">
-                                {{ version === 'latest' ? 'Latest Stable' : version }}
-                            </option>
-                        </select>
+                        <Deferred data="wordpressVersions">
+                            <template #fallback>
+                                <div class="mt-1 h-[38px] w-full animate-pulse rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></div>
+                            </template>
+                            <select
+                                v-model="selectedWordPressVersion"
+                                class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            >
+                                <option v-for="version in availableWordPressVersions" :key="version" :value="version">
+                                    {{ version === 'latest' ? 'Latest Stable' : version }}
+                                </option>
+                            </select>
+                        </Deferred>
                     </div>
 
                     <button
@@ -222,6 +293,19 @@ const installWordPress = async () => {
                             ? 'Applying...'
                         : (isWordPressDetected ? 'Update Configuration' : 'Install WordPress') }}
                     </button>
+                </div>
+
+                <div v-if="installBusy" class="mt-5">
+                    <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                        <span>{{ installStageLabel }}</span>
+                        <span>{{ installProgress }}%</span>
+                    </div>
+                    <div class="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                        <div
+                            class="h-full rounded-full bg-blue-500 transition-all duration-500 ease-out dark:bg-blue-400"
+                            :style="{ width: installProgress + '%' }"
+                        ></div>
+                    </div>
                 </div>
             </section>
         </div>

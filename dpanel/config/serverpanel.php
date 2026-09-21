@@ -15,9 +15,17 @@ return [
         ))))),
     ],
     'panel_cookie_name' => env('SERVERPANEL_PANEL_COOKIE', 'panel_session_proof'),
+    // Safety-net absolute session age, independent of activity — forces a
+    // fresh login eventually even if the panel is kept busy nonstop.
     'panel_token_lifetime' => (int) env('SERVERPANEL_PANEL_TOKEN_LIFETIME', 60),
+    // Window granted at login / on each refresh before the session is
+    // considered idle.
     'panel_inactivity_timeout' => (int) env('SERVERPANEL_PANEL_INACTIVITY_TIMEOUT', 10),
+    // How close to expiry (minutes remaining) a request must be before it
+    // triggers a refresh.
     'panel_token_refresh_threshold' => (int) env('SERVERPANEL_PANEL_TOKEN_REFRESH_THRESHOLD', 4),
+    // How far a refresh pushes expires_at out from "now" once triggered.
+    'panel_token_refresh_extension' => (int) env('SERVERPANEL_PANEL_TOKEN_REFRESH_EXTENSION', 15),
     'ssl_auto_renew_enabled' => (bool) env('SERVERPANEL_SSL_AUTO_RENEW_ENABLED', true),
     'ssl_auto_renew_days' => (int) env('SERVERPANEL_SSL_AUTO_RENEW_DAYS', 30),
     'ssl_auto_renew_cooldown_hours' => (int) env('SERVERPANEL_SSL_AUTO_RENEW_COOLDOWN_HOURS', 12),

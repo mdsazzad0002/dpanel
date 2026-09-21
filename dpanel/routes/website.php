@@ -176,6 +176,12 @@ Route::get('/websites/{id}/wordpress', [WordpressController::class, 'wordpressMa
 Route::post('/websites/{id}/wordpress/install', [WordpressController::class, 'installWordPress'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.wordpress.install');
+Route::get('/websites/{id}/wordpress/install/status/{installId}', [WordpressController::class, 'installStatus'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.wordpress.install.status');
+Route::post('/websites/{id}/wordpress/sso', [WordpressController::class, 'wordpressSsoLogin'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('websites.wordpress.sso');
 
 Route::get('/websites/{id}/redis-cache', [RedisCacheController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')

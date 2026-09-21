@@ -62,11 +62,25 @@ class PanelSession extends Model
         ));
     }
 
+    public static function refreshExtensionMinutes(): int
+    {
+        return max(1, (int) config('serverpanel.panel_token_refresh_extension', 15));
+    }
+
     public static function initialExpiresAt(): Carbon
     {
         return now()->addMinutes(min(self::inactivityMinutes(), self::maximumLifetimeMinutes()));
     }
 
+    /**
+     * Sliding renewal: once fewer than refreshThresholdMinutes() remain on
+     * the current expiry, the next request pushes it refreshExtensionMinutes()
+     * further out — so a session being actively used (e.g. a page polling a
+     * background job's progress) keeps renewing indefinitely. The absolute
+     * maximumLifetimeMinutes() cap (measured from created_at) still applies
+     * underneath as a safety net that forces re-login eventually even if the
+     * session never goes idle.
+     */
     public function refreshedExpiresAt(): Carbon
     {
         $currentExpiry = $this->expires_at instanceof Carbon
@@ -76,7 +90,7 @@ class PanelSession extends Model
             return $currentExpiry;
         }
 
-        $idleExpiry = now()->addMinutes(self::inactivityMinutes());
+        $idleExpiry = now()->addMinutes(self::refreshExtensionMinutes());
         $absoluteExpiry = ($this->created_at ?? now())->copy()->addMinutes(self::maximumLifetimeMinutes());
 
         return $idleExpiry->lessThan($absoluteExpiry) ? $idleExpiry : $absoluteExpiry;

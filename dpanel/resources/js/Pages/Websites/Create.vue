@@ -185,6 +185,22 @@ const deriveRootPath = () => {
 };
 
 const suggestedRootPath = computed(() => deriveRootPath());
+
+// Mirrors SslLifecycleService::RESERVED_SSL_SUFFIXES — a public CA can never
+// issue for these, so offering the checkbox just sets up a guaranteed failure.
+const RESERVED_SSL_SUFFIXES = ['.localhost', '.local', '.test', '.example', '.invalid'];
+const isReservedSslDomain = computed(() => {
+    const domain = finalDomain.value;
+    if (!domain) return false;
+
+    return domain === 'localhost' || RESERVED_SSL_SUFFIXES.some((suffix) => domain.endsWith(suffix));
+});
+
+watch(isReservedSslDomain, (reserved) => {
+    if (reserved) {
+        form.enable_ssl = false;
+    }
+});
 const effectiveStartDirectory = computed(() => {
     if (form.domain_type === 'alis') {
         return form.parent_id ? selectedParentStartDirectory.value : form.start_directory;
@@ -667,9 +683,14 @@ onBeforeUnmount(() => {
                         <p v-if="form.errors.python_start_command" class="mt-1 text-xs text-red-600">{{ form.errors.python_start_command }}</p>
                     </div>
                 </template>
-                <div v-if="!props.aliasMode" class="flex items-center gap-2 pt-7">
-                    <input id="enable_ssl" v-model="form.enable_ssl" type="checkbox" class="rounded border-slate-300" />
-                    <label for="enable_ssl" class="text-sm">Enable SSL</label>
+                <div v-if="!props.aliasMode" class="pt-7">
+                    <div class="flex items-center gap-2">
+                        <input id="enable_ssl" v-model="form.enable_ssl" type="checkbox" :disabled="isReservedSslDomain" class="rounded border-slate-300" />
+                        <label for="enable_ssl" class="text-sm">Enable SSL</label>
+                    </div>
+                    <p v-if="isReservedSslDomain" class="mt-1 text-xs text-slate-500">
+                        SSL isn't available for local domains like .localhost/.local/.test/.example/.invalid — they aren't publicly resolvable.
+                    </p>
                 </div>
                 <div v-if="!props.aliasMode" class="flex items-start gap-2 pt-2 md:col-span-2">
                     <input id="manage_dns" v-model="form.manage_dns" type="checkbox" class="mt-1 rounded border-slate-300" />

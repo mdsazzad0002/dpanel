@@ -473,7 +473,7 @@ fn spawn_redis_reload_listener(state: DemoServerState) {
     let (sender, mut receiver) = mpsc::channel::<Vec<String>>(16);
     let url = std::env::var("DRUST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".into());
     let channel = std::env::var("DRUST_REDIS_RELOAD_CHANNEL")
-        .unwrap_or_else(|_| "dpanel_database_edge:reload".into());
+        .unwrap_or_else(|_| "edge:reload".into());
     tokio::spawn(async move {
         loop {
             let result = async {

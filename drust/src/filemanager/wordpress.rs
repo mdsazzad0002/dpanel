@@ -71,36 +71,9 @@ pub(crate) async fn handle(
                 .into_response();
         }
     };
-    let response = match client
-        .get(url)
-        .header(reqwest::header::ACCEPT_ENCODING, "identity")
-        .header(reqwest::header::USER_AGENT, "drust-wordpress-installer/1.0")
-        .send()
-        .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            return ApiResponse::error(&format!("WordPress download failed: {error}"))
-                .into_response();
-        }
-    };
-    if !response.status().is_success() {
-        return ApiResponse::error(&format!(
-            "WordPress download returned {}",
-            response.status()
-        ))
-        .into_response();
-    }
-    let package = match response.bytes().await {
-        Ok(bytes) if bytes.len() <= MAX_PACKAGE_BYTES => bytes.to_vec(),
-        Ok(_) => {
-            return ApiResponse::error("WordPress package exceeds the download limit")
-                .into_response();
-        }
-        Err(error) => {
-            return ApiResponse::error(&format!("WordPress download failed: {error}"))
-                .into_response();
-        }
+    let package = match download_package(&client, &url).await {
+        Ok(package) => package,
+        Err(error) => return ApiResponse::error(&error).into_response(),
     };
 
     let result = tokio::task::spawn_blocking(move || {
@@ -113,6 +86,56 @@ pub(crate) async fn handle(
             ApiResponse::error(&format!("WordPress install worker failed: {error}")).into_response()
         }
     }
+}
+
+const DOWNLOAD_ATTEMPTS: u32 = 3;
+
+/// wordpress.org's CDN occasionally cuts the response stream short under
+/// load, which reqwest surfaces as "error decoding response body" rather
+/// than a clean connection error. A single retry after a short delay clears
+/// up almost all of these without making a permanently broken download
+/// (bad status, oversized package) retry pointlessly.
+async fn download_package(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
+    let mut last_error = String::new();
+    for attempt in 1..=DOWNLOAD_ATTEMPTS {
+        let response = match client
+            .get(url)
+            .header(reqwest::header::ACCEPT_ENCODING, "identity")
+            .header(reqwest::header::USER_AGENT, "drust-wordpress-installer/1.0")
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                last_error = format!("WordPress download failed: {error}");
+                if attempt < DOWNLOAD_ATTEMPTS {
+                    tokio::time::sleep(Duration::from_millis(500 * attempt as u64)).await;
+                    continue;
+                }
+                break;
+            }
+        };
+        if !response.status().is_success() {
+            return Err(format!(
+                "WordPress download returned {}",
+                response.status()
+            ));
+        }
+        match response.bytes().await {
+            Ok(bytes) if bytes.len() <= MAX_PACKAGE_BYTES => return Ok(bytes.to_vec()),
+            Ok(_) => return Err("WordPress package exceeds the download limit".into()),
+            Err(error) => {
+                last_error = format!("WordPress download failed: {error}");
+                if attempt < DOWNLOAD_ATTEMPTS {
+                    tokio::time::sleep(Duration::from_millis(500 * attempt as u64)).await;
+                    continue;
+                }
+                break;
+            }
+        }
+    }
+
+    Err(last_error)
 }
 
 fn prepare_target(username: &str, target: &str) -> Result<(), String> {
