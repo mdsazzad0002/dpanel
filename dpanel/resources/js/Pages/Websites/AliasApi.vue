@@ -8,7 +8,17 @@ const panelRoute = (name, params = {}) => token.value ? route(name, { token: tok
 const state = ref({ ...props.aliasApi }); const plainToken = ref(''); const loading = ref(false);
 const aliasRows = ref([...props.aliases]);
 const aliasDomain = ref('');
+const enableSslOnCreate = ref(true);
 const aliasActionId = ref('');
+const sslToggleId = ref('');
+const RESERVED_SSL_SUFFIXES = ['.localhost', '.local', '.test', '.example', '.invalid'];
+const isLocalDomain = (domain) => {
+    const value = String(domain || '').trim().toLowerCase();
+    if (!value) return false;
+    if (value === 'localhost') return true;
+    return RESERVED_SSL_SUFFIXES.some((suffix) => value.endsWith(suffix));
+};
+const aliasDomainIsLocal = computed(() => isLocalDomain(aliasDomain.value));
 const editingAliasId = ref('');
 const editingAliasDomain = ref('');
 const result = ref(null);
@@ -26,7 +36,7 @@ const createAlias = async () => {
         const response = await window.axios.post(panelRoute('websites.store'), {
             domain_type: 'alis', domain, parent_id: props.website.id, parent_domain: props.website.domain,
             root_path: '', start_directory: props.website.start_directory ?? '', php_version: null,
-            enable_ssl: false, manage_dns: false, assigned_user_id: null,
+            enable_ssl: enableSslOnCreate.value && !isLocalDomain(domain), manage_dns: false, assigned_user_id: null,
         });
         const row = response.data?.website;
         if (row?.id) aliasRows.value.unshift({ ...row, ssl_status: response.data?.ssl?.status || (row.enable_ssl ? 'enabled' : 'disabled'), ssl_expires_at: response.data?.ssl?.expires_at || null });
@@ -63,7 +73,7 @@ const removeAlias = async (alias) => {
     finally { aliasActionId.value = ''; }
 };
 const issueAliasSsl = async (alias) => {
-    if (aliasActionId.value) return;
+    if (aliasActionId.value || isLocalDomain(alias.domain)) return;
     aliasActionId.value = String(alias.id);
     try {
         const response = await window.axios.post(panelRoute('websites.ssl.issue', { id: alias.id }), {}, { headers: { Accept: 'application/json' } });
@@ -71,6 +81,18 @@ const issueAliasSsl = async (alias) => {
         showResult(response.data, 'success', 'SSL issued successfully.');
     } catch (error) { showResult(error?.response?.data, 'error', 'SSL issue failed.'); }
     finally { aliasActionId.value = ''; }
+};
+const toggleAliasSsl = async (alias) => {
+    if (sslToggleId.value || isLocalDomain(alias.domain)) return;
+    sslToggleId.value = String(alias.id);
+    const enabled = !Boolean(alias.enable_ssl);
+    try {
+        const response = await window.axios.patch(panelRoute('websites.ssl.status.update', { id: alias.id }), { enabled }, { headers: { Accept: 'application/json' } });
+        alias.enable_ssl = enabled;
+        alias.ssl_status = enabled ? 'unknown' : 'disabled';
+        showResult(response.data, 'success', `SSL ${enabled ? 'enabled' : 'disabled'} successfully.`);
+    } catch (error) { showResult(error?.response?.data, 'error', 'SSL status update failed.'); }
+    finally { sslToggleId.value = ''; }
 };
 const sslDaysRemaining = (alias) => {
     if (!alias.ssl_expires_at) return null;
@@ -180,9 +202,16 @@ if (verification.verified) {
             </div>
             <section id="add-alias" class="scroll-mt-5 rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <h2 class="font-semibold">Add alias for {{ website.domain }}</h2>
-                <form class="mt-4 flex flex-col gap-3 sm:flex-row" @submit.prevent="createAlias">
-                    <input v-model="aliasDomain" type="text" required placeholder="alias.example.com" class="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    <button type="submit" :disabled="Boolean(aliasActionId)" class="rounded bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{{ aliasActionId === 'create' ? 'Creating...' : 'Create Alias' }}</button>
+                <form class="mt-4 flex flex-col gap-3" @submit.prevent="createAlias">
+                    <div class="flex flex-col gap-3 sm:flex-row">
+                        <input v-model="aliasDomain" type="text" required placeholder="alias.example.com" class="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <button type="submit" :disabled="Boolean(aliasActionId)" class="rounded bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{{ aliasActionId === 'create' ? 'Creating...' : 'Create Alias' }}</button>
+                    </div>
+                    <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300" :class="{ 'opacity-50': aliasDomainIsLocal }">
+                        <input v-model="enableSslOnCreate" type="checkbox" :disabled="aliasDomainIsLocal" class="h-4 w-4 rounded border-slate-300 dark:border-slate-700" />
+                        Issue SSL for this alias
+                    </label>
+                    <p v-if="aliasDomainIsLocal" class="text-xs text-amber-600 dark:text-amber-400">Local domain ({{ aliasDomain }}) — SSL is not available and will be skipped.</p>
                 </form>
             </section>
             <div v-if="resultMessage" :class="['rounded-xl border px-4 py-3 text-sm', resultType === 'success' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-red-300 bg-red-50 text-red-700']">{{ resultMessage }}</div>
@@ -210,7 +239,10 @@ if (verification.verified) {
                                 <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium capitalize text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                     <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>{{ alias.status || 'unknown' }}
                                 </span>
-                                <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="sslValidityClass(alias)" :title="formatExpiry(alias.ssl_expires_at)">
+                                <span v-if="isLocalDomain(alias.domain)" class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400" title="Local domains cannot use SSL">
+                                    Local domain — SSL unavailable
+                                </span>
+                                <span v-else class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="sslValidityClass(alias)" :title="formatExpiry(alias.ssl_expires_at)">
                                     <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
                                     <span>SSL</span><span class="opacity-40">|</span><span>{{ sslValidityLabel(alias) }}</span>
                                 </span>
@@ -219,7 +251,16 @@ if (verification.verified) {
                         <div v-if="editingAliasId !== String(alias.id)" class="flex flex-wrap items-center gap-1.5">
                             <button type="button" :disabled="Boolean(aliasActionId)" @click="beginAliasEdit(alias)"
                                 class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Edit</button>
-                            <button type="button" :disabled="Boolean(aliasActionId)" @click="issueAliasSsl(alias)" class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">Issue SSL</button><button type="button" :disabled="Boolean(aliasActionId)"
+                            <template v-if="!isLocalDomain(alias.domain)">
+                                <button type="button" :disabled="Boolean(sslToggleId)"
+                                    class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition disabled:opacity-50"
+                                    :class="alias.enable_ssl
+                                        ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'
+                                        : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400'"
+                                    @click="toggleAliasSsl(alias)">{{ sslToggleId === String(alias.id) ? 'Updating...' : (alias.enable_ssl ? 'Disable SSL' : 'Enable SSL') }}</button>
+                                <button type="button" :disabled="Boolean(aliasActionId)" @click="issueAliasSsl(alias)" class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">Issue SSL</button>
+                            </template>
+                            <button type="button" :disabled="Boolean(aliasActionId)"
                                 class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400"
                                 @click="removeAlias(alias)">Remove</button>
                         </div>
