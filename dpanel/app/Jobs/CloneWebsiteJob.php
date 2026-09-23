@@ -77,7 +77,7 @@ class CloneWebsiteJob implements ShouldQueue
                 return;
             }
 
-            $hasDatabase = DatabaseRequest::query()->visibleTo($user)->where('domain', $source->domain)->where('status', 'active')->exists();
+            $hasDatabase = DatabaseRequest::query()->visibleTo($user)->whereRaw('LOWER(domain) = ?', [strtolower((string) $source->domain)])->where('status', 'active')->exists();
             if ($hasDatabase) {
                 CloneShareJobStatus::set($this->cloneId, ['stage' => 'exporting_database']);
                 $databasePackagePath = storage_path('app/backups/clone-share/'.Str::uuid().'-db.zip');
@@ -131,7 +131,7 @@ class CloneWebsiteJob implements ShouldQueue
 
             $database = null;
             if ($sqlPath !== null) {
-                $database = DatabaseRequest::query()->visibleTo($user)->where('domain', $target->domain)->where('status', 'active')->first();
+                $database = DatabaseRequest::query()->visibleTo($user)->whereRaw('LOWER(domain) = ?', [strtolower((string) $target->domain)])->where('status', 'active')->first();
                 if (! $database instanceof DatabaseRequest) {
                     $domainPrefix = substr(trim((string) preg_replace('/[^a-z0-9_]/i', '_', explode('.', (string) $target->domain)[0]), '_') ?: 'site', 0, 16);
                     $customName = strtolower(trim((string) preg_replace('/[^a-z0-9_]/i', '_', $this->newDatabaseName)));
