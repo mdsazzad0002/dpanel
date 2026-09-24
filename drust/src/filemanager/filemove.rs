@@ -45,12 +45,7 @@ pub fn move_user_path(username: &str, source: &str, destination: &str) -> Result
     if !canonical_parent.is_dir() {
         return Err("Destination parent is not a folder.".into());
     }
-    if fs::symlink_metadata(&destination_path).is_ok() {
-        return Err(format!(
-            "Target already exists: {}",
-            destination_path.display()
-        ));
-    }
+    super::unzip::validate_replaceable_existing_target(&destination_path)?;
 
     fs::rename(&source_path, &destination_path).map_err(|e| {
         format!(
