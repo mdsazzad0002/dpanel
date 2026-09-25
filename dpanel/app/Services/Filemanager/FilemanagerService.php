@@ -276,6 +276,31 @@ class FilemanagerService
         $this->createDirectoriesViaApi([$path], $username);
     }
 
+    /**
+     * Laravel keeps these directories in git only via a per-directory
+     * .gitignore placeholder ("*" + "!.gitignore"); a project delivered as a
+     * plain zip/tar archive commonly drops them since they're otherwise
+     * empty. Missing storage/framework/cache/data in particular breaks the
+     * file cache driver with "Please provide a valid cache path."
+     */
+    public function ensureLaravelStorageSkeleton(string $username, string $rootPath): void
+    {
+        $rootPath = $this->normalizeAbsolutePath($rootPath);
+        if ($rootPath === '') {
+            return;
+        }
+
+        $this->createDirectoriesViaApi([
+            $rootPath.'/storage/app/public',
+            $rootPath.'/storage/framework/cache/data',
+            $rootPath.'/storage/framework/sessions',
+            $rootPath.'/storage/framework/testing',
+            $rootPath.'/storage/framework/views',
+            $rootPath.'/storage/logs',
+            $rootPath.'/bootstrap/cache',
+        ], $username);
+    }
+
     public function deletePath(string $username, string $path): void
     {
         $username = $this->normalizeUsername($username);

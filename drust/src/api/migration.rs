@@ -877,6 +877,7 @@ fn restore_generic_database(req: &GenericRestoreRequest, sql: &Path) -> Result<(
         }
     }
     let bytes = fs::read(sql).map_err(|e| e.to_string())?;
+    let bytes = remap_unsupported_collations(bytes);
     let mut child = Command::new("mysql")
         .env("MYSQL_PWD", &req.database_password)
         .args([
@@ -892,20 +893,65 @@ fn restore_generic_database(req: &GenericRestoreRequest, sql: &Path) -> Result<(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| e.to_string())?;
-    child
+    // mysql exiting early (bad SQL, unknown collation, auth, ...) closes its
+    // stdin, so this write can fail with a bare "Broken pipe" before we ever
+    // see the real reason. Keep going to wait_with_output() either way so the
+    // child's actual stderr — not the write error — is what gets reported.
+    let write_result = child
         .stdin
         .as_mut()
         .ok_or("database import stdin unavailable")?
-        .write_all(&bytes)
-        .map_err(|e| e.to_string())?;
+        .write_all(&bytes);
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    if let Err(write_error) = write_result {
+        return Err(if stderr.is_empty() {
+            format!("database import failed: {write_error}")
+        } else {
+            format!("database import failed: {stderr}")
+        });
+    }
     if !out.status.success() {
         return Err(format!(
             "database import failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
+            if stderr.is_empty() { "mysql exited with an error".to_string() } else { stderr }
         ));
     }
     Ok(())
+}
+
+// MySQL 8's "utf8mb4_0900_*" collation family (including locale variants like
+// utf8mb4_de_pb_0900_ai_ci) doesn't exist on MariaDB below 11.4, so a dump
+// taken from MySQL 8 (or a newer MariaDB that added these for compatibility)
+// fails immediately with "Unknown collation" on an older MariaDB target.
+// Remap them to the closest MariaDB-native equivalent before importing —
+// same data, just a different default text sort order for those columns.
+fn remap_unsupported_collations(bytes: Vec<u8>) -> Vec<u8> {
+    const PREFIX: &[u8] = b"utf8mb4_";
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(PREFIX) {
+            let start = i;
+            let mut end = i + PREFIX.len();
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+                end += 1;
+            }
+            let token = &bytes[start..end];
+            if token.windows(4).any(|w| w == b"0900") {
+                out.extend_from_slice(if token.ends_with(b"_bin") {
+                    b"utf8mb4_bin"
+                } else {
+                    b"utf8mb4_general_ci"
+                });
+                i = end;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    out
 }
 
 fn detect_generic_application(root: &Path) -> (Option<&'static str>, Option<PathBuf>, PathBuf) {

@@ -732,6 +732,25 @@ class WebsiteController extends Controller
         }
 
         try {
+            // A project shipped as a plain zip/tar (rather than a git clone) often
+            // drops Laravel's empty storage/bootstrap-cache directories entirely,
+            // since they normally only survive in git via a per-directory
+            // .gitignore placeholder. Recreate them before the recursive
+            // chown/chmod below so they end up with correct ownership too —
+            // otherwise the app keeps failing with errors like "Please provide
+            // a valid cache path." even after permissions are "fixed".
+            try {
+                $inspection = $this->inspectWebsiteApplication($website);
+                if ((string) ($inspection['detected_app'] ?? '') === 'laravel') {
+                    $root = rtrim((string) ($inspection['root_path'] ?? ''), '/');
+                    if ($root !== '') {
+                        $this->filemanagerService->ensureLaravelStorageSkeleton($siteOwner, $root);
+                    }
+                }
+            } catch (\Throwable) {
+                // Best-effort: the permission fix below still runs regardless.
+            }
+
             $result = $this->filemanagerService->fixWebsitePermissions($siteOwner, $accountHome);
             if (! $result['success']) {
                 return response()->json(['success' => false, 'message' => $result['output'] ?: 'Permission repair failed.'], 422);
