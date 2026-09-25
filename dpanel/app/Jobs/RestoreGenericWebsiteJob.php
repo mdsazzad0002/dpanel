@@ -34,14 +34,19 @@ class RestoreGenericWebsiteJob implements ShouldQueue
         }
         try {
             $settings = (array) $import->inventory;
+            $archivePath = (string) $import->archive_path;
 
+            // Snapshotting moves the website's current files into .trash so the
+            // incoming archive can safely overwrite root_path. A database-only
+            // import never touches root_path, so moving files away here would
+            // just delete the site's files with nothing to put back — skip it.
             $website = Website::find($settings['website_id'] ?? null);
-            if ($website) {
+            if ($website && $archivePath !== '') {
                 $trashPaths = $trash->snapshot($website, 'import_overwrite');
                 $settings['database_backup_dir'] = $trashPaths['database'];
             }
 
-            $result = $provider->restore(['archive_path' => $import->archive_path] + $settings);
+            $result = $provider->restore(['archive_path' => $archivePath !== '' ? $archivePath : null] + $settings);
             DB::transaction(function () use ($settings): void {
                 if (! empty($settings['sql_path'])) {
                     $database = DatabaseRequest::firstOrNew(['database_name' => $settings['database_name']]);

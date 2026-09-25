@@ -280,14 +280,15 @@ class MigrationController extends Controller
     {
         $website = \App\Models\Website::visibleTo($request->user())->findOrFail($id);
         $data = $request->validate([
-            'archive_name' => ['required', 'string', 'max:255'], 'archive_size' => ['required', 'integer', 'between:1,5368709120'],
+            'archive_name' => ['nullable', 'string', 'max:255'], 'archive_size' => ['nullable', 'required_with:archive_name', 'integer', 'between:1,5368709120'],
             'database_name_file' => ['nullable', 'string', 'max:255'], 'database_size' => ['nullable', 'required_with:database_name_file', 'integer', 'between:1,2147483648'],
             'database_id' => ['nullable', 'string'],
             'new_database_name' => ['nullable', 'string', 'max:64'],
             'overwrite_database' => ['nullable', 'boolean'],
         ]);
-        $archiveName = basename((string) $data['archive_name']);
-        abort_unless(preg_match('/\.(?:zip|tar\.gz|tgz)$/i', $archiveName), 422, 'Upload a .zip, .tar.gz, or .tgz website archive.');
+        abort_if(empty($data['archive_name']) && empty($data['database_name_file']), 422, 'Provide website files, a database dump, or both.');
+        $archiveName = isset($data['archive_name']) ? basename((string) $data['archive_name']) : null;
+        abort_if($archiveName !== null && preg_match('/\.(?:zip|tar\.gz|tgz)$/i', $archiveName) !== 1, 422, 'Upload a .zip, .tar.gz, or .tgz website archive.');
         $databaseFileName = isset($data['database_name_file']) ? basename((string) $data['database_name_file']) : null;
         abort_if($databaseFileName !== null && preg_match('/\.sql$/i', $databaseFileName) !== 1, 422, 'Database dump must be a .sql file.');
 
@@ -305,7 +306,7 @@ class MigrationController extends Controller
         if (! is_dir($directory)) {
             mkdir($directory, 0750, true);
         }
-        $archivePath = $directory.'/website-'.preg_replace('/[^A-Za-z0-9._-]/', '_', $archiveName);
+        $archivePath = $archiveName !== null ? $directory.'/website-'.preg_replace('/[^A-Za-z0-9._-]/', '_', $archiveName) : '';
         $sqlPath = $databaseFileName !== null ? $directory.'/database.sql' : null;
         $owner = (string) $website->site_owner;
         abort_if($owner === '', 422, 'This website does not have a system user.');
@@ -324,7 +325,7 @@ class MigrationController extends Controller
             ]);
         }
         $inventory = ['domain' => strtolower((string) $website->domain), 'website_id' => (string) $website->id, 'site_owner' => $owner, 'php_version' => (string) $website->php_version,
-            'assigned_user_id' => $website->assigned_user_id,
+            'assigned_user_id' => $website->assigned_user_id, 'upload_dir' => $directory,
             // root_path is the website-specific project directory. project_root can be
             // the shared account home (especially for subdomains), so importing there
             // would unpack one site's files into every site owner's common directory.
@@ -334,11 +335,11 @@ class MigrationController extends Controller
             'database_name' => (string) ($database?->database_name ?? ''), 'database_user' => (string) ($database?->database_user ?? ''),
             'database_password' => (string) ($database?->database_password ?? ''),
             'overwrite_database' => $databaseFileName !== null && $database->exists,
-            'uploads' => ['archive' => ['name' => $archiveName, 'size' => (int) $data['archive_size']],
+            'uploads' => ['archive' => $archiveName === null ? null : ['name' => $archiveName, 'size' => (int) $data['archive_size']],
                 'database' => $databaseFileName === null ? null : ['name' => $databaseFileName, 'size' => (int) $data['database_size']]]];
         $actor = $request->user();
-        $import = MigrationImport::create(['id' => $trackingId, 'provider' => 'generic', 'original_name' => $archiveName, 'archive_path' => $archivePath,
-            'archive_size' => (int) $data['archive_size'], 'status' => 'uploading', 'inventory' => $inventory, 'created_by' => $actor->id,
+        $import = MigrationImport::create(['id' => $trackingId, 'provider' => 'generic', 'original_name' => $archiveName ?? $databaseFileName, 'archive_path' => $archivePath,
+            'archive_size' => $archiveName !== null ? (int) $data['archive_size'] : 0, 'status' => 'uploading', 'inventory' => $inventory, 'created_by' => $actor->id,
             'assigned_reseller_id' => $actor->hasRole('reseller') ? $actor->id : null]);
 
         return response()->json(['message' => 'Tracked upload initialized.', 'tracking_id' => $trackingId, 'status' => 'uploading'], 201);
@@ -349,8 +350,8 @@ class MigrationController extends Controller
         $import = $this->trackedWebsiteImport($request, $id, $tracking);
         $data = $request->validate(['index' => ['required', 'integer', 'min:0'], 'total' => ['required', 'integer', 'between:1,10000'], 'chunk' => ['required', 'file', 'max:6144']]);
         abort_unless(in_array($kind, ['archive', 'database'], true), 404);
-        abort_if($kind === 'database' && data_get($import->inventory, 'uploads.database') === null, 422, 'No database upload was initialized.');
-        $directory = dirname($import->archive_path).'/chunks';
+        abort_if(data_get($import->inventory, 'uploads.'.$kind) === null, 422, "No {$kind} upload was initialized.");
+        $directory = data_get($import->inventory, 'upload_dir').'/chunks';
         if (! is_dir($directory)) {
             mkdir($directory, 0750, true);
         }
@@ -373,8 +374,9 @@ class MigrationController extends Controller
         abort_unless(in_array($kind, ['archive', 'database'], true), 404);
         $target = $kind === 'archive' ? $import->archive_path : (string) data_get($import->inventory, 'sql_path');
         abort_if($target === '', 422, 'This upload stage was not initialized.');
-        $chunkDirectory = dirname($import->archive_path).'/chunks';
-        $lock = fopen(dirname($import->archive_path).'/'.$kind.'.lock', 'c');
+        $uploadDir = (string) data_get($import->inventory, 'upload_dir');
+        $chunkDirectory = $uploadDir.'/chunks';
+        $lock = fopen($uploadDir.'/'.$kind.'.lock', 'c');
         abort_if($lock === false || ! flock($lock, LOCK_EX), 503, 'Upload finalization is busy.');
         try {
             if (! is_file($target)) {
@@ -414,9 +416,11 @@ class MigrationController extends Controller
             if (in_array($import->status, ['restoring', 'completed'], true)) {
                 return ['status' => $import->status, 'duplicate' => true];
             }
-            abort_unless(is_file($import->archive_path), 422, 'Website file upload is not ready.');
+            $archivePath = (string) $import->archive_path;
+            abort_if($archivePath !== '' && ! is_file($archivePath), 422, 'Website file upload is not ready.');
             $sqlPath = data_get($import->inventory, 'sql_path');
             abort_if(is_string($sqlPath) && $sqlPath !== '' && ! is_file($sqlPath), 422, 'Database upload is not ready.');
+            abort_if($archivePath === '' && (! is_string($sqlPath) || $sqlPath === ''), 422, 'Nothing to import.');
             $import->update(['status' => 'restoring', 'last_error' => null]);
             RestoreGenericWebsiteJob::dispatch($import->id)->afterCommit();
 
@@ -507,8 +511,9 @@ class MigrationController extends Controller
             if (is_string($sqlPath) && is_file($sqlPath)) {
                 unlink($sqlPath);
             }
-            if (is_dir(dirname($import->archive_path))) {
-                @rmdir(dirname($import->archive_path));
+            $uploadDir = (string) data_get($import->inventory, 'upload_dir', dirname((string) $import->archive_path ?: '.'));
+            if (is_dir($uploadDir)) {
+                @rmdir($uploadDir);
             }
         }
         $import->delete();

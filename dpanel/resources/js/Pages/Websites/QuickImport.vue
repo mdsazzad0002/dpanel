@@ -35,6 +35,7 @@ const databaseTarget = ref(databases.value.length ? databases.value[0].id : 'new
 const newDatabaseName = ref(props.suggestedDatabaseName);
 
 const submitGeneric = async () => {
+    if (!generic.archive && !generic.database) { error.value = 'Choose website files, a database dump, or both.'; return; }
     const overwriteDatabase = !!generic.database && databaseTarget.value !== 'new';
     const targetDatabase = databases.value.find((entry) => entry.id === databaseTarget.value);
     if (overwriteDatabase && !window.confirm(`Database ${targetDatabase?.database_name || ''} already exists. A backup will be created first. Continue and overwrite it?`)) return;
@@ -43,7 +44,7 @@ const submitGeneric = async () => {
     const routeParams = { token: panelToken.value, id: props.website.id };
     try {
         const response = await axios.post(route('websites.import.store', routeParams), {
-            archive_name: generic.archive.name, archive_size: generic.archive.size,
+            archive_name: generic.archive?.name || null, archive_size: generic.archive?.size || null,
             database_name_file: generic.database?.name || null, database_size: generic.database?.size || null,
             database_id: generic.database && databaseTarget.value !== 'new' ? databaseTarget.value : null,
             new_database_name: generic.database && databaseTarget.value === 'new' ? newDatabaseName.value : null,
@@ -52,7 +53,8 @@ const submitGeneric = async () => {
         trackingId.value = response.data.tracking_id;
         if (generic.database) await uploadTrackedFile(generic.database, 'database', trackingId.value);
         else { uploadStages.database.progress = 100; uploadStages.database.status = 'skipped'; }
-        await uploadTrackedFile(generic.archive, 'archive', trackingId.value);
+        if (generic.archive) await uploadTrackedFile(generic.archive, 'archive', trackingId.value);
+        else { uploadStages.archive.progress = 100; uploadStages.archive.status = 'skipped'; }
         uploadStages.connect.status = 'connecting'; uploadStages.connect.progress = 50;
         const connected = await axios.post(route('websites.import.connect', { ...routeParams, tracking: trackingId.value }));
         uploadStages.connect.status = 'queued'; uploadStages.connect.progress = 100; message.value = connected.data.message;
@@ -276,10 +278,10 @@ onUnmounted(() => {
         <div class="mx-auto grid gap-6  lg:grid-cols-2">
             <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Import into {{ website.domain }}</h3>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Upload website files and an optional SQL dump. Existing database credentials for this website are selected automatically—no connection form is required.</p>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Upload website files, a database dump, or both — either one alone is fine. Files upload in chunks, so phpMyAdmin's PHP upload-size limit doesn't apply here. Existing database credentials for this website are selected automatically—no connection form is required.</p>
                 <form class="mt-6 grid gap-4 md:grid-cols-2" @submit.prevent="submitGeneric">
-                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Website files<input required type="file" accept=".zip,.gz,.tgz,application/zip,application/gzip" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.archive = $event.target.files[0]" /></label>
-                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Database dump <span class="font-normal text-slate-400">(optional)</span><input type="file" accept=".sql,application/sql,text/plain" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.database = $event.target.files[0]" /><span class="mt-1 block text-xs font-normal text-slate-500">Automatically imports into this website's active database.</span></label>
+                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Website files <span class="font-normal text-slate-400">(optional)</span><input type="file" accept=".zip,.gz,.tgz,application/zip,application/gzip" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.archive = $event.target.files[0]" /></label>
+                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Database dump <span class="font-normal text-slate-400">(optional)</span><input type="file" accept=".sql,application/sql,text/plain" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.database = $event.target.files[0]" /><span class="mt-1 block text-xs font-normal text-slate-500">Automatically imports into this website's active database. Leave "Website files" empty to import the database only.</span></label>
                     <div v-if="!generic.database" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 md:col-span-2">
                         <template v-if="databaseConnection?.available"><i class="bi bi-database-check mr-1 text-emerald-500"></i>{{ databases.length > 1 ? `${databases.length} databases are linked to this website — choose a database dump to pick which one to replace.` : `Existing database ${databaseConnection.database_name} requires confirmation and will be backed up before overwrite.` }}</template>
                         <template v-else><i class="bi bi-database-add mr-1 text-indigo-500"></i>No active database exists. Uploading SQL will automatically create and connect one.</template>
@@ -305,7 +307,7 @@ onUnmounted(() => {
                             <div class="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div class="h-full rounded-full transition-all duration-200" :class="stage.status === 'ready' || stage.status === 'queued' || stage.status === 'skipped' ? 'bg-emerald-500' : 'bg-indigo-500'" :style="{ width: `${stage.progress}%` }"></div></div>
                         </div>
                     </div>
-                    <div class="md:col-span-2"><button :disabled="uploading" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{{ uploading ? 'Starting…' : 'Upload & migrate website' }}</button></div>
+                    <div class="md:col-span-2"><button :disabled="uploading || (!generic.archive && !generic.database)" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{{ uploading ? 'Starting…' : 'Upload & migrate' }}</button></div>
                 </form>
             </section>
 

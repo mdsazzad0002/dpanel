@@ -31,7 +31,10 @@ pub fn routes() -> Router<Arc<ApiState>> {
 
 #[derive(Deserialize)]
 struct GenericRestoreRequest {
-    archive_path: String,
+    // Absent/empty for a database-only import (see the early-return branch in
+    // generic_restore): no website files are extracted or copied.
+    #[serde(default)]
+    archive_path: Option<String>,
     domain: String,
     site_owner: String,
     php_version: String,
@@ -434,7 +437,6 @@ fn restore(value: &str, selection: &Selection) -> Result<serde_json::Value, Stri
 }
 
 fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, String> {
-    let source = archive_under_root(&req.archive_path, &[".zip", ".tar.gz", ".tgz"])?;
     if req.site_owner.is_empty()
         || !req
             .site_owner
@@ -470,6 +472,53 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
             }
         }
     }
+    let home = PathBuf::from(format!("/home/{}", req.site_owner));
+    if !home.exists() {
+        let _ = Command::new("groupadd")
+            .args(["--force", &req.site_owner])
+            .status();
+        if !Command::new("useradd")
+            .args([
+                "--create-home",
+                "--gid",
+                &req.site_owner,
+                "--shell",
+                "/usr/sbin/nologin",
+                &req.site_owner,
+            ])
+            .status()
+            .map_err(|e| e.to_string())?
+            .success()
+        {
+            return Err("cannot create target system user".into());
+        }
+    }
+
+    let archive_path = req.archive_path.as_deref().filter(|p| !p.is_empty());
+    if archive_path.is_none() {
+        // Database-only import: no website archive was submitted, so skip
+        // extraction/copy/chown entirely and just restore the SQL dump. This
+        // is the path a plain database import takes without also requiring
+        // a website files upload.
+        let sql_path = req
+            .sql_path
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .ok_or_else(|| "no website archive or database dump was provided".to_string())?;
+        let sql = archive_under_root(sql_path, &[".sql"])?;
+        let database_backup = if req.overwrite_database {
+            Some(backup_generic_database(req, &home)?)
+        } else {
+            None
+        };
+        restore_generic_database(req, &sql)?;
+        let saved_database = Some(preserve_generic_upload(&sql, &home)?);
+        return Ok(serde_json::json!({
+            "project_root": null, "document_root": null, "framework": null, "config_path": null,
+            "saved_archive": null, "saved_database": saved_database, "database_backup": database_backup,
+        }));
+    }
+    let source = archive_under_root(archive_path.unwrap(), &[".zip", ".tar.gz", ".tgz"])?;
     let stage = PathBuf::from(format!(
         "{ROOT}/.generic-{}-{}",
         std::process::id(),
@@ -520,28 +569,6 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
         return Err("website archive extraction failed".into());
     }
     let content_root = collapse_single_directory(&stage)?;
-    let home = PathBuf::from(format!("/home/{}", req.site_owner));
-    if !home.exists() {
-        let _ = Command::new("groupadd")
-            .args(["--force", &req.site_owner])
-            .status();
-        if !Command::new("useradd")
-            .args([
-                "--create-home",
-                "--gid",
-                &req.site_owner,
-                "--shell",
-                "/usr/sbin/nologin",
-                &req.site_owner,
-            ])
-            .status()
-            .map_err(|e| e.to_string())?
-            .success()
-        {
-            fs::remove_dir_all(&stage).ok();
-            return Err("cannot create target system user".into());
-        }
-    }
     let project_root = PathBuf::from(&req.target_root);
     if !project_root.starts_with(&home)
         || project_root
