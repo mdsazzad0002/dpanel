@@ -15,6 +15,7 @@ use App\Services\Filemanager\FilemanagerService;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
 use App\Services\Ssl\SslLifecycleService;
+use App\Services\Website\ProjectDependencyService;
 use App\Services\Website\WebsiteCreateEditService;
 use App\Services\Website\WebsiteResolverService;
 use App\Services\Website\WebsiteTemplateCatalogService;
@@ -739,12 +740,18 @@ class WebsiteController extends Controller
             // chown/chmod below so they end up with correct ownership too —
             // otherwise the app keeps failing with errors like "Please provide
             // a valid cache path." even after permissions are "fixed".
+            $envCreated = false;
+            $vite = null;
             try {
                 $inspection = $this->inspectWebsiteApplication($website);
                 if ((string) ($inspection['detected_app'] ?? '') === 'laravel') {
                     $root = rtrim((string) ($inspection['root_path'] ?? ''), '/');
                     if ($root !== '') {
                         $this->filemanagerService->ensureLaravelStorageSkeleton($siteOwner, $root);
+                        // A fresh clone/zip ships only .env.example; Laravel won't boot without .env.
+                        $envCreated = $this->filemanagerService->ensureLaravelEnvFile($siteOwner, $root);
+                        // Runs before the permission fix so public/build ends up with correct ownership.
+                        $vite = app(ProjectDependencyService::class)->ensureViteAssets($siteOwner, $root);
                     }
                 }
             } catch (\Throwable) {
@@ -756,7 +763,20 @@ class WebsiteController extends Controller
                 return response()->json(['success' => false, 'message' => $result['output'] ?: 'Permission repair failed.'], 422);
             }
 
-            return response()->json(['success' => true, 'message' => "Permissions fixed recursively from {$accountHome} for {$siteOwner}."]);
+            $message = "Permissions fixed recursively from {$accountHome} for {$siteOwner}.";
+            if ($envCreated) {
+                $message .= ' .env was missing, so it was created from .env.example.';
+            }
+            if ($vite['hot_removed'] ?? false) {
+                $message .= ' Removed stale public/hot.';
+            }
+            if ($vite['built'] ?? false) {
+                $message .= ' Vite build was missing, so assets were built.';
+            } elseif (($vite['error'] ?? null) !== null) {
+                $message .= ' Vite build was missing but building failed: '.mb_substr((string) $vite['error'], -500);
+            }
+
+            return response()->json(['success' => true, 'message' => $message]);
         } catch (\Throwable $error) {
             return response()->json(['success' => false, 'message' => 'Permission repair failed: '.$error->getMessage()], 422);
         }
@@ -837,19 +857,9 @@ class WebsiteController extends Controller
             return response()->json(['success' => false, 'message' => $manifest.' was not found in the detected project root.'], 422);
         }
 
-        $client = Http::acceptJson()->asJson()->timeout(900);
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
-        if ($apiToken !== '') {
-            $client = $client->withToken($apiToken);
-        }
-        $response = $client->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/project-dependencies', [
-            'site_owner' => (string) ($website['site_owner'] ?? ''),
-            'project_root' => $root,
-            'action' => $validated['action'],
-        ]);
-        $json = $response->json();
-        if (! $response->successful() || ! ($json['success'] ?? false)) {
-            return response()->json(['success' => false, 'message' => (string) ($json['message'] ?? 'Dependency installation failed.')], 422);
+        $result = app(ProjectDependencyService::class)->run((string) ($website['site_owner'] ?? ''), $root, $validated['action']);
+        if (! $result['success']) {
+            return response()->json(['success' => false, 'message' => $result['output'] !== '' ? $result['output'] : 'Dependency installation failed.'], 422);
         }
         $message = match ($validated['action']) {
             'composer_install' => 'Composer dependencies installed successfully.',
@@ -1457,8 +1467,10 @@ class WebsiteController extends Controller
         $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
         $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
-        $destinationPathRelative = $this->sanitizeRelativePath((string) ($validated['destination_path'] ?? ''));
-        $this->resolvePathInsideBase($basePath, $destinationPathRelative);
+        $destinationPathRelative = $this->resolveDestinationRelative($basePath, $currentPath, (string) ($validated['destination_path'] ?? ''));
+        if ($destinationPathRelative === null) {
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', "Destination must stay inside {$basePath}.");
+        }
 
         $allItems = [];
         if (! empty($validated['item_path'])) {
@@ -1547,8 +1559,10 @@ class WebsiteController extends Controller
         $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
         $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
-        $destinationPathRelative = $this->sanitizeRelativePath((string) ($validated['destination_path'] ?? ''));
-        $this->resolvePathInsideBase($basePath, $destinationPathRelative);
+        $destinationPathRelative = $this->resolveDestinationRelative($basePath, $currentPath, (string) ($validated['destination_path'] ?? ''));
+        if ($destinationPathRelative === null) {
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', "Destination must stay inside {$basePath}.");
+        }
 
         $allItems = [];
         if (! empty($validated['item_path'])) {
@@ -3840,6 +3854,36 @@ class WebsiteController extends Controller
         }
 
         return str_replace('\\', '/', rtrim($resolvedRoot, '/'));
+    }
+
+    /**
+     * Resolve a user-typed destination folder to a path relative to the base.
+     * Accepts an absolute path inside the base, "./" or "../" relative to the
+     * current folder, or a plain path relative to the base. Returns null when
+     * an absolute path points outside the base.
+     */
+    protected function resolveDestinationRelative(string $basePath, string $currentPath, string $destination): ?string
+    {
+        $destination = str_replace('\\', '/', trim($destination));
+        $base = rtrim(str_replace('\\', '/', trim($basePath)), '/');
+
+        if (str_starts_with($destination, '/')) {
+            $destination = rtrim($destination, '/');
+            if ($destination === $base) {
+                return '';
+            }
+            if (! str_starts_with($destination, $base.'/')) {
+                return null;
+            }
+
+            return $this->sanitizeRelativePath(substr($destination, strlen($base) + 1));
+        }
+
+        if ($destination === '.' || $destination === '..' || str_starts_with($destination, './') || str_starts_with($destination, '../')) {
+            return $this->sanitizeRelativePath($currentPath.'/'.$destination);
+        }
+
+        return $this->sanitizeRelativePath($destination);
     }
 
     protected function relativePathFromBase(string $basePath, string $absolutePath): string

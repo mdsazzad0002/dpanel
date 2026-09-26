@@ -261,6 +261,9 @@ pkg_install_php_stack() {
 
   case "$(pkg_distro_family)" in
     debian)
+      if pkg_package_available "php${version}-bcmath"; then
+        packages+=("php${version}-bcmath")
+      fi
       if pkg_package_available "php${version}-cli"; then
         packages+=("php${version}-cli")
       fi
@@ -290,7 +293,7 @@ pkg_install_php_stack() {
       fi
       ;;
     rpm)
-      packages=(php php-cli php-common php-fpm php-imap php-mbstring php-mysqlnd php-xml php-zip php-curl)
+      packages=(php php-bcmath php-cli php-common php-fpm php-imap php-mbstring php-mysqlnd php-xml php-zip php-curl)
       ;;
   esac
 

@@ -39,9 +39,15 @@ defineProps({
                     <button
                         type="button"
                         class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
-                        :class="!fm.currentPath ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'"
+                        :class="[
+                            !fm.currentPath ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400',
+                            fm.moveDragTargetPath === '' ? 'bg-emerald-50 ring-1 ring-emerald-400 dark:bg-emerald-900/20' : '',
+                        ]"
                         :title="fm.basePath"
                         @click="fm.goRoot"
+                        @dragover.prevent.stop="fm.handleFolderTargetDragOver('', $event)"
+                        @dragleave="fm.handleFolderTargetDragLeave('')"
+                        @drop.prevent.stop="fm.handleFolderTargetDrop('', $event)"
                     >
                         <span class="inline-flex h-3.5 w-3.5 items-center justify-center"><i class="bi bi-house-door-fill text-blue-500"></i></span>
                         <span class="block truncate">{{ fm.ownerRootLabel }}</span>
@@ -73,7 +79,17 @@ defineProps({
             </div>
 
             <div class="border-t border-slate-200 px-3 py-2 dark:border-slate-800">
-                <button v-if="fm.currentPath" type="button" class="mb-1 w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800" @click="fm.goParent">
+                <button
+                    v-if="fm.currentPath"
+                    type="button"
+                    class="mb-1 w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                    :class="fm.moveDragTargetPath === fm.parentPath ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20' : ''"
+                    title="Drop items here to move them up one level"
+                    @click="fm.goParent"
+                    @dragover.prevent.stop="fm.handleFolderTargetDragOver(fm.parentPath, $event)"
+                    @dragleave="fm.handleFolderTargetDragLeave(fm.parentPath)"
+                    @drop.prevent.stop="fm.handleFolderTargetDrop(fm.parentPath, $event)"
+                >
                     <i class="bi bi-arrow-up mr-1"></i>Up Directory
                 </button>
                 <button type="button" class="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800" @click="fm.goRoot">

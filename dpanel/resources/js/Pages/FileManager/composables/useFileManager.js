@@ -135,11 +135,28 @@ export function useFileManager(props) {
         router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ path: path || '.' })));
     }
 
-    function goParent() {
+    const parentPath = computed(() => {
         const segments = String(props.currentPath || '').split('/').filter(Boolean);
-        if (segments.length === 0) return;
         segments.pop();
-        openPath(segments.join('/'));
+        return segments.join('/');
+    });
+
+    function goParent() {
+        if (!props.currentPath) return;
+        openPath(parentPath.value);
+    }
+
+    function joinRelativePath(from, relative) {
+        const parts = String(from || '').split('/').filter(Boolean);
+        for (const part of relative.split('/')) {
+            if (part === '' || part === '.') continue;
+            if (part === '..') {
+                parts.pop();
+                continue;
+            }
+            parts.push(part);
+        }
+        return parts.join('/');
     }
 
     function goFromPathInput() {
@@ -153,6 +170,11 @@ export function useFileManager(props) {
             relative = entered.slice(base.length + 1);
         } else if (entered.startsWith('/')) {
             pushToast(`Path must stay inside ${base}.`);
+            return;
+        }
+
+        if (relative === '.' || relative === '..' || relative.startsWith('./') || relative.startsWith('../')) {
+            openPath(joinRelativePath(props.currentPath, relative));
             return;
         }
 
@@ -1250,6 +1272,7 @@ export function useFileManager(props) {
         openPath,
         goParent,
         goFromPathInput,
+        parentPath,
         toggleHidden,
         toggleSelectAll,
         toggleSelectPath,

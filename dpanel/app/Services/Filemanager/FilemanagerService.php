@@ -301,6 +301,22 @@ class FilemanagerService
         ], $username);
     }
 
+    /**
+     * Copy .env.example to .env when a Laravel project has no .env yet.
+     * Never overwrites an existing .env. Returns true when a copy was made.
+     */
+    public function ensureLaravelEnvFile(string $username, string $rootPath): bool
+    {
+        $rootPath = $this->normalizeAbsolutePath($rootPath);
+        if ($rootPath === '' || $this->fileExists($rootPath.'/.env') || ! $this->fileExists($rootPath.'/.env.example')) {
+            return false;
+        }
+
+        $this->copyPath($username, $rootPath.'/.env.example', $rootPath.'/.env');
+
+        return true;
+    }
+
     public function deletePath(string $username, string $path): void
     {
         $username = $this->normalizeUsername($username);
@@ -468,6 +484,22 @@ class FilemanagerService
 
         $output = trim((string) $result['output']);
         throw new \RuntimeException($output !== '' ? $output : 'Filemanager command failed.');
+    }
+
+    public function fileExists(string $path): bool
+    {
+        return $this->filemanagerApiRequest('exists', [
+            'paths' => [$this->normalizeAbsolutePath($path)],
+            'check_file' => true,
+        ])['success'];
+    }
+
+    public function directoryExists(string $path): bool
+    {
+        return $this->filemanagerApiRequest('exists', [
+            'paths' => [$this->normalizeAbsolutePath($path)],
+            'check_file' => false,
+        ])['success'];
     }
 
     /** @param array<int, string> $paths */

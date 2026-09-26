@@ -55,6 +55,15 @@ class WebsiteGitController extends Controller
         } elseif (($validated['auth_token'] ?? '') === '') {
             unset($validated['auth_token']);
         }
+        // A different repository or branch is a new enrollment: drop the old
+        // clone history so the page offers a fresh deploy instead of pulling
+        // through the previous repository's .git remote.
+        $repositoryChanged = $existing !== null
+            && ($existing->repository_url !== $validated['repository_url'] || $existing->branch !== $validated['branch']);
+        if ($repositoryChanged) {
+            $existing->logs()->delete();
+            $existing->forceFill(['last_synced_at' => null, 'last_status' => null, 'last_message' => null])->save();
+        }
         $deployment = WebsiteGitDeployment::query()->updateOrCreate(
             ['website_id' => $id],
             array_merge($validated, [
@@ -65,7 +74,20 @@ class WebsiteGitController extends Controller
             ]),
         );
 
-        return response()->json(['message' => 'Git deployment settings saved.', 'deployment' => array_merge($deployment->toArray(), ['has_token' => filled($deployment->auth_token)])]);
+        return response()->json([
+            'message' => 'Git deployment settings saved.',
+            'deployment' => array_merge($deployment->toArray(), ['has_token' => filled($deployment->auth_token)]),
+            'repository_changed' => $repositoryChanged,
+        ]);
+    }
+
+    public function destroy(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->website($request, $id);
+        // Only the connection and its activity are removed; website files stay.
+        WebsiteGitDeployment::query()->where('website_id', $id)->delete();
+
+        return response()->json(['message' => 'Repository disconnected.']);
     }
 
     public function run(Request $request, string $token, string $id): JsonResponse
