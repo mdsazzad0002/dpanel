@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\PanelSession;
+use App\Support\PanelReturnPath;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -16,6 +17,8 @@ class EnsurePanelSessionIsValid
     public function handle(Request $request, Closure $next): Response
     {
         if (! Auth::check()) {
+            PanelReturnPath::rememberRequest($request);
+
             return redirect()->route('login');
         }
 
@@ -83,10 +86,13 @@ class EnsurePanelSessionIsValid
                 'cookieToken_present' => $cookieToken !== '',
                 'missingProofCookie' => $missingProofCookie,
             ]);
+            $userId = (int) Auth::id();
             Auth::guard('web')->logout();
             $request->session()->forget('panel_session_token');
             $request->session()->invalidate();
             $request->session()->regenerateToken();
+            // Expired/revoked session: come back to this page after login.
+            PanelReturnPath::rememberRequest($request, $userId);
 
             return redirect()
                 ->route('login')

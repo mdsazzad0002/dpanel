@@ -958,6 +958,9 @@ Route::any('/cpsess{token}/{path?}', function (string $token, ?string $path = nu
         && hash_equals($sessionToken, $token);
 
     abort_if($isValidCurrentToken, 404);
+    if (! Auth::check()) {
+        \App\Support\PanelReturnPath::rememberRequest(request());
+    }
 
     return redirect()->route('login');
 })->where([

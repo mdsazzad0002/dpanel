@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\PanelSession;
 use App\Services\TwoFactorService;
+use App\Support\PanelReturnPath;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -92,14 +93,14 @@ class AuthenticatedSessionController extends Controller
                 ->json([
                     'success' => true,
                     'token' => $token,
-                    'redirect' => $this->consumeLastPanelPath($request, $token),
+                    'redirect' => PanelReturnPath::consume($request, $token, (int) $user->id),
                 ])
                 ->withCookie($panelCookie);
         }
 
         $token = (string) $request->session()->get('panel_session_token', '');
 
-        return redirect($this->consumeLastPanelPath($request, $token))
+        return redirect(PanelReturnPath::consume($request, $token, (int) $user->id))
             ->withCookie($panelCookie);
     }
 
@@ -152,7 +153,7 @@ class AuthenticatedSessionController extends Controller
     {
         $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
         $token = (string) $request->session()->get('panel_session_token', '');
-        $lastPanelPath = $this->lastPanelPathFromReferer($request, $token);
+        $userId = $request->user()?->id;
 
         if ($token !== '') {
             PanelSession::query()
@@ -168,44 +169,10 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerateToken();
 
         $request->session()->forget('panel_session_token');
-        if ($lastPanelPath !== null) {
-            $request->session()->put('panel.last_path', $lastPanelPath);
-        }
+        // The logout button posts from the page the user was on.
+        PanelReturnPath::rememberUrl($request, (string) $request->headers->get('referer', ''), $userId);
 
         return redirect('/')
             ->withCookie(Cookie::forget($cookieName));
-    }
-
-    private function lastPanelPathFromReferer(Request $request, string $token): ?string
-    {
-        if ($token === '') {
-            return null;
-        }
-
-        $referer = (string) $request->headers->get('referer', '');
-        $host = parse_url($referer, PHP_URL_HOST);
-        $path = parse_url($referer, PHP_URL_PATH);
-        if (! is_string($host) || ! hash_equals(strtolower($request->getHost()), strtolower($host)) || ! is_string($path)) {
-            return null;
-        }
-
-        $prefix = '/cpsess'.$token;
-        if (! str_starts_with($path, $prefix.'/')) {
-            return null;
-        }
-
-        $relativePath = substr($path, strlen($prefix));
-
-        return in_array($relativePath, ['/logout', '/login'], true) ? null : $relativePath;
-    }
-
-    private function consumeLastPanelPath(Request $request, string $token): string
-    {
-        $relativePath = $request->session()->pull('panel.last_path');
-        if (is_string($relativePath) && str_starts_with($relativePath, '/') && ! str_starts_with($relativePath, '//')) {
-            return '/cpsess'.$token.$relativePath;
-        }
-
-        return route('dashboard', ['token' => $token], absolute: false);
     }
 }

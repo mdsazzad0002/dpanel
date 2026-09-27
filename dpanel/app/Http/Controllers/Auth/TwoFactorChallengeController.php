@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PanelSession;
 use App\Models\User;
 use App\Services\TwoFactorService;
+use App\Support\PanelReturnPath;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -128,12 +129,7 @@ class TwoFactorChallengeController extends Controller
         $panelCookie = $this->issuePanelSessionProof($request);
 
         $token = (string) $request->session()->get('panel_session_token', '');
-        $relativePath = $request->session()->pull('panel.last_path');
-        $redirectPath = is_string($relativePath) && str_starts_with($relativePath, '/') && ! str_starts_with($relativePath, '//')
-            ? '/cpsess'.$token.$relativePath
-            : route('dashboard', ['token' => $token], absolute: false);
-
-        return redirect($redirectPath)
+        return redirect(PanelReturnPath::consume($request, $token, (int) $user->id))
             ->withCookie($panelCookie);
     }
 
