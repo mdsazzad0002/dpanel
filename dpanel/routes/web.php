@@ -17,6 +17,8 @@ use App\Http\Controllers\ChatEngineAssistantController;
 use App\Http\Controllers\ChatEngineChannelController;
 use App\Http\Controllers\ChatEngineConversationController;
 use App\Http\Controllers\ChatEngineFacebookAppController;
+use App\Http\Controllers\GithubIntegrationController;
+use App\Http\Controllers\Webhooks\GitDeployWebhookController;
 use App\Http\Controllers\ChatEngineFacebookPostController;
 use App\Http\Controllers\ChatEngineScheduledMessageController;
 use App\Http\Controllers\CloneShareController;
@@ -200,6 +202,18 @@ Route::post('/widget/chat/{channel}/media', [WebsiteChatWidgetController::class,
 Route::get('/widget-media/{token}', [WebsiteChatWidgetController::class, 'showMedia'])
     ->middleware('throttle:30,1')
     ->name('widget.media.show');
+
+// GitHub OAuth redirect_uri must be a fixed URL registered on the admin's
+// GitHub app, so it can't carry the rotating cpsess token — it relies on the
+// browser session and the state saved by GithubIntegrationController::connect().
+Route::get('/github/oauth/callback', [GithubIntegrationController::class, 'callback'])
+    ->middleware('throttle:30,1')
+    ->name('github.oauth.callback');
+
+// Push-to-deploy: one URL + HMAC secret per website deployment.
+Route::post('/webhooks/git/{deployment}', GitDeployWebhookController::class)
+    ->middleware('throttle:60,1')
+    ->name('webhooks.git.deploy');
 
 Route::prefix('cpsess{token}')
     ->where(['token' => '[0-9a-fA-F]{64}'])
@@ -827,6 +841,28 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->name('security.firewall.guide');
 
+            Route::get('/integrations/github', [GithubIntegrationController::class, 'index'])
+                ->middleware('role_or_permission:admin|reseller|manage_websites')
+                ->name('github.index');
+            Route::put('/integrations/github/app', [GithubIntegrationController::class, 'saveApp'])
+                ->middleware('role:admin|superadmin')
+                ->name('github.app.save');
+            Route::delete('/integrations/github/app', [GithubIntegrationController::class, 'destroyApp'])
+                ->middleware('role:admin|superadmin')
+                ->name('github.app.destroy');
+            Route::get('/integrations/github/connect', [GithubIntegrationController::class, 'connect'])
+                ->middleware('role_or_permission:admin|reseller|manage_websites')
+                ->name('github.connect');
+            Route::delete('/integrations/github/accounts/{account}', [GithubIntegrationController::class, 'destroyAccount'])
+                ->middleware('role_or_permission:admin|reseller|manage_websites')
+                ->name('github.accounts.destroy');
+            Route::get('/integrations/github/accounts/{account}/repositories', [GithubIntegrationController::class, 'repositories'])
+                ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:60,1'])
+                ->name('github.accounts.repositories');
+            Route::get('/integrations/github/accounts/{account}/branches', [GithubIntegrationController::class, 'branches'])
+                ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:60,1'])
+                ->name('github.accounts.branches');
+
             Route::get('/settings/self-connection', [SelfConnectionController::class, 'manager'])
                 ->middleware('role:admin')
                 ->name('self-connection.manager');
@@ -922,6 +958,9 @@ Route::any('/cpsess{token}/{path?}', function (string $token, ?string $path = nu
         && hash_equals($sessionToken, $token);
 
     abort_if($isValidCurrentToken, 404);
+    if (! Auth::check()) {
+        \App\Support\PanelReturnPath::rememberRequest(request());
+    }
 
     return redirect()->route('login');
 })->where([

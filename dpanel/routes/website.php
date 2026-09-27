@@ -104,6 +104,8 @@ Route::put('/websites/{id}/git', [WebsiteGitController::class, 'store'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.store');
 Route::post('/websites/{id}/git/run', [WebsiteGitController::class, 'run'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.run');
+Route::put('/websites/{id}/git/webhook', [WebsiteGitController::class, 'webhook'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.webhook');
 Route::delete('/websites/{id}/git', [WebsiteGitController::class, 'destroy'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.destroy');
 Route::get('/websites/{id}/ssh-key', [WebsiteSshKeyController::class, 'index'])

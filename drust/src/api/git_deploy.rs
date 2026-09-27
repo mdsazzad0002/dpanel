@@ -84,6 +84,7 @@ fn execute(request: &Request) -> Result<String, String> {
         "pull" => pull(request, &target, &auth),
         "push" => push(request, &target, &auth),
         "sync" => sync(request, &target, &auth),
+        "checkout" => checkout(request, &target, &auth),
         _ => Err("Unsupported Git action.".into()),
     }
 }
@@ -338,4 +339,45 @@ fn sync(request: &Request, target: &Path, auth: &Auth) -> Result<String, String>
         return push(request, target, auth);
     }
     Err("Local and remote history diverged; manual resolution is required.".into())
+}
+
+/// Switch the working tree to another branch of the same repository. The
+/// clone is `--single-branch --depth 1`, so the branch is added to the
+/// remote's fetch refspec (later pulls then track it) and fetched shallowly.
+fn checkout(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    if !clean(request, target, auth)? {
+        return Err("Local files have uncommitted changes; branch switch stopped.".into());
+    }
+    let remote = format!("origin/{}", request.branch);
+    git(
+        request,
+        target,
+        auth,
+        &["remote", "set-branches", "--add", "origin", &request.branch],
+    )?;
+    git(
+        request,
+        target,
+        auth,
+        &[
+            "fetch",
+            "--depth",
+            "1",
+            "origin",
+            &format!("+refs/heads/{}:refs/remotes/{remote}", request.branch),
+        ],
+    )?;
+    git(
+        request,
+        target,
+        auth,
+        &["checkout", "-B", &request.branch, &remote],
+    )?;
+    git(
+        request,
+        target,
+        auth,
+        &["branch", "--set-upstream-to", &remote, &request.branch],
+    )?;
+    Ok(format!("Switched to branch {}.", request.branch))
 }

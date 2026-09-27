@@ -51,6 +51,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'webhooks/chat/whatsapp/*',
             'webhooks/chat/instagram/*',
             'webhooks/chat/slack/*',
+            'webhooks/git/*',
             'widget/chat/*',
         ]);
 
