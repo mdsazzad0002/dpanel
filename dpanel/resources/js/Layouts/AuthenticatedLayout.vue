@@ -207,6 +207,7 @@ const menuItems = computed(() => [
         children: [
             { label: 'Create Website', hint: 'Add a new website', icon: 'CW', iconClass: 'bi bi-plus-square', routeName: 'websites.create', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
             { label: 'List Websites', hint: 'View all websites', icon: 'LW', iconClass: 'bi bi-list-ul', routeName: 'websites.list', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+            { label: 'GitHub Accounts', hint: 'Connect GitHub for deployments', icon: 'GH', iconClass: 'bi bi-github', routeName: 'github.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
         ],
     },
     {
