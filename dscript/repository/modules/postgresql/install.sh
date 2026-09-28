@@ -156,8 +156,9 @@ UNIT
 
 pgadmin_package_dir() {
   "${PGADMIN_VENV}/bin/python" - <<'PY'
-import os, pgadmin4
-print(os.path.dirname(pgadmin4.__file__))
+# pgadmin4 ships as a namespace package, so it has __path__ but no __file__.
+import pgadmin4
+print(list(pgadmin4.__path__)[0])
 PY
 }
 
