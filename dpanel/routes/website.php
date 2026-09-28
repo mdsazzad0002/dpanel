@@ -14,6 +14,7 @@ use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
 use App\Http\Controllers\Website\WebsiteSshKeyController;
 use App\Http\Controllers\Website\WebsiteTerminalController;
+use App\Http\Controllers\Website\LaravelInstallerController;
 use App\Http\Controllers\Website\WordpressController;
 use App\Http\Controllers\WebsiteChatController;
 // Manage Website ===================================================================
@@ -102,6 +103,8 @@ Route::get('/websites/{id}/git', [WebsiteGitController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.index');
 Route::put('/websites/{id}/git', [WebsiteGitController::class, 'store'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.store');
+Route::post('/websites/{id}/git/probe', [WebsiteGitController::class, 'probe'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])->name('websites.git.probe');
 Route::post('/websites/{id}/git/run', [WebsiteGitController::class, 'run'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.run');
 Route::put('/websites/{id}/git/webhook', [WebsiteGitController::class, 'webhook'])
@@ -186,6 +189,17 @@ Route::get('/websites/{id}/wordpress/install/status/{installId}', [WordpressCont
 Route::post('/websites/{id}/wordpress/sso', [WordpressController::class, 'wordpressSsoLogin'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.wordpress.sso');
+
+// Laravel Installer Routes
+Route::get('/websites/{id}/laravel', [LaravelInstallerController::class, 'laravelInstaller'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.laravel.installer');
+Route::post('/websites/{id}/laravel/install', [LaravelInstallerController::class, 'installLaravel'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:5,1'])
+    ->name('websites.laravel.install');
+Route::get('/websites/{id}/laravel/install/status/{installId}', [LaravelInstallerController::class, 'laravelInstallStatus'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.laravel.install.status');
 
 Route::get('/websites/{id}/redis-cache', [RedisCacheController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')

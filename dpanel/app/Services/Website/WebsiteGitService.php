@@ -11,7 +11,11 @@ use Illuminate\Support\Facades\Http;
 
 class WebsiteGitService
 {
-    public const ACTIONS = ['clone', 'status', 'pull', 'push', 'sync', 'checkout'];
+    // init: publish the current website root to an empty repository.
+    public const ACTIONS = ['clone', 'init', 'status', 'pull', 'push', 'sync', 'checkout'];
+
+    /** Actions after which the website root is linked to the repository. */
+    public const CONNECTING_ACTIONS = ['clone', 'init'];
 
     public function __construct(private PreOverwriteBackupService $preOverwriteBackup, private GithubClient $github)
     {
@@ -47,29 +51,10 @@ class WebsiteGitService
                 $this->preOverwriteBackup->snapshot($website, 'git_clone');
             }
             [$username, $secret] = $this->credentials($deployment);
-            if ($secret === '' && in_array($action, ['push', 'sync'], true)) {
+            if ($secret === '' && in_array($action, ['init', 'push', 'sync'], true)) {
                 throw new \RuntimeException('Pushing needs credentials. Select a connected GitHub account (or add an access token) in the connection settings and save.');
             }
-            $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
-            $token = trim((string) config('serverpanel.execution_api_token', ''));
-            if ($token !== '') $request = $request->withToken($token);
-            $response = $request->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/git-deploy', [
-                'site_owner' => (string) $website->site_owner,
-                'target' => rtrim((string) $website->root_path, '/'),
-                'repository' => (string) $deployment->repository_url,
-                'branch' => $branch,
-                'action' => $action,
-                'message' => mb_substr(trim($message) ?: 'Website update', 0, 200),
-                'username' => $username,
-                'token' => $secret,
-            ]);
-            $json = $response->json();
-            $data = is_array($json['data'] ?? null) ? $json['data'] : [];
-            $result = [
-                'success' => $response->successful() && (bool) ($json['success'] ?? false),
-                'output' => (string) ($data['output'] ?? $json['message'] ?? $response->body()),
-                'exit_code' => $response->successful() ? 0 : $response->status(),
-            ];
+            $result = $this->callDrust($website, (string) $deployment->repository_url, $branch, $action, $username, $secret, $message);
 
             $success = (bool) ($result['success'] ?? false);
             $output = mb_substr(trim((string) ($result['output'] ?? '')), 0, 12000);
@@ -92,6 +77,63 @@ class WebsiteGitService
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Decide the first action for a repository before anything runs: a
+     * remote with commits is deployed (clone), an empty one is fed from the
+     * website's current files (init).
+     *
+     * @return array{remote_empty: bool, branch_exists: bool, local_files: bool, local_repo: bool, recommended: string}
+     */
+    public function probe(\App\Models\Website $website, string $repositoryUrl, string $branch, string $username, string $secret): array
+    {
+        $result = $this->callDrust($website, $repositoryUrl, $branch, 'probe', $username, $secret, '');
+        $state = $result['success'] ? json_decode($result['output'], true) : null;
+        if (! is_array($state)) {
+            throw new \RuntimeException($result['output'] ?: 'Could not inspect the repository.');
+        }
+        $state = [
+            'remote_empty' => (bool) ($state['remote_empty'] ?? false),
+            'branch_exists' => (bool) ($state['branch_exists'] ?? false),
+            'local_files' => (bool) ($state['local_files'] ?? false),
+            'local_repo' => (bool) ($state['local_repo'] ?? false),
+        ];
+        $state['recommended'] = ! $state['remote_empty'] ? 'clone' : ($state['local_files'] && ! $state['local_repo'] ? 'init' : 'none');
+
+        return $state;
+    }
+
+    /** @return array{0: string, 1: string} */
+    public function credentialsFor(WebsiteGitDeployment $deployment): array
+    {
+        return $this->credentials($deployment);
+    }
+
+    /** @return array{success: bool, output: string, exit_code: int} */
+    private function callDrust(\App\Models\Website $website, string $repositoryUrl, string $branch, string $action, string $username, string $secret, string $message): array
+    {
+        $request = Http::acceptJson()->asJson()->timeout(max((int) config('serverpanel.execution_api_timeout', 60), $action === 'init' ? 300 : 0));
+        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($token !== '') $request = $request->withToken($token);
+        $response = $request->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/git-deploy', [
+            'site_owner' => (string) $website->site_owner,
+            'target' => rtrim((string) $website->root_path, '/'),
+            'repository' => $repositoryUrl,
+            'branch' => $branch,
+            'action' => $action,
+            'message' => mb_substr(trim($message) ?: 'Website update', 0, 200),
+            'username' => $username,
+            'token' => $secret,
+        ]);
+        $json = $response->json();
+        $data = is_array($json['data'] ?? null) ? $json['data'] : [];
+
+        return [
+            'success' => $response->successful() && (bool) ($json['success'] ?? false),
+            'output' => (string) ($data['output'] ?? $json['message'] ?? $response->body()),
+            'exit_code' => $response->successful() ? 0 : $response->status(),
+        ];
     }
 
     /**

@@ -9,6 +9,7 @@ pub(crate) mod exists;
 pub(crate) mod filemove;
 pub(crate) mod fix_permissions;
 pub(crate) mod inspect;
+pub(crate) mod laravel;
 pub(crate) mod read;
 pub(crate) mod remove;
 pub(crate) mod size;

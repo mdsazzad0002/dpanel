@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
@@ -92,11 +92,68 @@ const credentialsReady = computed(() => source.value === 'github' ? Boolean(sele
 const canSave = computed(() => repoValid.value && branchValid.value && credentialsReady.value && !busy.value);
 const repoChanged = computed(() => Boolean(deployment.value) && (form.value.repository_url !== deployment.value.repository_url || form.value.branch !== deployment.value.branch));
 const accountChanged = computed(() => Boolean(deployment.value) && (source.value === 'github' ? accountId.value : null) !== (deployment.value.github_account_id || null));
-const cloned = computed(() => repositoryConnected.value || logs.value.some((log) => log.action === 'clone' && log.status === 'success'));
+const cloned = computed(() => repositoryConnected.value || logs.value.some((log) => ['clone', 'init'].includes(log.action) && log.status === 'success'));
 const currentStep = computed(() => !deployment.value ? 1 : !cloned.value ? 2 : 3);
+// Probe the repository as soon as it's chosen: a remote with code gets
+// deployed (clone), an empty remote gets this website's files pushed (init).
+const probeState = ref(null);
+const probing = ref(false);
+const probeError = ref('');
+const firstAction = computed(() => probeState.value?.recommended || null);
+let probeTimer = null;
+let probeSeq = 0;
+const probeRepository = async () => {
+    const seq = ++probeSeq;
+    probeState.value = null; probeError.value = '';
+    if (!repoValid.value || !branchValid.value || (cloned.value && !repoChanged.value)) { probing.value = false; return; }
+    const payload = { repository_url: form.value.repository_url, branch: form.value.branch };
+    if (source.value === 'github') {
+        if (!selectedAccount.value) { probing.value = false; return; }
+        payload.github_account_id = accountId.value;
+    } else if (accessType.value === 'private' && form.value.auth_token) {
+        payload.auth_username = form.value.auth_username;
+        payload.auth_token = form.value.auth_token;
+    }
+    probing.value = true;
+    try {
+        const data = await request(panelRoute('websites.git.probe', { id: props.website.id }), 'POST', payload);
+        if (seq === probeSeq) probeState.value = data;
+    } catch (e) {
+        if (seq === probeSeq) probeError.value = e.message;
+    } finally {
+        if (seq === probeSeq) probing.value = false;
+    }
+};
+watch(
+    () => [form.value.repository_url, form.value.branch, source.value, accountId.value, accessType.value, form.value.auth_token, cloned.value],
+    () => { window.clearTimeout(probeTimer); probing.value = true; probeTimer = window.setTimeout(probeRepository, 600); },
+    { immediate: true },
+);
+const decision = computed(() => {
+    const state = probeState.value;
+    if (!state) return null;
+    if (!state.remote_empty) {
+        return state.branch_exists
+            ? { tone: 'violet', icon: 'bi-cloud-download', title: 'Repository has code → Deploy', text: `The ${form.value.branch} branch will be cloned into the website. Current website files move to the File Manager trash (restorable).` }
+            : { tone: 'amber', icon: 'bi-exclamation-triangle', title: `Branch "${form.value.branch}" not found`, text: 'The repository has code, but not on this branch. Pick an existing branch to deploy.' };
+    }
+    if (state.local_repo) return { tone: 'amber', icon: 'bi-exclamation-triangle', title: 'Website is already a Git repository', text: 'The repository is empty, but the website root already has its own .git folder. Remove it (or re-install the site) before pushing.' };
+    if (state.local_files) return { tone: 'emerald', icon: 'bi-cloud-upload', title: 'Repository is empty → Push', text: `This website's current files will be pushed as the first commit of ${form.value.branch}. Files in .gitignore (.env, vendor, node_modules) are not pushed.` };
+    return { tone: 'slate', icon: 'bi-info-circle', title: 'Both are empty', text: 'The repository and the website root are both empty. Install an app first (e.g. Laravel or WordPress installer), or push code to the repository, then come back.' };
+});
+const canFirstAction = computed(() => firstAction.value === 'init' || (firstAction.value === 'clone' && probeState.value?.branch_exists));
+const decisionClass = (tone) => ({
+    violet: 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-200',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200',
+    amber: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-200',
+}[tone]);
+
 const actionHelp = computed(() => {
     if (!deployment.value) return 'Repository details save করলে deployment buttons চালু হবে।';
-    if (!cloned.value) return 'এখন “Deploy website” চাপুন। Website folder খালি থাকতে হবে।';
+    if (!cloned.value && firstAction.value === 'init') return 'Repository খালি: “Push site to empty repo” চাপলে website-এর files প্রথম commit হিসেবে যাবে।';
+    if (!cloned.value && firstAction.value === 'clone') return 'Repository-তে code আছে: “Deploy website” চাপলে website-এ clone হবে।';
+    if (!cloned.value) return 'Repository check হচ্ছে… উপরের status দেখে পরের ধাপ নিন।';
     return 'Repository connected. নতুন version আনতে Pull, server changes পাঠাতে Push ব্যবহার করুন।';
 });
 const githubActionsYaml = computed(() => [
@@ -175,7 +232,8 @@ const save = async () => {
 const run = async (action, skipConfirmation = false, extra = {}) => {
     if (!deployment.value) { error.value = 'Step 1 complete করুন: আগে connection save করুন।'; return; }
     if (action === 'clone' && !skipConfirmation && !confirm(`Deploy ${form.value.branch} branch to ${props.website.domain}?\n\nExisting files in the website root will be moved to the File Manager trash (restorable) before cloning.`)) return;
-    busy.value = action; progressText.value = action === 'clone' ? 'Connecting repository and downloading code…' : `${operationLabel(action)}…`; notice.value = ''; error.value = '';
+    if (action === 'init' && !skipConfirmation && !confirm(`Publish the current files of ${props.website.domain} to the ${form.value.branch} branch?\n\nOnly works when the repository is still empty. Files listed in .gitignore (like .env, vendor, node_modules) are not pushed.`)) return;
+    busy.value = action; progressText.value = action === 'clone' ? 'Connecting repository and downloading code…' : action === 'init' ? 'Initializing repository and pushing files…' : `${operationLabel(action)}…`; notice.value = ''; error.value = '';
     try {
         const data = await request(panelRoute('websites.git.run', { id: props.website.id }), 'POST', { action, message: `Deploy ${props.website.domain}`, ...extra });
         applyState(data);
@@ -205,10 +263,14 @@ const reclone = async () => {
     await run('clone', true);
 };
 const connectAndDeploy = async () => {
-    if (!canSave.value) return;
-    if (!confirm(`Connect this repository and deploy ${form.value.branch} to ${props.website.domain}?\n\nExisting files in the website root will be moved to the File Manager trash (restorable) before cloning.`)) return;
+    if (!canSave.value || !canFirstAction.value) return;
+    const pushing = firstAction.value === 'init';
+    const question = pushing
+        ? `Connect this empty repository and push ${props.website.domain}'s files to ${form.value.branch}?\n\nFiles in .gitignore (.env, vendor, node_modules) are not pushed.`
+        : `Connect this repository and deploy ${form.value.branch} to ${props.website.domain}?\n\nExisting files in the website root will be moved to the File Manager trash (restorable) before cloning.`;
+    if (!confirm(question)) return;
     const saved = await save();
-    if (saved) await run('clone', true);
+    if (saved) await run(pushing ? 'init' : 'clone', true);
 };
 const disconnect = async () => {
     if (!deployment.value) return;
@@ -224,7 +286,7 @@ const disconnect = async () => {
     } catch (e) { error.value = e.message; } finally { busy.value = ''; }
 };
 const date = (value) => value ? new Date(value).toLocaleString() : 'Not scheduled';
-const operationLabel = (action) => ({ clone: 'Deploy website', status: 'Check status', pull: 'Pull latest', push: 'Push changes', sync: 'Sync both ways', checkout: 'Switch branch', webhook: 'Updating webhook' }[action] || action);
+const operationLabel = (action) => ({ clone: 'Deploy website', init: 'Push site to empty repo', status: 'Check status', pull: 'Pull latest', push: 'Push changes', sync: 'Sync both ways', checkout: 'Switch branch', webhook: 'Updating webhook' }[action] || action);
 </script>
 
 <template>
@@ -249,7 +311,7 @@ const operationLabel = (action) => ({ clone: 'Deploy website', status: 'Check st
                     <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Overview</p>
                     <div class="min-w-0"><div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full" :class="cloned ? 'bg-emerald-500' : deployment ? 'bg-amber-500' : 'bg-slate-300'"></span><p class="truncate font-medium">{{ form.repository_url || 'No repository connected' }}</p></div><p class="mt-1 text-xs text-slate-500">{{ cloned ? `${form.branch} branch is deployed` : deployment ? 'Connection saved — ready for first deploy' : 'Connect a repository to start' }}</p></div>
                     <dl class="mt-4 space-y-2 border-t pt-3 text-xs dark:border-slate-700"><div class="flex justify-between gap-3"><dt class="text-slate-500">Branch</dt><dd class="font-medium">{{ form.branch || '—' }}</dd></div><div class="flex justify-between gap-3"><dt class="text-slate-500">Access</dt><dd class="truncate" :class="source === 'github' ? '' : 'capitalize'">{{ source === 'github' ? (selectedAccount ? `@${selectedAccount.login}` : 'GitHub') : accessType }}</dd></div><div class="flex justify-between gap-3"><dt class="text-slate-500">Auto update</dt><dd class="capitalize">{{ form.auto_action }}</dd></div><div class="flex justify-between gap-3"><dt class="text-slate-500">Next check</dt><dd class="text-right">{{ form.auto_action === 'off' ? 'Disabled' : date(deployment?.next_sync_at) }}</dd></div></dl>
-                    <button v-if="deployment && !cloned" @click="run('clone')" :disabled="isBusy" class="mt-4 w-full rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"><i class="bi bi-rocket-takeoff mr-2"></i>Deploy now</button>
+                    <button v-if="deployment && !cloned && canFirstAction" @click="run(firstAction)" :disabled="isBusy" class="mt-4 w-full rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"><i class="bi mr-2" :class="firstAction === 'init' ? 'bi-cloud-upload' : 'bi-rocket-takeoff'"></i>{{ firstAction === 'init' ? 'Push now' : 'Deploy now' }}</button>
                     <button v-else-if="cloned && !repoChanged" @click="run('pull')" :disabled="isBusy" class="mt-4 w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"><i class="bi bi-cloud-download mr-2"></i>Pull latest</button>
                 </div>
                 <nav class="grid grid-cols-5 p-2 lg:block" aria-label="Git deployment sections"><button v-for="tab in [{ id: 'connect', label: 'Connection', icon: 'bi-link-45deg' }, { id: 'deploy', label: 'Deployment', icon: 'bi-rocket-takeoff' }, { id: 'automation', label: 'Automation', icon: 'bi-clock-history' }, { id: 'yaml', label: 'GitHub YAML', icon: 'bi-filetype-yml' }, { id: 'activity', label: 'Activity', icon: 'bi-list-check' }]" :key="tab.id" @click="activePanel = tab.id" class="w-full rounded-lg px-1 py-2.5 text-[11px] font-medium lg:mb-1 lg:flex lg:items-center lg:px-3 lg:text-left lg:text-sm" :class="activePanel === tab.id ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'"><i class="bi mr-1 lg:mr-3" :class="tab.icon"></i>{{ tab.label }}</button></nav>
@@ -298,8 +360,11 @@ const operationLabel = (action) => ({ clone: 'Deploy website', status: 'Check st
                         <label class="text-sm font-medium">Personal access token <span class="text-red-500">*</span><div class="relative mt-1.5"><input v-model="form.auth_token" :type="showToken ? 'text' : 'password'" :placeholder="deployment?.has_token ? 'Token already saved — blank রাখলে আগেরটি থাকবে' : 'Paste access token'" autocomplete="new-password" class="w-full rounded-lg border-slate-300 pr-20 dark:bg-slate-800" /><button type="button" @click="showToken = !showToken" class="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs text-indigo-600">{{ showToken ? 'Hide' : 'Show' }}</button></div><span class="mt-1 block text-xs font-normal text-slate-500">Password নয়—repository read/write permission সহ access token দিন। Token encrypted থাকে।</span></label>
                     </template>
                 </div>
-                <div class="mt-6 flex flex-wrap items-center gap-3"><button v-if="!cloned || repoChanged" @click="connectAndDeploy" :disabled="!canSave" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"><span v-if="busy" class="mr-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-r-transparent"></span><i v-else class="bi bi-plug-fill mr-2"></i>{{ busy ? progressText : 'Connect & deploy' }}</button><button v-else @click="save" :disabled="!canSave" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{{ busy === 'save' ? 'Saving…' : 'Update connection' }}</button><button v-if="!deployment && !cloned" @click="save" :disabled="!canSave" class="rounded-lg border border-indigo-300 px-4 py-2.5 text-sm font-medium text-indigo-700 disabled:opacity-40">Save only</button><span v-if="!canSave && !busy" class="text-xs text-slate-500">Required fields complete করলে button চালু হবে।</span><span v-if="deployment && !repoChanged" class="text-sm text-emerald-600"><i class="bi bi-shield-check mr-1"></i>Settings saved securely</span><button v-if="deployment && !confirmingDisconnect" type="button" @click="confirmingDisconnect = true" :disabled="isBusy" class="ml-auto rounded-lg border border-red-300 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 dark:hover:bg-red-950/30"><i class="bi bi-x-circle mr-2"></i>{{ busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect repository' }}</button></div>
+                <div class="mt-6 flex flex-wrap items-center gap-3"><button v-if="!cloned || repoChanged" @click="connectAndDeploy" :disabled="!canSave || !canFirstAction" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"><span v-if="busy" class="mr-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-r-transparent"></span><i v-else class="bi bi-plug-fill mr-2"></i>{{ busy ? progressText : firstAction === 'init' ? 'Connect & push' : 'Connect & deploy' }}</button><button v-else @click="save" :disabled="!canSave" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{{ busy === 'save' ? 'Saving…' : 'Update connection' }}</button><button v-if="!deployment && !cloned" @click="save" :disabled="!canSave" class="rounded-lg border border-indigo-300 px-4 py-2.5 text-sm font-medium text-indigo-700 disabled:opacity-40">Save only</button><span v-if="!canSave && !busy" class="text-xs text-slate-500">Required fields complete করলে button চালু হবে।</span><span v-if="deployment && !repoChanged" class="text-sm text-emerald-600"><i class="bi bi-shield-check mr-1"></i>Settings saved securely</span><button v-if="deployment && !confirmingDisconnect" type="button" @click="confirmingDisconnect = true" :disabled="isBusy" class="ml-auto rounded-lg border border-red-300 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 dark:hover:bg-red-950/30"><i class="bi bi-x-circle mr-2"></i>{{ busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect repository' }}</button></div>
                 <div v-if="deployment && confirmingDisconnect" class="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200"><p class="min-w-0 flex-1"><i class="bi bi-exclamation-triangle-fill mr-1"></i>Disconnect <strong class="break-all">{{ deployment.repository_url }}</strong>? Saved settings, token এবং activity মুছে যাবে। Website files delete হবে না।</p><button type="button" @click="disconnect" :disabled="isBusy" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40">Yes, disconnect</button><button type="button" @click="confirmingDisconnect = false" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-600">Cancel</button></div>
+                <div v-if="probing" class="mt-4 flex items-center gap-2 text-sm text-slate-500"><span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-400 border-r-transparent"></span>Checking repository…</div>
+                <div v-else-if="probeError" class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300"><i class="bi bi-exclamation-triangle mr-1"></i>Repository check failed: {{ probeError }}</div>
+                <div v-else-if="decision" class="mt-4 flex gap-3 rounded-lg border p-3 text-sm" :class="decisionClass(decision.tone)"><i class="bi mt-0.5" :class="decision.icon"></i><div><p class="font-semibold">{{ decision.title }}</p><p class="mt-0.5">{{ decision.text }}</p></div></div>
                 <p v-if="repoChanged && cloned" class="mt-3 text-xs text-amber-700"><i class="bi bi-info-circle mr-1"></i>Repository/branch পরিবর্তন হয়েছে। “Connect & deploy” চাপলে পুরোনো files trash-এ যাবে এবং নতুন repository clone হবে।</p>
             </section>
 
@@ -307,7 +372,8 @@ const operationLabel = (action) => ({ clone: 'Deploy website', status: 'Check st
                 <div class="flex items-start gap-3"><span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 font-semibold text-violet-700">2</span><div><h2 class="font-semibold">Deploy and manage</h2><p class="mt-1 text-sm text-slate-500">{{ actionHelp }}</p></div></div>
                 <div v-if="busy && busy !== 'save'" class="mt-5 rounded-lg bg-indigo-50 p-4 text-sm text-indigo-700"><span class="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-r-transparent"></span>{{ operationLabel(busy) }} চলছে—page বন্ধ করবেন না…</div>
                 <div class="mt-5 flex flex-wrap gap-2">
-                    <button v-if="!cloned" @click="run('clone')" :disabled="busy || !deployment" :title="!deployment ? 'Save repository connection first' : ''" class="rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"><i class="bi bi-rocket-takeoff mr-2"></i>{{ busy === 'clone' ? 'Deploying…' : 'Deploy website' }}</button>
+                    <button v-if="!cloned && firstAction !== 'init' && firstAction !== 'none'" @click="run('clone')" :disabled="busy || !deployment || (firstAction === 'clone' && !probeState?.branch_exists)" :title="!deployment ? 'Save repository connection first' : ''" class="rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"><i class="bi bi-rocket-takeoff mr-2"></i>{{ busy === 'clone' ? 'Deploying…' : 'Deploy website' }}</button>
+                    <button v-if="!cloned && firstAction !== 'clone' && firstAction !== 'none'" @click="run('init')" :disabled="busy || !deployment || probeState?.local_repo" :title="!deployment ? 'Save repository connection first' : 'Repository is empty: push the files already on this website as the first commit'" class="rounded-lg border border-violet-300 px-5 py-2.5 text-sm font-semibold text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-950/30"><i class="bi bi-cloud-upload mr-2"></i>{{ busy === 'init' ? 'Pushing…' : 'Push site to empty repo' }}</button>
                     <template v-else><button v-for="action in ['status','pull','push','sync']" :key="action" @click="run(action)" :disabled="isBusy" class="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800"><i class="bi mr-2" :class="{ 'bi-activity': action === 'status', 'bi-cloud-download': action === 'pull', 'bi-cloud-upload': action === 'push', 'bi-arrow-repeat': action === 'sync' }"></i>{{ operationLabel(action) }}</button><button @click="reclone" :disabled="busy || repoChanged" :title="repoChanged ? 'Save the new repository with Connect & deploy first' : ''" class="rounded-lg border border-amber-300 px-4 py-2.5 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-40 dark:hover:bg-amber-950/30"><i class="bi bi-arrow-counterclockwise mr-2"></i>{{ busy === 'clone' ? 'Re-cloning…' : 'Re-clone' }}</button></template>
                 </div>
                 <div v-if="!deployment" class="mt-3 text-xs text-amber-700"><i class="bi bi-lock mr-1"></i>Step 1 save না করা পর্যন্ত deployment disabled থাকবে।</div>

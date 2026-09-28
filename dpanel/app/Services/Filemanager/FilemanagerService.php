@@ -461,6 +461,29 @@ class FilemanagerService
     }
 
     /**
+     * One Laravel installer step (create_project, artisan, npm_build), run by
+     * Rust as the site owner with the given PHP version first on PATH.
+     *
+     * @param  array<string, string>  $extra  stack/version for create_project, command for artisan
+     * @return array{success: bool, output: string}
+     */
+    public function runLaravelInstallerStep(string $username, string $path, string $phpVersion, string $action, array $extra = [], int $timeout = 1000): array
+    {
+        $result = $this->filemanagerApiRequest('laravel', [
+            'username' => $this->normalizeUsername($username),
+            'path' => $this->normalizeAbsolutePath($path),
+            'php_version' => trim($phpVersion),
+            'action' => $action,
+            ...$extra,
+        ], $timeout);
+
+        return [
+            'success' => $result['success'],
+            'output' => $result['success'] ? (string) ($result['data']['output'] ?? '') : $result['output'],
+        ];
+    }
+
+    /**
      * @param  array<int, string>  $paths
      */
     private function createDirectoriesViaApi(array $paths, string $username): void

@@ -83,7 +83,9 @@ const date = (value) => value ? new Date(value.replace(' ', 'T')).toLocaleString
                                 <div class="mt-1 flex gap-2"><code class="min-w-0 flex-1 break-all rounded bg-white px-2 py-1.5 text-xs dark:bg-slate-900">{{ item.value }}</code><button type="button" @click="copy(item.key, item.value)" class="shrink-0 rounded border px-2 text-xs dark:border-slate-600"><i class="bi" :class="copied === item.key ? 'bi-check-lg' : 'bi-copy'"></i></button></div>
                             </div>
                         </li>
-                        <li class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800"><strong>3.</strong> App তৈরি হলে <em>Client ID</em> এবং নতুন <em>Client secret</em> এখানে paste করুন। Requested scopes: <code v-for="scope in setup.scopes" :key="scope" class="ml-1 rounded bg-white px-1 text-xs dark:bg-slate-900">{{ scope }}</code></li>
+                        <li class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800"><strong>3.</strong> App তৈরি হলে <em>Client ID</em> এবং নতুন <em>Client secret</em> এখানে paste করুন। Requested scopes: <code v-for="scope in setup.scopes" :key="scope" class="ml-1 rounded bg-white px-1 text-xs dark:bg-slate-900">{{ scope }}</code>
+                            <p class="mt-2 text-xs text-slate-600 dark:text-slate-300"><strong>GitHub App</strong> (Client ID <code>Iv…</code>) হলে scopes কাজ করে না — App settings → <em>Permissions → Repository</em>-এ <strong>Contents</strong>, <strong>Workflows</strong> ও <strong>Webhooks</strong>: <em>Read and write</em> দিন। Permission বদলালে installation-এ নতুন permission approve করে account <em>Reconnect</em> করুন। Workflows না দিলে <code>.github/workflows</code> push হবে না।</p>
+                        </li>
                     </ol>
                     <form @submit.prevent="saveApp" class="space-y-4">
                         <label class="block text-sm font-medium">Display name<input v-model.trim="appForm.name" class="mt-1.5 w-full rounded-lg border-slate-300 dark:bg-slate-800" placeholder="dPanel" /></label>

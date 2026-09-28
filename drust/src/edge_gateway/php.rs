@@ -474,6 +474,7 @@ fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(),
         created = true;
     }
 
+    quarantine_orphan_pools(&pool_directory);
     if let Err(error) = test_fpm_configuration(version) {
         if created {
             let _ = fs::remove_file(&pool_path);
@@ -495,6 +496,40 @@ fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(),
         "PHP-FPM pool was provisioned but its socket did not start: {}",
         socket.display()
     ))
+}
+
+/// A managed pool whose Linux user was deleted (e.g. the website was removed
+/// but its pool file stayed) makes `php-fpm -t` fail for every pool of that
+/// PHP version, so no new site pool could ever be provisioned. Move such
+/// files aside — not deleted, so they stay recoverable — before testing.
+fn quarantine_orphan_pools(pool_directory: &Path) {
+    let Ok(entries) = fs::read_dir(pool_directory) else {
+        return;
+    };
+    let quarantine = pool_directory.with_file_name("pool.d.orphaned");
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with("dpanel-") || !name.ends_with(".conf") {
+            continue;
+        }
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(user) = content.lines().find_map(|line| {
+            let (key, value) = line.split_once('=')?;
+            (key.trim() == "user").then(|| value.trim().to_string())
+        }) else {
+            continue;
+        };
+        if user.is_empty() || validate_system_user(&user).is_ok() {
+            continue;
+        }
+        if fs::create_dir_all(&quarantine).is_ok() {
+            let _ = fs::rename(&path, quarantine.join(&name));
+            tracing::warn!(pool = %path.display(), user = %user, "moved orphan PHP-FPM pool aside");
+        }
+    }
 }
 
 fn validate_php_version(version: &str) -> Result<(), String> {

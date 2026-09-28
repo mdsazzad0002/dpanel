@@ -219,8 +219,13 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     if zip_path.as_os_str().is_empty() {
         return Err("Missing zip path.".into());
     }
-    let backup_root = Path::new("/var/www/dpanel/storage/app/backups");
-    if !zip_path.starts_with(backup_root)
+    // website-trash holds the pre-delete archive written when a website is
+    // removed; restore_archive and the trash delete endpoint already use it.
+    let allowed_roots = [
+        Path::new("/var/www/dpanel/storage/app/backups"),
+        Path::new("/var/www/dpanel/storage/app/website-trash"),
+    ];
+    if !allowed_roots.iter().any(|root| zip_path.starts_with(root))
         || zip_path
             .components()
             .any(|part| matches!(part, Component::ParentDir))

@@ -15,7 +15,9 @@ use Illuminate\Support\Facades\Http;
  */
 class GithubClient
 {
-    public const SCOPES = ['repo', 'admin:repo_hook', 'read:user'];
+    // OAuth Apps only; a GitHub App ignores scopes and uses the permissions set
+    // in its settings (Contents, Workflows, Webhooks: Read and write).
+    public const SCOPES = ['repo', 'workflow', 'admin:repo_hook', 'read:user'];
 
     public function authorizationUrl(GithubOAuthApp $app, string $redirectUri, string $state): string
     {

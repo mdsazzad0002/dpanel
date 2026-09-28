@@ -80,6 +80,8 @@ fn execute(request: &Request) -> Result<String, String> {
 
     match request.action.as_str() {
         "clone" => clone_repository(request, &target, &auth),
+        "init" => init_push(request, &target, &auth),
+        "probe" => probe(request, &target, &auth),
         "status" => git(request, &target, &auth, &["status", "--short", "--branch"]),
         "pull" => pull(request, &target, &auth),
         "push" => push(request, &target, &auth),
@@ -194,6 +196,11 @@ fn finish(output: Output, auth: &Auth) -> Result<String, String> {
             combined
         });
     }
+    if combined.contains("refusing to allow") && combined.contains("workflow") {
+        return Err(format!(
+            "{WORKFLOW_DENIED} GitHub rejected changes under .github/workflows because the connected GitHub App lacks the \"Workflows: Read and write\" repository permission (an OAuth App token needs the \"workflow\" scope). Add it in the App settings, approve the updated permissions, then reconnect the account.\n\n{combined}"
+        ));
+    }
     if combined.contains("403") || combined.contains("Write access to repository not granted") {
         return Err("Repository access denied (403). Verify the repository owner, token expiry, and that the token has Contents: Read and write permission.".into());
     }
@@ -203,6 +210,8 @@ fn finish(output: Output, auth: &Auth) -> Result<String, String> {
         combined
     })
 }
+
+const WORKFLOW_DENIED: &str = "Workflows permission missing.";
 
 fn git(request: &Request, target: &Path, auth: &Auth, args: &[&str]) -> Result<String, String> {
     if !target.join(".git").is_dir() {
@@ -268,6 +277,133 @@ fn clone_repository(request: &Request, target: &Path, auth: &Auth) -> Result<Str
         .output()
         .map_err(|error| format!("Unable to start Git clone: {error}"))?;
     finish(output, auth)
+}
+
+/// What the first action for this repository + website root should be:
+/// a remote with commits is deployed (clone), an empty remote is fed from
+/// the website's files (init). Returned as JSON for the panel.
+fn probe(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    let remote = command(request, auth)
+        .args(["ls-remote", "--heads", "--", &request.repository])
+        .output()
+        .map_err(|error| format!("Unable to start Git: {error}"))?;
+    if !remote.status.success() {
+        return finish(remote, auth);
+    }
+    let heads = String::from_utf8_lossy(&remote.stdout);
+    let branch_ref = format!("refs/heads/{}", request.branch);
+    let remote_empty = heads.trim().is_empty();
+    let branch_exists = heads
+        .lines()
+        .any(|line| line.split_whitespace().nth(1) == Some(branch_ref.as_str()));
+    let local_files = target.is_dir()
+        && fs::read_dir(target)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false);
+    Ok(serde_json::json!({
+        "remote_empty": remote_empty,
+        "branch_exists": branch_exists,
+        "local_files": local_files,
+        "local_repo": target.join(".git").exists(),
+    })
+    .to_string())
+}
+
+/// Publish an existing website root (e.g. a fresh Laravel install) to a
+/// connected repository that has no commits yet: git init → commit → push.
+/// Refuses a non-empty remote (use clone) and a root that is already a repo.
+fn init_push(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    if target.join(".git").exists() {
+        return Err("The website root is already a Git repository; use Push instead.".into());
+    }
+    if !target.is_dir()
+        || fs::read_dir(target)
+            .map_err(|error| error.to_string())?
+            .next()
+            .is_none()
+    {
+        return Err("The website root is empty; there is nothing to push.".into());
+    }
+
+    let remote = command(request, auth)
+        .args(["ls-remote", "--heads", "--", &request.repository])
+        .output()
+        .map_err(|error| format!("Unable to start Git: {error}"))?;
+    if !remote.status.success() {
+        return finish(remote, auth);
+    }
+    if !remote.stdout.iter().all(u8::is_ascii_whitespace) {
+        return Err(
+            "The remote repository already has commits. Use Deploy (clone) to pull it, or connect an empty repository.".into(),
+        );
+    }
+
+    let result = init_commit_push(request, target, auth);
+    if result.is_err() {
+        // Leave the root as it was so the action can simply be retried.
+        let _ = fs::remove_dir_all(target.join(".git"));
+    }
+    result
+}
+
+fn init_commit_push(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    let output = command(request, auth)
+        .arg("-C")
+        .arg(target)
+        .args(["init", "-b", &request.branch])
+        .output()
+        .map_err(|error| format!("Unable to start Git: {error}"))?;
+    finish(output, auth)?;
+
+    // Never publish credentials: without a .gitignore covering .env (every
+    // Laravel skeleton has one) the push stops here.
+    if target.join(".env").exists() {
+        let ignored = command(request, auth)
+            .arg("-C")
+            .arg(target)
+            .args(["check-ignore", "-q", ".env"])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if !ignored {
+            return Err(".env is not listed in .gitignore; push stopped so credentials are not published.".into());
+        }
+    }
+
+    git(request, target, auth, &["remote", "add", "origin", &request.repository])?;
+    git(request, target, auth, &["add", "-A"])?;
+    git(
+        request,
+        target,
+        auth,
+        &[
+            "commit",
+            "-m",
+            request.message.as_deref().unwrap_or("Initial commit"),
+        ],
+    )?;
+    let refspec = format!("HEAD:{}", request.branch);
+    match git(request, target, auth, &["push", "-u", "origin", &refspec]) {
+        Ok(pushed) => Ok(format!("Initialized the repository and pushed the first commit.\n{pushed}")),
+        Err(error) if error.starts_with(WORKFLOW_DENIED) && target.join(".github/workflows").is_dir() => {
+            // Publish everything else; the workflow files stay on the server,
+            // untracked and locally excluded, so later pushes skip them too.
+            git(request, target, auth, &["rm", "-r", "--cached", "--quiet", ".github/workflows"])?;
+            let mut exclude = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(target.join(".git/info/exclude"))
+                .map_err(|e| format!("Unable to update .git/info/exclude: {e}"))?;
+            std::io::Write::write_all(&mut exclude, b"\n/.github/workflows/\n")
+                .map_err(|e| format!("Unable to update .git/info/exclude: {e}"))?;
+            git(request, target, auth, &["commit", "--amend", "--no-edit"])?;
+            let pushed = git(request, target, auth, &["push", "-u", "origin", &refspec])?;
+            Ok(format!(
+                "Initialized the repository and pushed the first commit without .github/workflows: the GitHub App has no \"Workflows\" permission. The workflow files are still on the server; grant the permission and add them later if you need CI.\n{pushed}"
+            ))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 // Reads raw stdout: git() swaps empty output for a success message, which

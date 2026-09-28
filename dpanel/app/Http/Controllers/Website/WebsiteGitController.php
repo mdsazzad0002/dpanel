@@ -47,7 +47,7 @@ class WebsiteGitController extends Controller
     {
         return [
             'deployment' => $deployment ? $this->present($deployment->refresh()) : null,
-            'repositoryConnected' => (bool) $deployment?->logs()->where('action', 'clone')->where('status', 'success')->exists(),
+            'repositoryConnected' => (bool) $deployment?->logs()->whereIn('action', WebsiteGitService::CONNECTING_ACTIONS)->where('status', 'success')->exists(),
             'logs' => $deployment?->logs()->latest()->limit(30)->get() ?? [],
         ];
     }
@@ -142,6 +142,45 @@ class WebsiteGitController extends Controller
         }
 
         return response()->json(['message' => 'Repository disconnected.']);
+    }
+
+    /**
+     * Inspect a repository before connecting or deploying it, so the page can
+     * offer Deploy (remote has code) or Push (remote is empty) up front.
+     * Works on unsaved form values: a selected GitHub account, a typed token,
+     * or — for the same URL — the saved connection's credentials.
+     */
+    public function probe(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->website($request, $id);
+        $validated = $request->validate([
+            'repository_url' => ['required', 'url', 'max:500', 'regex:#^https://(github\.com|gitlab\.com|bitbucket\.org)/#i'],
+            'branch' => ['required', 'string', 'max:255', 'regex:#^[A-Za-z0-9._/-]+$#', 'not_regex:#\.\.|^-#'],
+            'github_account_id' => ['nullable', 'string'],
+            'auth_username' => ['nullable', 'string', 'max:255'],
+            'auth_token' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $deployment = WebsiteGitDeployment::query()->with('githubAccount')->where('website_id', $website->id)->first();
+        [$username, $secret] = ['', ''];
+        if (filled($validated['github_account_id'] ?? null)) {
+            $account = GithubAccount::query()->ownedBy($request->user())->find($validated['github_account_id'])
+                ?? ($deployment?->github_account_id === $validated['github_account_id'] ? $deployment->githubAccount : null);
+            if (! $account) {
+                return response()->json(['message' => 'GitHub account not found.'], 404);
+            }
+            [$username, $secret] = [$account->login, $this->github->tokenFor($account)];
+        } elseif (filled($validated['auth_token'] ?? null)) {
+            [$username, $secret] = [(string) ($validated['auth_username'] ?: 'x-access-token'), (string) $validated['auth_token']];
+        } elseif ($deployment && $deployment->repository_url === $validated['repository_url']) {
+            [$username, $secret] = $this->git->credentialsFor($deployment);
+        }
+
+        try {
+            return response()->json($this->git->probe($website, $validated['repository_url'], $validated['branch'], $username, $secret));
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
     }
 
     public function run(Request $request, string $token, string $id): JsonResponse
