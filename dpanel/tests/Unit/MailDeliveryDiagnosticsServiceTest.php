@@ -18,6 +18,7 @@ class MailDeliveryDiagnosticsServiceTest extends TestCase
             'authentication policy' => ['550 5.7.26 Unauthenticated email: DKIM fail', 'bounced', 'authentication_policy', false],
             'rate limit' => ['421 4.7.0 Too many messages', 'deferred', 'rate_limit', true],
             'network' => ['connect to mx.example.test: Connection timed out', 'deferred', 'network', true],
+            'residential ip' => ["550-5.7.1 [203.0.113.5] The IP you're using to send mail is not authorized to 550-5.7.1 send email directly to our servers. Please use the SMTP relay at your service provider instead.", 'bounced', 'reputation', false],
         ];
     }
 

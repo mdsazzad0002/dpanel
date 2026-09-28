@@ -2,6 +2,9 @@
 
 namespace App\Services\Mail;
 
+use App\Services\ScriptExecutionGateway;
+use App\Services\ScriptPathResolver;
+
 class MailDeliveryDiagnosticsService
 {
     private const MAX_LOG_BYTES = 4_194_304;
@@ -29,11 +32,55 @@ class MailDeliveryDiagnosticsService
             'queue' => $queue,
             'diagnostics' => [
                 'log_source' => $logSource,
+                // stat() needs no read permission, so the size is known even when the content is root-only.
+                'log_size_bytes' => $logSource !== null && is_file($logSource) ? (int) @filesize($logSource) : null,
                 'lines_analyzed' => count($lines),
                 'spam_engine' => $this->spamEngine($lines),
                 'scope_note' => 'Metrics are calculated from the most recent available mail log sample.',
             ],
         ];
+    }
+
+    /**
+     * Archive (gzip) and empty the mail log.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function clearLog(): array
+    {
+        $path = collect((array) config('serverpanel.mail.health_log_paths', []))
+            ->first(fn ($candidate) => is_string($candidate) && is_file($candidate));
+        if ($path === null) {
+            return ['ok' => false, 'message' => 'No mail log file was found to clear.'];
+        }
+
+        try {
+            $script = ScriptPathResolver::resolveRepositoryRoot().'/scripts/mail-log-clear.sh';
+            $result = app(ScriptExecutionGateway::class)->execute($script, [$path], [], true);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => $e->getMessage()];
+        }
+
+        if (! $result['success'] || ! preg_match('/^BYTES_FREED=(\d+)$/m', $result['output'], $freed)) {
+            return ['ok' => false, 'message' => 'Mail log could not be cleared: '.(trim($result['output']) ?: 'unknown error.')];
+        }
+
+        $archive = preg_match('/^ARCHIVE=(.+)$/m', $result['output'], $match) ? trim($match[1]) : '';
+
+        return [
+            'ok' => true,
+            'message' => sprintf('Mail log cleared (%s freed).', $this->humanBytes((int) $freed[1]))
+                .($archive !== '' ? ' Previous content archived to '.$archive.'.' : ''),
+        ];
+    }
+
+    private function humanBytes(int $bytes): string
+    {
+        return match (true) {
+            $bytes >= 1_048_576 => round($bytes / 1_048_576, 1).' MB',
+            $bytes >= 1024 => round($bytes / 1024, 1).' KB',
+            default => $bytes.' B',
+        };
     }
 
     /** @return array{category: string, label: string, explanation: string, suggestion: string, severity: string, temporary: bool} */
@@ -45,7 +92,7 @@ class MailDeliveryDiagnosticsService
             ['quota', 'Mailbox quota exceeded', 'The recipient mailbox or your mail storage has reached its limit.', 'Ask the recipient to free storage or increase the mailbox quota, then retry.', 'medium', true, ['quota exceeded', 'mailbox full', 'over quota', 'insufficient system storage', '5.2.2']],
             ['authentication', 'Authentication failed', 'The sending server could not authenticate with the configured credentials or relay policy.', 'Verify the mailbox username/password and ensure SMTP authentication is enabled.', 'high', false, ['authentication failed', 'sasl authentication', 'relay access denied', 'not permitted to relay', '5.7.8']],
             ['dns', 'DNS or domain problem', 'A required domain, MX record, or destination hostname could not be resolved.', 'Check the domain MX/A records and confirm that the destination domain is active.', 'high', true, ['domain not found', 'host not found', 'name service error', 'no mx', 'nxdomain', 'temporary lookup failure', '5.4.4']],
-            ['reputation', 'IP or domain reputation blocked', 'The destination rejected this server because of a blocklist or poor sending reputation.', 'Check IP blocklists, PTR/rDNS, sending history, and request delisting where required.', 'high', false, ['blacklist', 'blocklist', 'listed in', 'reputation', 'spamhaus', 'barracuda']],
+            ['reputation', 'IP or domain reputation blocked', 'The destination rejected this server because of a blocklist or poor sending reputation.', 'Check IP blocklists, PTR/rDNS, sending history, and request delisting where required.', 'high', false, ['blacklist', 'blocklist', 'listed in', 'reputation', 'spamhaus', 'barracuda', 'not authorized to send email directly', 'use the smtp relay']],
             ['authentication_policy', 'SPF, DKIM, or DMARC failed', 'The message did not satisfy the destination domain authentication policy.', 'Review SPF, enable DKIM signing, and confirm DMARC alignment in Mail DNS Guide.', 'high', false, ['spf fail', 'dkim fail', 'dmarc fail', 'authentication-results', 'unauthenticated email', '5.7.26']],
             ['spam', 'Rejected as spam', 'The receiving system classified the content or sender as spam.', 'Review the spam score/rules, remove suspicious links or attachments, and verify sender reputation.', 'high', false, ['spam detected', 'message considered spam', 'spam message rejected', 'spam content', '5.7.1']],
             ['rate_limit', 'Sending rate limited', 'Too many messages or connections were sent in a short period.', 'Slow the sending rate and retry after the provider cooldown period.', 'medium', true, ['rate limit', 'too many messages', 'too many connections', 'throttl', '4.7.0']],
@@ -190,10 +237,18 @@ class MailDeliveryDiagnosticsService
     /** @return array{0: array<int, string>, 1: string|null} */
     private function readLogLines(): array
     {
-        foreach ((array) config('serverpanel.mail.health_log_paths', []) as $path) {
-            if (is_string($path) && is_file($path) && is_readable($path)) {
+        $paths = array_values(array_filter((array) config('serverpanel.mail.health_log_paths', []), 'is_string'));
+        foreach ($paths as $path) {
+            if (is_file($path) && is_readable($path)) {
                 return [$this->tailLines($path), $path];
             }
+        }
+
+        // The mail log is normally root/adm-only; read it through the root
+        // execution API instead of widening the web user's permissions.
+        $viaRoot = $this->readLogLinesAsRoot($paths);
+        if ($viaRoot !== null) {
+            return $viaRoot;
         }
 
         $journal = @shell_exec('journalctl -u postfix -u rspamd -u spamassassin --no-pager -n '.self::MAX_LOG_LINES.' 2>/dev/null');
@@ -202,6 +257,28 @@ class MailDeliveryDiagnosticsService
         }
 
         return [[], null];
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     * @return array{0: array<int, string>, 1: string}|null
+     */
+    private function readLogLinesAsRoot(array $paths): ?array
+    {
+        try {
+            $script = ScriptPathResolver::resolveRepositoryRoot().'/scripts/mail-log-tail.sh';
+            $result = app(ScriptExecutionGateway::class)->execute($script, [(string) self::MAX_LOG_LINES, ...$paths], [], true);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (! $result['success'] || ! preg_match('/^LOG_SOURCE=(.+)$/m', $result['output'], $match)) {
+            return null;
+        }
+
+        $body = (string) preg_replace('/^LOG_SOURCE=.*\R?/m', '', $result['output'], 1);
+
+        return [$this->normalizeLines($body), trim($match[1])];
     }
 
     /** @return array<int, string> */
@@ -304,6 +381,11 @@ class MailDeliveryDiagnosticsService
 
     private function timestamp(string $line): string
     {
+        // rsyslog on current Ubuntu/Debian writes RFC 3339 ("2026-09-28T19:38:00.123+06:00").
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/', $line, $match)) {
+            return $match[1].' '.$match[2];
+        }
+
         return preg_match('/^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/', $line, $match)
             ? preg_replace('/\s+/', ' ', trim($match[1]))
             : '';

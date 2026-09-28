@@ -1,11 +1,27 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
     mailHealth: { type: Object, required: true },
 });
+
+const page = usePage();
+const flash = computed(() => page.props.flash ?? {});
+const canClearLog = computed(() => (page.props.auth?.roles ?? []).some((role) => ['admin', 'superadmin'].includes(role)));
+const clearingLog = ref(false);
+const logSize = computed(() => props.mailHealth.diagnostics?.log_size_bytes);
+
+const clearLog = () => {
+    if (!confirm('Clear the mail log? The current log is archived as a .gz file first (the newest 5 archives are kept).')) return;
+    clearingLog.value = true;
+    const token = page.props.panel?.token;
+    router.post(token ? route('mail-health.clear-log', { token }) : route('mail-health.clear-log'), {}, {
+        preserveScroll: true,
+        onFinish: () => { clearingLog.value = false; },
+    });
+};
 
 const activeTab = ref('failures');
 const statusFilter = ref('all');
@@ -90,10 +106,13 @@ const statusClass = (status) => ({
         </template>
 
         <div class="space-y-5">
+            <div v-if="flash.success" class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">{{ flash.success }}</div>
+            <div v-if="flash.error" class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">{{ flash.error }}</div>
+
             <div v-if="!mailHealth.diagnostics?.log_source" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                 <div class="flex gap-3">
                     <i class="bi bi-exclamation-triangle mt-0.5"></i>
-                    <div><p class="font-semibold">Mail logs are not readable</p><p class="mt-1">Allow the PHP service user read-only access to the Postfix log, or configure <code>SERVERPANEL_MAIL_HEALTH_LOG_PATHS</code>. Queue data may still be available.</p></div>
+                    <div><p class="font-semibold">Mail logs are not readable</p><p class="mt-1">The panel reads the Postfix log through the execution service (<code>mail-log-tail.sh</code>). Make sure drust is running and its runtime scripts are up to date, or set <code>SERVERPANEL_MAIL_HEALTH_LOG_PATHS</code> to a log under <code>/var/log</code>. Queue data may still be available.</p></div>
                 </div>
             </div>
 
@@ -120,7 +139,23 @@ const statusClass = (status) => ({
                     <div><p class="text-xs uppercase tracking-wide text-slate-500">Delivery rate</p><p class="mt-1 text-lg font-semibold">{{ mailHealth.delivery_rate === null ? 'No data' : `${mailHealth.delivery_rate}%` }}</p></div>
                     <div><p class="text-xs uppercase tracking-wide text-slate-500">Queued messages</p><p class="mt-1 text-lg font-semibold">{{ queue.available ? queue.count : 'Unavailable' }}</p></div>
                     <div><p class="text-xs uppercase tracking-wide text-slate-500">Spam engine</p><p class="mt-1 text-lg font-semibold">{{ mailHealth.diagnostics?.spam_engine?.name ?? 'Not detected' }}</p></div>
-                    <div><p class="text-xs uppercase tracking-wide text-slate-500">Log sample</p><p class="mt-1 text-lg font-semibold">{{ mailHealth.diagnostics?.lines_analyzed ?? 0 }} lines</p><p class="truncate text-xs text-slate-500">{{ mailHealth.diagnostics?.log_source ?? 'No source' }}</p></div>
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Log sample</p>
+                        <p class="mt-1 text-lg font-semibold">{{ mailHealth.diagnostics?.lines_analyzed ?? 0 }} lines</p>
+                        <p class="truncate text-xs text-slate-500">
+                            {{ mailHealth.diagnostics?.log_source ?? 'No source' }}<span v-if="logSize !== null && logSize !== undefined"> · {{ formatBytes(logSize) }}</span>
+                        </p>
+                        <button
+                            v-if="canClearLog && logSize"
+                            type="button"
+                            :disabled="clearingLog"
+                            class="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                            @click="clearLog"
+                        >
+                            <i class="bi" :class="clearingLog ? 'bi-arrow-repeat animate-spin' : 'bi-trash3'"></i>
+                            {{ clearingLog ? 'Clearing…' : 'Clear log' }}
+                        </button>
+                    </div>
                 </div>
             </section>
 

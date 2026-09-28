@@ -311,6 +311,9 @@ Route::prefix('cpsess{token}')
             Route::get('/mail-health', [MailHealthController::class, 'index'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mail-health.index');
+            Route::post('/mail-health/clear-log', [MailHealthController::class, 'clearLog'])
+                ->middleware(['role:admin|superadmin', 'throttle:5,1'])
+                ->name('mail-health.clear-log');
             Route::post('/emails', [EmailController::class, 'store'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.store');
