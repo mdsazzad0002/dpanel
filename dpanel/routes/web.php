@@ -40,6 +40,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RemoteMysqlAccessController;
 use App\Http\Controllers\RoleManagementController;
+use App\Http\Controllers\SecurityCenterController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\SelfConnectionController;
 use App\Http\Controllers\ServerController;
@@ -755,6 +756,28 @@ Route::prefix('cpsess{token}')
             Route::get('/php/settings', [PhpManagementController::class, 'config'])
                 ->middleware('role:admin|reseller')
                 ->name('php.settings');
+
+            Route::get('/security/center', [SecurityCenterController::class, 'dashboard'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('security.center');
+            Route::get('/security/center/findings', [SecurityCenterController::class, 'findings'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('security.center.findings');
+            Route::post('/security/center/scans', [SecurityCenterController::class, 'startScan'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('security.center.scans.start');
+            Route::get('/security/center/scans/{scan}', [SecurityCenterController::class, 'scanStatus'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->whereNumber('scan')
+                ->name('security.center.scans.show');
+            Route::post('/security/center/findings/{finding}/status', [SecurityCenterController::class, 'updateFinding'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->whereNumber('finding')
+                ->name('security.center.findings.status');
+            Route::post('/security/center/rules/{rule}/toggle', [SecurityCenterController::class, 'toggleRule'])
+                ->middleware('role:admin')
+                ->where('rule', 'DP-[A-Z]+-[0-9]+')
+                ->name('security.center.rules.toggle');
 
             Route::get('/security', [SecurityController::class, 'manager'])
                 ->middleware('role:admin|reseller')

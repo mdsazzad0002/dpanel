@@ -58,13 +58,13 @@ dpanel chain repair
 Default chain module order:
 
 ```text
-php -> mariadb -> redis -> postgresql -> ssl -> supervisor -> queue -> firewall -> fail2ban
+php -> mariadb -> redis -> postgresql -> clamav -> ssl -> supervisor -> queue -> firewall -> fail2ban
 ```
 
 The top-level default install adds non-module services around that chain:
 
 ```text
-php -> mariadb -> redis -> postgresql -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs -> queue
+php -> mariadb -> redis -> postgresql -> clamav -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs -> queue
 ```
 
 Choose modules with either syntax:
@@ -170,6 +170,7 @@ dpanel module <name> info
 | `mariadb` | MariaDB server | `dpanel mariadb install` |
 | `redis` | Redis service | `dpanel redis install` |
 | `postgresql` | PostgreSQL + pgAdmin, installed but left off | `dpanel postgresql start` |
+| `clamav` | ClamAV for Security Center malware scans, daemons left off | `dpanel clamav status` |
 | `supervisor` | Supervisor process manager | `dpanel supervisor update` |
 | `queue` | Queue runtime based on Supervisor | `dpanel queue install` |
 | `firewall` | UFW/firewalld baseline | `dpanel firewall install` |
