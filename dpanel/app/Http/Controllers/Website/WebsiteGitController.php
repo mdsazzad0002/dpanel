@@ -30,15 +30,26 @@ class WebsiteGitController extends Controller
 
         return Inertia::render('Websites/GitDeployment', [
             'website' => $website,
-            'deployment' => $deployment ? $this->present($deployment) : null,
             'github' => [
                 'configured' => GithubOAuthApp::current() !== null,
                 'accounts' => GithubAccount::query()->ownedBy($request->user())->orderBy('login')->get()
                     ->map(fn (GithubAccount $account): array => $account->summary()),
             ],
+            ...$this->state($deployment),
+        ]);
+    }
+
+    /**
+     * Deployment state the Git page renders; returned after every operation
+     * so the page updates in place without a reload.
+     */
+    private function state(?WebsiteGitDeployment $deployment): array
+    {
+        return [
+            'deployment' => $deployment ? $this->present($deployment->refresh()) : null,
             'repositoryConnected' => (bool) $deployment?->logs()->where('action', 'clone')->where('status', 'success')->exists(),
             'logs' => $deployment?->logs()->latest()->limit(30)->get() ?? [],
-        ]);
+        ];
     }
 
     public function store(Request $request, string $token, string $id): JsonResponse
@@ -145,10 +156,10 @@ class WebsiteGitController extends Controller
         try {
             $result = $this->git->run($deployment, $validated['action'], $request->user()?->id, $validated['message'] ?? 'Website update', $validated['branch'] ?? null);
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage(), 'success' => false], 422);
+            return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment)], 422);
         }
 
-        return response()->json(['message' => $result['output'], 'success' => $result['success']], $result['success'] ? 200 : 422);
+        return response()->json(['message' => $result['output'], 'success' => $result['success'], ...$this->state($deployment)], $result['success'] ? 200 : 422);
     }
 
     /**

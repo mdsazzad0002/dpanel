@@ -47,6 +47,9 @@ class WebsiteGitService
                 $this->preOverwriteBackup->snapshot($website, 'git_clone');
             }
             [$username, $secret] = $this->credentials($deployment);
+            if ($secret === '' && in_array($action, ['push', 'sync'], true)) {
+                throw new \RuntimeException('Pushing needs credentials. Select a connected GitHub account (or add an access token) in the connection settings and save.');
+            }
             $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
             $token = trim((string) config('serverpanel.execution_api_token', ''));
             if ($token !== '') $request = $request->withToken($token);

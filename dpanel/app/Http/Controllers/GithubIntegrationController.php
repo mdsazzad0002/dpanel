@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\GithubAccount;
 use App\Models\GithubOAuthApp;
+use App\Models\WebsiteGitDeployment;
 use App\Models\Website;
 use App\Services\Github\GithubClient;
 use Illuminate\Http\JsonResponse;
@@ -146,6 +147,17 @@ class GithubIntegrationController extends Controller
                 'scopes' => $token['scopes'],
             ],
         );
+
+        // Reconnecting from a website's Git page re-links that deployment when
+        // it lost its account (a disconnect unlinks it) and has no manual token.
+        if (! empty($pending['website_id'])) {
+            WebsiteGitDeployment::query()
+                ->where('website_id', $pending['website_id'])
+                ->whereNull('github_account_id')
+                ->whereNotNull('repository_full_name')
+                ->whereNull('auth_token')
+                ->update(['github_account_id' => $account->id]);
+        }
 
         return redirect($back())->with('success', ($account->wasRecentlyCreated ? 'Connected' : 'Reconnected')." GitHub account @{$account->login}.");
     }

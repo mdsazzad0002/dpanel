@@ -180,7 +180,13 @@ fn finish(output: Output, auth: &Auth) -> Result<String, String> {
         String::from_utf8_lossy(&output.stderr)
     )
     .trim()
-    .replace(&auth.token, "***");
+    .to_string();
+    // Replacing an empty token would insert "***" between every character.
+    let combined = if auth.token.is_empty() {
+        combined
+    } else {
+        combined.replace(&auth.token, "***")
+    };
     if output.status.success() {
         return Ok(if combined.is_empty() {
             "Operation completed successfully.".into()
@@ -264,10 +270,22 @@ fn clone_repository(request: &Request, target: &Path, auth: &Auth) -> Result<Str
     finish(output, auth)
 }
 
+// Reads raw stdout: git() swaps empty output for a success message, which
+// would make a clean tree look dirty.
 fn clean(request: &Request, target: &Path, auth: &Auth) -> Result<bool, String> {
-    Ok(git(request, target, auth, &["status", "--porcelain"])?
-        .trim()
-        .is_empty())
+    if !target.join(".git").is_dir() {
+        return Err("Repository is not connected yet.".into());
+    }
+    let output = command(request, auth)
+        .arg("-C")
+        .arg(target)
+        .args(["status", "--porcelain"])
+        .output()
+        .map_err(|error| format!("Unable to start Git: {error}"))?;
+    if !output.status.success() {
+        return finish(output, auth).map(|_| false);
+    }
+    Ok(output.stdout.iter().all(u8::is_ascii_whitespace))
 }
 fn ancestor(request: &Request, target: &Path, auth: &Auth, older: &str, newer: &str) -> bool {
     command(request, auth)
