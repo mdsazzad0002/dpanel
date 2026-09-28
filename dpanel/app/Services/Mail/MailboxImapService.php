@@ -9,6 +9,8 @@ use RuntimeException;
 
 class MailboxImapService
 {
+    private const MAX_CACHED_BODY_BYTES = 1048576;
+
     /**
      * Return the last database snapshot without opening an IMAP connection.
      *
@@ -38,6 +40,41 @@ class MailboxImapService
     }
 
     /**
+     * An already read message whose body is cached needs no IMAP connection.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function cachedMessage(Mailbox $mailbox, string $folder, int $uid): ?array
+    {
+        $metadata = $this->cacheQuery($mailbox, $folder)->where('uid', $uid)->first();
+        if ($metadata === null || $metadata->body_text === null || ! $metadata->seen) {
+            return null;
+        }
+
+        return $this->messagePayload($folder, $uid, $metadata, (string) $metadata->body_text);
+    }
+
+    /**
+     * Load a single message without touching the folder list or message list.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function openMessage(Mailbox $mailbox, string $folder, int $uid): ?array
+    {
+        $cached = $this->cachedMessage($mailbox, $folder, $uid);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $stream = $this->open($mailbox, $folder);
+        try {
+            return $this->message($stream, $mailbox, $folder, $uid);
+        } finally {
+            $this->close($stream);
+        }
+    }
+
+    /**
      * @return array{folders: array<int, array{name: string, unread: int, exists: int}>, messages: array<int, array<string, mixed>>, message: array<string, mixed>|null}
      */
     public function loadMailbox(Mailbox $mailbox, string $folder = 'INBOX', ?int $uid = null, int $limit = 40): array
@@ -45,7 +82,7 @@ class MailboxImapService
         $stream = $this->open($mailbox, $folder);
         $folders = $this->folders($stream, $mailbox, $folder);
         $messages = $this->messages($stream, $mailbox, $folder, $limit);
-        $message = $uid !== null ? $this->message($stream, $folder, $uid) : null;
+        $message = $uid !== null ? $this->message($stream, $mailbox, $folder, $uid) : null;
         $this->close($stream);
 
         return [
@@ -57,61 +94,162 @@ class MailboxImapService
 
     public function deleteMessage(Mailbox $mailbox, string $folder, int $uid): void
     {
+        $this->deleteMessages($mailbox, $folder, [$uid]);
+    }
+
+    /**
+     * @param  array<int, int>  $uids
+     */
+    public function deleteMessages(Mailbox $mailbox, string $folder, array $uids): void
+    {
+        $uids = $this->normalizeUids($uids);
+        if ($uids === []) {
+            return;
+        }
+
         $stream = $this->open($mailbox, $folder);
-        if (! @imap_delete($stream, (string) $uid, FT_UID)) {
-            $this->close($stream);
-            throw new RuntimeException(imap_last_error() ?: 'Unable to delete message.');
+        foreach (array_chunk($uids, 500) as $chunk) {
+            if (! @imap_delete($stream, implode(',', $chunk), FT_UID)) {
+                $error = imap_last_error();
+                $this->close($stream);
+                throw new RuntimeException($error ?: 'Unable to delete messages.');
+            }
         }
 
         @imap_expunge($stream);
         $this->close($stream);
-        MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)
-            ->where('folder', $folder)->where('uid', $uid)->delete();
+        foreach (array_chunk($uids, 1000) as $chunk) {
+            $this->cacheQuery($mailbox, $folder)->whereIn('uid', $chunk)->delete();
+        }
     }
 
-    public function sendMessage(Mailbox $mailbox, string $to, string $subject, string $body): void
+    /**
+     * @param  array<int, string>  $to
+     * @param  array<int, string>  $cc
+     * @param  array<int, string>  $bcc
+     */
+    public function sendMessage(Mailbox $mailbox, array $to, string $subject, string $body, array $cc = [], array $bcc = []): void
     {
-        $to = trim($to);
         $subject = trim($subject);
         $body = trim($body);
 
-        if ($to === '' || $subject === '' || $body === '') {
+        if ($to === [] || $subject === '' || $body === '') {
             throw new RuntimeException('To, subject and message body are required.');
+        }
+        foreach (array_merge($to, $cc, $bcc) as $address) {
+            if (filter_var($address, FILTER_VALIDATE_EMAIL) === false) {
+                throw new RuntimeException('Invalid email address: '.$address);
+            }
         }
 
         $from = (string) $mailbox->email;
+        $domain = substr((string) strrchr($from, '@'), 1) ?: 'localhost';
         $headers = [
             'From: '.$from,
             'Reply-To: '.$from,
+            'Date: '.date(DATE_RFC2822),
+            'Message-ID: <'.bin2hex(random_bytes(16)).'@'.$domain.'>',
             'MIME-Version: 1.0',
             'Content-Type: text/plain; charset=UTF-8',
             'Content-Transfer-Encoding: 8bit',
         ];
+        if ($cc !== []) {
+            $headers[] = 'Cc: '.implode(', ', $cc);
+        }
 
         $encodedSubject = function_exists('mb_encode_mimeheader')
             ? mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n")
             : $subject;
 
-        $ok = @mail($to, $encodedSubject, $body, implode("\r\n", $headers), '-f'.$from);
+        $body = str_replace(["\r\n", "\r"], "\n", $body);
+        // sendmail runs with -t, so Bcc recipients are delivered and the header is stripped.
+        $sendHeaders = $bcc !== [] ? array_merge($headers, ['Bcc: '.implode(', ', $bcc)]) : $headers;
+        $ok = @mail(implode(', ', $to), $encodedSubject, $body, implode("\r\n", $sendHeaders), '-f'.$from);
         if (! $ok) {
             throw new RuntimeException('Message could not be sent.');
         }
+
+        // mail() only hands the message to the local MTA; keep a copy in the
+        // mailbox's Sent folder the same way a regular mail client does.
+        $raw = implode("\r\n", array_merge(['To: '.implode(', ', $to), 'Subject: '.$encodedSubject], $sendHeaders))
+            ."\r\n\r\n".str_replace("\n", "\r\n", $body)."\r\n";
+        $this->appendToSent($mailbox, $raw);
+    }
+
+    private function appendToSent(Mailbox $mailbox, string $raw): void
+    {
+        $stream = $this->open($mailbox);
+        $prefix = $this->mailboxPrefix();
+
+        $sentFolder = null;
+        $mailboxes = @imap_getmailboxes($stream, $prefix, '*');
+        foreach (is_array($mailboxes) ? $mailboxes : [] as $entry) {
+            $name = $this->stripMailboxPrefix((string) ($entry->name ?? ''));
+            if (in_array(strtolower($name), ['sent', 'sent items', 'sent messages', 'inbox.sent'], true)) {
+                $sentFolder = $name;
+                break;
+            }
+        }
+
+        if ($sentFolder === null) {
+            $sentFolder = 'Sent';
+            @imap_createmailbox($stream, imap_utf7_encode($prefix.$sentFolder));
+            @imap_subscribe($stream, imap_utf7_encode($prefix.$sentFolder));
+        }
+
+        $appended = @imap_append($stream, $prefix.$sentFolder, $raw, '\\Seen');
+        $error = imap_last_error();
+        $this->close($stream);
+
+        if (! $appended) {
+            throw new RuntimeException('Message was sent but could not be saved to Sent: '.($error ?: 'unknown IMAP error'));
+        }
+
+        // Force the folder list (and counts) to refresh on the next load.
+        MailboxSyncState::query()->where('mailbox_id', $mailbox->id)->update(['folders_synced_at' => null]);
     }
 
     public function markRead(Mailbox $mailbox, string $folder, int $uid, bool $seen): void
     {
-        $stream = $this->open($mailbox, $folder);
-        $flags = $seen ? '\\Seen' : '\\Unseen';
-        $result = @imap_setflag_full($stream, (string) $uid, $flags, FT_UID);
-        $this->close($stream);
+        $this->setSeen($mailbox, $folder, [$uid], $seen);
+    }
 
-        if (! $result) {
-            throw new RuntimeException(imap_last_error() ?: 'Unable to update message flag.');
+    /**
+     * @param  array<int, int>  $uids
+     */
+    public function setSeen(Mailbox $mailbox, string $folder, array $uids, bool $seen): void
+    {
+        $uids = $this->normalizeUids($uids);
+        if ($uids === []) {
+            return;
         }
 
-        MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)
-            ->where('folder', $folder)->where('uid', $uid)
-            ->update(['seen' => $seen, 'synced_at' => now()]);
+        $stream = $this->open($mailbox, $folder);
+        foreach (array_chunk($uids, 500) as $chunk) {
+            // "Unread" means clearing \Seen; there is no \Unseen flag in IMAP.
+            $result = $seen
+                ? @imap_setflag_full($stream, implode(',', $chunk), '\\Seen', ST_UID)
+                : @imap_clearflag_full($stream, implode(',', $chunk), '\\Seen', ST_UID);
+            if (! $result) {
+                $error = imap_last_error();
+                $this->close($stream);
+                throw new RuntimeException($error ?: 'Unable to update message flags.');
+            }
+        }
+        $this->close($stream);
+
+        foreach (array_chunk($uids, 1000) as $chunk) {
+            $this->cacheQuery($mailbox, $folder)->whereIn('uid', $chunk)->update(['seen' => $seen, 'synced_at' => now()]);
+        }
+    }
+
+    /**
+     * @param  array<int, mixed>  $uids
+     * @return array<int, int>
+     */
+    private function normalizeUids(array $uids): array
+    {
+        return array_values(array_unique(array_filter(array_map('intval', $uids), fn (int $uid): bool => $uid > 0)));
     }
 
     /**
@@ -207,61 +345,141 @@ class MailboxImapService
     }
 
     /**
+     * Incremental sync in the style of Roundcube's message index: a single
+     * STATUS call is compared with the stored folder signature, and IMAP is
+     * only asked for what changed (new UIDs, removed UIDs, unseen flags).
+     *
      * @param  resource  $stream
      * @return array<int, array<string, mixed>>
      */
     private function messages($stream, Mailbox $mailbox, string $folder, int $limit): array
     {
-        $this->guardUidValidity($stream, $mailbox, $folder);
-        $uids = @imap_search($stream, 'ALL', SE_UID);
-        if (! is_array($uids) || $uids === []) {
-            MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)
-                ->where('folder', $folder)->delete();
-
-            return [];
+        $status = @imap_status($stream, $this->mailboxPath($folder), SA_ALL);
+        if (! is_object($status)) {
+            throw new RuntimeException(imap_last_error() ?: 'Unable to read folder status.');
         }
 
-        rsort($uids);
-        $uids = array_slice($uids, 0, max(1, $limit));
+        $uidValidity = (int) ($status->uidvalidity ?? 0);
+        $count = (int) ($status->messages ?? 0);
+        $uidNext = (int) ($status->uidnext ?? 0);
+        $unseen = (int) ($status->unseen ?? 0);
 
-        $cached = MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)
-            ->where('folder', $folder)->whereIn('uid', $uids)->get()->keyBy('uid');
-        $messages = [];
-        $freshAfter = now()->subSeconds(60);
-        foreach ($uids as $uid) {
-            $metadata = $cached->get((int) $uid);
-            if ($metadata && $metadata->synced_at?->isAfter($freshAfter)) {
-                $messages[] = $this->metadataRow($metadata);
+        $state = MailboxSyncState::query()->firstOrCreate(['mailbox_id' => $mailbox->id, 'folder' => $folder]);
+        if ($uidValidity > 0 && $state->uid_validity && (int) $state->uid_validity !== $uidValidity) {
+            $this->cacheQuery($mailbox, $folder)->delete();
+            $state->message_count = null;
+        }
 
+        $unchanged = $state->message_count !== null
+            && (int) $state->message_count === $count
+            && (int) $state->uid_next === $uidNext
+            && (int) $state->unseen_count === $unseen
+            && (int) $state->uid_validity === $uidValidity;
+
+        if (! $unchanged) {
+            $this->syncFolder($stream, $mailbox, $folder, $count, $unseen);
+            $state->forceFill([
+                'uid_validity' => $uidValidity ?: $state->uid_validity,
+                'uid_next' => $uidNext,
+                'message_count' => $count,
+                'unseen_count' => $unseen,
+                'messages_synced_at' => now(),
+            ])->save();
+        }
+
+        $rows = $this->cacheQuery($mailbox, $folder)->orderByDesc('uid')->limit(max(1, $limit))->get();
+
+        // Snippets need a body fetch, so they are only built for the visible page.
+        foreach ($rows as $row) {
+            if ($row->snippet === null) {
+                $row->forceFill(['snippet' => $this->snippet($stream, (int) $row->uid)])->save();
+            }
+        }
+
+        return $rows->map(fn (MailboxMessageMetadata $metadata): array => $this->metadataRow($metadata))->all();
+    }
+
+    /**
+     * @param  resource  $stream
+     */
+    private function syncFolder($stream, Mailbox $mailbox, string $folder, int $count, int $unseen): void
+    {
+        if ($count === 0) {
+            $this->cacheQuery($mailbox, $folder)->delete();
+
+            return;
+        }
+
+        // New mail: one FETCH for every UID above the highest cached one.
+        $maxUid = (int) $this->cacheQuery($mailbox, $folder)->max('uid');
+        $this->storeOverviews($mailbox, $folder, @imap_fetch_overview($stream, ($maxUid + 1).':*', FT_UID), $maxUid);
+
+        // Expunged or not-yet-cached messages: only then is the full UID list needed.
+        if ($this->cacheQuery($mailbox, $folder)->count() !== $count) {
+            $serverUids = array_map('intval', @imap_search($stream, 'ALL', SE_UID) ?: []);
+            $cachedUids = $this->cacheQuery($mailbox, $folder)->pluck('uid')->map(fn ($uid): int => (int) $uid)->all();
+
+            foreach (array_chunk(array_values(array_diff($cachedUids, $serverUids)), 1000) as $chunk) {
+                $this->cacheQuery($mailbox, $folder)->whereIn('uid', $chunk)->delete();
+            }
+            foreach (array_chunk(array_values(array_diff($serverUids, $cachedUids)), 500) as $chunk) {
+                $this->storeOverviews($mailbox, $folder, @imap_fetch_overview($stream, implode(',', $chunk), FT_UID));
+            }
+        }
+
+        // Flags changed elsewhere (another client, phone): resync unseen state in one SEARCH.
+        if ($this->cacheQuery($mailbox, $folder)->where('seen', false)->count() !== $unseen) {
+            $unseenUids = array_map('intval', @imap_search($stream, 'UNSEEN', SE_UID) ?: []);
+            $this->cacheQuery($mailbox, $folder)->where('seen', false)->update(['seen' => true]);
+            foreach (array_chunk($unseenUids, 1000) as $chunk) {
+                $this->cacheQuery($mailbox, $folder)->whereIn('uid', $chunk)->update(['seen' => false]);
+            }
+        }
+    }
+
+    /**
+     * @param  array<int, object>|false  $overviews
+     */
+    private function storeOverviews(Mailbox $mailbox, string $folder, array|false $overviews, int $afterUid = 0): void
+    {
+        $now = now();
+        $rows = [];
+        foreach (is_array($overviews) ? $overviews : [] as $overview) {
+            $uid = (int) ($overview->uid ?? 0);
+            // "n:*" always returns the last message, even when it is older than n.
+            if ($uid <= $afterUid) {
                 continue;
             }
 
-            $overviewList = @imap_fetch_overview($stream, (string) $uid, FT_UID);
-            $overview = is_array($overviewList) && isset($overviewList[0]) ? $overviewList[0] : null;
-            if (! is_object($overview)) {
-                continue;
-            }
-
-            $row = [
-                'uid' => (int) $uid,
+            $rows[] = [
+                'mailbox_id' => $mailbox->id,
+                'folder' => $folder,
+                'uid' => $uid,
                 'subject' => $this->decodeHeader((string) ($overview->subject ?? '(no subject)')),
-                'from' => $this->decodeHeader((string) ($overview->from ?? '')),
-                'date' => (string) ($overview->date ?? ''),
+                'sender' => $this->decodeHeader((string) ($overview->from ?? '')),
+                'recipient' => $this->decodeHeader((string) ($overview->to ?? '')),
+                'message_date' => (string) ($overview->date ?? ''),
                 'seen' => (bool) ($overview->seen ?? false),
                 'size' => (int) ($overview->size ?? 0),
-                'snippet' => $this->snippet($stream, (int) $uid),
+                'snippet' => null,
+                'synced_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
             ];
-            MailboxMessageMetadata::query()->updateOrCreate(
-                ['mailbox_id' => $mailbox->id, 'folder' => $folder, 'uid' => (int) $uid],
-                ['subject' => $row['subject'], 'sender' => $row['from'], 'message_date' => $row['date'], 'seen' => $row['seen'], 'size' => $row['size'], 'snippet' => $row['snippet'], 'synced_at' => now()]
-            );
-            $messages[] = $row;
         }
 
-        MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)
-            ->where('folder', $folder)->whereNotIn('uid', $uids)->delete();
+        foreach (array_chunk($rows, 500) as $chunk) {
+            MailboxMessageMetadata::query()->upsert(
+                $chunk,
+                ['mailbox_id', 'folder', 'uid'],
+                ['subject', 'sender', 'recipient', 'message_date', 'seen', 'size', 'synced_at', 'updated_at']
+            );
+        }
+    }
 
-        return $messages;
+    private function cacheQuery(Mailbox $mailbox, string $folder): \Illuminate\Database\Eloquent\Builder
+    {
+        return MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)->where('folder', $folder);
     }
 
     /** @return array<string, mixed> */
@@ -271,6 +489,7 @@ class MailboxImapService
             'uid' => $metadata->uid,
             'subject' => (string) ($metadata->subject ?: '(no subject)'),
             'from' => (string) $metadata->sender,
+            'to' => (string) $metadata->recipient,
             'date' => (string) $metadata->message_date,
             'seen' => $metadata->seen,
             'size' => $metadata->size,
@@ -278,45 +497,53 @@ class MailboxImapService
         ];
     }
 
-    /** @param resource $stream */
-    private function guardUidValidity($stream, Mailbox $mailbox, string $folder): void
-    {
-        $status = @imap_status($stream, $this->mailboxPath($folder), SA_UIDVALIDITY);
-        $uidValidity = is_object($status) ? (int) ($status->uidvalidity ?? 0) : 0;
-        $state = MailboxSyncState::query()->firstOrCreate(['mailbox_id' => $mailbox->id, 'folder' => $folder]);
-        if ($uidValidity > 0 && $state->uid_validity && (int) $state->uid_validity !== $uidValidity) {
-            MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)->where('folder', $folder)->delete();
-        }
-        if ($uidValidity > 0 && (int) $state->uid_validity !== $uidValidity) {
-            $state->forceFill(['uid_validity' => $uidValidity])->save();
-        }
-    }
-
     /**
+     * Opened messages are served from the body cache after the first read.
+     *
      * @param  resource  $stream
      * @return array<string, mixed>|null
      */
-    private function message($stream, string $folder, int $uid): ?array
+    private function message($stream, Mailbox $mailbox, string $folder, int $uid): ?array
     {
-        $overviewList = @imap_fetch_overview($stream, (string) $uid, FT_UID);
-        $overview = is_array($overviewList) && isset($overviewList[0]) ? $overviewList[0] : null;
-        if (! is_object($overview)) {
-            return null;
+        $metadata = $this->cacheQuery($mailbox, $folder)->where('uid', $uid)->first();
+
+        if ($metadata === null || $metadata->body_text === null) {
+            $overviewList = @imap_fetch_overview($stream, (string) $uid, FT_UID);
+            $overview = is_array($overviewList) && isset($overviewList[0]) ? $overviewList[0] : null;
+            if (! is_object($overview)) {
+                return null;
+            }
+
+            $this->storeOverviews($mailbox, $folder, [$overview]);
+            $metadata = $this->cacheQuery($mailbox, $folder)->where('uid', $uid)->first();
+            $text = $this->extractText($stream, $uid);
+            if ($metadata !== null && strlen($text) <= self::MAX_CACHED_BODY_BYTES) {
+                $metadata->forceFill(['body_text' => $text])->save();
+            }
+        } else {
+            $text = (string) $metadata->body_text;
         }
 
-        $rawHeader = @imap_fetchheader($stream, $uid, FT_UID) ?: '';
-        $rawBody = @imap_body($stream, $uid, FT_UID) ?: '';
-        $text = $this->extractText($stream, $uid);
+        if ($metadata !== null && ! $metadata->seen && @imap_setflag_full($stream, (string) $uid, '\\Seen', ST_UID)) {
+            $metadata->forceFill(['seen' => true])->save();
+        }
 
+        return $this->messagePayload($folder, $uid, $metadata, $text);
+    }
+
+    /** @return array<string, mixed> */
+    private function messagePayload(string $folder, int $uid, ?MailboxMessageMetadata $metadata, string $text): array
+    {
         return [
             'uid' => $uid,
             'folder' => $folder,
-            'subject' => $this->decodeHeader((string) ($overview->subject ?? '(no subject)')),
-            'from' => $this->decodeHeader((string) ($overview->from ?? '')),
-            'to' => $this->decodeHeader((string) ($overview->to ?? '')),
-            'date' => (string) ($overview->date ?? ''),
-            'raw_header' => $rawHeader,
-            'raw_body' => $rawBody,
+            'subject' => (string) ($metadata?->subject ?: '(no subject)'),
+            'from' => (string) $metadata?->sender,
+            'to' => (string) $metadata?->recipient,
+            'date' => (string) $metadata?->message_date,
+            'seen' => (bool) $metadata?->seen,
+            'raw_header' => '',
+            'raw_body' => '',
             'text' => $text,
         ];
     }
@@ -348,7 +575,7 @@ class MailboxImapService
         foreach (['text/plain', 'text/html'] as $mime) {
             if (isset($parts[$mime])) {
                 $part = $parts[$mime];
-                $body = (string) @imap_fetchbody($stream, $uid, $part['part'], FT_UID);
+                $body = (string) @imap_fetchbody($stream, $uid, $part['part'], FT_UID | FT_PEEK);
                 $body = $this->decodePart($body, (int) ($part['encoding'] ?? 0));
                 if ($mime === 'text/html') {
                     $body = strip_tags(html_entity_decode($body, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
@@ -358,7 +585,7 @@ class MailboxImapService
             }
         }
 
-        $body = (string) @imap_body($stream, $uid, FT_UID);
+        $body = (string) @imap_body($stream, $uid, FT_UID | FT_PEEK);
 
         return trim($body);
     }

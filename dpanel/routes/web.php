@@ -332,6 +332,10 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->name('mailbox.data');
 
+            Route::get('/mail/{id}/message', [MailClientController::class, 'message'])
+                ->middleware('role:admin|reseller')
+                ->name('mailbox.message');
+
             Route::post('/mail/{id}/send', [MailClientController::class, 'send'])
                 ->middleware('role:admin|reseller')
                 ->name('mailbox.send');
@@ -375,6 +379,10 @@ Route::prefix('cpsess{token}')
                 ->where('domain', '[A-Za-z0-9.-]+')
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.guide.export');
+
+            Route::post('/mail/{id}/bulk', [MailClientController::class, 'bulk'])
+                ->middleware('role:admin|reseller')
+                ->name('mailbox.bulk');
 
             Route::post('/mail/{id}/mark-read', [MailClientController::class, 'markRead'])
                 ->middleware('role:admin|reseller')

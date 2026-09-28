@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\SyncMailboxMetadataJob;
 use App\Models\Mailbox;
+use App\Models\MailboxMessageMetadata;
 use App\Services\Mail\MailboxImapService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -38,6 +39,8 @@ class MailClientController extends Controller
                 'domain' => $mailbox->domain,
                 'quota_mb' => $mailbox->quota_mb,
                 'status' => $mailbox->status,
+                // Approximate: sizes of messages in folders that have been synced.
+                'used_bytes' => (int) MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)->sum('size'),
             ],
             'relatedMailboxes' => $relatedMailboxes,
             'selectedFolder' => $folder,
@@ -46,9 +49,11 @@ class MailClientController extends Controller
             'message' => null,
             'loadingError' => null,
             'loadEndpoint' => route('mailbox.data', ['token' => $token, 'id' => $id]),
+            'messageEndpoint' => route('mailbox.message', ['token' => $token, 'id' => $id]),
             'sendEndpoint' => route('mailbox.send', ['token' => $token, 'id' => $id]),
             'deleteEndpoint' => route('mailbox.delete-message', ['token' => $token, 'id' => $id]),
             'markReadEndpoint' => route('mailbox.mark-read', ['token' => $token, 'id' => $id]),
+            'bulkEndpoint' => route('mailbox.bulk', ['token' => $token, 'id' => $id]),
             'composeDefaults' => [
                 'to' => '',
                 'subject' => '',
@@ -64,9 +69,10 @@ class MailClientController extends Controller
         $folder = (string) $request->query('folder', 'INBOX');
         $uid = $request->integer('uid') ?: null;
 
-        if ($uid === null && ! $request->boolean('refresh')) {
+        if (! $request->boolean('refresh')) {
             $cached = $mailboxImapService->cachedMailbox($mailbox, $folder);
-            if ($cached !== null) {
+            $cachedMessage = $uid !== null ? $mailboxImapService->cachedMessage($mailbox, $folder, $uid) : null;
+            if ($cached !== null && ($uid === null || $cachedMessage !== null)) {
                 SyncMailboxMetadataJob::dispatch((string) $mailbox->id, $folder)->afterResponse();
 
                 return response()->json([
@@ -74,7 +80,7 @@ class MailClientController extends Controller
                     'message' => null,
                     'folders' => $cached['folders'],
                     'messages' => $cached['messages'],
-                    'messageData' => null,
+                    'messageData' => $cachedMessage,
                     'cached' => true,
                     'syncing' => true,
                 ]);
@@ -104,13 +110,38 @@ class MailClientController extends Controller
         ]);
     }
 
+    public function message(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): JsonResponse
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        $validated = $request->validate([
+            'folder' => ['required', 'string'],
+            'uid' => ['required', 'integer', 'min:1'],
+        ]);
+
+        try {
+            $message = $mailboxImapService->openMessage($mailbox, (string) $validated['folder'], (int) $validated['uid']);
+        } catch (RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage(), 'messageData' => null]);
+        }
+
+        if ($message === null) {
+            return response()->json(['success' => false, 'message' => 'Message not found.', 'messageData' => null]);
+        }
+
+        return response()->json(['success' => true, 'message' => null, 'messageData' => $message]);
+    }
+
     public function send(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): RedirectResponse|JsonResponse
     {
         $mailbox = Mailbox::query()->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([
-            'to' => ['required', 'email'],
+            'to' => ['required', 'string', 'max:2000'],
+            'cc' => ['nullable', 'string', 'max:2000'],
+            'bcc' => ['nullable', 'string', 'max:2000'],
             'subject' => ['required', 'string', 'max:255'],
             'body' => ['required', 'string'],
             'folder' => ['nullable', 'string'],
@@ -119,9 +150,11 @@ class MailClientController extends Controller
         try {
             $mailboxImapService->sendMessage(
                 $mailbox,
-                (string) $validated['to'],
+                $this->addresses((string) $validated['to']),
                 (string) $validated['subject'],
-                (string) $validated['body']
+                (string) $validated['body'],
+                $this->addresses((string) ($validated['cc'] ?? '')),
+                $this->addresses((string) ($validated['bcc'] ?? ''))
             );
         } catch (RuntimeException $e) {
             if ($request->expectsJson()) {
@@ -191,5 +224,67 @@ class MailClientController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => (bool) $validated['seen'] ? 'Marked as read.' : 'Marked as unread.']);
+    }
+
+    public function bulk(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): JsonResponse
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        $validated = $request->validate([
+            'folder' => ['required', 'string'],
+            'action' => ['required', 'in:delete,read,unread'],
+            'uids' => ['required', 'array', 'min:1', 'max:1000'],
+            'uids.*' => ['integer', 'min:1'],
+        ]);
+
+        $folder = (string) $validated['folder'];
+        $uids = array_map('intval', $validated['uids']);
+
+        try {
+            match ($validated['action']) {
+                'delete' => $mailboxImapService->deleteMessages($mailbox, $folder, $uids),
+                'read' => $mailboxImapService->setSeen($mailbox, $folder, $uids, true),
+                'unread' => $mailboxImapService->setSeen($mailbox, $folder, $uids, false),
+            };
+        } catch (RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        $count = count($uids);
+        $noun = $count === 1 ? 'message' : 'messages';
+
+        return response()->json([
+            'success' => true,
+            'message' => match ($validated['action']) {
+                'delete' => "{$count} {$noun} deleted.",
+                'read' => "{$count} {$noun} marked as read.",
+                'unread' => "{$count} {$noun} marked as unread.",
+            },
+        ]);
+    }
+
+    /**
+     * Accepts "a@x.com, Name <b@y.com>; c@z.com" and returns bare addresses.
+     *
+     * @return array<int, string>
+     */
+    private function addresses(string $value): array
+    {
+        $addresses = [];
+        // Quoted display names may contain commas ("Doe, J" <j@x.com>).
+        $value = (string) preg_replace('/"[^"]*"/', '', $value);
+        foreach (preg_split('/[,;]+/', $value) ?: [] as $part) {
+            $part = trim($part);
+            if ($part === '') {
+                continue;
+            }
+            if (preg_match('/<([^<>]+)>/', $part, $match)) {
+                $part = trim($match[1]);
+            }
+            $addresses[] = $part;
+        }
+
+        return array_values(array_unique($addresses));
     }
 }

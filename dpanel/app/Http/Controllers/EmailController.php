@@ -7,9 +7,8 @@ use App\Models\MailDomain;
 use App\Models\Mailbox;
 use App\Models\Website;
 use App\Services\Mail\MailboxImapService;
+use App\Services\Mail\MailDomainProvisioner;
 use App\Services\ResourceQuotaService;
-use App\Services\ScriptExecutionGateway;
-use App\Services\ScriptPathResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response as HttpResponse;
@@ -107,7 +106,7 @@ class EmailController extends Controller
         try {
             $mailboxImapService->sendMessage(
                 $mailbox,
-                (string) $validated['recipient'],
+                [(string) $validated['recipient']],
                 'Email configuration for '.$mailbox->email,
                 $body
             );
@@ -160,28 +159,18 @@ class EmailController extends Controller
         ]);
     }
 
-    public function generateDkim(Request $request, ScriptExecutionGateway $gateway): RedirectResponse
+    public function generateDkim(Request $request, MailDomainProvisioner $provisioner): RedirectResponse
     {
         $validated = $request->validate([
             'domain' => ['required', 'string', 'max:253', 'regex:/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/'],
         ]);
         $domain = strtolower(trim($validated['domain']));
         abort_unless(in_array($domain, $this->readWebsiteDomains(), true) || Mailbox::query()->where('domain', $domain)->exists(), 403);
-        $selector = trim((string) config('serverpanel.mail.dkim_selector', 'default')) ?: 'default';
-        $script = ScriptPathResolver::resolveRepositoryRoot().'/scripts/generate-dkim.sh';
-        $result = $gateway->execute($script, [$domain, $selector], [], true);
 
-        if (! $result['success'] || ! preg_match('/^DKIM_PUBLIC_KEY=(.+)$/m', $result['output'], $match)) {
-            return redirect()->route('emails.guide', ['domain' => $domain])
-                ->with('error', trim($result['output']) ?: 'DKIM key generation failed.');
+        $result = $provisioner->ensureDkim($domain, true);
+        if (! $result['ok']) {
+            return redirect()->route('emails.guide', ['domain' => $domain])->with('error', $result['message']);
         }
-
-        MailDomain::query()->updateOrCreate(['domain' => $domain], [
-            'enable_dkim' => true,
-            'dkim_selector' => $selector,
-            'dkim_public_key' => trim($match[1]),
-            'status' => 'active',
-        ]);
 
         return redirect()->route('emails.guide', ['domain' => $domain])
             ->with('success', "DKIM key generated and signing enabled for {$domain}.");
@@ -242,7 +231,7 @@ class EmailController extends Controller
             ->implode(' ');
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, MailDomainProvisioner $provisioner): JsonResponse
     {
         $validated = $this->validatePayload($request);
         $domain = strtolower(trim((string) $validated['domain']));
@@ -289,9 +278,13 @@ class EmailController extends Controller
             ], 500);
         }
 
+        // Mailbox exists at this point; prep failures are reported, not fatal.
+        $prepared = $provisioner->ensureReady($domain);
+
         return response()->json([
             'ok' => true,
-            'message' => "Mailbox {$email} created and synced to storage server.",
+            'message' => trim("Mailbox {$email} created and synced to storage server. ".implode(' ', $prepared['messages'])),
+            'mail_ready' => $prepared['ok'],
             'mailbox' => [
                 'email' => $email,
                 'domain' => $domain,

@@ -1,47 +1,8 @@
 <script setup>
-const folderLabel = (name) => {
-    const normalized = String(name || '').trim().toLowerCase();
-    if (normalized === 'inbox') return 'Inbox';
-    if (normalized.includes('sent')) return 'Sent';
-    if (normalized.includes('draft')) return 'Drafts';
-    if (normalized.includes('spam') || normalized.includes('junk')) return 'Spam';
-    if (normalized.includes('trash') || normalized.includes('bin') || normalized.includes('deleted')) return 'Trash';
-    if (normalized === 'outbox') return 'Outbox';
-    if (normalized === 'all mail') return 'All';
-    return name;
-};
+import { computed } from 'vue';
+import { folderIcon, folderLabel, formatBytes } from './mailboxFolders';
 
-const folderConfig = {
-    inbox: { icon: 'bi-inbox', color: 'blue' },
-    sent: { icon: 'bi-send-check', color: 'emerald' },
-    drafts: { icon: 'bi-file-earmark-text', color: 'amber' },
-    spam: { icon: 'bi-shield-exclamation', color: 'red' },
-    trash: { icon: 'bi-trash3', color: 'rose' },
-    outbox: { icon: 'bi-box-arrow-up', color: 'violet' },
-    all: { icon: 'bi-envelope-stack', color: 'slate' },
-};
-
-const getFolderConfig = (name) => {
-    const normalized = String(name || '').trim().toLowerCase();
-    for (const [key, config] of Object.entries(folderConfig)) {
-        if (normalized === key || normalized.includes(key)) {
-            return config;
-        }
-    }
-    return { icon: 'bi-folder2', color: 'slate' };
-};
-
-const colorClasses = {
-    blue: { bg: 'bg-blue-500/10', text: 'text-blue-500', activeBg: 'bg-blue-500/15', activeText: 'text-blue-600 dark:text-blue-400' },
-    emerald: { bg: 'bg-emerald-500/10', text: 'text-emerald-500', activeBg: 'bg-emerald-500/15', activeText: 'text-emerald-600 dark:text-emerald-400' },
-    amber: { bg: 'bg-amber-500/10', text: 'text-amber-500', activeBg: 'bg-amber-500/15', activeText: 'text-amber-600 dark:text-amber-400' },
-    red: { bg: 'bg-red-500/10', text: 'text-red-500', activeBg: 'bg-red-500/15', activeText: 'text-red-600 dark:text-red-400' },
-    rose: { bg: 'bg-rose-500/10', text: 'text-rose-500', activeBg: 'bg-rose-500/15', activeText: 'text-rose-600 dark:text-rose-400' },
-    violet: { bg: 'bg-violet-500/10', text: 'text-violet-500', activeBg: 'bg-violet-500/15', activeText: 'text-violet-600 dark:text-violet-400' },
-    slate: { bg: 'bg-slate-500/10', text: 'text-slate-500', activeBg: 'bg-slate-500/15', activeText: 'text-slate-600 dark:text-slate-400' },
-};
-
-defineProps({
+const props = defineProps({
     folders: {
         type: Array,
         default: () => [],
@@ -72,169 +33,180 @@ defineProps({
     },
 });
 
-const emit = defineEmits(['compose', 'open-folder', 'close-mobile']);
+const emit = defineEmits(['compose', 'open-folder', 'close-mobile', 'toggle-collapse']);
+
+const ui = computed(() => (props.isDark
+    ? {
+        aside: 'bg-slate-950 border-slate-800',
+        divider: 'border-slate-800',
+        muted: 'text-slate-500',
+        text: 'text-slate-300',
+        strong: 'text-slate-100',
+        iconButton: 'text-slate-400 hover:bg-slate-800 hover:text-slate-100',
+        item: 'text-slate-400 hover:bg-slate-900 hover:text-slate-100',
+        itemActive: 'bg-blue-500/10 text-blue-300',
+        iconActive: 'text-blue-400',
+        icon: 'text-slate-500 group-hover:text-slate-300',
+        track: 'bg-slate-800',
+        card: 'border-slate-800 bg-slate-900/60',
+    }
+    : {
+        aside: 'bg-white border-slate-200',
+        divider: 'border-slate-200',
+        muted: 'text-slate-500',
+        text: 'text-slate-700',
+        strong: 'text-slate-900',
+        iconButton: 'text-slate-500 hover:bg-slate-100 hover:text-slate-900',
+        item: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+        itemActive: 'bg-blue-50 text-blue-700',
+        iconActive: 'text-blue-600',
+        icon: 'text-slate-400 group-hover:text-slate-600',
+        track: 'bg-slate-200',
+        card: 'border-slate-200 bg-slate-50',
+    }));
+
+// The mobile drawer always shows the full sidebar.
+const compact = computed(() => props.collapsed && !props.mobileOpen);
+
+const quotaBytes = computed(() => (Number(props.mailbox.quota_mb) || 0) * 1024 * 1024);
+const usedBytes = computed(() => Number(props.mailbox.used_bytes) || 0);
+const usedPercent = computed(() => (quotaBytes.value > 0 ? Math.min(100, (usedBytes.value / quotaBytes.value) * 100) : 0));
+const barColor = computed(() => {
+    if (usedPercent.value >= 90) return 'bg-rose-500';
+    if (usedPercent.value >= 75) return 'bg-amber-500';
+
+    return 'bg-blue-600';
+});
 </script>
 
 <template>
     <aside
         :class="[
-            isDark ? 'bg-slate-950 border-slate-800/80' : 'bg-white border-slate-200/80',
-            'flex h-screen flex-col border-r shadow-xl transition-all duration-300',
-            collapsed ? 'w-[72px]' : 'w-[280px]',
-            'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50',
+            ui.aside,
+            'flex h-screen flex-col border-r transition-[width,transform] duration-200',
+            compact ? 'w-[72px]' : 'w-[260px]',
+            'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:w-[280px] max-md:shadow-2xl',
             mobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full',
         ]"
     >
-        <!-- Logo Header -->
-        <div :class="isDark ? 'border-b border-slate-800/60' : 'border-b border-slate-100'" class="flex h-14 shrink-0 items-center justify-center px-4">
-            <img v-if="collapsed" src="/sm_logo.png" alt="dPanel" class="h-7 w-auto" />
-            <template v-else>
-                <img src="/sm_logo.png" alt="dPanel" class="h-7 w-auto md:hidden" />
-                <img src="/dpanel_logo.png" alt="dPanel" class="hidden h-[60px] w-auto md:block" />
-            </template>
-        </div>
+        <!-- Brand -->
+        <div :class="[ui.divider, 'flex h-14 shrink-0 items-center border-b', compact ? 'justify-center px-2' : 'justify-between px-4']">
+            <div v-if="!compact" class="flex min-w-0 items-center gap-2.5">
+                <img src="/sm_logo.png" alt="" class="h-7 w-7 shrink-0 object-contain" />
+                <div class="min-w-0 leading-tight">
+                    <p :class="[ui.strong, 'text-sm font-semibold']">dPanel Mail</p>
+                    <p :class="[ui.muted, 'truncate text-[11px]']">{{ mailbox.domain || 'Webmail' }}</p>
+                </div>
+            </div>
 
-        <!-- Compose Button -->
-        <div class="px-3 pt-4 pb-2">
             <button
                 type="button"
-                :class="[
-                    'group flex w-full items-center justify-center gap-2.5 rounded-xl text-sm font-semibold shadow-lg shadow-blue-500/20 transition-all duration-200',
-                    isDark
-                        ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:from-blue-500 hover:to-blue-400 hover:shadow-blue-500/30'
-                        : 'bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:from-blue-500 hover:to-blue-400 hover:shadow-blue-500/30',
-                    collapsed ? 'h-11 w-11 px-0' : 'h-11 px-4',
-                ]"
-                @click="emit('compose')"
-                :title="collapsed ? 'Compose' : ''"
+                :class="[ui.iconButton, 'hidden h-8 w-8 items-center justify-center rounded-md transition md:flex']"
+                :title="compact ? 'Expand sidebar' : 'Collapse sidebar'"
+                :aria-label="compact ? 'Expand sidebar' : 'Collapse sidebar'"
+                @click="emit('toggle-collapse')"
             >
-                <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 fill-current" :class="!collapsed ? 'rotate-0' : ''">
-                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-                </svg>
-                <span v-if="!collapsed">Compose</span>
+                <i :class="['bi text-base', compact ? 'bi-layout-sidebar' : 'bi-layout-sidebar-inset']"></i>
+            </button>
+
+            <button
+                type="button"
+                :class="[ui.iconButton, 'flex h-8 w-8 items-center justify-center rounded-md transition md:hidden']"
+                aria-label="Close menu"
+                @click="emit('close-mobile')"
+            >
+                <i class="bi bi-x-lg text-sm"></i>
             </button>
         </div>
 
-        <!-- Folder List -->
-        <div class="flex-1 space-y-0.5 overflow-auto px-2 py-2">
+        <!-- Compose -->
+        <div :class="compact ? 'flex justify-center px-2 pt-4 pb-3' : 'px-3 pt-4 pb-3'">
+            <button
+                type="button"
+                :class="[
+                    'flex items-center justify-center gap-2 rounded-lg bg-blue-600 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
+                    isDark ? 'focus-visible:ring-offset-slate-950' : 'focus-visible:ring-offset-white',
+                    compact ? 'h-10 w-10' : 'h-10 w-full px-4',
+                ]"
+                :title="compact ? 'Compose' : ''"
+                aria-label="Compose"
+                @click="emit('compose')"
+            >
+                <i class="bi bi-pencil-square text-[15px]"></i>
+                <span v-if="!compact">Compose</span>
+            </button>
+        </div>
+
+        <!-- Folders -->
+        <nav class="flex-1 overflow-y-auto px-2 pb-3" aria-label="Folders">
+            <p v-if="!compact" :class="[ui.muted, 'px-3 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider']">Folders</p>
+
             <button
                 v-for="folder in folders"
                 :key="folder.name"
                 type="button"
                 :class="[
-                    'group relative flex w-full items-center gap-3 rounded-xl text-left text-[13px] font-medium transition-all duration-150',
-                    collapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5',
-                    folder.name === activeFolder
-                        ? (isDark
-                            ? 'bg-blue-500/10 text-blue-400 shadow-sm'
-                            : 'bg-blue-50 text-blue-600 shadow-sm')
-                        : (isDark
-                            ? 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'),
+                    'group relative mb-0.5 flex w-full items-center gap-3 rounded-md text-left text-sm transition disabled:cursor-wait',
+                    compact ? 'h-10 justify-center' : 'h-9 px-3',
+                    folder.name === activeFolder ? [ui.itemActive, 'font-semibold'] : [ui.item, folder.unread > 0 ? 'font-semibold' : 'font-medium'],
                 ]"
+                :aria-current="folder.name === activeFolder ? 'page' : undefined"
                 :disabled="loading"
-                :title="collapsed ? folderLabel(folder.name) : ''"
+                :title="compact ? `${folderLabel(folder.name)}${folder.unread ? ` (${folder.unread})` : ''}` : ''"
                 @click="emit('open-folder', folder)"
             >
-                <!-- Active Indicator -->
+                <i :class="['bi shrink-0 text-[15px]', folderIcon(folder.name), folder.name === activeFolder ? ui.iconActive : ui.icon]"></i>
+
+                <span v-if="!compact" class="flex-1 truncate">{{ folderLabel(folder.name) }}</span>
+
                 <span
-                    v-if="folder.name === activeFolder"
-                    class="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-blue-500"
-                ></span>
-
-                <i
-                    :class="[
-                        'bi shrink-0 text-[15px]',
-                        getFolderConfig(folder.name).icon,
-                        folder.name === activeFolder
-                            ? (isDark ? 'text-blue-400' : 'text-blue-500')
-                            : (isDark ? 'text-slate-500 group-hover:text-slate-300' : 'text-slate-400 group-hover:text-slate-600'),
-                    ]"
-                ></i>
-
-                <span v-if="!collapsed" class="flex-1 truncate">{{ folderLabel(folder.name) }}</span>
-
-                <!-- Unread Badge -->
-                <span
-                    v-if="folder.unread > 0 && !collapsed"
-                    :class="[
-                        'min-w-[22px] rounded-full px-1.5 py-0.5 text-center text-[11px] font-bold leading-none',
-                        folder.name === activeFolder
-                            ? (isDark ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-500 text-white')
-                            : (isDark ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'),
-                    ]"
+                    v-if="folder.unread > 0 && !compact"
+                    :class="['text-xs tabular-nums', folder.name === activeFolder ? '' : ui.strong]"
                 >
-                    {{ folder.unread > 99 ? '99+' : folder.unread }}
+                    {{ folder.unread > 999 ? '999+' : folder.unread }}
                 </span>
 
-                <!-- Collapsed Dot -->
                 <span
-                    v-if="folder.unread > 0 && collapsed"
-                    class="absolute right-2 top-2 h-2 w-2 rounded-full bg-blue-500 ring-2 ring-slate-950 dark:ring-slate-950"
+                    v-if="folder.unread > 0 && compact"
+                    :class="['absolute right-3 top-2 h-2 w-2 rounded-full bg-blue-600 ring-2', isDark ? 'ring-slate-950' : 'ring-white']"
                 ></span>
             </button>
-        </div>
+        </nav>
 
-        <!-- Divider -->
-        <div :class="isDark ? 'border-t border-slate-800/60' : 'border-t border-slate-100'" class="mx-3"></div>
-
-        <!-- Mailbox Info Footer -->
-        <div class="p-3">
+        <!-- Storage -->
+        <div :class="[ui.divider, 'border-t p-3']">
             <div
-                :class="[
-                    isDark ? 'bg-slate-900/80 border border-slate-800/60' : 'bg-slate-50 border border-slate-100',
-                    'rounded-xl px-3 py-3 transition-colors',
-                ]"
+                v-if="!compact"
+                :class="[ui.card, 'rounded-lg border px-3 py-2.5']"
+                :title="'Based on messages in synced folders'"
             >
-                <template v-if="!collapsed">
-                    <div class="flex items-center gap-2.5">
-                        <div
-                            :class="[
-                                'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                                isDark
-                                    ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white'
-                                    : 'bg-gradient-to-br from-blue-500 to-indigo-500 text-white',
-                            ]"
-                        >
-                            {{ mailbox.email?.slice(0, 1)?.toUpperCase() || 'M' }}
-                            <span class="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400 dark:border-slate-900"></span>
-                        </div>
-                        <div class="min-w-0">
-                            <div class="truncate text-[13px] font-semibold" :class="isDark ? 'text-slate-100' : 'text-slate-900'">{{ mailbox.email }}</div>
-                            <div class="truncate text-[11px]" :class="isDark ? 'text-slate-500' : 'text-slate-400'">{{ mailbox.domain || '-' }}</div>
-                        </div>
-                    </div>
+                <div class="flex items-center justify-between text-xs">
+                    <span :class="[ui.text, 'flex items-center gap-1.5 font-medium']">
+                        <i class="bi bi-hdd"></i>
+                        Storage
+                    </span>
+                    <span :class="[ui.muted, 'tabular-nums']">{{ Math.round(usedPercent) }}%</span>
+                </div>
+                <div :class="[ui.track, 'mt-2 h-1.5 overflow-hidden rounded-full']">
+                    <div :class="[barColor, 'h-full rounded-full transition-[width] duration-500']" :style="{ width: `${Math.max(usedPercent, usedBytes > 0 ? 2 : 0)}%` }"></div>
+                </div>
+                <p :class="[ui.muted, 'mt-1.5 text-[11px] tabular-nums']">
+                    {{ formatBytes(usedBytes) }} of {{ mailbox.quota_mb ? `${mailbox.quota_mb} MB` : 'unlimited' }}
+                </p>
+            </div>
 
-                    <!-- Storage Bar -->
-                    <div class="mt-3">
-                        <div class="flex items-center justify-between">
-                            <span class="text-[11px] font-medium" :class="isDark ? 'text-slate-500' : 'text-slate-400'">Storage</span>
-                            <span class="text-[11px] font-semibold" :class="isDark ? 'text-slate-300' : 'text-slate-600'">{{ mailbox.quota_mb }} MB</span>
-                        </div>
-                        <div :class="isDark ? 'mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-800' : 'mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200'">
-                            <div class="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500" style="width: 0%"></div>
-                        </div>
-                        <div class="mt-1 flex items-center justify-between">
-                            <span class="text-[10px]" :class="isDark ? 'text-slate-600' : 'text-slate-400'">0 MB used</span>
-                            <span class="text-[10px]" :class="isDark ? 'text-slate-600' : 'text-slate-400'">0%</span>
-                        </div>
-                    </div>
-                </template>
-                <template v-else>
-                    <div class="flex flex-col items-center gap-1">
-                        <div
-                            :class="[
-                                'relative flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold',
-                                isDark
-                                    ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white'
-                                    : 'bg-gradient-to-br from-blue-500 to-indigo-500 text-white',
-                            ]"
-                        >
-                            {{ mailbox.email?.slice(0, 1)?.toUpperCase() || 'M' }}
-                            <span class="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-[1.5px] border-white bg-emerald-400 dark:border-slate-950"></span>
-                        </div>
-                    </div>
-                </template>
+            <div v-else class="flex justify-center" :title="`Storage: ${formatBytes(usedBytes)} of ${mailbox.quota_mb} MB`">
+                <div class="relative h-9 w-9">
+                    <svg viewBox="0 0 36 36" class="h-9 w-9 -rotate-90">
+                        <circle cx="18" cy="18" r="15" fill="none" stroke-width="3" :class="isDark ? 'stroke-slate-800' : 'stroke-slate-200'" />
+                        <circle
+                            cx="18" cy="18" r="15" fill="none" stroke-width="3" stroke-linecap="round"
+                            :class="usedPercent >= 90 ? 'stroke-rose-500' : usedPercent >= 75 ? 'stroke-amber-500' : 'stroke-blue-600'"
+                            :stroke-dasharray="`${(usedPercent / 100) * 94.25} 94.25`"
+                        />
+                    </svg>
+                    <i :class="[ui.muted, 'bi bi-hdd absolute inset-0 flex items-center justify-center text-xs']"></i>
+                </div>
             </div>
         </div>
     </aside>

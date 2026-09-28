@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import MailboxSidebar from './components/MailboxSidebar.vue';
 import MailboxThreadPanel from './components/MailboxThreadPanel.vue';
 import MailboxToastStack from './components/MailboxToastStack.vue';
+import MailboxComposeWindow from './components/MailboxComposeWindow.vue';
 import MailboxTopbar from './components/MailboxTopbar.vue';
 
 const page = usePage();
@@ -42,6 +43,10 @@ const props = defineProps({
         type: String,
         required: true,
     },
+    messageEndpoint: {
+        type: String,
+        required: true,
+    },
     sendEndpoint: {
         type: String,
         required: true,
@@ -51,6 +56,10 @@ const props = defineProps({
         required: true,
     },
     markReadEndpoint: {
+        type: String,
+        default: '',
+    },
+    bulkEndpoint: {
         type: String,
         default: '',
     },
@@ -65,6 +74,8 @@ const props = defineProps({
 
 const composeOpen = ref(false);
 const loading = ref(false);
+const messageLoading = ref(false);
+let requestedUid = null;
 const sending = ref(false);
 const deletingUid = ref(null);
 const accountMenuOpen = ref(false);
@@ -82,17 +93,29 @@ const composeSubject = ref(props.composeDefaults.subject || '');
 const composeBody = ref('');
 const composeCc = ref('');
 const composeBcc = ref('');
-const showCc = ref(false);
-const showBcc = ref(false);
 const theme = ref('light');
 const isDark = computed(() => theme.value === 'dark');
 const toasts = ref([]);
 let toastSeq = 0;
-const sidebarCollapsed = ref(false);
+const readCollapsed = () => {
+    try {
+        return localStorage.getItem('mailbox-sidebar-collapsed') === '1';
+    }
+    catch {
+        return false;
+    }
+};
+const sidebarCollapsed = ref(readCollapsed());
 const sidebarOpen = ref(false);
 
 const toggleSidebar = () => {
     sidebarCollapsed.value = !sidebarCollapsed.value;
+    try {
+        localStorage.setItem('mailbox-sidebar-collapsed', sidebarCollapsed.value ? '1' : '0');
+    }
+    catch {
+        // Preference only; ignore unavailable storage.
+    }
 };
 
 const toggleMobileSidebar = () => {
@@ -163,7 +186,7 @@ function pushToast(message, type = 'error') {
 const filteredMessages = computed(() => {
     const needle = searchQuery.value.trim().toLowerCase();
     const all = messages.value.filter((item) => {
-        const haystack = `${item.subject || ''} ${item.from || ''} ${item.snippet || ''}`.toLowerCase();
+        const haystack = `${item.subject || ''} ${item.from || ''} ${item.to || ''} ${item.snippet || ''}`.toLowerCase();
         const matchesSearch = !needle || haystack.includes(needle);
         const isUnread = !item.seen;
         const matchesFilter = messageFilter.value === 'all'
@@ -178,7 +201,7 @@ const filteredMessages = computed(() => {
 const totalFilteredMessages = computed(() => {
     const needle = searchQuery.value.trim().toLowerCase();
     return messages.value.filter((item) => {
-        const haystack = `${item.subject || ''} ${item.from || ''} ${item.snippet || ''}`.toLowerCase();
+        const haystack = `${item.subject || ''} ${item.from || ''} ${item.to || ''} ${item.snippet || ''}`.toLowerCase();
         const matchesSearch = !needle || haystack.includes(needle);
         const isUnread = !item.seen;
         const matchesFilter = messageFilter.value === 'all'
@@ -225,6 +248,7 @@ const folderLabel = (name) => {
     if (normalized === 'all mail') return 'All';
     return name;
 };
+const activeFolderUnread = computed(() => Number(folders.value.find((f) => f.name === activeFolder.value)?.unread) || 0);
 const folderOrder = ['inbox', 'sent', 'outbox', 'drafts', 'spam', 'trash', 'all mail'];
 
 const compactFolders = computed(() => {
@@ -306,8 +330,8 @@ const openMailbox = (id) => {
     router.visit(mailboxRoute('mailbox.open', { id }));
 };
 
-const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = false) => {
-    loading.value = true;
+const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = false, followUp = false) => {
+    loading.value = !followUp;
     errorMessage.value = '';
     statusMessage.value = '';
 
@@ -325,18 +349,27 @@ const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = 
         if (Array.isArray(data.folders) && data.folders.length > 0) {
             folders.value = mergeFolders(data.folders);
         }
+        const previousFolder = activeFolder.value;
         messages.value = Array.isArray(data.messages) ? data.messages : [];
         activeFolder.value = folder;
-        activeMessage.value = data.messageData || null;
+        if (uid) {
+            activeMessage.value = data.messageData || null;
+        }
+        else if (activeMessage.value && (previousFolder !== folder || !messages.value.some((m) => m.uid === activeMessage.value.uid))) {
+            // A list refresh keeps the open message unless it is gone.
+            activeMessage.value = null;
+        }
 
         if (!data.success) {
             pushToast(data.message || 'Mailbox could not be loaded.');
         }
-        else if (!data.cached && !activeMessage.value && messages.value.length > 0 && !uid) {
-            const firstUid = messages.value[0]?.uid;
-            if (firstUid) {
-                await loadMailbox(folder, firstUid);
-            }
+        else if (data.cached && data.syncing && !followUp) {
+            // The cached list is shown instantly; pick up the background sync result once.
+            setTimeout(() => {
+                if (activeFolder.value === folder) {
+                    loadMailbox(folder, null, false, true);
+                }
+            }, 3000);
         }
     }
     catch (error) {
@@ -349,13 +382,93 @@ const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = 
     }
 };
 
+// Pull-based background refresh: each cached load also queues a server-side
+// IMAP sync, so the next poll picks up new mail. No spinner, no auto-open,
+// and a failed poll never clears the list.
+const POLL_INTERVAL_MS = 30000;
+let pollTimer = null;
+let polling = false;
+
+const pollMailbox = async () => {
+    if (polling || loading.value || document.hidden) return;
+
+    const folder = activeFolder.value;
+    polling = true;
+    try {
+        const response = await window.axios.get(props.loadEndpoint, {
+            params: { folder },
+            headers: { Accept: 'application/json' },
+        });
+        const data = response?.data || {};
+        if (!data.success || loading.value || activeFolder.value !== folder) return;
+
+        if (Array.isArray(data.folders) && data.folders.length > 0) {
+            folders.value = mergeFolders(data.folders);
+        }
+        if (Array.isArray(data.messages)) {
+            messages.value = data.messages;
+        }
+    }
+    catch {
+        // Next poll retries.
+    }
+    finally {
+        polling = false;
+    }
+};
+
+// Poll now to queue a sync, then once more to pick up its result.
+const refreshInBackground = () => {
+    pollMailbox();
+    setTimeout(pollMailbox, 3000);
+};
+
+const handleVisibilityChange = () => {
+    if (!document.hidden) pollMailbox();
+};
+
 const openFolder = async (folder) => {
     filterMenuOpen.value = false;
     await loadMailbox(folder.name);
 };
 
+// Opening a message fetches only that message; the list and folders stay as they are.
 const openMessage = async (uid) => {
-    await loadMailbox(activeFolder.value, uid);
+    if (!uid || activeMessage.value?.uid === uid) return;
+
+    const folder = activeFolder.value;
+    requestedUid = uid;
+    messageLoading.value = true;
+
+    try {
+        const response = await window.axios.get(props.messageEndpoint, {
+            params: { folder, uid },
+            headers: { Accept: 'application/json' },
+        });
+        if (requestedUid !== uid || activeFolder.value !== folder) return;
+
+        const data = response?.data || {};
+        if (!data.success || !data.messageData) {
+            pushToast(data.message || 'Message could not be loaded.');
+            return;
+        }
+
+        activeMessage.value = data.messageData;
+        const item = messages.value.find((m) => m.uid === uid);
+        if (item && !item.seen) {
+            item.seen = true;
+            const currentFolder = folders.value.find((f) => f.name === folder);
+            if (currentFolder && currentFolder.unread > 0) currentFolder.unread -= 1;
+        }
+    }
+    catch (error) {
+        if (requestedUid === uid) {
+            pushToast(error?.response?.data?.message || error?.message || 'Message could not be loaded.');
+        }
+    }
+    finally {
+        if (requestedUid === uid) messageLoading.value = false;
+    }
 };
 
 const closePreview = () => {
@@ -395,20 +508,29 @@ const handleDocumentKeydown = (event) => {
 };
 
 const refreshMailbox = async () => {
-    await loadMailbox(activeFolder.value, currentMessage.value?.uid || null, true);
+    await loadMailbox(activeFolder.value, null, true);
 };
 
 const startCompose = () => {
     composeOpen.value = true;
-    showCc.value = false;
-    showBcc.value = false;
     statusMessage.value = '';
 };
 
 const closeCompose = () => {
     composeOpen.value = false;
-    showCc.value = false;
-    showBcc.value = false;
+};
+
+const clearDraft = () => {
+    composeTo.value = '';
+    composeCc.value = '';
+    composeBcc.value = '';
+    composeSubject.value = '';
+    composeBody.value = '';
+};
+
+const discardCompose = () => {
+    clearDraft();
+    composeOpen.value = false;
 };
 
 const submitSend = async () => {
@@ -420,6 +542,8 @@ const submitSend = async () => {
             props.sendEndpoint,
             {
                 to: composeTo.value,
+                cc: composeCc.value,
+                bcc: composeBcc.value,
                 subject: composeSubject.value,
                 body: composeBody.value,
                 folder: activeFolder.value,
@@ -427,14 +551,10 @@ const submitSend = async () => {
             { headers: { Accept: 'application/json' } },
         );
 
-        statusMessage.value = response?.data?.message || 'Message sent successfully.';
+        pushToast(response?.data?.message || 'Message sent successfully.', 'success');
         composeOpen.value = false;
-        composeBody.value = '';
-        composeCc.value = '';
-        composeBcc.value = '';
-        showCc.value = false;
-        showBcc.value = false;
-        await loadMailbox(activeFolder.value, null);
+        clearDraft();
+        refreshInBackground();
     }
     catch (error) {
         pushToast(error?.response?.data?.message || error?.message || 'Message could not be sent.');
@@ -443,6 +563,77 @@ const submitSend = async () => {
         sending.value = false;
     }
 };
+
+const selectedUids = ref([]);
+const bulkWorking = ref(false);
+
+const toggleSelect = (uid) => {
+    selectedUids.value = selectedUids.value.includes(uid)
+        ? selectedUids.value.filter((item) => item !== uid)
+        : [...selectedUids.value, uid];
+};
+
+const selectAll = (checked) => {
+    selectedUids.value = checked ? filteredMessages.value.map((item) => item.uid) : [];
+};
+
+const bulkAction = async (action) => {
+    const uids = [...selectedUids.value];
+    if (!uids.length || !props.bulkEndpoint || bulkWorking.value) return;
+    if (action === 'delete' && !confirm(`Delete ${uids.length} ${uids.length === 1 ? 'message' : 'messages'}? This cannot be undone.`)) return;
+
+    const folder = activeFolder.value;
+    bulkWorking.value = true;
+
+    try {
+        const response = await window.axios.post(
+            props.bulkEndpoint,
+            { folder, action, uids },
+            { headers: { Accept: 'application/json' } },
+        );
+
+        if (action === 'delete') {
+            if (uids.includes(activeMessage.value?.uid)) activeMessage.value = null;
+            selectedUids.value = [];
+            await loadMailbox(folder, null);
+        }
+        else {
+            const seen = action === 'read';
+            let unreadDelta = 0;
+            messages.value.forEach((item) => {
+                if (uids.includes(item.uid) && item.seen !== seen) {
+                    unreadDelta += seen ? -1 : 1;
+                    item.seen = seen;
+                }
+            });
+            const currentFolder = folders.value.find((f) => f.name === folder);
+            if (currentFolder) currentFolder.unread = Math.max(0, (Number(currentFolder.unread) || 0) + unreadDelta);
+            if (activeMessage.value && uids.includes(activeMessage.value.uid)) {
+                activeMessage.value = { ...activeMessage.value, seen };
+            }
+            selectedUids.value = [];
+        }
+
+        pushToast(response?.data?.message || 'Done.', 'success');
+    }
+    catch (error) {
+        pushToast(error?.response?.data?.message || error?.message || 'Action failed.');
+    }
+    finally {
+        bulkWorking.value = false;
+    }
+};
+
+// Selection only makes sense for rows that are still visible.
+watch([activeFolder, currentPage, searchQuery, messageFilter], () => {
+    selectedUids.value = [];
+});
+watch(messages, () => {
+    const visible = new Set(messages.value.map((item) => item.uid));
+    if (selectedUids.value.some((uid) => !visible.has(uid))) {
+        selectedUids.value = selectedUids.value.filter((uid) => visible.has(uid));
+    }
+});
 
 const deleteMessage = async (uid) => {
     if (!confirm('Delete this message?')) return;
@@ -471,27 +662,38 @@ const deleteMessage = async (uid) => {
     }
 };
 
+const addressOf = (value) => {
+    const match = String(value || '').match(/<(.+?)>/);
+
+    return (match ? match[1] : String(value || '')).trim().toLowerCase();
+};
+const selfAddress = computed(() => String(props.mailbox?.email || '').trim().toLowerCase());
+const isFromSelf = (message) => selfAddress.value !== '' && addressOf(message?.from) === selfAddress.value;
+const withoutSelf = (list) => String(list || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item && addressOf(item) !== selfAddress.value)
+    .join(', ');
+
+// Replying to your own sent mail goes back to its recipients, not to yourself.
 const replyToMessage = (message) => {
     if (!message) return;
-    composeTo.value = message.from || '';
+    composeTo.value = isFromSelf(message) ? (withoutSelf(message.to) || message.to || '') : (message.from || '');
     composeSubject.value = `Re: ${(message.subject || '').replace(/^Re:\s*/i, '')}`;
     composeBody.value = '';
     composeCc.value = '';
     composeBcc.value = '';
-    showCc.value = false;
-    showBcc.value = false;
     composeOpen.value = true;
 };
 
 const replyAllToMessage = (message) => {
     if (!message) return;
-    composeTo.value = message.from || '';
+    const fromSelf = isFromSelf(message);
+    composeTo.value = fromSelf ? (withoutSelf(message.to) || message.to || '') : (message.from || '');
     composeSubject.value = `Re: ${(message.subject || '').replace(/^Re:\s*/i, '')}`;
     composeBody.value = '';
-    composeCc.value = message.to || '';
+    composeCc.value = fromSelf ? '' : withoutSelf(message.to);
     composeBcc.value = '';
-    showCc.value = !!message.to;
-    showBcc.value = false;
     composeOpen.value = true;
 };
 
@@ -502,32 +704,35 @@ const forwardMessage = (message) => {
     composeBody.value = `\n\n--- Forwarded message ---\nFrom: ${message.from || ''}\nDate: ${message.date || ''}\nSubject: ${message.subject || ''}\n\n${message.text || message.raw_body || ''}`;
     composeCc.value = '';
     composeBcc.value = '';
-    showCc.value = false;
-    showBcc.value = false;
     composeOpen.value = true;
 };
 
 const toggleRead = async (message) => {
     if (!message || !props.markReadEndpoint) return;
 
+    // Capture first: `message` may be the list item itself, which is mutated below.
+    const uid = message.uid;
+    const seen = !message.seen;
+    const folder = activeFolder.value;
+
     try {
         await window.axios.post(
             props.markReadEndpoint,
-            {
-                folder: activeFolder.value,
-                uid: message.uid,
-                seen: !message.seen,
-            },
+            { folder, uid, seen },
             { headers: { Accept: 'application/json' } },
         );
 
-        const msg = messages.value.find((m) => m.uid === message.uid);
-        if (msg) msg.seen = !msg.seen;
-        if (activeMessage.value?.uid === message.uid) {
-            activeMessage.value = { ...activeMessage.value, seen: !message.seen };
+        const msg = messages.value.find((m) => m.uid === uid);
+        if (msg && msg.seen !== seen) {
+            msg.seen = seen;
+            const currentFolder = folders.value.find((f) => f.name === folder);
+            if (currentFolder) currentFolder.unread = Math.max(0, (Number(currentFolder.unread) || 0) + (seen ? -1 : 1));
+        }
+        if (activeMessage.value?.uid === uid) {
+            activeMessage.value = { ...activeMessage.value, seen };
         }
 
-        pushToast(message.seen ? 'Marked as unread.' : 'Marked as read.', 'success');
+        pushToast(seen ? 'Marked as read.' : 'Marked as unread.', 'success');
     }
     catch (error) {
         pushToast(error?.response?.data?.message || 'Could not update message status.');
@@ -541,6 +746,27 @@ onMounted(() => {
     applyTheme(theme.value);
 
     loadMailbox(activeFolder.value);
+    pollTimer = window.setInterval(pollMailbox, POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+});
+
+onBeforeUnmount(() => {
+    window.clearInterval(pollTimer);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+});
+
+// Keep the folder in the URL so reload and back/forward return to it.
+// Inertia's history state is passed through unchanged.
+watch(activeFolder, (folder) => {
+    try {
+        const url = new URL(window.location.href);
+        if (!folder || folder === 'INBOX') url.searchParams.delete('folder');
+        else url.searchParams.set('folder', folder);
+        if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url);
+    }
+    catch {
+        // URL sync is a convenience only.
+    }
 });
 
 watch(() => searchQuery.value, () => {
@@ -576,13 +802,14 @@ watch(() => messageFilter.value, () => {
             @compose="startCompose"
             @open-folder="openFolder"
             @close-mobile="sidebarOpen = false"
+            @toggle-collapse="toggleSidebar"
         />
 
         <!-- Main Content Area -->
         <div
             :class="[
-                sidebarCollapsed ? 'md:ml-[72px]' : 'md:ml-[280px]',
-                'flex min-h-screen flex-col transition-all duration-300'
+                sidebarCollapsed ? 'md:ml-[72px]' : 'md:ml-[260px]',
+                'flex h-screen min-w-0 flex-col transition-[margin] duration-200'
             ]"
         >
             <MailboxTopbar
@@ -597,31 +824,40 @@ watch(() => messageFilter.value, () => {
                 :related-mailboxes="relatedMailboxesToShow"
                 :mailboxes-href="mailboxesHref"
                 :logout-href="logoutHref"
-                :sidebar-collapsed="sidebarCollapsed"
+                :active-folder-label="folderLabel(activeFolder)"
+                :unread-count="activeFolderUnread"
+                :loading="loading"
                 @refresh-inbox="refreshInbox"
                 @update:searchQuery="searchQuery = $event"
                 @set-message-filter="setMessageFilter"
                 @toggle-theme="toggleTheme"
                 @open-mailbox="openMailbox"
-                @toggle-sidebar="toggleSidebar"
                 @toggle-mobile-sidebar="toggleMobileSidebar"
             />
 
             <div v-if="statusMessage" :class="isDark
-                ? 'mx-4 mt-4 rounded-2xl border border-emerald-900/40 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200 md:mx-6'
-                : 'mx-4 mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 md:mx-6'">
+                ? 'shrink-0 border-b border-emerald-900/40 bg-emerald-950/30 px-4 py-2 text-sm text-emerald-200'
+                : 'shrink-0 border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800'">
                 {{ statusMessage }}
             </div>
 
-            <main class="flex-1 p-4 md:p-6">
+            <main class="min-h-0 flex-1">
                 <MailboxThreadPanel
                     :active-folder="activeFolder"
                     :filtered-messages="filteredMessages"
                     :current-message="currentMessage"
                     :loading="loading"
+                    :message-loading="messageLoading"
                     :deleting-uid="deletingUid"
                     :is-dark="isDark"
                     :has-search-query="hasSearchQuery"
+                    :page="currentPage"
+                    :total-pages="totalPages"
+                    :per-page="perPage"
+                    :total-count="totalFilteredMessages"
+                    :selected-uids="selectedUids"
+                    :bulk-working="bulkWorking"
+                    :self-email="mailbox.email"
                     @open-message="openMessage"
                     @close-preview="closePreview"
                     @start-compose="startCompose"
@@ -630,165 +866,28 @@ watch(() => messageFilter.value, () => {
                     @reply-all="replyAllToMessage"
                     @forward="forwardMessage"
                     @toggle-read="toggleRead"
+                    @change-page="currentPage = $event"
+                    @toggle-select="toggleSelect"
+                    @select-all="selectAll"
+                    @bulk-action="bulkAction"
                 />
 
-                <div v-if="totalPages > 1" :class="isDark ? 'mt-4 flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm' : 'mt-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm'">
-                    <div :class="isDark ? 'text-slate-400' : 'text-slate-500'">
-                        Page {{ currentPage }} of {{ totalPages }} ({{ totalFilteredMessages }} messages)
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <button
-                            type="button"
-                            :disabled="currentPage <= 1"
-                            :class="isDark
-                                ? 'rounded-full border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-40'
-                                : 'rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40'"
-                            @click="currentPage--"
-                        >
-                            Previous
-                        </button>
-                        <span :class="isDark ? 'text-xs text-slate-500' : 'text-xs text-slate-400'">
-                            {{ currentPage }} / {{ totalPages }}
-                        </span>
-                        <button
-                            type="button"
-                            :disabled="currentPage >= totalPages"
-                            :class="isDark
-                                ? 'rounded-full border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-40'
-                                : 'rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40'"
-                            @click="currentPage++"
-                        >
-                            Next
-                        </button>
-                    </div>
-                </div>
             </main>
         </div>
 
-        <div v-if="composeOpen" class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-3 backdrop-blur-sm sm:items-center sm:p-4">
-            <div :class="isDark
-                ? 'w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl'
-                : 'w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl'">
-                <div :class="isDark ? 'flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-950 px-4 py-3' : 'flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3'">
-                    <div class="min-w-0">
-                        <h3 :class="isDark ? 'truncate text-base font-medium text-slate-100' : 'truncate text-base font-medium text-slate-900'">New Message</h3>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <button type="button" :class="isDark ? 'rounded-full p-2 text-slate-300 hover:bg-slate-800' : 'rounded-full p-2 text-slate-600 hover:bg-slate-200'" aria-label="Minimize">
-                            <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current" aria-hidden="true">
-                                <path d="M6 12h12v2H6z" />
-                            </svg>
-                        </button>
-                        <button type="button" :class="isDark ? 'rounded-full p-2 text-slate-300 hover:bg-slate-800' : 'rounded-full p-2 text-slate-600 hover:bg-slate-200'" aria-label="Pop out">
-                            <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current" aria-hidden="true">
-                                <path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3zM5 5h6v2H7v10h10v-4h2v6H5V5z" />
-                            </svg>
-                        </button>
-                        <button type="button" :class="isDark ? 'rounded-full p-2 text-slate-300 hover:bg-slate-800' : 'rounded-full p-2 text-slate-600 hover:bg-slate-200'" @click="closeCompose" aria-label="Close">
-                            <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current" aria-hidden="true">
-                                <path d="M18.3 5.7a1 1 0 00-1.4-1.4L12 9.17 7.1 4.3A1 1 0 105.7 5.7L10.59 10.6 5.7 15.5a1 1 0 101.4 1.4l4.9-4.89 4.9 4.89a1 1 0 001.4-1.4l-4.89-4.9 4.89-4.9z" />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-
-                <form @submit.prevent="submitSend">
-                    <div :class="isDark ? 'border-b border-slate-800 px-4 py-2' : 'border-b border-slate-200 px-4 py-2'">
-                        <div class="flex items-start gap-3 py-2">
-                            <label class="min-w-[52px] pt-2 text-sm text-slate-500">To</label>
-                            <div class="min-w-0 flex-1">
-                                <input
-                                    v-model="composeTo"
-                                    type="email"
-                                    :class="isDark
-                                        ? 'w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500'
-                                        : 'w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400'"
-                                    placeholder="recipients"
-                                >
-                            </div>
-                            <div class="flex items-center gap-3 pt-1 text-sm text-slate-500">
-                                <button type="button" class="hover:text-slate-700 dark:hover:text-slate-200" @click="showCc = !showCc">Cc</button>
-                                <button type="button" class="hover:text-slate-700 dark:hover:text-slate-200" @click="showBcc = !showBcc">Bcc</button>
-                            </div>
-                        </div>
-
-                        <div v-if="showCc" class="flex items-start gap-3 border-t border-slate-200/70 py-2 dark:border-slate-800">
-                            <label class="min-w-[52px] pt-2 text-sm text-slate-500">Cc</label>
-                            <input
-                                v-model="composeCc"
-                                type="text"
-                                :class="isDark
-                                    ? 'min-w-0 flex-1 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500'
-                                    : 'min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400'"
-                                placeholder="carbon copy"
-                            >
-                        </div>
-
-                        <div v-if="showBcc" class="flex items-start gap-3 border-t border-slate-200/70 py-2 dark:border-slate-800">
-                            <label class="min-w-[52px] pt-2 text-sm text-slate-500">Bcc</label>
-                            <input
-                                v-model="composeBcc"
-                                type="text"
-                                :class="isDark
-                                    ? 'min-w-0 flex-1 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500'
-                                    : 'min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400'"
-                                placeholder="blind copy"
-                            >
-                        </div>
-                    </div>
-
-                    <div :class="isDark ? 'border-b border-slate-800 px-4 py-2' : 'border-b border-slate-200 px-4 py-2'">
-                        <div class="flex items-center gap-3 py-2">
-                            <label class="min-w-[52px] text-sm text-slate-500">Subject</label>
-                            <input
-                                v-model="composeSubject"
-                                type="text"
-                                :class="isDark
-                                    ? 'w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500'
-                                    : 'w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400'"
-                                placeholder="Subject"
-                            >
-                        </div>
-                    </div>
-
-                    <div class="p-3">
-                        <textarea
-                            v-model="composeBody"
-                            rows="14"
-                            :class="isDark
-                                ? 'w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-4 py-4 text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-500 focus:border-blue-500'
-                                : 'w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500'"
-                            placeholder="Compose your message"
-                        ></textarea>
-                    </div>
-
-                    <div :class="isDark ? 'flex items-center justify-between gap-3 border-t border-slate-800 px-4 py-3' : 'flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3'">
-                        <div class="flex items-center gap-2 text-slate-500">
-                            <button type="button" :class="isDark ? 'rounded-full p-2 hover:bg-slate-800' : 'rounded-full p-2 hover:bg-slate-100'" aria-label="Formatting">
-                                <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current" aria-hidden="true"><path d="M5 5h14v2H5zm0 6h14v2H5zm0 6h10v2H5z" /></svg>
-                            </button>
-                            <button type="button" :class="isDark ? 'rounded-full p-2 hover:bg-slate-800' : 'rounded-full p-2 hover:bg-slate-100'" aria-label="Attach">
-                                <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current" aria-hidden="true"><path d="M16.5 6.5l-7.78 7.78a3 3 0 104.24 4.24l8.49-8.49a5 5 0 10-7.07-7.07l-8.84 8.84 1.42 1.42 8.84-8.84a3 3 0 114.24 4.24l-8.49 8.49a1 1 0 01-1.41-1.41l7.78-7.78-1.42-1.42z" /></svg>
-                            </button>
-                            <button type="button" :class="isDark ? 'rounded-full p-2 hover:bg-slate-800' : 'rounded-full p-2 hover:bg-slate-100'" aria-label="Insert link">
-                                <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current" aria-hidden="true"><path d="M3.9 12a5 5 0 015-5h3v2h-3a3 3 0 100 6h3v2h-3a5 5 0 01-5-5zm7.2 1h2.8v-2h-2.8v2zm3.1-6h-3v2h3a3 3 0 010 6h-3v2h3a5 5 0 000-10z" /></svg>
-                            </button>
-                        </div>
-
-                        <div class="flex items-center gap-3">
-                            <button type="button" :class="isDark
-                                ? 'rounded-full border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800'
-                                : 'rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100'" @click="closeCompose">Cancel</button>
-                            <button type="submit" :class="isDark
-                                ? 'rounded-full bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-400'
-                                : 'rounded-full bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700'" :disabled="sending">
-                                {{ sending ? 'Sending...' : 'Send' }}
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
+        <MailboxComposeWindow
+            v-model:open="composeOpen"
+            v-model:to="composeTo"
+            v-model:cc="composeCc"
+            v-model:bcc="composeBcc"
+            v-model:subject="composeSubject"
+            v-model:body="composeBody"
+            :is-dark="isDark"
+            :sending="sending"
+            :from-email="mailbox.email"
+            @send="submitSend"
+            @discard="discardCompose"
+        />
 
         <MailboxToastStack
             :toasts="toasts"

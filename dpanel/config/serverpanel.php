@@ -6,6 +6,8 @@ return [
     'panel_port' => (int) env('PANEL_PORT'),
     'mail' => [
         'server_ip' => env('SERVERPANEL_MAIL_SERVER_IP', ''),
+        // Postfix HELO name. Empty = mail.<domain> of the first mailbox created.
+        'hostname' => env('SERVERPANEL_MAIL_HOSTNAME', ''),
         'dkim_selector' => env('SERVERPANEL_DKIM_SELECTOR', 'default'),
         'dkim_domain' => env('SERVERPANEL_DKIM_DOMAIN', ''),
         'dkim_public_key' => env('SERVERPANEL_DKIM_PUBLIC_KEY', ''),

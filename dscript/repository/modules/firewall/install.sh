@@ -18,6 +18,11 @@ firewall_install() {
         ufw allow 443/udp || true
         ufw allow 53/tcp || true
         ufw allow 53/udp || true
+        # Mail: 25 receives from other servers; 465/587 submission and 993 IMAPS for mail clients.
+        ufw allow 25/tcp || true
+        ufw allow 465/tcp || true
+        ufw allow 587/tcp || true
+        ufw allow 993/tcp || true
         ufw --force enable || true
       fi
       ;;
