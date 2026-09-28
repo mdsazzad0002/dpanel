@@ -4,14 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\PostgresqlServiceManager;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery\MockInterface;
 use Tests\TestCase;
 
 class PostgresqlControllerTest extends TestCase
 {
-    use RefreshDatabase;
-
     private string $token;
 
     protected function setUp(): void
@@ -74,7 +71,7 @@ class PostgresqlControllerTest extends TestCase
     {
         return $this
             ->withoutMiddleware()
-            ->actingAs(User::factory()->create())
+            ->actingAs(User::factory()->make())
             ->withSession(['panel_session_token' => $this->token]);
     }
 }
