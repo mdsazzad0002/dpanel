@@ -35,7 +35,6 @@ use App\Http\Controllers\PackagePlanController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
-use App\Http\Controllers\PhpMyAdmin\PhpMyAdminController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RemoteMysqlAccessController;
@@ -642,80 +641,6 @@ Route::prefix('cpsess{token}')
             Route::get('/databases/{id}/edit', [DatabaseController::class, 'edit'])
                 ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.edit');
-
-            Route::get('/phpmyadmin', [PhpMyAdminController::class, 'index'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.index');
-            Route::get('/phpmyadmin/about', [PhpMyAdminController::class, 'about'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.about');
-            Route::get('/phpmyadmin/sql', [PhpMyAdminController::class, 'sqlPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.sql');
-            Route::get('/phpmyadmin/databases-page', [PhpMyAdminController::class, 'databasesPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.databases');
-            Route::get('/phpmyadmin/transfer', [PhpMyAdminController::class, 'transferPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.transfer');
-            Route::get('/phpmyadmin/status', [PhpMyAdminController::class, 'statusPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.status');
-            Route::get('/phpmyadmin/user-accounts', [PhpMyAdminController::class, 'userAccountsPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.user-accounts');
-            Route::get('/phpmyadmin/settings', [PhpMyAdminController::class, 'settingsPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.settings');
-            Route::get('/phpmyadmin/replication', [PhpMyAdminController::class, 'replicationPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.replication');
-            Route::get('/phpmyadmin/variables', [PhpMyAdminController::class, 'variablesPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.variables');
-            Route::get('/phpmyadmin/charsets', [PhpMyAdminController::class, 'charsetsPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.charsets');
-            Route::get('/phpmyadmin/databases', [PhpMyAdminController::class, 'databases'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.databases');
-            Route::get('/phpmyadmin/databases/{database}', [PhpMyAdminController::class, 'database'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where('database', '[A-Za-z0-9_]+')
-                ->name('phpmyadmin.database');
-            Route::get('/phpmyadmin/databases/{database}/tables/{table}', [PhpMyAdminController::class, 'table'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table');
-            Route::delete('/phpmyadmin/databases/{database}/tables/{table}', [PhpMyAdminController::class, 'destroyTable'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table.destroy');
-            Route::post('/phpmyadmin/databases/{database}/tables/{table}/empty', [PhpMyAdminController::class, 'emptyTable'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table.empty');
-            Route::post('/phpmyadmin/databases/{database}/tables/{table}/rename', [PhpMyAdminController::class, 'renameTable'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table.rename');
-            Route::post('/phpmyadmin/databases/{database}/tables/{table}/structure', [PhpMyAdminController::class, 'alterTableStructure'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table.structure.update');
-            Route::post('/phpmyadmin/databases/{database}/tables', [PhpMyAdminController::class, 'createTable'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table.create');
-            Route::post('/phpmyadmin/query', [PhpMyAdminController::class, 'execute'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.execute');
-            Route::post('/phpmyadmin/export', [PhpMyAdminController::class, 'export'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.export');
-            Route::post('/phpmyadmin/import', [PhpMyAdminController::class, 'import'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.import');
 
             Route::get('/phpmyadmin/root-autologin', [DatabaseController::class, 'openPhpMyAdminRootGlobal'])
                 ->middleware('role:admin')
