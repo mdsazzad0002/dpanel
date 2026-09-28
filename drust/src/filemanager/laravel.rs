@@ -24,11 +24,13 @@ const NPM_TIMEOUT: Duration = Duration::from_secs(900);
 const ARTISAN_TIMEOUT: Duration = Duration::from_secs(600);
 const MAX_OUTPUT_CHARS: usize = 20_000;
 
-/// Laravel installer steps, run as the site owner with the website's own PHP
-/// version first on PATH (composer, artisan and the Vite build's wayfinder
-/// plugin all shell out to `php`). The panel's LaravelInstallJob calls the
-/// actions in order: create_project → artisan (env/key/migrate) → breeze
-/// (Laravel 10 frontend stacks) or npm_build → finalize.
+/// PHP application installer steps, run as the site owner with the website's
+/// own PHP version first on PATH (composer, artisan and the Vite build's
+/// wayfinder plugin all shell out to `php`). The panel's LaravelInstallJob
+/// calls the actions in order: create_project → artisan (env/key/migrate) →
+/// breeze (Laravel 10 frontend stacks) or npm_build → finalize. AppInstallJob
+/// uses create_project (stack "codeigniter") or joomla_install, then finalize
+/// with the matching stack.
 #[derive(Deserialize)]
 pub(crate) struct Request {
     username: String,
@@ -38,7 +40,32 @@ pub(crate) struct Request {
     stack: Option<String>,
     version: Option<String>,
     command: Option<String>,
+    joomla: Option<JoomlaInstall>,
 }
+
+/// Answers for Joomla's `installation/joomla.php install` command.
+#[derive(Deserialize)]
+pub(crate) struct JoomlaInstall {
+    site_name: String,
+    admin_user: String,
+    admin_username: String,
+    admin_password: String,
+    admin_email: String,
+    db_host: String,
+    db_user: String,
+    db_pass: String,
+    db_name: String,
+    db_prefix: String,
+}
+
+/// Loads the Joomla CLI installer with its arguments read from stdin, so the
+/// admin and database passwords never appear in the process list (argv is
+/// readable by every local user; stdin is not).
+const JOOMLA_CLI_BOOTSTRAP: &str = r#"$a = json_decode(stream_get_contents(STDIN), true);
+if (!is_array($a)) { fwrite(STDERR, "Invalid installer input.\n"); exit(1); }
+$_SERVER['argv'] = $argv = array_merge(['installation/joomla.php'], $a);
+$_SERVER['argc'] = $argc = count($argv);
+require 'installation/joomla.php';"#;
 
 pub(crate) async fn handle(
     State(state): State<Arc<ApiState>>,
@@ -86,7 +113,7 @@ async fn execute(request: &Request) -> Result<String, String> {
                 .next()
                 .is_some()
             {
-                return Err("Laravel install requires an empty project root.".into());
+                return Err("The installer requires an empty project root.".into());
             }
             let target_arg = target.to_string_lossy().to_string();
             run_as_owner(
@@ -131,7 +158,15 @@ async fn execute(request: &Request) -> Result<String, String> {
             let mut args = vec!["artisan"];
             args.extend(command.split_whitespace());
             args.extend(["--no-interaction", "--no-ansi"]);
-            run_as_owner(&request.username, &runtime, &target, &php, &args, ARTISAN_TIMEOUT).await
+            run_as_owner(
+                &request.username,
+                &runtime,
+                &target,
+                &php,
+                &args,
+                ARTISAN_TIMEOUT,
+            )
+            .await
         }
         "breeze" => {
             // Laravel 10 has no starter kits; Breeze scaffolds the same stacks
@@ -165,19 +200,66 @@ async fn execute(request: &Request) -> Result<String, String> {
                 &runtime,
                 &target,
                 &php,
-                &["artisan", "breeze:install", stack, "--no-interaction", "--no-ansi"],
+                &[
+                    "artisan",
+                    "breeze:install",
+                    stack,
+                    "--no-interaction",
+                    "--no-ansi",
+                ],
                 NPM_TIMEOUT,
             )
             .await?;
             Ok(format!("{require_output}\n\n{install_output}"))
         }
+        "joomla_install" => {
+            let input = request
+                .joomla
+                .as_ref()
+                .ok_or("Joomla install answers are missing.")?;
+            if !target.join("installation/joomla.php").is_file() {
+                return Err(
+                    "Joomla installation/joomla.php was not found in the site root.".into(),
+                );
+            }
+            let args = joomla_arguments(input)?;
+            let stdin = serde_json::to_vec(&args).map_err(|e| e.to_string())?;
+            run_as_owner_with_input(
+                &request.username,
+                &runtime,
+                &target,
+                &php,
+                &["-r", JOOMLA_CLI_BOOTSTRAP],
+                ARTISAN_TIMEOUT,
+                Some(&stdin),
+            )
+            .await
+        }
         "finalize" => {
             // The site normally runs in its own PHP-FPM pool as the owner, but
             // the gateway falls back to the shared www-data pool when that
-            // pool can't be provisioned — keep Laravel's writable dirs usable
+            // pool can't be provisioned — keep the app's writable dirs usable
             // by both.
             let owner = format!("{}:www-data", request.username);
-            for dir in ["storage", "bootstrap/cache"] {
+            let writable: &[&str] = match request.stack.as_deref().unwrap_or("laravel") {
+                "codeigniter" => &["writable"],
+                "joomla" => &[
+                    "cache",
+                    "administrator/cache",
+                    "administrator/logs",
+                    "tmp",
+                    "images",
+                ],
+                _ => &["storage", "bootstrap/cache"],
+            };
+            // Joomla's configuration.php holds the database password.
+            let config = target.join("configuration.php");
+            if request.stack.as_deref() == Some("joomla") && config.is_file() {
+                let config = config.to_string_lossy();
+                run_status("chown", &[&owner, config.as_ref()])?;
+                run_status("chmod", &["640", config.as_ref()])?;
+            }
+            for dir in writable {
                 let path = target.join(dir);
                 if !path.is_dir() {
                     continue;
@@ -186,7 +268,7 @@ async fn execute(request: &Request) -> Result<String, String> {
                 run_status("chown", &["-R", &owner, path.as_ref()])?;
                 run_status("chmod", &["-R", "u+rwX,g+rwX,o-rwx", path.as_ref()])?;
             }
-            Ok("Laravel storage permissions prepared.".into())
+            Ok("Writable directory permissions prepared.".into())
         }
         "npm_build" => {
             if !target.join("package.json").is_file() {
@@ -218,14 +300,101 @@ async fn execute(request: &Request) -> Result<String, String> {
             .await?;
             Ok(format!("{install_output}\n\n{build_output}"))
         }
-        _ => Err("Unsupported Laravel installer action.".into()),
+        _ => Err("Unsupported installer action.".into()),
     }
+}
+
+/// Builds `joomla.php install` options. Values are validated here as well as
+/// in the panel because they end up in Joomla's configuration.php.
+fn joomla_arguments(input: &JoomlaInstall) -> Result<Vec<String>, String> {
+    let no_control = |value: &str| !value.chars().any(char::is_control);
+    if input.site_name.trim().is_empty()
+        || !no_control(&input.site_name)
+        || input.site_name.len() > 200
+    {
+        return Err("Invalid Joomla site name.".into());
+    }
+    if input.admin_user.trim().is_empty()
+        || !no_control(&input.admin_user)
+        || input.admin_user.len() > 100
+    {
+        return Err("Invalid Joomla admin name.".into());
+    }
+    let username_ok = !input.admin_username.is_empty()
+        && input.admin_username.len() <= 150
+        && input
+            .admin_username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '@'));
+    if !username_ok {
+        return Err("Invalid Joomla admin username.".into());
+    }
+    if input.admin_password.chars().count() < 12 || !no_control(&input.admin_password) {
+        return Err("The Joomla admin password must be at least 12 characters.".into());
+    }
+    if !input.admin_email.contains('@') || !no_control(&input.admin_email) {
+        return Err("Invalid Joomla admin email.".into());
+    }
+    let identifier = |value: &str| {
+        !value.is_empty()
+            && value.len() <= 64
+            && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    if !identifier(&input.db_name) || !identifier(&input.db_user) {
+        return Err("Invalid Joomla database name or user.".into());
+    }
+    let prefix_ok = input.db_prefix.len() <= 15
+        && input.db_prefix.ends_with('_')
+        && input
+            .db_prefix
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic())
+        && input
+            .db_prefix
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !prefix_ok {
+        return Err("Invalid Joomla table prefix.".into());
+    }
+    if input.db_host.is_empty()
+        || !input
+            .db_host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':' | '_'))
+    {
+        return Err("Invalid Joomla database host.".into());
+    }
+    if !no_control(&input.db_pass) {
+        return Err("Invalid Joomla database password.".into());
+    }
+
+    Ok(vec![
+        "install".into(),
+        format!("--site-name={}", input.site_name.trim()),
+        format!("--admin-user={}", input.admin_user.trim()),
+        format!("--admin-username={}", input.admin_username),
+        format!("--admin-password={}", input.admin_password),
+        format!("--admin-email={}", input.admin_email.trim()),
+        "--db-type=mysqli".into(),
+        format!("--db-host={}", input.db_host),
+        format!("--db-user={}", input.db_user),
+        format!("--db-pass={}", input.db_pass),
+        format!("--db-name={}", input.db_name),
+        format!("--db-prefix={}", input.db_prefix),
+        "--db-encryption=0".into(),
+        "--no-interaction".into(),
+        "--no-ansi".into(),
+    ])
 }
 
 /// Whitelisted create-project sources. Starter kits only publish tagged
 /// releases for Laravel 12; their main branch tracks the current major.
 /// Laravel 11 has neither, and Laravel 10 gets its stacks from Breeze.
 fn package_for(stack: &str, version: &str) -> Result<(&'static str, &'static str), String> {
+    if stack == "codeigniter" {
+        return Ok(("codeigniter4/appstarter", "^4.0"));
+    }
     let base = match version {
         "13" => "^13.0",
         "12" => "^12.0",
@@ -271,7 +440,9 @@ fn php_binary(version: &str) -> Result<String, String> {
     }
     let binary = format!("/usr/bin/php{version}");
     if !Path::new(&binary).is_file() {
-        return Err(format!("PHP {version} CLI is not installed on this server."));
+        return Err(format!(
+            "PHP {version} CLI is not installed on this server."
+        ));
     }
     Ok(binary)
 }
@@ -294,7 +465,11 @@ fn prepare_runtime(
     let base = home.join(".dpanel/laravel-installer");
     let mut dirs = Vec::new();
     for sub in ["", "bin", "composer", "composer-cache", "npm-cache"] {
-        let path = if sub.is_empty() { base.clone() } else { base.join(sub) };
+        let path = if sub.is_empty() {
+            base.clone()
+        } else {
+            base.join(sub)
+        };
         dirs.push(ensure_directory_inside_home(
             username,
             group,
@@ -340,6 +515,18 @@ async fn run_as_owner(
     args: &[&str],
     timeout: Duration,
 ) -> Result<String, String> {
+    run_as_owner_with_input(username, runtime, cwd, program, args, timeout, None).await
+}
+
+async fn run_as_owner_with_input(
+    username: &str,
+    runtime: &Runtime,
+    cwd: &Path,
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+    input: Option<&[u8]>,
+) -> Result<String, String> {
     let home = runtime.home.display();
     let mut command = tokio::process::Command::new("/usr/sbin/runuser");
     command
@@ -359,16 +546,28 @@ async fn run_as_owner(
         .arg(program)
         .args(args)
         .current_dir(cwd)
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0)
         .kill_on_drop(true);
 
-    let child = command
+    let mut child = command
         .spawn()
         .map_err(|e| format!("Cannot start {program}: {e}"))?;
     let pid = child.id();
+    if let (Some(bytes), Some(mut stdin)) = (input, child.stdin.take()) {
+        use tokio::io::AsyncWriteExt;
+        stdin
+            .write_all(bytes)
+            .await
+            .map_err(|e| format!("Cannot send input to {program}: {e}"))?;
+        // Dropping stdin closes it so the child sees EOF.
+    }
     let output = match tokio::time::timeout(timeout, child.wait_with_output()).await {
         Ok(result) => result.map_err(|e| format!("{program} failed: {e}"))?,
         Err(_) => {
@@ -404,5 +603,62 @@ async fn run_as_owner(
         Err(format!("{program} exited with {}.", output.status))
     } else {
         Err(tail)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn joomla() -> JoomlaInstall {
+        JoomlaInstall {
+            site_name: "Example Site".into(),
+            admin_user: "Site Admin".into(),
+            admin_username: "admin".into(),
+            admin_password: "correct horse battery".into(),
+            admin_email: "admin@example.com".into(),
+            db_host: "127.0.0.1".into(),
+            db_user: "ex_user".into(),
+            db_pass: "p@ss'word\"$x".into(),
+            db_name: "ex_db".into(),
+            db_prefix: "jx4_".into(),
+        }
+    }
+
+    #[test]
+    fn joomla_arguments_keep_values_verbatim() {
+        let args = joomla_arguments(&joomla()).unwrap();
+        assert_eq!(args[0], "install");
+        assert!(args.contains(&"--db-pass=p@ss'word\"$x".to_string()));
+        assert!(args.contains(&"--db-prefix=jx4_".to_string()));
+        assert!(args.contains(&"--no-interaction".to_string()));
+    }
+
+    #[test]
+    fn joomla_arguments_reject_bad_input() {
+        let mut input = joomla();
+        input.admin_password = "short".into();
+        assert!(joomla_arguments(&input).is_err());
+        let mut input = joomla();
+        input.db_prefix = "1x_".into();
+        assert!(joomla_arguments(&input).is_err());
+        let mut input = joomla();
+        input.db_name = "db; drop".into();
+        assert!(joomla_arguments(&input).is_err());
+        let mut input = joomla();
+        input.site_name = "a\nb".into();
+        assert!(joomla_arguments(&input).is_err());
+    }
+
+    #[test]
+    fn codeigniter_uses_appstarter() {
+        assert_eq!(
+            package_for("codeigniter", "4").unwrap(),
+            ("codeigniter4/appstarter", "^4.0")
+        );
+        assert_eq!(
+            package_for("blank", "12").unwrap(),
+            ("laravel/laravel", "^12.0")
+        );
     }
 }

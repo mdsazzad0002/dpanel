@@ -19,6 +19,8 @@ const serviceLinks = computed(() => [
     { label: 'Import & Clone', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and database — upload directly, clone from another site on this server, or pull a share link' },
     { label: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress' },
     { label: 'Laravel Installer', icon: 'bi-box-seam', color: 'red', href: panelRoute('websites.laravel.installer', { id: props.website.id }), description: 'Fresh Laravel, starter kits (Vue, React, Svelte, Livewire) or API' },
+    { label: 'Joomla Installer', icon: 'bi-puzzle', color: 'orange', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'joomla' }), description: 'Joomla CMS with admin account and database' },
+    { label: 'CodeIgniter Installer', icon: 'bi-fire', color: 'amber', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'codeigniter' }), description: 'CodeIgniter 4 app starter with .env configured' },
     { label: 'Usage Details', icon: 'bi-graph-up', color: 'violet', href: panelRoute('websites.usage', { id: props.website.id }), description: 'Detailed usage history' },
     { label: 'Redis Cache', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
     { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
@@ -38,7 +40,7 @@ const serviceLinks = computed(() => [
 // that overwrite files/git/database or grant separate account access don't
 // apply to it and would risk breaking the panel itself, so hide them here.
 ].filter((item) => !isSystemWebsite.value || ![
-    'WordPress Installer', 'Laravel Installer', 'File Manager', 'Import & Clone', 'FTP Accounts',
+    'WordPress Installer', 'Laravel Installer', 'Joomla Installer', 'CodeIgniter Installer', 'File Manager', 'Import & Clone', 'FTP Accounts',
     'Cron Jobs', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Export & Share',
 ].includes(item.label)));
 

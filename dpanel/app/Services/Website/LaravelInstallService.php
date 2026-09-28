@@ -2,15 +2,12 @@
 
 namespace App\Services\Website;
 
-use App\Models\DatabaseRequest;
 use App\Models\User;
 use App\Models\Website;
 use App\Models\WebsiteGitDeployment;
 use App\Services\Backup\PreOverwriteBackupService;
 use App\Services\EdgeGatewayReloader;
 use App\Services\Filemanager\FilemanagerService;
-use App\Services\ScriptExecutionGateway;
-use App\Services\ScriptPathResolver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -47,6 +44,7 @@ class LaravelInstallService
         private readonly WebsiteTemplateCatalogService $templateCatalog,
         private readonly EdgeGatewayReloader $gatewayReloader,
         private readonly WebsiteGitService $git,
+        private readonly WebsiteDatabaseProvisioner $databases,
     ) {
     }
 
@@ -108,24 +106,7 @@ class LaravelInstallService
      */
     public function selectableDatabases(Website $website, ?User $actor): array
     {
-        return $this->websiteDatabases($website, $actor)
-            ->orderBy('database_name')
-            ->get(['id', 'domain', 'database_name', 'database_user'])
-            ->map(fn (DatabaseRequest $database): array => [
-                'id' => (string) $database->id,
-                'database_name' => (string) $database->database_name,
-                'database_user' => (string) $database->database_user,
-                'domain' => (string) $database->domain,
-            ])->values()->all();
-    }
-
-    /** @return \Illuminate\Database\Eloquent\Builder<DatabaseRequest> */
-    private function websiteDatabases(Website $website, ?User $actor)
-    {
-        return DatabaseRequest::query()
-            ->visibleTo($actor)
-            ->where('status', 'active')
-            ->where('domain', $this->resolver->normalizeDomain((string) $website->domain));
+        return $this->databases->selectable($website, $actor);
     }
 
     /**
@@ -136,16 +117,7 @@ class LaravelInstallService
      */
     public function previewNewDatabase(Website $website): array
     {
-        $config = $this->resolveDatabaseConfig($this->resolver->normalizeDomain((string) $website->domain), null);
-
-        return [
-            'database_name' => $config['database_name'],
-            'database_user' => $config['database_user'],
-            'database_host' => $config['database_host'],
-            'charset' => $config['charset'],
-            'collation' => $config['collation'],
-            'suffix' => $config['suffix'],
-        ];
+        return $this->databases->preview($website, 'laravel');
     }
 
     /**
@@ -189,11 +161,8 @@ class LaravelInstallService
         $existing = null;
         $databaseId = trim((string) ($input['database_id'] ?? ''));
         if ($databaseId !== '' && $databaseId !== 'new') {
-            $existing = $this->websiteDatabases($website, $actor)->find($databaseId);
-            if ($existing === null
-                || trim((string) $existing->database_name) === ''
-                || trim((string) $existing->database_user) === ''
-                || trim((string) $existing->database_password) === '') {
+            $existing = $this->databases->find($website, $actor, $databaseId);
+            if ($existing === null) {
                 return $this->fail('The selected database is not available or has no stored credentials.');
             }
         }
@@ -215,22 +184,13 @@ class LaravelInstallService
         }
 
         $report('creating_database');
-        $database = $this->resolveDatabaseConfig($domain, $existing, (string) ($input['database_suffix'] ?? ''));
-        $provision = app(ScriptExecutionGateway::class)->execute($this->databaseScriptPath(), [
-            'create',
-            $database['database_name'],
-            $database['database_user'],
-            $database['database_password'],
-            $database['database_host'],
-            $database['database_port'],
-            $database['charset'],
-            $database['collation'],
-        ]);
-        if (! (bool) ($provision['success'] ?? false)) {
-            return $this->fail(trim((string) ($provision['output'] ?? '')) ?: 'Database provisioning failed.');
+        $database = $this->databases->resolveConfig($domain, $existing, (string) ($input['database_suffix'] ?? ''));
+        $provision = $this->databases->provision($database);
+        if (! $provision['success']) {
+            return $this->fail($provision['output'] ?: 'Database provisioning failed.');
         }
         if ($existing === null) {
-            $this->createDatabaseRequest($domain, $database, $website, $actor);
+            $this->databases->record($domain, $database, $website, $actor);
         }
 
         $report('configuring');
@@ -345,84 +305,6 @@ class LaravelInstallService
     private function artisan(string $siteOwner, string $rootPath, string $phpVersion, string $command): array
     {
         return $this->step($siteOwner, $rootPath, $phpVersion, 'artisan', ['command' => $command], 660);
-    }
-
-    /** @return array<string, string> */
-    private function resolveDatabaseConfig(string $domain, ?DatabaseRequest $existing, string $preferredSuffix = ''): array
-    {
-        $host = (string) config('database.connections.mysql.host', config('database.connections.mariadb.host', '127.0.0.1'));
-        $port = (string) config('database.connections.mysql.port', config('database.connections.mariadb.port', '3306'));
-
-        if ($existing !== null) {
-            return [
-                'database_name' => trim((string) $existing->database_name),
-                'database_user' => trim((string) $existing->database_user),
-                'database_password' => trim((string) $existing->database_password),
-                'database_host' => trim((string) $existing->database_host) ?: $host,
-                'database_port' => $port,
-                'charset' => (string) ($existing->charset ?: 'utf8mb4'),
-                'collation' => (string) ($existing->collation ?: 'utf8mb4_unicode_ci'),
-            ];
-        }
-
-        $base = (string) Str::of(explode('.', $domain)[0] ?? '')
-            ->lower()
-            ->replaceMatches('/[^a-z0-9]+/', '_')
-            ->trim('_')
-            ->limit(20, '');
-        $base = $base !== '' ? $base : 'laravel';
-        // Always add a random suffix: the provisioning script is CREATE IF NOT
-        // EXISTS + reset password, and migrate:fresh wipes the target, so a
-        // plain name could silently take over a database the panel doesn't
-        // track. Panel-tracked names are checked as well.
-        $taken = fn (string $name, string $user): bool => DatabaseRequest::query()
-            ->where(fn ($query) => $query->where('database_name', $name)->orWhere('database_user', $user))
-            ->exists();
-        $suffix = preg_match('/^[a-z0-9]{4}$/', $preferredSuffix) === 1 ? '_'.$preferredSuffix : '';
-        while ($suffix === '' || $taken($base.$suffix.'_db', $base.$suffix.'_user')) {
-            $suffix = '_'.Str::lower(Str::random(4));
-        }
-
-        return [
-            'database_name' => $base.$suffix.'_db',
-            'database_user' => $base.$suffix.'_user',
-            'database_password' => bin2hex(random_bytes(16)).'A1',
-            'database_host' => $host,
-            'database_port' => $port,
-            'charset' => 'utf8mb4',
-            'collation' => 'utf8mb4_unicode_ci',
-            'suffix' => ltrim($suffix, '_'),
-        ];
-    }
-
-    private function databaseScriptPath(): string
-    {
-        foreach (ScriptPathResolver::repositorySearchPaths() as $root) {
-            $candidate = rtrim((string) $root, '/').'/scripts/database-request.sh';
-            if (trim($candidate) !== '') {
-                return $candidate;
-            }
-        }
-
-        return rtrim(dirname(base_path()), DIRECTORY_SEPARATOR).'/dscript/scripts/database-request.sh';
-    }
-
-    /** @param array<string, string> $database */
-    private function createDatabaseRequest(string $domain, array $database, Website $website, ?User $actor): void
-    {
-        $record = new DatabaseRequest(['id' => (string) Str::uuid()]);
-        $record->fill([
-            'domain' => $domain,
-            'database_name' => $database['database_name'],
-            'database_user' => $database['database_user'],
-            'database_password' => $database['database_password'],
-            'database_host' => $database['database_host'],
-            'charset' => $database['charset'],
-            'collation' => $database['collation'],
-            'status' => 'active',
-            'assigned_user_id' => (int) ($website->assigned_user_id ?? 0) > 0 ? (int) $website->assigned_user_id : $actor?->id,
-        ]);
-        $record->save();
     }
 
     /** @param array<string, string> $database */

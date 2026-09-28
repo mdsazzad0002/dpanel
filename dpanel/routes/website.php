@@ -14,6 +14,7 @@ use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
 use App\Http\Controllers\Website\WebsiteSshKeyController;
 use App\Http\Controllers\Website\WebsiteTerminalController;
+use App\Http\Controllers\Website\AppInstallerController;
 use App\Http\Controllers\Website\LaravelInstallerController;
 use App\Http\Controllers\Website\WordpressController;
 use App\Http\Controllers\WebsiteChatController;
@@ -200,6 +201,20 @@ Route::post('/websites/{id}/laravel/install', [LaravelInstallerController::class
 Route::get('/websites/{id}/laravel/install/status/{installId}', [LaravelInstallerController::class, 'laravelInstallStatus'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.laravel.install.status');
+
+// Joomla / CodeIgniter Installer Routes
+Route::get('/websites/{id}/apps/{app}', [AppInstallerController::class, 'installer'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->whereIn('app', ['joomla', 'codeigniter'])
+    ->name('websites.apps.installer');
+Route::post('/websites/{id}/apps/{app}/install', [AppInstallerController::class, 'install'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:5,1'])
+    ->whereIn('app', ['joomla', 'codeigniter'])
+    ->name('websites.apps.install');
+Route::get('/websites/{id}/apps/{app}/install/status/{installId}', [AppInstallerController::class, 'installStatus'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->whereIn('app', ['joomla', 'codeigniter'])
+    ->name('websites.apps.install.status');
 
 Route::get('/websites/{id}/redis-cache', [RedisCacheController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
