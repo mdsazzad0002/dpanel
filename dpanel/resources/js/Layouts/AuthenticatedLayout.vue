@@ -249,6 +249,7 @@ const menuItems = computed(() => [
             { label: 'Create Database', hint: 'Create a new database', icon: 'CD', iconClass: 'bi bi-database-add', routeName: 'databases.create', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
             { label: 'List Databases', hint: 'View all databases', icon: 'LD', iconClass: 'bi bi-table', routeName: 'databases.list', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
             { label: 'Remote Access', hint: 'Allow specific IPs to reach MySQL', icon: 'RA', iconClass: 'bi bi-globe2', routeName: 'databases.remote-access', roles: ['admin'] },
+            { label: 'PostgreSQL', hint: 'Turn PostgreSQL and pgAdmin on or off', icon: 'PG', iconClass: 'bi bi-database-gear', routeName: 'databases.postgresql', roles: ['admin'] },
         ],
     },
     {

@@ -35,6 +35,7 @@ use App\Http\Controllers\PackagePlanController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
+use App\Http\Controllers\PostgresqlController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RemoteMysqlAccessController;
@@ -830,6 +831,17 @@ Route::prefix('cpsess{token}')
             Route::post('/databases/remote-access/refresh', [RemoteMysqlAccessController::class, 'refresh'])
                 ->middleware('role:admin')
                 ->name('databases.remote-access.refresh');
+
+            Route::get('/databases/postgresql', [PostgresqlController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('databases.postgresql');
+            Route::post('/databases/postgresql/refresh', [PostgresqlController::class, 'refresh'])
+                ->middleware('role:admin')
+                ->name('databases.postgresql.refresh');
+            Route::post('/databases/postgresql/{service}/toggle', [PostgresqlController::class, 'toggle'])
+                ->middleware('role:admin')
+                ->where('service', 'postgresql|pgadmin')
+                ->name('databases.postgresql.toggle');
 
             Route::get('/admin', [UserManagementController::class, 'index'])
                 ->middleware('role:admin')

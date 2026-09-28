@@ -70,7 +70,7 @@ dscript_chain_help() {
 Usage: dpanel chain <install|update|verify|repair> [module,...]
 
 install   Install modules in order. Default:
-          php,mariadb,redis,ssl,supervisor,queue,firewall,fail2ban.
+          php,mariadb,redis,postgresql,ssl,supervisor,queue,firewall,fail2ban.
 update    Refresh the remote manifest and update changed modules.
 verify    Run read-only repository, dependency and runtime checks.
 repair    Apply safe local repairs, then verify again.
@@ -134,6 +134,18 @@ Simple SSH management:
   sudo dpanel ssh remove-user <username> --yes
   sudo dpanel ssh sessions
   sudo dpanel ssh diagnose
+EOF
+      ;;
+    postgresql)
+      cat <<'EOF'
+PostgreSQL + pgAdmin module (installed by default, services left OFF):
+  sudo dpanel postgresql install
+  sudo dpanel postgresql start [postgresql|pgadmin|all]   Turn on and enable at boot
+  sudo dpanel postgresql stop [postgresql|pgadmin|all]    Turn off and disable at boot
+  sudo dpanel postgresql restart [postgresql|pgadmin|all]
+  dpanel postgresql status [postgresql|pgadmin|all]
+  sudo dpanel postgresql update | remove
+pgAdmin is served on the panel domain at /pgadmin4/.
 EOF
       ;;
     firewall|firewall-manager)
@@ -385,7 +397,7 @@ dscript_run_chain() {
         export PANEL_MODULES
       fi
       if [[ "$DSCRIPT_DRY_RUN" == "true" ]]; then
-        printf '[DRY-RUN] chain install: %s\n' "${PANEL_MODULES:-php,mariadb,redis,ssl,supervisor,queue,firewall,fail2ban}"
+        printf '[DRY-RUN] chain install: %s\n' "${PANEL_MODULES:-php,mariadb,redis,postgresql,ssl,supervisor,queue,firewall,fail2ban}"
       else
         PANEL_BOOTSTRAP_MODE=install panel_bootstrap
       fi

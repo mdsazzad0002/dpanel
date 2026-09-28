@@ -58,13 +58,13 @@ dpanel chain repair
 Default chain module order:
 
 ```text
-php -> mariadb -> redis -> ssl -> supervisor -> queue -> firewall -> fail2ban
+php -> mariadb -> redis -> postgresql -> ssl -> supervisor -> queue -> firewall -> fail2ban
 ```
 
 The top-level default install adds non-module services around that chain:
 
 ```text
-php -> mariadb -> redis -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs -> queue
+php -> mariadb -> redis -> postgresql -> supervisor -> rust/drust -> firewall -> fail2ban -> ssl -> postfix -> dovecot -> nodejs -> queue
 ```
 
 Choose modules with either syntax:
@@ -169,6 +169,7 @@ dpanel module <name> info
 | `php` | Multi-version PHP/FPM | `dpanel php install 8.3` |
 | `mariadb` | MariaDB server | `dpanel mariadb install` |
 | `redis` | Redis service | `dpanel redis install` |
+| `postgresql` | PostgreSQL + pgAdmin, installed but left off | `dpanel postgresql start` |
 | `supervisor` | Supervisor process manager | `dpanel supervisor update` |
 | `queue` | Queue runtime based on Supervisor | `dpanel queue install` |
 | `firewall` | UFW/firewalld baseline | `dpanel firewall install` |
@@ -199,7 +200,27 @@ Supported versions come from `repository/modules/php/php.json`, not from a list
 embedded in the CLI. On RPM systems the distribution package stream may limit
 simultaneous PHP versions.
 
-### 4.2 Filemanager
+### 4.2 PostgreSQL and pgAdmin
+
+The default install sets up PostgreSQL and pgAdmin 4 but leaves both services
+stopped and disabled at boot, so they use no memory until needed. Turn them on
+from the panel (Database Management > PostgreSQL) or from the shell:
+
+```bash
+dpanel postgresql status
+sudo dpanel postgresql start              # both services
+sudo dpanel postgresql start postgresql   # only the database
+sudo dpanel postgresql stop pgadmin       # only pgAdmin
+```
+
+pgAdmin runs as `dpanel-pgadmin` (gunicorn on 127.0.0.1:5050) and the drust
+edge gateway serves it on the panel domain at `/pgadmin4/`. PostgreSQL listens
+on localhost only. The generated `postgres` password and the pgAdmin login are
+written to the panel `.env` (`PGSQL_ADMIN_PASSWORD`, `PGADMIN_EMAIL`,
+`PGADMIN_PASSWORD`) and shown on the panel page. `dpanel chain update` only
+updates this module on servers where it is already installed.
+
+### 4.3 Filemanager
 
 ```bash
 dpanel filemanager exists /home/example/public_html
