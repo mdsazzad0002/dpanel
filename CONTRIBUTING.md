@@ -11,7 +11,7 @@ where you got stuck is often just as useful as a polished report.
 - [Set up a development server](#set-up-a-development-server)
   - [1. Prepare a machine](#1-prepare-a-machine)
   - [2. Fork and clone](#2-fork-and-clone)
-  - [3. Configure git](#3-configure-git)
+  - [3. Configure git and sign in to GitHub](#3-configure-git-and-sign-in-to-github)
   - [4. Run the installer from your checkout](#4-run-the-installer-from-your-checkout)
   - [5. Give yourself write access](#5-give-yourself-write-access)
   - [6. Verify the setup](#6-verify-the-setup)
@@ -48,7 +48,12 @@ sudo DSCRIPT_SOURCE_DIR=/var/www/dscript bash /var/www/installer.sh
 sudo apt-get install -y acl
 sudo setfacl -R -m u:$USER:rwX -m d:u:$USER:rwX /var/www/.git /var/www/dpanel /var/www/drust /var/www/dscript /var/www/docs
 
-# 5. Check it works
+# 5. Sign in to GitHub so you can push (as your user, never with sudo)
+sudo apt-get install -y gh
+gh auth login          # GitHub.com → HTTPS → Login with a web browser
+gh auth setup-git
+
+# 6. Check it works
 sudo dpanel doctor
 ```
 
@@ -129,7 +134,9 @@ away.
    git remote -v
    ```
 
-### 3. Configure git
+### 3. Configure git and sign in to GitHub
+
+#### Git settings
 
 The installer makes the code owned by `root:www-data` and changes file modes.
 These settings keep git working smoothly:
@@ -145,6 +152,78 @@ sudo git -C /var/www config core.fileMode false
 # Your identity for commits
 git config --global user.name  "Your Name"
 git config --global user.email "you@example.com"
+```
+
+Use the email address linked to your GitHub account (or your
+`<id>+<username>@users.noreply.github.com` address) so commits show up on
+your profile.
+
+#### Sign in to GitHub
+
+Cloning a public fork needs no login, but **pushing** does. GitHub no longer
+accepts your account password for git, so pick one of the options below.
+
+> [!IMPORTANT]
+> Run `git commit`, `git push`, and the login commands as **your own user**,
+> not with `sudo`. `sudo` uses root's credentials, which are not your GitHub
+> login. Pushing needs write access to `.git`, which you get in
+> [step 5](#5-give-yourself-write-access).
+
+**Option A: GitHub CLI (easiest)**
+
+```bash
+sudo apt-get install -y gh
+gh auth login
+```
+
+Answer the prompts with **GitHub.com → HTTPS → Yes (authenticate Git) →
+Login with a web browser**. Open the URL it shows, enter the one-time code,
+and approve. On a headless VM you can open the URL from any other device.
+
+```bash
+gh auth setup-git     # let git use the gh login for HTTPS pushes
+gh auth status        # confirm you are signed in
+```
+
+**Option B: SSH key**
+
+```bash
+ssh-keygen -t ed25519 -C "you@example.com"   # press Enter to accept defaults
+cat ~/.ssh/id_ed25519.pub                      # copy this line
+```
+
+Add the key under **GitHub → Settings → SSH and GPG keys → New SSH key**, then
+test it and switch your fork's remote to SSH:
+
+```bash
+ssh -T git@github.com     # "Hi <username>! You've successfully authenticated"
+git -C /var/www remote set-url origin git@github.com:<your-username>/dpanel.git
+```
+
+**Option C: HTTPS with a personal access token**
+
+1. Create a token under **GitHub → Settings → Developer settings → Personal
+   access tokens → Fine-grained tokens**. Limit it to your `dpanel` fork with
+   **Contents: Read and write** permission.
+2. Tell git to remember it:
+
+   ```bash
+   git config --global credential.helper store   # or 'cache' to keep it in memory only
+   ```
+
+3. On your first `git push`, enter your GitHub username and paste the token as
+   the password.
+
+> [!CAUTION]
+> `credential.helper store` saves the token in plain text in
+> `~/.git-credentials`. Use `cache` on shared machines, and never commit or
+> share a token.
+
+Check which remotes you will push to. `origin` must be **your fork**; you only
+fetch from `upstream`:
+
+```bash
+git -C /var/www remote -v
 ```
 
 ### 4. Run the installer from your checkout
@@ -413,6 +492,10 @@ smooth, and what felt confusing or unfinished. Screenshots help a lot.
 | `destination path '/var/www' already exists` | Use the clone-in-place commands in [step 2](#2-fork-and-clone) |
 | Panel actions fail with `Unauthorized` | Make `DRUST_API_TOKEN` in `/etc/drust/drust.env` match `SERVERPANEL_EXECUTION_API_TOKEN` in `/var/www/dpanel/.env`, then `sudo systemctl restart drust.service` |
 | Laravel shows a 500 error | `sudo tail -n 50 /var/www/dpanel/storage/logs/laravel.log` |
+| `Password authentication is not supported` | Sign in with `gh auth login`, an SSH key, or a token (see [step 3](#sign-in-to-github)) |
+| `Permission denied (publickey)` | Add your SSH key to GitHub and check it with `ssh -T git@github.com` |
+| `Permission to mdsazzad0002/dpanel.git denied` | You are pushing to `upstream`. Push to your fork: `git push -u origin <branch>` |
+| Push asks for a password even after login | You ran git with `sudo`. Run it as your own user |
 | `cargo: command not found` | Install Rust for your user with `rustup` (see [step 5](#5-give-yourself-write-access)) |
 | Install chain stopped on an error | `sudo dpanel doctor`, then retry the failed module only |
 
