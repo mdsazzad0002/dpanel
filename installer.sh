@@ -74,7 +74,9 @@ EOF
 #   bash installer.sh
 #   bash installer.sh php mariadb redis
 #   bash installer.sh update
-#   PANEL_INSTALL_BASE_URL="https://dpanel.dengrweb.com" bash installer.sh
+#   DPANEL_REF="v1.2.0" bash installer.sh                  # a tag, branch or commit
+#   DPANEL_REPO="your-user/dpanel" bash installer.sh       # install from a fork
+#   PANEL_INSTALL_BASE_URL="https://mirror.example.com" bash installer.sh
 #   DSCRIPT_SOURCE_DIR="/var/www/dscript" bash installer.sh   # git checkout at /var/www
 #
 # Default call:
@@ -87,13 +89,25 @@ EOF
 #
 # Configure installer paths and download URLs.
 #
-DEFAULT_BASE_URL="https://dpanel.dengrweb.com"
+# By default everything comes straight from GitHub: the release is the source
+# archive of DPANEL_REF, and dscript assets are served from raw.githubusercontent.com.
+# A custom mirror can still be used with PANEL_INSTALL_BASE_URL, which must serve
+# /dscript.zip (built by dscript/archive.sh) and the /dscript/ tree.
+#
+DPANEL_REPO="${DPANEL_REPO:-mdsazzad0002/dpanel}"
+DPANEL_REF="${DPANEL_REF:-main}"
+DEFAULT_BASE_URL="https://raw.githubusercontent.com/${DPANEL_REPO}/${DPANEL_REF}"
 BASE_URL="${PANEL_INSTALL_BASE_URL:-${DPANEL_BASE_URL:-$DEFAULT_BASE_URL}}"
 DSCRIPT_DIR="${DSCRIPT_DIR:-/var/www/dscript}"
 TMP_DIR="$(mktemp -d)"
 ARCHIVE_PATH="${TMP_DIR}/release.zip"
 EXTRACT_DIR="${TMP_DIR}/extracted"
-archive_url="${DSCRIPT_ARCHIVE_URL:-${BASE_URL%/}/dscript.zip}"
+if [[ "$BASE_URL" == "$DEFAULT_BASE_URL" ]]; then
+  default_archive_url="https://github.com/${DPANEL_REPO}/archive/${DPANEL_REF}.zip"
+else
+  default_archive_url="${BASE_URL%/}/dscript.zip"
+fi
+archive_url="${DSCRIPT_ARCHIVE_URL:-$default_archive_url}"
 if [[ "${BASE_URL%/}" == */dscript ]]; then
   dscript_base_url="${BASE_URL%/}"
 else

@@ -134,7 +134,5 @@ if systemctl cat "php${VERSION}-fpm.service" >/dev/null 2>&1; then
     systemctl restart "php${VERSION}-fpm"
 fi
 
-fi
-
 echo "[php-config-apply] Applied PHP ${VERSION} config and restarted related services."
 exit 0

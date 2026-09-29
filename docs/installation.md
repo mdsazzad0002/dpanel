@@ -42,9 +42,16 @@ To install or refresh the Rust services on their own:
 sudo /var/www/drust/deploy/install-service.sh
 ```
 
-> **Note for maintainers:** the install URL always serves `installer.sh` from
-> the `main` branch. Pushing to `main` is the only step needed to publish
-> installer changes.
+Everything is downloaded straight from GitHub: the installer, the release
+(the source zip of the `main` branch), and later module updates. There is no
+separate download server, so a push to `main` publishes a new release.
+
+To install a specific tag, branch, or commit, or a fork:
+
+```bash
+sudo env DPANEL_REF=v1.2.0 ./installer.sh
+sudo env DPANEL_REPO=your-user/dpanel DPANEL_REF=my-branch ./installer.sh
+```
 
 ## Installed paths
 

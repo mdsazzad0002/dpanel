@@ -405,7 +405,9 @@ systemctl status edge-gateway --no-pager
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PANEL_INSTALL_BASE_URL` | `https://dpanel.dengrweb.com` | Installer website root |
+| `DPANEL_REPO` | `mdsazzad0002/dpanel` | GitHub repository to install from |
+| `DPANEL_REF` | `main` | Branch, tag, or commit to install |
+| `PANEL_INSTALL_BASE_URL` | `https://raw.githubusercontent.com/<repo>/<ref>` | Optional custom mirror root |
 | `PANEL_DSCRIPT_BASE_URL` | `<site>/dscript` | Explicit dscript asset root |
 | `DPANEL_BASE_URL` | dscript asset root | Manifest/module download root |
 | `DPANEL_BASE_DIR` | `/opt/dpanel` | Preferred installed state root setting |
@@ -453,11 +455,21 @@ chmod +x installer.sh
 sudo ./installer.sh
 ```
 
-`https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh` 302-redirects to
-`https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh`
-(edge-gateway dispatcher, `drust/src/edge_gateway/dispatcher.rs`). Pushing
-`installer.sh` to `main` is enough to update the public URL — no separate
-deploy/upload step to the server is needed.
+Everything is served directly by GitHub; there is no separate download server:
+
+| What | Default source |
+| --- | --- |
+| `installer.sh` | `https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh` |
+| Release archive | `https://github.com/mdsazzad0002/dpanel/archive/main.zip` (GitHub source zip) |
+| dscript assets for updates | `https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/dscript/` |
+
+Publishing a release is just a push to `main`. Pin a tag, branch, or commit,
+or install from a fork, with:
+
+```bash
+sudo env DPANEL_REF=v1.2.0 ./installer.sh
+sudo env DPANEL_REPO=your-user/dpanel DPANEL_REF=my-branch ./installer.sh
+```
 
 Forward any dscript command:
 
@@ -480,8 +492,8 @@ sudo env DSCRIPT_SOURCE_DIR=/var/www/dscript /var/www/installer.sh php,mariadb,r
 ```
 
 Source precedence is `DSCRIPT_SOURCE_DIR`, `DSCRIPT_ARCHIVE_PATH`,
-`DSCRIPT_ARCHIVE_URL`, then the default live `/dscript.zip`. With no source
-parameter, the installer always downloads and extracts the current live ZIP.
+`DSCRIPT_ARCHIVE_URL`, then the GitHub source zip of `DPANEL_REF`. With no
+source parameter, the installer downloads and extracts that zip.
 
 The installer owns no server configuration; it downloads the dscript archive,
 extracts it into `/var/www/dscript`, assigns executable permissions to shell
@@ -489,15 +501,15 @@ entrypoints, registers `dpanel`, and delegates the request to dscript. With no
 arguments it delegates to `dpanel default-install`; with `update` it delegates to
 `dpanel chain update`.
 
-Build the archive served to clients with:
+A custom mirror is optional. To host one, build the archive with:
 
 ```bash
 cd /var/www/dscript
 bash archive.sh /var/www/dscript.zip
 ```
 
-The public server should expose that file as `/dscript.zip` and serve the
-matching `installer.sh` from the same release. For a private/local archive:
+Serve it as `<mirror>/dscript.zip` next to the `<mirror>/dscript/` tree and
+install with `PANEL_INSTALL_BASE_URL=<mirror>`. For a private/local archive:
 
 ```bash
 sudo env DSCRIPT_ARCHIVE_PATH=/tmp/dscript.zip /var/www/installer.sh
@@ -564,7 +576,7 @@ fixed as root while paths remain scoped inside `/home/{site_user}`.
 ```text
 dscript/
 ├── dpanel                         user CLI
-├── archive.sh                     build dscript.zip for installer.sh
+├── archive.sh                     build dscript.zip for an optional mirror
 ├── bootstrap/core.sh              implementation API and compatibility core
 ├── core/commands.sh               help, parsing, chain/individual routing, doctor
 ├── core/package-manager.sh        Debian/RPM package abstraction
