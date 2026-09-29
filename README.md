@@ -82,6 +82,17 @@ chmod +x installer.sh
 sudo ./installer.sh
 ```
 
+This installs the **latest release tag** straight from GitHub. Pick a version
+with `DPANEL_VERSION`, and update later with `sudo ./installer.sh update`:
+
+```bash
+sudo env DPANEL_VERSION=v1.2.3 ./installer.sh   # a specific release
+sudo env DPANEL_VERSION=main ./installer.sh     # the development branch
+```
+
+The installed version is written to the panel `.env` automatically. See
+[Versions and updates](docs/installation.md#versions-and-updates).
+
 Then check that the services are running:
 
 ```bash
