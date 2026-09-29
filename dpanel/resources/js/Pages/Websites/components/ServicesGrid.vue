@@ -20,6 +20,7 @@ const serviceLinks = computed(() => [
     { label: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress' },
     { label: 'Laravel Installer', icon: 'bi-box-seam', color: 'red', href: panelRoute('websites.laravel.installer', { id: props.website.id }), description: 'Fresh Laravel, starter kits (Vue, React, Svelte, Livewire) or API' },
     { label: 'Joomla Installer', icon: 'bi-puzzle', color: 'orange', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'joomla' }), description: 'Joomla CMS with admin account and database' },
+    { label: 'Drupal Installer', icon: 'bi-droplet', color: 'blue', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'drupal' }), description: 'Drupal CMS with Drush and an admin account' },
     { label: 'CodeIgniter Installer', icon: 'bi-fire', color: 'amber', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'codeigniter' }), description: 'CodeIgniter 4 app starter with .env configured' },
     { label: 'WHMCS Installer', icon: 'bi-receipt', color: 'teal', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'whmcs' }), description: 'Install your licensed WHMCS package with cron' },
     { label: 'Usage Details', icon: 'bi-graph-up', color: 'violet', href: panelRoute('websites.usage', { id: props.website.id }), description: 'Detailed usage history' },
@@ -41,7 +42,7 @@ const serviceLinks = computed(() => [
 // that overwrite files/git/database or grant separate account access don't
 // apply to it and would risk breaking the panel itself, so hide them here.
 ].filter((item) => !isSystemWebsite.value || ![
-    'WordPress Installer', 'Laravel Installer', 'Joomla Installer', 'CodeIgniter Installer', 'WHMCS Installer', 'File Manager', 'Import & Clone', 'FTP Accounts',
+    'WordPress Installer', 'Laravel Installer', 'Joomla Installer', 'Drupal Installer', 'CodeIgniter Installer', 'WHMCS Installer', 'File Manager', 'Import & Clone', 'FTP Accounts',
     'Cron Jobs', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Export & Share',
 ].includes(item.label)));
 

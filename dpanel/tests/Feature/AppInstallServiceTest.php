@@ -67,6 +67,43 @@ class AppInstallServiceTest extends TestCase
         app(AppInstallService::class)->setCodeIgniterEnvValues('', ['x' => "a'\${HOME}"]);
     }
 
+    public function test_drupal_settings_append_a_loadable_database_array(): void
+    {
+        $settings = app(AppInstallService::class)->drupalSettings("<?php\n\n// default settings\n\$settings['hash_salt'] = '';\n", [
+            'database_name' => 'ex_db',
+            'database_user' => 'ex_user',
+            'database_password' => "it's a \\ \$ecret\"",
+            'database_host' => '127.0.0.1',
+            'database_port' => '3306',
+        ]);
+
+        $file = tempnam(sys_get_temp_dir(), 'settings');
+        file_put_contents($file, $settings);
+        $databases = [];
+        $settingsArray = [];
+        (static function () use ($file, &$databases, &$settingsArray) {
+            $settings = [];
+            include $file;
+            $settingsArray = $settings;
+        })();
+        unlink($file);
+
+        $this->assertSame("it's a \\ \$ecret\"", $databases['default']['default']['password']);
+        $this->assertSame('ex_db', $databases['default']['default']['database']);
+        $this->assertSame('Drupal\\mysql\\Driver\\Database\\mysql', $databases['default']['default']['namespace']);
+        $this->assertArrayHasKey('hash_salt', $settingsArray);
+    }
+
+    public function test_drupal_catalog_and_request_rules(): void
+    {
+        $this->assertSame('8.3', AppInstallService::DRUPAL_VERSIONS['11']['min_php']);
+
+        $rules = $this->rulesFor('drupal');
+        $valid = ['version' => '11', 'database_id' => 'new', 'site_name' => 'Example', 'admin_username' => 'admin', 'admin_email' => 'a@example.com', 'admin_password' => 'long-enough-pass'];
+        $this->assertTrue(Validator::make($valid, $rules)->passes());
+        $this->assertTrue(Validator::make(['admin_email' => 'nope'] + $valid, $rules)->fails());
+    }
+
     public function test_joomla_request_requires_admin_details(): void
     {
         $rules = $this->rulesFor('joomla');

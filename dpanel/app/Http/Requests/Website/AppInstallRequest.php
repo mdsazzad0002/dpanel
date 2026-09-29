@@ -33,6 +33,15 @@ class AppInstallRequest extends FormRequest
             ];
         }
 
+        if ($this->route('app') === 'drupal') {
+            $rules += [
+                'site_name' => ['required', 'string', 'max:200', 'regex:/^[^\x00-\x1F\x7F]+$/u'],
+                'admin_username' => ['required', 'string', 'max:60', 'regex:/^[A-Za-z0-9_.@-]+$/'],
+                'admin_email' => ['required', 'email', 'max:190'],
+                'admin_password' => ['required', 'string', 'min:12', 'max:200', 'regex:/^[^\x00-\x1F\x7F]+$/u'],
+            ];
+        }
+
         if ($this->route('app') === 'whmcs') {
             $rules += [
                 'upload_id' => ['required', 'uuid'],

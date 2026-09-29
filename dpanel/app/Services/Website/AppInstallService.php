@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 /**
- * One-click installers for Joomla, CodeIgniter 4 and WHMCS. Like the Laravel
+ * One-click installers for Joomla, Drupal, CodeIgniter 4 and WHMCS. Like the Laravel
  * installer, existing files go to the File Manager trash first, every shell
  * step runs in drust as the site owner on the website's PHP version, and the
  * panel records the database and switches the document root.
@@ -27,6 +27,12 @@ class AppInstallService
             'label' => 'Joomla',
             'description' => 'Joomla CMS, installed with an administrator account and database.',
             'document_root' => '',
+            'database' => 'required',
+        ],
+        'drupal' => [
+            'label' => 'Drupal',
+            'description' => 'Drupal CMS (recommended project) with Drush, installed with the standard profile and an admin account.',
+            'document_root' => 'web',
             'database' => 'required',
         ],
         'codeigniter' => [
@@ -51,6 +57,11 @@ class AppInstallService
         '4' => ['min_php' => '7.2', 'max_php' => '8.3'],
         '5' => ['min_php' => '8.1', 'max_php' => '8.5'],
         '6' => ['min_php' => '8.3', 'max_php' => '8.5'],
+    ];
+
+    public const DRUPAL_VERSIONS = [
+        '11' => ['label' => 'Drupal 11', 'min_php' => '8.3', 'max_php' => '8.5'],
+        '10' => ['label' => 'Drupal 10', 'min_php' => '8.1', 'max_php' => '8.4'],
     ];
 
     public const CODEIGNITER_PHP = ['min_php' => '8.1', 'max_php' => '8.5'];
@@ -88,6 +99,16 @@ class AppInstallService
                 ...self::WHMCS_PHP,
                 'php_version' => $this->resolvePhpVersion($current, self::WHMCS_PHP),
             ]], 'error' => null];
+        }
+
+        if ($app === 'drupal') {
+            return ['versions' => collect(self::DRUPAL_VERSIONS)->map(fn (array $meta, string $version): array => [
+                'value' => $version,
+                'label' => $meta['label'],
+                'min_php' => $meta['min_php'],
+                'max_php' => $meta['max_php'],
+                'php_version' => $this->resolvePhpVersion($current, $meta),
+            ])->values()->all(), 'error' => null];
         }
 
         if ($app === 'codeigniter') {
@@ -241,6 +262,12 @@ class AppInstallService
                 return $this->fail('The uploaded file is not a WHMCS package (install/bin/installer.php and init.php were not found).');
             }
             $range = self::WHMCS_PHP;
+        } elseif ($app === 'drupal') {
+            $version = (string) ($input['version'] ?? '');
+            if (! isset(self::DRUPAL_VERSIONS[$version])) {
+                return $this->fail('The selected Drupal version is not available.');
+            }
+            $range = self::DRUPAL_VERSIONS[$version];
         } else {
             $range = self::CODEIGNITER_PHP;
         }
@@ -287,6 +314,11 @@ class AppInstallService
             $download = $this->deployJoomlaPackage($siteOwner, $rootPath, $package['url']);
         } elseif ($app === 'whmcs') {
             $download = $this->deployWhmcsPackage($siteOwner, $rootPath, $package['path'], $package['base']);
+        } elseif ($app === 'drupal') {
+            $download = $this->step($siteOwner, $rootPath, $phpVersion, 'create_project', ['stack' => 'drupal', 'version' => $version], 960);
+            if ($download['success']) {
+                $download = $this->step($siteOwner, $rootPath, $phpVersion, 'drupal_drush', ['version' => $version], 960);
+            }
         } else {
             $download = $this->step($siteOwner, $rootPath, $phpVersion, 'create_project', ['stack' => 'codeigniter', 'version' => '4'], 960);
         }
@@ -328,6 +360,23 @@ class AppInstallService
             // The web installer must not stay reachable once the site is set up.
             if ($this->filemanager->directoryExists($rootPath.'/installation')) {
                 $this->filemanager->deletePath($siteOwner, $rootPath.'/installation');
+            }
+        } elseif ($app === 'drupal') {
+            try {
+                $this->writeDrupalSettings($siteOwner, $rootPath, $database);
+            } catch (\Throwable $e) {
+                return $this->fail('Writing settings.php failed: '.$e->getMessage());
+            }
+            // site:install drops every table in the database first, so a
+            // reused database starts clean.
+            $step = $this->step($siteOwner, $rootPath, $phpVersion, 'drupal_install', ['drupal' => [
+                'site_name' => (string) ($input['site_name'] ?? $domain),
+                'account_name' => (string) ($input['admin_username'] ?? ''),
+                'account_pass' => (string) ($input['admin_password'] ?? ''),
+                'account_mail' => (string) ($input['admin_email'] ?? ''),
+            ]], 660);
+            if (! $step['success']) {
+                return $this->fail('Drupal installation failed: '.$step['output']);
             }
         } elseif ($app === 'whmcs') {
             try {
@@ -374,9 +423,14 @@ class AppInstallService
         $databaseNote = $database === null
             ? 'without a database'
             : sprintf('with %s database %s', $existing ? 'the existing' : 'a new', $database['database_name']);
-        $label = $app === 'joomla' ? 'Joomla '.$package['version'] : $meta['label'];
+        $label = match ($app) {
+            'joomla' => 'Joomla '.$package['version'],
+            'drupal' => self::DRUPAL_VERSIONS[$version]['label'],
+            default => $meta['label'],
+        };
         $login = match ($app) {
             'joomla' => " Log in at /administrator as {$input['admin_username']}.",
+            'drupal' => " Log in at /user/login as {$input['admin_username']}.",
             'whmcs' => " Log in at /admin as {$input['admin_username']}.".$this->addWhmcsCron($website, $rootPath, $phpVersion),
             default => '',
         };
@@ -523,6 +577,41 @@ class AppInstallService
         }
 
         return ' The WHMCS cron job (every 5 minutes) was added.';
+    }
+
+    /**
+     * Create web/sites/default/settings.php from default.settings.php with
+     * the database connection, so the password never has to be passed to
+     * Drush on the command line.
+     *
+     * @param  array<string, string>  $database
+     */
+    private function writeDrupalSettings(string $siteOwner, string $rootPath, array $database): void
+    {
+        $dir = $rootPath.'/web/sites/default';
+        $template = $this->filemanager->readTextFile($siteOwner, $dir.'/default.settings.php')['content'];
+        $this->filemanager->writeTextFile($siteOwner, $dir.'/settings.php', $this->drupalSettings($template, $database));
+    }
+
+    /**
+     * @param  array<string, string>  $database
+     */
+    public function drupalSettings(string $template, array $database): string
+    {
+        $connection = var_export([
+            'database' => $database['database_name'],
+            'username' => $database['database_user'],
+            'password' => $database['database_password'],
+            'host' => $database['database_host'],
+            'port' => $database['database_port'],
+            'driver' => 'mysql',
+            'prefix' => '',
+            'collation' => 'utf8mb4_general_ci',
+            'namespace' => 'Drupal\\mysql\\Driver\\Database\\mysql',
+            'autoload' => 'core/modules/mysql/src/Driver/Database/mysql/',
+        ], true);
+
+        return rtrim($template)."\n\n// Added by the dPanel installer.\n\$databases['default']['default'] = {$connection};\n";
     }
 
     /**

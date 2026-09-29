@@ -42,6 +42,18 @@ pub(crate) struct Request {
     command: Option<String>,
     joomla: Option<JoomlaInstall>,
     whmcs: Option<WhmcsInstall>,
+    drupal: Option<DrupalInstall>,
+}
+
+/// Answers for `drush site:install`. Database credentials are not part of
+/// this: the panel writes them into settings.php first, and Drush reads them
+/// from there.
+#[derive(Deserialize)]
+pub(crate) struct DrupalInstall {
+    site_name: String,
+    account_name: String,
+    account_pass: String,
+    account_mail: String,
 }
 
 /// Values for WHMCS's `install/bin/installer.php -i -n -c`, which reads its
@@ -81,6 +93,14 @@ if (!is_array($a)) { fwrite(STDERR, "Invalid installer input.\n"); exit(1); }
 $_SERVER['argv'] = $argv = array_merge(['installation/joomla.php'], $a);
 $_SERVER['argc'] = $argc = count($argv);
 require 'installation/joomla.php';"#;
+
+/// Same stdin trick for Drush, so the admin password stays out of argv.
+const DRUSH_BOOTSTRAP: &str = r#"$a = json_decode(stream_get_contents(STDIN), true);
+if (!is_array($a)) { fwrite(STDERR, "Invalid installer input.\n"); exit(1); }
+$_SERVER['argv'] = $argv = array_merge(['vendor/bin/drush'], $a);
+$_SERVER['argc'] = $argc = count($argv);
+$_composer_autoload_path = getcwd() . '/vendor/autoload.php';
+require 'vendor/drush/drush/drush.php';"#;
 
 pub(crate) async fn handle(
     State(state): State<Arc<ApiState>>,
@@ -131,6 +151,42 @@ async fn execute(request: &Request) -> Result<String, String> {
                 return Err("The installer requires an empty project root.".into());
             }
             let target_arg = target.to_string_lossy().to_string();
+            let mut args = vec![
+                "/usr/bin/composer",
+                "create-project",
+                package,
+                &target_arg,
+                constraint,
+                "--prefer-dist",
+                "--no-interaction",
+                "--no-progress",
+                "--no-ansi",
+                "--remove-vcs",
+            ];
+            // Drupal's scaffold plugin creates web/index.php and friends from
+            // Composer script events, so scripts must run for it.
+            if request.stack.as_deref() != Some("drupal") {
+                args.push("--no-scripts");
+            }
+            run_as_owner(
+                &request.username,
+                &runtime,
+                &target,
+                &php,
+                &args,
+                CREATE_PROJECT_TIMEOUT,
+            )
+            .await
+        }
+        "drupal_drush" => {
+            if !target.join("web/core/lib/Drupal.php").is_file() {
+                return Err("Drupal core was not found under web/.".into());
+            }
+            let constraint = match request.version.as_deref() {
+                Some("11") => "drush/drush:^13",
+                Some("10") => "drush/drush:^12.5 || ^13",
+                _ => return Err("Unsupported Drupal version.".into()),
+            };
             run_as_owner(
                 &request.username,
                 &runtime,
@@ -138,18 +194,33 @@ async fn execute(request: &Request) -> Result<String, String> {
                 &php,
                 &[
                     "/usr/bin/composer",
-                    "create-project",
-                    package,
-                    &target_arg,
+                    "require",
                     constraint,
-                    "--prefer-dist",
                     "--no-interaction",
-                    "--no-scripts",
                     "--no-progress",
                     "--no-ansi",
-                    "--remove-vcs",
                 ],
                 CREATE_PROJECT_TIMEOUT,
+            )
+            .await
+        }
+        "drupal_install" => {
+            let input = request
+                .drupal
+                .as_ref()
+                .ok_or("Drupal install answers are missing.")?;
+            if !target.join("vendor/drush/drush/drush.php").is_file() {
+                return Err("Drush was not found in vendor/.".into());
+            }
+            let stdin = serde_json::to_vec(&drupal_arguments(input)?).map_err(|e| e.to_string())?;
+            run_as_owner_with_input(
+                &request.username,
+                &runtime,
+                &target,
+                &php,
+                &["-r", DRUSH_BOOTSTRAP],
+                ARTISAN_TIMEOUT,
+                Some(&stdin),
             )
             .await
         }
@@ -300,11 +371,16 @@ async fn execute(request: &Request) -> Result<String, String> {
                     "images",
                 ],
                 "whmcs" => &["attachments", "downloads", "templates_c"],
+                "drupal" => &["web/sites/default/files"],
                 _ => &["storage", "bootstrap/cache"],
             };
-            // Joomla's and WHMCS's configuration.php hold the database password.
-            let config = target.join("configuration.php");
-            if matches!(request.stack.as_deref(), Some("joomla" | "whmcs")) && config.is_file() {
+            // These config files hold the database password.
+            let config = match request.stack.as_deref() {
+                Some("joomla" | "whmcs") => Some(target.join("configuration.php")),
+                Some("drupal") => Some(target.join("web/sites/default/settings.php")),
+                _ => None,
+            };
+            if let Some(config) = config.filter(|path| path.is_file()) {
                 let config = config.to_string_lossy();
                 run_status("chown", &[&owner, config.as_ref()])?;
                 run_status("chmod", &["640", config.as_ref()])?;
@@ -352,6 +428,48 @@ async fn execute(request: &Request) -> Result<String, String> {
         }
         _ => Err("Unsupported installer action.".into()),
     }
+}
+
+/// `drush site:install` arguments. Validated here as well as in the panel.
+fn drupal_arguments(input: &DrupalInstall) -> Result<Vec<String>, String> {
+    let no_control = |value: &str| !value.chars().any(char::is_control);
+    if input.site_name.trim().is_empty()
+        || !no_control(&input.site_name)
+        || input.site_name.len() > 200
+    {
+        return Err("Invalid Drupal site name.".into());
+    }
+    let name_ok = !input.account_name.is_empty()
+        && input.account_name.len() <= 60
+        && input
+            .account_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '@'));
+    if !name_ok {
+        return Err("Invalid Drupal admin username.".into());
+    }
+    if input.account_pass.chars().count() < 12 || !no_control(&input.account_pass) {
+        return Err("The Drupal admin password must be at least 12 characters.".into());
+    }
+    if !input.account_mail.contains('@')
+        || !no_control(&input.account_mail)
+        || input.account_mail.len() > 190
+    {
+        return Err("Invalid Drupal admin email.".into());
+    }
+
+    Ok(vec![
+        "site:install".into(),
+        "standard".into(),
+        format!("--site-name={}", input.site_name.trim()),
+        format!("--site-mail={}", input.account_mail.trim()),
+        format!("--account-name={}", input.account_name),
+        format!("--account-pass={}", input.account_pass),
+        format!("--account-mail={}", input.account_mail.trim()),
+        "--yes".into(),
+        "--no-interaction".into(),
+        "--no-ansi".into(),
+    ])
 }
 
 /// One line of JSON for WHMCS's CLI installer. Values are checked here as
@@ -513,6 +631,13 @@ fn joomla_arguments(input: &JoomlaInstall) -> Result<Vec<String>, String> {
 fn package_for(stack: &str, version: &str) -> Result<(&'static str, &'static str), String> {
     if stack == "codeigniter" {
         return Ok(("codeigniter4/appstarter", "^4.0"));
+    }
+    if stack == "drupal" {
+        return match version {
+            "11" => Ok(("drupal/recommended-project", "^11.0")),
+            "10" => Ok(("drupal/recommended-project", "^10.0")),
+            _ => Err("Unsupported Drupal version.".into()),
+        };
     }
     let base = match version {
         "13" => "^13.0",
@@ -793,6 +918,31 @@ mod tests {
             ..input
         };
         assert!(whmcs_config(&bad).is_err());
+    }
+
+    #[test]
+    fn drupal_arguments_validate_and_keep_values() {
+        let input = DrupalInstall {
+            site_name: "Example".into(),
+            account_name: "admin".into(),
+            account_pass: "it's a $ecret pass".into(),
+            account_mail: "a@example.com".into(),
+        };
+        let args = drupal_arguments(&input).unwrap();
+        assert_eq!(&args[..2], ["site:install", "standard"]);
+        assert!(args.contains(&"--account-pass=it's a $ecret pass".to_string()));
+        assert!(
+            drupal_arguments(&DrupalInstall {
+                account_pass: "short".into(),
+                ..input
+            })
+            .is_err()
+        );
+        assert_eq!(
+            package_for("drupal", "11").unwrap(),
+            ("drupal/recommended-project", "^11.0")
+        );
+        assert!(package_for("drupal", "9").is_err());
     }
 
     #[test]

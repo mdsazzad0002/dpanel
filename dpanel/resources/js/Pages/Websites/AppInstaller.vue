@@ -26,6 +26,9 @@ watch(() => props.website, (next) => {
 const website = computed(() => websiteState.value || {});
 
 const isJoomla = computed(() => props.app.key === 'joomla');
+const isDrupal = computed(() => props.app.key === 'drupal');
+// Joomla and Drupal both create an administrator account during install.
+const needsAccount = computed(() => isJoomla.value || isDrupal.value);
 const isWhmcs = computed(() => props.app.key === 'whmcs');
 const databaseOptional = computed(() => props.app.database === 'optional');
 const newDatabaseOnly = computed(() => props.app.database === 'new');
@@ -104,9 +107,9 @@ const uploadPackage = async (event) => {
         uploadBusy.value = false;
     }
 };
-const joomlaValid = computed(() => !isJoomla.value || (
+const joomlaValid = computed(() => !needsAccount.value || (
     joomla.value.site_name.trim()
-    && joomla.value.admin_name.trim()
+    && (!isJoomla.value || joomla.value.admin_name.trim())
     && /^[A-Za-z0-9_.@-]+$/.test(joomla.value.admin_username)
     && /.+@.+\..+/.test(joomla.value.admin_email)
     && joomla.value.admin_password.length >= 12
@@ -140,9 +143,17 @@ const INSTALL_STAGES = ['backing_up', 'downloading', 'creating_database', 'confi
 const INSTALL_STAGE_LABELS = computed(() => ({
     queued: 'Queued…',
     backing_up: 'Moving existing files to trash…',
-    downloading: isJoomla.value ? 'Downloading and extracting Joomla…' : 'Downloading CodeIgniter with Composer…',
+    downloading: {
+        joomla: 'Downloading and extracting Joomla…',
+        drupal: 'Downloading Drupal and Drush with Composer…',
+        whmcs: 'Extracting the WHMCS package…',
+    }[props.app.key] || 'Downloading CodeIgniter with Composer…',
     creating_database: 'Preparing database…',
-    configuring: isJoomla.value ? 'Running the Joomla installer…' : 'Writing .env…',
+    configuring: {
+        joomla: 'Running the Joomla installer…',
+        drupal: 'Writing settings.php and running drush site:install…',
+        whmcs: 'Running the WHMCS installer…',
+    }[props.app.key] || 'Writing .env…',
     finalizing: 'Setting permissions, PHP version and document root…',
     ready: 'Done',
 }));
@@ -211,7 +222,7 @@ const install = async () => {
                 version: selectedVersion.value,
                 database_id: selectedDatabaseId.value,
                 database_suffix: props.newDatabase?.suffix || null,
-                ...(isJoomla.value ? joomla.value : {}),
+                ...(needsAccount.value ? joomla.value : {}),
                 ...(isWhmcs.value ? { ...whmcs.value, license_key: whmcs.value.license_key.trim(), upload_id: uploadId.value } : {}),
             },
             { headers: { Accept: 'application/json' } },
@@ -330,11 +341,11 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                     </div>
                 </div>
 
-                <div v-if="isJoomla" class="mt-5">
+                <div v-if="needsAccount" class="mt-5">
                     <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Site &amp; administrator</p>
                     <div class="mt-2 grid gap-3 sm:grid-cols-2">
                         <label class="text-sm">Site name<input v-model="joomla.site_name" type="text" :disabled="installBusy" :class="inputClass" /></label>
-                        <label class="text-sm">Admin full name<input v-model="joomla.admin_name" type="text" :disabled="installBusy" :class="inputClass" /></label>
+                        <label v-if="isJoomla" class="text-sm">Admin full name<input v-model="joomla.admin_name" type="text" :disabled="installBusy" :class="inputClass" /></label>
                         <label class="text-sm">Admin username<input v-model="joomla.admin_username" type="text" autocomplete="off" :disabled="installBusy" :class="inputClass" /></label>
                         <label class="text-sm">Admin email<input v-model="joomla.admin_email" type="email" :disabled="installBusy" :class="inputClass" /></label>
                         <label class="text-sm sm:col-span-2">
@@ -356,7 +367,7 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                             <span class="min-w-0">
                                 <span class="block break-all text-sm font-semibold">{{ db.database_name }}</span>
                                 <span class="block break-all text-xs text-slate-500 dark:text-slate-400">User: {{ db.database_user }}</span>
-                                <span class="block text-xs text-slate-500 dark:text-slate-400">{{ isJoomla ? 'Existing tables are kept; Joomla uses a new table prefix' : 'Credentials are written to .env' }}</span>
+                                <span class="block text-xs text-slate-500 dark:text-slate-400">{{ isJoomla ? 'Existing tables are kept; Joomla uses a new table prefix' : (isDrupal ? 'All tables will be dropped by the installer' : 'Credentials are written to .env') }}</span>
                             </span>
                         </label>
                         <label class="flex cursor-pointer gap-3 rounded-lg border p-3 transition" :class="cardClass(selectedDatabaseId === 'new')">
@@ -380,7 +391,7 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                         <dl class="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
                             <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Database:</dt><dd class="break-all font-mono">{{ newDatabase.database_name }}</dd></div>
                             <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">User:</dt><dd class="break-all font-mono">{{ newDatabase.database_user }}</dd></div>
-                            <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Password:</dt><dd>auto-generated, saved in <code>{{ isJoomla ? 'configuration.php' : '.env' }}</code></dd></div>
+                            <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Password:</dt><dd>auto-generated, saved in <code>{{ isJoomla ? 'configuration.php' : (isDrupal ? 'web/sites/default/settings.php' : '.env') }}</code></dd></div>
                             <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Host:</dt><dd class="font-mono">{{ newDatabase.database_host }}</dd></div>
                         </dl>
                     </div>
@@ -404,6 +415,10 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                     <li v-if="isWhmcs">
                         <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
                         Needs the ionCube Loader for PHP {{ targetPhp || '8.1–8.3' }}. The <code>install/</code> folder is removed, a 5-minute cron for <code>crons/cron.php</code> is added, and the admin area is <code>/admin</code>.
+                    </li>
+                    <li v-if="isDrupal">
+                        <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
+                        Drush is added to the project (<code>vendor/bin/drush</code>). Log in at <code>/user/login</code>.
                     </li>
                     <li v-if="isJoomla">
                         <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
