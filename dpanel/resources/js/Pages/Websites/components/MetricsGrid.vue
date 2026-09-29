@@ -38,18 +38,17 @@ const metricColorClasses = {
     emerald: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400',
 };
 
-// The account root the site lives in: /home/<user> or /var/www. Falls back
-// to the site root for any other layout.
-const accountRoot = (rootPath) => {
-    const path = String(rootPath || '').trim().replace(/\/+$/, '');
-    const home = path.match(/^\/home\/[^/]+/);
-    if (home) return home[0];
-    if (path === '/var/www' || path.startsWith('/var/www/')) return '/var/www';
-    return path;
-};
+// Sites under /var/www get the whole /var/www; everywhere else the project
+// root (the directory holding .git when there is one).
+const permissionRoot = computed(() => {
+    const siteRoot = String(props.website?.root_path || '').trim().replace(/\/+$/, '');
+    if (siteRoot === '/var/www' || siteRoot.startsWith('/var/www/')) return '/var/www';
+    const projectRoot = props.rootInspection?.has_git ? String(props.rootInspection?.root_path || '').trim() : '';
+    return (projectRoot || siteRoot).replace(/\/+$/, '');
+});
 
 const localDevPermissionCommand = computed(() => {
-    const path = accountRoot(props.website?.root_path);
+    const path = permissionRoot.value;
     if (!path) return '';
     return `sudo chmod -R u+rwX ${path} && sudo chmod -R 777 ${path}`;
 });
