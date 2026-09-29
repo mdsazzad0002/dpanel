@@ -134,7 +134,7 @@ const isPythonWebsite = computed(() => String(props.website?.runtime || 'php') =
             <!-- Services + Activity -->
             <section class="grid gap-4 xl:grid-cols-[minmax(0,2.4fr)_minmax(300px,1fr)]">
                 <div class="contents">
-                    <MetricsGrid :website="website" :metrics="metrics" />
+                    <MetricsGrid :website="website" :metrics="metrics" :root-inspection="rootInspection" />
                     <ServicesGrid :website="website" />
                 </div>
 

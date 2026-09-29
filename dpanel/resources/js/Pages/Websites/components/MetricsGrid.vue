@@ -11,6 +11,10 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    rootInspection: {
+        type: Object,
+        default: () => ({}),
+    },
 });
 
 const pushToast = inject('pushToast');
@@ -34,10 +38,27 @@ const metricColorClasses = {
     emerald: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400',
 };
 
+// Sites under /var/www get the whole /var/www; everywhere else the project
+// root (the directory holding .git when there is one).
+const permissionRoot = computed(() => {
+    const siteRoot = String(props.website?.root_path || '').trim().replace(/\/+$/, '');
+    if (siteRoot === '/var/www' || siteRoot.startsWith('/var/www/')) return '/var/www';
+    const projectRoot = props.rootInspection?.has_git ? String(props.rootInspection?.root_path || '').trim() : '';
+    return (projectRoot || siteRoot).replace(/\/+$/, '');
+});
+
 const localDevPermissionCommand = computed(() => {
-    const path = String(props.website?.root_path || '').trim();
+    const path = permissionRoot.value;
     if (!path) return '';
     return `sudo chmod -R u+rwX ${path} && sudo chmod -R 777 ${path}`;
+});
+
+// After chmod -R 777 every file shows up as modified in git; tell git to
+// ignore permission bits. Only offered when the project is a git checkout.
+const gitFileModeCommand = computed(() => {
+    if (!props.rootInspection?.has_git) return '';
+    const path = String(props.rootInspection?.root_path || props.website?.root_path || '').trim();
+    return path ? `git -C ${path} config core.fileMode false` : '';
 });
 
 const copyToClipboard = (text, toastMessage = '') => {
@@ -69,6 +90,17 @@ const copyToClipboard = (text, toastMessage = '') => {
                 <i class="bi bi-exclamation-triangle-fill mt-0.5 shrink-0"></i>
                 <span>Development risk: this opens file permissions to 777. Only run it on your local machine — never on a production server.</span>
             </p>
+            <div v-if="gitFileModeCommand" class="mt-3 border-t border-blue-200 pt-3 dark:border-blue-800">
+                <div class="flex items-start justify-between gap-2">
+                    <p class="text-xs text-blue-700 dark:text-blue-300">Git repository found. Run this too so the permission change doesn't show every file as modified in git.</p>
+                    <button type="button"
+                        class="shrink-0 rounded-lg border border-blue-200 bg-white p-1.5 text-blue-500 transition hover:text-blue-700 dark:border-blue-800 dark:bg-slate-900 dark:hover:text-blue-300"
+                        @click="copyToClipboard(gitFileModeCommand, 'Command copied — paste it in your local terminal.')" title="Copy command" aria-label="Copy git command">
+                        <i class="bi bi-copy text-sm"></i>
+                    </button>
+                </div>
+                <code class="mt-2 block overflow-x-auto rounded-lg bg-white/70 px-2.5 py-1.5 text-[11px] text-blue-800 dark:bg-slate-900/50 dark:text-blue-300">{{ gitFileModeCommand }}</code>
+            </div>
         </div>
         <Deferred data="metrics">
             <template #fallback>
