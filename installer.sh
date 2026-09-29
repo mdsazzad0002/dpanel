@@ -48,6 +48,43 @@ find_dscript_root() {
   dirname "$candidate"
 }
 
+# Print the highest version tag (v1.2.3 or 1.2.3) of DPANEL_REPO, or nothing.
+latest_release_tag() {
+  local tags_json="${TMP_DIR}/tags.json"
+  download "https://api.github.com/repos/${DPANEL_REPO}/tags?per_page=100" "$tags_json" 2>/dev/null || return 0
+  grep -o '"name": *"[^"]*"' "$tags_json" \
+    | sed 's/^"name": *"//; s/"$//' \
+    | grep -E '^v?[0-9]+(\.[0-9]+)*$' \
+    | sort -V \
+    | tail -n 1 || true
+}
+
+# Print the full commit SHA that a ref points to, or nothing.
+commit_for_ref() {
+  local sha_file="${TMP_DIR}/commit.sha"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --retry 3 --connect-timeout 10 -H 'Accept: application/vnd.github.sha' \
+      "https://api.github.com/repos/${DPANEL_REPO}/commits/$1" -o "$sha_file" 2>/dev/null || return 0
+  else
+    wget -q --tries=3 --timeout=10 --header='Accept: application/vnd.github.sha' \
+      -O "$sha_file" "https://api.github.com/repos/${DPANEL_REPO}/commits/$1" 2>/dev/null || return 0
+  fi
+  grep -Eo '^[0-9a-f]{40}$' "$sha_file" || true
+}
+
+# Turn a ref into the APP_VERSION shown in the panel: v1.2.3 -> 1.2.3,
+# a branch or commit -> <ref>-<short sha>.
+app_version_for() {
+  local ref="$1" commit="$2"
+  if [[ "$ref" =~ ^v?[0-9]+(\.[0-9]+)*$ ]]; then
+    printf '%s' "${ref#v}"
+  elif [[ -n "$commit" && "$ref" != "$commit" ]]; then
+    printf '%s-%s' "$ref" "${commit:0:7}"
+  else
+    printf '%s' "${ref:0:12}"
+  fi
+}
+
 register_dpanel_command() {
   local command_name launcher_path temp_launcher
   install -d -m 0755 /usr/local/bin
@@ -74,7 +111,8 @@ EOF
 #   bash installer.sh
 #   bash installer.sh php mariadb redis
 #   bash installer.sh update
-#   DPANEL_REF="v1.2.0" bash installer.sh                  # a tag, branch or commit
+#   DPANEL_VERSION="v1.2.0" bash installer.sh             # one release tag
+#   DPANEL_VERSION="main" bash installer.sh               # a branch or commit
 #   DPANEL_REPO="your-user/dpanel" bash installer.sh       # install from a fork
 #   PANEL_INSTALL_BASE_URL="https://mirror.example.com" bash installer.sh
 #   DSCRIPT_SOURCE_DIR="/var/www/dscript" bash installer.sh   # git checkout at /var/www
@@ -90,20 +128,62 @@ EOF
 # Configure installer paths and download URLs.
 #
 # By default everything comes straight from GitHub: the release is the source
-# archive of DPANEL_REF, and dscript assets are served from raw.githubusercontent.com.
+# archive of the selected version, and dscript assets are served from
+# raw.githubusercontent.com. DPANEL_VERSION picks the version:
+#
+#   latest (default)   highest version tag, such as v1.2.3; main when no tag exists
+#   v1.2.3             that release tag
+#   main / <commit>    a branch or commit
+#
 # A custom mirror can still be used with PANEL_INSTALL_BASE_URL, which must serve
 # /dscript.zip (built by dscript/archive.sh) and the /dscript/ tree.
 #
 DPANEL_REPO="${DPANEL_REPO:-mdsazzad0002/dpanel}"
-DPANEL_REF="${DPANEL_REF:-main}"
-DEFAULT_BASE_URL="https://raw.githubusercontent.com/${DPANEL_REPO}/${DPANEL_REF}"
-BASE_URL="${PANEL_INSTALL_BASE_URL:-${DPANEL_BASE_URL:-$DEFAULT_BASE_URL}}"
+DPANEL_VERSION="${DPANEL_VERSION:-${DPANEL_REF:-latest}}"
 DSCRIPT_DIR="${DSCRIPT_DIR:-/var/www/dscript}"
 TMP_DIR="$(mktemp -d)"
+trap cleanup EXIT
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Run this installer as root."
+
+DPANEL_RELEASE_REF=""
+DPANEL_RELEASE_COMMIT=""
+if [[ -n "${DSCRIPT_SOURCE_DIR:-}" ]]; then
+  # Local checkout: describe the checked-out commit when git is available.
+  if command -v git >/dev/null 2>&1 && git -C "$DSCRIPT_SOURCE_DIR" rev-parse HEAD >/dev/null 2>&1; then
+    DPANEL_RELEASE_COMMIT="$(git -C "$DSCRIPT_SOURCE_DIR" rev-parse HEAD)"
+    DPANEL_RELEASE_REF="$(git -C "$DSCRIPT_SOURCE_DIR" describe --tags --exact-match 2>/dev/null \
+      || git -C "$DSCRIPT_SOURCE_DIR" rev-parse --abbrev-ref HEAD)"
+  fi
+elif [[ -z "${PANEL_INSTALL_BASE_URL:-${DPANEL_BASE_URL:-}}" && -z "${DSCRIPT_ARCHIVE_URL:-}" && -z "${DSCRIPT_ARCHIVE_PATH:-}" ]]; then
+  if [[ "$DPANEL_VERSION" == "latest" ]]; then
+    DPANEL_RELEASE_REF="$(latest_release_tag)"
+    if [[ -z "$DPANEL_RELEASE_REF" ]]; then
+      printf '[WARN] No release tag found in %s; installing the main branch.\n' "$DPANEL_REPO"
+      DPANEL_RELEASE_REF="main"
+    fi
+  else
+    DPANEL_RELEASE_REF="$DPANEL_VERSION"
+  fi
+  DPANEL_RELEASE_COMMIT="$(commit_for_ref "$DPANEL_RELEASE_REF")"
+elif [[ "$DPANEL_VERSION" != "latest" ]]; then
+  # Custom mirror or archive: trust an explicit version, there is nothing to resolve.
+  DPANEL_RELEASE_REF="$DPANEL_VERSION"
+fi
+
+DPANEL_RELEASE_VERSION=""
+if [[ -n "$DPANEL_RELEASE_REF" ]]; then
+  DPANEL_RELEASE_VERSION="$(app_version_for "$DPANEL_RELEASE_REF" "$DPANEL_RELEASE_COMMIT")"
+  printf '[INFO] Selected dPanel %s (%s%s)\n' "$DPANEL_RELEASE_VERSION" "$DPANEL_RELEASE_REF" \
+    "${DPANEL_RELEASE_COMMIT:+ @ ${DPANEL_RELEASE_COMMIT:0:7}}"
+fi
+
+DEFAULT_BASE_URL="https://raw.githubusercontent.com/${DPANEL_REPO}/${DPANEL_RELEASE_REF:-main}"
+BASE_URL="${PANEL_INSTALL_BASE_URL:-${DPANEL_BASE_URL:-$DEFAULT_BASE_URL}}"
 ARCHIVE_PATH="${TMP_DIR}/release.zip"
 EXTRACT_DIR="${TMP_DIR}/extracted"
 if [[ "$BASE_URL" == "$DEFAULT_BASE_URL" ]]; then
-  default_archive_url="https://github.com/${DPANEL_REPO}/archive/${DPANEL_REF}.zip"
+  default_archive_url="https://github.com/${DPANEL_REPO}/archive/${DPANEL_RELEASE_REF:-main}.zip"
 else
   default_archive_url="${BASE_URL%/}/dscript.zip"
 fi
@@ -114,13 +194,6 @@ else
   dscript_base_url="${BASE_URL%/}/dscript"
 fi
 
-
-#
-# Register cleanup and confirm the installer is running as root.
-#
-trap cleanup EXIT
-
-[[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Run this installer as root."
 
 
 #
@@ -222,8 +295,13 @@ elif [[ "${1:-}" == "chain" ]]; then
 else
   dscript_args=(chain install "$@")
 fi
+# dscript records the version in the panel .env (APP_VERSION and DPANEL_RELEASE_*).
 PANEL_INSTALL_BASE_URL="$BASE_URL" \
 PANEL_DSCRIPT_BASE_URL="$dscript_base_url" \
+DPANEL_REPO="$DPANEL_REPO" \
+DPANEL_RELEASE_REF="$DPANEL_RELEASE_REF" \
+DPANEL_RELEASE_COMMIT="$DPANEL_RELEASE_COMMIT" \
+DPANEL_RELEASE_VERSION="$DPANEL_RELEASE_VERSION" \
 bash "${DSCRIPT_DIR}/dpanel" "${dscript_args[@]}"
 
 

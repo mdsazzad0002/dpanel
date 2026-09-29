@@ -406,7 +406,7 @@ systemctl status edge-gateway --no-pager
 | Variable | Default | Purpose |
 |---|---|---|
 | `DPANEL_REPO` | `mdsazzad0002/dpanel` | GitHub repository to install from |
-| `DPANEL_REF` | `main` | Branch, tag, or commit to install |
+| `DPANEL_VERSION` | `latest` | `latest` (highest version tag), a tag, a branch, or a commit |
 | `PANEL_INSTALL_BASE_URL` | `https://raw.githubusercontent.com/<repo>/<ref>` | Optional custom mirror root |
 | `PANEL_DSCRIPT_BASE_URL` | `<site>/dscript` | Explicit dscript asset root |
 | `DPANEL_BASE_URL` | dscript asset root | Manifest/module download root |
@@ -463,13 +463,19 @@ Everything is served directly by GitHub; there is no separate download server:
 | Release archive | `https://github.com/mdsazzad0002/dpanel/archive/main.zip` (GitHub source zip) |
 | dscript assets for updates | `https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/dscript/` |
 
-Publishing a release is just a push to `main`. Pin a tag, branch, or commit,
-or install from a fork, with:
+By default the installer picks the **latest version tag** (for example
+`v1.2.3`), falling back to `main` when no tag exists. Choose another version,
+or a fork, with:
 
 ```bash
-sudo env DPANEL_REF=v1.2.0 ./installer.sh
-sudo env DPANEL_REPO=your-user/dpanel DPANEL_REF=my-branch ./installer.sh
+sudo env DPANEL_VERSION=v1.2.0 ./installer.sh
+sudo env DPANEL_VERSION=main ./installer.sh
+sudo env DPANEL_REPO=your-user/dpanel DPANEL_VERSION=my-branch ./installer.sh
 ```
+
+The selected version is written to the panel `.env` as `APP_VERSION`,
+`DPANEL_RELEASE_REF`, and `DPANEL_RELEASE_COMMIT` on every install and
+`update`. See [Versions and updates](installation.md#versions-and-updates).
 
 Forward any dscript command:
 
@@ -492,7 +498,7 @@ sudo env DSCRIPT_SOURCE_DIR=/var/www/dscript /var/www/installer.sh php,mariadb,r
 ```
 
 Source precedence is `DSCRIPT_SOURCE_DIR`, `DSCRIPT_ARCHIVE_PATH`,
-`DSCRIPT_ARCHIVE_URL`, then the GitHub source zip of `DPANEL_REF`. With no
+`DSCRIPT_ARCHIVE_URL`, then the GitHub source zip of the selected `DPANEL_VERSION`. With no
 source parameter, the installer downloads and extracts that zip.
 
 The installer owns no server configuration; it downloads the dscript archive,

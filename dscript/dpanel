@@ -17,7 +17,7 @@ set -Eeuo pipefail
 # without the full dscript directory beside it.
 #
 SCRIPT_NAME="$(basename "$0")"
-DEFAULT_BASE_URL="https://raw.githubusercontent.com/${DPANEL_REPO:-mdsazzad0002/dpanel}/${DPANEL_REF:-main}"
+DEFAULT_BASE_URL="https://raw.githubusercontent.com/${DPANEL_REPO:-mdsazzad0002/dpanel}/${DPANEL_RELEASE_REF:-main}"
 BASE_URL="${PANEL_INSTALL_BASE_URL:-${DPANEL_BASE_URL:-$DEFAULT_BASE_URL}}"
 BASE_URL_SOURCE="default"
 if [[ -n "${PANEL_INSTALL_BASE_URL:-}" ]]; then

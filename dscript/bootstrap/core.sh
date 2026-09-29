@@ -153,7 +153,7 @@ PY
     [[ -n "$configured" ]] && { printf '%s' "$configured"; return 0; }
   fi
 
-  printf '%s' "https://raw.githubusercontent.com/${DPANEL_REPO:-mdsazzad0002/dpanel}/${DPANEL_REF:-main}/dscript"
+  printf '%s' "https://raw.githubusercontent.com/${DPANEL_REPO:-mdsazzad0002/dpanel}/${DPANEL_RELEASE_REF:-main}/dscript"
 }
 
 panel_fetch() {
@@ -1849,6 +1849,22 @@ panel_resync_website_vhosts() {
   fi
 }
 
+# Record the installed release in the panel .env. installer.sh resolves the
+# version (a tag, "latest", or a branch/commit) and passes it in DPANEL_RELEASE_*;
+# APP_VERSION is what the panel shows in its sidebar and footer.
+panel_record_release_version() {
+  local env_file
+
+  [[ -n "${DPANEL_RELEASE_VERSION:-}" ]] || return 0
+  env_file="$(panel_resolve_app_env_file)"
+  [[ -n "$env_file" && -f "$env_file" ]] || return 0
+
+  panel_env_set "$env_file" APP_VERSION "$DPANEL_RELEASE_VERSION"
+  panel_env_set "$env_file" DPANEL_RELEASE_REF "${DPANEL_RELEASE_REF:-}"
+  panel_env_set "$env_file" DPANEL_RELEASE_COMMIT "${DPANEL_RELEASE_COMMIT:-}"
+  panel_info_log "Recorded dPanel version ${DPANEL_RELEASE_VERSION} in ${env_file}."
+}
+
 panel_refresh_app_config_cache() {
   local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
 
@@ -1936,6 +1952,7 @@ panel_finalize_default_install() {
     panel_warn_log "Admin user env vars are ignored during bootstrap. Create the first user after install from the menu."
   fi
 
+  panel_record_release_version
   panel_refresh_app_config_cache
   # Runs last: composer, migrations, npm and the config cache all create files as
   # root, so repairing before them leaves root-owned files under storage/.
@@ -2054,6 +2071,8 @@ panel_bootstrap() {
       panel_refresh_phpmyadmin_sso
       panel_fix_website_permissions
       panel_resync_website_vhosts
+      panel_record_release_version
+      panel_refresh_app_config_cache
       panel_fix_app_permissions
       ;;
     info)

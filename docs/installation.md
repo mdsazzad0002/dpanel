@@ -7,6 +7,7 @@ supported way to set up and repair website file permissions.
 
 - [Requirements](#requirements)
 - [Install dPanel](#install-dpanel)
+- [Versions and updates](#versions-and-updates)
 - [Installed paths](#installed-paths)
 - [Configuration](#configuration)
 - [Website ownership and permissions](#website-ownership-and-permissions)
@@ -42,16 +43,61 @@ To install or refresh the Rust services on their own:
 sudo /var/www/drust/deploy/install-service.sh
 ```
 
-Everything is downloaded straight from GitHub: the installer, the release
-(the source zip of the `main` branch), and later module updates. There is no
-separate download server, so a push to `main` publishes a new release.
+## Versions and updates
 
-To install a specific tag, branch, or commit, or a fork:
+Everything is downloaded straight from GitHub. There is no separate download
+server and no zip file to manage: the installer uses GitHub's source zip of the
+version you choose.
+
+| `DPANEL_VERSION` | Installs |
+| --- | --- |
+| `latest` *(default)* | The highest release tag, such as `v1.2.3`. Falls back to `main` if the repository has no tags yet |
+| `v1.2.3` | That exact release tag |
+| `main`, another branch, or a commit SHA | That branch or commit |
 
 ```bash
-sudo env DPANEL_REF=v1.2.0 ./installer.sh
-sudo env DPANEL_REPO=your-user/dpanel DPANEL_REF=my-branch ./installer.sh
+sudo ./installer.sh                                  # latest release
+sudo env DPANEL_VERSION=v1.2.3 ./installer.sh        # one release
+sudo env DPANEL_VERSION=main ./installer.sh          # development branch
+sudo env DPANEL_REPO=your-user/dpanel DPANEL_VERSION=my-branch ./installer.sh   # a fork
 ```
+
+Update an existing server the same way:
+
+```bash
+sudo ./installer.sh update                           # to the latest release
+sudo env DPANEL_VERSION=v1.3.0 ./installer.sh update # to one release
+```
+
+### The version is recorded automatically
+
+Each install or update writes the selected version to `/var/www/dpanel/.env`,
+so the panel sidebar and footer always show what is running:
+
+```dotenv
+APP_VERSION=1.2.3                                        # tag without the "v"; main-<sha> for a branch
+DPANEL_RELEASE_REF=v1.2.3                                # tag, branch, or commit that was installed
+DPANEL_RELEASE_COMMIT=3f2c1e0d9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e
+```
+
+Check the installed version at any time:
+
+```bash
+sudo grep -E '^(APP_VERSION|DPANEL_RELEASE_)' /var/www/dpanel/.env
+```
+
+### Publishing a release (maintainers)
+
+Push a version tag. Nothing else is needed. A GitHub Release is optional.
+
+```bash
+git tag -a v1.2.3 -m "dPanel 1.2.3"
+git push origin v1.2.3
+```
+
+Use `vMAJOR.MINOR.PATCH` tags. Pre-release tags such as `v2.0.0-beta` are never
+picked by `latest`, but can still be installed with
+`DPANEL_VERSION=v2.0.0-beta`.
 
 ## Installed paths
 
