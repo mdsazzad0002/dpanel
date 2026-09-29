@@ -35,11 +35,12 @@ use App\Http\Controllers\PackagePlanController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
-use App\Http\Controllers\PhpMyAdmin\PhpMyAdminController;
+use App\Http\Controllers\PostgresqlController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RemoteMysqlAccessController;
 use App\Http\Controllers\RoleManagementController;
+use App\Http\Controllers\SecurityCenterController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\SelfConnectionController;
 use App\Http\Controllers\ServerController;
@@ -643,80 +644,6 @@ Route::prefix('cpsess{token}')
                 ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.edit');
 
-            Route::get('/phpmyadmin', [PhpMyAdminController::class, 'index'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.index');
-            Route::get('/phpmyadmin/about', [PhpMyAdminController::class, 'about'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.about');
-            Route::get('/phpmyadmin/sql', [PhpMyAdminController::class, 'sqlPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.sql');
-            Route::get('/phpmyadmin/databases-page', [PhpMyAdminController::class, 'databasesPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.databases');
-            Route::get('/phpmyadmin/transfer', [PhpMyAdminController::class, 'transferPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.transfer');
-            Route::get('/phpmyadmin/status', [PhpMyAdminController::class, 'statusPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.status');
-            Route::get('/phpmyadmin/user-accounts', [PhpMyAdminController::class, 'userAccountsPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.user-accounts');
-            Route::get('/phpmyadmin/settings', [PhpMyAdminController::class, 'settingsPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.settings');
-            Route::get('/phpmyadmin/replication', [PhpMyAdminController::class, 'replicationPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.replication');
-            Route::get('/phpmyadmin/variables', [PhpMyAdminController::class, 'variablesPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.variables');
-            Route::get('/phpmyadmin/charsets', [PhpMyAdminController::class, 'charsetsPage'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.page.charsets');
-            Route::get('/phpmyadmin/databases', [PhpMyAdminController::class, 'databases'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.databases');
-            Route::get('/phpmyadmin/databases/{database}', [PhpMyAdminController::class, 'database'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where('database', '[A-Za-z0-9_]+')
-                ->name('phpmyadmin.database');
-            Route::get('/phpmyadmin/databases/{database}/tables/{table}', [PhpMyAdminController::class, 'table'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table');
-            Route::delete('/phpmyadmin/databases/{database}/tables/{table}', [PhpMyAdminController::class, 'destroyTable'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table.destroy');
-            Route::post('/phpmyadmin/databases/{database}/tables/{table}/empty', [PhpMyAdminController::class, 'emptyTable'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table.empty');
-            Route::post('/phpmyadmin/databases/{database}/tables/{table}/rename', [PhpMyAdminController::class, 'renameTable'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table.rename');
-            Route::post('/phpmyadmin/databases/{database}/tables/{table}/structure', [PhpMyAdminController::class, 'alterTableStructure'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+', 'table' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table.structure.update');
-            Route::post('/phpmyadmin/databases/{database}/tables', [PhpMyAdminController::class, 'createTable'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->where(['database' => '[A-Za-z0-9_]+'])
-                ->name('phpmyadmin.table.create');
-            Route::post('/phpmyadmin/query', [PhpMyAdminController::class, 'execute'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.execute');
-            Route::post('/phpmyadmin/export', [PhpMyAdminController::class, 'export'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.export');
-            Route::post('/phpmyadmin/import', [PhpMyAdminController::class, 'import'])
-                ->middleware('role_or_permission:admin|reseller|manage_databases')
-                ->name('phpmyadmin.import');
-
             Route::get('/phpmyadmin/root-autologin', [DatabaseController::class, 'openPhpMyAdminRootGlobal'])
                 ->middleware('role:admin')
                 ->name('phpmyadmin.root-autologin');
@@ -830,6 +757,28 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->name('php.settings');
 
+            Route::get('/security/center', [SecurityCenterController::class, 'dashboard'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('security.center');
+            Route::get('/security/center/findings', [SecurityCenterController::class, 'findings'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('security.center.findings');
+            Route::post('/security/center/scans', [SecurityCenterController::class, 'startScan'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('security.center.scans.start');
+            Route::get('/security/center/scans/{scan}', [SecurityCenterController::class, 'scanStatus'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->whereNumber('scan')
+                ->name('security.center.scans.show');
+            Route::post('/security/center/findings/{finding}/status', [SecurityCenterController::class, 'updateFinding'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->whereNumber('finding')
+                ->name('security.center.findings.status');
+            Route::post('/security/center/rules/{rule}/toggle', [SecurityCenterController::class, 'toggleRule'])
+                ->middleware('role:admin')
+                ->where('rule', 'DP-[A-Z]+-[0-9]+')
+                ->name('security.center.rules.toggle');
+
             Route::get('/security', [SecurityController::class, 'manager'])
                 ->middleware('role:admin|reseller')
                 ->name('security.manager');
@@ -905,6 +854,17 @@ Route::prefix('cpsess{token}')
             Route::post('/databases/remote-access/refresh', [RemoteMysqlAccessController::class, 'refresh'])
                 ->middleware('role:admin')
                 ->name('databases.remote-access.refresh');
+
+            Route::get('/databases/postgresql', [PostgresqlController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('databases.postgresql');
+            Route::post('/databases/postgresql/refresh', [PostgresqlController::class, 'refresh'])
+                ->middleware('role:admin')
+                ->name('databases.postgresql.refresh');
+            Route::post('/databases/postgresql/{service}/toggle', [PostgresqlController::class, 'toggle'])
+                ->middleware('role:admin')
+                ->where('service', 'postgresql|pgadmin')
+                ->name('databases.postgresql.toggle');
 
             Route::get('/admin', [UserManagementController::class, 'index'])
                 ->middleware('role:admin')

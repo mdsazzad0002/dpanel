@@ -12,6 +12,7 @@ mod php_config;
 mod script;
 mod scripts;
 mod security;
+mod security_scan;
 mod ssl;
 mod vhost;
 mod vhost_ops;

@@ -310,7 +310,7 @@ default_install_sequence() {
   # The default install is split so Drust can be installed between the module
   # groups. Defer post-install configuration for the first group; otherwise the
   # panel details and system records are collected once per group.
-  PANEL_DEFER_FINALIZE=true dscript_cli chain install php mariadb redis supervisor
+  PANEL_DEFER_FINALIZE=true dscript_cli chain install php mariadb redis postgresql clamav supervisor
   install_drust_service
   PANEL_DEFER_FINALIZE=true dscript_cli chain install firewall dns fail2ban ssl
   install_mail_services
@@ -328,7 +328,7 @@ run_interactive_menu() {
     printf '\n'
     printf 'dpanel interactive menu\n'
     printf '=======================\n'
-    printf '1) Default Install (php -> mariadb -> redis -> supervisor -> rust/drust -> firewall -> dns -> fail2ban -> ssl -> postfix -> dovecot -> nodejs -> queue) | dpanel default-install\n'
+    printf '1) Default Install (php -> mariadb -> redis -> postgresql (off) -> clamav (off) -> supervisor -> rust/drust -> firewall -> dns -> fail2ban -> ssl -> postfix -> dovecot -> nodejs -> queue) | dpanel default-install\n'
     printf '2) Default Update | dpanel chain update\n'
     printf '3) Web stack menu | dpanel script run sync-vhost <action> <domain> <root-path> [php-version]\n'
     printf '4) PHP menu | dpanel php install all / dpanel php default <version>\n'

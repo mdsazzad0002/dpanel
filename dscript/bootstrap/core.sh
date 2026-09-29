@@ -1970,7 +1970,7 @@ panel_install_cli_launcher() {
 }
 
 panel_bootstrap() {
-  local requested_modules="${PANEL_MODULES:-php,mariadb,redis,ssl,supervisor,queue,firewall,fail2ban}"
+  local requested_modules="${PANEL_MODULES:-php,mariadb,redis,postgresql,clamav,ssl,supervisor,queue,firewall,fail2ban}"
   local skip_firewall="${SKIP_FIREWALL:-false}"
   local skip_ssl="${SKIP_SSL:-false}"
   local skip_test="${SKIP_TEST:-false}"

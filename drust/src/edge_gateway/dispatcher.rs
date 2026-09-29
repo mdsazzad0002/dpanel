@@ -91,6 +91,15 @@ pub async fn dispatch(
         response.headers_mut().remove(header::CONTENT_ENCODING);
         return response;
     }
+    if site.scope == "system" && is_system_pgadmin_path(&path) {
+        return handle_system_pgadmin(
+            request,
+            &path,
+            proxy_client,
+            site.hostnames.first().map(String::as_str).unwrap_or(""),
+        )
+        .await;
+    }
     // Certbot's webroot authenticator writes its token to the site's root
     // path regardless of runtime. Node/Python sites route "/" through a
     // reverse proxy, so serve this one path straight off disk or SSL
@@ -447,6 +456,54 @@ async fn handle_system_phpmyadmin(
                 )
             });
     annotated_response(response, site_match, "/phpmyadmin")
+}
+
+// pgAdmin runs as its own gunicorn service (dpanel-pgadmin, installed by the
+// dscript postgresql module) with SCRIPT_NAME=/pgadmin4, so the full request
+// path is forwarded unchanged.
+const PGADMIN_PATH: &str = "/pgadmin4";
+const PGADMIN_UPSTREAM: ([u8; 4], u16) = ([127, 0, 0, 1], 5050);
+
+fn is_system_pgadmin_path(path: &str) -> bool {
+    path == PGADMIN_PATH || path.starts_with("/pgadmin4/")
+}
+
+async fn handle_system_pgadmin(
+    request: Request<Body>,
+    path: &str,
+    proxy_client: &reqwest::Client,
+    site_match: &str,
+) -> Response {
+    if path == PGADMIN_PATH {
+        return annotated_response(
+            redirect_response(301, "/pgadmin4/"),
+            site_match,
+            PGADMIN_PATH,
+        );
+    }
+    let upstream = super::UpstreamConfig::Http(SocketAddr::from(PGADMIN_UPSTREAM));
+    let response = match proxy_request(proxy_client, &upstream, request).await {
+        Ok(response) => response,
+        // The service is off by default; a refused connection means an admin
+        // has not turned it on yet.
+        Err(_) => pgadmin_unavailable_response(),
+    };
+    annotated_response(response, site_match, PGADMIN_PATH)
+}
+
+fn pgadmin_unavailable_response() -> Response {
+    let mut response = simple_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>pgAdmin is turned off</title></head><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem"><h1>pgAdmin is turned off</h1><p>PostgreSQL and pgAdmin are installed but not running.</p><p>An admin can turn them on from <strong>dPanel &rarr; Database Management &rarr; PostgreSQL</strong>, or on the server with <code>sudo dpanel postgresql start</code>.</p></body></html>"#,
+    );
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 fn repair_phpmyadmin_sensitive_permissions(root: &Path) -> Result<(), String> {

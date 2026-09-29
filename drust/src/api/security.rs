@@ -4,17 +4,19 @@ use axum::{
     Router,
     extract::{Json, State},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
 };
 use serde::Deserialize;
 
 use crate::{
     api::{ApiResponse, ApiState, check_token},
-    security,
+    security, security_scan,
 };
 
 pub(crate) fn routes() -> Router<Arc<ApiState>> {
-    Router::new().route("/api/v1/security", get(status).post(control))
+    Router::new()
+        .route("/api/v1/security", get(status).post(control))
+        .route("/api/v1/security/scan", post(scan))
 }
 
 #[derive(Deserialize)]
@@ -76,5 +78,28 @@ async fn control(
     match result.and_then(|message| security::status().map(|data| (message, data))) {
         Ok((message, data)) => ApiResponse::ok_data(&message, data).into_response(),
         Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+    }
+}
+
+/// Runs a fixed set of checks against one website root. The caller picks the
+/// root and scan type only; it cannot influence which programs run.
+async fn scan(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<security_scan::ScanRequest>,
+) -> impl IntoResponse {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+    let result = tokio::task::spawn_blocking(move || security_scan::run(&request)).await;
+    match result {
+        Ok(Ok(report)) => match serde_json::to_value(&report) {
+            Ok(data) => ApiResponse::ok_data("Security scan completed.", data).into_response(),
+            Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+        },
+        Ok(Err(error)) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+        Err(error) => {
+            ApiResponse::error(&format!("Failed: scan task crashed: {error}")).into_response()
+        }
     }
 }
