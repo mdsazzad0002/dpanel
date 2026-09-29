@@ -35,11 +35,18 @@ pub(crate) struct JoomlaInstall {
     admin_username: String,
     admin_password: String,
     admin_email: String,
+    /// "mysqli" (MariaDB) or "pgsql"; older callers omit it.
+    #[serde(default = "default_db_type")]
+    db_type: String,
     db_host: String,
     db_user: String,
     db_pass: String,
     db_name: String,
     db_prefix: String,
+}
+
+fn default_db_type() -> String {
+    "mysqli".into()
 }
 
 pub(super) async fn install(site: &Site, input: &JoomlaInstall) -> Result<String, String> {
@@ -97,6 +104,9 @@ fn arguments(input: &JoomlaInstall) -> Result<Vec<String>, String> {
     if !prefix_ok {
         return Err("Invalid Joomla table prefix.".into());
     }
+    if !matches!(input.db_type.as_str(), "mysqli" | "pgsql") {
+        return Err("Invalid Joomla database type.".into());
+    }
     if !is_db_host(&input.db_host) {
         return Err("Invalid Joomla database host.".into());
     }
@@ -111,7 +121,7 @@ fn arguments(input: &JoomlaInstall) -> Result<Vec<String>, String> {
         format!("--admin-username={}", input.admin_username),
         format!("--admin-password={}", input.admin_password),
         format!("--admin-email={}", input.admin_email.trim()),
-        "--db-type=mysqli".into(),
+        format!("--db-type={}", input.db_type),
         format!("--db-host={}", input.db_host),
         format!("--db-user={}", input.db_user),
         format!("--db-pass={}", input.db_pass),
@@ -134,6 +144,7 @@ mod tests {
             admin_username: "admin".into(),
             admin_password: "correct horse battery".into(),
             admin_email: "admin@example.com".into(),
+            db_type: "mysqli".into(),
             db_host: "127.0.0.1".into(),
             db_user: "ex_user".into(),
             db_pass: "p@ss'word\"$x".into(),
@@ -164,6 +175,9 @@ mod tests {
         assert!(arguments(&input).is_err());
         let mut input = joomla();
         input.site_name = "a\nb".into();
+        assert!(arguments(&input).is_err());
+        let mut input = joomla();
+        input.db_type = "sqlite".into();
         assert!(arguments(&input).is_err());
     }
 }

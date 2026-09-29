@@ -94,6 +94,34 @@ class AppInstallServiceTest extends TestCase
         $this->assertArrayHasKey('hash_salt', $settingsArray);
     }
 
+    public function test_drupal_settings_use_the_pgsql_driver_for_postgresql(): void
+    {
+        $settings = app(AppInstallService::class)->drupalSettings("<?php\n", [
+            'engine' => 'postgresql',
+            'database_name' => 'ex_db',
+            'database_user' => 'ex_user',
+            'database_password' => 'secret',
+            'database_host' => '127.0.0.1',
+            'database_port' => '5432',
+        ]);
+
+        $file = tempnam(sys_get_temp_dir(), 'settings');
+        file_put_contents($file, $settings);
+        $databases = [];
+        (static function () use ($file, &$databases) {
+            include $file;
+        })();
+        unlink($file);
+
+        $connection = $databases['default']['default'];
+        $this->assertSame('pgsql', $connection['driver']);
+        $this->assertSame('Drupal\\pgsql\\Driver\\Database\\pgsql', $connection['namespace']);
+        $this->assertSame('5432', $connection['port']);
+        $this->assertArrayNotHasKey('collation', $connection);
+        $this->assertSame(['mariadb', 'postgresql'], AppInstallService::engines('codeigniter'));
+        $this->assertSame(['mariadb'], AppInstallService::engines('whmcs'));
+    }
+
     public function test_drupal_catalog_and_request_rules(): void
     {
         $this->assertSame('8.3', AppInstallService::DRUPAL_VERSIONS['11']['min_php']);

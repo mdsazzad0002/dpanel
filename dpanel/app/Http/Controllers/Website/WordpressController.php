@@ -43,19 +43,28 @@ class WordpressController extends WebsiteController
     public function wordpressManager(string $token, string $id): Response
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
+        $model = Website::query()->findOrFail($website['id']);
 
         return Inertia::render('Websites/WordPressInstaller', [
             'website' => $website,
+            'databases' => $this->wordpressInstallService->selectableDatabases($model, request()->user()),
+            'newDatabase' => $this->wordpressInstallService->previewNewDatabase($model),
             'rootInspection' => Inertia::defer(
                 fn () => $this->wordpressInstallService->inspectRootDirectory(
                     $this->wordpressInstallService->resolveInstallationRoot($website),
                 ),
                 'diagnostics',
             ),
+            'installedVersion' => Inertia::defer(
+                fn () => $this->wordpressInstallService->installedVersion($website),
+                'diagnostics',
+            ),
+            // Each version with its compatible PHP range and the PHP it would run on.
             'wordpressVersions' => Inertia::defer(
-                fn () => $this->wordpressInstallService->getWordPressVersionOptions(),
+                fn () => $this->wordpressInstallService->versionCatalog((string) ($website['php_version'] ?? '')),
                 'remote',
             ),
+            'phpRanges' => WordpressInstallService::WORDPRESS_PHP,
         ]);
     }
 

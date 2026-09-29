@@ -19,6 +19,8 @@ class WordpressInstallRequest extends FormRequest
         return [
             'wordpress_version' => ['nullable', 'string', 'max:20', 'regex:/^(latest|\\d+\\.\\d+(?:\\.\\d+)?)$/i'],
             'database_prefix' => ['nullable', 'string', 'max:32', 'regex:/^[A-Za-z0-9_]+$/'],
+            'database_id' => ['nullable', 'string', 'max:64'],
+            'database_suffix' => ['nullable', 'string', 'regex:/^[a-z0-9]{4}$/'],
             'return_to' => ['nullable', 'string', 'in:manage,wordpress'],
         ];
     }

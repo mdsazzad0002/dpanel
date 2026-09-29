@@ -12,6 +12,7 @@ const props = defineProps({
     databases: { type: Array, default: () => [] },
     newDatabase: { type: Object, default: () => null },
     databaseEngines: { type: Array, default: () => ['mariadb'] },
+    postgresql: { type: Object, default: () => ({ installed: false, active: false, port: 5432 }) },
     adminEmail: { type: String, default: '' },
     rootInspection: { type: Object, default: () => null },
 });
@@ -243,6 +244,7 @@ const install = async () => {
                 version: selectedVersion.value,
                 database_id: selectedDatabaseId.value,
                 database_suffix: props.newDatabase?.suffix || null,
+                database_engine: selectedDatabaseId.value === 'new' ? newDatabaseEngine.value : null,
                 ...(needsAccount.value ? joomla.value : {}),
                 ...(isWhmcs.value ? { ...whmcs.value, license_key: whmcs.value.license_key.trim(), upload_id: uploadId.value } : {}),
             },
@@ -385,6 +387,7 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                     :databases="databases"
                     :new-database="newDatabase"
                     :engines="databaseEngines"
+                    :postgresql="postgresql"
                     :allow-existing="!newDatabaseOnly"
                     :allow-none="databaseOptional"
                     :existing-note="existingDatabaseNote"
