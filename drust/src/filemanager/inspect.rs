@@ -81,6 +81,8 @@ fn inspect(request: &Request) -> Result<serde_json::Value, String> {
         "first_directory": wordpress.first().or(laravel.first()).or(codeigniter.first()).cloned().unwrap_or_default(),
         "summary": summary, "signals": { "wordpress": wordpress, "laravel": laravel, "codeigniter": codeigniter },
         "root_path": root, "has_composer_json": root.join("composer.json").is_file(), "has_package_json": root.join("package.json").is_file(),
+        // `.git` is a file (not a directory) in worktrees and submodules.
+        "has_git": root.join(".git").exists(),
         "storage_linked": storage_path.symlink_metadata().map(|metadata| metadata.file_type().is_symlink()).unwrap_or(false),
         "storage_link_path": storage_path,
     }))
