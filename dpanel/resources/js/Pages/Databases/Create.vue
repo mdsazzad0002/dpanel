@@ -14,11 +14,16 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    postgresql: {
+        type: Object,
+        default: () => ({ installed: false, active: false }),
+    },
 });
 
 const prefillDomain = new URLSearchParams(window.location.search).get('domain') || '';
 
 const form = useForm({
+    engine: 'mariadb',
     domain: props.websiteDomains.includes(prefillDomain) ? prefillDomain : '',
     database_name: '',
     database_user: '',
@@ -33,6 +38,16 @@ const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
 const showPassword = ref(false);
+const isPostgresql = computed(() => form.engine === 'postgresql');
+const engineOptions = computed(() => [
+    { value: 'mariadb', label: 'MariaDB / MySQL', hint: 'Opens in phpMyAdmin', disabled: false },
+    {
+        value: 'postgresql',
+        label: 'PostgreSQL',
+        hint: !props.postgresql.installed ? 'Not installed on this server' : 'Opens in pgAdmin',
+        disabled: !props.postgresql.installed,
+    },
+]);
 const useRemoteHost = ref(false);
 const suggestedDatabaseName = ref('');
 const suggestedDatabaseUser = ref('');
@@ -48,6 +63,17 @@ const databaseUserSuggestions = computed(() => [
 const submit = () => {
     form.post(panelRoute('databases.store'));
 };
+
+watch(
+    () => form.engine,
+    (engine) => {
+        if (engine === 'postgresql') {
+            // PostgreSQL databases are always local and UTF8.
+            useRemoteHost.value = false;
+            form.database_host = '127.0.0.1';
+        }
+    },
+);
 
 const toggleRemoteHost = () => {
     useRemoteHost.value = !useRemoteHost.value;
@@ -102,7 +128,7 @@ watch(
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Create Database</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Create a new MySQL/MariaDB database and user. Leave credentials blank to auto-generate them on save.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Create a new MariaDB or PostgreSQL database and user. Leave the password blank to auto-generate it on save.</p>
             </div>
         </template>
 
@@ -114,6 +140,32 @@ watch(
             </div>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-2 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
+                <fieldset class="md:col-span-2">
+                    <legend class="mb-1 block text-sm">Database Engine</legend>
+                    <div class="grid gap-2 sm:grid-cols-2">
+                        <label
+                            v-for="option in engineOptions"
+                            :key="option.value"
+                            :class="[
+                                form.engine === option.value
+                                    ? 'border-blue-500 bg-blue-50 dark:border-blue-500 dark:bg-blue-950/30'
+                                    : 'border-slate-300 dark:border-slate-700',
+                                option.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-blue-400',
+                            ]"
+                            class="flex items-start gap-3 rounded-md border px-3 py-2"
+                        >
+                            <input v-model="form.engine" type="radio" name="engine" :value="option.value" :disabled="option.disabled" class="mt-1" />
+                            <span>
+                                <span class="block text-sm font-medium">{{ option.label }}</span>
+                                <span class="block text-xs text-slate-500 dark:text-slate-400">{{ option.hint }}</span>
+                            </span>
+                        </label>
+                    </div>
+                    <p v-if="isPostgresql && !postgresql.active" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                        PostgreSQL is turned off. Turn it on under Database Management &rarr; PostgreSQL first, or the database will be saved as failed.
+                    </p>
+                    <p v-if="form.errors.engine" class="mt-1 text-xs text-red-600">{{ form.errors.engine }}</p>
+                </fieldset>
                 <div class="md:col-span-2">
                     <label class="mb-1 block text-sm">Website Domain</label>
                     <SearchableSelect
@@ -171,7 +223,7 @@ watch(
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">If left empty, the server will generate a strong password and save it with the request.</p>
                     <p v-if="form.errors.database_password" class="mt-1 text-xs text-red-600">{{ form.errors.database_password }}</p>
                 </div>
-                <div>
+                <div v-if="!isPostgresql">
                     <div class="mb-1 flex items-center justify-between">
                         <label class="block text-sm">Host</label>
                         <label class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -191,7 +243,12 @@ watch(
                     </p>
                     <p v-if="form.errors.database_host" class="mt-1 text-xs text-red-600">{{ form.errors.database_host }}</p>
                 </div>
-                <div>
+                <div v-if="isPostgresql">
+                    <label class="mb-1 block text-sm">Host</label>
+                    <input value="127.0.0.1:5432" type="text" disabled class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900" />
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Created on this server with UTF8 encoding.</p>
+                </div>
+                <div v-if="!isPostgresql">
                     <label class="mb-1 block text-sm">Charset</label>
                     <select v-model="form.charset" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option value="utf8mb4">utf8mb4</option>
@@ -200,7 +257,7 @@ watch(
                     </select>
                     <p v-if="form.errors.charset" class="mt-1 text-xs text-red-600">{{ form.errors.charset }}</p>
                 </div>
-                <div>
+                <div v-if="!isPostgresql">
                     <label class="mb-1 block text-sm">Collation</label>
                     <select v-model="form.collation" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option value="utf8mb4_unicode_ci">utf8mb4_unicode_ci</option>

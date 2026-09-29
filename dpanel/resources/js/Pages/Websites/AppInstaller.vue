@@ -2,6 +2,8 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Deferred, Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref, watch } from 'vue';
+import InstallerDatabasePicker from '@/Components/Installer/InstallerDatabasePicker.vue';
+import InstallerVersionPicker from '@/Components/Installer/InstallerVersionPicker.vue';
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -9,6 +11,7 @@ const props = defineProps({
     catalog: { type: Object, default: () => ({ versions: [], error: null }) },
     databases: { type: Array, default: () => [] },
     newDatabase: { type: Object, default: () => null },
+    databaseEngines: { type: Array, default: () => ['mariadb'] },
     adminEmail: { type: String, default: '' },
     rootInspection: { type: Object, default: () => null },
 });
@@ -38,6 +41,24 @@ const selectedVersion = ref(versions.value.find((v) => v.php_version)?.value || 
 const versionMeta = computed(() => versions.value.find((v) => v.value === selectedVersion.value) || null);
 
 const selectedDatabaseId = ref('new');
+const newDatabaseEngine = ref('mariadb');
+
+const versionOptions = computed(() => versions.value.map((version) => ({
+    value: version.value,
+    label: version.label,
+    hint: version.php_version ? `Runs on PHP ${version.php_version}` : `Needs PHP ${version.min_php}+ (not installed)`,
+    disabled: !version.php_version,
+})));
+const existingDatabaseNote = computed(() => {
+    if (isJoomla.value) return 'Existing tables are kept; Joomla uses a new table prefix';
+    if (isDrupal.value) return 'All tables will be dropped by the installer';
+    return 'Credentials are written to .env';
+});
+const passwordFile = computed(() => {
+    if (isJoomla.value) return 'configuration.php';
+    if (isDrupal.value) return 'web/sites/default/settings.php';
+    return '.env';
+});
 const selectedDatabase = computed(() => props.databases.find((db) => db.id === selectedDatabaseId.value) || null);
 
 const randomPassword = () => {
@@ -242,9 +263,6 @@ const install = async () => {
     }
 };
 
-const cardClass = (active) => (active
-    ? 'border-orange-400 bg-orange-50/60 dark:border-orange-500 dark:bg-orange-500/10'
-    : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600');
 const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800';
 </script>
 
@@ -301,14 +319,15 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                     {{ catalog.error }}
                 </div>
 
-                <div class="mt-5">
-                    <label class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Version</label>
-                    <select v-model="selectedVersion" :disabled="installBusy || versions.length === 0" :class="inputClass" class="sm:w-72">
-                        <option v-for="version in versions" :key="version.value" :value="version.value" :disabled="!version.php_version">
-                            {{ version.label }} (PHP {{ version.min_php }}+){{ version.php_version ? '' : ' — PHP not installed' }}
-                        </option>
-                    </select>
-                </div>
+                <InstallerVersionPicker
+                    v-model="selectedVersion"
+                    class="mt-5"
+                    :label="`${app.label} Version`"
+                    name="app_version"
+                    :versions="versionOptions"
+                    :disabled="installBusy"
+                    accent="orange"
+                />
 
                 <div v-if="isWhmcs" class="mt-5">
                     <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">WHMCS package &amp; license</p>
@@ -359,43 +378,20 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                     </div>
                 </div>
 
-                <div class="mt-5">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Database</p>
-                    <div class="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        <label v-for="db in (newDatabaseOnly ? [] : databases)" :key="db.id" class="flex cursor-pointer gap-3 rounded-lg border p-3 transition" :class="cardClass(selectedDatabaseId === db.id)">
-                            <input v-model="selectedDatabaseId" type="radio" name="database" class="mt-1" :value="db.id" :disabled="installBusy" />
-                            <span class="min-w-0">
-                                <span class="block break-all text-sm font-semibold">{{ db.database_name }}</span>
-                                <span class="block break-all text-xs text-slate-500 dark:text-slate-400">User: {{ db.database_user }}</span>
-                                <span class="block text-xs text-slate-500 dark:text-slate-400">{{ isJoomla ? 'Existing tables are kept; Joomla uses a new table prefix' : (isDrupal ? 'All tables will be dropped by the installer' : 'Credentials are written to .env') }}</span>
-                            </span>
-                        </label>
-                        <label class="flex cursor-pointer gap-3 rounded-lg border p-3 transition" :class="cardClass(selectedDatabaseId === 'new')">
-                            <input v-model="selectedDatabaseId" type="radio" name="database" class="mt-1" value="new" :disabled="installBusy" />
-                            <span>
-                                <span class="block text-sm font-semibold">Create new database</span>
-                                <span class="block text-xs text-slate-500 dark:text-slate-400">A fresh database and user for this website</span>
-                            </span>
-                        </label>
-                        <label v-if="databaseOptional" class="flex cursor-pointer gap-3 rounded-lg border p-3 transition" :class="cardClass(selectedDatabaseId === 'none')">
-                            <input v-model="selectedDatabaseId" type="radio" name="database" class="mt-1" value="none" :disabled="installBusy" />
-                            <span>
-                                <span class="block text-sm font-semibold">No database</span>
-                                <span class="block text-xs text-slate-500 dark:text-slate-400">Configure one later in .env</span>
-                            </span>
-                        </label>
-                    </div>
-
-                    <div v-if="selectedDatabaseId === 'new' && newDatabase" class="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/50">
-                        <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Will be created</p>
-                        <dl class="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
-                            <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Database:</dt><dd class="break-all font-mono">{{ newDatabase.database_name }}</dd></div>
-                            <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">User:</dt><dd class="break-all font-mono">{{ newDatabase.database_user }}</dd></div>
-                            <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Password:</dt><dd>auto-generated, saved in <code>{{ isJoomla ? 'configuration.php' : (isDrupal ? 'web/sites/default/settings.php' : '.env') }}</code></dd></div>
-                            <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Host:</dt><dd class="font-mono">{{ newDatabase.database_host }}</dd></div>
-                        </dl>
-                    </div>
-                </div>
+                <InstallerDatabasePicker
+                    v-model="selectedDatabaseId"
+                    v-model:engine="newDatabaseEngine"
+                    class="mt-5"
+                    :databases="databases"
+                    :new-database="newDatabase"
+                    :engines="databaseEngines"
+                    :allow-existing="!newDatabaseOnly"
+                    :allow-none="databaseOptional"
+                    :existing-note="existingDatabaseNote"
+                    :password-file="passwordFile"
+                    :disabled="installBusy"
+                    accent="orange"
+                />
 
                 <ul class="mt-5 space-y-1.5 text-sm text-slate-600 dark:text-slate-300">
                     <li v-if="targetPhp">

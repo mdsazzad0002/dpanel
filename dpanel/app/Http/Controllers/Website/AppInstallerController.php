@@ -59,6 +59,8 @@ class AppInstallerController extends WebsiteController
             'catalog' => $this->appInstallService->catalog($app, $model),
             'databases' => $this->databases->selectable($model, request()->user()),
             'newDatabase' => $this->databases->preview($model, $app),
+            // Joomla, Drupal, CodeIgniter and WHMCS are installed on MariaDB only.
+            'databaseEngines' => [\App\Models\DatabaseRequest::ENGINE_MARIADB],
             'adminEmail' => (string) (request()->user()?->email ?? ''),
             'rootInspection' => Inertia::defer(
                 fn () => $this->wordpressInstallService->inspectRootDirectory((string) ($website['root_path'] ?? '')),

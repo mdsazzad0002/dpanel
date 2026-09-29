@@ -2,6 +2,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Deferred, Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref, watch } from 'vue';
+import InstallerDatabasePicker from '@/Components/Installer/InstallerDatabasePicker.vue';
+import InstallerVersionPicker from '@/Components/Installer/InstallerVersionPicker.vue';
+import { engineLabel } from '@/Components/Installer/engines';
 
 const props = defineProps({
     website: {
@@ -23,6 +26,14 @@ const props = defineProps({
     gitRepository: {
         type: Object,
         default: () => null,
+    },
+    postgresql: {
+        type: Object,
+        default: () => ({ installed: false, active: false, port: 5432 }),
+    },
+    databaseEngines: {
+        type: Array,
+        default: () => ['mariadb'],
     },
     rootInspection: {
         type: Object,
@@ -58,6 +69,17 @@ watch(selectedVersion, () => {
 
 const selectedDatabaseId = ref(props.databases[0]?.id || 'new');
 const selectedDatabase = computed(() => props.databases.find((db) => db.id === selectedDatabaseId.value) || null);
+
+// Engine for a new database; an existing one keeps its own.
+const newDatabaseEngine = ref('mariadb');
+const effectiveEngine = computed(() => selectedDatabase.value?.engine || newDatabaseEngine.value);
+
+const versionOptions = computed(() => versions.value.map((version) => ({
+    value: version.value,
+    label: version.label,
+    hint: version.php_version ? `Runs on PHP ${version.php_version}` : `Needs PHP ${version.min_php}+ (not installed)`,
+    disabled: !version.php_version,
+})));
 
 const pushToGit = ref(Boolean(props.gitRepository));
 const gitRepositoryLabel = computed(() => props.gitRepository?.repository_full_name || props.gitRepository?.repository_url || '');
@@ -150,7 +172,7 @@ const installLaravel = async () => {
 
     const warnings = [];
     if (rootHasFiles.value) warnings.push(`Current files in ${website.value.root_path} will be moved to the File Manager trash.`);
-    if (selectedDatabase.value) warnings.push(`Database "${selectedDatabase.value.database_name}" will be wiped (migrate:fresh).`);
+    if (selectedDatabase.value) warnings.push(`${engineLabel(selectedDatabase.value.engine)} database "${selectedDatabase.value.database_name}" will be wiped (migrate:fresh).`);
     if (phpWillChange.value) warnings.push(`Website PHP will switch from ${currentPhp.value || 'none'} to ${targetPhp.value}.`);
     if (warnings.length && !window.confirm(`${warnings.join('\n')}\n\nContinue?`)) return;
 
@@ -166,6 +188,7 @@ const installLaravel = async () => {
                 laravel_version: selectedVersion.value,
                 database_id: selectedDatabaseId.value,
                 database_suffix: props.newDatabase?.suffix || null,
+                database_engine: selectedDatabase.value ? null : newDatabaseEngine.value,
                 push_to_git: Boolean(props.gitRepository) && pushToGit.value,
             },
             { headers: { Accept: 'application/json' } },
@@ -239,65 +262,30 @@ const installLaravel = async () => {
                     </Deferred>
                 </div>
 
-                <div class="mt-5">
-                    <label class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Laravel Version</label>
-                    <select
-                        v-model="selectedVersion"
-                        :disabled="installBusy"
-                        class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm sm:w-72 dark:border-slate-700 dark:bg-slate-800"
-                    >
-                        <option v-for="version in versions" :key="version.value" :value="version.value" :disabled="!version.php_version">
-                            {{ version.label }} (PHP {{ version.min_php }}+){{ version.php_version ? '' : ' — PHP not installed' }}
-                        </option>
-                    </select>
-                </div>
+                <InstallerVersionPicker
+                    v-model="selectedVersion"
+                    class="mt-5"
+                    label="Laravel Version"
+                    name="laravel_version"
+                    :versions="versionOptions"
+                    :disabled="installBusy"
+                    accent="red"
+                />
 
-                <div class="mt-5">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Database</p>
-                    <div class="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        <label
-                            v-for="db in databases"
-                            :key="db.id"
-                            class="flex cursor-pointer gap-3 rounded-lg border p-3 transition"
-                            :class="selectedDatabaseId === db.id
-                                ? 'border-red-400 bg-red-50/60 dark:border-red-500 dark:bg-red-500/10'
-                                : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'"
-                        >
-                            <input v-model="selectedDatabaseId" type="radio" name="database" class="mt-1" :value="db.id" :disabled="installBusy" />
-                            <span class="min-w-0">
-                                <span class="block break-all text-sm font-semibold">{{ db.database_name }}</span>
-                                <span class="block break-all text-xs text-slate-500 dark:text-slate-400">User: {{ db.database_user }}</span>
-                                <span class="block text-xs text-rose-600 dark:text-rose-400">All tables will be dropped</span>
-                            </span>
-                        </label>
-                        <label
-                            class="flex cursor-pointer gap-3 rounded-lg border p-3 transition"
-                            :class="selectedDatabaseId === 'new'
-                                ? 'border-red-400 bg-red-50/60 dark:border-red-500 dark:bg-red-500/10'
-                                : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'"
-                        >
-                            <input v-model="selectedDatabaseId" type="radio" name="database" class="mt-1" value="new" :disabled="installBusy" />
-                            <span>
-                                <span class="block text-sm font-semibold">Create new database</span>
-                                <span class="block text-xs text-slate-500 dark:text-slate-400">A fresh database and user for this website</span>
-                            </span>
-                        </label>
-                    </div>
-
-                    <div
-                        v-if="selectedDatabaseId === 'new' && newDatabase"
-                        class="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/50"
-                    >
-                        <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Will be created</p>
-                        <dl class="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
-                            <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Database:</dt><dd class="break-all font-mono">{{ newDatabase.database_name }}</dd></div>
-                            <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">User:</dt><dd class="break-all font-mono">{{ newDatabase.database_user }}</dd></div>
-                            <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Password:</dt><dd>auto-generated, saved in <code>.env</code></dd></div>
-                            <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Host:</dt><dd class="font-mono">{{ newDatabase.database_host }}</dd></div>
-                            <div class="flex gap-2 sm:col-span-2"><dt class="text-slate-500 dark:text-slate-400">Charset:</dt><dd class="font-mono">{{ newDatabase.charset }} / {{ newDatabase.collation }}</dd></div>
-                        </dl>
-                    </div>
-                </div>
+                <InstallerDatabasePicker
+                    v-model="selectedDatabaseId"
+                    v-model:engine="newDatabaseEngine"
+                    class="mt-5"
+                    :databases="databases"
+                    :new-database="newDatabase"
+                    :engines="databaseEngines"
+                    :postgresql="postgresql"
+                    existing-note="All tables will be dropped"
+                    existing-note-class="text-rose-600 dark:text-rose-400"
+                    password-file=".env"
+                    :disabled="installBusy"
+                    accent="red"
+                />
 
                 <div class="mt-5">
                     <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Stack</p>
@@ -354,8 +342,9 @@ const installLaravel = async () => {
                     </li>
                     <li>
                         <i class="bi bi-database mr-2 text-orange-500"></i>
-                        <template v-if="selectedDatabase">Database <strong>{{ selectedDatabase.database_name }}</strong> will be reused and <strong>wiped</strong> by <code>migrate:fresh</code>.</template>
-                        <template v-else>A new database <strong>{{ newDatabase?.database_name }}</strong> will be created for {{ website.domain }}.</template>
+                        <template v-if="selectedDatabase">{{ engineLabel(selectedDatabase.engine) }} database <strong>{{ selectedDatabase.database_name }}</strong> will be reused and <strong>wiped</strong> by <code>migrate:fresh</code>.</template>
+                        <template v-else>A new {{ engineLabel(newDatabaseEngine) }} database <strong>{{ newDatabase?.database_name }}</strong> will be created for {{ website.domain }}.</template>
+                        <span v-if="effectiveEngine === 'postgresql'" class="block pl-6 text-xs text-slate-500 dark:text-slate-400">Laravel connects with <code>DB_CONNECTION=pgsql</code>; the site's PHP needs the <code>pdo_pgsql</code> extension.</span>
                     </li>
                     <li v-if="rootHasFiles">
                         <i class="bi bi-trash mr-2 text-rose-500"></i>

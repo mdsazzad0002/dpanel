@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 
 class PostgresqlServiceManager
@@ -27,7 +28,9 @@ class PostgresqlServiceManager
 
     /**
      * Turn a service on (start + enable at boot) or off (stop + disable at boot)
-     * through the dscript postgresql module.
+     * through drust. php-fpm runs with ProtectSystem=full, so /etc is read-only
+     * for anything it spawns (sudo included) and `systemctl enable` can't work
+     * from here; drust runs outside that sandbox.
      *
      * @return array{success: bool, error?: string}
      */
@@ -37,9 +40,33 @@ class PostgresqlServiceManager
             return ['success' => false, 'error' => 'Unknown service.'];
         }
 
-        $result = $this->runPrivileged(['dpanel', 'postgresql', $running ? 'start' : 'stop', $service]);
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        if ($baseUrl === '') {
+            return ['success' => false, 'error' => 'drust API is not configured.'];
+        }
 
-        return $result->successful() ? ['success' => true] : ['success' => false, 'error' => $this->tail($result)];
+        // Enabling pgAdmin can take a while on first start.
+        $request = Http::acceptJson()->asJson()->timeout(120);
+        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($token !== '') {
+            $request = $request->withToken($token);
+        }
+
+        try {
+            $response = $request->post(rtrim($baseUrl, '/').'/api/v1/postgresql/service', [
+                'service' => $service,
+                'enabled' => $running,
+            ]);
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => 'drust API request failed: '.$e->getMessage()];
+        }
+
+        $json = $response->json();
+        if ($response->successful() && is_array($json) && ($json['success'] ?? false)) {
+            return ['success' => true];
+        }
+
+        return ['success' => false, 'error' => (string) ((is_array($json) ? ($json['message'] ?? null) : null) ?: $response->body() ?: 'drust API failed.')];
     }
 
     /**
@@ -76,22 +103,5 @@ class PostgresqlServiceManager
         } catch (\Throwable) {
             return '';
         }
-    }
-
-    private function runPrivileged(array $command)
-    {
-        // Enabling pgAdmin can take a while on first start.
-        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
-            return Process::timeout(120)->run($command);
-        }
-
-        return Process::timeout(120)->run(array_merge(['sudo', '-n'], $command));
-    }
-
-    private function tail($result): string
-    {
-        $output = trim($result->errorOutput() ?: $result->output());
-
-        return $output !== '' ? substr($output, -500) : 'exit code '.$result->exitCode();
     }
 }

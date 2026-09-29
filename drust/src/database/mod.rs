@@ -1,3 +1,4 @@
+pub(crate) mod postgresql;
 pub(crate) mod request;
 
 pub(crate) fn run_database_request(

@@ -22,6 +22,11 @@ PGADMIN_BIND="127.0.0.1:5050"
 # Must match the fixed system path the drust edge gateway proxies.
 PGADMIN_SCRIPT_NAME="/pgadmin4"
 PGADMIN_DEFAULT_EMAIL="admin@dpanel.local"
+# Shared with the drust edge gateway, which injects it (plus the user header)
+# only on a dPanel single sign-on request. Keep the paths/names in sync with
+# drust/src/pgadmin_sso.rs.
+PGADMIN_SSO_SECRET_FILE="${PGADMIN_CONFIG_DIR}/dpanel-sso.secret"
+PGADMIN_SSO_USER_HEADER="X-Dpanel-Pgadmin-User"
 
 postgresql_service() {
   printf '%s' postgresql
@@ -109,8 +114,17 @@ postgresql_setup() {
   panel_info_log "PostgreSQL installed. Superuser credentials saved to ${env_file}."
 }
 
+pgadmin_write_sso_secret() {
+  if [[ ! -s "$PGADMIN_SSO_SECRET_FILE" ]]; then
+    ( umask 077; panel_generate_token > "$PGADMIN_SSO_SECRET_FILE" )
+  fi
+  chown "root:${PGADMIN_USER}" "$PGADMIN_SSO_SECRET_FILE"
+  chmod 0640 "$PGADMIN_SSO_SECRET_FILE"
+}
+
 pgadmin_write_config() {
   install -d -m 0755 "$PGADMIN_CONFIG_DIR"
+  pgadmin_write_sso_secret || return 1
   cat > "${PGADMIN_CONFIG_DIR}/config_system.py" <<PY
 # Managed by dpanel. pgAdmin reads this file on every start.
 SERVER_MODE = True
@@ -127,6 +141,20 @@ PROXY_X_PROTO_COUNT = 1
 PROXY_X_HOST_COUNT = 1
 ALLOW_SPECIAL_EMAIL_DOMAINS = ['local']
 UPGRADE_CHECK_ENABLED = False
+# Login only through dPanel: the edge gateway turns a one-time panel ticket
+# into these headers. pgAdmin trusts them only from loopback and only with the
+# shared secret, and the gateway strips both from every browser request.
+AUTHENTICATION_SOURCES = ['webserver']
+WEBSERVER_AUTO_CREATE_USER = True
+WEBSERVER_REMOTE_USER = '${PGADMIN_SSO_USER_HEADER}'
+WEBSERVER_REMOTE_USER_FROM_HEADER = True
+WEBSERVER_TRUSTED_PROXIES = ['127.0.0.1/32', '::1/128']
+with open('${PGADMIN_SSO_SECRET_FILE}') as _secret_file:
+    WEBSERVER_SHARED_SECRET = _secret_file.read().strip()
+del _secret_file
+# Server passwords come from per-user pgpass files written by drust, so there
+# is nothing for a master password to protect.
+MASTER_PASSWORD_REQUIRED = False
 PY
   chmod 0644 "${PGADMIN_CONFIG_DIR}/config_system.py"
 }
@@ -332,6 +360,13 @@ case "$action" in
       systemctl is-active --quiet "$unit" && systemctl restart "$unit"
     done < <(service_units "${1:-all}")
     postgresql_status "${1:-all}"
+    ;;
+  configure)
+    # Rewrite pgAdmin's config (dPanel sign-on) without reinstalling anything.
+    pgadmin_installed || panel_die "pgAdmin is not installed. Run: dpanel postgresql install"
+    pgadmin_write_config
+    systemctl is-active --quiet "$PGADMIN_SERVICE" && systemctl restart "$PGADMIN_SERVICE"
+    panel_info_log "pgAdmin configured for dPanel sign-on."
     ;;
   status) postgresql_status "${1:-all}" ;;
   *) panel_die "Unsupported postgresql action: $action" ;;

@@ -81,10 +81,10 @@ pub fn routes() -> Router<Arc<ApiState>> {
         )
         .route(
             "/api/v1/filemanager/laravel",
-            post(crate::filemanager::laravel::handle),
+            post(crate::installer::handle),
         )
         .route(
             "/api/v1/filemanager/wordpress-install",
-            post(crate::filemanager::wordpress::handle),
+            post(crate::installer::wordpress::handle),
         )
 }

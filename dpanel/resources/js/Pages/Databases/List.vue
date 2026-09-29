@@ -92,12 +92,19 @@ const deleteRequest = (id) => {
     deleteForm.delete(panelRoute('databases.destroy', { id }));
 };
 
-const openPhpMyAdminUser = async (item) => {
-    window.location.href = panelRoute('databases.phpmyadmin.autologin', { id: item.id });
-};
+const isPostgresql = (item) => item.engine === 'postgresql';
+
+// phpMyAdmin for MariaDB, pgAdmin for PostgreSQL; both sign in automatically.
+const databaseLoginUrl = (item) => (isPostgresql(item)
+    ? panelRoute('databases.pgadmin.autologin', { id: item.id })
+    : panelRoute('databases.phpmyadmin.autologin', { id: item.id }));
 
 const openRootPhpMyAdmin = () => {
     window.location.href = panelRoute('phpmyadmin.root-autologin');
+};
+
+const openRootPgAdmin = () => {
+    window.location.href = panelRoute('databases.postgresql.pgadmin');
 };
 
 </script>
@@ -129,6 +136,14 @@ const openRootPhpMyAdmin = () => {
                     @click="openRootPhpMyAdmin"
                 >
                     phpMyAdmin
+                </button>
+                <button
+                    v-if="canOpenAllDatabases"
+                    type="button"
+                    class="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-200 dark:hover:bg-indigo-950/50"
+                    @click="openRootPgAdmin"
+                >
+                    pgAdmin
                 </button>
                 <Link :href="panelRoute('databases.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Database
@@ -180,6 +195,7 @@ const openRootPhpMyAdmin = () => {
                         <tr>
                             <th class="px-4 py-3">Attached Website</th>
                             <th class="px-4 py-3">Owner</th>
+                            <th class="px-4 py-3">Engine</th>
                             <th class="px-4 py-3">Name</th>
                             <th class="px-4 py-3">User</th>
                            <th class="px-4 py-3">Status</th>
@@ -190,12 +206,33 @@ const openRootPhpMyAdmin = () => {
                     <tbody>
                         <tr v-for="item in databaseRequests" :key="item.id" class="border-t border-slate-200 dark:border-slate-800">
                             <td class="px-4 py-3">
-                                <span class="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">
-                                    {{ item.domain || 'Not attached' }}
+                                <span class="inline-flex items-center gap-1.5">
+                                    <span class="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">
+                                        {{ item.domain || 'Not attached' }}
+                                    </span>
+                                    <Link
+                                        v-if="item.website_id"
+                                        :href="panelRoute('websites.manage', { id: item.website_id })"
+                                        class="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800 dark:hover:text-blue-300"
+                                        :title="`Manage ${item.domain}`"
+                                        :aria-label="`Manage ${item.domain}`"
+                                    >
+                                        <i class="bi bi-gear text-xs"></i>
+                                    </Link>
                                 </span>
                             </td>
                             <td class="px-4 py-3 text-slate-600 dark:text-slate-300">
                                 {{ item.assigned_user_name || item.assigned_user_email || 'dPanel user' }}
+                            </td>
+                            <td class="px-4 py-3">
+                                <span
+                                    :class="isPostgresql(item)
+                                        ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
+                                        : 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300'"
+                                    class="rounded-full px-2 py-1 text-xs"
+                                >
+                                    {{ isPostgresql(item) ? 'PostgreSQL' : 'MariaDB' }}
+                                </span>
                             </td>
                             <td class="px-4 py-3 font-medium">{{ item.database_name }}</td>
                             <td class="px-4 py-3">{{ item.database_user }}</td>
@@ -211,13 +248,15 @@ const openRootPhpMyAdmin = () => {
                                     <Link :href="panelRoute('databases.edit', { id: item.id })" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                         Edit
                                     </Link>
-                                    <button
-                                        type="button"
-                                        class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
-                                        @click="openPhpMyAdminUser(item)"
+                                    <a
+                                        :href="databaseLoginUrl(item)"
+                                        target="_blank"
+                                        rel="noopener"
+                                        class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
+                                        :title="isPostgresql(item) ? 'Open in pgAdmin (new tab)' : 'Open in phpMyAdmin (new tab)'"
                                     >
-                                        phpMyAdmin
-                                    </button>
+                                        DB Login
+                                    </a>
                                     <button
                                         :disabled="deleteForm.processing"
                                         class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-400"
@@ -230,7 +269,7 @@ const openRootPhpMyAdmin = () => {
                             </td>
                         </tr>
                         <tr v-if="props.databaseRequests.length === 0">
-                            <td colspan="7" class="px-4 py-6 text-center text-slate-500">No database requests found.</td>
+                            <td colspan="8" class="px-4 py-6 text-center text-slate-500">No database requests found.</td>
                         </tr>
                     </tbody>
                 </table>

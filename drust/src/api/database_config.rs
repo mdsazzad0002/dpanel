@@ -30,6 +30,43 @@ struct Request {
     database_password: String,
     database_host: Option<String>,
     database_port: Option<u16>,
+    /// "mariadb" (default) or "postgresql".
+    engine: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Engine {
+    Mariadb,
+    Postgresql,
+}
+
+impl Engine {
+    fn parse(value: Option<&str>) -> Result<Self, String> {
+        match value.unwrap_or("mariadb") {
+            "mariadb" | "mysql" => Ok(Self::Mariadb),
+            "postgresql" => Ok(Self::Postgresql),
+            _ => Err("Unsupported database engine.".into()),
+        }
+    }
+
+    fn default_port(self) -> u16 {
+        match self {
+            Self::Mariadb => 3306,
+            Self::Postgresql => 5432,
+        }
+    }
+
+    /// The driver name each framework expects for this engine.
+    fn driver(self, framework: &str) -> &'static str {
+        match (framework, self) {
+            ("laravel", Self::Mariadb) => "mysql",
+            ("laravel", Self::Postgresql) => "pgsql",
+            ("codeigniter4", Self::Mariadb) => "MySQLi",
+            ("codeigniter4", Self::Postgresql) => "Postgre",
+            (_, Self::Mariadb) => "mysqli",
+            (_, Self::Postgresql) => "postgre",
+        }
+    }
 }
 
 async fn handle(
@@ -52,6 +89,8 @@ async fn handle(
 
 fn apply(request: &Request) -> Result<PathBuf, String> {
     validate(request)?;
+    let engine = Engine::parse(request.engine.as_deref())?;
+    ensure_engine_supported(&request.framework, engine)?;
     let path = PathBuf::from(&request.config_path);
     let original = if path.is_file() {
         fs::read_to_string(&path)
@@ -90,12 +129,16 @@ fn apply(request: &Request) -> Result<PathBuf, String> {
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("127.0.0.1");
-    let port = request.database_port.unwrap_or(3306).to_string();
+    let port = request
+        .database_port
+        .unwrap_or(engine.default_port())
+        .to_string();
+    let driver = engine.driver(&request.framework);
     let updated = match request.framework.as_str() {
         "laravel" => update_env(
             original,
             &[
-                ("DB_CONNECTION", "mysql"),
+                ("DB_CONNECTION", driver),
                 ("DB_HOST", host),
                 ("DB_PORT", &port),
                 ("DB_DATABASE", &request.database_name),
@@ -104,13 +147,20 @@ fn apply(request: &Request) -> Result<PathBuf, String> {
             ],
         ),
         "wordpress" => update_wordpress(original, request, host)?,
-        "codeigniter4" => update_codeigniter4(original, request, host, &port),
-        "codeigniter3" => update_codeigniter3(original, request, host, &port)?,
+        "codeigniter4" => update_codeigniter4(original, request, host, &port, driver),
+        "codeigniter3" => update_codeigniter3(original, request, host, &port, driver)?,
         _ => return Err("Only Laravel, WordPress, and CodeIgniter projects are supported.".into()),
     };
     fs::write(&path, updated)
         .map_err(|error| format!("Unable to update project database configuration: {error}"))?;
     Ok(backup)
+}
+
+fn ensure_engine_supported(framework: &str, engine: Engine) -> Result<(), String> {
+    if engine == Engine::Postgresql && framework == "wordpress" {
+        return Err("WordPress only runs on MySQL/MariaDB; choose a MariaDB database.".into());
+    }
+    Ok(())
 }
 
 fn validate(request: &Request) -> Result<(), String> {
@@ -230,7 +280,13 @@ fn update_wordpress(text: String, request: &Request, host: &str) -> Result<Strin
     Ok(output)
 }
 
-fn update_codeigniter4(mut text: String, request: &Request, host: &str, port: &str) -> String {
+fn update_codeigniter4(
+    mut text: String,
+    request: &Request,
+    host: &str,
+    port: &str,
+    driver: &str,
+) -> String {
     for (key, value) in [
         ("database.default.hostname", host),
         ("database.default.database", request.database_name.as_str()),
@@ -239,7 +295,7 @@ fn update_codeigniter4(mut text: String, request: &Request, host: &str, port: &s
             "database.default.password",
             request.database_password.as_str(),
         ),
-        ("database.default.DBDriver", "MySQLi"),
+        ("database.default.DBDriver", driver),
         ("database.default.port", port),
     ] {
         let replacement = format!("{key} = {}", env_value(value));
@@ -305,13 +361,14 @@ fn update_codeigniter3(
     request: &Request,
     host: &str,
     port: &str,
+    driver: &str,
 ) -> Result<String, String> {
     for (key, value) in [
         ("hostname", host),
         ("username", request.database_user.as_str()),
         ("password", request.database_password.as_str()),
         ("database", request.database_name.as_str()),
-        ("dbdriver", "mysqli"),
+        ("dbdriver", driver),
     ] {
         text = replace_ci3_setting(&text, key, value)
             .ok_or_else(|| format!("CodeIgniter database setting {key} was not found."))?;
@@ -349,6 +406,7 @@ mod tests {
             database_password: "s'ecret".into(),
             database_host: Some("127.0.0.1".into()),
             database_port: Some(3306),
+            engine: None,
         }
     }
 
@@ -359,6 +417,7 @@ mod tests {
             &request("codeigniter4"),
             "db",
             "3306",
+            "MySQLi",
         );
         assert!(output.contains("database.default.hostname = db"));
         assert!(output.contains("database.default.database = app_db"));
@@ -371,7 +430,7 @@ mod tests {
         ]
         .map(|key| format!("$db['default']['{key}'] = '';"))
         .join("\n");
-        let output = update_codeigniter3(input, &request("codeigniter3"), "db", "3306").unwrap();
+        let output = update_codeigniter3(input, &request("codeigniter3"), "db", "3306", "mysqli").unwrap();
         assert!(output.contains("$db['default']['database'] = 'app_db';"));
         assert!(output.contains("$db['default']['password'] = 's\\'ecret';"));
     }
@@ -394,12 +453,39 @@ mod tests {
             \t'port' => 3306,\n\
             );\n";
         let output =
-            update_codeigniter3(input.into(), &request("codeigniter3"), "db", "3307").unwrap();
+            update_codeigniter3(input.into(), &request("codeigniter3"), "db", "3307", "mysqli").unwrap();
         assert!(output.contains("'hostname' => 'db',"));
         assert!(output.contains("'database' => 'app_db',"));
         assert!(output.contains("'username' => 'app_user',"));
         assert!(output.contains("'password' => 's\\'ecret',"));
         assert!(output.contains("'dbdriver' => 'mysqli',"));
         assert!(output.contains("'port' => '3307',"));
+    }
+
+    #[test]
+    fn each_framework_gets_the_driver_for_its_engine() {
+        let pg = Engine::parse(Some("postgresql")).unwrap();
+        let my = Engine::parse(None).unwrap();
+        assert_eq!(pg.driver("laravel"), "pgsql");
+        assert_eq!(my.driver("laravel"), "mysql");
+        assert_eq!(pg.driver("codeigniter4"), "Postgre");
+        assert_eq!(pg.driver("codeigniter3"), "postgre");
+        assert_eq!(pg.default_port(), 5432);
+        assert_eq!(my.default_port(), 3306);
+        assert!(Engine::parse(Some("oracle")).is_err());
+    }
+
+    #[test]
+    fn codeigniter4_postgres_driver_is_written() {
+        let output = update_codeigniter4(String::new(), &request("codeigniter4"), "127.0.0.1", "5432", "Postgre");
+        assert!(output.contains("database.default.DBDriver = Postgre"));
+        assert!(output.contains("database.default.port = 5432"));
+    }
+
+    #[test]
+    fn wordpress_refuses_postgresql() {
+        assert!(ensure_engine_supported("wordpress", Engine::Postgresql).is_err());
+        assert!(ensure_engine_supported("wordpress", Engine::Mariadb).is_ok());
+        assert!(ensure_engine_supported("laravel", Engine::Postgresql).is_ok());
     }
 }

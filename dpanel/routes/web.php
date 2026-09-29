@@ -658,6 +658,11 @@ Route::prefix('cpsess{token}')
                 ->where('id', '[^/]+')
                 ->name('databases.phpmyadmin.root-autologin');
 
+            Route::get('/databases/{id}/pgadmin/autologin', [DatabaseController::class, 'openPgAdmin'])
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
+                ->where('id', '[^/]+')
+                ->name('databases.pgadmin.autologin');
+
             Route::redirect('/databases/{id}/phpmyadmin/{path?}', '/phpmyadmin')
                 ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->where('path', '.*')
@@ -861,6 +866,9 @@ Route::prefix('cpsess{token}')
             Route::post('/databases/postgresql/refresh', [PostgresqlController::class, 'refresh'])
                 ->middleware('role:admin')
                 ->name('databases.postgresql.refresh');
+            Route::get('/databases/postgresql/pgadmin', [PostgresqlController::class, 'openPgAdmin'])
+                ->middleware('role:admin')
+                ->name('databases.postgresql.pgadmin');
             Route::post('/databases/postgresql/{service}/toggle', [PostgresqlController::class, 'toggle'])
                 ->middleware('role:admin')
                 ->where('service', 'postgresql|pgadmin')

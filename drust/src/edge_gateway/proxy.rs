@@ -30,6 +30,10 @@ pub fn build_client(config: &ProxyConfig) -> Result<Client, String> {
     Client::builder()
         .connect_timeout(config.connect_timeout)
         .timeout(config.request_timeout)
+        // A proxy hands redirects to the browser. Following them here would
+        // drop the Set-Cookie on the redirect (logins) and fetch the target
+        // without the browser's cookies.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| format!("proxy client build failed: {error}"))
 }
@@ -89,7 +93,8 @@ pub async fn proxy_request(
         if should_skip_response_header(name) {
             continue;
         }
-        headers_mut.insert(name, value.clone());
+        // append, not insert: headers like Set-Cookie repeat, one per cookie.
+        headers_mut.append(name, value.clone());
     }
 
     Ok(axum_response)

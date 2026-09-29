@@ -52,6 +52,8 @@ class LaravelInstallerController extends WebsiteController
             'catalog' => $this->laravelInstallService->catalog($model),
             'databases' => $databases,
             'newDatabase' => $this->laravelInstallService->previewNewDatabase($model),
+            'postgresql' => $this->laravelInstallService->postgresqlAvailability(),
+            'databaseEngines' => LaravelInstallService::DATABASE_ENGINES,
             'gitRepository' => WebsiteGitDeployment::query()->where('website_id', $model->id)->first()?->only(['repository_full_name', 'repository_url', 'branch']),
             'rootInspection' => Inertia::defer(
                 fn () => $this->wordpressInstallService->inspectRootDirectory((string) ($website['root_path'] ?? '')),

@@ -15,13 +15,13 @@ mod filemanager;
 mod ftp;
 mod git_deploy;
 mod health;
-mod laravel;
 mod mailbox_storage;
 mod media;
 mod migration;
 mod migration_ssh;
 mod node;
 mod php;
+mod postgresql;
 mod python;
 mod redis_config;
 mod script;
@@ -93,6 +93,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(ftp::routes())
         .merge(git_deploy::routes())
         .merge(php::routes())
+        .merge(postgresql::routes())
         .merge(redis_config::routes())
         .merge(ssl::routes())
         .merge(script::routes())
@@ -103,7 +104,6 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(database_config::routes())
         .merge(dependencies::routes())
         .merge(cron::routes())
-        .merge(laravel::routes())
         .merge(mailbox_storage::routes())
         .merge(media::routes())
         .merge(migration::routes())

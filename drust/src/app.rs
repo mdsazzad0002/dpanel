@@ -1,5 +1,4 @@
 mod admin;
-mod laravel;
 mod support;
 
 pub use support::{
@@ -15,8 +14,4 @@ pub fn run_admin_user(args: Vec<String>) -> Result<(), String> {
 
 pub fn run_disable_root_login() -> Result<(), String> {
     admin::disable_root::run()
-}
-
-pub fn run_laravel_install(args: Vec<String>) -> Result<(), String> {
-    laravel::run(args)
 }

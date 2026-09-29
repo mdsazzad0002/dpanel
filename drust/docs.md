@@ -445,31 +445,6 @@ Expected output:
 }
 ```
 
-### 18. Laravel install
-
-```http
-POST /api/v1/laravel-install
-```
-
-Body:
-
-```json
-{
-  "root_path": "/home/example/public_html",
-  "domain": "example.com",
-  "php_version": "8.3",
-  "start_directory": "public",
-  "db_name": "example_db",
-  "db_user": "example_user",
-  "db_password": "secret",
-  "db_host": "127.0.0.1",
-  "db_port": "3306",
-  "no_demo": false,
-  "no_db": false,
-  "no_vhost": false
-}
-```
-
 ## Postman Setup
 
 Create one environment with these variables:

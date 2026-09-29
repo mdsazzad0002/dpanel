@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\DatabaseRequest as DatabaseRequestModel;
 use App\Models\Website;
+use App\Services\PgAdminSsoService;
+use App\Services\PostgresqlServiceManager;
 use App\Services\ResourceQuotaService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -13,6 +15,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,8 +24,11 @@ class DatabaseController extends Controller
 {
     private const LEGACY_MIGRATION_FLAG_FILE = 'database-requests.migrated';
 
-    public function __construct(private readonly ResourceQuotaService $quotas)
-    {
+    public function __construct(
+        private readonly ResourceQuotaService $quotas,
+        private readonly PostgresqlServiceManager $postgresql,
+        private readonly PgAdminSsoService $pgAdmin,
+    ) {
     }
 
     /**
@@ -46,6 +52,7 @@ class DatabaseController extends Controller
                     strtolower(trim((string) $website->domain)) => $this->sanitizeDatabasePrefix((string) $website->site_owner),
                 ])
                 ->all(),
+            'postgresql' => $this->postgresqlAvailability(),
         ]);
     }
 
@@ -119,6 +126,15 @@ class DatabaseController extends Controller
             ->values()
             ->all();
 
+        // Link each database to its website's Manage page, when this user can open it.
+        $websiteIds = Website::query()
+            ->visibleTo($actor)
+            ->get(['id', 'domain'])
+            ->mapWithKeys(fn (Website $website): array => [strtolower(trim((string) $website->domain)) => (string) $website->id]);
+        $requests = array_map(fn (array $item): array => $item + [
+            'website_id' => $websiteIds[strtolower(trim($item['domain']))] ?? null,
+        ], $requests);
+
         return Inertia::render('Databases/List', [
             'databaseRequests' => $requests,
             'websiteOptions' => $websiteOptions,
@@ -139,6 +155,7 @@ class DatabaseController extends Controller
         $this->migrateLegacyJsonRequests();
 
         $input = $request->all();
+        $engine = $this->engineFrom($input);
         $suffixes = Validator::make($input, [
             'database_name' => ['required', 'string', 'max:31', 'regex:/^[A-Za-z0-9_]+$/'],
             'database_user' => ['required', 'string', 'max:31', 'regex:/^[A-Za-z0-9_]+$/'],
@@ -147,19 +164,21 @@ class DatabaseController extends Controller
         $website = Website::query()->visibleTo($request->user())->whereRaw('LOWER(domain) = ?', [$domain])->first();
         abort_if($website === null || trim((string) $website->site_owner) === '', 422, 'Select a website with a system owner before creating a database.');
         $ownerPrefix = $this->sanitizeDatabasePrefix((string) $website->site_owner).'_';
-        $input['database_name'] = substr($ownerPrefix, 0, 64 - strlen($suffixes['database_name'])).$suffixes['database_name'];
-        $input['database_user'] = substr($ownerPrefix, 0, 64 - strlen($suffixes['database_user'])).$suffixes['database_user'];
-        $prepared = $this->preparePayload($input, $request->user());
-        $validated = $this->normalizePayload($this->validatePayload($prepared));
+        $maxLength = $this->maxIdentifierLength($engine);
+        $input['database_name'] = substr($ownerPrefix, 0, $maxLength - strlen($suffixes['database_name'])).$suffixes['database_name'];
+        $input['database_user'] = substr($ownerPrefix, 0, $maxLength - strlen($suffixes['database_user'])).$suffixes['database_user'];
+        $prepared = $this->preparePayload($input, $request->user(), $engine);
+        $validated = $this->normalizePayload($this->validatePayload($prepared, $engine));
         $owner = $this->quotas->ownerForDomain((string) $validated['domain']);
         if ($owner !== null) {
             $this->quotas->assertDatabaseAllowed($owner);
         }
-        $syncResult = $this->syncDatabaseToServer($validated);
+        $syncResult = $this->syncDatabaseToServer($validated, $engine);
         $status = $syncResult['success'] ? 'active' : ($syncResult['ran'] ? 'failed' : 'pending');
 
         DatabaseRequestModel::query()->create([
             'id' => (string) str()->uuid(),
+            'engine' => $engine,
             'domain' => $validated['domain'],
             'database_name' => $validated['database_name'],
             'database_user' => $validated['database_user'],
@@ -172,7 +191,7 @@ class DatabaseController extends Controller
         ]);
 
         if ($syncResult['success']) {
-            return redirect()->route('databases.list')->with('success', 'Database created and synced to MySQL/MariaDB successfully.');
+            return redirect()->route('databases.list')->with('success', 'Database created and synced to '.$this->engineLabel($engine).' successfully.');
         }
 
         if ($syncResult['ran']) {
@@ -209,9 +228,6 @@ class DatabaseController extends Controller
         $this->migrateLegacyJsonRequests();
         $actor = $request->user();
 
-        $prepared = $this->preparePayload($request->all(), $actor);
-        $validated = $this->normalizePayload($this->validatePayload($prepared));
-
         $requestItem = DatabaseRequestModel::query()
             ->visibleTo($actor)
             ->find($id);
@@ -219,7 +235,12 @@ class DatabaseController extends Controller
             return redirect()->route('databases.list')->with('error', 'Database request not found.');
         }
 
-        $syncResult = $this->syncDatabaseToServer($validated);
+        // The engine is fixed at creation; moving data between engines isn't supported.
+        $engine = (string) ($requestItem->engine ?: DatabaseRequestModel::ENGINE_MARIADB);
+        $prepared = $this->preparePayload($request->all(), $actor, $engine);
+        $validated = $this->normalizePayload($this->validatePayload($prepared, $engine));
+
+        $syncResult = $this->syncDatabaseToServer($validated, $engine);
         $status = $syncResult['success'] ? 'active' : ($syncResult['ran'] ? 'failed' : 'pending');
 
         $requestItem->fill([
@@ -274,6 +295,10 @@ class DatabaseController extends Controller
             ->find($id);
         abort_if($requestItem === null, 404);
 
+        if ($requestItem->isPostgresql()) {
+            return redirect()->route('databases.pgadmin.autologin', ['id' => $requestItem->id]);
+        }
+
         return $this->renderPhpMyAdminAutologin(
             (string) $requestItem->database_user,
             (string) $requestItem->database_password,
@@ -291,6 +316,10 @@ class DatabaseController extends Controller
             ->visibleTo($request->user())
             ->find($id);
         abort_if($requestItem === null, 404);
+
+        if ($requestItem->isPostgresql()) {
+            return redirect()->route('databases.postgresql.pgadmin');
+        }
 
         $username = trim((string) config('app.phpmyadmin_admin_username', ''));
         $password = (string) config('app.phpmyadmin_admin_password', '');
@@ -325,6 +354,27 @@ class DatabaseController extends Controller
             '',
             true,
         );
+    }
+
+    /**
+     * Open pgAdmin signed in as this database's own role.
+     */
+    public function openPgAdmin(Request $request, string $token, string $id): RedirectResponse
+    {
+        $requestItem = DatabaseRequestModel::query()
+            ->visibleTo($request->user())
+            ->find($id);
+        abort_if($requestItem === null, 404);
+
+        if (! $requestItem->isPostgresql()) {
+            return redirect()->route('databases.phpmyadmin.autologin', ['id' => $requestItem->id]);
+        }
+
+        try {
+            return redirect()->to($this->pgAdmin->urlForDatabase($requestItem));
+        } catch (\RuntimeException $e) {
+            return redirect()->route('databases.list')->with('error', 'Could not open pgAdmin: '.$e->getMessage());
+        }
     }
 
     private function renderPhpMyAdminAutologin(string $username, string $password, string $host, string $database, bool $allowRoot = false)
@@ -411,12 +461,16 @@ class DatabaseController extends Controller
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    private function validatePayload(array $payload): array
+    private function validatePayload(array $payload, string $engine = DatabaseRequestModel::ENGINE_MARIADB): array
     {
+        $max = 'max:'.$this->maxIdentifierLength($engine);
+        // PostgreSQL identifiers may not start with a digit.
+        $pattern = $engine === DatabaseRequestModel::ENGINE_POSTGRESQL ? 'regex:/^[A-Za-z_][A-Za-z0-9_]*$/' : 'regex:/^[A-Za-z0-9_]+$/';
+
         return Validator::make($payload, [
             'domain' => ['required', 'string', 'max:255'],
-            'database_name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_]+$/'],
-            'database_user' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_]+$/'],
+            'database_name' => ['required', 'string', $max, $pattern],
+            'database_user' => ['required', 'string', $max, $pattern, Rule::notIn(['postgres', 'root'])],
             'database_password' => ['required', 'string', 'max:255'],
             'database_host' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9._%-]+$/'],
             'charset' => ['required', 'string', 'max:32'],
@@ -428,12 +482,19 @@ class DatabaseController extends Controller
      * @param array<string, mixed> $input
      * @return array<string, mixed>
      */
-    private function preparePayload(array $input, ?\App\Models\User $user = null): array
+    private function preparePayload(array $input, ?\App\Models\User $user = null, string $engine = DatabaseRequestModel::ENGINE_MARIADB): array
     {
         $domain = strtolower(trim((string) ($input['domain'] ?? '')));
         $host = trim((string) ($input['database_host'] ?? '127.0.0.1'));
         $charset = trim((string) ($input['charset'] ?? 'utf8mb4'));
         $collation = trim((string) ($input['collation'] ?? 'utf8mb4_unicode_ci'));
+        if ($engine === DatabaseRequestModel::ENGINE_POSTGRESQL) {
+            // Local server only; databases are always created UTF8 with the
+            // server's default collation.
+            $host = '127.0.0.1';
+            $charset = 'UTF8';
+            $collation = 'default';
+        }
 
         $prefix = $this->databasePrefixFromDomain($domain, $user);
 
@@ -523,7 +584,7 @@ class DatabaseController extends Controller
      * @param array<string, mixed> $payload
      * @return array{ran: bool, success: bool, output: string}
      */
-    private function syncDatabaseToServer(array $payload): array
+    private function syncDatabaseToServer(array $payload, string $engine = DatabaseRequestModel::ENGINE_MARIADB): array
     {
         if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
             return ['ran' => false, 'success' => false, 'output' => 'Database sync skipped on Windows environment.'];
@@ -547,6 +608,7 @@ class DatabaseController extends Controller
         try {
             $response = $request->post($apiUrl, [
                 'action' => 'create',
+                'engine' => $engine,
                 'database_name' => (string) $payload['database_name'],
                 'database_user' => (string) $payload['database_user'],
                 'database_password' => (string) $payload['database_password'],
@@ -565,6 +627,7 @@ class DatabaseController extends Controller
                     'status' => $response->status(),
                     'output' => $message,
                     'payload' => [
+                        'engine' => $engine,
                         'database_name' => (string) $payload['database_name'],
                         'database_user' => (string) $payload['database_user'],
                         'database_host' => (string) $payload['database_host'],
@@ -592,6 +655,40 @@ class DatabaseController extends Controller
                 'output' => $e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    private function engineFrom(array $input): string
+    {
+        return Validator::make($input, [
+            'engine' => ['nullable', Rule::in([DatabaseRequestModel::ENGINE_MARIADB, DatabaseRequestModel::ENGINE_POSTGRESQL])],
+        ])->validate()['engine'] ?? DatabaseRequestModel::ENGINE_MARIADB;
+    }
+
+    private function maxIdentifierLength(string $engine): int
+    {
+        // PostgreSQL truncates identifiers at 63 bytes.
+        return $engine === DatabaseRequestModel::ENGINE_POSTGRESQL ? 63 : 64;
+    }
+
+    private function engineLabel(string $engine): string
+    {
+        return $engine === DatabaseRequestModel::ENGINE_POSTGRESQL ? 'PostgreSQL' : 'MySQL/MariaDB';
+    }
+
+    /**
+     * @return array{installed: bool, active: bool}
+     */
+    private function postgresqlAvailability(): array
+    {
+        $service = $this->postgresql->statuses()['postgresql'] ?? null;
+
+        return [
+            'installed' => (bool) ($service['installed'] ?? false),
+            'active' => (bool) ($service['active'] ?? false),
+        ];
     }
 
     /**
@@ -624,6 +721,7 @@ class DatabaseController extends Controller
     {
         return [
             'id' => (string) $request->id,
+            'engine' => (string) ($request->engine ?: DatabaseRequestModel::ENGINE_MARIADB),
             'domain' => (string) $request->domain,
             'database_name' => (string) $request->database_name,
             'database_user' => (string) $request->database_user,

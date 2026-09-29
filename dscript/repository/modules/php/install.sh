@@ -59,6 +59,9 @@ php_core_packages() {
   esac
 }
 
+# Optional extensions, installed when the distro offers them for this PHP
+# version (pkg_install_available). pgsql is the PDO/native PostgreSQL driver
+# that sites connected to a panel PostgreSQL database need.
 php_extension_packages() {
   case "$(pkg_distro_family)" in
     debian)
@@ -67,6 +70,7 @@ php_extension_packages() {
         "php${php_version}-gd" \
         "php${php_version}-intl" \
         "php${php_version}-opcache" \
+        "php${php_version}-pgsql" \
         "php${php_version}-readline" \
         "php${php_version}-redis" \
         "php${php_version}-soap"
@@ -77,6 +81,7 @@ php_extension_packages() {
         php-gd \
         php-intl \
         php-opcache \
+        php-pgsql \
         php-readline \
         php-redis \
         php-soap

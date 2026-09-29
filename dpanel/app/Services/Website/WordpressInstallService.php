@@ -284,7 +284,11 @@ class WordpressInstallService
             }
 
             $report('creating_database');
-            $existingDatabaseRequest = DatabaseRequest::query()->where('domain', $domain)->first();
+            // WordPress only runs on MySQL/MariaDB; never reuse a PostgreSQL database.
+            $existingDatabaseRequest = DatabaseRequest::query()
+                ->where('domain', $domain)
+                ->where('engine', DatabaseRequest::ENGINE_MARIADB)
+                ->first();
             $databaseConfig = $this->resolveWordPressDatabaseConfig($databasePrefix, $domain, $existingDatabaseRequest);
             $databaseProvisionResult = $this->provisionWordPressDatabase($databaseConfig);
             if (! $databaseProvisionResult['success']) {
@@ -756,6 +760,7 @@ class WordpressInstallService
     {
         $databaseRequest = $existing ?? DatabaseRequest::query()->firstOrNew([
             'domain' => $domain,
+            'engine' => DatabaseRequest::ENGINE_MARIADB,
         ]);
 
         if (! $databaseRequest->exists) {

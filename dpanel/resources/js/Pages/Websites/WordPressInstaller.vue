@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import WordpressSsoLogin from '@/Pages/Websites/SSOlogin/WordpressSsoLogin.vue';
 import { Deferred, Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref, watch } from 'vue';
+import InstallerVersionPicker from '@/Components/Installer/InstallerVersionPicker.vue';
 
 const props = defineProps({
     website: {
@@ -62,6 +63,11 @@ const availableWordPressVersions = computed(() => {
 });
 
 const selectedWordPressVersion = ref('latest');
+const wordpressVersionOptions = computed(() => availableWordPressVersions.value.map((version) => ({
+    value: version,
+    label: version === 'latest' ? 'Latest stable' : `WordPress ${version}`,
+    hint: version === 'latest' ? 'Recommended' : '',
+})));
 const suggestedDatabasePrefix = computed(() => {
     const stored = normalizePrefix(website.value?.wordpress_db_prefix || '');
     if (stored !== '') return stored;
@@ -247,7 +253,25 @@ const installWordPress = async () => {
                     <WordpressSsoLogin :website-id="website.id" />
                 </div>
 
-                <div class="mt-5 grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+                <div class="mt-5">
+                    <Deferred data="wordpressVersions">
+                        <template #fallback>
+                            <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">WordPress Version</p>
+                            <div class="mt-2 h-[62px] w-full animate-pulse rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></div>
+                        </template>
+                        <InstallerVersionPicker
+                            v-model="selectedWordPressVersion"
+                            label="WordPress Version"
+                            name="wordpress_version"
+                            :versions="wordpressVersionOptions"
+                            :disabled="installBusy"
+                            :max-cards="8"
+                            accent="blue"
+                        />
+                    </Deferred>
+                </div>
+
+                <div class="mt-5 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
                     <div>
                         <label class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Database Prefix</label>
                         <input
@@ -261,23 +285,6 @@ const installWordPress = async () => {
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                             Used for the DB name, DB user, and WordPress table prefix. Example: `client` becomes `client_`.
                         </p>
-                    </div>
-
-                    <div>
-                        <label class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">WordPress Version</label>
-                        <Deferred data="wordpressVersions">
-                            <template #fallback>
-                                <div class="mt-1 h-[38px] w-full animate-pulse rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></div>
-                            </template>
-                            <select
-                                v-model="selectedWordPressVersion"
-                                class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                            >
-                                <option v-for="version in availableWordPressVersions" :key="version" :value="version">
-                                    {{ version === 'latest' ? 'Latest Stable' : version }}
-                                </option>
-                            </select>
-                        </Deferred>
                     </div>
 
                     <button

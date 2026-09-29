@@ -38,6 +38,7 @@ const props = defineProps({
         default: () => ({}),
     },
     databaseConnection: { type: Object, default: () => ({ available: false }) },
+    connectedDatabase: { type: String, default: null },
     phpVersions: { type: Array, default: () => [] },
 });
 
@@ -122,6 +123,7 @@ const isPythonWebsite = computed(() => String(props.website?.runtime || 'php') =
                         :website="website"
                         :root-inspection="rootInspection"
                         :database-connection="databaseConnection"
+                        :connected-database="connectedDatabase"
                     />
                 </div>
             </section>

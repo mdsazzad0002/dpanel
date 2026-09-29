@@ -10,7 +10,7 @@ pub(super) fn validate_absolute_path(target: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(target))
 }
 
-pub(super) fn validate_account(username: &str) -> Result<(PathBuf, PathBuf, String), String> {
+pub(crate) fn validate_account(username: &str) -> Result<(PathBuf, PathBuf, String), String> {
     ensure_root()?;
     if !valid_username(username) {
         return Err(format!("Invalid username: {username}"));
@@ -24,7 +24,7 @@ pub(super) fn validate_account(username: &str) -> Result<(PathBuf, PathBuf, Stri
     Ok((home, canonical_home, group))
 }
 
-pub(super) fn validate_user_path(username: &str, target: &str) -> Result<PathBuf, String> {
+pub(crate) fn validate_user_path(username: &str, target: &str) -> Result<PathBuf, String> {
     let path = validate_absolute_path(target)?;
     if path
         .components()
@@ -58,7 +58,7 @@ pub(super) fn ensure_canonical_inside_home(
     Ok(canonical)
 }
 
-pub(super) fn ensure_directory_inside_home(
+pub(crate) fn ensure_directory_inside_home(
     username: &str,
     group: &str,
     user_home: &Path,

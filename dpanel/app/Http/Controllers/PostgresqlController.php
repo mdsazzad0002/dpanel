@@ -2,16 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\PgAdminSsoService;
 use App\Services\PostgresqlServiceManager;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PostgresqlController extends Controller
 {
-    public function __construct(private readonly PostgresqlServiceManager $services)
-    {
+    public function __construct(
+        private readonly PostgresqlServiceManager $services,
+        private readonly PgAdminSsoService $pgAdmin,
+    ) {
     }
 
     public function index(): Response
@@ -37,6 +41,18 @@ class PostgresqlController extends Controller
         ], $this->state()), $result['success'] ? 200 : 422);
     }
 
+    /**
+     * Open pgAdmin signed in as the PostgreSQL superuser.
+     */
+    public function openPgAdmin(): RedirectResponse
+    {
+        try {
+            return redirect()->to($this->pgAdmin->urlForAdmin());
+        } catch (\RuntimeException $e) {
+            return redirect()->route('databases.postgresql')->with('error', 'Could not open pgAdmin: '.$e->getMessage());
+        }
+    }
+
     public function refresh(): JsonResponse
     {
         return response()->json(array_merge(['success' => true], $this->state()));
@@ -57,8 +73,6 @@ class PostgresqlController extends Controller
             ],
             'pgadmin' => [
                 'path' => (string) config('postgresql.pgadmin_path'),
-                'email' => (string) config('postgresql.pgadmin_email'),
-                'password' => (string) config('postgresql.pgadmin_password'),
             ],
         ];
     }
