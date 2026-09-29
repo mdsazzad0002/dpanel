@@ -26,7 +26,9 @@ watch(() => props.website, (next) => {
 const website = computed(() => websiteState.value || {});
 
 const isJoomla = computed(() => props.app.key === 'joomla');
+const isWhmcs = computed(() => props.app.key === 'whmcs');
 const databaseOptional = computed(() => props.app.database === 'optional');
+const newDatabaseOnly = computed(() => props.app.database === 'new');
 
 const versions = computed(() => props.catalog?.versions || []);
 const selectedVersion = ref(versions.value.find((v) => v.php_version)?.value || versions.value[0]?.value || '');
@@ -50,6 +52,58 @@ const joomla = ref({
     admin_password: randomPassword(),
 });
 const showPassword = ref(false);
+
+const whmcs = ref({
+    license_key: '',
+    admin_username: 'admin',
+    admin_password: randomPassword(),
+});
+const whmcsValid = computed(() => !isWhmcs.value || (
+    /^[A-Za-z0-9-]+$/.test(whmcs.value.license_key.trim())
+    && /^[A-Za-z0-9_.-]+$/.test(whmcs.value.admin_username)
+    && whmcs.value.admin_password.length >= 12
+    && Boolean(uploadId.value)
+));
+
+// WHMCS zips need a customer login to download, so the admin uploads theirs.
+// Uploaded in 5 MB chunks so the panel's PHP upload limit doesn't apply.
+const uploadId = ref('');
+const uploadName = ref('');
+const uploadProgress = ref(0);
+const uploadBusy = ref(false);
+const uploadError = ref('');
+
+const uploadPackage = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    uploadId.value = '';
+    uploadError.value = '';
+    uploadName.value = file.name;
+    uploadProgress.value = 0;
+    uploadBusy.value = true;
+    const params = { id: website.value.id, app: props.app.key };
+    try {
+        const started = await window.axios.post(panelRoute('websites.apps.upload.start', params), { name: file.name, size: file.size });
+        const id = started.data.upload_id;
+        const chunkSize = 5 * 1024 * 1024;
+        const total = Math.ceil(file.size / chunkSize);
+        for (let index = 0; index < total; index += 1) {
+            const form = new FormData();
+            form.append('index', String(index));
+            form.append('chunk', file.slice(index * chunkSize, Math.min(file.size, (index + 1) * chunkSize)), `${index}.part`);
+            await window.axios.post(panelRoute('websites.apps.upload.chunk', { ...params, uploadId: id }), form);
+            uploadProgress.value = Math.round(((index + 1) / total) * 100);
+        }
+        await window.axios.post(panelRoute('websites.apps.upload.complete', { ...params, uploadId: id }), { total });
+        uploadId.value = id;
+    } catch (error) {
+        const errors = error?.response?.data?.errors;
+        uploadError.value = errors ? Object.values(errors).flat().join(' ') : (error?.response?.data?.message || 'Upload failed.');
+    } finally {
+        uploadBusy.value = false;
+    }
+};
 const joomlaValid = computed(() => !isJoomla.value || (
     joomla.value.site_name.trim()
     && joomla.value.admin_name.trim()
@@ -139,7 +193,7 @@ const pollInstallStatus = async (installId) => {
 };
 
 const install = async () => {
-    if (installBusy.value || !targetPhp.value || !joomlaValid.value) return;
+    if (installBusy.value || !targetPhp.value || !joomlaValid.value || !whmcsValid.value) return;
 
     const warnings = [];
     if (rootHasFiles.value) warnings.push(`Current files in ${website.value.root_path} will be moved to the File Manager trash.`);
@@ -158,6 +212,7 @@ const install = async () => {
                 database_id: selectedDatabaseId.value,
                 database_suffix: props.newDatabase?.suffix || null,
                 ...(isJoomla.value ? joomla.value : {}),
+                ...(isWhmcs.value ? { ...whmcs.value, license_key: whmcs.value.license_key.trim(), upload_id: uploadId.value } : {}),
             },
             { headers: { Accept: 'application/json' } },
         );
@@ -244,6 +299,37 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                     </select>
                 </div>
 
+                <div v-if="isWhmcs" class="mt-5">
+                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">WHMCS package &amp; license</p>
+                    <div class="mt-2 rounded-lg border border-dashed border-slate-300 p-4 text-sm dark:border-slate-700">
+                        <p class="text-slate-600 dark:text-slate-300">
+                            Download the full WHMCS zip from your WHMCS client area (Services → your license → Downloads) and upload it here.
+                        </p>
+                        <label class="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" :class="{ 'pointer-events-none opacity-50': uploadBusy || installBusy }">
+                            <i class="bi bi-upload"></i> {{ uploadId ? 'Replace zip' : 'Choose WHMCS zip' }}
+                            <input type="file" accept=".zip,application/zip" class="hidden" @change="uploadPackage" />
+                        </label>
+                        <p v-if="uploadName" class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                            {{ uploadName }} —
+                            <span v-if="uploadBusy">uploading {{ uploadProgress }}%</span>
+                            <span v-else-if="uploadId" class="text-emerald-600 dark:text-emerald-400">uploaded and checked</span>
+                        </p>
+                        <p v-if="uploadError" class="mt-2 text-xs text-red-600 dark:text-red-400">{{ uploadError }}</p>
+                    </div>
+                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                        <label class="text-sm sm:col-span-2">License key<input v-model="whmcs.license_key" type="text" autocomplete="off" placeholder="Owned-xxxxxxxxxxxx" :disabled="installBusy" :class="inputClass" class="font-mono" /></label>
+                        <label class="text-sm">Admin username<input v-model="whmcs.admin_username" type="text" autocomplete="off" :disabled="installBusy" :class="inputClass" /></label>
+                        <label class="text-sm">
+                            Admin password <span class="text-xs text-slate-500">(12+ characters — save it now)</span>
+                            <div class="flex gap-2">
+                                <input v-model="whmcs.admin_password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" :disabled="installBusy" :class="inputClass" class="font-mono" />
+                                <button type="button" class="mt-1 rounded-md border border-slate-300 px-3 text-xs dark:border-slate-700" @click="showPassword = !showPassword">{{ showPassword ? 'Hide' : 'Show' }}</button>
+                                <button type="button" class="mt-1 rounded-md border border-slate-300 px-3 text-xs dark:border-slate-700" :disabled="installBusy" @click="whmcs.admin_password = randomPassword(); showPassword = true">Generate</button>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
                 <div v-if="isJoomla" class="mt-5">
                     <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Site &amp; administrator</p>
                     <div class="mt-2 grid gap-3 sm:grid-cols-2">
@@ -265,7 +351,7 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                 <div class="mt-5">
                     <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Database</p>
                     <div class="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        <label v-for="db in databases" :key="db.id" class="flex cursor-pointer gap-3 rounded-lg border p-3 transition" :class="cardClass(selectedDatabaseId === db.id)">
+                        <label v-for="db in (newDatabaseOnly ? [] : databases)" :key="db.id" class="flex cursor-pointer gap-3 rounded-lg border p-3 transition" :class="cardClass(selectedDatabaseId === db.id)">
                             <input v-model="selectedDatabaseId" type="radio" name="database" class="mt-1" :value="db.id" :disabled="installBusy" />
                             <span class="min-w-0">
                                 <span class="block break-all text-sm font-semibold">{{ db.database_name }}</span>
@@ -315,6 +401,10 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                         <template v-if="app.document_root">The document root will be set to <code>{{ app.document_root }}/</code>.</template>
                         <template v-else>The site is served from the project root.</template>
                     </li>
+                    <li v-if="isWhmcs">
+                        <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
+                        Needs the ionCube Loader for PHP {{ targetPhp || '8.1–8.3' }}. The <code>install/</code> folder is removed, a 5-minute cron for <code>crons/cron.php</code> is added, and the admin area is <code>/admin</code>.
+                    </li>
                     <li v-if="isJoomla">
                         <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
                         The <code>installation/</code> folder is removed after setup. Admin panel: <code>/administrator</code>.
@@ -325,7 +415,7 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                     <button
                         type="button"
                         class="rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="installBusy || !targetPhp || !joomlaValid"
+                        :disabled="installBusy || uploadBusy || !targetPhp || !joomlaValid || !whmcsValid"
                         :class="installBusy
                             ? 'border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400'
                             : 'border-orange-300 text-orange-700 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-900/20'"

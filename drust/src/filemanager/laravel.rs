@@ -41,6 +41,21 @@ pub(crate) struct Request {
     version: Option<String>,
     command: Option<String>,
     joomla: Option<JoomlaInstall>,
+    whmcs: Option<WhmcsInstall>,
+}
+
+/// Values for WHMCS's `install/bin/installer.php -i -n -c`, which reads its
+/// configuration as one line of JSON on stdin.
+#[derive(Deserialize)]
+pub(crate) struct WhmcsInstall {
+    admin_username: String,
+    admin_password: String,
+    license: String,
+    db_host: String,
+    db_username: String,
+    db_password: String,
+    db_name: String,
+    cc_encryption_hash: String,
 }
 
 /// Answers for Joomla's `installation/joomla.php install` command.
@@ -235,6 +250,40 @@ async fn execute(request: &Request) -> Result<String, String> {
             )
             .await
         }
+        "php_modules" => {
+            run_as_owner(
+                &request.username,
+                &runtime,
+                &target,
+                &php,
+                &["-m"],
+                ARTISAN_TIMEOUT,
+            )
+            .await
+        }
+        "whmcs_install" => {
+            let input = request
+                .whmcs
+                .as_ref()
+                .ok_or("WHMCS install values are missing.")?;
+            let install_dir = target.join("install");
+            if !install_dir.join("bin/installer.php").is_file() {
+                return Err(
+                    "WHMCS install/bin/installer.php was not found in the site root.".into(),
+                );
+            }
+            let stdin = whmcs_config(input)?;
+            run_as_owner_with_input(
+                &request.username,
+                &runtime,
+                &install_dir,
+                &php,
+                &["-f", "bin/installer.php", "--", "-i", "-n", "-c"],
+                ARTISAN_TIMEOUT,
+                Some(&stdin),
+            )
+            .await
+        }
         "finalize" => {
             // The site normally runs in its own PHP-FPM pool as the owner, but
             // the gateway falls back to the shared www-data pool when that
@@ -250,11 +299,12 @@ async fn execute(request: &Request) -> Result<String, String> {
                     "tmp",
                     "images",
                 ],
+                "whmcs" => &["attachments", "downloads", "templates_c"],
                 _ => &["storage", "bootstrap/cache"],
             };
-            // Joomla's configuration.php holds the database password.
+            // Joomla's and WHMCS's configuration.php hold the database password.
             let config = target.join("configuration.php");
-            if request.stack.as_deref() == Some("joomla") && config.is_file() {
+            if matches!(request.stack.as_deref(), Some("joomla" | "whmcs")) && config.is_file() {
                 let config = config.to_string_lossy();
                 run_status("chown", &[&owner, config.as_ref()])?;
                 run_status("chmod", &["640", config.as_ref()])?;
@@ -302,6 +352,75 @@ async fn execute(request: &Request) -> Result<String, String> {
         }
         _ => Err("Unsupported installer action.".into()),
     }
+}
+
+/// One line of JSON for WHMCS's CLI installer. Values are checked here as
+/// well as in the panel because they end up in configuration.php.
+fn whmcs_config(input: &WhmcsInstall) -> Result<Vec<u8>, String> {
+    let no_control = |value: &str| !value.chars().any(char::is_control);
+    let username_ok = !input.admin_username.is_empty()
+        && input.admin_username.len() <= 64
+        && input
+            .admin_username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+    if !username_ok {
+        return Err("Invalid WHMCS admin username.".into());
+    }
+    if input.admin_password.chars().count() < 12 || !no_control(&input.admin_password) {
+        return Err("The WHMCS admin password must be at least 12 characters.".into());
+    }
+    let license_ok = !input.license.is_empty()
+        && input.license.len() <= 64
+        && input
+            .license
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-');
+    if !license_ok {
+        return Err("Invalid WHMCS license key.".into());
+    }
+    let identifier = |value: &str| {
+        !value.is_empty()
+            && value.len() <= 64
+            && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    if !identifier(&input.db_name) || !identifier(&input.db_username) {
+        return Err("Invalid WHMCS database name or user.".into());
+    }
+    if input.db_host.is_empty()
+        || !input
+            .db_host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':' | '_'))
+        || !no_control(&input.db_password)
+    {
+        return Err("Invalid WHMCS database host or password.".into());
+    }
+    if input.cc_encryption_hash.len() != 64
+        || !input
+            .cc_encryption_hash
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric())
+    {
+        return Err("The WHMCS encryption hash must be 64 letters and digits.".into());
+    }
+
+    serde_json::to_vec(&serde_json::json!({
+        "admin": {
+            "username": input.admin_username,
+            "password": input.admin_password,
+        },
+        "configuration": {
+            "license": input.license,
+            "db_host": input.db_host,
+            "db_username": input.db_username,
+            "db_password": input.db_password,
+            "db_name": input.db_name,
+            "cc_encryption_hash": input.cc_encryption_hash,
+            "mysql_charset": "utf8",
+        },
+    }))
+    .map_err(|e| e.to_string())
 }
 
 /// Builds `joomla.php install` options. Values are validated here as well as
@@ -648,6 +767,32 @@ mod tests {
         let mut input = joomla();
         input.site_name = "a\nb".into();
         assert!(joomla_arguments(&input).is_err());
+    }
+
+    #[test]
+    fn whmcs_config_is_one_json_line() {
+        let input = WhmcsInstall {
+            admin_username: "admin".into(),
+            admin_password: "p\"ss word 12345".into(),
+            license: "Owned-abc123".into(),
+            db_host: "127.0.0.1".into(),
+            db_username: "wh_user".into(),
+            db_password: "it's $ecret".into(),
+            db_name: "wh_db".into(),
+            cc_encryption_hash: "a".repeat(64),
+        };
+        let bytes = whmcs_config(&input).unwrap();
+        assert!(!bytes.contains(&b'\n'));
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["admin"]["password"], "p\"ss word 12345");
+        assert_eq!(value["configuration"]["db_password"], "it's $ecret");
+        assert_eq!(value["configuration"]["license"], "Owned-abc123");
+
+        let bad = WhmcsInstall {
+            cc_encryption_hash: "short".into(),
+            ..input
+        };
+        assert!(whmcs_config(&bad).is_err());
     }
 
     #[test]
