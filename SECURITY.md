@@ -1,102 +1,94 @@
 # Security Policy
 
-dPanel is a hosting control panel stack. Security reports are taken seriously because the project can manage websites, files, databases, SSL, and server-level operations.
+dPanel manages websites, files, databases, SSL certificates, and server-level
+operations, so we take every security report seriously. Thank you for helping
+keep dPanel and its users safe.
 
-## Supported Versions
+## Supported versions
 
-Security fixes are provided for the latest code on the `main` branch.
+Security fixes are released for the latest code on the `main` branch.
 
 | Version | Supported |
-| --- | --- |
-| `main` | Yes |
-| Older snapshots/forks | No |
+| --- | :---: |
+| `main` | ✅ |
+| Older snapshots and forks | ❌ |
 
-## Reporting A Vulnerability
+## Reporting a vulnerability
 
-Please do not open a public GitHub issue for security vulnerabilities.
+> **Please do not open a public GitHub issue for security vulnerabilities.**
 
-Report privately to the project maintainer:
+Report privately through
+[GitHub Security Advisories](https://github.com/mdsazzad0002/dpanel/security/advisories/new),
+or contact the maintainer [@mdsazzad0002](https://github.com/mdsazzad0002)
+directly.
 
-- GitHub: `mdsazzad0002`
-- Repository: `https://github.com/mdsazzad0002/dpanel`
+Please include:
 
-Include as much detail as possible:
+- The affected component: `dpanel`, `drust`, `dscript`, the installer, or docs
+- The affected endpoint, command, file path, or UI page
+- Steps to reproduce
+- Expected and actual results
+- The impact you believe it has
+- Logs or screenshots, with secrets removed
 
-- affected component: `dpanel`, `drust`, `dscript`, installer, or docs
-- affected endpoint, command, file path, or UI page
-- steps to reproduce
-- expected result and actual result
-- impact level
-- logs or screenshots with secrets removed
+Areas that deserve extra care include authentication and authorization, file
+manager path validation, drust token handling, command execution, SSH keys,
+database provisioning, SSL private keys, and permission repair.
 
-## Secret Handling
+## Disclosure process
+
+1. The maintainer reviews and reproduces the report.
+2. A fix is prepared privately when needed.
+3. The fix is released to `main`.
+4. Public notes are published once disclosure is safe.
+
+## Hardening checklist
+
+Before running dPanel on a public server:
+
+- [ ] Keep `DRUST_API_TOKEN` and `SERVERPANEL_EXECUTION_API_TOKEN` identical and secret.
+- [ ] Keep `/var/www/dpanel/.env` owned by `root:www-data` with mode `640`. It holds the drust token, which grants root-level control of the host.
+- [ ] Keep websites on their own PHP-FPM pools (`DRUST_SITE_POOLS=1`, the default) so one site cannot read another site's files.
+- [ ] Confirm drust is reachable only from `127.0.0.1`.
+- [ ] Serve the panel over HTTPS only.
+- [ ] Pass secrets to maintenance scripts through `DPANEL_ADMIN_PASSWORD`, `DPANEL_DB_PASSWORD`, or `DPANEL_USER_PASSWORD`, never as command-line arguments that other users can read from `/proc`.
+- [ ] Run `sudo dpanel script run fix-permissions --all` after the first install or a project migration.
+- [ ] Never use `chmod 777`.
+- [ ] Keep PHP, Laravel and Rust dependencies, the edge gateway, and system packages up to date.
+- [ ] Disable unused services and close unused ports.
+- [ ] Review logs without exposing secrets.
+
+## The drust API
+
+`drust` is the privileged, root-owned execution API. It must:
+
+- Listen on `127.0.0.1` only, behind bearer-token authentication
+- Never be exposed to the public internet
+- Validate every file path before touching the filesystem
+- Keep file manager operations inside the account's home directory
+- Never run shell commands built from user-controlled input
+
+If drust has been exposed publicly, **rotate the API token immediately** and
+restrict network access.
+
+## Handling secrets
 
 Never share or commit:
 
-- `.env` files
-- API tokens
-- database passwords
-- SSH private keys
-- SSL private keys
-- service credentials
-- logs containing credentials
-- database dumps with user data
+- `.env` files, including `/var/www/dpanel/.env` and `/etc/drust/drust.env`
+- API tokens and service credentials
+- Database passwords or dumps containing user data
+- SSH or SSL private keys
+- Logs that contain credentials
 
-Important files such as `/etc/drust/drust.env` and `/var/www/dpanel/.env` must stay private on the server.
+## Permission problems are usually not security bugs
 
-## Execution API Security
-
-`drust` is the privileged localhost execution API. It should:
-
-- listen on `127.0.0.1`
-- run behind bearer-token authentication
-- never be exposed directly to the public internet
-- validate all file paths before touching the filesystem
-- restrict filemanager operations to the intended account home
-- avoid arbitrary shell execution from user-controlled input
-
-If `drust` is exposed publicly, rotate the API token immediately and restrict network access.
-
-## Deployment Hardening Checklist
-
-Before using dPanel on a public server:
-
-- keep `DRUST_API_TOKEN` and `SERVERPANEL_EXECUTION_API_TOKEN` synchronized and secret
-- keep `/var/www/dpanel/.env` at `root:www-data` mode `640`; it carries the drust token, which is a root capability on the host
-- keep websites on their own PHP-FPM pools (`DRUST_SITE_POOLS=1`, the default) so one site's PHP cannot read another site's files
-- pass secrets to maintenance scripts through `DPANEL_ADMIN_PASSWORD`, `DPANEL_DB_PASSWORD` or `DPANEL_USER_PASSWORD`, never as arguments other local users can read from `/proc`
-- confirm `drust` is reachable only from localhost
-- use HTTPS for public panel access
-- run the panel with least-privilege web server users
-- avoid `chmod 777`
-- run `/var/www/dscript/scripts/fix-permissions.sh --all` after first install or project migration
-- keep PHP, Laravel dependencies, Rust dependencies, the edge gateway, and system packages updated
-- disable unused services and public ports
-- review logs without exposing secrets
-
-## Permission Problems Are Not Always Security Fixes
-
-If the file manager can open folders but cannot create, edit, upload, unzip, or delete files, use:
+If the file manager can open folders but cannot create, edit, upload, unzip, or
+delete files, repair ownership instead of loosening permissions:
 
 ```bash
-/var/www/dscript/scripts/fix-permissions.sh --all
+sudo dpanel script run fix-permissions --all
 ```
 
-Do not use this as a permanent workaround:
-
-```bash
-chmod -R 777 /home/example/public_html
-```
-
-The repair command keeps ownership safer by using the site user and `www-data` group with ACL inheritance.
-
-## Disclosure Process
-
-After a valid report is received:
-
-1. The maintainer reviews and reproduces the issue.
-2. A fix is prepared privately when needed.
-3. The fix is released to `main`.
-4. Public notes are added when disclosure is safe.
-
-Thank you for helping keep dPanel safe.
+This keeps files owned by the site user with the `www-data` group and ACL
+inheritance. Never use `chmod -R 777` as a workaround.

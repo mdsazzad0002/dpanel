@@ -1,66 +1,64 @@
-# Contributing To dPanel
+# Contributing to dPanel
 
-Thank you for wanting to help improve dPanel. Whether you are fixing a bug,
-trying an alpha build, or just sharing an idea, your input matters.
+Thank you for helping improve dPanel! Bug fixes, alpha-test feedback, and
+feature ideas are all welcome. A short, rough note about what you tried and
+where you got stuck is often just as useful as a polished report.
 
-dPanel is a free-to-use ServerPanel hosting control panel stack made from:
+## Contents
 
-- `dpanel` - Laravel + Vue control panel
-- `drust` - Rust localhost execution API
-- `dscript` - shell installer and repair tooling
+- [Ground rules](#ground-rules)
+- [Reporting issues](#reporting-issues)
+- [Development setup](#development-setup)
+- [Architecture boundaries](#architecture-boundaries)
+- [Code style](#code-style)
+- [Testing](#testing)
+- [Pull requests](#pull-requests)
+- [Documentation](#documentation)
+- [License](#license)
 
-Please read this guide before submitting issues, fixes, alpha-test feedback, or
-feature ideas.
+## Ground rules
 
-## Before You Start
+- Only submit code or content you have the right to contribute.
+- Never include secrets, `.env` files, database dumps, private keys, or
+  customer data.
+- Never commit generated folders such as `vendor/`, `node_modules/`, or
+  `drust/target/`.
+- Never copy paid or proprietary code from another project.
+- **Security vulnerabilities must be reported privately.** See the
+  [Security Policy](SECURITY.md).
 
-Read these files first:
+By contributing, you agree that the maintainer may use, modify, and distribute
+your contribution as part of dPanel under the current or a future project
+license (see section 5 of the [License](LICENSE)).
 
-- `README.md` - project overview and install commands
-- `SECURITY.md` - vulnerability reporting policy
-- `LICENSE` - custom free-use license
-- [First Install](FIRST_INSTALL_AND_PERMISSIONS.md) - first install and permission repair guide
+## Reporting issues
 
-## Contribution Rules
+### Bugs
 
-By contributing, you agree that your contribution may be used, modified, and distributed by the dPanel maintainer as part of this project under the current license or a future project license.
+Please include:
 
-Do not contribute code or content you do not have permission to submit.
+- dPanel version or commit hash
+- Operating system and PHP version
+- The exact error message
+- Steps to reproduce
+- Relevant logs, with secrets removed
 
-If you are alpha testing, it is perfectly fine to send rough feedback. A short
-note about what you tried, what surprised you, and where you got stuck is often
-more useful than a polished report.
+### Feature requests
 
-Do not include:
+Please describe:
 
-- secrets
-- `.env` files
-- database dumps
-- private keys
-- customer data
-- paid/proprietary code copied from another project
-- generated dependency folders such as `vendor/`, `node_modules/`, or `drust/target/`
+- The workflow you want to support and the expected result
+- Why it belongs in dPanel
+- Which layers it touches: `dpanel`, `drust`, `dscript`, or all of them
 
-## Security Reports
+### Alpha feedback
 
-Do not open public issues for security vulnerabilities.
+Tell us which build or branch you tried, what you attempted first, what felt
+smooth, and what felt confusing or unfinished. Screenshots help a lot.
 
-Follow `SECURITY.md` and report privately with reproduction details.
+## Development setup
 
-Examples of security-sensitive areas:
-
-- authentication and authorization
-- file manager path validation
-- `drust` API token handling
-- command execution
-- SSH keys and credentials
-- database provisioning
-- SSL private keys
-- permissions and ownership repair
-
-## Development Setup
-
-Laravel app:
+**Panel (Laravel + Vue)**
 
 ```bash
 cd /var/www/dpanel
@@ -72,16 +70,15 @@ php artisan migrate
 npm run dev
 ```
 
-Rust API:
+**drust (Rust)**
 
 ```bash
 cd /var/www/drust
-cargo fmt
-cargo test
 cargo build
+cargo run -- serve --port 9500 --token development-only-token
 ```
 
-Scripts:
+**dscript (shell)**
 
 ```bash
 cd /var/www/dscript
@@ -89,156 +86,113 @@ cd /var/www/dscript
 sudo ./dpanel script list
 ```
 
-## Architecture Boundaries
+## Architecture boundaries
 
-Keep responsibilities separate:
+Each component has one job. Keep it that way.
 
-- `dpanel` owns UI, database records, authorization, queues, and user workflows.
-- `drust` owns privileged local server operations.
-- `dscript` owns install, bootstrap, and recovery scripts.
+| Component | Owns |
+| --- | --- |
+| `dpanel` | UI, database records, authorization, queues, and user workflows |
+| `drust` | Privileged local server operations and public web traffic |
+| `dscript` | Install, bootstrap, and recovery scripts |
 
-Do not add raw privileged shell execution directly inside Laravel controllers.
+Do not run privileged shell commands directly from Laravel controllers. To add
+a new host-level action:
 
-For a new host-level action:
-
-1. Add UI/model/job/service code in `dpanel`.
+1. Add the UI, model, job, or service code in `dpanel`.
 2. Add a validated endpoint in `drust`.
 3. Add a `dscript` wrapper only if it is useful as a maintenance command.
 4. Document the new behavior.
 
-## Code Style
+See [Architecture](docs/architecture.md) for details.
 
-Laravel:
+## Code style
 
-- keep controllers small
-- validate requests before service calls
-- use policies/middleware for authorization
-- use queued jobs for slow operations
-- never expose secrets in props, JSON, logs, or reports
+**Laravel**
 
-Vue/Inertia:
+- Keep controllers small; validate requests before calling services.
+- Use policies or middleware for authorization.
+- Use queued jobs for slow operations.
+- Never expose secrets in props, JSON, logs, or reports.
 
-- keep pages task-focused
-- use shared components for repeated UI
-- include loading, success, empty, and error states
+**Vue / Inertia**
 
-Rust:
+- Keep pages focused on one task and reuse shared components.
+- Handle loading, success, empty, and error states.
 
-- run `cargo fmt`
-- validate all inputs
-- keep path operations inside allowed directories
-- return clear operator-facing errors
-- avoid arbitrary shell built from untrusted input
+**Rust**
 
-Shell:
+- Run `cargo fmt` and validate every input.
+- Keep path operations inside allowed directories.
+- Return clear, operator-friendly errors.
+- Never build shell commands from untrusted input.
 
-- use `set -euo pipefail`
-- quote variables
-- validate arguments
-- avoid unsafe broad operations
-- do not use `chmod 777` as a fix
+**Shell**
 
-## Testing Checklist
+- Start scripts with `set -euo pipefail`.
+- Quote variables and validate arguments.
+- Avoid broad, unsafe operations. `chmod 777` is never a fix.
 
-Run checks for the areas you changed.
+## Testing
 
-Laravel:
+Run the checks for every area you changed.
 
 ```bash
+# Panel
 cd /var/www/dpanel
 php artisan test
 npm run build
-```
 
-Rust:
-
-```bash
+# drust
 cd /var/www/drust
-cargo fmt
+cargo fmt --check
 cargo test
 cargo build
 ```
 
-Server config changes:
+For gateway changes:
 
 ```bash
 sudo systemctl status edge-gateway.service --no-pager
 ```
 
-Permission repair changes:
+For permission-repair changes:
 
 ```bash
-/var/www/dscript/scripts/fix-permissions.sh --path /home/example/public_html
+sudo /var/www/dscript/scripts/fix-permissions.sh --path /home/example/public_html
 sudo -u www-data sh -c 'echo ok > /home/example/public_html/.permission-test && rm /home/example/public_html/.permission-test'
 ```
 
-## Documentation Updates
+## Pull requests
 
-Update docs when changing:
+Good commits are focused, describe the behavior they change, and avoid
+unrelated formatting churn.
 
-- install commands
-- required environment variables
-- API request/response shapes
-- permissions or ownership behavior
-- security-sensitive behavior
-- public website content
-- developer workflow
+A good pull request includes:
 
-Relevant docs:
+- **What** problem it solves and what changed
+- **How** it was tested
+- **Screenshots** for UI changes
+- **Risks** or migration notes, if any
 
-- `README.md`
-- `SECURITY.md`
-- `LICENSE`
-- `drust/docs.md`
+## Documentation
 
-## Commit And Pull Request Tips
+Update the docs in the same pull request when you change install commands,
+environment variables, API requests or responses, permission behavior,
+security-sensitive behavior, or the developer workflow.
 
-Good commits:
+| Topic | File |
+| --- | --- |
+| Project overview | [`README.md`](README.md) |
+| Install and configuration | [`docs/installation.md`](docs/installation.md) |
+| Everyday commands | [`docs/operations.md`](docs/operations.md) |
+| drust endpoints | [`docs/drust-api.md`](docs/drust-api.md) |
+| `dpanel` CLI | [`docs/dscript.md`](docs/dscript.md) |
+| Security guidance | [`SECURITY.md`](SECURITY.md) |
 
-- are focused
-- describe the behavior changed
-- avoid unrelated formatting churn
-- do not include generated secrets or dependencies
+## License
 
-Good pull requests include:
-
-- what problem is solved
-- what changed
-- how it was tested
-- screenshots for UI changes
-- any risks or migration notes
-
-## Issue Reports
-
-For bugs, include:
-
-- dPanel version or commit hash
-- operating system
-- PHP version
-- gateway: Rust edge gateway
-- exact error message
-- reproduction steps
-- relevant logs with secrets removed
-
-For feature requests, include:
-
-- user workflow
-- expected result
-- why it belongs in dPanel
-- whether it needs `dpanel`, `drust`, `dscript`, or all layers
-
-For alpha feedback, include:
-
-- what build or branch you tried
-- the first thing you attempted to do
-- what felt smooth
-- what felt confusing or unfinished
-- any screenshots or logs that help show the experience
-
-## License Reminder
-
-dPanel is free to use under a custom source-available license.
-
-You may sell hosting or server management services operated through your own dPanel installation.
-
-You may not sell, rebrand, redistribute, or publish modified dPanel software without written permission.
+dPanel is free to use under a custom source-available license. You may sell
+hosting or server management services run on your own dPanel installation, but
+you may not sell, rebrand, redistribute, or publish modified dPanel software
+without written permission. See [LICENSE](LICENSE).

@@ -1,8 +1,7 @@
-# dscript 2.0 guide
+# dscript CLI Guide
 
-Category-wise documentation is available under [`docs/README.md`](docs/README.md).
-Use that directory when you need a separate guide for installation, modules,
-vhosts, scripts, recovery or environment configuration.
+> Part of the [dPanel documentation](README.md). For a first install, start
+> with the [Installation Guide](installation.md).
 
 `dscript` is the shell toolkit for installing, updating, diagnosing and repairing
 dPanel servers. The public command is `dpanel`.

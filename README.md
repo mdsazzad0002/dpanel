@@ -1,99 +1,80 @@
-# dPanel Production Manual
+<div align="center">
 
-dPanel is a Laravel/Vue hosting panel backed by local Rust services:
+# dPanel
 
-- `dpanel`: UI, authentication, authorization, records, and queues.
-- `drust.service`: bearer-token protected privileged localhost API.
-- `edge-gateway.service`: public Rust HTTP/TLS website gateway.
-- `dscript`: installation, update, and recovery commands.
+**A free, self-hosted web hosting control panel built on Laravel, Vue, and Rust.**
 
-This README is the single production and developer manual. The current stack
-uses the Rust edge gateway directly and does not generate legacy vhost files.
+[![Laravel](https://img.shields.io/badge/Laravel-12-FF2D20?logo=laravel&logoColor=white)](https://laravel.com)
+[![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org)
+[![Rust](https://img.shields.io/badge/Rust-2024-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![PHP](https://img.shields.io/badge/PHP-%E2%89%A5%208.2-777BB4?logo=php&logoColor=white)](https://www.php.net)
+[![License](https://img.shields.io/badge/license-Free%20Use-blue)](LICENSE)
 
-## Product and Support Model
+[Installation](docs/installation.md) ·
+[Documentation](docs/README.md) ·
+[Contributing](CONTRIBUTING.md) ·
+[Security](SECURITY.md)
 
-> **Free forever. The same software for everyone. No license fee, no feature
-> lock, and no forced subscription. Users pay only when they request support.**
+</div>
 
-```text
-                         dPanel
-                            │
-                   Free Core Software
-                            │
-          ┌─────────────────┴─────────────────┐
-          │                                   │
-   Self-Service User                    Supported User
-          │                                   │
-   Software: free                      Software: free
-   Updates: free                       Updates: free
-   Features: identical                 Features: identical
-   Community help                      Paid expert assistance
-          │                                   │
-          └──────── Optional donation ────────┘
-```
+---
 
-### Operating Structure
+## Overview
 
-1. Maintain one public product and one release channel for every user.
-2. Include all software features and updates at no license cost.
-3. Charge for human work such as installation, migration, troubleshooting,
-   priority response, and managed operations.
-4. Keep donations optional and treat them as community contributions rather
-   than predictable operating revenue.
+dPanel manages websites, databases, email, DNS, SSL, and backups on a Linux
+server. The web panel handles users and workflows, while small Rust services
+carry out privileged host operations and serve public website traffic.
 
-This structure avoids customer-specific editions, license checks, and separate
-feature branches. Engineering effort stays focused on one codebase, while the
-commercial service remains independent from software access.
+> **Free forever.** Every user gets the same software, the same features, and
+> the same updates. There are no license fees, no feature locks, and no forced
+> subscriptions. Paid help is available only if you ask for it.
 
-### Revenue and Capacity Calculation
+## Features
 
-Use support revenue—not downloads or active installations—for planning:
+| Area | Highlights |
+| --- | --- |
+| **Websites** | Per-site Linux accounts, per-site PHP-FPM pools, multiple PHP versions, one-click WordPress and Laravel installs, Git deployments, Node.js and Python apps |
+| **Edge gateway** | Rust HTTP/TLS server with SNI certificates, static file serving, PHP-FPM dispatch, compression, and live config reloads |
+| **SSL** | Automatic Let's Encrypt issuance, validation, and renewal |
+| **Databases** | MySQL/MariaDB and PostgreSQL with per-database users, phpMyAdmin and pgAdmin, remote-access rules |
+| **Email** | Postfix, Dovecot, and Roundcube with mailbox provisioning and delivery diagnostics |
+| **DNS** | Authoritative DNS through PowerDNS with automatic zone reconciliation |
+| **Files** | Account-scoped file manager with upload, zip/unzip, permissions repair, and trash |
+| **Backups & migration** | Scheduled backups, portable restore packages, and imports from cPanel and CyberPanel |
+| **Operations** | Cron jobs, FTP accounts, Redis, monitoring, security scans, and a server task runner |
+| **Business** | Resellers, package plans, roles and permissions, and WHMCS integration |
+
+## Architecture
 
 ```text
-Monthly support revenue
-  = one-time support jobs
-  + recurring support plans
-
-One-time support jobs
-  = completed jobs × average fee per job
-
-Recurring support plans
-  = active supported customers × average monthly support fee
-
-Available support hours
-  = support engineers × billable hours per engineer
-
-Required support hours
-  = total estimated hours across all accepted support requests
-
-Operating margin
-  = support revenue + donations - support cost - infrastructure cost
+             Browser
+                │
+                ▼
+   ┌──────────────────────────┐
+   │   edge-gateway.service   │  public :80 / :443  (Rust)
+   └──────────────────────────┘
+        │ static · PHP-FPM · panel · phpMyAdmin
+        ▼
+   ┌──────────────────────────┐        ┌──────────────────────────┐
+   │     dpanel (Laravel)     │ ─────▶ │      drust.service       │
+   │  UI · auth · records ·   │ token  │  privileged localhost    │
+   │  queues                  │        │  API on 127.0.0.1:9500   │
+   └──────────────────────────┘        └──────────────────────────┘
+                                                    │
+                                    files · users · databases · SSL · PHP
 ```
 
-Before accepting more paid work, `Required support hours` should remain below
-`Available support hours`. Donations should be excluded from the baseline
-forecast because they are voluntary and may vary from month to month.
+| Component | Path | Responsibility |
+| --- | --- | --- |
+| [`dpanel`](dpanel) | `/var/www/dpanel` | Laravel + Vue panel: UI, authentication, authorization, records, and queues |
+| [`drust`](drust) | `/var/www/drust` | Rust privileged API (`drust.service`) and public web gateway (`edge-gateway.service`) |
+| [`dscript`](dscript) | `/var/www/dscript` | Shell toolkit for installing, updating, diagnosing, and repairing servers |
 
-Unlike a traditional per-server licensing model, dPanel monetizes optional
-expert service without restricting access to the software itself.
+See [Architecture](docs/architecture.md) for the full request flow.
 
-## Request Flow
+## Quick Start
 
-```text
-Browser
-  -> edge-gateway.service (:80/:443)
-  -> active website matched from the DPanel database
-  -> static file, PHP-FPM, DPanel, or phpMyAdmin dispatch
-
-DPanel
-  -> drust.service (127.0.0.1:9500)
-  -> privileged filesystem, user, database, SSL, PHP, and script operations
-```
-
-There is no website preview URL. Websites open through their configured live
-hostname.
-
-## Installation
+Run on a fresh server as a user with `sudo` access:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh -o installer.sh
@@ -101,314 +82,62 @@ chmod +x installer.sh
 sudo ./installer.sh
 ```
 
-This URL 302-redirects to the `installer.sh` on the `main` branch of this
-repo, so a push to `main` is the only step needed to publish installer
-changes.
-
-Install or refresh the Rust services:
+Then check that the services are running:
 
 ```bash
-sudo /var/www/drust/deploy/install-service.sh
 sudo systemctl status drust.service edge-gateway.service
-```
-
-## Installed Paths
-
-```text
-/var/www/dpanel       Laravel/Vue panel
-/var/www/drust        Rust API and edge gateway
-/var/www/dscript      installer and recovery runtime
-/var/www/phpmyadmin   bundled phpMyAdmin
-/etc/drust/drust.env
-/etc/drust/edge-gateway.env
-```
-
-## Configuration
-
-`/etc/drust/drust.env`:
-
-```dotenv
-DRUST_API_PORT=9500
-DRUST_API_TOKEN=replace-with-a-long-random-token
-DRUST_MAX_UPLOAD_SIZE_BYTES=10737418240
-DRUST_MAX_ZIP_ENTRIES=100000
-DRUST_MAX_ZIP_EXPANDED_BYTES=21474836480
-DRUST_SCRIPTS_DIR=/opt/dpanel/runtime/scripts
-DRUST_DATABASE_ADMIN_USER=
-DRUST_DATABASE_ADMIN_PASSWORD=
-DRUST_DATABASE_ADMIN_HOST=127.0.0.1
-DRUST_DATABASE_ADMIN_PORT=3306
-```
-
-`/etc/drust/edge-gateway.env`:
-
-```dotenv
-DRUST_HTTP_BIND=0.0.0.0:80
-DRUST_HTTPS_BIND=0.0.0.0:443
-DRUST_PANEL_DOMAIN=panel.example.com
-DRUST_DEFAULT_SITE_ROOT=/var/www/html
-DRUST_SITE_POOLS=1
-DRUST_SITE_POOL_MAX_CHILDREN=4
-```
-
-Apply configuration:
-
-```bash
-sudo systemctl restart drust.service edge-gateway.service
-```
-
-## Website and PHP Execution
-
-The edge gateway reads active website records containing hostname, scope,
-`site_owner`, document root, PHP version, SSL state, and status.
-
-User-scope PHP websites normally execute through:
-
-```text
-/run/php/dpanel-<site_owner>-php<version>.sock
-```
-
-If the socket is absent, the gateway validates the Linux user, creates an
-ondemand PHP-FPM pool, tests the configuration, reloads PHP-FPM, and waits for
-the socket. Invalid owners or provisioning failures fall back to the shared
-PHP-FPM socket without failing the request.
-
-System-scope websites, DPanel, and phpMyAdmin always use the shared `www-data`
-PHP-FPM pool.
-
-Website roots normally live at `/home/<site-user>/public_html`. Files should be
-owned by the site account. Shared PHP fallback requires ACL/group permission for
-`www-data`.
-
-## Database Provisioning
-
-Database creation:
-
-1. Creates the database when absent.
-2. Creates or updates its user and password.
-3. Grants `ALL PRIVILEGES` on that database only.
-4. Synchronizes `user@127.0.0.1` and `user@localhost` for local hosts.
-5. Flushes privileges.
-
-The user can create/drop its assigned database and manage all its objects, but
-does not receive global server-admin privileges.
-
-```http
-POST http://127.0.0.1:9500/api/v1/database-request
-Authorization: Bearer <DRUST_API_TOKEN>
-Content-Type: application/json
-```
-
-```json
-{
-  "action": "create",
-  "database_name": "example_db",
-  "database_user": "example_user",
-  "database_password": "strong-secret",
-  "database_host": "127.0.0.1",
-  "database_port": 3306,
-  "charset": "utf8mb4",
-  "collation": "utf8mb4_unicode_ci"
-}
-```
-
-Allowed actions: `create`, `upsert`.
-
-## Drust API
-
-Protected endpoints require `Authorization: Bearer <DRUST_API_TOKEN>`.
-
-```text
-GET  /health
-GET  /api/v1/health-checker
-POST /api/v1/create-admin-user
-POST /api/v1/disable-root-login
-POST /api/v1/database-request
-POST /api/v1/filemanager/user
-POST /api/v1/filemanager/create
-POST /api/v1/filemanager/write
-POST /api/v1/filemanager/upload
-POST /api/v1/filemanager/unzip
-POST /api/v1/filemanager/move
-POST /api/v1/filemanager/delete
-POST /api/v1/filemanager/fix-permissions
-POST /api/v1/ssl/ensure
-POST /api/v1/php/config
-POST /api/v1/script/run
-```
-
-Keep the API bound to localhost; never expose it publicly.
-
-## File Manager Safety
-
-User file operations stay inside `/home/<username>`. Drust validates the Linux
-user and path, rejects traversal and unsafe symlinks, applies account ownership,
-preserves dotfiles, and enforces upload/archive limits.
-
-## Command Cookbook
-
-### Developer: test and build Drust
-
-```bash
-cd /var/www/drust
-CARGO_TARGET_DIR="/tmp/drust-${USER}-target" cargo test
-CARGO_TARGET_DIR="/tmp/drust-${USER}-target" cargo build --release
-```
-
-The separate target avoids permission conflicts with the root-owned production
-build. Building alone does not restart production. To build, install launchers and
-units, align the API token, and restart both Rust services:
-
-```bash
-sudo /var/www/drust/deploy/install-service.sh
-```
-
-Restart only the component changed:
-
-```bash
-sudo systemctl restart drust.service          # privileged API change
-sudo systemctl restart edge-gateway.service   # HTTP/PHP/TLS gateway change
-```
-
-### Developer: build DPanel
-
-```bash
-cd /var/www/dpanel
-npm run build
-sudo -u www-data php artisan optimize:clear
-```
-
-After adding a migration:
-
-```bash
-cd /var/www/dpanel
-sudo -u www-data php artisan migrate --force
-```
-
-### Installer: refresh and repair
-
-```bash
-sudo dpanel runtime refresh
 sudo dpanel doctor
-sudo dpanel doctor --fix
-sudo dpanel chain verify
-sudo dpanel chain repair
 ```
 
-Preview an installer action without changing the server:
+Full steps, configuration, and permission setup are in the
+[Installation Guide](docs/installation.md).
 
-```bash
-sudo dpanel --dry-run chain update
-```
+## Documentation
 
-### Targeted fixes
-
-Repair all website filesystem ownership/ACLs:
-
-```bash
-sudo dpanel script run fix-permissions --all
-```
-
-Repair only one website account or path:
-
-```bash
-sudo dpanel script run fix-permissions --user <site-user>
-sudo dpanel script run fix-permissions --user <site-user> --path /home/<site-user>/public_html
-```
-
-Validate and restart one PHP-FPM version:
-
-```bash
-sudo php-fpm8.3 -t
-sudo systemctl reload-or-restart php8.3-fpm
-```
-
-Reapply one database/user configuration and its database-scoped privileges:
-
-```bash
-sudo dpanel script run database-request upsert <db> <user> '<password>' 127.0.0.1 3306 utf8mb4 utf8mb4_unicode_ci
-```
-
-Check services and recent logs:
-
-```bash
-sudo systemctl status drust.service edge-gateway.service
-sudo journalctl -u drust.service -n 100 --no-pager
-sudo journalctl -u edge-gateway.service -n 100 --no-pager
-```
-
-Quick decision map:
-
-| Changed area | Run |
+| Guide | Description |
 | --- | --- |
-| Rust source | `sudo /var/www/drust/deploy/install-service.sh` |
-| Vue/CSS | `cd /var/www/dpanel && npm run build` |
-| Laravel config/routes | `cd /var/www/dpanel && sudo -u www-data php artisan optimize:clear` |
-| Laravel migration | `cd /var/www/dpanel && sudo -u www-data php artisan migrate --force` |
-| Installer/runtime scripts | `sudo dpanel runtime refresh` |
-| Website permissions | `sudo dpanel script run fix-permissions --all` |
+| [Installation](docs/installation.md) | First install, configuration files, and website permissions |
+| [Architecture](docs/architecture.md) | Components, request flow, PHP execution, and the edge gateway |
+| [Operations](docs/operations.md) | Everyday commands, rebuilds, and troubleshooting |
+| [dscript CLI](docs/dscript.md) | The `dpanel` command: chains, modules, scripts, and recovery |
+| [drust Service](docs/drust-service.md) | Installing and running the privileged Rust service |
+| [drust API](docs/drust-api.md) | Endpoint reference for the localhost execution API |
+| [Backups](docs/backups.md) | Scheduled backups, remote upload, and restore |
+| [Server Task Runner](docs/ssh-command-runner.md) | SSH connector, command safety rules, and task reports |
+| [WHMCS Integration](dpanel/integrations/whmcs/README.md) | Connecting dPanel to WHMCS billing |
 
-Test a hostname without changing DNS:
+## Support Model
 
-```bash
-curl -H 'Host: example.com' http://127.0.0.1/
-```
+dPanel is one product with one release channel for everyone.
 
-Verify database grants:
+| | Self-service | Supported |
+| --- | --- | --- |
+| Software | Free | Free |
+| Updates | Free | Free |
+| Features | All | All |
+| Help | Community | Paid expert assistance |
 
-```sql
-SHOW GRANTS FOR 'example_user'@'127.0.0.1';
-SHOW GRANTS FOR 'example_user'@'localhost';
-```
+Paid support covers human work only, such as installation, migration,
+troubleshooting, priority response, and managed operations. Donations are
+always optional.
 
-## Troubleshooting
+## Contributing
 
-Gateway/PHP:
+Bug reports, alpha-test feedback, and pull requests are welcome. Please read
+the [Contributing Guide](CONTRIBUTING.md) first.
 
-```bash
-systemctl is-active edge-gateway.service
-journalctl -u edge-gateway.service -n 100 --no-pager
-ls -la /run/php
-systemctl status php8.3-fpm
-```
+## Security
 
-Drust API:
+Please **do not** open public issues for security problems. See the
+[Security Policy](SECURITY.md) for how to report them privately.
 
-```bash
-systemctl is-active drust.service
-journalctl -u drust.service -n 100 --no-pager
-curl http://127.0.0.1:9500/health
-```
+## License
 
-Filesystem permissions:
+dPanel is free to use under the [dPanel Free Use License](LICENSE), a
+source-available license. You may run it and sell hosting services with it, but
+you may not redistribute, rebrand, or resell the software itself without
+written permission.
 
-```bash
-namei -l /home/<site-user>/public_html
-getfacl /home/<site-user>/public_html
-```
-
-Database permissions:
-
-```bash
-sudo mariadb -e "SHOW GRANTS FOR 'example_user'@'127.0.0.1';"
-sudo mariadb -e "SHOW GRANTS FOR 'example_user'@'localhost';"
-```
-
-## Development Rules
-
-- DPanel owns UI, authorization, records, and workflows.
-- Drust owns privileged host operations.
-- Edge gateway owns public HTTP/TLS dispatch.
-- Dscript owns installation and recovery.
-- Prefer a validated Drust endpoint over privileged shell execution in Laravel.
-- Validate usernames, identifiers, paths, and versions before use.
-- Never log tokens, passwords, private keys, or customer data.
-- Run relevant Rust, PHP, Laravel, and frontend checks before deployment.
-
-## Policy Files
-
-- [Contributing](CONTRIBUTING.md)
-- [Security](SECURITY.md)
-- [License](LICENSE)
-
-These policy files intentionally remain separate from the production manual.
+<div align="center">
+<sub>Copyright © 2026 mdsazzad0002</sub>
+</div>

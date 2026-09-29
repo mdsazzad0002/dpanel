@@ -1,10 +1,11 @@
-dPanel Free Use License
+DPANEL FREE USE LICENSE
+=======================
 
 Copyright (c) 2026 mdsazzad0002.
 
 This software is provided as a free-to-use, source-available hosting control panel project.
 
-1. Permission To Use
+1. PERMISSION TO USE
 
 You may use dPanel for free for personal, educational, internal, or commercial hosting operations.
 
@@ -17,7 +18,7 @@ You may:
 - sell hosting, website management, server management, or related services that are operated using your own dPanel installation
 - make private configuration changes required for your own deployment
 
-2. Restrictions
+2. RESTRICTIONS
 
 Without prior written permission from the copyright holder, you may not:
 
@@ -31,7 +32,7 @@ Without prior written permission from the copyright holder, you may not:
 - create derivative works for public release
 - package dPanel into another public or commercial control panel product
 
-3. Services Are Allowed
+3. SERVICES ARE ALLOWED
 
 You may sell services that use dPanel as an internal tool or hosting control panel.
 
@@ -50,7 +51,7 @@ Not allowed without written permission:
 - redistributing modified dPanel source code to customers
 - packaging dPanel into another product for sale
 
-4. Private Deployment Changes
+4. PRIVATE DEPLOYMENT CHANGES
 
 You may make private changes only for your own installed server, such as:
 
@@ -61,13 +62,13 @@ You may make private changes only for your own installed server, such as:
 
 Private changes do not grant permission to redistribute, resell, rebrand, or publish modified source code.
 
-5. Contributions
+5. CONTRIBUTIONS
 
 If you submit code, documentation, fixes, issues, or other contributions to this repository, you agree that the project maintainer may use, modify, and distribute those contributions as part of dPanel under this license or a future project license.
 
 Contributors retain ownership of their own contributions, but grant the maintainer a broad permission to include them in the project.
 
-6. No Warranty
+6. NO WARRANTY
 
 dPanel is provided "as is", without warranty of any kind.
 
@@ -83,7 +84,7 @@ The author is not responsible for:
 
 You are responsible for reviewing, securing, backing up, and maintaining your own server.
 
-7. Security And Secrets
+7. SECURITY AND SECRETS
 
 You must not publish secrets from your installation, including:
 
@@ -95,17 +96,15 @@ You must not publish secrets from your installation, including:
 - customer data
 - server logs containing sensitive information
 
-See `SECURITY.md` for the security reporting policy.
+See SECURITY.md for the security reporting policy.
 
-8. Written Permission
+8. WRITTEN PERMISSION
 
 For permission to redistribute, modify publicly, rebrand, resell, or use dPanel in a way not allowed by this license, contact the project owner through the repository:
 
-```text
-https://github.com/mdsazzad0002/dpanel
-```
+    https://github.com/mdsazzad0002/dpanel
 
-9. License Type
+9. LICENSE TYPE
 
 This is a custom source-available free-use license.
 
