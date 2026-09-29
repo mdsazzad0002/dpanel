@@ -123,8 +123,10 @@ always optional.
 
 ## Contributing
 
-Bug reports, alpha-test feedback, and pull requests are welcome. Please read
-the [Contributing Guide](CONTRIBUTING.md) first.
+Bug reports, alpha-test feedback, and pull requests are welcome. The
+[Contributing Guide](CONTRIBUTING.md) walks you through cloning the repository,
+running the installer from your checkout, setting up permissions, and opening
+a pull request.
 
 ## Security
 

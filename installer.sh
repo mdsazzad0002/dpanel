@@ -75,7 +75,7 @@ EOF
 #   bash installer.sh php mariadb redis
 #   bash installer.sh update
 #   PANEL_INSTALL_BASE_URL="https://dpanel.dengrweb.com" bash installer.sh
-#   DSCRIPT_SOURCE_DIR="/var/www/dscript" bash installer.sh
+#   DSCRIPT_SOURCE_DIR="/var/www/dscript" bash installer.sh   # git checkout at /var/www
 #
 # Default call:
 #   bash installer.sh
@@ -157,16 +157,17 @@ fi
 # Install release sibling services when the archive contains them.
 #
 RELEASE_SOURCE_ROOT="$(dirname "$ARCHIVE_DSCRIPT_DIR")"
-if [[ -d "${RELEASE_SOURCE_ROOT}/drust" ]]; then
-  mkdir -p /var/www/drust
-  printf '[INFO] Installing drust into /var/www/drust\n'
-  cp -a "${RELEASE_SOURCE_ROOT}/drust/." /var/www/drust/
-fi
-if [[ -d "${RELEASE_SOURCE_ROOT}/dpanel" ]]; then
-  mkdir -p /var/www/dpanel
-  printf '[INFO] Installing dpanel into /var/www/dpanel\n'
-  cp -a "${RELEASE_SOURCE_ROOT}/dpanel/." /var/www/dpanel/
-fi
+for component in drust dpanel; do
+  [[ -d "${RELEASE_SOURCE_ROOT}/${component}" ]] || continue
+  mkdir -p "/var/www/${component}"
+  # A git checkout at /var/www is already in place; copying it onto itself fails.
+  if [[ "$(readlink -f "${RELEASE_SOURCE_ROOT}/${component}")" == "$(readlink -f "/var/www/${component}")" ]]; then
+    printf '[INFO] Local source already matches /var/www/%s; reusing existing files.\n' "$component"
+    continue
+  fi
+  printf '[INFO] Installing %s into /var/www/%s\n' "$component" "$component"
+  cp -a "${RELEASE_SOURCE_ROOT}/${component}/." "/var/www/${component}/"
+done
 
 # ZIP mode bits are not reliable across mirrors or ZIP creation tools.
 find "$DSCRIPT_DIR" -type d -exec chmod 0755 {} +
