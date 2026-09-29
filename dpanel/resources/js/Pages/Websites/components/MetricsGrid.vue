@@ -38,8 +38,18 @@ const metricColorClasses = {
     emerald: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400',
 };
 
+// The account root the site lives in: /home/<user> or /var/www. Falls back
+// to the site root for any other layout.
+const accountRoot = (rootPath) => {
+    const path = String(rootPath || '').trim().replace(/\/+$/, '');
+    const home = path.match(/^\/home\/[^/]+/);
+    if (home) return home[0];
+    if (path === '/var/www' || path.startsWith('/var/www/')) return '/var/www';
+    return path;
+};
+
 const localDevPermissionCommand = computed(() => {
-    const path = String(props.website?.root_path || '').trim();
+    const path = accountRoot(props.website?.root_path);
     if (!path) return '';
     return `sudo chmod -R u+rwX ${path} && sudo chmod -R 777 ${path}`;
 });
