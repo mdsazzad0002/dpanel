@@ -57,8 +57,10 @@ class AppInstallerController extends WebsiteController
             'website' => $website,
             'app' => ['key' => $app, ...AppInstallService::APPS[$app]],
             'catalog' => $this->appInstallService->catalog($app, $model),
-            'databases' => $this->databases->selectable($model, request()->user()),
+            'databases' => $this->databases->selectable($model, request()->user(), AppInstallService::engines($app)),
             'newDatabase' => $this->databases->preview($model, $app),
+            'databaseEngines' => AppInstallService::engines($app),
+            'postgresql' => $this->postgresqlAvailability(AppInstallService::engines($app)),
             'adminEmail' => (string) (request()->user()?->email ?? ''),
             'rootInspection' => Inertia::defer(
                 fn () => $this->wordpressInstallService->inspectRootDirectory((string) ($website['root_path'] ?? '')),
@@ -67,13 +69,28 @@ class AppInstallerController extends WebsiteController
         ]);
     }
 
+    /**
+     * Whether "create new database" can offer PostgreSQL; only checked for apps that support it.
+     *
+     * @param  array<int, string>  $engines
+     * @return array{installed: bool, active: bool, port: int}
+     */
+    private function postgresqlAvailability(array $engines): array
+    {
+        if (! in_array(\App\Models\DatabaseRequest::ENGINE_POSTGRESQL, $engines, true)) {
+            return ['installed' => false, 'active' => false, 'port' => (int) config('postgresql.port', 5432)];
+        }
+
+        return app(\App\Services\Website\LaravelInstallService::class)->postgresqlAvailability();
+    }
+
     public function install(AppInstallRequest $request, string $token, string $id, string $app): JsonResponse
     {
         $validated = $request->validated();
         $website = Website::query()->findOrFail($this->findAuthorizedWebsiteOrFail($id)['id']);
 
         $databaseId = $validated['database_id'];
-        $databaseIds = array_column($this->databases->selectable($website, $request->user()), 'id');
+        $databaseIds = array_column($this->databases->selectable($website, $request->user(), AppInstallService::engines($app)), 'id');
         $databaseMode = AppInstallService::APPS[$app]['database'];
         $allowed = $databaseId === 'new'
             || ($databaseId === 'none' && $databaseMode === 'optional')

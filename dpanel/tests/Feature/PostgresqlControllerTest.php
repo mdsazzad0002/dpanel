@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\PostgresqlServiceManager;
+use Illuminate\Support\Facades\Http;
 use Mockery\MockInterface;
 use Tests\TestCase;
 
@@ -59,12 +60,42 @@ class PostgresqlControllerTest extends TestCase
 
     public function test_manager_only_accepts_configured_services(): void
     {
-        $manager = new PostgresqlServiceManager();
+        $manager = new PostgresqlServiceManager;
 
         $this->assertTrue($manager->isKnownService('postgresql'));
         $this->assertTrue($manager->isKnownService('pgadmin'));
         $this->assertFalse($manager->isKnownService('mariadb'));
         $this->assertFalse($manager->setRunning('mariadb', true)['success']);
+    }
+
+    public function test_manager_toggles_services_through_drust(): void
+    {
+        config([
+            'serverpanel.execution_api_base_url' => 'http://drust.test',
+            'serverpanel.execution_api_token' => 'secret',
+        ]);
+        Http::fake([
+            'drust.test/api/v1/postgresql/service' => Http::response(['success' => true, 'message' => 'ok']),
+        ]);
+
+        $this->assertSame(['success' => true], (new PostgresqlServiceManager)->setRunning('pgadmin', true));
+
+        Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer secret')
+            && $request['service'] === 'pgadmin'
+            && $request['enabled'] === true);
+    }
+
+    public function test_manager_surfaces_drust_errors(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        Http::fake([
+            'drust.test/*' => Http::response(['success' => false, 'message' => 'Failed: unit not found'], 400),
+        ]);
+
+        $this->assertSame(
+            ['success' => false, 'error' => 'Failed: unit not found'],
+            (new PostgresqlServiceManager)->setRunning('postgresql', false),
+        );
     }
 
     private function request(): static

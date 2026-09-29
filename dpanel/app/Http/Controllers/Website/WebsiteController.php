@@ -279,6 +279,9 @@ class WebsiteController extends Controller
         // closure reuses the status the sslStatus closure already resolved
         // instead of inspecting the certificate a second time.
         $sslStatus = null;
+        // rootInspection and connectedDatabase share one inspection so the
+        // Rust inspect call runs once per deferred 'diagnostics' request.
+        $inspection = null;
 
         return Inertia::render('Websites/Manage', [
             'website' => $website,
@@ -289,7 +292,14 @@ class WebsiteController extends Controller
             // renders immediately and the heavy checks load in via background
             // requests afterwards.
             'metrics' => Inertia::defer(fn () => $this->safeBuildDynamicMetrics($website), 'diagnostics'),
-            'rootInspection' => Inertia::defer(fn () => $this->inspectWebsiteApplication($website), 'diagnostics'),
+            'rootInspection' => Inertia::defer(function () use ($website, &$inspection) {
+                return $inspection ??= $this->inspectWebsiteApplication($website);
+            }, 'diagnostics'),
+            'connectedDatabase' => Inertia::defer(function () use ($website, &$inspection) {
+                $inspection ??= $this->inspectWebsiteApplication($website);
+
+                return $this->detectConnectedDatabaseName($website, $inspection);
+            }, 'diagnostics'),
             'sslStatus' => Inertia::defer(function () use ($website, &$sslStatus) {
                 return $sslStatus = $this->inspectWebsiteSslStatus($website);
             }, 'ssl'),
@@ -303,6 +313,8 @@ class WebsiteController extends Controller
                 'databases' => $databaseRequests->map(fn (DatabaseRequest $database): array => [
                     'id' => $database->id,
                     'database_name' => $database->database_name,
+                    'database_user' => $database->database_user,
+                    'engine' => $database->isPostgresql() ? DatabaseRequest::ENGINE_POSTGRESQL : DatabaseRequest::ENGINE_MARIADB,
                 ])->values()->all(),
             ],
         ]);
@@ -786,22 +798,13 @@ class WebsiteController extends Controller
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $inspection = $this->inspectWebsiteApplication($website);
-        $framework = strtolower((string) ($inspection['detected_app'] ?? ''));
-        if (! in_array($framework, ['laravel', 'wordpress', 'codeigniter'], true)) {
+        $target = $this->resolveProjectDatabaseConfig($inspection);
+        if ($target === null) {
             return response()->json(['success' => false, 'message' => 'Laravel, WordPress, or CodeIgniter project was not detected.'], 422);
         }
 
         $root = rtrim((string) ($inspection['root_path'] ?? ''), '/');
-        if ($framework === 'codeigniter') {
-            $signals = (array) data_get($inspection, 'signals.codeigniter', []);
-            $isCodeIgniter4 = in_array('spark', $signals, true) || in_array('app/Config/App.php', $signals, true);
-            $framework = $isCodeIgniter4 ? 'codeigniter4' : 'codeigniter3';
-        }
-        $configPath = match ($framework) {
-            'laravel', 'codeigniter4' => $root.'/.env',
-            'wordpress' => $root.'/wp-config.php',
-            'codeigniter3' => $root.'/application/config/database.php',
-        };
+        [$framework, $configPath] = $target;
         $validated = $request->validate(['database_id' => ['nullable', 'string']]);
         $databaseQuery = DatabaseRequest::query()
             ->visibleTo($request->user())
@@ -812,6 +815,10 @@ class WebsiteController extends Controller
             : (clone $databaseQuery)->latest()->first();
         if ($database === null) {
             return response()->json(['success' => false, 'message' => 'No active database is assigned to this website domain.'], 422);
+        }
+        $isPostgresql = $database->isPostgresql();
+        if ($isPostgresql && $framework === 'wordpress') {
+            return response()->json(['success' => false, 'message' => 'WordPress only runs on MySQL/MariaDB. Connect a MariaDB database instead.'], 422);
         }
 
         $client = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
@@ -827,7 +834,9 @@ class WebsiteController extends Controller
             'database_user' => (string) $database->database_user,
             'database_password' => (string) $database->database_password,
             'database_host' => (string) ($database->database_host ?: '127.0.0.1'),
-            'database_port' => 3306,
+            // drust writes the matching driver (pgsql / Postgre / postgre or the MySQL ones).
+            'engine' => $isPostgresql ? DatabaseRequest::ENGINE_POSTGRESQL : DatabaseRequest::ENGINE_MARIADB,
+            'database_port' => $isPostgresql ? (int) config('postgresql.port', 5432) : 3306,
         ]);
         $json = $response->json();
         if (! $response->successful() || ! ($json['success'] ?? false)) {
@@ -843,7 +852,66 @@ class WebsiteController extends Controller
             default => ucfirst($framework),
         };
 
-        return response()->json(['success' => true, 'message' => $frameworkLabel.' database connected successfully.']);
+        return response()->json(['success' => true, 'message' => sprintf(
+            '%s database connected successfully (%s: %s).',
+            $frameworkLabel,
+            $isPostgresql ? 'PostgreSQL' : 'MariaDB',
+            $database->database_name,
+        )]);
+    }
+
+    /**
+     * Framework variant and config file that hold the project's DB credentials.
+     *
+     * @return array{0:string,1:string}|null
+     */
+    private function resolveProjectDatabaseConfig(array $inspection): ?array
+    {
+        $framework = strtolower((string) ($inspection['detected_app'] ?? ''));
+        $root = rtrim((string) ($inspection['root_path'] ?? ''), '/');
+        if ($root === '' || ! in_array($framework, ['laravel', 'wordpress', 'codeigniter'], true)) {
+            return null;
+        }
+        if ($framework === 'codeigniter') {
+            $signals = (array) data_get($inspection, 'signals.codeigniter', []);
+            $isCodeIgniter4 = in_array('spark', $signals, true) || in_array('app/Config/App.php', $signals, true);
+            $framework = $isCodeIgniter4 ? 'codeigniter4' : 'codeigniter3';
+        }
+
+        return [$framework, match ($framework) {
+            'laravel', 'codeigniter4' => $root.'/.env',
+            'wordpress' => $root.'/wp-config.php',
+            'codeigniter3' => $root.'/application/config/database.php',
+        }];
+    }
+
+    /**
+     * Database name the project's config file currently points at, or null
+     * when the project/config can't be read.
+     */
+    private function detectConnectedDatabaseName(array $website, array $inspection): ?string
+    {
+        $target = $this->resolveProjectDatabaseConfig($inspection);
+        if ($target === null) {
+            return null;
+        }
+        [$framework, $configPath] = $target;
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($configPath));
+
+        try {
+            $content = $this->filemanagerService->readTextFile($siteOwner, $configPath)['content'];
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $pattern = match ($framework) {
+            'laravel' => '/^\s*DB_DATABASE\s*=\s*["\']?([^"\'\s#]*)/m',
+            'codeigniter4' => '/^\s*database\.default\.database\s*=\s*["\']?([^"\'\s#]*)/m',
+            'wordpress' => '/define\(\s*[\'"]DB_NAME[\'"]\s*,\s*[\'"]([^\'"]*)[\'"]/',
+            'codeigniter3' => '/\$db\[[\'"]default[\'"]\]\[[\'"]database[\'"]\]\s*=\s*[\'"]([^\'"]*)[\'"]/',
+        };
+
+        return preg_match($pattern, $content, $match) && $match[1] !== '' ? $match[1] : null;
     }
 
     public function installProjectDependencies(Request $request, string $token, string $id): JsonResponse

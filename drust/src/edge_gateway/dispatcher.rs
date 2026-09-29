@@ -469,14 +469,39 @@ fn is_system_pgadmin_path(path: &str) -> bool {
 }
 
 async fn handle_system_pgadmin(
-    request: Request<Body>,
+    mut request: Request<Body>,
     path: &str,
     proxy_client: &reqwest::Client,
     site_match: &str,
 ) -> Response {
-    if path == PGADMIN_PATH {
+    // pgAdmin logs in whoever these headers name (see crate::pgadmin_sso), so a
+    // browser must never be able to send them. Only the SSO request below adds
+    // them, after checking a one-time ticket.
+    strip_pgadmin_identity_headers(request.headers_mut());
+
+    // Check the raw path: `path` is normalized, which strips the trailing
+    // slash, so "/pgadmin4/" would otherwise redirect to itself forever.
+    if path == PGADMIN_PATH && request.uri().path() == PGADMIN_PATH {
         return annotated_response(
             redirect_response(301, "/pgadmin4/"),
+            site_match,
+            PGADMIN_PATH,
+        );
+    }
+    if path == crate::pgadmin_sso::SSO_PATH {
+        return annotated_response(
+            pgadmin_sso_login(request, proxy_client).await,
+            site_match,
+            PGADMIN_PATH,
+        );
+    }
+    if is_anonymous_pgadmin_entry(&request, path) {
+        return annotated_response(
+            pgadmin_notice_response(
+                StatusCode::OK,
+                "Open pgAdmin from dPanel",
+                "pgAdmin signs you in through dPanel. Use <strong>DB Login</strong> on a PostgreSQL database, or <strong>Open pgAdmin</strong> on Database Management &rarr; PostgreSQL.",
+            ),
             site_match,
             PGADMIN_PATH,
         );
@@ -489,6 +514,119 @@ async fn handle_system_pgadmin(
         Err(_) => pgadmin_unavailable_response(),
     };
     annotated_response(response, site_match, PGADMIN_PATH)
+}
+
+/// WSGI maps `X-Foo-Bar` and `X_Foo_Bar` to the same variable, so match both.
+fn strip_pgadmin_identity_headers(headers: &mut axum::http::HeaderMap) {
+    let blocked: Vec<axum::http::HeaderName> = headers
+        .keys()
+        .filter(|name| {
+            let normalized = name.as_str().replace('_', "-");
+            normalized == crate::pgadmin_sso::USER_HEADER
+                || normalized == crate::pgadmin_sso::SECRET_HEADER
+        })
+        .cloned()
+        .collect();
+    for name in blocked {
+        headers.remove(name);
+    }
+}
+
+/// pgAdmin's own login page can't sign anyone in (webserver auth only), so a
+/// visitor without a session gets a pointer back to dPanel instead.
+fn is_anonymous_pgadmin_entry(request: &Request<Body>, path: &str) -> bool {
+    if request.method() != axum::http::Method::GET {
+        return false;
+    }
+    if path == "/pgadmin4/login" {
+        return true;
+    }
+    let has_session = request
+        .headers()
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .any(|pair| pair.trim_start().starts_with("pga4_session="));
+    path == PGADMIN_PATH && !has_session
+}
+
+/// Turns a one-time dPanel ticket into a pgAdmin login: forwards a fresh
+/// (cookie-less) login request carrying the identity and shared secret, and
+/// hands pgAdmin's session cookie and redirect back to the browser.
+async fn pgadmin_sso_login(request: Request<Body>, proxy_client: &reqwest::Client) -> Response {
+    let ticket = request
+        .uri()
+        .query()
+        .unwrap_or("")
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("ticket="))
+        .unwrap_or("");
+    let Some(identity) = crate::pgadmin_sso::consume(ticket) else {
+        return pgadmin_notice_response(
+            StatusCode::FORBIDDEN,
+            "pgAdmin link expired",
+            "This sign-in link has already been used or is older than a minute. Open pgAdmin again from dPanel.",
+        );
+    };
+    let Some(secret) = crate::pgadmin_sso::shared_secret() else {
+        return pgadmin_notice_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "pgAdmin sign-on is not configured",
+            "Run <code>sudo dpanel postgresql configure</code> on the server.",
+        );
+    };
+    let (Ok(identity), Ok(secret)) = (
+        HeaderValue::from_str(&identity),
+        HeaderValue::from_str(&secret),
+    ) else {
+        return pgadmin_unavailable_response();
+    };
+
+    let mut login = Request::builder()
+        .method(axum::http::Method::GET)
+        .uri("/pgadmin4/login")
+        .body(Body::empty())
+        .expect("static pgAdmin login request is valid");
+    for (name, value) in request.headers() {
+        // Drop the old pgAdmin session so the login starts clean.
+        if name != header::COOKIE {
+            login.headers_mut().append(name.clone(), value.clone());
+        }
+    }
+    login
+        .headers_mut()
+        .insert(crate::pgadmin_sso::USER_HEADER, identity);
+    login
+        .headers_mut()
+        .insert(crate::pgadmin_sso::SECRET_HEADER, secret);
+
+    let upstream = super::UpstreamConfig::Http(SocketAddr::from(PGADMIN_UPSTREAM));
+    let mut response = match proxy_request(proxy_client, &upstream, login).await {
+        Ok(response) => response,
+        Err(_) => return pgadmin_unavailable_response(),
+    };
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+fn pgadmin_notice_response(status: StatusCode, title: &str, message: &str) -> Response {
+    let mut response = simple_response(
+        status,
+        &format!(
+            r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title></head><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem"><h1>{title}</h1><p>{message}</p></body></html>"#
+        ),
+    );
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 fn pgadmin_unavailable_response() -> Response {
@@ -796,5 +934,36 @@ mod tests {
         assert!(is_blocked_htaccess_path("/.env"));
         assert!(is_blocked_htaccess_path("/.well-known/private.txt"));
         assert!(is_blocked_htaccess_path("/.well-known/acme-challenge"));
+    }
+
+    #[test]
+    fn browsers_cannot_send_pgadmin_identity_headers() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert("x-dpanel-pgadmin-user", HeaderValue::from_static("dpanel-admin"));
+        headers.insert("x_dpanel_pgadmin_user", HeaderValue::from_static("dpanel-admin"));
+        headers.insert("x-pgadmin-webserver-secret", HeaderValue::from_static("guess"));
+        headers.insert("x_pgadmin_webserver_secret", HeaderValue::from_static("guess"));
+        headers.insert("accept", HeaderValue::from_static("text/html"));
+        strip_pgadmin_identity_headers(&mut headers);
+        assert_eq!(headers.len(), 1);
+        assert!(headers.contains_key("accept"));
+    }
+
+    #[test]
+    fn only_sessionless_pgadmin_entry_pages_are_intercepted() {
+        let request = |uri: &str, cookie: Option<&str>| {
+            let mut builder = Request::builder().method("GET").uri(uri);
+            if let Some(cookie) = cookie {
+                builder = builder.header(header::COOKIE, cookie);
+            }
+            builder.body(Body::empty()).unwrap()
+        };
+        assert!(is_anonymous_pgadmin_entry(&request("/pgadmin4/", None), "/pgadmin4"));
+        assert!(is_anonymous_pgadmin_entry(&request("/pgadmin4/login", Some("pga4_session=x")), "/pgadmin4/login"));
+        assert!(!is_anonymous_pgadmin_entry(
+            &request("/pgadmin4/", Some("PGADMIN_LANGUAGE=en; pga4_session=abc")),
+            "/pgadmin4"
+        ));
+        assert!(!is_anonymous_pgadmin_entry(&request("/pgadmin4/browser/", None), "/pgadmin4/browser"));
     }
 }

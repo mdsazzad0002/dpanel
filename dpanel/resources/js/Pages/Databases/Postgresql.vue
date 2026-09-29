@@ -30,6 +30,9 @@ const revealed = ref({});
 const pgadminService = computed(() => state.value.services.find((service) => service.key === 'pgadmin'));
 const postgresService = computed(() => state.value.services.find((service) => service.key === 'postgresql'));
 const pgadminUrl = computed(() => state.value.pgadmin?.path || '/pgadmin4/');
+// Signs in through dPanel (one-time link) as the PostgreSQL superuser.
+const pgadminLoginUrl = computed(() => panelRoute('databases.postgresql.pgadmin'));
+const flashError = computed(() => page.props.flash?.error || '');
 
 const applyState = (data) => {
     if (data.services) state.value.services = data.services;
@@ -95,6 +98,9 @@ const mask = (value, key) => (revealed.value[key] ? value : '••••••�
         </template>
 
         <div class="space-y-6">
+            <div v-if="flashError && !message" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+                {{ flashError }}
+            </div>
             <div v-if="message" :class="message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'" class="rounded-md border px-4 py-3 text-sm">
                 {{ message.text }}
             </div>
@@ -141,7 +147,7 @@ const mask = (value, key) => (revealed.value[key] ? value : '••••••�
                             </button>
                             <a
                                 v-if="service.key === 'pgadmin' && service.active"
-                                :href="pgadminUrl"
+                                :href="pgadminLoginUrl"
                                 target="_blank"
                                 rel="noopener"
                                 class="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200"
@@ -177,22 +183,13 @@ const mask = (value, key) => (revealed.value[key] ? value : '••••••�
                 </div>
 
                 <div class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 class="text-base font-semibold">pgAdmin login</h2>
+                    <h2 class="text-base font-semibold">pgAdmin sign-in</h2>
                     <dl class="mt-4 space-y-3 text-sm">
                         <div class="flex justify-between gap-3"><dt class="text-slate-500">URL</dt><dd class="font-mono">{{ pgadminUrl }}</dd></div>
-                        <div class="flex justify-between gap-3"><dt class="text-slate-500">Email</dt><dd class="font-mono">{{ state.pgadmin.email || 'Not set' }}</dd></div>
-                        <div class="flex items-center justify-between gap-3">
-                            <dt class="text-slate-500">Password</dt>
-                            <dd v-if="state.pgadmin.password" class="flex items-center gap-2">
-                                <span class="font-mono">{{ mask(state.pgadmin.password, 'pga') }}</span>
-                                <button type="button" class="text-xs text-blue-600 hover:underline dark:text-blue-300" @click="toggleReveal('pga')">{{ revealed.pga ? 'Hide' : 'Show' }}</button>
-                                <button type="button" class="text-xs text-blue-600 hover:underline dark:text-blue-300" @click="copy(state.pgadmin.password)">Copy</button>
-                            </dd>
-                            <dd v-else class="text-slate-500">Not set</dd>
-                        </div>
                     </dl>
                     <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">
-                        The local server is pre-registered in pgAdmin as "Local PostgreSQL"; use the PostgreSQL password above when it asks.
+                        pgAdmin has no password of its own: you sign in through dPanel.
+                        <strong>Open pgAdmin</strong> connects as the superuser; <strong>DB Login</strong> on a PostgreSQL database in List Databases connects as that database's user and shows only that database.
                         <span v-if="pgadminService && !pgadminService.active">Turn pgAdmin on to open it.</span>
                     </p>
                 </div>

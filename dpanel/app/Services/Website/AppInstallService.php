@@ -3,6 +3,7 @@
 namespace App\Services\Website;
 
 use App\Models\CronJob;
+use App\Models\DatabaseRequest;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Backup\PreOverwriteBackupService;
@@ -28,18 +29,21 @@ class AppInstallService
             'description' => 'Joomla CMS, installed with an administrator account and database.',
             'document_root' => '',
             'database' => 'required',
+            'engines' => [DatabaseRequest::ENGINE_MARIADB, DatabaseRequest::ENGINE_POSTGRESQL],
         ],
         'drupal' => [
             'label' => 'Drupal',
             'description' => 'Drupal CMS (recommended project) with Drush, installed with the standard profile and an admin account.',
             'document_root' => 'web',
             'database' => 'required',
+            'engines' => [DatabaseRequest::ENGINE_MARIADB, DatabaseRequest::ENGINE_POSTGRESQL],
         ],
         'codeigniter' => [
             'label' => 'CodeIgniter 4',
             'description' => 'CodeIgniter 4 app starter from Composer, with .env configured.',
             'document_root' => 'public',
             'database' => 'optional',
+            'engines' => [DatabaseRequest::ENGINE_MARIADB, DatabaseRequest::ENGINE_POSTGRESQL],
         ],
         // WHMCS is licensed software behind a customer login, so the admin
         // uploads the zip from their WHMCS account and enters the license key.
@@ -81,6 +85,16 @@ class AppInstallService
         private readonly AppPackageUploads $uploads,
         private readonly CronSystemService $cron,
     ) {
+    }
+
+    /**
+     * Database engines an app can be installed on.
+     *
+     * @return array<int, string>
+     */
+    public static function engines(string $app): array
+    {
+        return self::APPS[$app]['engines'] ?? [DatabaseRequest::ENGINE_MARIADB];
     }
 
     /**
@@ -284,11 +298,28 @@ class AppInstallService
         if ($meta['database'] === 'new' && $databaseId !== 'new') {
             return $this->fail("{$meta['label']} must be installed into a new, empty database.");
         }
+        $engines = self::engines($app);
         $existing = null;
         if ($useDatabase && $databaseId !== 'new') {
-            $existing = $this->databases->find($website, $actor, $databaseId);
+            $existing = $this->databases->find($website, $actor, $databaseId, $engines);
             if ($existing === null) {
                 return $this->fail('The selected database is not available or has no stored credentials.');
+            }
+        }
+        $engine = $existing !== null
+            ? ($existing->isPostgresql() ? DatabaseRequest::ENGINE_POSTGRESQL : DatabaseRequest::ENGINE_MARIADB)
+            : (string) ($input['database_engine'] ?? DatabaseRequest::ENGINE_MARIADB);
+        if ($useDatabase && ! in_array($engine, $engines, true)) {
+            return $this->fail("{$meta['label']} cannot be installed on this database engine.");
+        }
+        $isPostgresql = $useDatabase && $engine === DatabaseRequest::ENGINE_POSTGRESQL;
+        // Without the driver the installer only fails after the site files are
+        // replaced. CodeIgniter's Postgre driver uses native pgsql, the rest PDO.
+        if ($isPostgresql) {
+            $module = $app === 'codeigniter' ? 'pgsql' : 'pdo_pgsql';
+            $modules = $this->step($siteOwner, $rootPath, $phpVersion, 'php_modules', [], 60);
+            if (! $modules['success'] || preg_match('/^'.$module.'$/mi', $modules['output']) !== 1) {
+                return $this->fail("PostgreSQL needs the {$module} extension for PHP {$phpVersion}, and it is not loaded. Enable it in PHP Manager or choose MariaDB.");
             }
         }
 
@@ -329,13 +360,20 @@ class AppInstallService
         $database = null;
         if ($useDatabase) {
             $report('creating_database');
-            $database = $this->databases->resolveConfig($domain, $existing, (string) ($input['database_suffix'] ?? ''), $app);
+            $database = $this->databases->resolveConfig($domain, $existing, (string) ($input['database_suffix'] ?? ''), $app, $engine);
             $provision = $this->databases->provision($database);
             if (! $provision['success']) {
                 return $this->fail($provision['output'] ?: 'Database provisioning failed.');
             }
             if ($existing === null) {
                 $this->databases->record($domain, $database, $website, $actor);
+            }
+            if ($app === 'drupal' && $isPostgresql) {
+                try {
+                    $this->ensurePgTrgm($database);
+                } catch (\Throwable $e) {
+                    return $this->fail('Drupal needs the pg_trgm PostgreSQL extension, and creating it failed: '.$e->getMessage());
+                }
             }
         }
 
@@ -348,7 +386,9 @@ class AppInstallService
                 'admin_username' => (string) ($input['admin_username'] ?? ''),
                 'admin_password' => (string) ($input['admin_password'] ?? ''),
                 'admin_email' => (string) ($input['admin_email'] ?? ''),
-                'db_host' => $database['database_host'],
+                'db_type' => $isPostgresql ? 'pgsql' : 'mysqli',
+                // Joomla's PDO driver splits host:port itself.
+                'db_host' => $isPostgresql ? $database['database_host'].':'.$database['database_port'] : $database['database_host'],
                 'db_user' => $database['database_user'],
                 'db_pass' => $database['database_password'],
                 'db_name' => $database['database_name'],
@@ -598,20 +638,44 @@ class AppInstallService
      */
     public function drupalSettings(string $template, array $database): string
     {
+        $isPostgresql = ($database['engine'] ?? '') === DatabaseRequest::ENGINE_POSTGRESQL;
         $connection = var_export([
             'database' => $database['database_name'],
             'username' => $database['database_user'],
             'password' => $database['database_password'],
             'host' => $database['database_host'],
             'port' => $database['database_port'],
-            'driver' => 'mysql',
             'prefix' => '',
-            'collation' => 'utf8mb4_general_ci',
-            'namespace' => 'Drupal\\mysql\\Driver\\Database\\mysql',
-            'autoload' => 'core/modules/mysql/src/Driver/Database/mysql/',
+            ...($isPostgresql ? [
+                'driver' => 'pgsql',
+                'namespace' => 'Drupal\\pgsql\\Driver\\Database\\pgsql',
+                'autoload' => 'core/modules/pgsql/src/Driver/Database/pgsql/',
+            ] : [
+                'driver' => 'mysql',
+                'collation' => 'utf8mb4_general_ci',
+                'namespace' => 'Drupal\\mysql\\Driver\\Database\\mysql',
+                'autoload' => 'core/modules/mysql/src/Driver/Database/mysql/',
+            ]),
         ], true);
 
         return rtrim($template)."\n\n// Added by the dPanel installer.\n\$databases['default']['default'] = {$connection};\n";
+    }
+
+    /**
+     * Drupal 10+ refuses PostgreSQL without pg_trgm. It is a trusted extension
+     * (PostgreSQL 13+), so the database owner can create it.
+     *
+     * @param  array<string, string>  $database
+     */
+    private function ensurePgTrgm(array $database): void
+    {
+        $pdo = new \PDO(
+            sprintf('pgsql:host=%s;port=%s;dbname=%s', $database['database_host'], $database['database_port'], $database['database_name']),
+            $database['database_user'],
+            $database['database_password'],
+            [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::ATTR_TIMEOUT => 10],
+        );
+        $pdo->exec('CREATE EXTENSION IF NOT EXISTS pg_trgm');
     }
 
     /**
@@ -637,7 +701,7 @@ class AppInstallService
                 'database.default.database' => $database['database_name'],
                 'database.default.username' => $database['database_user'],
                 'database.default.password' => $database['database_password'],
-                'database.default.DBDriver' => 'MySQLi',
+                'database.default.DBDriver' => ($database['engine'] ?? '') === DatabaseRequest::ENGINE_POSTGRESQL ? 'Postgre' : 'MySQLi',
                 'database.default.port' => $database['database_port'],
             ];
         }

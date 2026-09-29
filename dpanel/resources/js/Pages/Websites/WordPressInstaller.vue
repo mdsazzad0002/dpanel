@@ -3,17 +3,39 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import WordpressSsoLogin from '@/Pages/Websites/SSOlogin/WordpressSsoLogin.vue';
 import { Deferred, Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref, watch } from 'vue';
+import InstallerVersionPicker from '@/Components/Installer/InstallerVersionPicker.vue';
+import InstallerDatabasePicker from '@/Components/Installer/InstallerDatabasePicker.vue';
 
 const props = defineProps({
     website: {
         type: Object,
         required: true,
     },
+    // [{ value, min_php, max_php, php_version }], "latest" first.
     wordpressVersions: {
         type: Array,
-        default: () => ['latest'],
+        default: () => [],
+    },
+    // Version already in the site root, if any (deferred).
+    installedVersion: {
+        type: String,
+        default: null,
+    },
+    // { "6.8": { min_php, max_php }, ... } newest first.
+    phpRanges: {
+        type: Object,
+        default: () => ({}),
     },
     rootInspection: {
+        type: Object,
+        default: () => null,
+    },
+    // This website's MariaDB databases — WordPress can't use PostgreSQL.
+    databases: {
+        type: Array,
+        default: () => [],
+    },
+    newDatabase: {
         type: Object,
         default: () => null,
     },
@@ -52,16 +74,50 @@ const normalizePrefix = (value) => {
     return normalized.slice(0, 32);
 };
 
-const availableWordPressVersions = computed(() => {
-    const list = Array.isArray(props.wordpressVersions) ? props.wordpressVersions : [];
-    const normalized = list
-        .map((version) => normalizeVersion(version))
-        .filter((version) => version === 'latest' || /^\d+\.\d+(\.\d+)?$/.test(version));
-
-    return Array.from(new Set(['latest', ...normalized]));
-});
+const versionList = computed(() => (Array.isArray(props.wordpressVersions) ? props.wordpressVersions : [])
+    .filter((version) => version && typeof version === 'object'));
 
 const selectedWordPressVersion = ref('latest');
+const phpHint = (version) => {
+    const range = `PHP ${version.min_php}–${version.max_php}`;
+    return version.php_version ? `${range} · runs on ${version.php_version}` : `${range} · not installed`;
+};
+const wordpressVersionOptions = computed(() => versionList.value.map((version) => ({
+    value: version.value,
+    label: version.value === 'latest' ? 'Latest stable' : `WordPress ${version.value}`,
+    hint: phpHint(version),
+    disabled: !version.php_version,
+})));
+
+// PHP auto-fix: an existing install keeps its own version, so its range decides.
+const branchRange = (version) => {
+    const branch = String(version || '').split('.').slice(0, 2).join('.');
+    return props.phpRanges[branch] || null;
+};
+const currentPhp = computed(() => String(website.value.php_version || ''));
+const phpPlan = computed(() => {
+    if (isWordPressDetected.value && props.installedVersion) {
+        const range = branchRange(props.installedVersion);
+        if (!range) return null;
+        const fits = currentPhp.value
+            && Number.parseFloat(currentPhp.value) >= Number.parseFloat(range.min_php)
+            && Number.parseFloat(currentPhp.value) <= Number.parseFloat(range.max_php);
+        return { subject: `Installed WordPress ${props.installedVersion}`, ...range, target: fits ? currentPhp.value : null, fits };
+    }
+    const meta = versionList.value.find((version) => version.value === selectedWordPressVersion.value);
+    if (!meta) return null;
+    return {
+        subject: meta.value === 'latest' ? 'Latest WordPress' : `WordPress ${meta.value}`,
+        min_php: meta.min_php,
+        max_php: meta.max_php,
+        target: meta.php_version,
+        fits: meta.php_version === currentPhp.value,
+    };
+});
+const phpBlocked = computed(() => !isWordPressDetected.value && phpPlan.value && !phpPlan.value.target);
+
+const selectedDatabaseId = ref(props.databases[0]?.id || 'new');
+const selectedDatabase = computed(() => props.databases.find((db) => db.id === selectedDatabaseId.value) || null);
 const suggestedDatabasePrefix = computed(() => {
     const stored = normalizePrefix(website.value?.wordpress_db_prefix || '');
     if (stored !== '') return stored;
@@ -127,7 +183,7 @@ const pollInstallStatus = async (installId, prefix) => {
             installBusy.value = false;
 
             if (payload.website) {
-                websiteState.value = { ...payload.website };
+                websiteState.value = { ...websiteState.value, ...payload.website };
                 databasePrefix.value = normalizePrefix(payload.website.wordpress_db_prefix || prefix) || prefix;
             }
 
@@ -160,6 +216,8 @@ const installWordPress = async () => {
             {
                 wordpress_version: version,
                 database_prefix: prefix,
+                database_id: selectedDatabaseId.value,
+                database_suffix: selectedDatabaseId.value === 'new' ? (props.newDatabase?.suffix || null) : null,
             },
             {
                 headers: {
@@ -247,9 +305,58 @@ const installWordPress = async () => {
                     <WordpressSsoLogin :website-id="website.id" />
                 </div>
 
-                <div class="mt-5 grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+                <div class="mt-5">
+                    <Deferred data="wordpressVersions">
+                        <template #fallback>
+                            <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">WordPress Version</p>
+                            <div class="mt-2 h-[62px] w-full animate-pulse rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></div>
+                        </template>
+                        <InstallerVersionPicker
+                            v-model="selectedWordPressVersion"
+                            label="WordPress Version"
+                            name="wordpress_version"
+                            :versions="wordpressVersionOptions"
+                            :disabled="installBusy"
+                            :max-cards="8"
+                            accent="blue"
+                        />
+                    </Deferred>
+                </div>
+
+                <InstallerDatabasePicker
+                    v-model="selectedDatabaseId"
+                    class="mt-5"
+                    :databases="databases"
+                    :new-database="newDatabase"
+                    :engines="['mariadb']"
+                    existing-note="Reused as-is; WordPress tables use the prefix below"
+                    password-file="wp-config.php"
+                    :disabled="installBusy"
+                    accent="blue"
+                />
+
+                <Deferred :data="['wordpressVersions', 'installedVersion']">
+                    <template #fallback><span></span></template>
+                    <div v-if="phpPlan" class="mt-5 flex items-start gap-2 rounded-lg border px-3 py-2 text-sm"
+                        :class="phpPlan.fits
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400'
+                            : (phpPlan.target || isWordPressDetected
+                                ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'
+                                : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400')">
+                        <i class="bi bi-filetype-php mt-0.5"></i>
+                        <span>
+                            {{ phpPlan.subject }} supports <strong>PHP {{ phpPlan.min_php }}–{{ phpPlan.max_php }}</strong>.
+                            <template v-if="phpPlan.fits">Current PHP <strong>{{ currentPhp }}</strong> is compatible.</template>
+                            <template v-else-if="phpPlan.target">PHP will be switched automatically from <strong>{{ currentPhp || 'none' }}</strong> to <strong>{{ phpPlan.target }}</strong>.</template>
+                            <template v-else-if="isWordPressDetected">Current PHP <strong>{{ currentPhp || 'none' }}</strong> is out of range; <em>Update Configuration</em> switches it to the newest compatible installed PHP.</template>
+                            <template v-else>No compatible PHP is installed on this server — install one in PHP Manager or pick another version.</template>
+                        </span>
+                    </div>
+                </Deferred>
+
+                <div class="mt-5 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
                     <div>
-                        <label class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Database Prefix</label>
+                        <label class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Table Prefix</label>
                         <input
                             v-model="databasePrefix"
                             type="text"
@@ -259,31 +366,15 @@ const installWordPress = async () => {
                             class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                         />
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            Used for the DB name, DB user, and WordPress table prefix. Example: `client` becomes `client_`.
+                            WordPress table prefix. Example: `client` becomes `client_`.
+                            <template v-if="selectedDatabase">Tables are created in <strong>{{ selectedDatabase.database_name }}</strong>; existing tables with another prefix are left alone.</template>
                         </p>
-                    </div>
-
-                    <div>
-                        <label class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">WordPress Version</label>
-                        <Deferred data="wordpressVersions">
-                            <template #fallback>
-                                <div class="mt-1 h-[38px] w-full animate-pulse rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></div>
-                            </template>
-                            <select
-                                v-model="selectedWordPressVersion"
-                                class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                            >
-                                <option v-for="version in availableWordPressVersions" :key="version" :value="version">
-                                    {{ version === 'latest' ? 'Latest Stable' : version }}
-                                </option>
-                            </select>
-                        </Deferred>
                     </div>
 
                     <button
                         type="button"
                         class="rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="installBusy || normalizePrefix(databasePrefix) === ''"
+                        :disabled="installBusy || normalizePrefix(databasePrefix) === '' || phpBlocked"
                         :class="installBusy
                             ? 'border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400'
                             : 'border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20'"

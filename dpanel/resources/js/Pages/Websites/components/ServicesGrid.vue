@@ -17,12 +17,6 @@ const isSystemWebsite = computed(() => String(props.website.id) === '1');
 const serviceLinks = computed(() => [
     { label: 'Export & Share', icon: 'bi-file-earmark-zip', color: 'violet', href: panelRoute('websites.quick-export.page', { id: props.website.id }), description: 'Download files/database separately, or share a one-time clone link for another server' },
     { label: 'Import & Clone', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and database — upload directly, clone from another site on this server, or pull a share link' },
-    { label: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress' },
-    { label: 'Laravel Installer', icon: 'bi-box-seam', color: 'red', href: panelRoute('websites.laravel.installer', { id: props.website.id }), description: 'Fresh Laravel, starter kits (Vue, React, Svelte, Livewire) or API' },
-    { label: 'Joomla Installer', icon: 'bi-puzzle', color: 'orange', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'joomla' }), description: 'Joomla CMS with admin account and database' },
-    { label: 'Drupal Installer', icon: 'bi-droplet', color: 'blue', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'drupal' }), description: 'Drupal CMS with Drush and an admin account' },
-    { label: 'CodeIgniter Installer', icon: 'bi-fire', color: 'amber', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'codeigniter' }), description: 'CodeIgniter 4 app starter with .env configured' },
-    { label: 'WHMCS Installer', icon: 'bi-receipt', color: 'teal', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'whmcs' }), description: 'Install your licensed WHMCS package with cron' },
     { label: 'Usage Details', icon: 'bi-graph-up', color: 'violet', href: panelRoute('websites.usage', { id: props.website.id }), description: 'Detailed usage history' },
     { label: 'Redis Cache', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
     { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
@@ -38,6 +32,13 @@ const serviceLinks = computed(() => [
     { label: 'DNS Zones', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.zones'), description: 'DNS entries' },
     { label: 'PHP Manager', icon: 'bi-braces', color: 'indigo', href: panelRoute('php.manager'), description: 'PHP versions & modules' },
     { label: 'IP Ban / Whitelist', icon: 'bi-shield-lock', color: 'red', href: panelRoute('websites.ip-rules.index', { id: props.website.id }), description: 'Control website IP access' },
+    // App installers are shown last, in their own "Installers" section.
+    { installer: true, label: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress' },
+    { installer: true, label: 'Laravel Installer', icon: 'bi-box-seam', color: 'red', href: panelRoute('websites.laravel.installer', { id: props.website.id }), description: 'Fresh Laravel, starter kits (Vue, React, Svelte, Livewire) or API' },
+    { installer: true, label: 'Joomla Installer', icon: 'bi-puzzle', color: 'orange', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'joomla' }), description: 'Joomla CMS with admin account and database' },
+    { installer: true, label: 'Drupal Installer', icon: 'bi-droplet', color: 'blue', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'drupal' }), description: 'Drupal CMS with Drush and an admin account' },
+    { installer: true, label: 'CodeIgniter Installer', icon: 'bi-fire', color: 'amber', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'codeigniter' }), description: 'CodeIgniter 4 app starter with .env configured' },
+    { installer: true, label: 'WHMCS Installer', icon: 'bi-receipt', color: 'teal', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'whmcs' }), description: 'Install your licensed WHMCS package with cron' },
 // The system website is dpanel's own installation — hosting-management actions
 // that overwrite files/git/database or grant separate account access don't
 // apply to it and would risk breaking the panel itself, so hide them here.
@@ -45,6 +46,11 @@ const serviceLinks = computed(() => [
     'WordPress Installer', 'Laravel Installer', 'Joomla Installer', 'Drupal Installer', 'CodeIgniter Installer', 'WHMCS Installer', 'File Manager', 'Import & Clone', 'FTP Accounts',
     'Cron Jobs', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Export & Share',
 ].includes(item.label)));
+
+const sections = computed(() => [
+    { title: 'Services', items: serviceLinks.value.filter((item) => !item.installer), unit: 'tools' },
+    { title: 'Installers', items: serviceLinks.value.filter((item) => item.installer), unit: 'apps' },
+].filter((section) => section.items.length > 0));
 
 const serviceColorClasses = {
     blue: 'bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400',
@@ -63,12 +69,13 @@ const serviceColorClasses = {
 
 <template>
     <div class="order-1 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50 xl:row-span-2">
+        <section v-for="(section, index) in sections" :key="section.title" :class="index > 0 ? 'mt-6 border-t border-slate-100 pt-5 dark:border-slate-800' : ''">
         <div class="flex items-center justify-between">
-            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Services</h2>
-            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ serviceLinks.length }} tools</span>
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{{ section.title }}</h2>
+            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ section.items.length }} {{ section.unit }}</span>
         </div>
         <div class="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            <Link v-for="service in serviceLinks" :key="service.label" :href="service.href"
+            <Link v-for="service in section.items" :key="service.label" :href="service.href"
                 class="group flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:shadow-lg">
                 <div :class="['flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition', serviceColorClasses[service.color]]">
                     <i :class="['bi text-base', service.icon]"></i>
@@ -83,5 +90,6 @@ const serviceColorClasses = {
                 </svg>
             </Link>
         </div>
+        </section>
     </div>
 </template>

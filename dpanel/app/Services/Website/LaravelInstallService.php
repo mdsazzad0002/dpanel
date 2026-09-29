@@ -2,9 +2,11 @@
 
 namespace App\Services\Website;
 
+use App\Models\DatabaseRequest;
 use App\Models\User;
 use App\Models\Website;
 use App\Models\WebsiteGitDeployment;
+use App\Services\PostgresqlServiceManager;
 use App\Services\Backup\PreOverwriteBackupService;
 use App\Services\EdgeGatewayReloader;
 use App\Services\Filemanager\FilemanagerService;
@@ -20,6 +22,9 @@ use Illuminate\Support\Str;
 class LaravelInstallService
 {
     /** Supported majors with the PHP range each one runs on. */
+    /** Laravel runs on both; the other app installers stay MariaDB-only. */
+    public const DATABASE_ENGINES = [DatabaseRequest::ENGINE_MARIADB, DatabaseRequest::ENGINE_POSTGRESQL];
+
     public const VERSIONS = [
         '13' => ['label' => 'Laravel 13', 'min_php' => '8.3', 'max_php' => '8.5'],
         '12' => ['label' => 'Laravel 12', 'min_php' => '8.2', 'max_php' => '8.5'],
@@ -27,7 +32,7 @@ class LaravelInstallService
         '10' => ['label' => 'Laravel 10', 'min_php' => '8.1', 'max_php' => '8.3'],
     ];
 
-    /** Must stay in sync with the whitelist in drust/src/filemanager/laravel.rs. */
+    /** Must stay in sync with the whitelist in drust/src/installer/laravel.rs. */
     public const STACKS = [
         'blank' => ['label' => 'Laravel (Blade)', 'description' => 'Plain Laravel skeleton with Blade views and Vite.', 'versions' => ['13', '12', '11', '10']],
         'vue' => ['label' => 'Inertia + Vue', 'description' => 'Official Vue starter kit with authentication (Breeze on Laravel 10).', 'versions' => ['13', '12', '10']],
@@ -45,6 +50,7 @@ class LaravelInstallService
         private readonly EdgeGatewayReloader $gatewayReloader,
         private readonly WebsiteGitService $git,
         private readonly WebsiteDatabaseProvisioner $databases,
+        private readonly PostgresqlServiceManager $postgresql,
     ) {
     }
 
@@ -106,7 +112,23 @@ class LaravelInstallService
      */
     public function selectableDatabases(Website $website, ?User $actor): array
     {
-        return $this->databases->selectable($website, $actor);
+        return $this->databases->selectable($website, $actor, self::DATABASE_ENGINES);
+    }
+
+    /**
+     * Whether "create new database" can offer PostgreSQL on this server.
+     *
+     * @return array{installed: bool, active: bool, port: int}
+     */
+    public function postgresqlAvailability(): array
+    {
+        $service = $this->postgresql->statuses()['postgresql'] ?? [];
+
+        return [
+            'installed' => (bool) ($service['installed'] ?? false),
+            'active' => (bool) ($service['active'] ?? false),
+            'port' => (int) config('postgresql.port', 5432),
+        ];
     }
 
     /**
@@ -161,9 +183,25 @@ class LaravelInstallService
         $existing = null;
         $databaseId = trim((string) ($input['database_id'] ?? ''));
         if ($databaseId !== '' && $databaseId !== 'new') {
-            $existing = $this->databases->find($website, $actor, $databaseId);
+            $existing = $this->databases->find($website, $actor, $databaseId, self::DATABASE_ENGINES);
             if ($existing === null) {
                 return $this->fail('The selected database is not available or has no stored credentials.');
+            }
+        }
+        $engine = $existing !== null
+            ? (string) ($existing->engine ?: DatabaseRequest::ENGINE_MARIADB)
+            : (string) ($input['database_engine'] ?? DatabaseRequest::ENGINE_MARIADB);
+        if (! in_array($engine, self::DATABASE_ENGINES, true)) {
+            return $this->fail('Unsupported database engine.');
+        }
+        // Check PostgreSQL prerequisites before the website is touched: without
+        // them the install would wipe the site and then fail halfway.
+        if ($engine === DatabaseRequest::ENGINE_POSTGRESQL) {
+            if (! ($this->postgresql->statuses()['postgresql']['active'] ?? false)) {
+                return $this->fail('PostgreSQL is turned off. Turn it on under Database Management → PostgreSQL first.');
+            }
+            if (! $this->phpHasModule($siteOwner, $rootPath, $phpVersion, 'pdo_pgsql')) {
+                return $this->fail("PHP {$phpVersion} has no PostgreSQL driver (pdo_pgsql). Install it with: sudo dpanel php update all");
             }
         }
 
@@ -184,7 +222,7 @@ class LaravelInstallService
         }
 
         $report('creating_database');
-        $database = $this->databases->resolveConfig($domain, $existing, (string) ($input['database_suffix'] ?? ''));
+        $database = $this->databases->resolveConfig($domain, $existing, (string) ($input['database_suffix'] ?? ''), 'laravel', $engine);
         $provision = $this->databases->provision($database);
         if (! $provision['success']) {
             return $this->fail($provision['output'] ?: 'Database provisioning failed.');
@@ -252,11 +290,12 @@ class LaravelInstallService
         return [
             'success' => true,
             'message' => sprintf(
-                '%s (%s) installed on PHP %s with %s database %s.',
+                '%s (%s) installed on PHP %s with %s %s database %s.',
                 self::VERSIONS[$version]['label'],
                 self::STACKS[$stack]['label'],
                 $phpVersion,
                 $existing ? 'the existing (freshly migrated)' : 'a new',
+                $engine === DatabaseRequest::ENGINE_POSTGRESQL ? 'PostgreSQL' : 'MariaDB',
                 $database['database_name'],
             ).$gitNote,
             'php_version' => $phpVersion,
@@ -301,6 +340,18 @@ class LaravelInstallService
         return $this->filemanager->runLaravelInstallerStep($siteOwner, $rootPath, $phpVersion, $action, $extra, $timeout);
     }
 
+    private function phpHasModule(string $siteOwner, string $rootPath, string $phpVersion, string $module): bool
+    {
+        // Runs `php -m` as the owner (drust creates the root if it's missing,
+        // which is harmless before an install).
+        $step = $this->step($siteOwner, $rootPath, $phpVersion, 'php_modules', [], 60);
+
+        return $step['success'] && in_array(strtolower($module), array_map(
+            fn (string $line): string => strtolower(trim($line)),
+            preg_split('/\R/', $step['output']) ?: [],
+        ), true);
+    }
+
     /** @return array{success: bool, output: string} */
     private function artisan(string $siteOwner, string $rootPath, string $phpVersion, string $command): array
     {
@@ -321,7 +372,7 @@ class LaravelInstallService
             'APP_ENV' => 'local',
             'APP_DEBUG' => 'false',
             'APP_URL' => $scheme.'://'.$this->resolver->normalizeDomain((string) $website->domain),
-            'DB_CONNECTION' => 'mysql',
+            'DB_CONNECTION' => ($database['engine'] ?? '') === DatabaseRequest::ENGINE_POSTGRESQL ? 'pgsql' : 'mysql',
             'DB_HOST' => $database['database_host'],
             'DB_PORT' => $database['database_port'],
             'DB_DATABASE' => $database['database_name'],

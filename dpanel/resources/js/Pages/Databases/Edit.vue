@@ -29,6 +29,7 @@ const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
 const showPassword = ref(false);
+const isPostgresql = computed(() => props.databaseRequest.engine === 'postgresql');
 const useRemoteHost = ref(!!form.database_host && form.database_host !== '127.0.0.1' && form.database_host.toLowerCase() !== 'localhost');
 
 const toggleRemoteHost = () => {
@@ -65,7 +66,7 @@ const generatePassword = () => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">Edit Database</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Update and sync MySQL/MariaDB database settings. Empty credentials will be regenerated on save.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Update and sync {{ isPostgresql ? 'PostgreSQL' : 'MySQL/MariaDB' }} database settings. Empty credentials will be regenerated on save.</p>
             </div>
         </template>
 
@@ -77,6 +78,11 @@ const generatePassword = () => {
             </div>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-2 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
+                <div class="md:col-span-2 text-sm">
+                    <span class="text-slate-500 dark:text-slate-400">Engine:</span>
+                    <span class="ml-1 font-medium">{{ isPostgresql ? 'PostgreSQL' : 'MariaDB / MySQL' }}</span>
+                    <span class="ml-1 text-xs text-slate-500 dark:text-slate-400">(set when the database was created)</span>
+                </div>
                 <div class="md:col-span-2">
                     <label class="mb-1 block text-sm">Website Domain</label>
                     <select v-model="form.domain" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
@@ -128,7 +134,7 @@ const generatePassword = () => {
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">If left empty, the server will generate a strong password and save it with the request.</p>
                     <p v-if="form.errors.database_password" class="mt-1 text-xs text-red-600">{{ form.errors.database_password }}</p>
                 </div>
-                <div>
+                <div v-if="!isPostgresql">
                     <div class="mb-1 flex items-center justify-between">
                         <label class="block text-sm">Host</label>
                         <label class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -148,7 +154,7 @@ const generatePassword = () => {
                     </p>
                     <p v-if="form.errors.database_host" class="mt-1 text-xs text-red-600">{{ form.errors.database_host }}</p>
                 </div>
-                <div>
+                <div v-if="!isPostgresql">
                     <label class="mb-1 block text-sm">Charset</label>
                     <select v-model="form.charset" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option value="utf8mb4">utf8mb4</option>
@@ -157,7 +163,7 @@ const generatePassword = () => {
                     </select>
                     <p v-if="form.errors.charset" class="mt-1 text-xs text-red-600">{{ form.errors.charset }}</p>
                 </div>
-                <div>
+                <div v-if="!isPostgresql">
                     <label class="mb-1 block text-sm">Collation</label>
                     <select v-model="form.collation" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option value="utf8mb4_unicode_ci">utf8mb4_unicode_ci</option>

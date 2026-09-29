@@ -10,8 +10,13 @@ use App\Models\User;
 
 class DatabaseRequest extends Model
 {
+    public const ENGINE_MARIADB = 'mariadb';
+
+    public const ENGINE_POSTGRESQL = 'postgresql';
+
     protected $fillable = [
         'id',
+        'engine',
         'domain',
         'database_name',
         'database_user',
@@ -26,6 +31,11 @@ class DatabaseRequest extends Model
     public $incrementing = false;
 
     protected $keyType = 'string';
+
+    public function isPostgresql(): bool
+    {
+        return $this->engine === self::ENGINE_POSTGRESQL;
+    }
 
     public function assignedUser(): BelongsTo
     {

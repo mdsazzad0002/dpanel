@@ -21,6 +21,8 @@ class AppInstallRequest extends FormRequest
             // "new", "none" (CodeIgniter only), or the id of one of the website's databases.
             'database_id' => ['required', 'string', 'max:64'],
             'database_suffix' => ['nullable', 'string', 'regex:/^[a-z0-9]{4}$/'],
+            // Engine for a new database; an existing one keeps its own.
+            'database_engine' => ['nullable', 'string', 'in:mariadb,postgresql'],
         ];
 
         if ($this->route('app') === 'joomla') {

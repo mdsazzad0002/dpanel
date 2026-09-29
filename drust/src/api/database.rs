@@ -20,6 +20,8 @@ pub(crate) fn routes() -> Router<Arc<ApiState>> {
 #[derive(Deserialize)]
 pub(crate) struct Request {
     pub action: String,
+    /// "mariadb" (default) or "postgresql".
+    pub engine: Option<String>,
     pub database_name: String,
     pub database_user: String,
     pub database_password: String,
@@ -36,6 +38,18 @@ pub(crate) async fn handle(
 ) -> impl IntoResponse {
     if let Err(error) = check_token(&state, &headers) {
         return error.into_response();
+    }
+
+    if request.engine.as_deref() == Some("postgresql") {
+        return match database::postgresql::run(
+            &request.action,
+            &request.database_name,
+            &request.database_user,
+            &request.database_password,
+        ) {
+            Ok(output) => ApiResponse::ok(&output).into_response(),
+            Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+        };
     }
 
     match database::run_database_request(

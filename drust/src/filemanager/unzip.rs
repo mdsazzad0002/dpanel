@@ -158,7 +158,7 @@ pub fn unzip_user_archive(
     Ok(())
 }
 
-pub(super) fn validate_archive<R: io::Read + io::Seek>(
+pub(crate) fn validate_archive<R: io::Read + io::Seek>(
     zip: &mut zip::ZipArchive<R>,
     max_entries: usize,
     max_expanded_bytes: u64,
@@ -184,7 +184,7 @@ pub(super) fn validate_archive<R: io::Read + io::Seek>(
     Ok(())
 }
 
-pub(super) fn safe_entry_path<R: io::Read>(
+pub(crate) fn safe_entry_path<R: io::Read>(
     entry: &zip::read::ZipFile<'_, R>,
     index: usize,
 ) -> Result<PathBuf, String> {
@@ -200,14 +200,14 @@ pub(super) fn safe_entry_path<R: io::Read>(
     Ok(path.to_path_buf())
 }
 
-pub(super) fn is_symlink_entry<R: io::Read>(entry: &zip::read::ZipFile<'_, R>) -> bool {
+pub(crate) fn is_symlink_entry<R: io::Read>(entry: &zip::read::ZipFile<'_, R>) -> bool {
     entry
         .unix_mode()
         .map(|mode| mode & 0o170000 == 0o120000)
         .unwrap_or(false)
 }
 
-pub(super) fn ensure_directory_tree(
+pub(crate) fn ensure_directory_tree(
     root: &Path,
     relative: &Path,
     touched_dirs: &mut HashSet<PathBuf>,
@@ -250,7 +250,7 @@ pub(super) fn ensure_directory_tree(
 /// created, instead of walking the whole destination tree (which used to dominate
 /// unzip time when extracting into a folder that already held many files, e.g. an
 /// existing `vendor/` or `node_modules/`).
-pub(super) fn fix_touched_permissions(
+pub(crate) fn fix_touched_permissions(
     username: &str,
     group: &str,
     touched_dirs: &HashSet<PathBuf>,
@@ -339,7 +339,7 @@ fn fix_laravel_writable_dirs(root: &str) -> Result<(), String> {
     )
 }
 
-pub(super) fn validate_replaceable_existing_target(target: &Path) -> Result<(), String> {
+pub(crate) fn validate_replaceable_existing_target(target: &Path) -> Result<(), String> {
     match fs::symlink_metadata(target) {
         Ok(metadata) if metadata.file_type().is_symlink() => Err(format!(
             "Refusing to replace symbolic link: {}",

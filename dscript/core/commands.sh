@@ -143,6 +143,7 @@ PostgreSQL + pgAdmin module (installed by default, services left OFF):
   sudo dpanel postgresql start [postgresql|pgadmin|all]   Turn on and enable at boot
   sudo dpanel postgresql stop [postgresql|pgadmin|all]    Turn off and disable at boot
   sudo dpanel postgresql restart [postgresql|pgadmin|all]
+  sudo dpanel postgresql configure                        Rewrite pgAdmin config (dPanel sign-on)
   dpanel postgresql status [postgresql|pgadmin|all]
   sudo dpanel postgresql update | remove
 pgAdmin is served on the panel domain at /pgadmin4/.
@@ -368,6 +369,15 @@ dscript_run_module() {
 
   case "$action" in
     info) dscript_module_info "$module" ;;
+    # Module-specific actions: only modules whose install.sh handles them.
+    configure)
+      [[ "$module" == "postgresql" ]] || panel_die "Unsupported action 'configure' for ${module}."
+      if [[ "$DSCRIPT_DRY_RUN" == "true" ]]; then
+        printf '[DRY-RUN] module %s %s\n' "$module" "$action"
+        return 0
+      fi
+      panel_run_module "$module" "$action" "$@"
+      ;;
     install|update|remove|reinstall|start|stop|restart|reload|status)
       if [[ "$DSCRIPT_DRY_RUN" == "true" ]]; then
         printf '[DRY-RUN] module %s %s' "$module" "$action"

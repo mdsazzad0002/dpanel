@@ -9,17 +9,55 @@ use App\Services\Backup\PreOverwriteBackupService;
 use App\Services\Filemanager\FilemanagerService;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
+use App\Services\EdgeGatewayReloader;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use ZipArchive;
 
 class WordpressInstallService
 {
+    /**
+     * PHP range each WordPress branch is compatible with, newest first — from
+     * make.wordpress.org/core/handbook/references/php-compatibility-and-wordpress-versions/.
+     * Branches newer than the table use its first entry.
+     */
+    public const WORDPRESS_PHP = [
+        '7.1' => ['min_php' => '7.4', 'max_php' => '8.5'],
+        '7.0' => ['min_php' => '7.4', 'max_php' => '8.5'],
+        '6.9' => ['min_php' => '7.2', 'max_php' => '8.5'],
+        '6.8' => ['min_php' => '7.2', 'max_php' => '8.4'],
+        '6.7' => ['min_php' => '7.2', 'max_php' => '8.4'],
+        '6.6' => ['min_php' => '7.2', 'max_php' => '8.3'],
+        '6.5' => ['min_php' => '7.0', 'max_php' => '8.3'],
+        '6.4' => ['min_php' => '7.0', 'max_php' => '8.3'],
+        '6.3' => ['min_php' => '7.0', 'max_php' => '8.2'],
+        '6.2' => ['min_php' => '5.6', 'max_php' => '8.2'],
+        '6.1' => ['min_php' => '5.6', 'max_php' => '8.2'],
+        '6.0' => ['min_php' => '5.6', 'max_php' => '8.1'],
+        '5.9' => ['min_php' => '5.6', 'max_php' => '8.1'],
+        '5.8' => ['min_php' => '5.6', 'max_php' => '8.0'],
+        '5.7' => ['min_php' => '5.6', 'max_php' => '8.0'],
+        '5.6' => ['min_php' => '5.6', 'max_php' => '8.0'],
+        '5.5' => ['min_php' => '5.6', 'max_php' => '7.4'],
+        '5.4' => ['min_php' => '5.6', 'max_php' => '7.4'],
+        '5.3' => ['min_php' => '5.6', 'max_php' => '7.4'],
+        '5.2' => ['min_php' => '5.6', 'max_php' => '7.3'],
+        '5.1' => ['min_php' => '5.2', 'max_php' => '7.3'],
+        '5.0' => ['min_php' => '5.2', 'max_php' => '7.3'],
+        '4.9' => ['min_php' => '5.2', 'max_php' => '7.2'],
+        '4.8' => ['min_php' => '5.2', 'max_php' => '7.1'],
+        '4.7' => ['min_php' => '5.2', 'max_php' => '7.1'],
+    ];
+
     public function __construct(
         private readonly WebsiteResolverService $resolver,
         private readonly FilemanagerService $filemanagerService,
         private readonly PreOverwriteBackupService $preOverwriteBackup,
+        private readonly WebsiteDatabaseProvisioner $databases,
+        private readonly EdgeGatewayReloader $gatewayReloader,
     ) {
     }
 
@@ -29,59 +67,24 @@ class WordpressInstallService
     public function getWordPressVersionOptions(): array
     {
         try {
-            return Cache::remember('wordpress.version.options', now()->addHours(6), function (): array {
-                $url = 'https://api.wordpress.org/core/version-check/1.7/';
-                $body = @file_get_contents(
-                    $url,
-                    false,
-                    stream_context_create([
-                        'http' => [
-                            'timeout' => 6,
-                        ],
-                    ]),
-                );
-
-                if (! is_string($body) || trim($body) === '') {
-                    $body = '';
-                    if (function_exists('curl_init')) {
-                        $ch = @curl_init($url);
-                        if ($ch !== false) {
-                            @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                            @curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-                            @curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-                            @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 4);
-                            $responseBody = @curl_exec($ch);
-                            $statusCode = (int) @curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                            @curl_close($ch);
-                            if (is_string($responseBody) && $responseBody !== '' && $statusCode >= 200 && $statusCode < 400) {
-                                $body = $responseBody;
-                            }
-                        }
-                    }
-                }
-
-                $decoded = is_string($body) && $body !== '' ? json_decode($body, true) : null;
-                if (! is_array($decoded)) {
+            return Cache::remember('wordpress.version.options.v3', now()->addHours(6), function (): array {
+                // stable-check lists every release ever made; version-check/1.7
+                // only returns the handful of currently-offered updates.
+                $response = Http::timeout(10)->connectTimeout(4)->get('https://api.wordpress.org/core/stable-check/1.0/');
+                $releases = $response->successful() ? $response->json() : null;
+                if (! is_array($releases) || $releases === []) {
                     return ['latest'];
                 }
 
-                $offers = $decoded['offers'] ?? null;
-                if (! is_array($offers)) {
-                    return ['latest'];
-                }
-
-                $versions = collect($offers)
-                    ->map(function ($offer): string {
-                        if (! is_array($offer)) {
-                            return '';
-                        }
-
-                        return $this->normalizeWordPressVersion((string) ($offer['current'] ?? $offer['version'] ?? ''));
-                    })
-                    ->filter(fn (string $version): bool => $version !== '' && $version !== 'latest')
-                    ->unique()
+                // Newest patch of each major.minor branch from 4.7 on (the oldest
+                // in WORDPRESS_PHP), newest first.
+                $versions = collect(array_keys($releases))
+                    ->map(fn ($version): string => $this->normalizeWordPressVersion((string) $version))
+                    ->filter(fn (string $version): bool => $version !== 'latest' && version_compare($version, '4.7', '>='))
+                    ->groupBy(fn (string $version): string => implode('.', array_slice(explode('.', $version), 0, 2)))
+                    ->map(fn ($branch): string => $branch->sort(fn (string $a, string $b): int => version_compare($b, $a))->first())
+                    ->values()
                     ->sort(fn (string $a, string $b): int => version_compare($b, $a))
-                    ->take(15)
                     ->values()
                     ->all();
 
@@ -90,6 +93,76 @@ class WordpressInstallService
         } catch (\Throwable $e) {
             return ['latest'];
         }
+    }
+
+    /**
+     * Compatible PHP range for a WordPress version; "latest" is the newest release.
+     *
+     * @return array{min_php: string, max_php: string}
+     */
+    public function wordpressPhpRange(string $version): array
+    {
+        if ($this->normalizeWordPressVersion($version) === 'latest') {
+            $version = $this->getWordPressVersionOptions()[1] ?? array_key_first(self::WORDPRESS_PHP);
+        }
+        $branch = implode('.', array_slice(explode('.', $version), 0, 2));
+        if (isset(self::WORDPRESS_PHP[$branch])) {
+            return self::WORDPRESS_PHP[$branch];
+        }
+
+        $ranges = self::WORDPRESS_PHP;
+
+        return version_compare($branch, (string) array_key_first($ranges), '>') ? reset($ranges) : end($ranges);
+    }
+
+    /**
+     * Installable versions, each with its PHP range and the PHP it would run on.
+     *
+     * @return array<int, array{value: string, min_php: string, max_php: string, php_version: string|null}>
+     */
+    public function versionCatalog(string $currentPhp): array
+    {
+        return array_map(function (string $version) use ($currentPhp): array {
+            $range = $this->wordpressPhpRange($version);
+
+            return [
+                'value' => $version,
+                ...$range,
+                'php_version' => app(AppInstallService::class)->resolvePhpVersion($currentPhp, $range),
+            ];
+        }, $this->getWordPressVersionOptions());
+    }
+
+    /**
+     * Version of the WordPress already in the site root (wp-includes/version.php), or null.
+     */
+    public function installedVersion(array $website): ?string
+    {
+        $rootPath = $this->resolveInstallationRoot($website);
+        $siteOwner = (string) ($website['site_owner'] ?? $this->resolver->extractSiteOwnerFromRootPath($rootPath));
+        try {
+            $content = $this->filemanagerService->readTextFile($siteOwner, rtrim($rootPath, '/').'/wp-includes/version.php')['content'];
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return preg_match('/\$wp_version\s*=\s*[\'"](\d+\.\d+(?:\.\d+)?)/', $content, $match) === 1 ? $match[1] : null;
+    }
+
+    /**
+     * This website's MariaDB databases — WordPress can't run on PostgreSQL.
+     *
+     * @return array<int, array{id: string, database_name: string, database_user: string, domain: string, engine: string}>
+     */
+    public function selectableDatabases(Website $website, ?User $actor): array
+    {
+        return $this->databases->selectable($website, $actor);
+    }
+
+    /** @return array{database_name: string, database_user: string, database_host: string, charset: string, collation: string, suffix: string} */
+    public function previewNewDatabase(Website $website): array
+    {
+        return $this->databases->preview($website, 'wp');
     }
 
     /**
@@ -258,12 +331,44 @@ class WordpressInstallService
             return $this->fail('Domain or root path is missing for WordPress installation.');
         }
 
+        // Files already there: fit PHP to the installed version, not the selected one.
+        $hasWordPress = $this->hasWordPressFiles($rootPath);
+        $phpFor = $hasWordPress ? ($this->installedVersion($website) ?? $wordpressVersion) : $wordpressVersion;
+        $phpRange = $this->wordpressPhpRange($phpFor);
+        $targetPhp = app(AppInstallService::class)->resolvePhpVersion($phpVersion, $phpRange);
+        if ($targetPhp === null) {
+            $label = $phpFor === 'latest' ? 'WordPress' : 'WordPress '.$phpFor;
+
+            return $this->fail("{$label} needs PHP {$phpRange['min_php']}–{$phpRange['max_php']}, but none is installed on this server.");
+        }
+
+        // database_id: an existing database id, "new", or absent (older callers:
+        // reuse the domain's MariaDB database if there is one). Resolved before
+        // any files are touched so a bad choice fails fast.
+        $databaseId = trim((string) ($input['database_id'] ?? ''));
+        $newDatabase = null;
+        if ($databaseId === 'new') {
+            $existingDatabaseRequest = null;
+            $newDatabase = $this->databases->resolveConfig($domain, null, (string) ($input['database_suffix'] ?? ''), 'wp');
+        } elseif ($databaseId !== '') {
+            $websiteModel = Website::query()->find($website['id'] ?? null);
+            $existingDatabaseRequest = $websiteModel ? $this->databases->find($websiteModel, $actor, $databaseId) : null;
+            if ($existingDatabaseRequest === null) {
+                return $this->fail('The selected database is not available for this website. WordPress needs a MySQL/MariaDB database.');
+            }
+        } else {
+            $existingDatabaseRequest = DatabaseRequest::query()
+                ->where('domain', $domain)
+                ->where('engine', DatabaseRequest::ENGINE_MARIADB)
+                ->first();
+        }
+
         try {
             if ($siteOwner !== '') {
                 $this->applyWebsiteFilesystemIsolation($siteOwner, $projectRoot, $rootPath);
             }
 
-            if (! $this->hasWordPressFiles($rootPath)) {
+            if (! $hasWordPress) {
                 // WordPress install requires an empty document root; a non-empty
                 // root (leftover files, a placeholder README, a previous app)
                 // would otherwise be rejected outright. Move whatever is there
@@ -284,8 +389,9 @@ class WordpressInstallService
             }
 
             $report('creating_database');
-            $existingDatabaseRequest = DatabaseRequest::query()->where('domain', $domain)->first();
-            $databaseConfig = $this->resolveWordPressDatabaseConfig($databasePrefix, $domain, $existingDatabaseRequest);
+            $databaseConfig = $newDatabase !== null
+                ? [...$newDatabase, 'database_prefix' => $databasePrefix, 'table_prefix' => $databasePrefix.'_']
+                : $this->resolveWordPressDatabaseConfig($databasePrefix, $domain, $existingDatabaseRequest);
             $databaseProvisionResult = $this->provisionWordPressDatabase($databaseConfig);
             if (! $databaseProvisionResult['success']) {
                 return $this->fail(trim((string) ($databaseProvisionResult['output'] ?? '')) ?: 'WordPress database provisioning failed.');
@@ -311,17 +417,43 @@ class WordpressInstallService
             $actor,
             $existingDatabaseRequest ?? null
         );
+        $phpNote = '';
+        if ($targetPhp !== $phpVersion) {
+            $this->applyPhpVersion((string) ($website['id'] ?? ''), $targetPhp);
+            $phpNote = " PHP switched from {$phpVersion} to {$targetPhp}.";
+        }
         $website = array_merge($website, [
             'wordpress_db_prefix' => $databasePrefix,
             'status' => $runtimeStatus,
+            'php_version' => $targetPhp,
         ]);
 
         return [
             'success' => true,
-            'message' => $existingDatabaseRequest ? 'WordPress configuration updated and database synced successfully.' : 'WordPress installed and configured successfully.',
+            'message' => ($existingDatabaseRequest ? 'WordPress configuration updated and database synced successfully.' : 'WordPress installed and configured successfully.').$phpNote,
             'website' => $website,
             'database_request' => $databaseRequest?->toArray(),
         ];
+    }
+
+    /**
+     * Switch the website (and its aliases) to a WordPress-compatible PHP.
+     */
+    private function applyPhpVersion(string $websiteId, string $phpVersion): void
+    {
+        if ($websiteId === '') {
+            return;
+        }
+        $domains = [];
+        DB::transaction(function () use ($websiteId, $phpVersion, &$domains): void {
+            $query = Website::query()
+                ->whereKey($websiteId)
+                ->orWhere(fn ($q) => $q->where('parent_id', $websiteId)->whereIn('type', ['alis', 'alias']));
+            $domains = $query->pluck('domain')->all();
+            $query->update(['php_version' => $phpVersion, 'updated_at' => now()]);
+        });
+
+        $this->gatewayReloader->reloadDomains($domains);
     }
 
     /**
@@ -756,6 +888,8 @@ class WordpressInstallService
     {
         $databaseRequest = $existing ?? DatabaseRequest::query()->firstOrNew([
             'domain' => $domain,
+            'engine' => DatabaseRequest::ENGINE_MARIADB,
+            'database_name' => $databaseConfig['database_name'],
         ]);
 
         if (! $databaseRequest->exists) {

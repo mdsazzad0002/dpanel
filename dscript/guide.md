@@ -216,10 +216,21 @@ sudo dpanel postgresql stop pgadmin       # only pgAdmin
 
 pgAdmin runs as `dpanel-pgadmin` (gunicorn on 127.0.0.1:5050) and the drust
 edge gateway serves it on the panel domain at `/pgadmin4/`. PostgreSQL listens
-on localhost only. The generated `postgres` password and the pgAdmin login are
-written to the panel `.env` (`PGSQL_ADMIN_PASSWORD`, `PGADMIN_EMAIL`,
-`PGADMIN_PASSWORD`) and shown on the panel page. `dpanel chain update` only
-updates this module on servers where it is already installed.
+on localhost only. The generated `postgres` password is written to the panel
+`.env` (`PGSQL_ADMIN_PASSWORD`) and shown on the panel page. `dpanel chain
+update` only updates this module on servers where it is already installed.
+
+pgAdmin has no password login: you sign in through dPanel. **Open pgAdmin** on
+the PostgreSQL page connects as `postgres`; **DB Login** on a PostgreSQL
+database (List Databases) connects as that database's own user and shows only
+that database. The panel asks drust for a one-time link (valid 60 seconds) and
+the edge gateway exchanges it for a pgAdmin session, using the shared secret in
+`/etc/pgadmin/dpanel-sso.secret`. After upgrading an existing install, apply
+the sign-on config once:
+
+```bash
+sudo dpanel postgresql configure
+```
 
 ### 4.3 Filemanager
 
