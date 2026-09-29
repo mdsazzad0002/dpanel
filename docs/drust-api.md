@@ -1,22 +1,26 @@
-# drust API Docs
+# drust API Reference
 
-`drust` is the execution API used by Laravel to run server-side operations.
+`drust` is the privileged, localhost-only execution API that the dPanel
+Laravel app uses for server-side operations.
+
+## Contents
+
+- [Base URL](#base-url)
+- [Authentication](#authentication)
+- [Response shape](#response-shape)
+- [Endpoint index](#endpoint-index)
+- [Endpoint details](#endpoint-details)
+- [Testing with Postman](#testing-with-postman)
 
 ## Base URL
 
-Local dev:
-
 ```text
 http://127.0.0.1:9500
 ```
 
-Production:
-
-```text
-http://127.0.0.1:9500
-```
-
-The service is intended to stay on localhost and be called by Laravel or a local control plane.
+The service stays on localhost in both development and production. It is
+called only by the Laravel panel or another local control plane. See
+[drust Service](drust-service.md) for installation and service management.
 
 ## Authentication
 
@@ -39,7 +43,7 @@ Use the same token value in both places:
 
 If the values do not match, the request will fail with `Unauthorized`.
 
-## Response Shape
+## Response shape
 
 Most endpoints return this JSON shape:
 
@@ -73,9 +77,36 @@ For script execution, the response includes output data:
 }
 ```
 
-## Endpoints
+## Endpoint index
 
-### 1. Health check
+Every endpoint except `GET /health` requires the bearer token.
+
+| Group | Endpoints |
+| --- | --- |
+| Health | `GET /health`, `GET /api/v1/health-checker` |
+| Accounts | `create-admin-user`, `disable-root-login`, `ssh-key/generate`, `ftp-account` |
+| File manager | `filemanager/{user, browse, read, write, create, remove, delete, exists, inspect, size, copy, move, chmod, upload, zip, unzip, fix-permissions}` |
+| App installers | `filemanager/{wordpress-install, laravel, artisan}`, `project-dependencies`, `git-deploy` |
+| Websites | `website/delete`, `website/archive`, `website/archive/restore`, `website/archive/delete`, `website/redis-config`, `website-terminal` |
+| Runtimes | `php/config`, `node/control`, `python/control`, `cron-job` |
+| SSL | `ssl/ensure` |
+| Databases | `database-request`, `database-config`, `postgresql/service`, `postgresql/pgadmin-login` |
+| Mail | `mailbox-storage` |
+| Backups | `backup/run`, `backup/delete` |
+| Migration | `migration/cpanel/{inspect, restore}`, `migration/cyberpanel-ssh/{discover, transfer}`, `migration/generic/restore` |
+| Security | `security`, `security/scan` |
+| Media | `media/ocr`, `media/transcribe` |
+| Scripts | `script/run` |
+
+Paths in the table are relative to `/api/v1/`. The legacy `sync-vhost`
+endpoint is kept only for compatibility and returns an error; the edge gateway
+now reads websites directly from the database.
+
+## Endpoint details
+
+The most commonly used endpoints are documented below.
+
+### Health check
 
 ```http
 GET /health
@@ -93,7 +124,7 @@ Example response:
 }
 ```
 
-### 1b. Authenticated health checker
+### Authenticated health checker
 
 ```http
 GET /api/v1/health-checker
@@ -115,67 +146,7 @@ Example response:
 }
 ```
 
-### 2. Fix web stack
-
-```http
-POST /api/v1/fix-web-stack
-```
-
-Body:
-
-```json
-{
-  "backend_port": 8080,
-  "frontend_port": 80
-}
-```
-
-### 3. Fix panel web stack
-
-```http
-POST /api/v1/fix-panel-web-stack
-```
-
-Body:
-
-```json
-{
-  "domain": "panel.example.com",
-  "backend_port": 8080,
-  "frontend_port": 80,
-  "app_dir": "/var/www/dpanel",
-  "conf_name": "dpanel.conf",
-  "aliases": ["www.panel.example.com"],
-  "no_www": false
-}
-```
-
-### 4. Sync vhost
-
-```http
-POST /api/v1/sync-vhost
-```
-
-Body:
-
-```json
-{
-  "action": "create",
-  "domain": "example.com",
-  "root_path": "/home/example/public_html",
-  "php_version": "8.3",
-  "old_domain": null,
-  "aliases": ["www.example.com"],
-  "no_www": false
-}
-```
-
-Notes:
-
-- `php_version` is optional in the API, but Laravel usually sends a real version.
-- If omitted, the API uses `8.3` as the default internal fallback.
-
-### 5. Create admin user
+### Create admin user
 
 ```http
 POST /api/v1/create-admin-user
@@ -194,7 +165,7 @@ Body:
 }
 ```
 
-### 6. Disable root login
+### Disable root login
 
 ```http
 POST /api/v1/disable-root-login
@@ -202,7 +173,7 @@ POST /api/v1/disable-root-login
 
 No JSON body required.
 
-### 7. File manager create
+### File manager create
 
 ```http
 POST /api/v1/filemanager/create
@@ -219,7 +190,7 @@ Body:
 }
 ```
 
-### 8. File manager remove
+### File manager remove
 
 ```http
 POST /api/v1/filemanager/remove
@@ -235,7 +206,7 @@ Body:
 }
 ```
 
-### 9. File manager exists
+### File manager exists
 
 ```http
 POST /api/v1/filemanager/exists
@@ -257,7 +228,7 @@ Notes:
 - `check_file: false` means directory check.
 - `check_file: true` means file check.
 
-### 10. File manager user
+### File manager user
 
 ```http
 POST /api/v1/filemanager/user
@@ -275,7 +246,7 @@ Body:
 }
 ```
 
-### 11. File manager write
+### File manager write
 
 ```http
 POST /api/v1/filemanager/write
@@ -293,7 +264,7 @@ Body:
 
 The path must remain inside `/home/{username}`. The daemon creates missing parent directories and applies account ownership, directory mode `0755`, and file mode `0644`.
 
-### 12. File manager upload
+### File manager upload
 
 ```http
 POST /api/v1/filemanager/upload
@@ -310,7 +281,7 @@ Uploads are streamed to a staging file, installed atomically with account owners
 and mode `0644`, and limited to 10 GiB by default. Set
 `DRUST_MAX_UPLOAD_SIZE_BYTES` on the daemon to change the API-side limit.
 
-### 13. File manager unzip
+### File manager unzip
 
 ```http
 POST /api/v1/filemanager/unzip
@@ -333,7 +304,7 @@ files/folders are owned by the account user. Dotfiles are preserved. The default
 limits are 100,000 entries and 20 GiB expanded data; override them with
 `DRUST_MAX_ZIP_ENTRIES` and `DRUST_MAX_ZIP_EXPANDED_BYTES`.
 
-### 14. File manager chmod
+### File manager chmod
 
 ```http
 POST /api/v1/filemanager/chmod
@@ -354,7 +325,7 @@ The path must remain inside the account home. The target is also assigned to the
 account user/group. Recursive changes reject symbolic links instead of following
 them.
 
-### 15. SSL ensure
+### SSL ensure
 
 ```http
 POST /api/v1/ssl/ensure
@@ -373,7 +344,7 @@ Body:
 
 The daemon validates the real certificate hostname and expiry with OpenSSL. It invokes Certbot only when the certificate is missing, invalid, or inside the renewal window, then validates the resulting certificate again. After a successful validation it restarts `edge-gateway.service` so the SNI certificate store and port 443 listener are refreshed immediately.
 
-### 16. Database request
+### Database request
 
 ```http
 POST /api/v1/database-request
@@ -401,7 +372,7 @@ created first when absent, the user account/password is synchronized, and the
 user receives `ALL PRIVILEGES` on that database only. Local requests synchronize
 both `user@127.0.0.1` and `user@localhost`. They do not grant global privileges.
 
-### 17. Run script
+### Run script
 
 ```http
 POST /api/v1/script/run
@@ -445,7 +416,7 @@ Expected output:
 }
 ```
 
-## Postman Setup
+## Testing with Postman
 
 Create one environment with these variables:
 
@@ -468,13 +439,6 @@ Accept: application/json
 2. `GET {{base_url}}/api/v1/health-checker`
 3. `POST {{base_url}}/api/v1/script/run`
 4. `POST {{base_url}}/api/v1/filemanager/exists`
-5. `POST {{base_url}}/api/v1/sync-vhost`
-
-## Laravel and drust handshake
-
-Laravel and `drust` must use the same token value.
-
-If Laravel sends a token that does not match `DRUST_API_TOKEN`, the API will reject the request.
 
 ## Notes
 

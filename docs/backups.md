@@ -1,6 +1,6 @@
-# Daily Backup Setup
+# Backups
 
-This project now includes a built-in backup command:
+dPanel includes a built-in backup command:
 
 ```bash
 php artisan serverpanel:backup

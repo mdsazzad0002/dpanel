@@ -54,7 +54,7 @@ EOF
 #   dscript/
 #
 (cd "$RELEASE_ROOT" && zip -qr "$OUTPUT" dpanel drust dscript \
-    README.md CHANGELOG.md LICENSE SECURITY.md \
+    README.md CONTRIBUTING.md LICENSE SECURITY.md docs \
   -x \
     '*/.git/*' \
     '*/.mimocode/*' \

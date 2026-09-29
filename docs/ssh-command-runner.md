@@ -1,6 +1,6 @@
-# ServerPanel Core Module
+# Server Task Runner
 
-This repository now includes a production-minded **ServerPanel Core** module for:
+The Server Task Runner (ServerPanel Core module) in the `dpanel` app provides:
 
 - SSH Connector (password + private key auth)
 - Safe command queue runner for server tasks
@@ -166,8 +166,6 @@ See `config/serverpanel.php` for:
 Command reports are saved under:
 
 `storage/app/serverpanel/reports/YYYY-MM-DD/server-{id}/command-{uuid}.txt`
-
-## Seed Data
 
 ## Tests
 

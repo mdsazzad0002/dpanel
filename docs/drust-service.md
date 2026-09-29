@@ -1,4 +1,4 @@
-# drust Runner Guide
+# drust Service
 
 `drust` is the root-owned execution API for ServerPanel. Laravel delegates filemanager and other privileged machine operations to this daemon; Laravel does not execute runtime shell scripts for these operations.
 
