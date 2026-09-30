@@ -2,6 +2,11 @@
 # Download dscript, prepare the runtime, then hand over all install work to chain.
 set -Eeuo pipefail
 
+# Ubuntu's needrestart opens a full-screen "Which services should be
+# restarted?" dialog after apt installs, which blocks an unattended install.
+# Suspend it for this run only; the installer restarts its own services.
+export NEEDRESTART_SUSPEND=1 NEEDRESTART_MODE=a DEBIAN_FRONTEND=noninteractive
+
 die() {
   printf '[INSTALLER ERROR] %s\n' "$*" >&2
   exit 1

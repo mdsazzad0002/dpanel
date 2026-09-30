@@ -309,6 +309,11 @@ if [[ ! -f /etc/debian_version ]]; then
     fail "This script currently supports Debian/Ubuntu apt-based systems only."
 fi
 
+# Ubuntu's needrestart opens a full-screen "Which services should be
+# restarted?" dialog after apt installs, which blocks an unattended install.
+# Suspend it for this run only; the installer restarts its own services.
+export NEEDRESTART_SUSPEND=1 NEEDRESTART_MODE=a DEBIAN_FRONTEND=noninteractive
+
 if ! command -v apt-get >/dev/null 2>&1; then
     fail "apt-get command not found."
 fi

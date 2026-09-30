@@ -43,7 +43,18 @@ clamav_install_packages() {
 clamav_refresh_signatures() {
   # The freshclam service may hold the database lock right after install.
   systemctl stop clamav-freshclam >/dev/null 2>&1 || true
-  if ! timeout 600 freshclam --quiet; then
+  systemctl stop dpanel-freshclam.service >/dev/null 2>&1 || true
+
+  # Downloading ~300 MB of signatures and test-loading them (~1 GB RAM) can
+  # take many minutes on a small VPS and looked like a frozen install. It runs
+  # in the background at low priority instead; nothing in the install needs
+  # the signatures, and a malware scan refreshes them anyway.
+  if command -v systemd-run >/dev/null 2>&1 \
+    && systemd-run --quiet --collect --unit=dpanel-freshclam \
+      --property=Nice=19 --property=IOSchedulingClass=idle --property=RuntimeMaxSec=1800 \
+      "$(command -v freshclam)" --quiet; then
+    panel_info_log "ClamAV signatures are downloading in the background (journalctl -u dpanel-freshclam)."
+  elif ! panel_run_with_progress "Downloading ClamAV signatures" timeout 600 freshclam --quiet; then
     panel_warn_log "freshclam could not download signatures now; the first malware scan will retry."
   fi
 }

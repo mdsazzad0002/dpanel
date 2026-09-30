@@ -47,6 +47,36 @@ panel_info_log() {
   panel_log INFO "$@"
 }
 
+# Runs a long command and prints "still working" with the elapsed time every
+# 20 s, so slow steps (composer, npm, cargo, freshclam) never look frozen.
+# Usage: panel_run_with_progress "<label>" [--dir <path>] <command> [args...]
+panel_run_with_progress() {
+  local label="$1" dir="" pid status=0 elapsed=0
+  shift
+  if [[ "${1:-}" == "--dir" ]]; then
+    dir="$2"
+    shift 2
+  fi
+  panel_info_log "${label}..."
+  ( [[ -z "$dir" ]] || cd "$dir" || exit 1; exec "$@" ) &
+  pid=$!
+  # Background jobs ignore Ctrl+C in scripts; forward it so it still stops them.
+  trap 'kill "$pid" 2>/dev/null' INT TERM
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 1
+    elapsed=$((elapsed + 1))
+    if (( elapsed % 20 == 0 )) && kill -0 "$pid" 2>/dev/null; then
+      printf '[....] %s: still working (%dm %02ds)\n' "$label" $((elapsed / 60)) $((elapsed % 60))
+    fi
+  done
+  wait "$pid" || status=$?
+  trap - INT TERM
+  if (( status == 0 )); then
+    panel_info_log "${label}: done in $((elapsed / 60))m $((elapsed % 60))s."
+  fi
+  return "$status"
+}
+
 panel_warn_log() {
   panel_log WARN "$@"
 }
@@ -1662,8 +1692,8 @@ panel_install_app_dependencies() {
   else
     panel_info_log "Installing PHP application dependencies with composer."
   fi
-  (cd "$app_dir" && COMPOSER_ALLOW_SUPERUSER=1 /usr/local/bin/composer install \
-    --no-interaction --prefer-dist --optimize-autoloader)
+  COMPOSER_ALLOW_SUPERUSER=1 panel_run_with_progress "composer install" --dir "$app_dir" \
+    /usr/local/bin/composer install --no-interaction --prefer-dist --optimize-autoloader
 }
 
 # The official composer in /usr/local/bin, on every distro. Distro packages lag
@@ -1769,8 +1799,8 @@ panel_install_frontend_assets() {
     panel_info_log "Limiting the frontend build heap to ${node_heap} MB for a ${memory} MB server."
   fi
 
-  (cd "$app_dir" && npm install --no-audit --no-fund)
-  (cd "$app_dir" && npm run build)
+  panel_run_with_progress "npm install" --dir "$app_dir" npm install --no-audit --no-fund || return 1
+  panel_run_with_progress "Frontend build (npm run build)" --dir "$app_dir" npm run build
 }
 
 panel_ensure_node20() {

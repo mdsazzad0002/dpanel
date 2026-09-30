@@ -218,9 +218,17 @@ fn transcribe(bytes: &[u8], language: Option<&str>) -> Result<String, String> {
     Ok(text.trim().to_string())
 }
 
+#[cfg(not(feature = "ocr"))]
+fn ocr(_bytes: &[u8]) -> Result<String, String> {
+    Err("Image OCR is not available on this server: drust was built without Tesseract 5 \
+         (the operating system ships an older version)."
+        .into())
+}
+
 /// Bengali + English are the two languages the panel's own userbase
 /// actually needs; tesseract can be fed more `traineddata` files later if
 /// another language becomes necessary.
+#[cfg(feature = "ocr")]
 fn ocr(bytes: &[u8]) -> Result<String, String> {
     let input = tempfile::Builder::new()
         .suffix(".img")

@@ -21,13 +21,15 @@ supported way to set up and repair website file permissions.
 - Ubuntu 22.04 or newer, Debian 12, or a RHEL-family distribution
 
 No extra configuration is needed for Ubuntu 22.04. Its packages are too old in
-three places, and the installer handles each one:
+five places, and the installer handles each one:
 
 | Tool | Ubuntu 22.04 package | What the installer uses |
 | --- | --- | --- |
 | PHP 8.2+ | Only 8.1 | `ppa:ondrej/php` |
 | Composer | 2.2, and it pulls in php8.1 | Official composer at `/usr/local/bin/composer` |
 | Node.js | 12, too old for Vite | Node.js 20 in `/opt/dpanel`, linked into `/usr/local/bin` |
+| Rust | No `rustup` package | The official rustup installer |
+| Tesseract (image OCR) | 4.1; drust needs 5 | `ppa:alex-p/tesseract-ocr5`. Set `DRUST_TESSERACT_PPA=0` to skip it; drust then builds without OCR |
 
 Website installers (Laravel, Drupal, and others) look for `composer` and `npm`
 in `/usr/local/bin` first, then `/usr/bin`. If an app install fails with

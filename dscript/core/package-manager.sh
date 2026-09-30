@@ -5,6 +5,11 @@ DPANEL_PACKAGE_MANAGER_SOURCE="${BASH_SOURCE[0]}"
 DPANEL_BASE_DIR="${DPANEL_BASE_DIR:-/opt/dpanel}"
 DPANEL_RUNTIME_DIR="${DPANEL_RUNTIME_DIR:-${DPANEL_BASE_DIR}/runtime}"
 
+# Ubuntu's needrestart opens a full-screen "Which services should be
+# restarted?" dialog after apt installs, which blocks an unattended install.
+# Suspend it for this run only; the installer restarts its own services.
+export NEEDRESTART_SUSPEND=1 NEEDRESTART_MODE=a DEBIAN_FRONTEND=noninteractive
+
 pkg_require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     echo "Package operations require root." >&2
