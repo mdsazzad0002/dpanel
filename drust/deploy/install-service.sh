@@ -57,9 +57,10 @@ ensure_rust_toolchain() {
 }
 
 # The tesseract crate links the system Tesseract and Leptonica libraries and
-# generates its bindings with bindgen, which needs libclang.
+# generates its bindings with bindgen, which needs libclang. whisper-rs
+# compiles its bundled whisper.cpp with cmake.
 ensure_build_dependencies() {
-  local packages=(build-essential pkg-config libleptonica-dev libtesseract-dev libclang-dev clang)
+  local packages=(build-essential pkg-config cmake libleptonica-dev libtesseract-dev libclang-dev clang)
   local missing=()
   local package
 
