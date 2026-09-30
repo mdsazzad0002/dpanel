@@ -185,6 +185,23 @@ See [Operations → Troubleshooting](operations.md#troubleshooting) for
 websites that do not load, SSL certificates that are not served, and file
 permission errors.
 
+### `phpMyAdmin unavailable: PHP front controller missing: /var/www/phpmyadmin/index.php`
+
+`/var/www/phpmyadmin` holds only dPanel's sign-on config, not phpMyAdmin
+itself. Older dscript copied phpMyAdmin only from the distro package in
+`/usr/share/phpmyadmin`, which is usually not installed. Current dscript
+downloads the official phpMyAdmin release (checksum-verified) when no copy is
+found.
+
+Update from `main` (see
+[above](#an-update-ran-but-a-fix-merged-to-main-is-not-on-the-server)), or
+re-run only the phpMyAdmin step:
+
+```bash
+sudo dpanel script run configure-phpmyadmin-signon
+ls /var/www/phpmyadmin/index.php
+```
+
 ## General checks
 
 ```bash
