@@ -384,6 +384,10 @@ Route::prefix('cpsess{token}')
                 ->where('domain', '[A-Za-z0-9.-]+')
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.guide.export');
+            Route::get('/emails/guide/verify/{domain}', [EmailController::class, 'verifyDns'])
+                ->where('domain', '[A-Za-z0-9.-]+')
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:20,1'])
+                ->name('emails.guide.verify');
 
             Route::post('/mail/{id}/bulk', [MailClientController::class, 'bulk'])
                 ->middleware('role:admin|reseller')

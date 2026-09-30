@@ -9,6 +9,7 @@ use App\Support\MailPasswordHash;
 use App\Models\Website;
 use App\Services\Mail\MailboxImapService;
 use App\Services\Mail\MailDnsRecords;
+use App\Services\Mail\MailDnsVerifier;
 use App\Services\Mail\MailDomainProvisioner;
 use App\Services\ResourceQuotaService;
 use Illuminate\Http\RedirectResponse;
@@ -172,6 +173,25 @@ class EmailController extends Controller
 
         return redirect()->route('emails.guide', ['domain' => $domain])
             ->with('success', "DKIM key generated and signing enabled for {$domain}.");
+    }
+
+    public function verifyDns(string $token, string $domain): JsonResponse
+    {
+        $domain = strtolower(trim($domain, " \t\n\r\0\x0B."));
+        abort_unless(
+            in_array($domain, $this->readWebsiteDomains(), true) || Mailbox::query()->where('domain', $domain)->exists(),
+            403
+        );
+
+        $mailDomain = MailDomain::query()->where('domain', $domain)->first();
+        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('serverpanel.mail.dkim_selector', 'default'))) ?: 'default';
+        $publicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('serverpanel.mail.dkim_public_key', '')))) ?: '';
+
+        return response()->json([
+            'success' => true,
+            'domain' => $domain,
+            'checks' => app(MailDnsVerifier::class)->verify($domain, $selector, $publicKey),
+        ]);
     }
 
     public function exportDnsZone(string $token, string $domain): HttpResponse

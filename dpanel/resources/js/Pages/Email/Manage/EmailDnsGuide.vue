@@ -2,8 +2,10 @@
 import { ref } from 'vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import axios from 'axios';
+import DnsVerifyResults from './components/DnsVerifyResults.vue';
 
-defineProps({
+const props = defineProps({
     domains: { type: Array, default: () => [] }, selectedDomain: { type: String, default: '' },
     mailHost: { type: String, default: '' }, mailHostResolvesTo: { type: String, default: '' }, serverIp: { type: String, default: '' },
     dkimReady: { type: Boolean, default: false }, dkimConfiguredDomain: { type: String, default: '' },
@@ -20,6 +22,20 @@ const copyValue = async (value, key) => {
     await navigator.clipboard.writeText(value);
     copied.value = key;
     window.setTimeout(() => { copied.value = ''; }, 1500);
+};
+const verifying = ref(false);
+const verification = ref(null);
+const verifyDns = async () => {
+    if (!props.selectedDomain || verifying.value) return;
+    verifying.value = true;
+    try {
+        const { data } = await axios.get(panelRoute('emails.guide.verify', { domain: props.selectedDomain }));
+        verification.value = { checks: data.checks || [], error: '' };
+    } catch (e) {
+        verification.value = { checks: [], error: e.response?.data?.message || 'DNS check failed.' };
+    } finally {
+        verifying.value = false;
+    }
 };
 const generateDkim = (domain) => {
     if (!domain || dkimForm.processing) return;
@@ -52,7 +68,7 @@ const generateDkim = (domain) => {
             <div v-if="selectedDomain && !dkimReady" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"><span>DKIM public key is not configured<span v-if="dkimConfiguredDomain"> for {{ selectedDomain }} (configured: {{ dkimConfiguredDomain }})</span>.</span><button :disabled="dkimForm.processing" class="rounded-md bg-amber-700 px-3 py-2 font-medium text-white hover:bg-amber-800 disabled:opacity-50" @click="generateDkim(selectedDomain)"><i class="bi bi-key mr-1"></i>{{ dkimForm.processing ? 'Generating…' : 'Generate DKIM key' }}</button></div>
 
             <section v-if="records.length" class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5 dark:border-slate-800"><div><h2 class="font-semibold">Records to add</h2><p class="mt-1 text-sm text-slate-500">Use the same values in Cloudflare DNS or dPanel DNS Zones. TTL: Auto/3600.</p></div><a :href="panelRoute('emails.guide.export', { domain: selectedDomain })" class="rounded-md bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-700"><i class="bi bi-download mr-1"></i> Download Cloudflare TXT</a></div>
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5 dark:border-slate-800"><div><h2 class="font-semibold">Records to add</h2><p class="mt-1 text-sm text-slate-500">Use the same values in Cloudflare DNS or dPanel DNS Zones. TTL: Auto/3600.</p></div><div class="flex flex-wrap gap-2"><button type="button" :disabled="verifying" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" @click="verifyDns"><i class="bi bi-patch-check mr-1"></i> {{ verifying ? 'Checking…' : 'Verify DNS' }}</button><a :href="panelRoute('emails.guide.export', { domain: selectedDomain })" class="rounded-md bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-700"><i class="bi bi-download mr-1"></i> Download Cloudflare TXT</a></div></div>
                 <div class="overflow-x-auto"><table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800"><tr><th class="px-4 py-3">Type</th><th class="px-4 py-3">Name</th><th class="px-4 py-3">Priority</th><th class="px-4 py-3">Content</th><th class="px-4 py-3">Purpose</th></tr></thead>
                     <tbody><tr v-for="(record, index) in records" :key="`${record.type}-${record.name}`" class="border-t border-slate-200 align-top dark:border-slate-800">
@@ -62,6 +78,8 @@ const generateDkim = (domain) => {
                     </tr></tbody>
                 </table></div>
             </section>
+
+            <DnsVerifyResults v-if="verification" :domain="selectedDomain" :checks="verification.checks" :error="verification.error" />
 
             <div v-if="selectedDomain" class="grid gap-4 lg:grid-cols-2">
                 <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">Cloudflare</h2><ol class="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-300"><li>Open domain → DNS → Records and add every configured row above.</li><li>The <strong>mail</strong> A record must be <strong>DNS only</strong> (grey cloud), never Proxied.</li><li>MX target is <code>{{ mailHost }}</code>, priority 10. Never put an IP in MX.</li><li>Paste TXT values without adding quotes; Cloudflare handles them.</li></ol></section>
