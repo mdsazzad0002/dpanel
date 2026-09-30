@@ -18,6 +18,23 @@ supported way to set up and repair website file permissions.
 - A fresh Linux server you control, with `sudo` or root access
 - Ports `80` and `443` open to the internet
 - A domain name for the panel (for example `panel.example.com`)
+- Ubuntu 22.04 or newer, Debian 12, or a RHEL-family distribution
+
+No extra configuration is needed for Ubuntu 22.04. Its packages are too old in
+five places, and the installer handles each one:
+
+| Tool | Ubuntu 22.04 package | What the installer uses |
+| --- | --- | --- |
+| PHP 8.2+ | Only 8.1 | `ppa:ondrej/php` |
+| Composer | 2.2, and it pulls in php8.1 | Official composer at `/usr/local/bin/composer` |
+| Node.js | 12, too old for Vite | Node.js 20 in `/opt/dpanel`, linked into `/usr/local/bin` |
+| Rust | No `rustup` package | The official rustup installer |
+| Tesseract (image OCR) | 4.1; drust needs 5 | `ppa:alex-p/tesseract-ocr5`. Set `DRUST_TESSERACT_PPA=0` to skip it; drust then builds without OCR |
+
+Website installers (Laravel, Drupal, and others) look for `composer` and `npm`
+in `/usr/local/bin` first, then `/usr/bin`. If an app install fails with
+`composer is not installed` or `npm is not installed`, run
+`sudo dpanel chain update`.
 
 ## Install dPanel
 
@@ -67,7 +84,28 @@ Update an existing server the same way:
 ```bash
 sudo ./installer.sh update                           # to the latest release
 sudo env DPANEL_VERSION=v1.3.0 ./installer.sh update # to one release
+sudo env DPANEL_VERSION=main ./installer.sh update   # unreleased fixes on main
 ```
+
+`update` with no version installs the **latest release tag**, not the newest
+commit. A fix that is merged to `main` reaches servers only after a new tag is
+published, or when you update with `DPANEL_VERSION=main`.
+
+An update runs these steps in order:
+
+1. Copies the selected release into `/var/www/dscript`, `/var/www/drust`, and
+   `/var/www/dpanel`.
+2. Updates each installed module.
+3. Rebuilds drust (`cargo build --release`) and restarts `drust.service` and
+   `edge-gateway.service`. If the build fails, the old binary keeps running.
+4. Refreshes the panel: installs or updates composer, runs `composer install`
+   and `php artisan migrate --force`, makes sure Node.js 20+ is installed, and
+   runs `npm run build`.
+5. Repairs website ownership, regenerates vhosts, records the version in
+   `.env`, rebuilds the config cache, and fixes app permissions.
+
+A step that fails logs a warning and the update continues. Check the output
+for `[WARN]` lines.
 
 ### The version is recorded automatically
 

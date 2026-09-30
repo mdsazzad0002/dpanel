@@ -13,6 +13,131 @@ export CARGO_HOME="/root/.cargo"
 export RUSTUP_HOME="/root/.rustup"
 export PATH="${CARGO_HOME}/bin:/usr/local/bin:/usr/bin:/bin:${PATH}"
 
+# Ubuntu's needrestart opens a full-screen "Which services should be
+# restarted?" dialog after apt installs, which blocks an unattended install.
+# Suspend it for this run only; the installer restarts its own services.
+export NEEDRESTART_SUSPEND=1 NEEDRESTART_MODE=a DEBIAN_FRONTEND=noninteractive
+
+# Another package manager often holds the dpkg lock (unattended-upgrades right
+# after a fresh boot, or a second apt session). Wait for it with a progress line
+# every 15 s instead of failing; give up after APT_LOCK_TIMEOUT seconds.
+apt_lock_holder() {
+  if command -v fuser >/dev/null 2>&1; then
+    fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock \
+      /var/cache/apt/archives/lock 2>/dev/null | tr -s ' ' '\n' | grep -m1 -E '^[0-9]+$' || true
+  else
+    pgrep -o -x 'apt|apt-get|dpkg|unattended-upgr|aptd|packagekitd' || true
+  fi
+}
+
+apt_wait_for_lock() {
+  local timeout="${APT_LOCK_TIMEOUT:-1800}" waited=0 pid holder
+  while pid="$(apt_lock_holder)"; [[ -n "$pid" ]]; do
+    holder="$(ps -o args= -p "$pid" 2>/dev/null | cut -c1-70)"
+    if (( waited >= timeout )); then
+      printf '[ERROR] apt is still busy after %ss (PID %s: %s). Retry later, or stop it with: kill %s\n' \
+        "$waited" "$pid" "${holder:-unknown}" "$pid" >&2
+      return 1
+    fi
+    if (( waited % 15 == 0 )); then
+      printf '[WAIT] apt/dpkg is busy (PID %s: %s); waiting... %ss elapsed, limit %ss\n' \
+        "$pid" "${holder:-unknown}" "$waited" "$timeout"
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  # A run killed mid-install leaves dpkg half-configured and apt refuses to
+  # continue until it is finished.
+  if compgen -G '/var/lib/dpkg/updates/[0-9]*' >/dev/null; then
+    printf '[INFO] Finishing an interrupted dpkg run (dpkg --configure -a).\n'
+    DEBIAN_FRONTEND=noninteractive dpkg --configure -a || true
+  fi
+}
+
+# apt-get that waits for the lock first. Lock::Timeout covers the race where
+# another apt starts between the check and this call.
+apt_get() {
+  apt_wait_for_lock || return 1
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 "$@"
+}
+
+# whisper-rs builds whisper.cpp (cmake, clang) and the tesseract bindings
+# need libtesseract/leptonica headers and libclang for bindgen.
+DRUST_CARGO_FEATURE_ARGS=()
+ensure_native_build_deps() {
+  local packages=(cmake clang libclang-dev libtesseract-dev libleptonica-dev
+    tesseract-ocr tesseract-ocr-eng tesseract-ocr-ben)
+  local missing=() package
+  ensure_tesseract5_repo
+  for package in "${packages[@]}"; do
+    dpkg-query -W -f='${db:Status-Abbrev}' "$package" 2>/dev/null | grep -q '^ii' \
+      || missing+=("$package")
+  done
+  if (( ${#missing[@]} )); then
+    echo "[drust] Installing build dependencies: ${missing[*]}"
+    apt_get update
+    apt_get install -y "${missing[@]}"
+  fi
+
+  # The tesseract crate uses the Tesseract 5 C API. Older system versions
+  # (Ubuntu 22.04 ships 4.1) fail to compile, so OCR is left out there
+  # instead of breaking the whole build.
+  if ! pkg-config --atleast-version=5 tesseract 2>/dev/null; then
+    echo "[drust] Tesseract $(pkg-config --modversion tesseract 2>/dev/null || echo missing) is older than 5; building without image OCR."
+    DRUST_CARGO_FEATURE_ARGS=(--no-default-features)
+    return 0
+  fi
+
+  # tesseract-sys generates its bindings from the system headers once and
+  # never re-checks them, so after a 4.x -> 5.x upgrade cargo keeps the stale
+  # 4.x bindings (error: no `TessBaseAPIInit5`). Rebuild them when the
+  # installed version changes.
+  local version stamp="${DRUST_ROOT}/target/.tesseract-version"
+  version="$(pkg-config --modversion tesseract 2>/dev/null || true)"
+  if [[ "$(cat "$stamp" 2>/dev/null || true)" != "$version" ]]; then
+    echo "[drust] Tesseract is now ${version}; rebuilding its Rust bindings."
+    cargo clean --release --manifest-path "${DRUST_ROOT}/Cargo.toml" \
+      -p tesseract-sys -p tesseract-plumbing -p tesseract >/dev/null 2>&1 || true
+    mkdir -p "${DRUST_ROOT}/target"
+    printf '%s\n' "$version" > "$stamp"
+  fi
+}
+
+tesseract_candidate_major() {
+  apt-cache policy libtesseract-dev 2>/dev/null \
+    | awk '/Candidate:/ {print $2}' | sed -E 's/^[0-9]+://; s/[^0-9].*//'
+}
+
+# Ubuntu releases before 23.04 only package Tesseract 4, so OCR would be left
+# out there. Add the Tesseract maintainer's PPA to get 5.x. Set
+# DRUST_TESSERACT_PPA=0 to skip it and build without OCR.
+ensure_tesseract5_repo() {
+  local distro="" major
+  [[ "${DRUST_TESSERACT_PPA:-1}" == "1" ]] || return 0
+  [[ -r /etc/os-release ]] && distro="$(. /etc/os-release; printf '%s' "${ID:-}")"
+  [[ "$distro" == "ubuntu" ]] || return 0
+
+  pkg-config --atleast-version=5 tesseract 2>/dev/null && return 0
+  major="$(tesseract_candidate_major)"
+  [[ -z "$major" ]] && { apt_get update >/dev/null 2>&1 || true; major="$(tesseract_candidate_major)"; }
+  [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 5 )) && return 0
+
+  echo "[drust] This Ubuntu packages Tesseract ${major:-?}; adding ppa:alex-p/tesseract-ocr5 for OCR."
+  if ! command -v add-apt-repository >/dev/null 2>&1; then
+    apt_get install -y software-properties-common || return 0
+  fi
+  if apt_wait_for_lock && add-apt-repository -y ppa:alex-p/tesseract-ocr5; then
+    apt_get update || true
+    # Upgrade an already installed 4.x so the headers match the 5.x library.
+    if dpkg-query -W libtesseract-dev >/dev/null 2>&1; then
+      apt_get install -y --only-upgrade libtesseract-dev libtesseract5 tesseract-ocr || true
+    fi
+  else
+    echo "[drust] Could not add the Tesseract 5 PPA; building without image OCR."
+  fi
+  return 0
+}
+
 # artisan cannot boot without Composer's autoloader. A fresh release archive
 # ships without vendor/, so install it here instead of relying on the caller.
 ensure_dpanel_dependencies() {
@@ -20,8 +145,8 @@ ensure_dpanel_dependencies() {
 
   if ! command -v composer >/dev/null 2>&1; then
     echo "[drust] composer is missing; installing it."
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y composer
+    apt_get update
+    apt_get install -y composer
   fi
 
   echo "[drust] Installing dPanel PHP dependencies with composer."
@@ -33,14 +158,14 @@ ensure_rust_toolchain() {
     return 0
   fi
 
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential pkg-config openssl ca-certificates curl
+  apt_get update
+  apt_get install -y build-essential pkg-config openssl ca-certificates curl
   if ! command -v rustup >/dev/null 2>&1; then
-    # Ubuntu 22.04 and Debian 12 have no rustup package; use the official installer there.
-    if apt-cache show rustup >/dev/null 2>&1; then
-      DEBIAN_FRONTEND=noninteractive apt-get install -y rustup
-    else
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
+    # Ubuntu 22.04 and Debian 12 have no rustup package; use the official
+    # installer there.
+    if ! apt_get install -y rustup; then
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
     fi
   fi
 
@@ -100,8 +225,8 @@ install_powerdns() {
 
   if ! dpkg-query -W -f='${db:Status-Abbrev}\n' pdns-server pdns-backend-mysql 2>/dev/null \
     | awk 'BEGIN { ok = 1; count = 0 } { count++; if ($0 !~ /^ii /) ok = 0 } END { exit !(ok && count == 2) }'; then
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y pdns-server pdns-backend-mysql
+    apt_get update
+    apt_get install -y pdns-server pdns-backend-mysql
   fi
   systemctl stop pdns.service >/dev/null 2>&1 || true
 
@@ -178,8 +303,8 @@ install_powerdns() {
 ensure_rust_toolchain
 ensure_build_dependencies
 if ! command -v certbot >/dev/null 2>&1; then
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y certbot
+  apt_get update
+  apt_get install -y certbot
 fi
 install -d -m 0750 /etc/drust
 # Drust executes only scripts from its isolated runtime directory. Keep that
@@ -246,7 +371,23 @@ if [[ "${MEMORY_MB}" =~ ^[0-9]+$ ]] && (( MEMORY_MB > 0 && MEMORY_MB < 2048 )); 
   export CARGO_BUILD_JOBS=1
 fi
 
-cargo build --release --manifest-path "${DRUST_ROOT}/Cargo.toml"
+# cargo can sit on one crate for minutes on a small VPS; print a heartbeat.
+ensure_native_build_deps
+cargo build --release --manifest-path "${DRUST_ROOT}/Cargo.toml" "${DRUST_CARGO_FEATURE_ARGS[@]}" &
+cargo_pid=$!
+trap 'kill "$cargo_pid" 2>/dev/null' INT TERM
+cargo_elapsed=0
+while kill -0 "$cargo_pid" 2>/dev/null; do
+  sleep 1
+  cargo_elapsed=$((cargo_elapsed + 1))
+  if (( cargo_elapsed % 30 == 0 )) && kill -0 "$cargo_pid" 2>/dev/null; then
+    printf '[drust] Still building (%dm %02ds)...\n' $((cargo_elapsed / 60)) $((cargo_elapsed % 60))
+  fi
+done
+cargo_status=0
+wait "$cargo_pid" || cargo_status=$?
+trap - INT TERM
+(( cargo_status == 0 )) || { echo "[drust] cargo build failed (exit ${cargo_status})." >&2; exit "$cargo_status"; }
 install -m 0755 "${DRUST_ROOT}/deploy/drust-start" /usr/local/bin/drust-start
 install -m 0755 "${DRUST_ROOT}/deploy/drust-edge-gateway" /usr/local/bin/drust-edge-gateway
 install -m 0755 "${DRUST_ROOT}/deploy/serverinstaller-site" /usr/local/bin/serverinstaller-site

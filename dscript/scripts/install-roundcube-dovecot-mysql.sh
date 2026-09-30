@@ -309,6 +309,11 @@ if [[ ! -f /etc/debian_version ]]; then
     fail "This script currently supports Debian/Ubuntu apt-based systems only."
 fi
 
+# Ubuntu's needrestart opens a full-screen "Which services should be
+# restarted?" dialog after apt installs, which blocks an unattended install.
+# Suspend it for this run only; the installer restarts its own services.
+export NEEDRESTART_SUSPEND=1 NEEDRESTART_MODE=a DEBIAN_FRONTEND=noninteractive
+
 if ! command -v apt-get >/dev/null 2>&1; then
     fail "apt-get command not found."
 fi
@@ -321,11 +326,11 @@ fi
 if ! dpkg-query -W -f='${Status}' "${PACKAGE_NAME}" 2>/dev/null | grep -q 'install ok installed'; then
     if [[ "${SKIP_UPDATE}" -eq 0 ]]; then
         log "Running apt-get update..."
-        apt-get update
+        apt-get -o DPkg::Lock::Timeout=1800 update
     fi
 
     log "Installing ${PACKAGE_NAME}..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y "${PACKAGE_NAME}"
+    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=1800 install -y "${PACKAGE_NAME}"
 else
     log "${PACKAGE_NAME} is already installed; skipping apt-get update and package install."
 fi

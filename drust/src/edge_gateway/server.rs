@@ -99,12 +99,11 @@ pub fn serve_gateway_with_tls(
     redirect_to: Option<String>,
 ) -> Result<(), String> {
     let tls_bind = tls_config.bind.clone();
-    let https_enabled = !tls_config.store.identities.is_empty();
-    let tls_built = if https_enabled {
-        Some(build_tls_config(&tls_config.store)?)
-    } else {
-        None
-    };
+    // The HTTPS listener starts even with zero certificates so the first
+    // certificate issued later goes live on reload; before this, a gateway
+    // booted without any cert never served HTTPS until a manual restart.
+    let https_required = !tls_config.store.identities.is_empty();
+    let tls_built = Some(build_tls_config(&tls_config.store)?);
     let tls_resolver = tls_built.as_ref().map(|(_, resolver)| resolver.clone());
     let state = make_demo_state_with_tls(snapshot, dispatch, cache_config, source_config, tls_resolver)?;
     let runtime =
@@ -163,17 +162,30 @@ pub fn serve_gateway_with_tls(
                 server_config,
             )))
         } else {
-            info!(bind = %tls_bind, "HTTPS listener skipped because no TLS identities are configured");
             None
         };
 
         if let Some(task) = https_task {
+            let mut http_task = http_task;
             tokio::select! {
-                result = http_task => {
+                result = &mut http_task => {
                     result.map_err(|error| format!("http join failed: {error}"))??;
                 }
                 result = task => {
-                    result.map_err(|error| format!("https join failed: {error}"))??;
+                    let result = result
+                        .map_err(|error| format!("https join failed: {error}"))
+                        .and_then(|inner| inner);
+                    match result {
+                        Err(error) if !https_required => {
+                            // No site had a certificate at boot, so keep
+                            // serving HTTP rather than exiting (old behaviour).
+                            warn!(%error, "HTTPS listener unavailable; serving HTTP only");
+                            http_task
+                                .await
+                                .map_err(|error| format!("http join failed: {error}"))??;
+                        }
+                        other => other?,
+                    }
                 }
             }
         } else {
@@ -449,10 +461,19 @@ async fn reload_domains(
                 sites.push(site.clone());
             }
 
+            // TLS is refreshed from the fresh snapshot: enabling SSL or
+            // issuing a certificate arrives as a per-domain reload, and
+            // keeping `current.tls` left the new certificate unserved.
+            if let Some(resolver) = &state.tls_resolver {
+                let store = tls_store_from_snapshot(&next);
+                if let Err(error) = resolver.update(&store) {
+                    warn!(%error, version = next.version, "TLS certificate reload failed; keeping previously loaded certificates");
+                }
+            }
             let updated = RuntimeSnapshot::new(
                 next.version,
                 Arc::from(sites),
-                current.tls.clone(),
+                next.tls.clone(),
                 current.cache.clone(),
             );
             *state.snapshot.write().await = Arc::new(updated);
@@ -503,8 +524,15 @@ fn spawn_redis_reload_listener(state: DemoServerState) {
     tokio::spawn(async move {
         while let Some(mut domains) = receiver.recv().await {
             tokio::time::sleep(Duration::from_millis(100)).await;
+            // An empty list means "reload everything" (e.g. certificate
+            // issued); it must win over domain-scoped requests batched with it.
+            let mut full_reload = domains.is_empty();
             while let Ok(more) = receiver.try_recv() {
+                full_reload |= more.is_empty();
                 domains.extend(more);
+            }
+            if full_reload {
+                domains.clear();
             }
             let result = if domains.is_empty() {
                 reload_snapshot(&state).await

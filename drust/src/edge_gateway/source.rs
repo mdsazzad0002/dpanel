@@ -152,10 +152,13 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         });
         if enable_ssl {
             tls.push(super::TlsConfig {
-                // The configured certificate may not include the www alias.
-                // Register only the guaranteed hostname so one single-name
-                // certificate cannot prevent the entire TLS listener starting.
-                hostnames: std::sync::Arc::from([domain.clone()]),
+                // The www alias is registered best-effort: the resolver skips
+                // any hostname the certificate does not actually cover.
+                hostnames: if domain.starts_with("www.") {
+                    std::sync::Arc::from([domain.clone()])
+                } else {
+                    std::sync::Arc::from([domain.clone(), format!("www.{domain}")])
+                },
                 cert_path: default_cert_path(&domain),
                 key_path: default_key_path(&domain),
             });

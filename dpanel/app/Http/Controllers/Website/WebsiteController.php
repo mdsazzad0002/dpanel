@@ -2967,16 +2967,29 @@ class WebsiteController extends Controller
             ],
         ]);
 
+        // Ask the local gateway first (SNI = domain): it shows what this server
+        // actually serves, without depending on DNS or NAT hairpinning. Fall
+        // back to the public address when the gateway is not local.
         $errno = 0;
         $errstr = '';
         $client = @stream_socket_client(
-            "ssl://{$domain}:443",
+            'ssl://127.0.0.1:443',
             $errno,
             $errstr,
-            8,
+            3,
             STREAM_CLIENT_CONNECT,
             $context,
         );
+        if (! is_resource($client)) {
+            $client = @stream_socket_client(
+                "ssl://{$domain}:443",
+                $errno,
+                $errstr,
+                8,
+                STREAM_CLIENT_CONNECT,
+                $context,
+            );
+        }
 
         if (! is_resource($client)) {
             return [

@@ -120,9 +120,15 @@ cmd+=("${domain_args[@]}")
 
 log "Issuing certificate for ${DOMAIN} (webroot: ${ROOT_PATH})"
 "${cmd[@]}"
-if ! systemd-run --quiet --collect --on-active=2s systemctl restart edge-gateway.service; then
-    log "Certificate issued, but the edge gateway restart could not be scheduled."
-    exit 1
+# The gateway swaps certificates in place on a reload event, so other sites keep
+# their connections. A restart is only the fallback when nothing is listening.
+reload_channel="${DRUST_REDIS_RELOAD_CHANNEL:-edge:reload}"
+listeners="$(redis-cli -u "${DRUST_REDIS_URL:-redis://127.0.0.1/}" PUBLISH "${reload_channel}" '{}' 2>/dev/null || true)"
+if [[ ! "${listeners}" =~ ^[1-9][0-9]*$ ]]; then
+    if ! systemd-run --quiet --collect --on-active=2s systemctl restart edge-gateway.service; then
+        log "Certificate issued, but the edge gateway could not be reloaded or restarted."
+        exit 1
+    fi
 fi
 log "SSL issue completed for ${DOMAIN}"
 exit 0

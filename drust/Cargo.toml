@@ -28,7 +28,7 @@ bytes = "1"
 tokio-util = { version = "0.7", features = ["io"] }
 redis = { version = "0.32", features = ["tokio-comp"] }
 whisper-rs = "0.14"
-tesseract = "0.15"
+tesseract = { version = "0.15", optional = true }
 hound = "3"
 tempfile = "3"
 h3 = "0.0.8"
@@ -36,6 +36,12 @@ h3-quinn = "0.0.10"
 quinn = { version = "0.11.12", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
 http = "1"
+
+[features]
+default = ["ocr"]
+# Image OCR for chat channels. Needs the system Tesseract 5+; install-service.sh
+# turns it off on distros that ship an older one (Ubuntu 22.04 has 4.1).
+ocr = ["dep:tesseract"]
 
 [dev-dependencies]
 webpki-roots = "1.0.9"

@@ -21,7 +21,21 @@ pub(super) const LONG_TIMEOUT: Duration = Duration::from_secs(900);
 /// artisan, drush and the CMS CLI installers.
 pub(super) const SHORT_TIMEOUT: Duration = Duration::from_secs(600);
 const MAX_OUTPUT_CHARS: usize = 20_000;
-const COMPOSER: &str = "/usr/bin/composer";
+// dscript installs the official composer and Node.js 20+ into /usr/local/bin.
+// Distro packages in /usr/bin are only the fallback: Ubuntu 22.04 ships
+// composer 2.2 and Node.js 12, which modern Laravel/Vite projects reject.
+const COMPOSER_CANDIDATES: &[&str] = &["/usr/local/bin/composer", "/usr/bin/composer"];
+const NPM_CANDIDATES: &[&str] = &["/usr/local/bin/npm", "/usr/bin/npm"];
+
+fn find_tool(name: &str, candidates: &[&'static str]) -> Result<&'static str, String> {
+    candidates
+        .iter()
+        .copied()
+        .find(|path| Path::new(path).is_file())
+        .ok_or_else(|| {
+            format!("{name} is not installed on this server. Run `sudo dpanel chain update` to install it.")
+        })
+}
 
 /// Directories an app writes to at runtime, and the config file that holds
 /// its database password (tightened to 640).
@@ -95,7 +109,7 @@ impl Site {
     }
 
     pub async fn composer(&self, args: &[&str], timeout: Duration) -> Result<String, String> {
-        let mut full = vec![COMPOSER];
+        let mut full = vec![find_tool("composer", COMPOSER_CANDIDATES)?];
         full.extend_from_slice(args);
         self.php(&full, timeout).await
     }
@@ -147,7 +161,7 @@ impl Site {
         if !self.has_file("package.json") {
             return Ok("No package.json found; asset build skipped.".into());
         }
-        let npm = "/usr/bin/npm";
+        let npm = find_tool("npm", NPM_CANDIDATES)?;
         let install = if self.has_file("package-lock.json") {
             "ci"
         } else {
@@ -287,7 +301,10 @@ fn prepare_runtime(
     }
     fs::write(
         &composer,
-        format!("#!/bin/sh\nexec {php} {COMPOSER} \"$@\"\n"),
+        format!(
+            "#!/bin/sh\nexec {php} {} \"$@\"\n",
+            find_tool("composer", COMPOSER_CANDIDATES)?
+        ),
     )
     .map_err(|e| format!("Cannot create composer shim: {e}"))?;
     fs::set_permissions(&composer, fs::Permissions::from_mode(0o755))
