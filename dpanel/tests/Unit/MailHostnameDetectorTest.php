@@ -2,9 +2,11 @@
 
 namespace Tests\Unit;
 
+use App\Services\Dns\PublicDnsLookup;
 use App\Services\Mail\MailDnsRecords;
 use App\Services\Mail\MailHostnameDetector;
 use App\Services\ScriptExecutionGateway;
+use Tests\Support\FakeDns;
 use Tests\TestCase;
 
 class MailHostnameDetectorTest extends TestCase
@@ -14,6 +16,7 @@ class MailHostnameDetectorTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->app->instance(PublicDnsLookup::class, new FakeDns([]));
         config([
             'app.url' => 'https://panel.example.com',
             'serverpanel.mail.server_ip' => '203.0.113.5',
@@ -23,9 +26,10 @@ class MailHostnameDetectorTest extends TestCase
 
     public function test_a_ptr_name_that_resolves_back_is_preferred(): void
     {
-        $detector = $this->detector('mail.example.com', [
-            'mail.example.com' => ['203.0.113.5'],
-            'mail.panel.example.com' => ['203.0.113.5'],
+        $detector = $this->detector([
+            'PTR 203.0.113.5' => ['mail.example.com'],
+            'A mail.example.com' => ['203.0.113.5'],
+            'A mail.panel.example.com' => ['203.0.113.5'],
         ]);
 
         $this->assertSame('mail.example.com', $detector->best());
@@ -35,10 +39,11 @@ class MailHostnameDetectorTest extends TestCase
     {
         // PTR does not resolve, the configured host is another server, the
         // panel domain is behind a proxy: only mail.<panel domain> is usable.
-        $detector = $this->detector('vps1.provider.example', [
-            'old.example.net' => ['198.51.100.9'],
-            'mail.panel.example.com' => ['203.0.113.5'],
-            'panel.example.com' => ['104.21.0.1'],
+        $detector = $this->detector([
+            'PTR 203.0.113.5' => ['vps1.provider.example'],
+            'A old.example.net' => ['198.51.100.9'],
+            'A mail.panel.example.com' => ['203.0.113.5'],
+            'A panel.example.com' => ['104.21.0.1'],
         ]);
 
         $this->assertSame('mail.panel.example.com', $detector->best());
@@ -47,7 +52,7 @@ class MailHostnameDetectorTest extends TestCase
 
     public function test_apply_refuses_a_host_that_is_not_this_server(): void
     {
-        $detector = $this->detector('', ['other.example.org' => ['198.51.100.9']]);
+        $detector = $this->detector(['A other.example.org' => ['198.51.100.9']]);
 
         $result = $detector->apply('other.example.org');
 
@@ -57,7 +62,7 @@ class MailHostnameDetectorTest extends TestCase
 
     public function test_apply_best_forces_the_script(): void
     {
-        $detector = $this->detector('', ['mail.panel.example.com' => ['203.0.113.5']]);
+        $detector = $this->detector(['A mail.panel.example.com' => ['203.0.113.5']]);
 
         $result = $detector->applyBest();
 
@@ -67,7 +72,7 @@ class MailHostnameDetectorTest extends TestCase
     }
 
     /** @param  array<string, array<int, string>>  $dns */
-    private function detector(string $ptr, array $dns): MailHostnameDetector
+    private function detector(array $dns): MailHostnameDetector
     {
         $test = $this;
         $gateway = new class($test) extends ScriptExecutionGateway
@@ -82,7 +87,7 @@ class MailHostnameDetectorTest extends TestCase
             }
         };
 
-        return new MailHostnameDetector(new MailDnsRecords, $gateway, fn (string $host) => $dns[$host] ?? [], fn () => $ptr);
+        return new MailHostnameDetector(new MailDnsRecords, $gateway, new FakeDns($dns));
     }
 
     public function record(array $arguments): void

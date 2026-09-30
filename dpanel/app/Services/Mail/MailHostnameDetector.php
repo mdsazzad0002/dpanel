@@ -2,6 +2,7 @@
 
 namespace App\Services\Mail;
 
+use App\Services\Dns\PublicDnsLookup;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
 
@@ -13,20 +14,11 @@ use App\Services\ScriptPathResolver;
  */
 class MailHostnameDetector
 {
-    /** @var \Closure(string): array<int, string> */
-    private \Closure $resolve;
-
-    /** @var \Closure(string): string */
-    private \Closure $reverse;
-
     public function __construct(
         private readonly MailDnsRecords $records,
         private readonly ScriptExecutionGateway $gateway,
-        ?\Closure $resolve = null,
-        ?\Closure $reverse = null,
+        private readonly PublicDnsLookup $dns,
     ) {
-        $this->resolve = $resolve ?? fn (string $host): array => @gethostbynamel($host) ?: [];
-        $this->reverse = $reverse ?? fn (string $ip): string => (string) @gethostbyaddr($ip);
     }
 
     public function current(): string
@@ -41,7 +33,7 @@ class MailHostnameDetector
     {
         $ip = $this->records->serverIp();
         $panel = strtolower((string) parse_url((string) config('app.url', ''), PHP_URL_HOST));
-        $ptr = $ip !== '' ? rtrim(strtolower(($this->reverse)($ip)), '.') : '';
+        $ptr = $ip !== '' ? (string) ($this->dns->ptr($ip)[0] ?? '') : '';
 
         $sources = [
             [$ptr, 'Reverse DNS (PTR) of '.($ip ?: 'server IP')],
@@ -58,7 +50,7 @@ class MailHostnameDetector
                 continue;
             }
             $seen[$host] = true;
-            $addresses = ($this->resolve)($host);
+            $addresses = $this->dns->a($host);
             $candidates[] = [
                 'host' => $host,
                 'source' => $source,
@@ -94,7 +86,7 @@ class MailHostnameDetector
             return ['ok' => false, 'changed' => false, 'host' => $host, 'message' => "'{$host}' is not a valid hostname."];
         }
         $ip = $this->records->serverIp();
-        if ($ip === '' || ! in_array($ip, ($this->resolve)($host), true)) {
+        if ($ip === '' || ! in_array($ip, $this->dns->a($host), true)) {
             return ['ok' => false, 'changed' => false, 'host' => $host, 'message' => "{$host} does not resolve to this server ({$ip}). Add an A record (DNS only) first."];
         }
 

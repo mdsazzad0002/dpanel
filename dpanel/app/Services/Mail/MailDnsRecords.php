@@ -2,6 +2,8 @@
 
 namespace App\Services\Mail;
 
+use App\Services\Dns\PublicDnsLookup;
+
 /**
  * The DNS records a domain needs to receive and send mail through this server.
  *
@@ -13,27 +15,37 @@ namespace App\Services\Mail;
 class MailDnsRecords
 {
     /**
-     * The one hostname all domains point MX at: the name Postfix announces in
-     * HELO (set by MailHostnameDetector), then the configured preference.
+     * The one hostname all domains point MX at: the first of Postfix's name,
+     * the configured preference and the panel domain that resolves to this
+     * server in public DNS. A name pointing elsewhere is never offered as MX,
+     * since mail would go to that other machine.
      */
     public function mailHost(): string
     {
-        $postfix = strtolower(trim((string) @shell_exec('postconf -h myhostname 2>/dev/null')));
-        if (MailDomainProvisioner::isValidFqdn($postfix)) {
-            return $postfix;
+        $candidates = array_values(array_filter([
+            strtolower(trim((string) @shell_exec('postconf -h myhostname 2>/dev/null'))),
+            strtolower(trim((string) config('serverpanel.mail.hostname', ''))),
+            strtolower((string) parse_url((string) config('app.url', ''), PHP_URL_HOST)),
+        ], fn ($host) => MailDomainProvisioner::isValidFqdn($host)));
+
+        $ip = $this->serverIp();
+        if ($ip !== '') {
+            $dns = app(PublicDnsLookup::class);
+            foreach ($candidates as $host) {
+                if (in_array($ip, $dns->a($host), true)) {
+                    return $host;
+                }
+            }
         }
 
-        $configured = strtolower(trim((string) config('serverpanel.mail.hostname', '')));
-        if (MailDomainProvisioner::isValidFqdn($configured)) {
-            return $configured;
-        }
-
-        $panel = strtolower((string) parse_url((string) config('app.url', ''), PHP_URL_HOST));
-
-        return MailDomainProvisioner::isValidFqdn($panel) ? $panel : '';
+        // Nothing resolves here yet; the guide then shows the mismatch warning.
+        return $candidates[0] ?? '';
     }
 
-    /** The public IP mail leaves from, or '' when it cannot be determined. */
+    /**
+     * The public IP mail leaves from, or '' when it cannot be determined.
+     * Never taken from DNS: a hostname may still point at another server.
+     */
     public function serverIp(): string
     {
         $configured = trim((string) config('serverpanel.mail.server_ip', ''));
@@ -41,28 +53,11 @@ class MailDnsRecords
             return $configured;
         }
 
-        // The machine's own outbound address first: a mail host name may still
-        // point at another server, and trusting DNS would put that IP in SPF.
-        $candidates = [trim((string) @shell_exec("ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if (\$i==\"src\") {print \$(i+1); exit}}'"))];
-        $host = $this->mailHost();
-        if ($host !== '') {
-            $candidates[] = (string) @gethostbyname($host);
-        }
+        $local = trim((string) @shell_exec("ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if (\$i==\"src\") {print \$(i+1); exit}}'"));
 
-        foreach ($candidates as $ip) {
-            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                return $ip;
-            }
-        }
-
-        return '';
+        return filter_var($local, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) ? $local : '';
     }
 
-    /**
-     * Where the mail host resolves, when that is not this server; '' when it
-     * matches or cannot be checked. MX pointing at such a host sends mail to
-     * the wrong machine, and a HELO name that does not match hurts delivery.
-     */
     public function mailHostMismatch(): string
     {
         $host = $this->mailHost();
@@ -70,7 +65,7 @@ class MailDnsRecords
         if ($host === '' || $ip === '') {
             return '';
         }
-        $resolved = @gethostbynamel($host) ?: [];
+        $resolved = app(PublicDnsLookup::class)->a($host);
 
         return $resolved === [] || in_array($ip, $resolved, true) ? '' : implode(', ', $resolved);
     }

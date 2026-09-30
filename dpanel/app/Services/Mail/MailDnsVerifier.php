@@ -2,24 +2,18 @@
 
 namespace App\Services\Mail;
 
+use App\Services\Dns\PublicDnsLookup;
+
 /**
  * Checks the live DNS of a mail domain against the records the Mail DNS Guide
  * asks for, plus the server-level checks Gmail enforces (mail host address and
- * reverse DNS). Lookups use the server's resolver, so a record added a minute
- * ago can still show as missing until caches expire.
+ * reverse DNS). Lookups go through public resolvers without a cache (drust),
+ * so the result matches what Gmail sees.
  */
 class MailDnsVerifier
 {
-    /** @var \Closure(string, int): array<int, array<string, mixed>> */
-    private \Closure $lookup;
-
-    /** @var \Closure(string): string */
-    private \Closure $reverse;
-
-    public function __construct(private readonly MailDnsRecords $records, ?\Closure $lookup = null, ?\Closure $reverse = null)
+    public function __construct(private readonly MailDnsRecords $records, private readonly PublicDnsLookup $dns)
     {
-        $this->lookup = $lookup ?? fn (string $name, int $type): array => @dns_get_record($name, $type) ?: [];
-        $this->reverse = $reverse ?? fn (string $ip): string => (string) @gethostbyaddr($ip);
     }
 
     /**
@@ -30,6 +24,10 @@ class MailDnsVerifier
         $domain = strtolower(trim($domain));
         $host = $this->records->mailHost() ?: 'mail.'.$domain;
         $ip = $this->records->serverIp();
+        $this->dns->prefetch([
+            [$domain, 'MX'], [$domain, 'TXT'], ["{$selector}._domainkey.{$domain}", 'TXT'],
+            ["_dmarc.{$domain}", 'TXT'], [$host, 'A'], [$ip, 'PTR'],
+        ]);
 
         return [
             $this->checkMx($domain, $host),
@@ -43,7 +41,7 @@ class MailDnsVerifier
 
     private function checkMx(string $domain, string $host): array
     {
-        $targets = array_map(fn ($r) => rtrim(strtolower((string) ($r['target'] ?? '')), '.'), ($this->lookup)($domain, DNS_MX));
+        $targets = $this->dns->mx($domain);
         $found = implode(', ', $targets);
 
         return match (true) {
@@ -104,7 +102,7 @@ class MailDnsVerifier
 
     private function checkMailHost(string $host, string $ip): array
     {
-        $addresses = array_map(fn ($r) => (string) ($r['ip'] ?? $r['ipv6'] ?? ''), ($this->lookup)($host, DNS_A));
+        $addresses = $this->dns->a($host);
         $found = implode(', ', $addresses);
 
         return match (true) {
@@ -120,11 +118,11 @@ class MailDnsVerifier
         if ($ip === '') {
             return $this->result('ptr', 'Reverse DNS (PTR)', 'warn', '', 'Server IP unknown; set SERVERPANEL_MAIL_SERVER_IP.');
         }
-        $name = rtrim(strtolower(($this->reverse)($ip)), '.');
-        if ($name === '' || $name === $ip) {
+        $name = (string) ($this->dns->ptr($ip)[0] ?? '');
+        if ($name === '') {
             return $this->result('ptr', 'Reverse DNS (PTR)', 'fail', '', "No PTR for {$ip}. Ask your server provider to set it to {$host}.");
         }
-        $forward = array_map(fn ($r) => (string) ($r['ip'] ?? ''), ($this->lookup)($name, DNS_A));
+        $forward = $this->dns->a($name);
         if (! in_array($ip, $forward, true)) {
             return $this->result('ptr', 'Reverse DNS (PTR)', 'fail', $name, "{$name} does not resolve back to {$ip}; Gmail rejects this. Ask your server provider to set the PTR to {$host}.");
         }
@@ -134,13 +132,10 @@ class MailDnsVerifier
             : $this->result('ptr', 'Reverse DNS (PTR)', 'warn', $name, "Works, but matching the mail host ({$host}) is better; ask your provider to change it.");
     }
 
-    /** @return array<int, string> TXT values with their 255-byte chunks joined */
+    /** @return array<int, string> */
     private function txt(string $name): array
     {
-        return array_map(
-            fn ($r) => isset($r['entries']) ? implode('', (array) $r['entries']) : (string) ($r['txt'] ?? ''),
-            ($this->lookup)($name, DNS_TXT)
-        );
+        return $this->dns->txt($name);
     }
 
     private function result(string $key, string $label, string $status, string $found, string $hint): array

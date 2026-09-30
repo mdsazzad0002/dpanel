@@ -2,8 +2,10 @@
 
 namespace Tests\Unit;
 
+use App\Services\Dns\PublicDnsLookup;
 use App\Services\Mail\MailDnsRecords;
 use App\Services\Mail\MailDnsVerifier;
+use Tests\Support\FakeDns;
 use Tests\TestCase;
 
 class MailDnsVerifierTest extends TestCase
@@ -11,18 +13,20 @@ class MailDnsVerifierTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->app->instance(PublicDnsLookup::class, new FakeDns([]));
         config(['serverpanel.mail.hostname' => 'mail.example.net', 'serverpanel.mail.server_ip' => '203.0.113.5']);
     }
 
     public function test_a_complete_setup_passes(): void
     {
         $checks = $this->verify([
-            'shop.test|MX' => [['target' => 'mail.example.net']],
-            'shop.test|TXT' => [['entries' => ['v=spf1 ip4:203.0.113.5 mx ~all']]],
-            'default._domainkey.shop.test|TXT' => [['entries' => ['v=DKIM1; k=rsa; p=ABC', 'DEF']]],
-            '_dmarc.shop.test|TXT' => [['txt' => 'v=DMARC1; p=none']],
-            'mail.example.net|A' => [['ip' => '203.0.113.5']],
-        ], 'mail.example.net', 'ABCDEF');
+            'MX shop.test' => ['mail.example.net'],
+            'TXT shop.test' => ['v=spf1 ip4:203.0.113.5 mx ~all'],
+            'TXT default._domainkey.shop.test' => ['v=DKIM1; k=rsa; p=ABCDEF'],
+            'TXT _dmarc.shop.test' => ['v=DMARC1; p=none'],
+            'A mail.example.net' => ['203.0.113.5'],
+            'PTR 203.0.113.5' => ['mail.example.net'],
+        ], 'ABCDEF');
 
         $this->assertSame(['pass'], array_values(array_unique(array_column($checks, 'status'))));
     }
@@ -30,9 +34,10 @@ class MailDnsVerifierTest extends TestCase
     public function test_missing_records_and_a_ptr_that_does_not_resolve_back_fail(): void
     {
         $checks = collect($this->verify([
-            'shop.test|TXT' => [['txt' => 'v=spf1 include:_spf.google.com ~all'], ['txt' => 'v=spf1 mx ~all']],
-            'mail.example.net|A' => [['ip' => '198.51.100.9']],
-        ], 'vps123.provider.example', 'ABC'))->keyBy('label');
+            'TXT shop.test' => ['v=spf1 include:_spf.google.com ~all', 'v=spf1 mx ~all'],
+            'A mail.example.net' => ['198.51.100.9'],
+            'PTR 203.0.113.5' => ['vps123.provider.example'],
+        ], 'ABC'))->keyBy('label');
 
         $this->assertSame('fail', $checks['MX']['status']);
         $this->assertStringContainsString('exactly one SPF', $checks['SPF']['hint']);
@@ -43,12 +48,12 @@ class MailDnsVerifierTest extends TestCase
         $this->assertStringContainsString('mail.example.net', $checks['Reverse DNS (PTR)']['hint']);
     }
 
-    /** @param  array<string, array<int, array<string, mixed>>>  $dns */
-    private function verify(array $dns, string $ptr, string $dkimKey): array
+    /** @param  array<string, array<int, string>>  $dns */
+    private function verify(array $dns, string $dkimKey): array
     {
-        $types = [DNS_MX => 'MX', DNS_TXT => 'TXT', DNS_A => 'A'];
-        $lookup = fn (string $name, int $type): array => $dns[$name.'|'.$types[$type]] ?? [];
+        $fake = new FakeDns($dns);
+        $this->app->instance(PublicDnsLookup::class, $fake);
 
-        return (new MailDnsVerifier(new MailDnsRecords, $lookup, fn () => $ptr))->verify('shop.test', 'default', $dkimKey);
+        return (new MailDnsVerifier(new MailDnsRecords, $fake))->verify('shop.test', 'default', $dkimKey);
     }
 }

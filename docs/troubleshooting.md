@@ -291,6 +291,9 @@ The mail hostname itself is picked automatically on every update: the first
 candidate that resolves to this server wins, in this order: the PTR name,
 `SERVERPANEL_MAIL_HOSTNAME`, the current Postfix name, `mail.<panel domain>`,
 the panel domain. A name that points elsewhere or through a proxy is skipped.
+These lookups go through drust to public DNS (Cloudflare, then Google), the way
+`dig @1.1.1.1` sees them, so a hostname listed in `/etc/hosts` cannot make a
+wrong name look correct.
 Users with the **manage_mail_server** permission can see the candidates and
 switch in **Email → Mail DNS Guide → Mail hostname**, or run:
 
