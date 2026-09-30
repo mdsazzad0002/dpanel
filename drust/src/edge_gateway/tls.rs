@@ -89,14 +89,25 @@ pub fn load_tls_identity(identity: &TlsIdentity) -> Result<CertifiedKey, String>
     Ok(CertifiedKey::new(certs, signing_key))
 }
 
+/// Loads every identity it can. One unreadable/mismatched certificate is
+/// logged and skipped instead of failing the whole set — otherwise a single
+/// broken site would stop every newly issued certificate from going live.
 fn build_sni_resolver(store: &TlsStore) -> Result<ResolvesServerCertUsingSni, String> {
     let mut resolver = ResolvesServerCertUsingSni::new();
     for identity in store.identities.iter() {
-        let certified = load_tls_identity(identity)?;
+        let certified = match load_tls_identity(identity) {
+            Ok(certified) => certified,
+            Err(error) => {
+                tracing::warn!(cert = %identity.cert_path.display(), %error, "skipping TLS identity");
+                continue;
+            }
+        };
         for hostname in identity.hostnames.iter() {
-            resolver
-                .add(hostname, certified.clone())
-                .map_err(|error| format!("tls hostname add failed: {error}"))?;
+            // rustls rejects names the certificate does not cover (e.g. an
+            // optional www alias); skip just that name.
+            if let Err(error) = resolver.add(hostname, certified.clone()) {
+                tracing::debug!(%hostname, %error, "certificate does not cover hostname");
+            }
         }
     }
     Ok(resolver)
