@@ -100,10 +100,37 @@ pkg_apt_wait_for_lock() {
   apt_wait_for_lock
 }
 
+# A package that failed to configure earlier (often linux-firmware or a kernel
+# whose initramfs did not fit in /boot) makes apt refuse every later install
+# with "Unmet dependencies". Repair what apt can, then let the caller retry.
+apt_repair() {
+  local boot_use boot_free broken
+
+  printf '[INFO] apt reported broken packages; repairing (dpkg --configure -a, apt-get -f install).\n'
+  DEBIAN_FRONTEND=noninteractive dpkg --configure -a || true
+  apt_get -f install -y && return 0
+
+  boot_use="$(df --output=pcent /boot 2>/dev/null | tail -n 1 | tr -dc '0-9' || true)"
+  if [[ "$boot_use" =~ ^[0-9]+$ ]] && (( boot_use >= 80 )); then
+    printf '[INFO] /boot is %s%% full; removing old kernels and retrying.\n' "$boot_use"
+    apt_get autoremove --purge -y || true
+    DEBIAN_FRONTEND=noninteractive dpkg --configure -a || true
+    apt_get -f install -y && return 0
+  fi
+
+  broken="$(dpkg --audit 2>/dev/null | awk '/^ [a-z0-9]/ {print $1}' | sort -u | xargs)"
+  printf '[ERROR] apt could not repair the system packages%s.\n' "${broken:+: ${broken}}" >&2
+  boot_free="$(df -h --output=avail /boot 2>/dev/null | tail -n 1 | xargs || true)"
+  printf '[HELP] Free space on /boot is %s. Fix it with: sudo dpkg --configure -a && sudo apt --fix-broken install, then run the update again.\n' \
+    "${boot_free:-unknown}" >&2
+  return 1
+}
+
 pkg_apt_install_retry() {
   local attempts=5
   local delay=3
   local try=1
+  local repaired=false
 
   while (( try <= attempts )); do
     if apt_get install -y "$@"; then
@@ -112,6 +139,13 @@ pkg_apt_install_retry() {
 
     if (( try == attempts )); then
       return 1
+    fi
+
+    # Retrying cannot help while dpkg has broken packages; repair them once.
+    if [[ "$repaired" == false ]] && { dpkg --audit 2>/dev/null | grep -q . || ! apt-get check >/dev/null 2>&1; }; then
+      repaired=true
+      apt_repair || return 1
+      continue
     fi
 
     if ! apt_wait_for_lock; then

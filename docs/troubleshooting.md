@@ -71,6 +71,21 @@ Another package manager holds the lock, usually `unattended-upgrades` right
 after boot. The installer waits up to 30 minutes (`APT_LOCK_TIMEOUT`, in
 seconds). Let it finish, or stop the process it names with `kill <PID>`.
 
+### `Errors were encountered while processing: linux-firmware` / `Unmet dependencies`
+
+A system package (often `linux-firmware` or a kernel) failed to configure
+earlier, and apt now refuses every install. The installer repairs this by
+itself: it runs `dpkg --configure -a` and `apt-get -f install`, removes old
+kernels when `/boot` is nearly full, and then retries. If it still stops, it
+names the broken packages. Fix them by hand, then run the update again:
+
+```bash
+df -h /boot                         # a full /boot is the usual cause
+sudo dpkg --configure -a
+sudo apt --fix-broken install
+sudo apt autoremove --purge         # frees /boot by removing old kernels
+```
+
 ### `Command failed at line ...` / `Module failed; chain stopped: <module>`
 
 The chain stops at the first failing module. Look at the lines just above the
