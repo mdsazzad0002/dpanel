@@ -234,6 +234,40 @@ sudo rm /etc/dovecot/conf.d/99-dpanel-debug.conf && sudo systemctl reload doveco
 command reports a password that cannot be decrypted, reset that mailbox's
 password in the panel.
 
+### `Relay access denied` or `mail for <domain> loops back to myself`
+
+Postfix does not know the domain is hosted here. Other servers get
+`Relay access denied`, and local mail bounces with `loops back to myself`.
+Current dscript configures Postfix to look up hosted domains, mailboxes, and
+forwarding in the panel database and deliver to Dovecot over LMTP. It also
+enables port 587 for mail clients. Update from `main` (or run
+`sudo dpanel chain update`), then check:
+
+```bash
+postconf -m | grep -x mysql                                # Postfix MySQL support
+postconf -h virtual_mailbox_domains virtual_transport
+sudo postmap -q example.com proxy:mysql:/etc/postfix/dpanel-virtual-domains.cf          # prints 1
+sudo postmap -q user@example.com proxy:mysql:/etc/postfix/dpanel-virtual-mailboxes.cf   # prints 1
+ls -l /var/spool/postfix/private/dovecot-lmtp /var/spool/postfix/private/auth
+```
+
+The domain's MX record must point to this server, and the mailbox must be
+`active` in the panel.
+
+### Gmail bounces with an SPF, DKIM, or DMARC failure
+
+The domain's DNS does not vouch for this server. Publish the records shown in
+the panel's Mail DNS Guide, then check them:
+
+```bash
+dig +short TXT example.com                       # SPF: v=spf1 ... ip4:<server IP> ... 
+dig +short TXT <selector>._domainkey.example.com # DKIM public key
+dig +short TXT _dmarc.example.com                # DMARC policy
+```
+
+The server's reverse DNS (PTR) should also match its mail hostname
+(`postconf -h myhostname`); set it at your hosting provider.
+
 ## General checks
 
 ```bash

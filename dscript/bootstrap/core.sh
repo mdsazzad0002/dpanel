@@ -1537,6 +1537,7 @@ panel_setup_application_database() {
   printf '  DB_PASSWORD=%s\n' "$db_password"
   # Dovecot reads mailboxes with these credentials; keep it in step.
   DPANEL_ENV_FILE="$env_file" panel_configure_dovecot_sql || panel_warn_log "Dovecot SQL auth could not be refreshed with the new DB password."
+  DPANEL_ENV_FILE="$env_file" panel_configure_postfix_sql || panel_warn_log "Postfix mail lookups could not be refreshed with the new DB password."
 
 }
 
@@ -2006,6 +2007,118 @@ user_query = SELECT mail_home AS home, CONCAT('maildir:', mail_home) AS mail, ma
   fi
 }
 
+# Postfix must know which domains and addresses the panel hosts, or it answers
+# "Relay access denied" to other servers and "loops back to myself" for local
+# mail. It reads them from the panel database and hands mail to Dovecot over
+# LMTP; Dovecot also authenticates SMTP logins on port 587.
+# Safe to run repeatedly; services are reloaded only when something changes.
+panel_configure_postfix_sql() {
+  local dpanel_env="${DPANEL_ENV_FILE:-${PANEL_APP_DIR:-/var/www/dpanel}/.env}"
+  local dovecot_file=/etc/dovecot/conf.d/90-dpanel-postfix.conf
+  local db_host db_port db_name db_user db_password connection changed=false map query content file
+
+  command -v postconf >/dev/null 2>&1 && command -v dovecot >/dev/null 2>&1 || return 0
+  [[ -f "$dpanel_env" ]] || { panel_warn_log "dPanel env file not found: ${dpanel_env}; Postfix mail domains not configured."; return 1; }
+
+  if ! postconf -m 2>/dev/null | grep -qx mysql; then
+    declare -F pkg_install >/dev/null && pkg_install postfix-mysql
+    postconf -m 2>/dev/null | grep -qx mysql || { panel_warn_log "Postfix MySQL support (postfix-mysql) is missing; hosted domains cannot receive mail."; return 1; }
+  fi
+
+  db_host="$(sed -n 's/^DB_HOST=//p' "$dpanel_env" | tail -n1 | tr -d '"')"
+  db_port="$(sed -n 's/^DB_PORT=//p' "$dpanel_env" | tail -n1 | tr -d '"')"
+  db_name="$(sed -n 's/^DB_DATABASE=//p' "$dpanel_env" | tail -n1 | tr -d '"')"
+  db_user="$(sed -n 's/^DB_USERNAME=//p' "$dpanel_env" | tail -n1 | tr -d '"')"
+  db_password="$(sed -n 's/^DB_PASSWORD=//p' "$dpanel_env" | tail -n1 | tr -d '"')"
+  [[ -n "$db_name" && -n "$db_user" ]] || { panel_warn_log "DB settings missing in ${dpanel_env}; Postfix mail domains not configured."; return 1; }
+  connection="hosts = inet:${db_host:-127.0.0.1}:${db_port:-3306}
+user = ${db_user}
+password = ${db_password}
+dbname = ${db_name}"
+
+  # A mailbox with forwarding keeps its own copy and also sends one on.
+  for map in domains mailboxes aliases; do
+    case "$map" in
+      domains) query="SELECT 1 FROM mailboxes WHERE domain = '%s' AND status = 'active' LIMIT 1" ;;
+      mailboxes) query="SELECT 1 FROM mailboxes WHERE email = '%s' AND status = 'active' LIMIT 1" ;;
+      aliases) query="SELECT CONCAT(email, ',', forwarding_to) FROM mailboxes WHERE email = '%s' AND status = 'active' AND forwarding_to <> '' LIMIT 1" ;;
+    esac
+    file="/etc/postfix/dpanel-virtual-${map}.cf"
+    content="${connection}
+query = ${query}"
+    if [[ "$(cat "$file" 2>/dev/null)" != "$content" ]]; then
+      printf '%s\n' "$content" > "$file"
+      changed=true
+    fi
+    chown root:postfix "$file" 2>/dev/null || chown root:root "$file"
+    chmod 0640 "$file"
+  done
+
+  local setting key value
+  for setting in \
+    "virtual_mailbox_domains=proxy:mysql:/etc/postfix/dpanel-virtual-domains.cf" \
+    "virtual_mailbox_maps=proxy:mysql:/etc/postfix/dpanel-virtual-mailboxes.cf" \
+    "virtual_alias_maps=proxy:mysql:/etc/postfix/dpanel-virtual-aliases.cf" \
+    "virtual_transport=lmtp:unix:private/dovecot-lmtp" \
+    "smtpd_sasl_type=dovecot" \
+    "smtpd_sasl_path=private/auth"; do
+    key="${setting%%=*}"
+    value="${setting#*=}"
+    if [[ "$(postconf -h "$key" 2>/dev/null)" != "$value" ]]; then
+      postconf -e "${key}=${value}"
+      changed=true
+    fi
+  done
+
+  # Port 587 for mail clients: TLS and a mailbox login are required.
+  if [[ -z "$(postconf -M submission/inet 2>/dev/null)" ]]; then
+    postconf -M submission/inet="submission inet n - y - - smtpd"
+    changed=true
+  fi
+  for setting in \
+    "syslog_name=postfix/submission" \
+    "smtpd_tls_security_level=encrypt" \
+    "smtpd_sasl_auth_enable=yes" \
+    "smtpd_tls_auth_only=yes" \
+    "smtpd_client_restrictions=permit_sasl_authenticated,reject" \
+    "smtpd_relay_restrictions=permit_sasl_authenticated,reject"; do
+    if [[ "$(postconf -Ph "submission/inet/${setting%%=*}" 2>/dev/null)" != "${setting#*=}" ]]; then
+      postconf -P "submission/inet/${setting}"
+      changed=true
+    fi
+  done
+
+  content="# Managed by dPanel: Postfix delivers to mailboxes over LMTP and checks
+# SMTP logins through Dovecot.
+service lmtp {
+  unix_listener /var/spool/postfix/private/dovecot-lmtp {
+    mode = 0600
+    user = postfix
+    group = postfix
+  }
+}
+
+service auth {
+  unix_listener /var/spool/postfix/private/auth {
+    mode = 0660
+    user = postfix
+    group = postfix
+  }
+}"
+  if [[ "$(cat "$dovecot_file" 2>/dev/null)" != "$content" ]]; then
+    printf '%s\n' "$content" > "$dovecot_file"
+    changed=true
+  fi
+
+  doveconf -n >/dev/null || { panel_warn_log "Dovecot rejected its configuration; run 'doveconf -n' to see why."; return 1; }
+  postfix check || { panel_warn_log "Postfix configuration check failed; run 'postfix check' to see why."; return 1; }
+  if [[ "$changed" == true ]]; then
+    panel_info_log "Postfix now receives mail for panel mailboxes."
+    systemctl is-active --quiet dovecot 2>/dev/null && { systemctl restart dovecot || panel_warn_log "Dovecot restart failed."; }
+    systemctl is-active --quiet postfix 2>/dev/null && { systemctl reload postfix || panel_warn_log "Postfix reload failed."; }
+  fi
+}
+
 # Mailbox hashes that drifted from the panel password make IMAP answer
 # AUTHENTICATIONFAILED; the panel command re-hashes them from its own record.
 panel_repair_mail_auth() {
@@ -2015,6 +2128,7 @@ panel_repair_mail_auth() {
   command -v dovecot >/dev/null 2>&1 || return 0
 
   panel_configure_dovecot_sql || panel_warn_log "Dovecot SQL auth could not be refreshed."
+  panel_configure_postfix_sql || panel_warn_log "Postfix mail domains could not be configured."
   (cd "$app_dir" && php artisan mail:repair-dovecot-auth) \
     || panel_warn_log "Mailbox password check failed; run 'php artisan mail:repair-dovecot-auth' in the panel directory."
 }

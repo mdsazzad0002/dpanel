@@ -90,7 +90,7 @@ install_system_packages() {
 }
 
 install_mail_services() {
-  install_system_packages postfix dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql opendkim opendkim-tools
+  install_system_packages postfix postfix-mysql dovecot-core dovecot-imapd dovecot-lmtpd dovecot-mysql opendkim opendkim-tools
 
   if [[ "${DSCRIPT_DRY_RUN:-false}" == "true" ]]; then
     printf '[DRY-RUN] configure dPanel Dovecot SQL backend and per-owner mail storage\n'
@@ -104,6 +104,7 @@ install_mail_services() {
 
   panel_configure_dovecot_sql || return 1
   systemctl enable --now dovecot
+  panel_configure_postfix_sql || return 1
   "${SCRIPT_DIR}/scripts/generate-dkim.sh" --configure-only
 }
 
