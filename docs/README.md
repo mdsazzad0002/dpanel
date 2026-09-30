@@ -1,11 +1,24 @@
 # dPanel Documentation
 
+## Start here
+
+| I want to… | Read |
+| --- | --- |
+| Install dPanel on a new server | [Installation](installation.md#install-dpanel) |
+| Update a server, or get a fix from `main` | [Versions and updates](installation.md#versions-and-updates) |
+| Find a command quickly | [Quick Reference](quick-reference.md) |
+| Fix an error message | [Troubleshooting](troubleshooting.md) |
+| Install Laravel/WordPress or build a site with npm/composer | [Websites and Apps](websites.md) |
+
 ## Getting started
 
 | Guide | Description |
 | --- | --- |
 | [Installation](installation.md) | First install, configuration files, and website permissions |
 | [Architecture](architecture.md) | Components, request flow, PHP execution, and the edge gateway |
+| [Quick Reference](quick-reference.md) | The most-used commands, by task |
+| [Troubleshooting](troubleshooting.md) | Error messages and how to fix them |
+| [Websites and Apps](websites.md) | App installers, Quick Actions, Git deploys, Composer and npm |
 | [Operations](operations.md) | Everyday commands, rebuilds, and troubleshooting |
 
 ## Reference

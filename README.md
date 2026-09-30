@@ -85,7 +85,8 @@ sudo ./installer.sh
 The installer asks which version to install: the **latest release tag**
 (the default), an older release tag, the `main` branch, or any tag, branch or
 commit you type. To skip the question, pass the version on the command line.
-Update later with `sudo ./installer.sh update`:
+Update later with `sudo ./installer.sh update` (this downloads new code;
+`sudo dpanel chain update` only re-runs the code already installed):
 
 ```bash
 sudo ./installer.sh --latest            # newest release, no question
@@ -120,6 +121,9 @@ Full steps, configuration, and permission setup are in the
 | --- | --- |
 | [Installation](docs/installation.md) | First install, configuration files, and website permissions |
 | [Architecture](docs/architecture.md) | Components, request flow, PHP execution, and the edge gateway |
+| [Quick Reference](docs/quick-reference.md) | The most-used commands, by task |
+| [Troubleshooting](docs/troubleshooting.md) | Error messages and how to fix them |
+| [Websites and Apps](docs/websites.md) | App installers, Quick Actions, Git deploys, Composer and npm |
 | [Operations](docs/operations.md) | Everyday commands, rebuilds, and troubleshooting |
 | [dscript CLI](docs/dscript.md) | The `dpanel` command: chains, modules, scripts, and recovery |
 | [drust Service](docs/drust-service.md) | Installing and running the privileged Rust service |

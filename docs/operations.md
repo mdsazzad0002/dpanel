@@ -1,6 +1,8 @@
 # Operations
 
 Everyday commands for running, updating, and troubleshooting a dPanel server.
+For a short task list see the [Quick Reference](quick-reference.md); to look
+up an error message see [Troubleshooting](troubleshooting.md).
 
 ## Contents
 

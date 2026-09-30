@@ -34,7 +34,8 @@ five places, and the installer handles each one:
 Website installers (Laravel, Drupal, and others) look for `composer` and `npm`
 in `/usr/local/bin` first, then `/usr/bin`. If an app install fails with
 `composer is not installed` or `npm is not installed`, run
-`sudo dpanel chain update`.
+`sudo dpanel chain update`. See [Websites and Apps](websites.md) for how
+these tools are used.
 
 ## Install dPanel
 
@@ -91,6 +92,25 @@ sudo env DPANEL_VERSION=main ./installer.sh update   # unreleased fixes on main
 commit. A fix that is merged to `main` reaches servers only after a new tag is
 published, or when you update with `DPANEL_VERSION=main`.
 
+> **`installer.sh update` vs `dpanel chain update`**
+>
+> | Command | Downloads new code? | Use it when |
+> | --- | --- | --- |
+> | `sudo ./installer.sh update` | Yes, the selected version | You want a new release or a fix from `main` |
+> | `sudo dpanel chain update` | No, re-runs the code already in `/var/www/dscript` | You want to repeat or repair the update steps |
+>
+> If you no longer have `installer.sh`, download it again:
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh -o /tmp/installer.sh
+> sudo bash /tmp/installer.sh --version main update
+> ```
+
+During an update the chain asks about each module, for example
+`Module mariadb is installed (1.1.0). Update it now? [Y/n/skip]`. Press Enter
+or `y` to update it, or `n`/`skip` to leave it and go on to the next module.
+Without a terminal the default answer is used.
+
 An update runs these steps in order:
 
 1. Copies the selected release into `/var/www/dscript`, `/var/www/drust`, and
@@ -101,11 +121,12 @@ An update runs these steps in order:
 4. Refreshes the panel: installs or updates composer, runs `composer install`
    and `php artisan migrate --force`, makes sure Node.js 20+ is installed, and
    runs `npm run build`.
-5. Repairs website ownership, regenerates vhosts, records the version in
-   `.env`, rebuilds the config cache, and fixes app permissions.
+5. Repairs website ownership, records the version in `.env`, rebuilds the
+   config cache, and fixes app permissions.
 
-A step that fails logs a warning and the update continues. Check the output
-for `[WARN]` lines.
+Steps 3 to 5 log a warning when they fail, and the update continues. Check the
+output for `[WARN]` lines. A module that fails in step 2 stops the chain, and
+the later steps do not run; see [Troubleshooting](troubleshooting.md#install-and-update).
 
 ### The version is recorded automatically
 
@@ -247,6 +268,8 @@ sudo dpanel doctor
 
 ## Next steps
 
+- [Quick Reference](quick-reference.md): the most-used commands by task
+- [Troubleshooting](troubleshooting.md): find an error message and its fix
 - [Operations](operations.md): everyday commands and troubleshooting
 - [dscript CLI](dscript.md): the full `dpanel` command reference
 - [Security Policy](../SECURITY.md): hardening checklist for public servers
