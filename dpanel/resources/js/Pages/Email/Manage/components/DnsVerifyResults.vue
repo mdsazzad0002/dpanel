@@ -16,7 +16,7 @@ const label = { pass: 'OK', warn: 'Check', fail: 'Missing / wrong' };
 <template>
     <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <h2 class="font-semibold">DNS check for {{ domain }}</h2>
-        <p class="mt-1 text-sm text-slate-500">Live lookup from this server. A record added in the last few minutes can still show as missing until DNS caches expire.</p>
+        <p class="mt-1 text-sm text-slate-500">Live lookup against public DNS (Cloudflare and Google), the way Gmail and other mail servers see it. A record saved a moment ago can take a minute to appear.</p>
 
         <div v-if="error" class="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{{ error }}</div>
 
