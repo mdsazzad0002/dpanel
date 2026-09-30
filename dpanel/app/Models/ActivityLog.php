@@ -13,6 +13,7 @@ class ActivityLog extends Model
     protected $keyType = 'string';
 
     protected $fillable = [
+        'id',
         'user_id',
         'action',
         'subject_type',

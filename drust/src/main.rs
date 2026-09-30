@@ -4,6 +4,7 @@ mod app;
 mod cron;
 mod database;
 mod edge_gateway;
+mod fail2ban;
 mod filemanager;
 mod health;
 mod installer;

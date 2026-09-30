@@ -28,6 +28,25 @@ class DrustSecurityClient
     }
 
     /**
+     * Jails with their banned IPs, and the IPs dPanel keeps on fail2ban's ignore list.
+     *
+     * @return array<string, mixed>
+     */
+    public function fail2banStatus(): array
+    {
+        return $this->request('get', '/api/v1/fail2ban', null, 30);
+    }
+
+    /**
+     * @param  'unban'|'whitelist_add'|'whitelist_remove'  $action
+     * @return array<string, mixed> the fail2ban status after the change
+     */
+    public function fail2banAction(string $action, string $ip): array
+    {
+        return $this->request('post', '/api/v1/fail2ban', ['action' => $action, 'ip' => $ip], 60);
+    }
+
+    /**
      * @param  array<string, mixed>|null  $payload
      * @return array<string, mixed>
      */

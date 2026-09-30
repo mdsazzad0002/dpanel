@@ -69,6 +69,8 @@ the installer when you want a fix that was just released or merged.
 
 | I want to… | Run |
 | --- | --- |
+| Unblock an IP banned by fail2ban | Panel → **Fail2ban**, or `sudo fail2ban-client unban <ip>` |
+| See which IPs fail2ban blocks | `sudo fail2ban-client status sshd` |
 | Create an admin (sudo) user | `sudo dpanel script run create-admin-user <username>` |
 | Set a system user's password | `sudo dpanel script run set-system-user-password <username>` |
 | List every maintenance script | `dpanel script list` |

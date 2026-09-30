@@ -268,6 +268,25 @@ dig +short TXT _dmarc.example.com                # DMARC policy
 The server's reverse DNS (PTR) should also match its mail hostname
 (`postconf -h myhostname`); set it at your hosting provider.
 
+### SSH says `Connection refused` after a few wrong passwords
+
+fail2ban blocked your IP. The `sshd` jail bans an IP for 1 hour after 5
+failures in 10 minutes, and a banned IP gets `Connection refused` on port 22
+only. The panel on 80/443 still works.
+
+- In the panel: **Fail2ban** in the sidebar (admins) shows your IP and an
+  **Unblock me** button. **Always allow my IP** whitelists a fixed IP you trust.
+- Without the panel: wait for the ban to expire, or use your provider's web
+  console and run:
+
+```bash
+sudo fail2ban-client status sshd        # banned IPs
+sudo fail2ban-client unban <your-ip>
+```
+
+If port 22 is still refused and your IP is not banned, check that SSH is
+running: `sudo systemctl status ssh`.
+
 ## General checks
 
 ```bash

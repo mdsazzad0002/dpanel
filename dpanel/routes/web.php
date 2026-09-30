@@ -42,6 +42,7 @@ use App\Http\Controllers\RemoteMysqlAccessController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SecurityCenterController;
 use App\Http\Controllers\SecurityController;
+use App\Http\Controllers\Fail2banController;
 use App\Http\Controllers\SelfConnectionController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerTaskController;
@@ -805,6 +806,23 @@ Route::prefix('cpsess{token}')
             Route::get('/security/firewall-guide', [SecurityController::class, 'firewallGuide'])
                 ->middleware('role:admin|reseller')
                 ->name('security.firewall.guide');
+
+            // Server-wide bans, so admins only.
+            Route::get('/security/fail2ban', [Fail2banController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('security.fail2ban');
+            Route::get('/security/fail2ban/status', [Fail2banController::class, 'status'])
+                ->middleware('role:admin')
+                ->name('security.fail2ban.status');
+            Route::post('/security/fail2ban/unban', [Fail2banController::class, 'unban'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('security.fail2ban.unban');
+            Route::post('/security/fail2ban/whitelist', [Fail2banController::class, 'whitelistAdd'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('security.fail2ban.whitelist.store');
+            Route::delete('/security/fail2ban/whitelist', [Fail2banController::class, 'whitelistRemove'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('security.fail2ban.whitelist.destroy');
 
             Route::get('/integrations/github', [GithubIntegrationController::class, 'index'])
                 ->middleware('role_or_permission:admin|reseller|manage_websites')
