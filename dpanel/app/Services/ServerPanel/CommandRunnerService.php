@@ -98,7 +98,7 @@ class CommandRunnerService
     }
 
     /**
-     * @param  array{output:string,error_output:string,exit_code:int|null}  $result
+     * @param  array{output:string,error_output:string,exit_code:int|null,reboot_required?:bool,reboot_packages?:list<string>}  $result
      */
     public function markFinished(CommandJob $job, array $result): CommandJob
     {
@@ -115,6 +115,14 @@ class CommandRunnerService
         $this->event($job, $successful ? 'success' : 'failed', $successful ? 'Command completed successfully.' : 'Command execution failed.', [
             'exit_code' => $result['exit_code'],
         ]);
+
+        if (! empty($result['reboot_required'])) {
+            $packages = $result['reboot_packages'] ?? [];
+            $this->event($job, 'output', 'Reboot required to finish applying updates'.($packages !== [] ? ' ('.implode(', ', $packages).')' : '').'.', [
+                'stream_type' => 'reboot_required',
+                'packages' => $packages,
+            ]);
+        }
 
         Event::dispatch($successful ? new CommandFinished($job) : new CommandFailed($job));
 
