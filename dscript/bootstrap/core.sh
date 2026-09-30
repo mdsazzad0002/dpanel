@@ -1778,15 +1778,18 @@ panel_fix_app_permissions() {
 panel_install_frontend_assets() {
   local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
 
-  [[ -d "$app_dir" ]] || { panel_warn_log "Application directory not found; skipping frontend build."; return 0; }
-  [[ -f "${app_dir}/package.json" ]] || { panel_warn_log "package.json not found; skipping frontend build."; return 0; }
-
-  panel_info_log "Installing frontend dependencies and building assets."
   if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
     panel_warn_log "npm is missing; attempting package install."
   fi
 
+  # Website installers and the dependency API need npm in /usr/local/bin even
+  # when the panel itself has nothing to build, so this runs before the skips.
   panel_ensure_node20
+
+  [[ -d "$app_dir" ]] || { panel_warn_log "Application directory not found; skipping frontend build."; return 0; }
+  [[ -f "${app_dir}/package.json" ]] || { panel_warn_log "package.json not found; skipping frontend build."; return 0; }
+
+  panel_info_log "Installing frontend dependencies and building assets."
 
   # Node grows its heap until the kernel kills it. Capping the heap below the
   # machine size makes the build spill to swap instead of dying on a small VPS.
