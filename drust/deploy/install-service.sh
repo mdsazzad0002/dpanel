@@ -13,17 +13,60 @@ export CARGO_HOME="/root/.cargo"
 export RUSTUP_HOME="/root/.rustup"
 export PATH="${CARGO_HOME}/bin:/usr/local/bin:/usr/bin:/bin:${PATH}"
 
+# Another package manager often holds the dpkg lock (unattended-upgrades right
+# after a fresh boot, or a second apt session). Wait for it with a progress line
+# every 15 s instead of failing; give up after APT_LOCK_TIMEOUT seconds.
+apt_lock_holder() {
+  if command -v fuser >/dev/null 2>&1; then
+    fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock \
+      /var/cache/apt/archives/lock 2>/dev/null | tr -s ' ' '\n' | grep -m1 -E '^[0-9]+$' || true
+  else
+    pgrep -o -x 'apt|apt-get|dpkg|unattended-upgr|aptd|packagekitd' || true
+  fi
+}
+
+apt_wait_for_lock() {
+  local timeout="${APT_LOCK_TIMEOUT:-1800}" waited=0 pid holder
+  while pid="$(apt_lock_holder)"; [[ -n "$pid" ]]; do
+    holder="$(ps -o args= -p "$pid" 2>/dev/null | cut -c1-70)"
+    if (( waited >= timeout )); then
+      printf '[ERROR] apt is still busy after %ss (PID %s: %s). Retry later, or stop it with: kill %s\n' \
+        "$waited" "$pid" "${holder:-unknown}" "$pid" >&2
+      return 1
+    fi
+    if (( waited % 15 == 0 )); then
+      printf '[WAIT] apt/dpkg is busy (PID %s: %s); waiting... %ss elapsed, limit %ss\n' \
+        "$pid" "${holder:-unknown}" "$waited" "$timeout"
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  # A run killed mid-install leaves dpkg half-configured and apt refuses to
+  # continue until it is finished.
+  if compgen -G '/var/lib/dpkg/updates/[0-9]*' >/dev/null; then
+    printf '[INFO] Finishing an interrupted dpkg run (dpkg --configure -a).\n'
+    DEBIAN_FRONTEND=noninteractive dpkg --configure -a || true
+  fi
+}
+
+# apt-get that waits for the lock first. Lock::Timeout covers the race where
+# another apt starts between the check and this call.
+apt_get() {
+  apt_wait_for_lock || return 1
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 "$@"
+}
+
 ensure_rust_toolchain() {
   if command -v cargo >/dev/null 2>&1 && cargo --version >/dev/null 2>&1; then
     return 0
   fi
 
   if ! command -v rustup >/dev/null 2>&1; then
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y rustup build-essential pkg-config openssl ca-certificates
+    apt_get update
+    apt_get install -y rustup build-essential pkg-config openssl ca-certificates
   else
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential pkg-config openssl ca-certificates
+    apt_get update
+    apt_get install -y build-essential pkg-config openssl ca-certificates
   fi
 
   export PATH="${CARGO_HOME}/bin:${PATH}"
@@ -64,8 +107,8 @@ install_powerdns() {
 
   if ! dpkg-query -W -f='${db:Status-Abbrev}\n' pdns-server pdns-backend-mysql 2>/dev/null \
     | awk 'BEGIN { ok = 1; count = 0 } { count++; if ($0 !~ /^ii /) ok = 0 } END { exit !(ok && count == 2) }'; then
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y pdns-server pdns-backend-mysql
+    apt_get update
+    apt_get install -y pdns-server pdns-backend-mysql
   fi
   systemctl stop pdns.service >/dev/null 2>&1 || true
 
@@ -140,8 +183,8 @@ install_powerdns() {
 
 ensure_rust_toolchain
 if ! command -v certbot >/dev/null 2>&1; then
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y certbot
+  apt_get update
+  apt_get install -y certbot
 fi
 install -d -m 0750 /etc/drust
 # Drust executes only scripts from its isolated runtime directory. Keep that

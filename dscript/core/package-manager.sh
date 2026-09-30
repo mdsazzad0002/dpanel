@@ -37,7 +37,7 @@ pkg_update_index() {
     debian)
       if [[ "${DPANEL_APT_UPDATED:-false}" != "true" ]]; then
         export DEBIAN_FRONTEND=noninteractive
-        apt-get update -y
+        apt_get update -y
         export DPANEL_APT_UPDATED=true
       fi
       ;;
@@ -47,21 +47,52 @@ pkg_update_index() {
   esac
 }
 
-pkg_apt_wait_for_lock() {
-  local attempts="${1:-30}"
-  local delay="${2:-2}"
-  local i=0
-  local lock_files=(/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock)
+# Another package manager often holds the dpkg lock (unattended-upgrades right
+# after a fresh boot, or a second apt session). Wait for it with a progress line
+# every 15 s instead of failing; give up after APT_LOCK_TIMEOUT seconds.
+apt_lock_holder() {
+  if command -v fuser >/dev/null 2>&1; then
+    fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock \
+      /var/cache/apt/archives/lock 2>/dev/null | tr -s ' ' '\n' | grep -m1 -E '^[0-9]+$' || true
+  else
+    pgrep -o -x 'apt|apt-get|dpkg|unattended-upgr|aptd|packagekitd' || true
+  fi
+}
 
-  while (( i < attempts )); do
-    if ! fuser "${lock_files[@]}" >/dev/null 2>&1; then
-      return 0
+apt_wait_for_lock() {
+  local timeout="${APT_LOCK_TIMEOUT:-1800}" waited=0 pid holder
+  while pid="$(apt_lock_holder)"; [[ -n "$pid" ]]; do
+    holder="$(ps -o args= -p "$pid" 2>/dev/null | cut -c1-70)"
+    if (( waited >= timeout )); then
+      printf '[ERROR] apt is still busy after %ss (PID %s: %s). Retry later, or stop it with: kill %s\n' \
+        "$waited" "$pid" "${holder:-unknown}" "$pid" >&2
+      return 1
     fi
-    sleep "$delay"
-    ((i++))
+    if (( waited % 15 == 0 )); then
+      printf '[WAIT] apt/dpkg is busy (PID %s: %s); waiting... %ss elapsed, limit %ss\n' \
+        "$pid" "${holder:-unknown}" "$waited" "$timeout"
+    fi
+    sleep 5
+    waited=$((waited + 5))
   done
+  # A run killed mid-install leaves dpkg half-configured and apt refuses to
+  # continue until it is finished.
+  if compgen -G '/var/lib/dpkg/updates/[0-9]*' >/dev/null; then
+    printf '[INFO] Finishing an interrupted dpkg run (dpkg --configure -a).\n'
+    DEBIAN_FRONTEND=noninteractive dpkg --configure -a || true
+  fi
+}
 
-  return 1
+# apt-get that waits for the lock first. Lock::Timeout covers the race where
+# another apt starts between the check and this call.
+apt_get() {
+  apt_wait_for_lock || return 1
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 "$@"
+}
+
+# Kept for callers that still use the old name.
+pkg_apt_wait_for_lock() {
+  apt_wait_for_lock
 }
 
 pkg_apt_install_retry() {
@@ -70,7 +101,7 @@ pkg_apt_install_retry() {
   local try=1
 
   while (( try <= attempts )); do
-    if apt-get install -y "$@"; then
+    if apt_get install -y "$@"; then
       return 0
     fi
 
@@ -78,7 +109,7 @@ pkg_apt_install_retry() {
       return 1
     fi
 
-    if ! pkg_apt_wait_for_lock 20 2; then
+    if ! apt_wait_for_lock; then
       return 1
     fi
 
@@ -188,7 +219,7 @@ pkg_remove() {
   case "$(pkg_distro_family)" in
     debian)
       export DEBIAN_FRONTEND=noninteractive
-      apt-get remove -y "$@"
+      apt_get remove -y "$@"
       ;;
     rpm)
       dnf remove -y "$@"
@@ -247,7 +278,7 @@ pkg_ensure_php_repo() {
       if command -v add-apt-repository >/dev/null 2>&1; then
         add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || true
         export DPANEL_APT_UPDATED=false
-        apt-get update -y >/dev/null 2>&1 || true
+        apt_get update -y >/dev/null 2>&1 || true
       fi
       ;;
   esac

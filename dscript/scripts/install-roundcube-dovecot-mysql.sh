@@ -321,11 +321,11 @@ fi
 if ! dpkg-query -W -f='${Status}' "${PACKAGE_NAME}" 2>/dev/null | grep -q 'install ok installed'; then
     if [[ "${SKIP_UPDATE}" -eq 0 ]]; then
         log "Running apt-get update..."
-        apt-get update
+        apt-get -o DPkg::Lock::Timeout=1800 update
     fi
 
     log "Installing ${PACKAGE_NAME}..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y "${PACKAGE_NAME}"
+    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=1800 install -y "${PACKAGE_NAME}"
 else
     log "${PACKAGE_NAME} is already installed; skipping apt-get update and package install."
 fi
