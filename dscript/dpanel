@@ -311,6 +311,8 @@ default_install_sequence() {
   # groups. Defer post-install configuration for the first group; otherwise the
   # panel details and system records are collected once per group.
   PANEL_DEFER_FINALIZE=true dscript_cli chain install php mariadb redis postgresql clamav supervisor
+  # Drust runs dPanel's migrations, which need Composer's vendor/ in place.
+  panel_install_app_dependencies
   install_drust_service
   PANEL_DEFER_FINALIZE=true dscript_cli chain install firewall dns fail2ban ssl
   install_mail_services

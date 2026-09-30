@@ -13,6 +13,21 @@ export CARGO_HOME="/root/.cargo"
 export RUSTUP_HOME="/root/.rustup"
 export PATH="${CARGO_HOME}/bin:/usr/local/bin:/usr/bin:/bin:${PATH}"
 
+# artisan cannot boot without Composer's autoloader. A fresh release archive
+# ships without vendor/, so install it here instead of relying on the caller.
+ensure_dpanel_dependencies() {
+  [[ -f "${DPANEL_ROOT}/vendor/autoload.php" ]] && return 0
+
+  if ! command -v composer >/dev/null 2>&1; then
+    echo "[drust] composer is missing; installing it."
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y composer
+  fi
+
+  echo "[drust] Installing dPanel PHP dependencies with composer."
+  (cd "${DPANEL_ROOT}" && COMPOSER_ALLOW_SUPERUSER=1 composer install --no-interaction --prefer-dist --optimize-autoloader)
+}
+
 ensure_rust_toolchain() {
   if command -v cargo >/dev/null 2>&1 && cargo --version >/dev/null 2>&1; then
     return 0
@@ -98,6 +113,7 @@ install_powerdns() {
   fi
 
   # PowerDNS 5 requires the schema migration shipped with dPanel.
+  ensure_dpanel_dependencies
   (cd "${DPANEL_ROOT}" && php artisan migrate --force)
 
   if [[ -f /etc/powerdns/pdns.d/bind.conf ]]; then
