@@ -48,17 +48,23 @@ class MailHostnameDetector
 
         $seen = [];
         $candidates = [];
-        foreach ($sources as [$host, $source]) {
+        $sources = array_values(array_filter($sources, function ($source) use (&$seen) {
+            $host = $source[0];
             if (! MailDomainProvisioner::isValidFqdn($host) || isset($seen[$host])) {
-                continue;
+                return false;
             }
-            $seen[$host] = true;
+
+            return $seen[$host] = true;
+        }));
+        $this->dns->prefetch(array_map(fn ($source) => [$source[0], 'A'], $sources));
+        foreach ($sources as [$host, $source]) {
             $addresses = $this->dns->a($host);
             $candidates[] = [
                 'host' => $host,
                 'source' => $source,
                 'addresses' => $addresses,
                 'usable' => $ip !== '' && in_array($ip, $addresses, true),
+                'lookup_failed' => $this->dns->failed($host, 'A'),
             ];
         }
 
@@ -106,6 +112,9 @@ class MailHostnameDetector
     /** @return array{ok: bool, changed: bool, host: string, message: string} */
     public function applyBest(): array
     {
+        if (collect($this->candidates())->contains('lookup_failed', true)) {
+            return ['ok' => false, 'changed' => false, 'host' => $this->current(), 'message' => 'DNS did not answer for every candidate; the mail hostname was left unchanged. Try again.'];
+        }
         $best = $this->best();
 
         return $best === ''

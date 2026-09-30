@@ -30,13 +30,21 @@ class MailDnsVerifier
         ]);
 
         return [
-            $this->checkMx($domain, $host),
-            $this->checkSpf($domain, $ip),
-            $this->checkDkim($domain, $selector, $dkimPublicKey),
-            $this->checkDmarc($domain),
-            $this->checkMailHost($host, $ip),
-            $this->checkPtr($host, $ip),
+            $this->unanswered('MX @', 'MX', $domain, 'MX') ?? $this->checkMx($domain, $host),
+            $this->unanswered('TXT @', 'SPF', $domain, 'TXT') ?? $this->checkSpf($domain, $ip),
+            $this->unanswered("TXT {$selector}._domainkey", 'DKIM', "{$selector}._domainkey.{$domain}", 'TXT') ?? $this->checkDkim($domain, $selector, $dkimPublicKey),
+            $this->unanswered('TXT _dmarc', 'DMARC', "_dmarc.{$domain}", 'TXT') ?? $this->checkDmarc($domain),
+            $this->unanswered('host', "Mail host {$host}", $host, 'A') ?? $this->checkMailHost($host, $ip),
+            $this->unanswered('ptr', 'Reverse DNS (PTR)', $ip, 'PTR') ?? $this->checkPtr($host, $ip),
         ];
+    }
+
+    /** A lookup that got no answer is reported as unknown, never as a wrong record. */
+    private function unanswered(string $key, string $label, string $name, string $type): ?array
+    {
+        return $name !== '' && $this->dns->failed($name, $type)
+            ? $this->result($key, $label, 'warn', '', 'DNS did not answer in time, so this was not checked. Press Verify DNS again.')
+            : null;
     }
 
     private function checkMx(string $domain, string $host): array

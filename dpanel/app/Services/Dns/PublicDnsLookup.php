@@ -18,6 +18,12 @@ class PublicDnsLookup
     /** @var array<string, array<int, string>> answers already fetched in this request */
     private array $memo = [];
 
+    /** @var array<string, true> lookups drust could not answer (timeout, SERVFAIL) */
+    private array $failed = [];
+
+    /** Once drust is unreachable, every lookup uses PHP so answers never mix sources. */
+    private bool $drustDown = false;
+
     /** @return array<int, string> */
     public function a(string $name): array
     {
@@ -43,6 +49,15 @@ class PublicDnsLookup
     }
 
     /**
+     * True when the lookup did not get an answer, as opposed to an answer of
+     * "no such record". Callers must not treat that as a wrong record.
+     */
+    public function failed(string $name, string $type): bool
+    {
+        return isset($this->failed[$this->key($name, $type)]);
+    }
+
+    /**
      * Looks several records up in one drust call, so a page of checks does
      * not wait for them one by one.
      *
@@ -50,11 +65,14 @@ class PublicDnsLookup
      */
     public function prefetch(array $queries): void
     {
-        $missing = array_values(array_filter($queries, fn ($q) => ! isset($this->memo[$this->key($q[0], $q[1])])));
-        foreach (array_chunk($missing, 20) as $chunk) {
-            foreach ($this->viaDrust($chunk) ?? [] as $key => $values) {
-                $this->memo[$key] = $values;
+        $missing = [];
+        foreach ($queries as $query) {
+            if ($query[0] !== '' && ! isset($this->memo[$this->key($query[0], $query[1])])) {
+                $missing[$this->key($query[0], $query[1])] = $query;
             }
+        }
+        foreach (array_chunk(array_values($missing), 20) as $chunk) {
+            $this->fetch($chunk);
         }
     }
 
@@ -63,10 +81,33 @@ class PublicDnsLookup
     {
         $key = $this->key($name, $type);
         if (! isset($this->memo[$key])) {
-            $this->memo[$key] = $this->viaDrust([[$name, $type]])[$key] ?? $this->viaPhp($name, $type);
+            $this->fetch([[$name, $type]]);
         }
 
-        return $this->memo[$key];
+        return $this->memo[$key] ?? [];
+    }
+
+    /** @param  array<int, array{0: string, 1: string}>  $queries */
+    private function fetch(array $queries): void
+    {
+        $answers = $this->drustDown ? null : $this->viaDrust($queries);
+        if ($answers === null) {
+            $this->drustDown = true;
+            foreach ($queries as [$name, $type]) {
+                $this->memo[$this->key($name, $type)] = $this->viaPhp($name, $type);
+            }
+
+            return;
+        }
+        foreach ($queries as [$name, $type]) {
+            $key = $this->key($name, $type);
+            if (array_key_exists($key, $answers)) {
+                $this->memo[$key] = $answers[$key];
+            } else {
+                $this->memo[$key] = [];
+                $this->failed[$key] = true;
+            }
+        }
     }
 
     private function key(string $name, string $type): string
@@ -76,7 +117,7 @@ class PublicDnsLookup
 
     /**
      * @param  array<int, array{0: string, 1: string}>  $queries
-     * @return array<string, array<int, string>>|null null when drust is unavailable
+     * @return array<string, array<int, string>>|null answered lookups; null when drust is unreachable
      */
     private function viaDrust(array $queries): ?array
     {
@@ -86,7 +127,7 @@ class PublicDnsLookup
         }
 
         try {
-            $request = Http::acceptJson()->asJson()->timeout(20);
+            $request = Http::acceptJson()->asJson()->timeout(15);
             $token = trim((string) config('serverpanel.execution_api_token', ''));
             if ($token !== '') {
                 $request = $request->withToken($token);
@@ -101,9 +142,9 @@ class PublicDnsLookup
             return null;
         }
 
+        // A lookup that errored is left out, and fetch() records it as failed.
         $answers = [];
         foreach ((array) $response->json('data.answers', []) as $answer) {
-            // A lookup that errored (timeout) is left out, so it falls back to PHP.
             if (($answer['error'] ?? '') === '') {
                 $answers[$this->key((string) $answer['name'], (string) $answer['type'])] = array_values((array) ($answer['values'] ?? []));
             }

@@ -20,7 +20,13 @@ class MailHostnameController extends Controller
 
     public function show(): JsonResponse
     {
-        return response()->json($this->state());
+        try {
+            return response()->json($this->state());
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not check the mail hostname: '.$e->getMessage()], 502);
+        }
     }
 
     public function update(Request $request, ActivityLogService $activity): JsonResponse

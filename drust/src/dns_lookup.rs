@@ -41,7 +41,7 @@ fn resolver() -> &'static TokioAsyncResolver {
         let mut options = ResolverOpts::default();
         options.use_hosts_file = false;
         options.cache_size = 0;
-        options.timeout = Duration::from_secs(3);
+        options.timeout = Duration::from_secs(2);
         options.attempts = 2;
         TokioAsyncResolver::tokio(ResolverConfig::from_parts(None, vec![], servers), options)
     })
@@ -73,7 +73,23 @@ fn is_empty_answer(error: &hickory_resolver::error::ResolveError) -> bool {
     )
 }
 
+/// Every lookup gets an answer or an error within this time, so a page of
+/// checks cannot hang on one unresponsive name server.
+const LOOKUP_DEADLINE: Duration = Duration::from_secs(6);
+
 pub(crate) async fn lookup(query: &Query) -> Answer {
+    match tokio::time::timeout(LOOKUP_DEADLINE, lookup_inner(query)).await {
+        Ok(answer) => answer,
+        Err(_) => Answer {
+            name: query.name.trim().to_lowercase(),
+            kind: query.kind.to_ascii_uppercase(),
+            values: vec![],
+            error: "DNS lookup timed out.".into(),
+        },
+    }
+}
+
+async fn lookup_inner(query: &Query) -> Answer {
     let kind = query.kind.to_ascii_uppercase();
     let name = query.name.trim().to_lowercase();
     let mut answer = Answer {
@@ -148,6 +164,30 @@ mod tests {
         assert!(!valid_name("a..b"));
         assert!(!valid_name(&format!("{}.com", "a".repeat(64))));
         assert!(!valid_name("x;rm -rf /"));
+    }
+
+    /// Repeats the mail checks to find intermittent failures.
+    #[tokio::test]
+    #[ignore]
+    async fn repeated_lookups_are_stable() {
+        let q = |name: &str, kind: &str| Query { name: name.into(), kind: kind.into() };
+        let mut errors = 0;
+        let mut values = std::collections::BTreeMap::<String, std::collections::BTreeSet<String>>::new();
+        for _ in 0..15 {
+            for (name, kind) in [("159.198.43.2", "PTR"), ("mail.dpanel.likesoftbd.com", "A"), ("drupal.dpanel.likesoftbd.com", "MX"), ("drupal.dpanel.likesoftbd.com", "TXT"), ("default._domainkey.drupal.dpanel.likesoftbd.com", "TXT"), ("_dmarc.drupal.dpanel.likesoftbd.com", "TXT"), ("untriflingly-chechen.vpsrdns.web-hosting.com", "A")] {
+                let start = std::time::Instant::now();
+                let answer = lookup(&q(name, kind)).await;
+                if !answer.error.is_empty() {
+                    errors += 1;
+                    println!("ERROR {kind} {name} after {:?}: {}", start.elapsed(), answer.error);
+                }
+                values.entry(format!("{kind} {name}")).or_default().insert(format!("{:?}", answer.values));
+            }
+        }
+        for (key, seen) in &values {
+            println!("{key}: {} distinct -> {:?}", seen.len(), seen.iter().map(|v| v.chars().take(60).collect::<String>()).collect::<Vec<_>>());
+        }
+        println!("errors: {errors}");
     }
 
     /// Needs the network: cargo test dns_lookup -- --ignored

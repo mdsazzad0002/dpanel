@@ -35,4 +35,9 @@ class FakeDns extends PublicDnsLookup
     public function prefetch(array $queries): void
     {
     }
+
+    public function failed(string $name, string $type): bool
+    {
+        return in_array($type.' '.$name, $this->records['failed'] ?? [], true);
+    }
 }

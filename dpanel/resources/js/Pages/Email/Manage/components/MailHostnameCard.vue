@@ -76,7 +76,8 @@ onMounted(load);
                             <span v-if="candidate.host === state.best" class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">best</span>
                         </td>
                         <td class="px-3 py-2 text-xs text-slate-500">{{ candidate.source }}</td>
-                        <td class="px-3 py-2 font-mono text-xs" :class="candidate.usable ? 'text-emerald-600' : 'text-red-600'">
+                        <td v-if="candidate.lookup_failed" class="px-3 py-2 text-xs text-amber-600">DNS did not answer; refresh to check again</td>
+                        <td v-else class="px-3 py-2 font-mono text-xs" :class="candidate.usable ? 'text-emerald-600' : 'text-red-600'">
                             {{ candidate.addresses.join(', ') || 'does not resolve' }}
                             <span v-if="!candidate.usable" class="font-sans">(not this server)</span>
                         </td>

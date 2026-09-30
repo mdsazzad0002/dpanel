@@ -20,6 +20,8 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(DnsRegistryService::class);
+        // One per request: DNS answers are reused across the mail checks of a page.
+        $this->app->scoped(\App\Services\Dns\PublicDnsLookup::class);
         $this->app->singleton(AiGatewayService::class);
         $this->app->bind(AiSuggestionProvider::class, function ($app) {
             $provider = (string) config('serverpanel.ai.provider', 'heuristic');

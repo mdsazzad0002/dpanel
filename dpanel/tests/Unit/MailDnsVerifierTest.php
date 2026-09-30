@@ -48,6 +48,18 @@ class MailDnsVerifierTest extends TestCase
         $this->assertStringContainsString('mail.example.net', $checks['Reverse DNS (PTR)']['hint']);
     }
 
+    public function test_a_lookup_without_an_answer_is_not_reported_as_wrong(): void
+    {
+        $checks = collect($this->verify([
+            'MX shop.test' => [],
+            'A mail.example.net' => ['203.0.113.5'],
+            'failed' => ['MX shop.test'],
+        ], 'ABC'))->keyBy('label');
+
+        $this->assertSame('warn', $checks['MX']['status']);
+        $this->assertStringContainsString('did not answer', $checks['MX']['hint']);
+    }
+
     /** @param  array<string, array<int, string>>  $dns */
     private function verify(array $dns, string $dkimKey): array
     {

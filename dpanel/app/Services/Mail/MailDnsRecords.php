@@ -31,7 +31,13 @@ class MailDnsRecords
         $ip = $this->serverIp();
         if ($ip !== '') {
             $dns = app(PublicDnsLookup::class);
+            $dns->prefetch(array_map(fn ($host) => [$host, 'A'], $candidates));
             foreach ($candidates as $host) {
+                // An unanswered lookup is not proof the name is wrong: keep the
+                // current name rather than letting MX drift to another one.
+                if ($dns->failed($host, 'A')) {
+                    return $candidates[0];
+                }
                 if (in_array($ip, $dns->a($host), true)) {
                     return $host;
                 }

@@ -187,11 +187,15 @@ class EmailController extends Controller
         $selector = trim((string) ($mailDomain?->dkim_selector ?: config('serverpanel.mail.dkim_selector', 'default'))) ?: 'default';
         $publicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('serverpanel.mail.dkim_public_key', '')))) ?: '';
 
-        return response()->json([
-            'success' => true,
-            'domain' => $domain,
-            'checks' => app(MailDnsVerifier::class)->verify($domain, $selector, $publicKey),
-        ]);
+        try {
+            $checks = app(MailDnsVerifier::class)->verify($domain, $selector, $publicKey);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json(['success' => false, 'message' => 'DNS check failed: '.$e->getMessage()], 502);
+        }
+
+        return response()->json(['success' => true, 'domain' => $domain, 'checks' => $checks]);
     }
 
     public function exportDnsZone(string $token, string $domain): HttpResponse
