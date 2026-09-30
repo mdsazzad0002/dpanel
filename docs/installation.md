@@ -88,7 +88,12 @@ sudo grep -E '^(APP_VERSION|DPANEL_RELEASE_)' /var/www/dpanel/.env
 
 ### Publishing a release (maintainers)
 
-Push a version tag. Nothing else is needed. A GitHub Release is optional.
+Change the number in the `VERSION` file at the repository root and merge that
+change into `main`. The `Release` GitHub Actions workflow then creates the tag
+and a GitHub Release with generated notes, and `latest` installs it from then
+on. A version that already has a release is left alone.
+
+Pushing a tag by hand still works too:
 
 ```bash
 git tag -a v1.2.3 -m "dPanel 1.2.3"
