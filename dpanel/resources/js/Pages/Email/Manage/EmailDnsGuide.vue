@@ -5,7 +5,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
 defineProps({
     domains: { type: Array, default: () => [] }, selectedDomain: { type: String, default: '' },
-    mailHost: { type: String, default: '' }, serverIp: { type: String, default: '' },
+    mailHost: { type: String, default: '' }, mailHostResolvesTo: { type: String, default: '' }, serverIp: { type: String, default: '' },
     dkimReady: { type: Boolean, default: false }, dkimConfiguredDomain: { type: String, default: '' },
     records: { type: Array, default: () => [] },
 });
@@ -47,6 +47,7 @@ const generateDkim = (domain) => {
                 <p v-else class="text-sm text-amber-700 dark:text-amber-300">No real website or mailbox domain exists yet. Create the domain first; this guide does not display demo records.</p>
             </section>
 
+            <div v-if="selectedDomain && mailHostResolvesTo" class="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">The mail host <code class="font-semibold">{{ mailHost }}</code> points to <code>{{ mailHostResolvesTo }}</code>, not this server (<code>{{ serverIp }}</code>). Mail sent to it goes to the wrong machine. Point its A record here (DNS only, not proxied), or set <code class="font-semibold">SERVERPANEL_MAIL_HOSTNAME</code> in <code>.env</code> to a name that does.</div>
             <div v-if="selectedDomain && !serverIp" class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Server IP is not configured. Set <code class="font-semibold">SERVERPANEL_MAIL_SERVER_IP</code> in <code>.env</code>; do not publish the A record until its real value appears here.</div>
             <div v-if="selectedDomain && !dkimReady" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"><span>DKIM public key is not configured<span v-if="dkimConfiguredDomain"> for {{ selectedDomain }} (configured: {{ dkimConfiguredDomain }})</span>.</span><button :disabled="dkimForm.processing" class="rounded-md bg-amber-700 px-3 py-2 font-medium text-white hover:bg-amber-800 disabled:opacity-50" @click="generateDkim(selectedDomain)"><i class="bi bi-key mr-1"></i>{{ dkimForm.processing ? 'Generating…' : 'Generate DKIM key' }}</button></div>
 

@@ -38,12 +38,13 @@ class MailDnsRecords
             return $configured;
         }
 
-        $candidates = [];
+        // The machine's own outbound address first: a mail host name may still
+        // point at another server, and trusting DNS would put that IP in SPF.
+        $candidates = [trim((string) @shell_exec("ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if (\$i==\"src\") {print \$(i+1); exit}}'"))];
         $host = $this->mailHost();
         if ($host !== '') {
             $candidates[] = (string) @gethostbyname($host);
         }
-        $candidates[] = trim((string) @shell_exec("ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if (\$i==\"src\") {print \$(i+1); exit}}'"));
 
         foreach ($candidates as $ip) {
             if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
@@ -52,6 +53,23 @@ class MailDnsRecords
         }
 
         return '';
+    }
+
+    /**
+     * Where the mail host resolves, when that is not this server; '' when it
+     * matches or cannot be checked. MX pointing at such a host sends mail to
+     * the wrong machine, and a HELO name that does not match hurts delivery.
+     */
+    public function mailHostMismatch(): string
+    {
+        $host = $this->mailHost();
+        $ip = $this->serverIp();
+        if ($host === '' || $ip === '') {
+            return '';
+        }
+        $resolved = @gethostbynamel($host) ?: [];
+
+        return $resolved === [] || in_array($ip, $resolved, true) ? '' : implode(', ', $resolved);
     }
 
     public function spf(): string

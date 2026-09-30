@@ -149,6 +149,7 @@ class EmailController extends Controller
             'domains' => $domains->all(),
             'selectedDomain' => $domain,
             'mailHost' => $mailHost,
+            'mailHostResolvesTo' => $domain !== '' ? $mailDns->mailHostMismatch() : '',
             'serverIp' => $serverIp,
             'dkimReady' => $dkimReady,
             'dkimConfiguredDomain' => $dkimDomain,
