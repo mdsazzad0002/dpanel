@@ -14,7 +14,7 @@ class ExecuteSshCommandJob implements ShouldQueue
 {
     use InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $timeout = 300;
+    public int $timeout;
 
     public int $tries = 1;
 
@@ -23,6 +23,8 @@ class ExecuteSshCommandJob implements ShouldQueue
      */
     public function __construct(public int $commandJobId)
     {
+        // Leave room past the SSH command timeout so the job can still record its result.
+        $this->timeout = (int) config('serverpanel.command_timeout', 300) + 60;
     }
 
     /**
@@ -48,5 +50,22 @@ class ExecuteSshCommandJob implements ShouldQueue
         }
 
         $commandRunner->markFinished($job->fresh(), $result);
+    }
+
+    /**
+     * Never leave a command stuck in "running" when the worker is killed.
+     */
+    public function failed(?\Throwable $exception): void
+    {
+        $job = CommandJob::query()->find($this->commandJobId);
+        if (! $job || ! in_array($job->status, ['queued', 'running'], true)) {
+            return;
+        }
+
+        app(CommandRunnerService::class)->markFinished($job, [
+            'output' => (string) $job->output,
+            'error_output' => $exception?->getMessage() ?: 'Command worker stopped before the command finished.',
+            'exit_code' => null,
+        ]);
     }
 }

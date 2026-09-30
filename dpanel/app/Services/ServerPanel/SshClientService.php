@@ -73,7 +73,7 @@ class SshClientService
     }
 
     /**
-     * @return array{output:string,error_output:string,exit_code:int|null}
+     * @return array{output:string,error_output:string,exit_code:int|null,reboot_required:bool,reboot_packages:list<string>}
      */
     public function executeOnServer(Server $server, string $command): array
     {
@@ -84,7 +84,7 @@ class SshClientService
 
     /**
      * @param  callable(string):void  $onOutputLine
-     * @return array{output:string,error_output:string,exit_code:int|null}
+     * @return array{output:string,error_output:string,exit_code:int|null,reboot_required:bool,reboot_packages:list<string>}
      */
     public function executeOnServerStreaming(Server $server, string $command, callable $onOutputLine): array
     {
@@ -94,39 +94,28 @@ class SshClientService
     }
 
     /**
-     * @return array{output:string,error_output:string,exit_code:int|null}
+     * @return array{output:string,error_output:string,exit_code:int|null,reboot_required:bool,reboot_packages:list<string>}
      */
     public function runCommand(SSH2 $ssh, string $command): array
     {
-        $wrapped = "bash -lc " . escapeshellarg($command."\n".'printf "\\n__SERVERPANEL_EXIT__:%s\\n" "$?"');
-
-        $output = (string) $ssh->exec($wrapped);
-        $stderr = (string) $ssh->getStdError();
-
-        $exitCode = null;
-        if (preg_match('/__SERVERPANEL_EXIT__:(\d+)/', $output, $matches) === 1) {
-            $exitCode = (int) $matches[1];
-            $output = trim((string) preg_replace('/(?:\r?\n)?__SERVERPANEL_EXIT__:\d+\s*/', '', $output));
-        }
-
-        return [
-            'output' => $this->truncateOutput($this->sanitizeControlMarkers($output)),
-            'error_output' => $this->truncateOutput($this->sanitizeControlMarkers($stderr)),
-            'exit_code' => $exitCode,
-        ];
+        return $this->runCommandStreaming($ssh, $command, static function (): void {
+        });
     }
 
     /**
      * @param  callable(string):void  $onOutputLine
-     * @return array{output:string,error_output:string,exit_code:int|null}
+     * @return array{output:string,error_output:string,exit_code:int|null,reboot_required:bool,reboot_packages:list<string>}
      */
     public function runCommandStreaming(SSH2 $ssh, string $command, callable $onOutputLine): array
     {
-        $wrapped = "bash -lc " . escapeshellarg($command."\n".'printf "\\n__SERVERPANEL_EXIT__:%s\\n" "$?"');
         $collectedOutput = '';
         $lineBuffer = '';
+        $finished = false;
 
-        $output = (string) $ssh->exec($wrapped, function (string $chunk) use (&$collectedOutput, &$lineBuffer, $onOutputLine): void {
+        // Stop reading as soon as the exit marker arrives. Upgrades that restart
+        // daemons (freshclam, needrestart, ...) leave children holding the SSH
+        // channel open, so waiting for EOF would hang until the timeout.
+        $ssh->exec($this->wrapCommand($command), function (string $chunk) use (&$collectedOutput, &$lineBuffer, &$finished, $onOutputLine): bool {
             $collectedOutput .= $chunk;
             $lineBuffer .= $chunk;
 
@@ -134,29 +123,75 @@ class SshClientService
                 $line = trim(substr($lineBuffer, 0, $lineEnd));
                 $lineBuffer = (string) substr($lineBuffer, $lineEnd + 1);
 
-                if ($line !== '' && ! str_contains($line, '__SERVERPANEL_EXIT__:')) {
+                if ($line !== '' && ! $this->isControlLine($line)) {
                     $onOutputLine($line);
                 }
             }
+
+            $finished = preg_match('/__SERVERPANEL_EXIT__:\d+\r?\n/', $collectedOutput) === 1;
+
+            return $finished;
         });
 
-        if (trim($lineBuffer) !== '' && ! str_contains(trim($lineBuffer), '__SERVERPANEL_EXIT__:')) {
+        if (! $finished && trim($lineBuffer) !== '' && ! $this->isControlLine(trim($lineBuffer))) {
             $onOutputLine(trim($lineBuffer));
         }
 
         $stderr = (string) $ssh->getStdError();
         $exitCode = null;
 
-        if (preg_match('/__SERVERPANEL_EXIT__:(\d+)/', $output, $matches) === 1) {
+        if (preg_match('/__SERVERPANEL_EXIT__:(\d+)/', $collectedOutput, $matches) === 1) {
             $exitCode = (int) $matches[1];
-            $output = trim((string) preg_replace('/(?:\r?\n)?__SERVERPANEL_EXIT__:\d+\s*/', '', $output));
+        } elseif (is_int($ssh->getExitStatus())) {
+            $exitCode = $ssh->getExitStatus();
+        } elseif ($ssh->isTimeout()) {
+            $stderr = trim($stderr.PHP_EOL.sprintf(
+                'Command did not finish within %d seconds and was stopped waiting. It may still be running on the server.',
+                (int) config('serverpanel.command_timeout', 300),
+            ));
+        } else {
+            $stderr = trim($stderr.PHP_EOL.'SSH connection closed before the command reported an exit status.');
         }
 
+        $rebootPackages = [];
+        $rebootRequired = preg_match('/__SERVERPANEL_REBOOT__:([^\r\n]*)/', $collectedOutput, $rebootMatches) === 1;
+        if ($rebootRequired) {
+            $rebootPackages = array_values(array_unique(array_filter(preg_split('/\s+/', trim($rebootMatches[1])) ?: [])));
+        }
+
+        $output = (string) preg_replace('/^.*__SERVERPANEL_(?:EXIT|REBOOT)__:.*$\R?/m', '', $collectedOutput);
+
         return [
-            'output' => $this->truncateOutput($this->sanitizeControlMarkers($output !== '' ? $output : $collectedOutput)),
-            'error_output' => $this->truncateOutput($this->sanitizeControlMarkers((string) preg_replace('/(?:\r?\n)?__SERVERPANEL_EXIT__:\d+\s*/', '', $stderr))),
+            'output' => $this->truncateOutput($this->sanitizeControlMarkers($output)),
+            'error_output' => $this->truncateOutput($this->sanitizeControlMarkers($stderr)),
             'exit_code' => $exitCode,
+            'reboot_required' => $rebootRequired,
+            'reboot_packages' => $rebootPackages,
         ];
+    }
+
+    private function wrapCommand(string $command): string
+    {
+        // Package tools must never prompt: there is no terminal to answer them.
+        // needrestart only lists services so it cannot restart sshd under us.
+        $script = implode("\n", [
+            'export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l APT_LISTCHANGES_FRONTEND=none',
+            '(',
+            $command,
+            ') </dev/null',
+            '__serverpanel_status=$?',
+            'if [ -f /var/run/reboot-required ]; then',
+            '  printf "\n__SERVERPANEL_REBOOT__:%s\n" "$(tr \'\n\' \' \' < /var/run/reboot-required.pkgs 2>/dev/null)"',
+            'fi',
+            'printf "\n__SERVERPANEL_EXIT__:%s\n" "$__serverpanel_status"',
+        ]);
+
+        return 'bash -lc '.escapeshellarg($script);
+    }
+
+    private function isControlLine(string $line): bool
+    {
+        return str_contains($line, '__SERVERPANEL_EXIT__:') || str_contains($line, '__SERVERPANEL_REBOOT__:');
     }
 
     private function loginWithPassword(SSH2 $ssh, Server $server): bool

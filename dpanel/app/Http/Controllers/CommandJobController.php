@@ -161,6 +161,9 @@ class CommandJobController extends Controller
 
             $commandRunner->markStarted($job->fresh());
 
+            // Long upgrades must not be cut off by PHP before the job is marked finished.
+            set_time_limit((int) config('serverpanel.command_timeout', 300) + 60);
+
             try {
                 $result = $sshClient->executeOnServerStreaming(
                     $server,
