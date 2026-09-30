@@ -1535,6 +1535,9 @@ panel_setup_application_database() {
   printf 'Generated database credentials for %s:\n' "$db_name"
   printf '  DB_USERNAME=%s\n' "$db_user"
   printf '  DB_PASSWORD=%s\n' "$db_password"
+  # Dovecot reads mailboxes with these credentials; keep it in step.
+  DPANEL_ENV_FILE="$env_file" panel_configure_dovecot_sql || panel_warn_log "Dovecot SQL auth could not be refreshed with the new DB password."
+
 }
 
 panel_run_runtime_script() {
@@ -1914,6 +1917,108 @@ panel_fix_website_permissions() {
   fi
 }
 
+# Dovecot authenticates mailboxes straight from the panel database, so its SQL
+# connection must follow the panel .env. Writing it only at mail install time
+# left IMAP answering AUTHENTICATIONFAILED after the DB password changed.
+# Safe to run repeatedly; Dovecot is reloaded only when the config changes.
+panel_configure_dovecot_sql() {
+  local dpanel_env="${DPANEL_ENV_FILE:-${PANEL_APP_DIR:-/var/www/dpanel}/.env}"
+  local auth_file=/etc/dovecot/conf.d/auth-serverpanel.conf.ext
+  local sql_file=/etc/dovecot/dpanel-sql.conf.ext
+  local dovecot_version db_host db_port db_name db_user db_password auth_content sql_content changed=false
+
+  command -v dovecot >/dev/null 2>&1 && [[ -d /etc/dovecot/conf.d ]] || return 0
+  [[ -f "$dpanel_env" ]] || { panel_warn_log "dPanel env file not found: ${dpanel_env}; Dovecot SQL auth not configured."; return 1; }
+
+  dovecot_version="$(dovecot --version 2>/dev/null | awk '{print $1}')"
+  db_host="$(sed -n 's/^DB_HOST=//p' "$dpanel_env" | tail -n1 | tr -d '"')"
+  db_port="$(sed -n 's/^DB_PORT=//p' "$dpanel_env" | tail -n1 | tr -d '"')"
+  db_name="$(sed -n 's/^DB_DATABASE=//p' "$dpanel_env" | tail -n1 | tr -d '"')"
+  db_user="$(sed -n 's/^DB_USERNAME=//p' "$dpanel_env" | tail -n1 | tr -d '"')"
+  db_password="$(sed -n 's/^DB_PASSWORD=//p' "$dpanel_env" | tail -n1 | tr -d '"')"
+  [[ -n "$db_name" && -n "$db_user" ]] || { panel_warn_log "DB settings missing in ${dpanel_env}; Dovecot SQL auth not configured."; return 1; }
+
+  if [[ "$dovecot_version" == 2.4* ]]; then
+    # Dovecot 2.4 requires named passdb/userdb sections with the connection inline.
+    auth_content="sql_driver = mysql
+
+mysql ${db_host:-127.0.0.1} {
+  port = ${db_port:-3306}
+  dbname = ${db_name}
+  user = ${db_user}
+  password = ${db_password}
+}
+
+passdb sql {
+  default_password_scheme = SHA512-CRYPT
+  query = SELECT email AS user, password FROM mailboxes WHERE email = '%{user}' AND status = 'active' LIMIT 1
+}
+
+userdb sql {
+  query = SELECT mail_home AS home, CONCAT('maildir:', mail_home) AS mail, mail_uid AS uid, mail_gid AS gid, CONCAT('*:bytes=', quota_mb * 1048576) AS quota_rule FROM mailboxes WHERE email = '%{user}' AND status = 'active' LIMIT 1
+}"
+    # Retained as a marker for readiness checks and older tooling.
+    sql_content=""
+  else
+    # Dovecot 2.3 reads SQL settings from a separate args file.
+    auth_content="passdb {
+  driver = sql
+  args = ${sql_file}
+}
+
+userdb {
+  driver = sql
+  args = ${sql_file}
+}"
+    sql_content="driver = mysql
+connect = host=${db_host:-127.0.0.1} port=${db_port:-3306} dbname=${db_name} user=${db_user} password=${db_password}
+default_pass_scheme = SHA512-CRYPT
+password_query = SELECT email AS user, password FROM mailboxes WHERE email = '%u' AND status = 'active' LIMIT 1
+user_query = SELECT mail_home AS home, CONCAT('maildir:', mail_home) AS mail, mail_uid AS uid, mail_gid AS gid, CONCAT('*:bytes=', quota_mb * 1048576) AS quota_rule FROM mailboxes WHERE email = '%u' AND status = 'active' LIMIT 1"
+  fi
+
+  if [[ "$(cat "$auth_file" 2>/dev/null)" != "$auth_content" ]]; then
+    printf '%s\n' "$auth_content" > "$auth_file"
+    changed=true
+  fi
+  if [[ ! -f "$sql_file" || "$(cat "$sql_file" 2>/dev/null)" != "$sql_content" ]]; then
+    if [[ -n "$sql_content" ]]; then printf '%s\n' "$sql_content" > "$sql_file"; else : > "$sql_file"; fi
+    changed=true
+  fi
+  # Credentials are root-only; Dovecot reads them through its group.
+  local file
+  for file in "$auth_file" "$sql_file"; do
+    chown root:dovecot "$file" 2>/dev/null || chown root:root "$file"
+    chmod 0640 "$file"
+  done
+
+  if ! grep -Fq '!include auth-serverpanel.conf.ext' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null; then
+    printf '\n!include auth-serverpanel.conf.ext\n' >> /etc/dovecot/conf.d/10-auth.conf
+    changed=true
+  fi
+
+  doveconf -n >/dev/null || { panel_warn_log "Dovecot rejected its configuration; run 'doveconf -n' to see why."; return 1; }
+  if [[ "$changed" == true ]]; then
+    panel_info_log "Dovecot SQL auth updated from ${dpanel_env}."
+    if systemctl is-active --quiet dovecot 2>/dev/null; then
+      systemctl reload-or-restart dovecot || panel_warn_log "Dovecot reload failed; run 'systemctl restart dovecot'."
+    fi
+  fi
+}
+
+# Mailbox hashes that drifted from the panel password make IMAP answer
+# AUTHENTICATIONFAILED; the panel command re-hashes them from its own record.
+panel_repair_mail_auth() {
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
+
+  [[ -x "${app_dir}/artisan" ]] || return 0
+  command -v dovecot >/dev/null 2>&1 || return 0
+
+  panel_configure_dovecot_sql || panel_warn_log "Dovecot SQL auth could not be refreshed."
+  (cd "$app_dir" && php artisan mail:repair-dovecot-auth) \
+    || panel_warn_log "Mailbox password check failed; run 'php artisan mail:repair-dovecot-auth' in the panel directory."
+}
+
 # Record the installed release in the panel .env. installer.sh resolves the
 # version (a tag, "latest", or a branch/commit) and passes it in DPANEL_RELEASE_*;
 # APP_VERSION is what the panel shows in its sidebar and footer.
@@ -2183,6 +2288,7 @@ panel_bootstrap() {
       # would keep old PHP packages, skip new migrations and serve old UI assets.
       panel_install_app_dependencies || panel_warn_log "composer install failed; run it in the panel directory."
       panel_run_app_migrations || panel_warn_log "Migrations failed; run 'php artisan migrate --force' after fixing them."
+      panel_repair_mail_auth
       panel_install_frontend_assets || panel_warn_log "Frontend build failed; run 'npm run build' in the panel directory."
       panel_reconcile_system_records
       panel_refresh_phpmyadmin_sso

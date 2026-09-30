@@ -202,6 +202,38 @@ sudo dpanel script run configure-phpmyadmin-signon
 ls /var/www/phpmyadmin/index.php
 ```
 
+### `Can not authenticate to IMAP server: [AUTHENTICATIONFAILED] Authentication failed.`
+
+Dovecot rejected the mailbox login. It checks passwords against the panel's
+`mailboxes` table, so there are two usual causes:
+
+- Dovecot's copy of the panel DB password (`/etc/dovecot/dpanel-sql.conf.ext`)
+  is out of date, for example after `chain install mariadb` created a new one.
+- The mailbox's stored hash no longer matches its password. Older
+  `mail:migrate-dovecot-sql` runs could hash an existing hash.
+
+Every update now repairs both. To repair right away:
+
+```bash
+sudo dpanel chain update
+# or only the mail part:
+cd /var/www/dpanel && sudo php artisan mail:repair-dovecot-auth
+```
+
+If it still fails, see the exact reason:
+
+```bash
+echo "auth_verbose = yes" | sudo tee /etc/dovecot/conf.d/99-dpanel-debug.conf && sudo systemctl reload dovecot
+sudo doveadm auth test user@example.com 'PASSWORD'
+sudo grep -iE "auth|imap-login" /var/log/mail.log | tail -20
+sudo rm /etc/dovecot/conf.d/99-dpanel-debug.conf && sudo systemctl reload dovecot
+```
+
+`unknown user` means the mailbox has no mail home yet; run
+`sudo php artisan mail:migrate-dovecot-sql` in `/var/www/dpanel`. If the
+command reports a password that cannot be decrypted, reset that mailbox's
+password in the panel.
+
 ## General checks
 
 ```bash

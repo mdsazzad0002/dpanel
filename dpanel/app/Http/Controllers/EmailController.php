@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\PackagePlan;
 use App\Models\MailDomain;
 use App\Models\Mailbox;
+use App\Support\MailPasswordHash;
 use App\Models\Website;
 use App\Services\Mail\MailboxImapService;
 use App\Services\Mail\MailDomainProvisioner;
@@ -826,21 +827,7 @@ class EmailController extends Controller
 
     private function hashStoragePassword(string $password): string
     {
-        $hash = trim((string) @shell_exec('doveadm pw -s SHA512-CRYPT -p '.escapeshellarg($password).' 2>/dev/null'));
-        if ($hash !== '') {
-            return $hash;
-        }
-
-        $hash = trim((string) @shell_exec('openssl passwd -6 '.escapeshellarg($password).' 2>/dev/null'));
-        if ($hash !== '') {
-            return $hash;
-        }
-
-        if (str_contains($password, ':')) {
-            return '';
-        }
-
-        return '{PLAIN}'.$password;
+        return MailPasswordHash::make($password);
     }
 
     private function resolveSystemId(string $mode, string $account, int $fallback): int

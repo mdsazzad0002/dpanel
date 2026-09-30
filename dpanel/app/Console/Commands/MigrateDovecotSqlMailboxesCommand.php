@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Mailbox;
 use App\Models\Website;
+use App\Support\MailPasswordHash;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -58,9 +59,14 @@ class MigrateDovecotSqlMailboxesCommand extends Command
             @chgrp($target, (int) $account['gid']);
             @chmod($target, 0700);
 
+            // Hash only a plaintext value. An openssl "$6$..." hash has no {SCHEME}
+            // prefix, and hashing it again locked the mailbox out.
             $password = (string) $mailbox->password;
-            if (! str_starts_with($password, '{')) {
-                $password = trim((string) shell_exec('doveadm pw -s SHA512-CRYPT -p '.escapeshellarg($password).' 2>/dev/null'));
+            $clientPassword = (string) ($mailbox->client_password ?? '');
+            if ($clientPassword !== '' && ! MailPasswordHash::verify($clientPassword, $password)) {
+                $password = MailPasswordHash::make($clientPassword);
+            } elseif ($password !== '' && ! MailPasswordHash::isHash($password)) {
+                $password = MailPasswordHash::make($password);
             }
             if ($password === '') {
                 $this->error("Cannot hash password for {$mailbox->email}; row was not updated.");
