@@ -1924,10 +1924,16 @@ panel_finalize_default_install() {
   fi
 
   if [[ -n "$panel_domain" ]]; then
-    panel_env_set "$env_file" APP_URL "http://${panel_domain}"
+    # Keep https when this domain already has it; re-running the installer must
+    # not switch a working panel back to plain HTTP.
+    local panel_scheme="http"
+    if [[ "$panel_port" == "443" ]] || grep -Eq "^APP_URL=[\"']?https://${panel_domain//./\\.}/?[\"']?\$" "$env_file" 2>/dev/null; then
+      panel_scheme="https"
+    fi
+    panel_env_set "$env_file" APP_URL "${panel_scheme}://${panel_domain}"
     panel_env_set "$env_file" SESSION_COOKIE_DOMAIN ""
-    panel_env_set "$env_file" SESSION_SECURE_COOKIE "$([[ "$panel_port" == "443" ]] && printf true || printf false)"
-    panel_env_set "$env_file" PHPMYADMIN_URL "http://${panel_domain}/phpmyadmin/"
+    panel_env_set "$env_file" SESSION_SECURE_COOKIE "$([[ "$panel_scheme" == "https" ]] && printf true || printf false)"
+    panel_env_set "$env_file" PHPMYADMIN_URL "${panel_scheme}://${panel_domain}/phpmyadmin/"
   fi
 
   if [[ -n "${PANEL_MAIL_SERVER_IP:-}" ]]; then
@@ -1943,6 +1949,7 @@ panel_finalize_default_install() {
   panel_refresh_phpmyadmin_sso
 
   panel_refresh_drust_service
+  panel_issue_panel_ssl "$env_file"
 
   local admin_username="${PANEL_ADMIN_USERNAME:-}"
   local admin_password="${PANEL_ADMIN_PASSWORD:-}"
@@ -1958,6 +1965,46 @@ panel_finalize_default_install() {
   # root, so repairing before them leaves root-owned files under storage/.
   panel_fix_app_permissions
 
+}
+
+# Issue the panel domain's certificate once drust is running, then switch the
+# panel to https. A failure only warns: the panel stays reachable over HTTP and
+# the certificate can be retried later with "php artisan serverpanel:panel-ssl".
+panel_issue_panel_ssl() {
+  local env_file="$1"
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
+  local domain="${PANEL_DOMAIN:-}"
+  local output
+
+  if [[ "${SKIP_SSL:-false}" == "true" ]]; then
+    panel_info_log "Skipping panel SSL (SKIP_SSL=true)."
+    return 0
+  fi
+  [[ -n "$domain" && -x "${app_dir}/artisan" ]] || return 0
+  if [[ "$domain" =~ ^[0-9.]+$ || "$domain" == *:* || "$domain" != *.* \
+    || "$domain" =~ \.(localhost|local|test|example|invalid)$ ]]; then
+    panel_info_log "Panel domain ${domain} cannot get a public certificate; keeping HTTP."
+    return 0
+  fi
+  if ! getent ahosts "$domain" >/dev/null 2>&1; then
+    panel_warn_log "Panel domain ${domain} does not resolve in DNS yet; skipping SSL. Point its A record at this server, then run: cd ${app_dir} && php artisan serverpanel:panel-ssl"
+    return 0
+  fi
+
+  panel_info_log "Requesting an SSL certificate for ${domain}."
+  (cd "$app_dir" && php artisan config:clear >/dev/null 2>&1 || true)
+  if ! output="$(cd "$app_dir" && php artisan serverpanel:panel-ssl 2>&1)"; then
+    printf '%s\n' "$output"
+    panel_warn_log "SSL for ${domain} failed; the panel stays on http://${domain}. Check that ports 80 and 443 are open and DNS points here, then run: cd ${app_dir} && php artisan serverpanel:panel-ssl"
+    return 0
+  fi
+  printf '%s\n' "$output"
+
+  panel_env_set "$env_file" APP_URL "https://${domain}"
+  panel_env_set "$env_file" SESSION_SECURE_COOKIE true
+  panel_env_set "$env_file" PHPMYADMIN_URL "https://${domain}/phpmyadmin/"
+  panel_refresh_phpmyadmin_sso
+  panel_info_log "Panel is now served at https://${domain}."
 }
 
 panel_write_runtime_templates() {

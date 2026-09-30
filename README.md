@@ -82,13 +82,24 @@ chmod +x installer.sh
 sudo ./installer.sh
 ```
 
-This installs the **latest release tag** straight from GitHub. Pick a version
-with `DPANEL_VERSION`, and update later with `sudo ./installer.sh update`:
+The installer asks which version to install: the **latest release tag**
+(the default), an older release tag, the `main` branch, or any tag, branch or
+commit you type. To skip the question, pass the version on the command line.
+Update later with `sudo ./installer.sh update`:
 
 ```bash
-sudo env DPANEL_VERSION=v1.2.3 ./installer.sh   # a specific release
-sudo env DPANEL_VERSION=main ./installer.sh     # the development branch
+sudo ./installer.sh --latest            # newest release, no question
+sudo ./installer.sh --version v1.2.3    # a specific release
+sudo ./installer.sh --version main      # the development branch
 ```
+
+`DPANEL_VERSION=v1.2.3` works the same way, and a run without a terminal
+installs the latest release.
+
+If the panel domain resolves to the server, the installer also requests its
+SSL certificate and switches the panel to `https://`. When that fails (DNS not
+pointed yet, port 80 blocked), the panel stays on `http://`; retry with
+`cd /var/www/dpanel && sudo php artisan serverpanel:panel-ssl`.
 
 The installed version is written to the panel `.env` automatically. See
 [Versions and updates](docs/installation.md#versions-and-updates).
