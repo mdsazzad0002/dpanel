@@ -33,12 +33,15 @@ ensure_rust_toolchain() {
     return 0
   fi
 
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential pkg-config openssl ca-certificates curl
   if ! command -v rustup >/dev/null 2>&1; then
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y rustup build-essential pkg-config openssl ca-certificates
-  else
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential pkg-config openssl ca-certificates
+    # Ubuntu 22.04 and Debian 12 have no rustup package; use the official installer there.
+    if apt-cache show rustup >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive apt-get install -y rustup
+    else
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
+    fi
   fi
 
   export PATH="${CARGO_HOME}/bin:${PATH}"
@@ -51,6 +54,23 @@ ensure_rust_toolchain() {
     echo "Rust cargo is unavailable. Install Rust with rustup and rerun this script." >&2
     exit 1
   }
+}
+
+# The tesseract crate links the system Tesseract and Leptonica libraries and
+# generates its bindings with bindgen, which needs libclang.
+ensure_build_dependencies() {
+  local packages=(build-essential pkg-config libleptonica-dev libtesseract-dev libclang-dev clang)
+  local missing=()
+  local package
+
+  for package in "${packages[@]}"; do
+    dpkg-query -W -f='${db:Status-Abbrev}' "${package}" 2>/dev/null | grep -q '^ii' || missing+=("${package}")
+  done
+  (( ${#missing[@]} == 0 )) && return 0
+
+  echo "[drust] Installing build dependencies: ${missing[*]}"
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
 }
 
 read_env_value() {
@@ -155,6 +175,7 @@ install_powerdns() {
 }
 
 ensure_rust_toolchain
+ensure_build_dependencies
 if ! command -v certbot >/dev/null 2>&1; then
   apt-get update
   DEBIAN_FRONTEND=noninteractive apt-get install -y certbot
