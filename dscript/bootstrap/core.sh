@@ -1784,12 +1784,14 @@ panel_ensure_node20() {
     major="${version%%.*}"
   fi
 
-  if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 20 )); then
+  # Distro nodejs packages (Ubuntu/Debian) ship without npm, so a new enough
+  # node alone is not enough.
+  if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 20 )) && command -v npm >/dev/null 2>&1; then
     panel_link_node_tools "$(dirname "$(command -v node)")"
     return 0
   fi
 
-  panel_warn_log "Node.js ${version:-missing} is too old for Vite; installing Node.js 20+."
+  panel_warn_log "Node.js ${version:-missing} (npm: $(command -v npm >/dev/null 2>&1 && echo present || echo missing)) is not usable for Vite; installing Node.js 20."
 
   arch="$(uname -m)"
   case "$arch" in
