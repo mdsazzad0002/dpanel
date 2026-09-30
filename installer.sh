@@ -96,15 +96,66 @@ find_dscript_root() {
   dirname "$candidate"
 }
 
-# Print the highest version tag (v1.2.3 or 1.2.3) of DPANEL_REPO, or nothing.
-latest_release_tag() {
+# Print the version tags (v1.2.3 or 1.2.3) of DPANEL_REPO, newest first, or nothing.
+release_tags() {
   local tags_json="${TMP_DIR}/tags.json"
-  download "https://api.github.com/repos/${DPANEL_REPO}/tags?per_page=100" "$tags_json" 2>/dev/null || return 0
+  [[ -s "$tags_json" ]] || download "https://api.github.com/repos/${DPANEL_REPO}/tags?per_page=100" "$tags_json" 2>/dev/null || return 0
   grep -o '"name": *"[^"]*"' "$tags_json" \
     | sed 's/^"name": *"//; s/"$//' \
     | grep -E '^v?[0-9]+(\.[0-9]+)*$' \
-    | sort -V \
-    | tail -n 1 || true
+    | sort -rV || true
+}
+
+# Print the highest version tag of DPANEL_REPO, or nothing.
+latest_release_tag() {
+  release_tags | head -n 1
+}
+
+# Ask which version to install. Prints the chosen ref ("latest", a tag, a
+# branch or a commit). Reads the terminal directly so "curl ... | bash" works.
+prompt_for_version() {
+  local tags=() latest answer index shown=10
+  mapfile -t tags < <(release_tags)
+  latest="${tags[0]:-}"
+
+  {
+    printf '\nWhich dPanel version do you want to install?\n'
+    printf '  1) Latest release%s [default]\n' "${latest:+ (${latest})}"
+    printf '  2) Pick a release tag\n'
+    printf '  3) main branch (newest code, not a release)\n'
+    printf '  4) Enter a tag, branch or commit\n'
+  } > /dev/tty
+
+  while true; do
+    read -r -p 'Choice [1]: ' answer < /dev/tty || answer=""
+    case "${answer:-1}" in
+      1) printf 'latest'; return 0 ;;
+      2)
+        if [[ ${#tags[@]} -eq 0 ]]; then
+          printf 'No release tags found in %s.\n' "$DPANEL_REPO" > /dev/tty
+          continue
+        fi
+        (( ${#tags[@]} < shown )) && shown=${#tags[@]}
+        for (( index = 0; index < shown; index++ )); do
+          printf '  %2d) %s\n' "$((index + 1))" "${tags[$index]}" > /dev/tty
+        done
+        read -r -p "Release [1-${shown}, or type a tag]: " answer < /dev/tty || answer=""
+        answer="${answer:-1}"
+        if [[ "$answer" =~ ^[0-9]+$ ]] && (( answer >= 1 && answer <= shown )); then
+          printf '%s' "${tags[$((answer - 1))]}"
+        else
+          printf '%s' "$answer"
+        fi
+        return 0
+        ;;
+      3) printf 'main'; return 0 ;;
+      4)
+        read -r -p 'Tag, branch or commit: ' answer < /dev/tty || answer=""
+        [[ -n "$answer" ]] && { printf '%s' "$answer"; return 0; }
+        ;;
+      *) printf 'Please enter 1, 2, 3 or 4.\n' > /dev/tty ;;
+    esac
+  done
 }
 
 # Print the full commit SHA that a ref points to, or nothing.
@@ -159,8 +210,11 @@ EOF
 #   bash installer.sh
 #   bash installer.sh php mariadb redis
 #   bash installer.sh update
+#   bash installer.sh --version v1.2.0                    # one release tag
+#   bash installer.sh --latest                            # newest release, no prompt
 #   DPANEL_VERSION="v1.2.0" bash installer.sh             # one release tag
 #   DPANEL_VERSION="main" bash installer.sh               # a branch or commit
+#   DPANEL_NONINTERACTIVE=1 bash installer.sh             # never prompt; installs latest
 #   DPANEL_REPO="your-user/dpanel" bash installer.sh       # install from a fork
 #   PANEL_INSTALL_BASE_URL="https://mirror.example.com" bash installer.sh
 #   DSCRIPT_SOURCE_DIR="/var/www/dscript" bash installer.sh   # git checkout at /var/www
@@ -183,14 +237,29 @@ EOF
 #   v1.2.3             that release tag
 #   main / <commit>    a branch or commit
 #
+# With no DPANEL_VERSION and no --version/--latest flag, an interactive run asks
+# which version to install. Runs without a terminal install the latest release.
+#
 # A custom mirror can still be used with PANEL_INSTALL_BASE_URL, which must serve
 # /dscript.zip (built by dscript/archive.sh) and the /dscript/ tree.
 #
 DPANEL_REPO="${DPANEL_REPO:-mdsazzad0002/dpanel}"
-DPANEL_VERSION="${DPANEL_VERSION:-${DPANEL_REF:-latest}}"
+DPANEL_VERSION="${DPANEL_VERSION:-${DPANEL_REF:-}}"
 DSCRIPT_DIR="${DSCRIPT_DIR:-/var/www/dscript}"
 TMP_DIR="$(mktemp -d)"
 trap cleanup EXIT
+
+# Version flags are the installer's own; everything else is handed to dscript.
+handover_args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version) [[ -n "${2:-}" ]] || die "--version needs a tag, branch or commit."; DPANEL_VERSION="$2"; shift 2 ;;
+    --version=*) DPANEL_VERSION="${1#--version=}"; [[ -n "$DPANEL_VERSION" ]] || die "--version needs a tag, branch or commit."; shift ;;
+    --latest) DPANEL_VERSION="latest"; shift ;;
+    *) handover_args+=("$1"); shift ;;
+  esac
+done
+set -- "${handover_args[@]}"
 
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Run this installer as root."
 
@@ -204,6 +273,13 @@ if [[ -n "${DSCRIPT_SOURCE_DIR:-}" ]]; then
       || git -C "$DSCRIPT_SOURCE_DIR" rev-parse --abbrev-ref HEAD)"
   fi
 elif [[ -z "${PANEL_INSTALL_BASE_URL:-${DPANEL_BASE_URL:-}}" && -z "${DSCRIPT_ARCHIVE_URL:-}" && -z "${DSCRIPT_ARCHIVE_PATH:-}" ]]; then
+  if [[ -z "$DPANEL_VERSION" ]]; then
+    if [[ "${DPANEL_NONINTERACTIVE:-}" != "1" ]] && { : < /dev/tty; } 2>/dev/null; then
+      DPANEL_VERSION="$(prompt_for_version)"
+    else
+      DPANEL_VERSION="latest"
+    fi
+  fi
   if [[ "$DPANEL_VERSION" == "latest" ]]; then
     DPANEL_RELEASE_REF="$(latest_release_tag)"
     if [[ -z "$DPANEL_RELEASE_REF" ]]; then
@@ -214,7 +290,12 @@ elif [[ -z "${PANEL_INSTALL_BASE_URL:-${DPANEL_BASE_URL:-}}" && -z "${DSCRIPT_AR
     DPANEL_RELEASE_REF="$DPANEL_VERSION"
   fi
   DPANEL_RELEASE_COMMIT="$(commit_for_ref "$DPANEL_RELEASE_REF")"
-elif [[ "$DPANEL_VERSION" != "latest" ]]; then
+  # The GitHub API can also be rate limited, so an unknown ref only warns; a real
+  # typo still stops at the archive download below.
+  if [[ -z "$DPANEL_RELEASE_COMMIT" ]]; then
+    printf "[WARN] Could not confirm version '%s' in %s; trying to download it anyway.\n" "$DPANEL_RELEASE_REF" "$DPANEL_REPO"
+  fi
+elif [[ -n "$DPANEL_VERSION" && "$DPANEL_VERSION" != "latest" ]]; then
   # Custom mirror or archive: trust an explicit version, there is nothing to resolve.
   DPANEL_RELEASE_REF="$DPANEL_VERSION"
 fi

@@ -406,7 +406,7 @@ systemctl status edge-gateway --no-pager
 | Variable | Default | Purpose |
 |---|---|---|
 | `DPANEL_REPO` | `mdsazzad0002/dpanel` | GitHub repository to install from |
-| `DPANEL_VERSION` | `latest` | `latest` (highest version tag), a tag, a branch, or a commit |
+| `DPANEL_VERSION` | asks, or `latest` without a terminal | `latest` (highest version tag), a tag, a branch, or a commit. Same as `--version <ref>` / `--latest` |
 | `PANEL_INSTALL_BASE_URL` | `https://raw.githubusercontent.com/<repo>/<ref>` | Optional custom mirror root |
 | `PANEL_DSCRIPT_BASE_URL` | `<site>/dscript` | Explicit dscript asset root |
 | `DPANEL_BASE_URL` | dscript asset root | Manifest/module download root |

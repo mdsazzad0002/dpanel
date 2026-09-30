@@ -138,6 +138,21 @@ ensure_tesseract5_repo() {
   return 0
 }
 
+# artisan cannot boot without Composer's autoloader. A fresh release archive
+# ships without vendor/, so install it here instead of relying on the caller.
+ensure_dpanel_dependencies() {
+  [[ -f "${DPANEL_ROOT}/vendor/autoload.php" ]] && return 0
+
+  if ! command -v composer >/dev/null 2>&1; then
+    echo "[drust] composer is missing; installing it."
+    apt_get update
+    apt_get install -y composer
+  fi
+
+  echo "[drust] Installing dPanel PHP dependencies with composer."
+  (cd "${DPANEL_ROOT}" && COMPOSER_ALLOW_SUPERUSER=1 composer install --no-interaction --prefer-dist --optimize-autoloader)
+}
+
 ensure_rust_toolchain() {
   if command -v cargo >/dev/null 2>&1 && cargo --version >/dev/null 2>&1; then
     return 0
@@ -164,6 +179,24 @@ ensure_rust_toolchain() {
     echo "Rust cargo is unavailable. Install Rust with rustup and rerun this script." >&2
     exit 1
   }
+}
+
+# The tesseract crate links the system Tesseract and Leptonica libraries and
+# generates its bindings with bindgen, which needs libclang. whisper-rs
+# compiles its bundled whisper.cpp with cmake.
+ensure_build_dependencies() {
+  local packages=(build-essential pkg-config cmake libleptonica-dev libtesseract-dev libclang-dev clang)
+  local missing=()
+  local package
+
+  for package in "${packages[@]}"; do
+    dpkg-query -W -f='${db:Status-Abbrev}' "${package}" 2>/dev/null | grep -q '^ii' || missing+=("${package}")
+  done
+  (( ${#missing[@]} == 0 )) && return 0
+
+  echo "[drust] Installing build dependencies: ${missing[*]}"
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
 }
 
 read_env_value() {
@@ -226,6 +259,7 @@ install_powerdns() {
   fi
 
   # PowerDNS 5 requires the schema migration shipped with dPanel.
+  ensure_dpanel_dependencies
   (cd "${DPANEL_ROOT}" && php artisan migrate --force)
 
   if [[ -f /etc/powerdns/pdns.d/bind.conf ]]; then
@@ -267,6 +301,7 @@ install_powerdns() {
 }
 
 ensure_rust_toolchain
+ensure_build_dependencies
 if ! command -v certbot >/dev/null 2>&1; then
   apt_get update
   apt_get install -y certbot
