@@ -85,6 +85,21 @@ ensure_native_build_deps() {
   if ! pkg-config --atleast-version=5 tesseract 2>/dev/null; then
     echo "[drust] Tesseract $(pkg-config --modversion tesseract 2>/dev/null || echo missing) is older than 5; building without image OCR."
     DRUST_CARGO_FEATURE_ARGS=(--no-default-features)
+    return 0
+  fi
+
+  # tesseract-sys generates its bindings from the system headers once and
+  # never re-checks them, so after a 4.x -> 5.x upgrade cargo keeps the stale
+  # 4.x bindings (error: no `TessBaseAPIInit5`). Rebuild them when the
+  # installed version changes.
+  local version stamp="${DRUST_ROOT}/target/.tesseract-version"
+  version="$(pkg-config --modversion tesseract 2>/dev/null || true)"
+  if [[ "$(cat "$stamp" 2>/dev/null || true)" != "$version" ]]; then
+    echo "[drust] Tesseract is now ${version}; rebuilding its Rust bindings."
+    cargo clean --release --manifest-path "${DRUST_ROOT}/Cargo.toml" \
+      -p tesseract-sys -p tesseract-plumbing -p tesseract >/dev/null 2>&1 || true
+    mkdir -p "${DRUST_ROOT}/target"
+    printf '%s\n' "$version" > "$stamp"
   fi
 }
 
