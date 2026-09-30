@@ -9,6 +9,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::api::{ApiResponse, ApiState, check_token};
+use crate::installer::{COMPOSER_CANDIDATES, NPM_CANDIDATES, find_tool};
 
 pub fn routes() -> Router<Arc<ApiState>> {
     Router::new().route("/api/v1/project-dependencies", post(handle))
@@ -48,13 +49,14 @@ fn execute(request: &Request) -> Result<String, String> {
         } else {
             vec!["install"]
         };
-        let install_output = run_as_site_owner(request, root, "npm", &install_args)?;
-        let build_output = run_as_site_owner(request, root, "npm", &["run", "build"])?;
+        let npm = find_tool("npm", NPM_CANDIDATES)?;
+        let install_output = run_as_site_owner(request, root, npm, &install_args)?;
+        let build_output = run_as_site_owner(request, root, npm, &["run", "build"])?;
         return Ok(format!("{install_output}\n\n{build_output}"));
     }
     let (program, args): (&str, Vec<&str>) = match request.action.as_str() {
         "composer_install" => (
-            "composer",
+            find_tool("composer", COMPOSER_CANDIDATES)?,
             vec![
                 "install",
                 "--no-interaction",
@@ -62,7 +64,7 @@ fn execute(request: &Request) -> Result<String, String> {
                 "--optimize-autoloader",
             ],
         ),
-        "npm_build" => ("npm", vec!["run", "build"]),
+        "npm_build" => (find_tool("npm", NPM_CANDIDATES)?, vec!["run", "build"]),
         _ => return Err("Unsupported dependency action.".into()),
     };
     run_as_site_owner(request, root, program, &args)
@@ -79,6 +81,9 @@ fn run_as_site_owner(
         .args(args)
         .current_dir(root)
         .env("HOME", format!("/home/{}", request.site_owner))
+        // npm's `#!/usr/bin/env node` must find the Node.js 20 dscript links
+        // into /usr/local/bin, not the distro one or none at all.
+        .env("PATH", "/usr/local/bin:/usr/bin:/bin")
         .env("COMPOSER_NO_INTERACTION", "1")
         .output()
         .map_err(|error| format!("Unable to start {program}: {error}"))?;

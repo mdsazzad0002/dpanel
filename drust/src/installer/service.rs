@@ -24,10 +24,10 @@ const MAX_OUTPUT_CHARS: usize = 20_000;
 // dscript installs the official composer and Node.js 20+ into /usr/local/bin.
 // Distro packages in /usr/bin are only the fallback: Ubuntu 22.04 ships
 // composer 2.2 and Node.js 12, which modern Laravel/Vite projects reject.
-const COMPOSER_CANDIDATES: &[&str] = &["/usr/local/bin/composer", "/usr/bin/composer"];
-const NPM_CANDIDATES: &[&str] = &["/usr/local/bin/npm", "/usr/bin/npm"];
+pub(crate) const COMPOSER_CANDIDATES: &[&str] = &["/usr/local/bin/composer", "/usr/bin/composer"];
+pub(crate) const NPM_CANDIDATES: &[&str] = &["/usr/local/bin/npm", "/usr/bin/npm"];
 
-fn find_tool(name: &str, candidates: &[&'static str]) -> Result<&'static str, String> {
+pub(crate) fn find_tool(name: &str, candidates: &[&'static str]) -> Result<&'static str, String> {
     candidates
         .iter()
         .copied()
