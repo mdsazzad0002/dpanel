@@ -76,7 +76,7 @@ fn run_as_site_owner(
     program: &str,
     args: &[&str],
 ) -> Result<String, String> {
-    let output = Command::new("runuser")
+    let output = Command::new("/usr/sbin/runuser")
         .args(["-u", &request.site_owner, "--", program])
         .args(args)
         .current_dir(root)
