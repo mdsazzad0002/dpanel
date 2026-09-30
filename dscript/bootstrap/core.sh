@@ -1899,7 +1899,7 @@ panel_refresh_drust_service() {
 }
 
 # A site only moves to its own PHP-FPM pool safely once its files already belong
-# to that account, so ownership is repaired before the vhosts are regenerated.
+# to that account, so ownership is repaired during the update.
 panel_fix_website_permissions() {
   local script_path="${DPANEL_RUNTIME_DIR}/scripts/fix-permissions.sh"
 
@@ -1911,20 +1911,6 @@ panel_fix_website_permissions() {
   panel_info_log "Repairing website ownership under /home."
   if ! bash "$script_path" --all; then
     panel_warn_log "Website ownership repair reported errors; run 'dpanel script run fix-permissions --all' after fixing them."
-  fi
-}
-
-# Website vhosts are written once at create time, so template fixes shipped with an
-# update stay dormant until each site is synced again. Doing it here means every
-# existing website on the server picks the new template up during the update.
-panel_resync_website_vhosts() {
-  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
-
-  [[ -x "${app_dir}/artisan" ]] || return 0
-
-  panel_info_log "Regenerating website vhosts from the current templates."
-  if ! (cd "$app_dir" && php artisan serverpanel:vhost-resync); then
-    panel_warn_log "Some website vhosts could not be regenerated; run 'php artisan serverpanel:vhost-resync' after fixing them."
   fi
 }
 
@@ -2201,7 +2187,6 @@ panel_bootstrap() {
       panel_reconcile_system_records
       panel_refresh_phpmyadmin_sso
       panel_fix_website_permissions
-      panel_resync_website_vhosts
       panel_record_release_version
       panel_refresh_app_config_cache
       panel_fix_app_permissions
