@@ -2067,6 +2067,11 @@ panel_bootstrap() {
       # previous drust running, and the remaining repair steps are worth doing.
       panel_refresh_drust_service || panel_warn_log "drust rebuild failed; keeping the running binary."
       panel_load_existing_panel_env
+      # The release copied new panel code into place; without these the update
+      # would keep old PHP packages, skip new migrations and serve old UI assets.
+      panel_install_app_dependencies || panel_warn_log "composer install failed; run it in the panel directory."
+      panel_run_app_migrations || panel_warn_log "Migrations failed; run 'php artisan migrate --force' after fixing them."
+      panel_install_frontend_assets || panel_warn_log "Frontend build failed; run 'npm run build' in the panel directory."
       panel_reconcile_system_records
       panel_refresh_phpmyadmin_sso
       panel_fix_website_permissions

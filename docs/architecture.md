@@ -49,10 +49,24 @@ snapshot that refreshes from the live database.
 - **Static files:** normalized safe paths, index resolution, SPA fallback, and ETags
 - **PHP:** front-controller and direct `.php` requests through PHP-FPM
 - **TLS:** SNI certificate selection from the configured certificate paths
+  (`/etc/letsencrypt/live/<domain>/`, then `/etc/drust/tls/<domain>.crt`).
+  Certificates are swapped in place on every reload, whether it is a full
+  reload or one for a single domain. The HTTPS listener starts even when no site
+  has a certificate yet, and an unreadable certificate is skipped instead of
+  blocking the others. The `www` alias is served when the certificate covers it.
 - **System paths:** the panel and phpMyAdmin always use the shared `www-data` PHP pool
 
 Each website record includes its hostname, scope, `site_owner`, document root,
 PHP version, SSL state, and status.
+
+### Reloads
+
+dPanel publishes reload events on the Redis channel `edge:reload` (with an
+HTTP fallback to `/__admin/reload`). A payload with `domains` reloads only those
+sites; an empty payload (`{}`) reloads everything. Events are batched for
+100 ms, and a full reload in a batch takes priority over per-domain reloads.
+After a certificate is issued or renewed, both drust and dPanel send a full
+reload, so the new certificate goes live without a restart.
 
 ## PHP execution
 

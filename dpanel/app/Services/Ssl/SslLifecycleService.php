@@ -5,6 +5,7 @@ namespace App\Services\Ssl;
 use App\Models\Domain;
 use App\Models\SslCertificate;
 use App\Models\Website;
+use App\Services\EdgeGatewayReloader;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -115,6 +116,11 @@ class SslLifecycleService
             'expires_at' => $expiresAt,
             'auto_renew' => true,
         ])->save();
+
+        // Full reload so the gateway serves the certificate right away. A
+        // per-domain reload (fired when enable_ssl is saved, before the cert
+        // exists) is not enough on its own.
+        app(EdgeGatewayReloader::class)->reload();
 
         return $data;
     }

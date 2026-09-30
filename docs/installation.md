@@ -67,7 +67,27 @@ Update an existing server the same way:
 ```bash
 sudo ./installer.sh update                           # to the latest release
 sudo env DPANEL_VERSION=v1.3.0 ./installer.sh update # to one release
+sudo env DPANEL_VERSION=main ./installer.sh update   # unreleased fixes on main
 ```
+
+`update` with no version installs the **latest release tag**, not the newest
+commit. A fix that is merged to `main` reaches servers only after a new tag is
+published, or when you update with `DPANEL_VERSION=main`.
+
+An update runs these steps in order:
+
+1. Copies the selected release into `/var/www/dscript`, `/var/www/drust`, and
+   `/var/www/dpanel`.
+2. Updates each installed module.
+3. Rebuilds drust (`cargo build --release`) and restarts `drust.service` and
+   `edge-gateway.service`. If the build fails, the old binary keeps running.
+4. Refreshes the panel: `composer install`, `php artisan migrate --force`, and
+   `npm run build`.
+5. Repairs website ownership, regenerates vhosts, records the version in
+   `.env`, rebuilds the config cache, and fixes app permissions.
+
+A step that fails logs a warning and the update continues. Check the output
+for `[WARN]` lines.
 
 ### The version is recorded automatically
 

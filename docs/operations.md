@@ -122,6 +122,34 @@ If drust answers `Unauthorized`, make sure `DRUST_API_TOKEN` in
 `/etc/drust/drust.env` matches `SERVERPANEL_EXECUTION_API_TOKEN` in
 `/var/www/dpanel/.env`.
 
+### SSL is issued but the browser shows no certificate
+
+The website list shows the certificate saved in the database. The manage page
+does a live TLS handshake with the gateway, so it shows what visitors actually
+get. When they disagree, the gateway has not loaded the certificate yet.
+
+```bash
+# What the gateway serves for the domain (SNI):
+openssl s_client -connect 127.0.0.1:443 -servername example.com </dev/null 2>/dev/null \
+  | openssl x509 -noout -subject -enddate
+# The certificate on disk:
+sudo openssl x509 -in /etc/letsencrypt/live/example.com/fullchain.pem -noout -subject -enddate
+# Is the gateway listening for reloads?
+redis-cli PUBSUB NUMSUB edge:reload
+journalctl -u edge-gateway.service -n 100 --no-pager | grep -i -E 'tls|reload'
+```
+
+The gateway swaps certificates in place on a reload, so a restart is not
+needed. To force one:
+
+```bash
+redis-cli PUBLISH edge:reload '{}'
+```
+
+If the handshake still fails, the server may be running an old gateway build.
+Run `sudo ./installer.sh update` (see
+[Versions and updates](installation.md#versions-and-updates)).
+
 ### Files cannot be created, edited, or uploaded
 
 ```bash

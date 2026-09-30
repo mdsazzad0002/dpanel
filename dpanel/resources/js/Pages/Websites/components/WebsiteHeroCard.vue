@@ -120,7 +120,9 @@ const issueWebsiteSsl = async () => {
     try {
         const data = await requestJson(panelRoute('websites.ssl.issue', { id: props.website.id }));
         pushToast?.(data.message || 'SSL certificate issued successfully.', 'success');
-        router.reload({ only: ['website', 'sslStatus', 'autoRenewNotice'], preserveScroll: true });
+        // Give the gateway a moment to load the new certificate before the
+        // live TLS check runs again.
+        setTimeout(() => router.reload({ only: ['website', 'sslStatus', 'autoRenewNotice'], preserveScroll: true }), 1500);
     } catch (error) {
         pushToast?.(error?.message || 'SSL issue failed.', 'error');
     } finally {
