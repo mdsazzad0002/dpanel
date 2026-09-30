@@ -281,38 +281,36 @@ ls -l /var/spool/postfix/private/dovecot-lmtp /var/spool/postfix/private/auth
 The domain's MX record must point to this server, and the mailbox must be
 `active` in the panel.
 
-### Gmail bounces with an SPF, DKIM, or DMARC failure
+### Gmail bounces with `550-5.7.26 ... sender is unauthenticated`
 
-The domain's DNS does not vouch for this server. Publish the records shown in
-the panel's Mail DNS Guide, then check them:
+The sending domain's DNS does not vouch for this server: SPF and DKIM both
+fail. Open **Email → Mail DNS Guide**, pick the domain, and publish every row
+it shows at the domain's DNS provider:
 
-```bash
-dig +short TXT example.com                       # SPF: v=spf1 ... ip4:<server IP> ... 
-dig +short TXT <selector>._domainkey.example.com # DKIM public key
-dig +short TXT _dmarc.example.com                # DMARC policy
-```
+| Record | Name | Value |
+| --- | --- | --- |
+| MX | `@` | the server's mail host, priority 10 |
+| TXT (SPF) | `@` | `v=spf1 ip4:<server IP> mx ~all` |
+| TXT (DKIM) | `default._domainkey` | `v=DKIM1; k=rsa; p=...` (click **Generate DKIM** first) |
+| TXT (DMARC) | `_dmarc` | `v=DMARC1; p=none; ...` |
 
-The server's reverse DNS (PTR) should also match its mail hostname
-(`postconf -h myhostname`); set it at your hosting provider.
+All domains share one mail host, so no per-domain `mail.` A record is needed.
+The host is `SERVERPANEL_MAIL_HOSTNAME` in `/var/www/dpanel/.env` when set
+(for example the panel domain), otherwise Postfix's current hostname. Setting
+it also makes Postfix announce that name. The server IP comes from
+`SERVERPANEL_MAIL_SERVER_IP`, or is detected when that is empty.
 
-### SSH says `Connection refused` after a few wrong passwords
-
-fail2ban blocked your IP. The `sshd` jail bans an IP for 1 hour after 5
-failures in 10 minutes, and a banned IP gets `Connection refused` on port 22
-only. The panel on 80/443 still works.
-
-- In the panel: **Fail2ban** in the sidebar (admins) shows your IP and an
-  **Unblock me** button. **Always allow my IP** whitelists a fixed IP you trust.
-- Without the panel: wait for the ban to expire, or use your provider's web
-  console and run:
+Check the records after they propagate:
 
 ```bash
-sudo fail2ban-client status sshd        # banned IPs
-sudo fail2ban-client unban <your-ip>
+dig +short MX example.com
+dig +short TXT example.com
+dig +short TXT default._domainkey.example.com
+dig +short TXT _dmarc.example.com
 ```
 
-If port 22 is still refused and your IP is not banned, check that SSH is
-running: `sudo systemctl status ssh`.
+Also ask your hosting provider to set the server IP's reverse DNS (PTR) to the
+mail host (`postconf -h myhostname`).
 
 ## General checks
 

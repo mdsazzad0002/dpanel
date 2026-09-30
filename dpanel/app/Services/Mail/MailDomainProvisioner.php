@@ -53,11 +53,15 @@ class MailDomainProvisioner
     public function ensureServerHostname(string $domain): array
     {
         $current = strtolower(trim((string) @shell_exec('postconf -h myhostname 2>/dev/null')));
-        if (self::isValidFqdn($current)) {
+        // SERVERPANEL_MAIL_HOSTNAME (for example the panel domain) is the one
+        // host every domain's MX points at, so Postfix must announce it too.
+        $configured = strtolower(trim((string) config('serverpanel.mail.hostname', '')));
+        $configured = self::isValidFqdn($configured) ? $configured : '';
+        if (self::isValidFqdn($current) && ($configured === '' || $configured === $current)) {
             return ['ok' => true, 'message' => ''];
         }
 
-        $target = strtolower(trim((string) config('serverpanel.mail.hostname', ''))) ?: 'mail.'.strtolower(trim($domain));
+        $target = $configured ?: 'mail.'.strtolower(trim($domain));
         $script = ScriptPathResolver::resolveRepositoryRoot().'/scripts/ensure-mail-hostname.sh';
         $result = $this->gateway->execute($script, [$target], [], true);
 

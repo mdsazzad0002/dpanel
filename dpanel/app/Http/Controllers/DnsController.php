@@ -1339,7 +1339,7 @@ class DnsController extends Controller
             $primaryDomain = (string) ($websiteDomains[0] ?? 'example.com');
         }
 
-        $mailHost = 'mail.'.$primaryDomain;
+        $mailHost = app(\App\Services\Mail\MailDnsRecords::class)->mailHost() ?: 'mail.'.$primaryDomain;
         $selector = trim((string) config('serverpanel.mail.dkim_selector', 'default'));
         if ($selector === '') {
             $selector = 'default';
@@ -1370,7 +1370,7 @@ class DnsController extends Controller
                 [
                     'type' => 'TXT',
                     'name' => '@',
-                    'content' => 'v=spf1 mx a ~all',
+                    'content' => app(\App\Services\Mail\MailDnsRecords::class)->spf(),
                     'note' => 'SPF for outbound mail.',
                 ],
                 [
@@ -1419,7 +1419,7 @@ class DnsController extends Controller
 
         $publicKey = trim((string) config('serverpanel.mail.dkim_public_key', ''));
         $recordName = $selector.'._domainkey.'.$domain;
-        $mailHost = 'mail.'.$domain;
+        $mailHost = app(\App\Services\Mail\MailDnsRecords::class)->mailHost() ?: 'mail.'.$domain;
         $dkimValue = $publicKey !== ''
             ? 'v=DKIM1; k=rsa; p='.$publicKey
             : 'v=DKIM1; k=rsa; p=PASTE_YOUR_PUBLIC_KEY_HERE';
@@ -1448,7 +1448,7 @@ class DnsController extends Controller
                 [
                     'type' => 'TXT',
                     'name' => '@',
-                    'content' => 'v=spf1 mx a ~all',
+                    'content' => app(\App\Services\Mail\MailDnsRecords::class)->spf(),
                     'note' => 'Allow your mail server to send mail',
                 ],
                 [
