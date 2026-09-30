@@ -270,6 +270,13 @@ filemanager_dispatch() {
   local command="${1:-install}"
   shift || true
 
+  # The chain runs every manifest module bare; this helper has nothing to
+  # install or update on its own, and failing here would stop the chain.
+  if [[ ( "$command" == "install" || "$command" == "update" ) && $# -eq 0 ]]; then
+    panel_info_log "filemanager is a helper module; nothing to ${command}."
+    return 0
+  fi
+
   case "$command" in
     install)
       case "${1:-}" in
