@@ -154,29 +154,31 @@ ensure_dpanel_dependencies() {
 }
 
 ensure_rust_toolchain() {
-  if command -v cargo >/dev/null 2>&1 && cargo --version >/dev/null 2>&1; then
+  # Only the toolchain in CARGO_HOME counts: a distro rustup (/usr/bin/rustup,
+  # packaged on Ubuntu 24.04) refuses to work with CARGO_HOME=/root/.cargo and
+  # fails with "rustup is not installed at '/root/.cargo'".
+  if [[ -x "${CARGO_HOME}/bin/cargo" ]] && "${CARGO_HOME}/bin/cargo" --version >/dev/null 2>&1; then
     return 0
   fi
 
   apt_get update
   apt_get install -y build-essential pkg-config openssl ca-certificates curl
-  if ! command -v rustup >/dev/null 2>&1; then
-    # Ubuntu 22.04 and Debian 12 have no rustup package; use the official
-    # installer there.
-    if ! apt_get install -y rustup; then
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
-    fi
+  if [[ ! -x "${CARGO_HOME}/bin/rustup" ]]; then
+    # The official installer, on every distro. The path check would stop it
+    # when a distro rustc or rustup is already on PATH.
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | RUSTUP_INIT_SKIP_PATH_CHECK=yes sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
   fi
 
   export PATH="${CARGO_HOME}/bin:${PATH}"
-  if ! cargo --version >/dev/null 2>&1; then
-    rustup toolchain install stable --profile minimal
-    rustup default stable
+  hash -r
+  if ! "${CARGO_HOME}/bin/cargo" --version >/dev/null 2>&1; then
+    "${CARGO_HOME}/bin/rustup" toolchain install stable --profile minimal
+    "${CARGO_HOME}/bin/rustup" default stable
   fi
 
-  command -v cargo >/dev/null 2>&1 || {
-    echo "Rust cargo is unavailable. Install Rust with rustup and rerun this script." >&2
+  "${CARGO_HOME}/bin/cargo" --version >/dev/null 2>&1 || {
+    echo "Rust cargo is unavailable in ${CARGO_HOME}. Install Rust with rustup and rerun this script." >&2
     exit 1
   }
 }

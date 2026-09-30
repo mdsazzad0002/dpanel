@@ -184,6 +184,18 @@ journalctl -u drust.service -n 100 --no-pager
 curl http://127.0.0.1:9500/health
 ```
 
+### `error: rustup is not installed at '/root/.cargo'`
+
+Seen on Ubuntu 24.04, which packages `rustup` in apt. Older drust installers
+used that package, but the build runs with `CARGO_HOME=/root/.cargo`, where
+the distro rustup refuses to work. Current installers always use the official
+rustup in `/root/.cargo`. Update from `main`, or rebuild drust alone:
+
+```bash
+sudo /var/www/drust/deploy/install-service.sh
+/root/.cargo/bin/cargo --version
+```
+
 ### `drust rebuild failed; keeping the running binary`
 
 The Rust build failed during an update, so the previous drust is still
