@@ -35,10 +35,13 @@ class MailHostnameDetector
         $panel = strtolower((string) parse_url((string) config('app.url', ''), PHP_URL_HOST));
         $ptr = $ip !== '' ? (string) ($this->dns->ptr($ip)[0] ?? '') : '';
 
+        // The current name ranks above the configured one, so a host an admin
+        // picked here is not switched back by the next update; only a working
+        // PTR name replaces it (that is what Gmail checks).
         $sources = [
             [$ptr, 'Reverse DNS (PTR) of '.($ip ?: 'server IP')],
-            [strtolower(trim((string) config('serverpanel.mail.hostname', ''))), 'SERVERPANEL_MAIL_HOSTNAME'],
             [$this->current(), 'Current Postfix hostname'],
+            [strtolower(trim((string) config('serverpanel.mail.hostname', ''))), 'SERVERPANEL_MAIL_HOSTNAME'],
             [$panel !== '' ? 'mail.'.$panel : '', 'mail. + panel domain'],
             [$panel, 'Panel domain'],
         ];

@@ -289,8 +289,11 @@ hostname. Check it with `dig +short -x <server IP>`.
 
 The mail hostname itself is picked automatically on every update: the first
 candidate that resolves to this server wins, in this order: the PTR name,
-`SERVERPANEL_MAIL_HOSTNAME`, the current Postfix name, `mail.<panel domain>`,
-the panel domain. A name that points elsewhere or through a proxy is skipped.
+the current Postfix name, `SERVERPANEL_MAIL_HOSTNAME`, `mail.<panel domain>`,
+the panel domain. A working host stays until the PTR name works, so a host
+picked in the panel is not switched back by the next update. Every domain's MX
+must point to the current mail host; after changing the host, update the MX
+records too, or the Verify DNS check marks them wrong. A name that points elsewhere or through a proxy is skipped.
 These lookups go through drust to public DNS (Cloudflare, then Google), the way
 `dig @1.1.1.1` sees them, so a hostname listed in `/etc/hosts` cannot make a
 wrong name look correct.

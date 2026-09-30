@@ -50,6 +50,23 @@ class MailHostnameDetectorTest extends TestCase
         $this->assertFalse(collect($detector->candidates())->firstWhere('host', 'old.example.net')['usable']);
     }
 
+    public function test_a_working_current_host_is_kept_over_the_configured_one(): void
+    {
+        // Both resolve here; the admin picked panel.example.com, so an update must not switch back.
+        $detector = new class(new MailDnsRecords, app(\App\Services\ScriptExecutionGateway::class), new FakeDns([
+            'A old.example.net' => ['203.0.113.5'],
+            'A panel.example.com' => ['203.0.113.5'],
+        ])) extends MailHostnameDetector
+        {
+            public function current(): string
+            {
+                return 'panel.example.com';
+            }
+        };
+
+        $this->assertSame('panel.example.com', $detector->best());
+    }
+
     public function test_apply_refuses_a_host_that_is_not_this_server(): void
     {
         $detector = $this->detector(['A other.example.org' => ['198.51.100.9']]);

@@ -27,7 +27,7 @@ const load = async () => {
 
 // An empty host means "detect and use the best candidate".
 const apply = async (host = '') => {
-    if (host && !confirm(`Use ${host} as the mail hostname? Every domain's MX should point to it.`)) return;
+    if (host && !confirm(`Use ${host} as the mail hostname?\n\nEvery domain's MX record must then be changed to ${host}; until you do, Verify DNS shows MX as wrong.`)) return;
     saving.value = host || 'best';
     message.value = null;
     try {
