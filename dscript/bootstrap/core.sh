@@ -2129,6 +2129,10 @@ panel_repair_mail_auth() {
 
   panel_configure_dovecot_sql || panel_warn_log "Dovecot SQL auth could not be refreshed."
   panel_configure_postfix_sql || panel_warn_log "Postfix mail domains could not be configured."
+  # Postfix must announce a name that resolves here (PTR first), or Gmail
+  # rejects mail with 550-5.7.25; MX in the Mail DNS Guide follows it.
+  (cd "$app_dir" && php artisan mail:hostname --apply) \
+    || panel_warn_log "Mail hostname detection failed; run 'php artisan mail:hostname --apply' in the panel directory."
   (cd "$app_dir" && php artisan mail:repair-dovecot-auth) \
     || panel_warn_log "Mailbox password check failed; run 'php artisan mail:repair-dovecot-auth' in the panel directory."
 }

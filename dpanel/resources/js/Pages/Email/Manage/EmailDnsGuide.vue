@@ -1,9 +1,10 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import axios from 'axios';
 import DnsVerifyResults from './components/DnsVerifyResults.vue';
+import MailHostnameCard from './components/MailHostnameCard.vue';
 
 const props = defineProps({
     domains: { type: Array, default: () => [] }, selectedDomain: { type: String, default: '' },
@@ -23,6 +24,9 @@ const copyValue = async (value, key) => {
     copied.value = key;
     window.setTimeout(() => { copied.value = ''; }, 1500);
 };
+const canManageMailServer = computed(() => (page.props.auth?.roles || []).includes('admin') || (page.props.auth?.permissions || []).includes('manage_mail_server'));
+// The MX value and warnings come from the server; reload them after the hostname changes.
+const reloadGuide = () => router.reload({ only: ['records', 'mailHost', 'mailHostResolvesTo'] });
 const verifying = ref(false);
 const verification = ref(null);
 const verifyDns = async () => {
@@ -78,6 +82,8 @@ const generateDkim = (domain) => {
                     </tr></tbody>
                 </table></div>
             </section>
+
+            <MailHostnameCard v-if="canManageMailServer" :panel-route="panelRoute" @changed="reloadGuide" />
 
             <DnsVerifyResults v-if="verification" :domain="selectedDomain" :checks="verification.checks" :error="verification.error" />
 

@@ -41,6 +41,7 @@ class RolePermissions
         'manage_servers',
         'manage_apache',
         'use_terminal',
+        'manage_mail_server',
     ];
 
     private const GENERAL_PERMISSIONS = [
@@ -109,6 +110,7 @@ class RolePermissions
             'manage_security',
             'manage_servers',
             'manage_apache',
+            'manage_mail_server',
         ],
     ];
 

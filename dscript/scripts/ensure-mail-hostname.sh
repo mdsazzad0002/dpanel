@@ -2,9 +2,14 @@
 set -euo pipefail
 
 # Ensures Postfix announces a real FQDN in HELO/EHLO. Leaves an existing valid
-# hostname untouched so an admin-chosen name is never overwritten.
+# hostname untouched so an admin-chosen name is never overwritten, unless
+# --set is given: the panel passes it when an admin (or the update's mail host
+# detection) picks a name that resolves to this server.
+#
+# Usage: ensure-mail-hostname.sh <hostname> [--set]
 
 hostname_arg="${1:-}"
+force="${2:-}"
 
 fail() { printf '[mail-hostname] %s\n' "$*" >&2; exit 1; }
 valid_fqdn() {
@@ -17,7 +22,7 @@ valid_fqdn() {
 command -v postconf >/dev/null 2>&1 || fail 'Postfix is not installed.'
 
 current="$(postconf -h myhostname 2>/dev/null || true)"
-if valid_fqdn "$current"; then
+if [[ "${current,,}" == "${hostname_arg,,}" ]] || { [[ "$force" != "--set" ]] && valid_fqdn "$current"; }; then
   printf 'MAIL_HOSTNAME=%s\nMAIL_HOSTNAME_CHANGED=0\n' "${current,,}"
   exit 0
 fi

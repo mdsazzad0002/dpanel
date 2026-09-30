@@ -43,6 +43,7 @@ use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SecurityCenterController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\Fail2banController;
+use App\Http\Controllers\MailHostnameController;
 use App\Http\Controllers\SelfConnectionController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerTaskController;
@@ -384,6 +385,12 @@ Route::prefix('cpsess{token}')
                 ->where('domain', '[A-Za-z0-9.-]+')
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.guide.export');
+            Route::get('/emails/mail-hostname', [MailHostnameController::class, 'show'])
+                ->middleware('role_or_permission:admin|manage_mail_server')
+                ->name('emails.mail-hostname.show');
+            Route::post('/emails/mail-hostname', [MailHostnameController::class, 'update'])
+                ->middleware(['role_or_permission:admin|manage_mail_server', 'throttle:10,1'])
+                ->name('emails.mail-hostname.update');
             Route::get('/emails/guide/verify/{domain}', [EmailController::class, 'verifyDns'])
                 ->where('domain', '[A-Za-z0-9.-]+')
                 ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:20,1'])

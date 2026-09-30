@@ -281,6 +281,27 @@ ls -l /var/spool/postfix/private/dovecot-lmtp /var/spool/postfix/private/auth
 The domain's MX record must point to this server, and the mailbox must be
 `active` in the panel.
 
+### Gmail bounces with `550-5.7.25 ... does not have a PTR record`
+
+The server IP's reverse DNS (PTR) name does not resolve back to the IP. Only
+the server provider can change a PTR record; ask them to set it to your mail
+hostname. Check it with `dig +short -x <server IP>`.
+
+The mail hostname itself is picked automatically on every update: the first
+candidate that resolves to this server wins, in this order: the PTR name,
+`SERVERPANEL_MAIL_HOSTNAME`, the current Postfix name, `mail.<panel domain>`,
+the panel domain. A name that points elsewhere or through a proxy is skipped.
+Users with the **manage_mail_server** permission can see the candidates and
+switch in **Email → Mail DNS Guide → Mail hostname**, or run:
+
+```bash
+cd /var/www/dpanel && sudo php artisan mail:hostname           # list candidates
+cd /var/www/dpanel && sudo php artisan mail:hostname --apply   # use the best one
+```
+
+The **Verify DNS** button on the same page checks MX, SPF, DKIM, DMARC, the
+mail hostname, and PTR.
+
 ### Gmail bounces with `550-5.7.26 ... sender is unauthenticated`
 
 The sending domain's DNS does not vouch for this server: SPF and DKIM both

@@ -52,26 +52,31 @@ class MailDomainProvisioner
      */
     public function ensureServerHostname(string $domain): array
     {
-        $current = strtolower(trim((string) @shell_exec('postconf -h myhostname 2>/dev/null')));
-        // SERVERPANEL_MAIL_HOSTNAME (for example the panel domain) is the one
-        // host every domain's MX points at, so Postfix must announce it too.
-        $configured = strtolower(trim((string) config('serverpanel.mail.hostname', '')));
-        $configured = self::isValidFqdn($configured) ? $configured : '';
-        if (self::isValidFqdn($current) && ($configured === '' || $configured === $current)) {
+        $detector = app(MailHostnameDetector::class);
+        $current = $detector->current();
+        $candidates = $detector->candidates();
+
+        // A name that already resolves here stays; otherwise take the best one that does.
+        if (collect($candidates)->contains(fn ($c) => $c['host'] === $current && $c['usable'])) {
+            return ['ok' => true, 'message' => ''];
+        }
+        if ($detector->best() !== '') {
+            $result = $detector->applyBest();
+
+            return ['ok' => $result['ok'], 'message' => $result['message']];
+        }
+        if (self::isValidFqdn($current)) {
             return ['ok' => true, 'message' => ''];
         }
 
-        $target = $configured ?: 'mail.'.strtolower(trim($domain));
+        // Nothing resolves here yet: any real FQDN beats an invalid HELO name.
+        $target = 'mail.'.strtolower(trim($domain));
         $script = ScriptPathResolver::resolveRepositoryRoot().'/scripts/ensure-mail-hostname.sh';
         $result = $this->gateway->execute($script, [$target], [], true);
 
-        if (! $result['success'] || ! preg_match('/^MAIL_HOSTNAME=(.+)$/m', $result['output'], $match)) {
-            return ['ok' => false, 'message' => 'Mail server hostname could not be set: '.(trim($result['output']) ?: 'unknown error.')];
-        }
-
-        return str_contains($result['output'], 'MAIL_HOSTNAME_CHANGED=1')
-            ? ['ok' => true, 'message' => 'Mail server hostname set to '.trim($match[1]).'.']
-            : ['ok' => true, 'message' => ''];
+        return $result['success']
+            ? ['ok' => true, 'message' => "Mail server hostname set to {$target}; point its A record at this server."]
+            : ['ok' => false, 'message' => 'Mail server hostname could not be set: '.(trim($result['output']) ?: 'unknown error.')];
     }
 
     /**

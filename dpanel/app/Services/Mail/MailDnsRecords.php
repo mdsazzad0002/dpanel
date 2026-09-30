@@ -12,17 +12,20 @@ namespace App\Services\Mail;
  */
 class MailDnsRecords
 {
-    /** The one hostname all domains point MX at; Postfix announces it in HELO. */
+    /**
+     * The one hostname all domains point MX at: the name Postfix announces in
+     * HELO (set by MailHostnameDetector), then the configured preference.
+     */
     public function mailHost(): string
     {
-        $configured = strtolower(trim((string) config('serverpanel.mail.hostname', '')));
-        if (MailDomainProvisioner::isValidFqdn($configured)) {
-            return $configured;
-        }
-
         $postfix = strtolower(trim((string) @shell_exec('postconf -h myhostname 2>/dev/null')));
         if (MailDomainProvisioner::isValidFqdn($postfix)) {
             return $postfix;
+        }
+
+        $configured = strtolower(trim((string) config('serverpanel.mail.hostname', '')));
+        if (MailDomainProvisioner::isValidFqdn($configured)) {
+            return $configured;
         }
 
         $panel = strtolower((string) parse_url((string) config('app.url', ''), PHP_URL_HOST));
