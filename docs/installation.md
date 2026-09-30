@@ -18,6 +18,21 @@ supported way to set up and repair website file permissions.
 - A fresh Linux server you control, with `sudo` or root access
 - Ports `80` and `443` open to the internet
 - A domain name for the panel (for example `panel.example.com`)
+- Ubuntu 22.04 or newer, Debian 12, or a RHEL-family distribution
+
+No extra configuration is needed for Ubuntu 22.04. Its packages are too old in
+three places, and the installer handles each one:
+
+| Tool | Ubuntu 22.04 package | What the installer uses |
+| --- | --- | --- |
+| PHP 8.2+ | Only 8.1 | `ppa:ondrej/php` |
+| Composer | 2.2, and it pulls in php8.1 | Official composer at `/usr/local/bin/composer` |
+| Node.js | 12, too old for Vite | Node.js 20 in `/opt/dpanel`, linked into `/usr/local/bin` |
+
+Website installers (Laravel, Drupal, and others) look for `composer` and `npm`
+in `/usr/local/bin` first, then `/usr/bin`. If an app install fails with
+`composer is not installed` or `npm is not installed`, run
+`sudo dpanel chain update`.
 
 ## Install dPanel
 
@@ -81,8 +96,9 @@ An update runs these steps in order:
 2. Updates each installed module.
 3. Rebuilds drust (`cargo build --release`) and restarts `drust.service` and
    `edge-gateway.service`. If the build fails, the old binary keeps running.
-4. Refreshes the panel: `composer install`, `php artisan migrate --force`, and
-   `npm run build`.
+4. Refreshes the panel: installs or updates composer, runs `composer install`
+   and `php artisan migrate --force`, makes sure Node.js 20+ is installed, and
+   runs `npm run build`.
 5. Repairs website ownership, regenerates vhosts, records the version in
    `.env`, rebuilds the config cache, and fixes app permissions.
 

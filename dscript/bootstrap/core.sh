@@ -1651,26 +1651,56 @@ panel_install_app_dependencies() {
 
   [[ -d "$app_dir" ]] || { panel_warn_log "Application directory not found; skipping app dependency install."; return 0; }
 
+  # Website installers (Laravel, Drupal, ...) need composer too, so it is
+  # ensured even when the panel's own vendor/ is already in place.
+  panel_ensure_composer || return 1
+
+  # Runs on every install and update: a release can add or bump packages, and
+  # composer finishes quickly when vendor/ already matches composer.lock.
   if [[ -f "${vendor_dir}/autoload.php" ]]; then
-    panel_info_log "Application dependencies already present."
+    panel_info_log "Syncing PHP application dependencies with composer."
   else
     panel_info_log "Installing PHP application dependencies with composer."
-    if ! command -v composer >/dev/null 2>&1; then
-      panel_warn_log "composer is missing; attempting package install."
-      if command -v apt-get >/dev/null 2>&1; then
-        DEBIAN_FRONTEND=noninteractive apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq composer
-      elif command -v dnf >/dev/null 2>&1; then
-        dnf install -y composer
-      elif command -v yum >/dev/null 2>&1; then
-        yum install -y composer
-      else
-        panel_die "composer is required but no supported package manager was found."
-      fi
-    fi
-
-    (cd "$app_dir" && composer install --no-interaction --prefer-dist --optimize-autoloader)
   fi
+  (cd "$app_dir" && COMPOSER_ALLOW_SUPERUSER=1 /usr/local/bin/composer install \
+    --no-interaction --prefer-dist --optimize-autoloader)
+}
+
+# The official composer in /usr/local/bin, on every distro. Distro packages lag
+# behind (Ubuntu 22.04 ships composer 2.2 and pulls in php8.1 packages next to
+# the panel's PHP), and drust's website installers look here first.
+panel_ensure_composer() {
+  local target="/usr/local/bin/composer"
+  local installer expected actual
+
+  if [[ -x "$target" ]]; then
+    COMPOSER_ALLOW_SUPERUSER=1 "$target" self-update --2 --no-interaction >/dev/null 2>&1 || true
+    return 0
+  fi
+  command -v php >/dev/null 2>&1 || { panel_warn_log "PHP CLI is missing; cannot install composer."; return 1; }
+
+  panel_info_log "Installing composer to ${target}."
+  installer="$(mktemp)"
+  if ! curl -fsSL --retry 3 https://getcomposer.org/installer -o "$installer"; then
+    rm -f "$installer"
+    panel_warn_log "Could not download the composer installer."
+    return 1
+  fi
+  expected="$(curl -fsSL --retry 3 https://composer.github.io/installer.sig || true)"
+  actual="$(php -r "echo hash_file('sha384', '${installer}');")"
+  if [[ -z "$expected" || "$expected" != "$actual" ]]; then
+    rm -f "$installer"
+    panel_warn_log "Composer installer checksum mismatch; not installing it."
+    return 1
+  fi
+  if ! php "$installer" --quiet --install-dir=/usr/local/bin --filename=composer; then
+    rm -f "$installer"
+    panel_warn_log "Composer installation failed."
+    return 1
+  fi
+  rm -f "$installer"
+  # Keep /usr/bin/composer working for older drust builds that hardcode it.
+  [[ -e /usr/bin/composer ]] || ln -s "$target" /usr/bin/composer
 }
 
 panel_fix_app_permissions() {
@@ -1755,6 +1785,7 @@ panel_ensure_node20() {
   fi
 
   if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 20 )); then
+    panel_link_node_tools "$(dirname "$(command -v node)")"
     return 0
   fi
 
@@ -1792,6 +1823,19 @@ panel_ensure_node20() {
 
   export PATH="${node_dir}/bin:${PATH}"
   hash -r 2>/dev/null || true
+  panel_link_node_tools "${node_dir}/bin"
+}
+
+# Website installers run as the site user with a fixed PATH
+# (/usr/local/bin before /usr/bin), so the Node.js 20 used for the panel must
+# be linked there; otherwise they find no npm, or the distro's old one.
+panel_link_node_tools() {
+  local bin_dir="$1" tool
+  [[ -n "$bin_dir" && "$bin_dir" != "/usr/local/bin" ]] || return 0
+  for tool in node npm npx; do
+    [[ -x "${bin_dir}/${tool}" ]] && ln -sfn "${bin_dir}/${tool}" "/usr/local/bin/${tool}"
+  done
+  return 0
 }
 
 panel_run_app_migrations() {
