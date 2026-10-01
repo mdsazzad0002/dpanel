@@ -197,6 +197,7 @@ pub fn serve(args: Vec<String>) -> ExitCode {
     };
 
     println!("[INFO] drust API server starting on port {port}");
+    std::thread::spawn(crate::fail2ban::ensure_default_policy);
 
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     runtime.block_on(async {

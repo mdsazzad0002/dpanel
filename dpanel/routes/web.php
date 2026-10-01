@@ -828,6 +828,15 @@ Route::prefix('cpsess{token}')
             Route::post('/security/fail2ban/unban', [Fail2banController::class, 'unban'])
                 ->middleware(['role:admin', 'throttle:30,1'])
                 ->name('security.fail2ban.unban');
+            Route::post('/security/fail2ban/ban', [Fail2banController::class, 'ban'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('security.fail2ban.ban');
+            Route::get('/security/fail2ban/ssh-history', [Fail2banController::class, 'history'])
+                ->middleware('role:admin')
+                ->name('security.fail2ban.history');
+            Route::post('/security/fail2ban/policy', [Fail2banController::class, 'policy'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('security.fail2ban.policy');
             Route::post('/security/fail2ban/whitelist', [Fail2banController::class, 'whitelistAdd'])
                 ->middleware(['role:admin', 'throttle:30,1'])
                 ->name('security.fail2ban.whitelist.store');

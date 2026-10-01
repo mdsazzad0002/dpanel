@@ -13,6 +13,14 @@ const CLIENT_CANDIDATES: &[&str] = &["/usr/bin/fail2ban-client", "/usr/local/bin
 const WHITELIST_FILE: &str = "/etc/fail2ban/jail.d/dpanel-whitelist.local";
 /// Always ignored; fail2ban's own default.
 const LOCAL_IGNORES: &[&str] = &["127.0.0.1/8", "::1"];
+/// dPanel's sshd rules. jail.d/*.local files are read in name order, so `zz-`
+/// lets this override serverpanel.local, whose `port = ssh` misses a custom port.
+const POLICY_FILE: &str = "/etc/fail2ban/jail.d/zz-dpanel-sshd.local";
+/// Failed SSH logins allowed before an IP is blocked for good.
+pub const DEFAULT_MAX_RETRY: u32 = 3;
+const MAX_RETRY_LIMIT: u32 = 10;
+const SSHD_CANDIDATES: &[&str] = &["/usr/sbin/sshd", "/usr/local/sbin/sshd"];
+const HISTORY_LIMIT: usize = 500;
 
 fn client() -> Option<&'static str> {
     CLIENT_CANDIDATES
@@ -138,19 +146,180 @@ fn write_whitelist(entries: &[String]) -> Result<(), String> {
     fs::write(WHITELIST_FILE, content).map_err(|e| format!("Cannot write {WHITELIST_FILE}: {e}"))
 }
 
+/// The ports sshd listens on, so a ban covers a custom port and not just 22.
+pub(crate) fn parse_sshd_ports(config: &str) -> Vec<String> {
+    let mut ports: Vec<String> = Vec::new();
+    for line in config.lines() {
+        if let Some(("port", value)) = line.trim().split_once(' ') {
+            let value = value.trim();
+            if value.parse::<u16>().is_ok() && !ports.iter().any(|port| port == value) {
+                ports.push(value.to_string());
+            }
+        }
+    }
+    ports
+}
+
+fn sshd_ports() -> Vec<String> {
+    let ports = SSHD_CANDIDATES
+        .iter()
+        .find(|path| Path::new(path).is_file())
+        .and_then(|sshd| Command::new(sshd).arg("-T").output().ok())
+        .filter(|output| output.status.success())
+        .map(|output| parse_sshd_ports(&String::from_utf8_lossy(&output.stdout)))
+        .unwrap_or_default();
+    if ports.is_empty() { vec!["ssh".to_string()] } else { ports }
+}
+
+pub(crate) fn policy_content(max_retry: u32, ports: &[String]) -> String {
+    format!(
+        "# Managed by dPanel (Security > Fail2ban). Changes here are overwritten.\n\
+         # {max_retry} failed SSH logins within a day block the IP until it is unblocked in the panel.\n\
+         [sshd]\nenabled = true\nport = {}\nmaxretry = {max_retry}\nfindtime = 1d\nbantime = -1\n",
+        ports.join(",")
+    )
+}
+
+pub(crate) fn parse_policy_max_retry(file: &str) -> Option<u32> {
+    file.lines().find_map(|line| {
+        let (key, value) = line.split_once('=')?;
+        (key.trim() == "maxretry").then(|| value.trim().parse().ok())?
+    })
+}
+
+fn write_policy(max_retry: u32) -> Result<(), String> {
+    if !(1..=MAX_RETRY_LIMIT).contains(&max_retry) {
+        return Err(format!("Allowed failed logins must be between 1 and {MAX_RETRY_LIMIT}."));
+    }
+    if let Some(parent) = Path::new(POLICY_FILE).parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
+    }
+    fs::write(POLICY_FILE, policy_content(max_retry, &sshd_ports()))
+        .map_err(|e| format!("Cannot write {POLICY_FILE}: {e}"))
+}
+
+/// Runs once when drust starts, so every server blocks SSH brute force by
+/// default. An existing policy file is the admin's choice and is left alone.
+pub fn ensure_default_policy() {
+    if client().is_none() || Path::new(POLICY_FILE).exists() {
+        return;
+    }
+    match write_policy(DEFAULT_MAX_RETRY).and_then(|()| run(&["reload"])) {
+        Ok(_) => println!("[INFO] fail2ban: SSH logins now block an IP after {DEFAULT_MAX_RETRY} failures."),
+        Err(error) => eprintln!("[WARN] fail2ban: could not apply the default SSH policy: {error}"),
+    }
+}
+
+/// What the running sshd jail enforces, read back from fail2ban itself.
+fn policy() -> Value {
+    let live = |key: &str| run(&["get", "sshd", key]).ok().and_then(|v| v.trim().parse::<i64>().ok());
+    json!({
+        "managed": Path::new(POLICY_FILE).exists(),
+        "max_retry": live("maxretry")
+            .or_else(|| fs::read_to_string(POLICY_FILE).ok().and_then(|f| parse_policy_max_retry(&f).map(i64::from))),
+        "permanent": live("bantime") == Some(-1),
+        "ports": sshd_ports(),
+        "default_max_retry": DEFAULT_MAX_RETRY,
+    })
+}
+
 pub fn status() -> Result<Value, String> {
     if client().is_none() {
-        return Ok(json!({ "installed": false, "running": false, "jails": [], "whitelist": [] }));
+        return Ok(json!({ "installed": false, "running": false, "jails": [], "whitelist": [], "policy": null }));
     }
     let whitelist = read_whitelist();
     let Ok(overview) = run(&["status"]) else {
-        return Ok(json!({ "installed": true, "running": false, "jails": [], "whitelist": whitelist }));
+        return Ok(json!({ "installed": true, "running": false, "jails": [], "whitelist": whitelist, "policy": null }));
     };
     let jails: Vec<Value> = parse_jail_list(&overview)
         .iter()
         .filter_map(|name| run(&["status", name]).ok().map(|text| parse_jail(name, &text)))
         .collect();
-    Ok(json!({ "installed": true, "running": true, "jails": jails, "whitelist": whitelist }))
+    Ok(json!({ "installed": true, "running": true, "jails": jails, "whitelist": whitelist, "policy": policy() }))
+}
+
+pub fn set_policy(max_retry: u32) -> Result<String, String> {
+    write_policy(max_retry)?;
+    run(&["reload"])?;
+    Ok(format!("SSH now blocks an IP permanently after {max_retry} failed logins."))
+}
+
+/// Blocks an IP from SSH until it is unblocked in the panel.
+pub fn ban(ip: &str) -> Result<String, String> {
+    let ip = validate_ip(ip)?;
+    if read_whitelist().contains(&ip) {
+        return Err(format!("{ip} is whitelisted. Remove it from the whitelist first."));
+    }
+    run(&["set", "sshd", "banip", &ip])?;
+    Ok(format!("{ip} blocked from SSH."))
+}
+
+/// One SSH login attempt from the journal.
+pub(crate) fn parse_login(message: &str) -> Option<(&'static str, String, String, String)> {
+    // "<user> from <ip> port <n>" -> (user, ip); the user may be empty or contain spaces.
+    let user_ip = |rest: &str| {
+        let (user, after) = rest.rsplit_once(" from ")?;
+        let ip = after.split_whitespace().next()?;
+        ip.parse::<IpAddr>().ok()?;
+        Some((user.trim().to_string(), ip.to_string()))
+    };
+    if let Some(rest) = message.strip_prefix("Accepted ") {
+        let (method, rest) = rest.split_once(" for ")?;
+        let (user, ip) = user_ip(rest)?;
+        return Some(("accepted", method.to_string(), user, ip));
+    }
+    if let Some(rest) = message.strip_prefix("Failed ") {
+        let (method, rest) = rest.split_once(" for ")?;
+        let (rest, method) = match rest.strip_prefix("invalid user ") {
+            Some(rest) => (rest, format!("{method} (invalid user)")),
+            None => (rest, method.to_string()),
+        };
+        let (user, ip) = user_ip(rest)?;
+        return Some(("failed", method, user, ip));
+    }
+    let (user, ip) = user_ip(message.strip_prefix("Invalid user ")?)?;
+    Some(("failed", "invalid user".to_string(), user, ip))
+}
+
+/// Recent SSH logins, newest first, both accepted and failed.
+pub fn ssh_history() -> Result<Value, String> {
+    let limit = HISTORY_LIMIT.to_string();
+    let output = Command::new("journalctl")
+        .args([
+            "-u", "ssh.service", "-u", "sshd.service", "--no-pager", "-r", "-n", &limit,
+            "-o", "json", "--output-fields=MESSAGE,_PID",
+            "-g", "^(Accepted|Failed|Invalid user) ",
+        ])
+        .output()
+        .map_err(|e| format!("Cannot run journalctl: {e}"))?;
+    // journalctl exits 1 when --grep matches nothing.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let entries: Vec<(String, i64, String)> = stdout
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter_map(|entry| {
+            let message = entry["MESSAGE"].as_str()?.to_string();
+            let micros = entry["__REALTIME_TIMESTAMP"].as_str()?.parse::<i64>().ok()?;
+            let pid = entry["_PID"].as_str().unwrap_or_default().to_string();
+            Some((message, micros / 1_000_000, pid))
+        })
+        .collect();
+    // sshd logs "Invalid user x" and then "Failed password for invalid user x"
+    // for the same attempt; keep only the second.
+    let failed_invalid: Vec<&str> = entries
+        .iter()
+        .filter(|(message, ..)| message.starts_with("Failed ") && message.contains(" for invalid user "))
+        .map(|(_, _, pid)| pid.as_str())
+        .collect();
+    let events: Vec<Value> = entries
+        .iter()
+        .filter(|(message, _, pid)| !(message.starts_with("Invalid user ") && failed_invalid.contains(&pid.as_str())))
+        .filter_map(|(message, time, _)| {
+            let (result, method, user, ip) = parse_login(message)?;
+            Some(json!({ "time": time, "result": result, "method": method, "user": user, "ip": ip }))
+        })
+        .collect();
+    Ok(json!({ "events": events, "limit": HISTORY_LIMIT }))
 }
 
 /// Removes the ban from every jail at once, which is what a locked-out admin wants.
@@ -214,6 +383,42 @@ mod tests {
         let file = "# Managed\n[DEFAULT]\nignoreip = 127.0.0.1/8 ::1 198.51.100.4 10.1.0.0/16\n";
         assert_eq!(parse_whitelist(file), vec!["198.51.100.4", "10.1.0.0/16"]);
         assert!(parse_whitelist("").is_empty());
+    }
+
+    #[test]
+    fn reads_sshd_ports() {
+        let config = "port 2002\nport 22\nport 2002\npermitrootlogin yes\nlistenaddress 0.0.0.0:2002\n";
+        assert_eq!(parse_sshd_ports(config), vec!["2002", "22"]);
+        assert!(parse_sshd_ports("").is_empty());
+    }
+
+    #[test]
+    fn policy_round_trips() {
+        let file = policy_content(3, &["2002".to_string()]);
+        assert!(file.contains("port = 2002\n"));
+        assert!(file.contains("bantime = -1\n"));
+        assert_eq!(parse_policy_max_retry(&file), Some(3));
+    }
+
+    #[test]
+    fn parses_login_lines() {
+        assert_eq!(
+            parse_login("Accepted password for sazzad from 103.78.226.196 port 58874 ssh2"),
+            Some(("accepted", "password".into(), "sazzad".into(), "103.78.226.196".into()))
+        );
+        assert_eq!(
+            parse_login("Failed password for root from 2001:db8::1 port 59492 ssh2"),
+            Some(("failed", "password".into(), "root".into(), "2001:db8::1".into()))
+        );
+        assert_eq!(
+            parse_login("Failed password for invalid user admin from 77.83.39.1 port 1 ssh2"),
+            Some(("failed", "password (invalid user)".into(), "admin".into(), "77.83.39.1".into()))
+        );
+        assert_eq!(
+            parse_login("Invalid user  from 77.83.39.99 port 42624"),
+            Some(("failed", "invalid user".into(), "".into(), "77.83.39.99".into()))
+        );
+        assert_eq!(parse_login("Server listening on 0.0.0.0 port 2002."), None);
     }
 
     #[test]

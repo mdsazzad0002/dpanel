@@ -38,12 +38,23 @@ class DrustSecurityClient
     }
 
     /**
-     * @param  'unban'|'whitelist_add'|'whitelist_remove'  $action
+     * @param  'unban'|'ban'|'whitelist_add'|'whitelist_remove'|'policy'  $action
+     * @param  array<string, mixed>  $extra
      * @return array<string, mixed> the fail2ban status after the change
      */
-    public function fail2banAction(string $action, string $ip): array
+    public function fail2banAction(string $action, string $ip, array $extra = []): array
     {
-        return $this->request('post', '/api/v1/fail2ban', ['action' => $action, 'ip' => $ip], 60);
+        return $this->request('post', '/api/v1/fail2ban', ['action' => $action, 'ip' => $ip] + $extra, 60);
+    }
+
+    /**
+     * Recent accepted and failed SSH logins, newest first.
+     *
+     * @return array<string, mixed>
+     */
+    public function sshHistory(): array
+    {
+        return $this->request('get', '/api/v1/fail2ban/ssh-history', null, 30);
     }
 
     /**
