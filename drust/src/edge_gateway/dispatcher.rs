@@ -6,7 +6,6 @@ use axum::{
     response::Response,
 };
 use axum::{extract::ConnectInfo, http::Request};
-use std::time::Duration;
 use std::{
     fs,
     net::{IpAddr, SocketAddr},
@@ -15,9 +14,9 @@ use std::{
 };
 
 use super::{
-    RouteAction, RuntimeSnapshot, StaticAsset, StaticAssetBody, StaticFileConfig,
+    RouteAction, StaticAsset, StaticAssetBody, StaticFileConfig,
     ensure_node_process_running, ensure_python_process_running, execute_php_front_controller,
-    load_static_asset, normalize_request_path, proxy_request, resolve_route, resolve_static_path,
+    browser_cache_control, load_static_asset, normalize_request_path, proxy_request, resolve_route, resolve_static_path,
 };
 
 #[derive(Clone, Debug)]
@@ -26,7 +25,6 @@ pub struct DispatchContext {
 }
 
 pub async fn dispatch(
-    snapshot: &RuntimeSnapshot,
     site: Option<&super::SiteConfig>,
     ctx: &DispatchContext,
     request: Request<Body>,
@@ -82,13 +80,13 @@ pub async fn dispatch(
             &path,
             site.php_version.as_deref(),
             site.hostnames.first().map(String::as_str).unwrap_or(""),
-            snapshot.cache.ttl,
         )
         .await;
         // Keep phpMyAdmin responses uncompressed. Its sign-on/logout flow
         // includes empty redirects that must not be transformed by the
         // global compression layer.
         response.headers_mut().remove(header::CONTENT_ENCODING);
+        response.extensions_mut().insert(super::compression::SkipCompression);
         return response;
     }
     if site.scope == "system" && is_system_pgadmin_path(&path) {
@@ -113,7 +111,7 @@ pub async fn dispatch(
             {
                 if let Ok(asset) = load_static_asset(&path_on_disk) {
                     return annotated_response(
-                        static_response(asset, snapshot.cache.ttl, request.headers()).await,
+                        static_response(asset, request.headers()).await,
                         site.hostnames.first().map(String::as_str).unwrap_or(""),
                         "acme-challenge",
                     );
@@ -143,7 +141,6 @@ pub async fn dispatch(
                     document_root: document_root.clone(),
                     index_file: "index.html".to_string(),
                     spa_fallback: site.spa_fallback,
-                    cache_ttl: snapshot.cache.ttl,
                 }
             } else if let Some(config) = ctx.static_files.as_ref() {
                 config.clone()
@@ -194,7 +191,7 @@ pub async fn dispatch(
                     }
                 };
                 return annotated_response(
-                    static_response(asset, config.cache_ttl, request.headers()).await,
+                    static_response(asset, request.headers()).await,
                     site_match,
                     route_match,
                 );
@@ -248,7 +245,7 @@ pub async fn dispatch(
             };
 
             return annotated_response(
-                static_response(asset, config.cache_ttl, request.headers()).await,
+                static_response(asset, request.headers()).await,
                 site_match,
                 route_match,
             );
@@ -363,7 +360,6 @@ async fn handle_system_phpmyadmin(
     path: &str,
     php_version: Option<&str>,
     site_match: &str,
-    cache_ttl: Duration,
 ) -> Response {
     // System paths are intentionally fixed. The hostname is database-driven,
     // while the service path remains stable across panel domain migrations.
@@ -428,7 +424,7 @@ async fn handle_system_phpmyadmin(
     if let Some(path_on_disk) = path_on_disk {
         return annotated_response(
             match load_static_asset(&path_on_disk) {
-                Ok(asset) => static_response(asset, cache_ttl, request.headers()).await,
+                Ok(asset) => static_response(asset, request.headers()).await,
                 Err(error) => simple_response(StatusCode::INTERNAL_SERVER_ERROR, &error),
             },
             site_match,
@@ -687,7 +683,6 @@ fn annotated_response(mut response: Response, site_match: &str, route_match: &st
 
 async fn static_response(
     asset: StaticAsset,
-    cache_ttl: Duration,
     request_headers: &axum::http::HeaderMap,
 ) -> Response {
     if request_headers
@@ -730,12 +725,7 @@ async fn static_response(
     headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     headers.insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_str(&format!(
-            "public, max-age={}, stale-while-revalidate={}",
-            cache_ttl.as_secs(),
-            cache_ttl.as_secs().saturating_div(2)
-        ))
-        .unwrap_or_else(|_| HeaderValue::from_static("public, max-age=60")),
+        HeaderValue::from_static(browser_cache_control(&asset.path, &asset.content_type)),
     );
     response
 }

@@ -290,6 +290,7 @@ pub fn build_demo_router(state: DemoServerState) -> Router {
         .route("/__admin/reload", post(handle_reload))
         .route("/__admin/health", any(handle_health))
         .route("/__admin/upstreams/health", any(handle_upstreams_health))
+        .layer(super::compression::layer())
         .with_state(Arc::new(state))
 }
 
@@ -315,7 +316,6 @@ pub async fn handle_request(
     let site = super::resolve_site(snapshot.as_ref(), &host);
     let canonical_domain = site.and_then(|site| site.hostnames.first().cloned());
     let response = dispatch(
-        snapshot.as_ref(),
         site,
         &state.dispatch,
         request,
@@ -857,7 +857,6 @@ pub fn sample_dispatch_context() -> DispatchContext {
             document_root: PathBuf::from("/var/www/demo/public"),
             index_file: "index.html".to_string(),
             spa_fallback: true,
-            cache_ttl: Duration::from_secs(60),
         }),
     }
 }

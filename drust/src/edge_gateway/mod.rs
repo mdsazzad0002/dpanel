@@ -1,4 +1,5 @@
 mod bandwidth;
+mod compression;
 mod config;
 mod dispatcher;
 mod h3_listener;
@@ -38,7 +39,7 @@ pub use server::{
 };
 pub use source::{DbSnapshotConfig, load_runtime_snapshot};
 pub use static_files::{
-    StaticAsset, StaticAssetBody, StaticFileConfig, clear_static_cache, clear_static_cache_under,
+    StaticAsset, StaticAssetBody, StaticFileConfig, browser_cache_control, clear_static_cache, clear_static_cache_under,
     load_static_asset, resolve_static_path,
 };
 pub use tls::{

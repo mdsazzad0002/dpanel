@@ -4,7 +4,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{OnceLock, RwLock},
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 #[derive(Clone, Debug)]
@@ -12,7 +12,6 @@ pub struct StaticFileConfig {
     pub document_root: PathBuf,
     pub index_file: String,
     pub spa_fallback: bool,
-    pub cache_ttl: Duration,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -110,6 +109,50 @@ pub fn load_static_asset(path: &Path) -> Result<StaticAsset, String> {
 }
 
 static STATIC_CACHE: OnceLock<RwLock<HashMap<PathBuf, StaticAsset>>> = OnceLock::new();
+/// How long a browser may reuse a static file without asking again.
+///
+/// Build output with a content hash in its name (Vite `app-C4as9d92.js`,
+/// webpack `app.3f2a1b9c.js`) never changes, so it is cached for a year. HTML
+/// is revalidated on every load (a cheap 304 via the ETag) so a deploy that
+/// points it at new hashed files shows up at once. Anything else is reused
+/// for an hour.
+pub fn browser_cache_control(path: &Path, content_type: &str) -> &'static str {
+    if content_type.starts_with("text/html") {
+        return "no-cache";
+    }
+    if is_fingerprinted(path) {
+        return "public, max-age=31536000, immutable";
+    }
+    "public, max-age=3600"
+}
+
+fn is_fingerprinted(path: &Path) -> bool {
+    const BUILD_DIRS: &[&str] = &["build", "assets", "dist", "static", "_next", "chunks"];
+    let in_build_dir = path
+        .parent()
+        .is_some_and(|dir| dir.components().any(|c| BUILD_DIRS.contains(&c.as_os_str().to_string_lossy().as_ref())));
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    // Webpack and others add `.min` or `.chunk` after the hash.
+    let stem = stem.trim_end_matches(".min").trim_end_matches(".chunk");
+    let bytes = stem.as_bytes();
+    if !in_build_dir || bytes.len() < 10 {
+        return false;
+    }
+    // An 8+ character hash after a `-` or `.`, mixing letters and digits.
+    (8..=20).any(|len| {
+        if bytes.len() <= len {
+            return false;
+        }
+        let (head, hash) = stem.split_at(bytes.len() - len);
+        matches!(head.as_bytes().last(), Some(b'-' | b'.'))
+            && hash.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            && hash.bytes().any(|b| b.is_ascii_digit())
+            && hash.bytes().any(|b| b.is_ascii_alphabetic())
+    })
+}
+
 pub fn clear_static_cache() {
     if let Some(cache) = STATIC_CACHE.get() {
         if let Ok(mut items) = cache.write() {
@@ -181,6 +224,29 @@ fn guess_content_type(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn hashed_build_files_are_cached_for_a_year() {
+        let immutable = "public, max-age=31536000, immutable";
+        for path in [
+            "/home/a/public/build/assets/Access-C4as9d92.js",
+            "/home/a/public/build/assets/Access-C4EN5T-s.js",
+            "/home/a/public/build/assets/accessGroups-C_MN_82O.css",
+            "/var/www/app/dist/js/app.3f2a1b9c.js",
+            "/var/www/app/build/static/js/main.8e2f4a1b.chunk.js",
+        ] {
+            assert_eq!(browser_cache_control(Path::new(path), "application/javascript"), immutable, "{path}");
+        }
+        for path in [
+            "/var/www/site/assets/js/jquery-3.6.0.min.js",
+            "/var/www/site/assets/css/bootstrap-datepicker.css",
+            "/var/www/site/wp-content/themes/x/app-C4as9d92.js",
+            "/var/www/site/assets/img/photo-20240101.jpg",
+        ] {
+            assert_eq!(browser_cache_control(Path::new(path), "text/css"), "public, max-age=3600", "{path}");
+        }
+        assert_eq!(browser_cache_control(Path::new("/var/www/site/build/index.html"), "text/html; charset=utf-8"), "no-cache");
+    }
     use super::*;
     use std::fs;
 
