@@ -42,6 +42,17 @@ class PublicDnsLookup
         return $this->one($name, 'TXT');
     }
 
+    /**
+     * Any supported type, in drust's answer format: CNAME/NS hostnames, MX
+     * "priority host", SRV "priority weight port target", CAA `flags tag "value"`.
+     *
+     * @return array<int, string>
+     */
+    public function records(string $name, string $type): array
+    {
+        return $this->one($name, strtoupper($type));
+    }
+
     /** @return array<int, string> */
     public function ptr(string $ip): array
     {
@@ -71,9 +82,8 @@ class PublicDnsLookup
                 $missing[$this->key($query[0], $query[1])] = $query;
             }
         }
-        foreach (array_chunk(array_values($missing), 20) as $chunk) {
-            $this->fetch($chunk);
-        }
+        // drust answers 20 per call; the calls go out together.
+        $this->fetch(array_chunk(array_values($missing), 20));
     }
 
     /** @return array<int, string> */
@@ -81,31 +91,37 @@ class PublicDnsLookup
     {
         $key = $this->key($name, $type);
         if (! isset($this->memo[$key])) {
-            $this->fetch([[$name, $type]]);
+            $this->fetch([[[$name, $type]]]);
         }
 
         return $this->memo[$key] ?? [];
     }
 
-    /** @param  array<int, array{0: string, 1: string}>  $queries */
-    private function fetch(array $queries): void
+    /** @param  array<int, array<int, array{0: string, 1: string}>>  $chunks */
+    private function fetch(array $chunks): void
     {
-        $answers = $this->drustDown ? null : $this->viaDrust($queries);
-        if ($answers === null) {
-            $this->drustDown = true;
-            foreach ($queries as [$name, $type]) {
-                $this->memo[$this->key($name, $type)] = $this->viaPhp($name, $type);
-            }
+        $results = $this->drustDown ? array_fill(0, count($chunks), null) : $this->viaDrust($chunks);
+        foreach ($chunks as $index => $queries) {
+            $answers = $results[$index] ?? null;
+            if ($answers === null) {
+                $this->drustDown = true;
+                foreach ($queries as [$name, $type]) {
+                    $this->memo[$this->key($name, $type)] = $this->viaPhp($name, $type);
+                }
 
-            return;
-        }
-        foreach ($queries as [$name, $type]) {
-            $key = $this->key($name, $type);
-            if (array_key_exists($key, $answers)) {
-                $this->memo[$key] = $answers[$key];
-            } else {
-                $this->memo[$key] = [];
-                $this->failed[$key] = true;
+                continue;
+            }
+            foreach ($queries as [$name, $type]) {
+                $key = $this->key($name, $type);
+                if (array_key_exists($key, $answers) && $answers[$key] === null) {
+                    // An older drust that does not know this type yet.
+                    $this->memo[$key] = $this->viaPhp($name, $type);
+                } elseif (array_key_exists($key, $answers)) {
+                    $this->memo[$key] = $answers[$key];
+                } else {
+                    $this->memo[$key] = [];
+                    $this->failed[$key] = true;
+                }
             }
         }
     }
@@ -116,37 +132,52 @@ class PublicDnsLookup
     }
 
     /**
-     * @param  array<int, array{0: string, 1: string}>  $queries
-     * @return array<string, array<int, string>>|null answered lookups; null when drust is unreachable
+     * @param  array<int, array<int, array{0: string, 1: string}>>  $chunks
+     * @return array<int, array<string, array<int, string>|null>|null> per chunk: answered lookups, or null when drust did not answer
      */
-    private function viaDrust(array $queries): ?array
+    private function viaDrust(array $chunks): array
     {
         $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        if ($baseUrl === '' || $queries === []) {
-            return null;
+        if ($baseUrl === '' || $chunks === []) {
+            return array_fill(0, count($chunks), null);
         }
+        $url = rtrim($baseUrl, '/').'/api/v1/dns/lookup';
+        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $request = function ($http, array $queries) use ($url, $token) {
+            $http = $http->acceptJson()->asJson()->timeout(15);
 
-        try {
-            $request = Http::acceptJson()->asJson()->timeout(15);
-            $token = trim((string) config('serverpanel.execution_api_token', ''));
-            if ($token !== '') {
-                $request = $request->withToken($token);
-            }
-            $response = $request->post(rtrim($baseUrl, '/').'/api/v1/dns/lookup', [
+            return ($token !== '' ? $http->withToken($token) : $http)->post($url, [
                 'queries' => array_map(fn ($q) => ['name' => $q[0], 'type' => $q[1]], $queries),
             ]);
+        };
+
+        try {
+            $responses = count($chunks) === 1
+                ? [$request(Http::getFacadeRoot(), $chunks[0])]
+                : Http::pool(fn ($pool) => array_map(fn ($queries) => $request($pool, $queries), $chunks));
         } catch (\Throwable) {
-            return null;
+            return array_fill(0, count($chunks), null);
         }
-        if (! $response->successful() || ! $response->json('success')) {
+
+        return array_map(fn ($response) => $this->drustAnswers($response), array_values($responses));
+    }
+
+    /** @return array<string, array<int, string>|null>|null */
+    private function drustAnswers(mixed $response): ?array
+    {
+        if (! $response instanceof \Illuminate\Http\Client\Response || ! $response->successful() || ! $response->json('success')) {
             return null;
         }
 
-        // A lookup that errored is left out, and fetch() records it as failed.
+        // A lookup that errored is left out, and fetch() records it as failed;
+        // one drust could not do is null, and fetch() asks PHP instead.
         $answers = [];
         foreach ((array) $response->json('data.answers', []) as $answer) {
-            if (($answer['error'] ?? '') === '') {
-                $answers[$this->key((string) $answer['name'], (string) $answer['type'])] = array_values((array) ($answer['values'] ?? []));
+            $key = $this->key((string) ($answer['name'] ?? ''), (string) ($answer['type'] ?? ''));
+            if (str_starts_with((string) ($answer['error'] ?? ''), 'Unsupported record type')) {
+                $answers[$key] = null;
+            } elseif (($answer['error'] ?? '') === '') {
+                $answers[$key] = array_values((array) ($answer['values'] ?? []));
             }
         }
 
@@ -163,6 +194,12 @@ class PublicDnsLookup
             'MX' => array_map(fn ($r) => $r['pri'].' '.$host($r['target']), @dns_get_record($name, DNS_MX) ?: []),
             'TXT' => array_map(fn ($r) => isset($r['entries']) ? implode('', $r['entries']) : (string) ($r['txt'] ?? ''), @dns_get_record($name, DNS_TXT) ?: []),
             'PTR' => array_map(fn ($r) => $host($r['target']), @dns_get_record($this->reverseName($name), DNS_PTR) ?: []),
+            'AAAA' => array_map(fn ($r) => (string) $r['ipv6'], @dns_get_record($name, DNS_AAAA) ?: []),
+            // dns_get_record() also returns the records behind an alias; keep the name's own.
+            'CNAME' => array_values(array_map(fn ($r) => $host($r['target']), array_filter(@dns_get_record($name, DNS_CNAME) ?: [], fn ($r) => ($r['type'] ?? '') === 'CNAME' && $host($r['host']) === $host($name)))),
+            'NS' => array_map(fn ($r) => $host($r['target']), @dns_get_record($name, DNS_NS) ?: []),
+            'SRV' => array_map(fn ($r) => "{$r['pri']} {$r['weight']} {$r['port']} ".$host($r['target']), @dns_get_record($name, DNS_SRV) ?: []),
+            'CAA' => array_map(fn ($r) => "{$r['flags']} {$r['tag']} \"{$r['value']}\"", @dns_get_record($name, DNS_CAA) ?: []),
             default => [],
         };
     }

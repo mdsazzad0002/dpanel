@@ -728,6 +728,12 @@ Route::prefix('cpsess{token}')
             Route::post('/dns/zones/{id}/import', [DnsZoneFileController::class, 'import'])
                 ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.zones.import');
+            Route::get('/dns/zones/{id}/scan', [DnsZoneFileController::class, 'scan'])
+                ->middleware(['role_or_permission:admin|reseller|general|general_user|manage_dns', 'throttle:10,1'])
+                ->name('dns.zones.scan');
+            Route::post('/dns/zones/{id}/import-records', [DnsZoneFileController::class, 'importRecords'])
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
+                ->name('dns.zones.import-records');
             Route::get('/dns/cloudflare/review', [DnsController::class, 'reviewCloudflare'])
                 ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.cloudflare.review');

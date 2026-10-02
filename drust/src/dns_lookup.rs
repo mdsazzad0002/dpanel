@@ -8,6 +8,7 @@
 use hickory_resolver::{
     TokioAsyncResolver,
     config::{NameServerConfigGroup, ResolverConfig, ResolverOpts},
+    proto::rr::{RData, Record, RecordType},
 };
 use serde::{Deserialize, Serialize};
 use std::{net::IpAddr, sync::OnceLock, time::Duration};
@@ -26,8 +27,11 @@ pub(crate) struct Answer {
     pub name: String,
     #[serde(rename = "type")]
     pub kind: String,
-    /// A/AAAA: addresses; MX: "priority host"; TXT: strings joined; PTR: hostnames.
-    /// Hostnames are lowercase without the trailing dot.
+    /// A/AAAA: addresses; MX: "priority host"; TXT: strings joined;
+    /// PTR/CNAME/NS: hostnames; SRV: "priority weight port target";
+    /// CAA: `flags tag "value"`. Hostnames are lowercase without the
+    /// trailing dot. CNAME is only the queried name's own alias, not the
+    /// chain behind it, so an import keeps it as a CNAME.
     pub values: Vec<String>,
     /// Empty when the lookup worked, including "no such record" (values is empty).
     pub error: String,
@@ -59,6 +63,31 @@ pub(crate) fn valid_name(name: &str) -> bool {
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         })
+}
+
+/// The records of `record_type` owned by `name` itself; a CNAME answer also
+/// carries the records of the name it points at.
+fn own_records<'a>(
+    name: &str,
+    record_type: RecordType,
+    records: impl Iterator<Item = &'a Record>,
+) -> Vec<String> {
+    records
+        .filter(|record| record.record_type() == record_type && host(record.name()) == name)
+        .filter_map(|record| match record.data()? {
+            RData::CNAME(target) => Some(host(&target.0)),
+            RData::NS(target) => Some(host(&target.0)),
+            RData::SRV(srv) => Some(format!(
+                "{} {} {} {}",
+                srv.priority(),
+                srv.weight(),
+                srv.port(),
+                host(srv.target())
+            )),
+            RData::CAA(caa) => Some(caa.to_string()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn host(name: &impl ToString) -> String {
@@ -137,8 +166,21 @@ async fn lookup_inner(query: &Query) -> Answer {
                 })
                 .collect()
         }),
+        "CNAME" | "NS" | "SRV" | "CAA" => {
+            let record_type = match kind.as_str() {
+                "CNAME" => RecordType::CNAME,
+                "NS" => RecordType::NS,
+                "SRV" => RecordType::SRV,
+                _ => RecordType::CAA,
+            };
+            resolver()
+                .lookup(name.as_str(), record_type)
+                .await
+                .map(|lookup| own_records(&name, record_type, lookup.record_iter()))
+        }
         _ => {
-            answer.error = "Unsupported record type; use A, AAAA, MX, TXT or PTR.".into();
+            answer.error =
+                "Unsupported record type; use A, AAAA, CNAME, MX, TXT, NS, SRV, CAA or PTR.".into();
             return answer;
         }
     };
@@ -199,6 +241,15 @@ mod tests {
         assert!(a.values.contains(&"1.1.1.1".to_string()), "{:?} {}", a.values, a.error);
         let ptr = lookup(&q("1.1.1.1", "PTR")).await;
         assert_eq!(ptr.values, vec!["one.one.one.one"]);
+        let cname = lookup(&q("www.github.com", "CNAME")).await;
+        assert_eq!(cname.values, vec!["github.com"], "{}", cname.error);
+        let none = lookup(&q("github.com", "CNAME")).await;
+        assert!(none.values.is_empty() && none.error.is_empty(), "{:?} {}", none.values, none.error);
+        let caa = lookup(&q("google.com", "CAA")).await;
+        assert!(caa.values.iter().any(|v| v.contains("issue \"pki.goog")), "{:?} {}", caa.values, caa.error);
+        let srv = lookup(&q("_xmpp-server._tcp.jabber.org", "SRV")).await;
+        assert!(srv.values.iter().all(|v| v.split(' ').count() == 4), "{:?}", srv.values);
+        println!("{:?} {:?}", caa.values, srv.values);
         let missing = lookup(&q("no-such-name.invalid", "A")).await;
         assert!(missing.values.is_empty());
         for (name, kind) in [("server1.dengrweb.com", "A"), ("159.198.43.2", "PTR"), ("mail.dpanel.likesoftbd.com", "A"), ("drupal.dpanel.likesoftbd.com", "MX"), ("drupal.dpanel.likesoftbd.com", "TXT")] {

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import ZoneFileImport from '@/Pages/Dns/components/ZoneFileImport.vue';
+import ZoneScanImport from '@/Pages/Dns/components/ZoneScanImport.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -26,6 +27,9 @@ const creatingRecordFor = ref('');
 const selectedZone = ref('');
 const zoneCanvasOpen = ref(false);
 const zoneImportOpen = ref(false);
+const zoneScanOpen = ref(false);
+// Cloudflare-style: find the domain's current records right after creating it.
+const scanAfterCreate = ref(true);
 const recordSaving = ref(false);
 const recordMessage = ref('');
 const cloneRecordMap = (records) => JSON.parse(JSON.stringify(records || {}));
@@ -166,7 +170,16 @@ const submitZone = () => {
         zoneForm.patch(panelRoute('dns.zones.update', { id: zoneEditingId.value }), { onSuccess: resetZoneForm });
         return;
     }
-    zoneForm.post(panelRoute('dns.zones.store'), { onSuccess: resetZoneForm });
+    const createdDomain = zoneForm.domain;
+    zoneForm.post(panelRoute('dns.zones.store'), {
+        onSuccess: () => {
+            resetZoneForm();
+            if (scanAfterCreate.value && props.zones.some((zone) => zone.domain === createdDomain)) {
+                selectedZone.value = createdDomain;
+                zoneScanOpen.value = true;
+            }
+        },
+    });
 };
 
 const submitRecord = async () => {
@@ -344,6 +357,10 @@ watch(
                     <input v-model.number="zoneForm.minimum_ttl" type="number" min="60" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="zoneForm.errors.minimum_ttl" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ zoneForm.errors.minimum_ttl }}</p>
                 </div>
+                <label v-if="!zoneEditingId" class="flex items-start gap-2 rounded-md border border-slate-200 p-3 text-sm dark:border-slate-700">
+                    <input v-model="scanAfterCreate" type="checkbox" class="mt-0.5 rounded border-slate-300" />
+                    <span>Find existing DNS records<span class="block text-xs text-slate-500">After creating, scan public DNS for the domain's current records and pick which to import.</span></span>
+                </label>
                 <p v-if="zoneError" class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">{{ zoneError }}</p>
                 <div class="flex items-center gap-2">
                     <button type="submit" :disabled="zoneForm.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
@@ -410,6 +427,7 @@ watch(
                     <div class="flex flex-wrap gap-2">
                         <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editZone(selectedZoneObject)">Edit Zone</button>
                         <a :href="panelRoute('dns.zones.export', { id: selectedZoneObject.zone_uuid || selectedZoneObject.id })" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Export zone file</a>
+                        <button type="button" class="rounded-md border border-blue-300 px-3 py-2 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300" @click="zoneScanOpen = true">Scan existing records</button>
                         <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="zoneImportOpen = true">Import zone file</button>
                         <Link :href="panelRoute('dns.cloudflare.review', { domain: selectedZoneObject.domain })" class="rounded-md border border-indigo-300 px-3 py-2 text-xs text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300">Review Cloudflare Sync</Link>
                         <button type="button" :disabled="deleteZoneForm.processing" class="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950" @click="deleteZone(selectedZoneObject.zone_uuid || selectedZoneObject.id)">Delete Zone</button>
@@ -423,6 +441,13 @@ watch(
                     <div class="bg-white px-3 py-2.5 dark:bg-slate-900"><span class="text-slate-400">Analytics</span><strong class="ml-2 font-medium" :class="selectedZoneObject.analytics_enabled ? 'text-emerald-600' : 'text-slate-500'">{{ selectedZoneObject.analytics_enabled ? 'Enabled' : 'Ready' }}</strong></div>
                 </div>
 
+                <ZoneScanImport
+                    v-if="zoneScanOpen"
+                    :zone="selectedZoneObject"
+                    :scan-url="panelRoute('dns.zones.scan', { id: selectedZoneObject.zone_uuid || selectedZoneObject.id })"
+                    :import-url="panelRoute('dns.zones.import-records', { id: selectedZoneObject.zone_uuid || selectedZoneObject.id })"
+                    @close="zoneScanOpen = false"
+                />
                 <ZoneFileImport
                     v-if="zoneImportOpen"
                     :zone="selectedZoneObject"

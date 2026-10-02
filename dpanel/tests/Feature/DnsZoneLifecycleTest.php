@@ -6,6 +6,7 @@ use App\Models\DnsZone;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
@@ -119,6 +120,75 @@ class DnsZoneLifecycleTest extends TestCase
         $this->request()->get("/cpsess{$this->token}/dns/zones/{$zone->id}/export")
             ->assertOk()
             ->assertSee("example.com.\t300\tIN\tTXT\t\"v=spf1 mx -all\"", false);
+    }
+
+    public function test_existing_records_are_scanned_and_the_picked_ones_imported(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret', 'dns.our_nameservers' => ['ns1.panel.test']]);
+        $public = [
+            'NS shop.test' => ['ada.ns.cloudflare.com', 'bob.ns.cloudflare.com'],
+            'A shop.test' => ['203.0.113.10'],
+            'MX shop.test' => ['10 mail.shop.test'],
+            'TXT shop.test' => ['v=spf1 mx -all'],
+            'CNAME www.shop.test' => ['shop.test'],
+            'A mail.shop.test' => ['203.0.113.20'],
+            'SRV _autodiscover._tcp.shop.test' => ['0 0 443 mail.shop.test'],
+        ];
+        Http::fake(['drust.test/api/v1/dns/lookup' => function ($request) use ($public) {
+            return Http::response(['success' => true, 'data' => ['answers' => array_map(fn ($q) => [
+                'name' => $q['name'], 'type' => $q['type'], 'error' => '',
+                'values' => $public[$q['type'].' '.$q['name']] ?? [],
+            ], $request['queries'])]]);
+        }]);
+        $this->createZone('shop.test');
+        $zone = DnsZone::query()->sole();
+
+        $scan = $this->request()->getJson("/cpsess{$this->token}/dns/zones/{$zone->id}/scan")->assertOk();
+        $scan->assertJsonPath('nameservers', ['ada.ns.cloudflare.com', 'bob.ns.cloudflare.com'])
+            ->assertJsonPath('uses_our_nameservers', false)
+            ->assertJsonPath('wildcard', false);
+        $found = collect($scan->json('records'))->map(fn ($r) => "{$r['type']} {$r['name']} {$r['priority']} {$r['content']}")->sort()->values()->all();
+        $this->assertSame([
+            'A mail.shop.test  203.0.113.20',
+            'A shop.test  203.0.113.10',
+            'CNAME www.shop.test  shop.test',
+            'MX shop.test 10 mail.shop.test',
+            'SRV _autodiscover._tcp.shop.test 0 0 443 mail.shop.test',
+            'TXT shop.test  v=spf1 mx -all',
+        ], $found);
+
+        $picked = collect($scan->json('records'))->reject(fn ($r) => $r['type'] === 'SRV')
+            ->map(fn ($r) => array_intersect_key($r, array_flip(['name', 'type', 'content', 'priority', 'ttl'])))->values()->all();
+        $this->request()->post("/cpsess{$this->token}/dns/zones/{$zone->id}/import-records", ['records' => $picked])
+            ->assertSessionHas('success', 'Imported 5 records into shop.test.');
+
+        $this->assertSame('shop.test', DB::table('records')->where('type', 'CNAME')->value('content'));
+        $this->assertSame(10, (int) DB::table('records')->where('type', 'MX')->value('prio'));
+        $this->assertSame('"v=spf1 mx -all"', DB::table('records')->where('type', 'TXT')->value('content'));
+        $this->assertFalse(DB::table('records')->where('type', 'SRV')->exists());
+
+        // Scanning again marks what the zone already has.
+        $again = $this->request()->getJson("/cpsess{$this->token}/dns/zones/{$zone->id}/scan");
+        $this->assertTrue(collect($again->json('records'))->firstWhere('type', 'MX')['exists']);
+    }
+
+    public function test_imported_records_must_belong_to_the_zone(): void
+    {
+        $this->createZone('shop.test');
+        $zone = DnsZone::query()->sole();
+
+        $this->request()->post("/cpsess{$this->token}/dns/zones/{$zone->id}/import-records", ['records' => [
+            ['name' => 'evil.other.test', 'type' => 'A', 'content' => '203.0.113.9', 'priority' => null, 'ttl' => 300],
+        ]])->assertSessionHas('error');
+        $this->assertFalse(DB::table('records')->where('name', 'evil.other.test')->exists());
+    }
+
+    private function createZone(string $domain): void
+    {
+        $this->request()->post("/cpsess{$this->token}/dns/zones", [
+            'domain' => $domain, 'type' => 'master', 'email' => "hostmaster@{$domain}",
+            'refresh' => 3600, 'retry' => 600, 'expire' => 1209600, 'minimum_ttl' => 3600, 'status' => 'active',
+        ])->assertSessionHasNoErrors();
     }
 
     public function test_a_zone_without_an_email_is_rejected_with_a_field_error(): void
