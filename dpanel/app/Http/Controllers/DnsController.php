@@ -7,7 +7,9 @@ use App\Models\DnsZone;
 use App\Models\Mailbox;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\Dns\DnsRecordContent;
 use App\Services\Dns\DnsRegistryService;
+use App\Services\Dns\DnsZoneRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -435,7 +438,7 @@ class DnsController extends Controller
         $this->ensureDnsTables();
         $validated = $request->validate([
             'zone_domain' => ['required', 'string', 'max:255'],
-            'type' => ['required', 'in:A,AAAA,CNAME,MX,TXT,NS,SRV'],
+            'type' => ['required', 'in:'.implode(',', DnsRecordContent::TYPES)],
             'name' => ['required', 'string', 'max:255'],
             'content' => ['required', 'string', 'max:2048'],
             'ttl' => ['required', 'integer', 'min:60', 'max:86400'],
@@ -450,28 +453,30 @@ class DnsController extends Controller
         }
         $this->authorizeZone($request, (int) $zone->id);
 
-        $name = $this->toFqdnRecordName($validated['name'], $zoneDomain);
+        $type = strtoupper((string) $validated['type']);
+        ['name' => $name, 'content' => $content, 'priority' => $priority] = $this->prepareRecord((int) $zone->id, $zoneDomain, $validated);
         $recordId = (int) $this->pdns()->table('records')->insertGetId([
             'domain_id' => (int) $zone->id,
             'name' => $name,
-            'type' => strtoupper((string) $validated['type']),
-            'content' => (string) $validated['content'],
+            'type' => $type,
+            'content' => $content,
             'ttl' => (int) $validated['ttl'],
-            'prio' => $validated['priority'] !== null ? (int) $validated['priority'] : 0,
+            'prio' => $priority,
             'disabled' => $validated['status'] === 'disabled' ? 1 : 0,
             'auth' => 1,
         ]);
+        app(DnsZoneRules::class)->bumpSerial($this->pdns(), (int) $zone->id);
         $profile = DnsZone::query()->where('powerdns_domain_id', (int) $zone->id)->first();
         if ($profile) {
             DnsRecord::query()->create([
                 'id' => (string) Str::uuid(),
                 'powerdns_record_id' => $recordId,
                 'dns_zone_id' => $profile->id,
-                'type' => strtoupper((string) $validated['type']),
+                'type' => $type,
                 'name' => $name,
-                'content' => (string) $validated['content'],
+                'content' => $content,
                 'ttl' => (int) $validated['ttl'],
-                'priority' => $validated['priority'] !== null ? (int) $validated['priority'] : 0,
+                'priority' => $priority,
                 'is_active' => $validated['status'] !== 'disabled',
             ]);
         }
@@ -484,7 +489,7 @@ class DnsController extends Controller
         $this->ensureDnsTables();
         $validated = $request->validate([
             'zone_domain' => ['required', 'string', 'max:255'],
-            'type' => ['required', 'in:A,AAAA,CNAME,MX,TXT,NS,SRV'],
+            'type' => ['required', 'in:'.implode(',', DnsRecordContent::TYPES)],
             'name' => ['required', 'string', 'max:255'],
             'content' => ['required', 'string', 'max:2048'],
             'ttl' => ['required', 'integer', 'min:1', 'max:86400'],
@@ -521,17 +526,22 @@ class DnsController extends Controller
         }
         $this->authorizeZone($request, (int) $zone->id);
 
-        $name = $this->toFqdnRecordName($validated['name'], $zoneDomain);
+        $type = strtoupper((string) $validated['type']);
+        ['name' => $name, 'content' => $content, 'priority' => $priority] = $this->prepareRecord((int) $zone->id, $zoneDomain, $validated, $recordId);
         $this->pdns()->table('records')->where('id', $recordId)->update([
             'domain_id' => (int) $zone->id,
             'name' => $name,
-            'type' => strtoupper((string) $validated['type']),
-            'content' => (string) $validated['content'],
+            'type' => $type,
+            'content' => $content,
             'ttl' => (int) $validated['ttl'],
-            'prio' => $validated['priority'] !== null ? (int) $validated['priority'] : 0,
+            'prio' => $priority,
             'disabled' => $validated['status'] === 'disabled' ? 1 : 0,
             'auth' => 1,
         ]);
+        app(DnsZoneRules::class)->bumpSerial($this->pdns(), (int) $zone->id);
+        if ((int) $record->domain_id !== (int) $zone->id) {
+            app(DnsZoneRules::class)->bumpSerial($this->pdns(), (int) $record->domain_id);
+        }
         $profile = DnsZone::query()->where('powerdns_domain_id', (int) $zone->id)->first();
         if ($profile) {
             DnsRecord::query()->updateOrCreate(
@@ -539,11 +549,11 @@ class DnsController extends Controller
                 [
                     'id' => DnsRecord::query()->where('powerdns_record_id', $recordId)->value('id') ?: (string) Str::uuid(),
                     'dns_zone_id' => $profile->id,
-                    'type' => strtoupper((string) $validated['type']),
+                    'type' => $type,
                     'name' => $name,
-                    'content' => (string) $validated['content'],
+                    'content' => $content,
                     'ttl' => (int) $validated['ttl'],
-                    'priority' => $validated['priority'] !== null ? (int) $validated['priority'] : 0,
+                    'priority' => $priority,
                     'is_active' => $validated['status'] !== 'disabled',
                 ],
             );
@@ -555,11 +565,11 @@ class DnsController extends Controller
                 'record' => [
                     'id' => (string) $recordId,
                     'zone_domain' => $zoneDomain,
-                    'type' => strtoupper((string) $validated['type']),
+                    'type' => $type,
                     'name' => $this->toUiRecordName($name, $zoneDomain),
-                    'content' => (string) $validated['content'],
+                    'content' => $content,
                     'ttl' => (int) $validated['ttl'],
-                    'priority' => $validated['priority'] !== null ? (int) $validated['priority'] : null,
+                    'priority' => in_array($type, ['MX', 'SRV'], true) ? $priority : null,
                     'status' => $validated['status'],
                 ],
             ]);
@@ -575,6 +585,7 @@ class DnsController extends Controller
         abort_unless($record, 404);
         $this->authorizeZone($request, (int) $record->domain_id);
         $this->pdns()->table('records')->where('id', $recordId)->delete();
+        app(DnsZoneRules::class)->bumpSerial($this->pdns(), (int) $record->domain_id);
         DnsRecord::query()->where('powerdns_record_id', $recordId)->delete();
 
         return redirect()->route('dns.zones')->with('success', 'DNS record deleted.');
@@ -746,7 +757,7 @@ class DnsController extends Controller
                 }
 
                 $content = trim((string) $record['content']);
-                $priority = (int) ($record['priority'] ?? 0);
+                $priority = isset($record['priority']) ? (int) $record['priority'] : null;
                 if ($type === 'SRV') {
                     $srv = json_decode($content, true);
                     if (! is_array($srv) || ! isset($srv['target'], $srv['port'])) {
@@ -755,11 +766,14 @@ class DnsController extends Controller
                         continue;
                     }
                     $priority = (int) ($srv['priority'] ?? 0);
-                    $content = (int) ($srv['weight'] ?? 0).' '.(int) $srv['port'].' '.$this->normalizeDomain((string) $srv['target']).'.';
-                } elseif ($type === 'TXT') {
-                    $content = $this->toPowerDnsTxtContent($content);
-                } elseif (in_array($type, ['CNAME', 'MX', 'NS'], true)) {
-                    $content = $this->normalizeDomain($content).'.';
+                    $content = (int) ($srv['weight'] ?? 0).' '.(int) $srv['port'].' '.(string) $srv['target'];
+                }
+                try {
+                    ['content' => $content, 'priority' => $priority] = app(DnsRecordContent::class)->normalize($type, $content, $priority, $zoneDomain);
+                } catch (\InvalidArgumentException) {
+                    $skipped++;
+
+                    continue;
                 }
 
                 $existingId = $this->pdns()->table('records')
@@ -798,6 +812,7 @@ class DnsController extends Controller
                 ]);
                 $created++;
             }
+            app(DnsZoneRules::class)->bumpSerial($this->pdns(), (int) $zone->id);
         }
 
         return redirect()->route('dns.zones')->with('success', "Cloudflare zone imported into PowerDNS. Created {$created}, skipped {$skipped}.");
@@ -876,13 +891,34 @@ class DnsController extends Controller
         return $payload;
     }
 
-    private function toPowerDnsTxtContent(string $content): string
+    /**
+     * Checks a submitted record and returns it as PowerDNS stores it.
+     *
+     * @param  array{type:string,name:string,content:string,priority?:int|null}  $input
+     * @return array{name:string,content:string,priority:int}
+     *
+     * @throws ValidationException
+     */
+    private function prepareRecord(int $zoneId, string $zoneDomain, array $input, ?int $exceptRecordId = null): array
     {
-        $content = trim($content, " \t\n\r\0\x0B\"");
+        $type = strtoupper((string) $input['type']);
+        $name = $this->toFqdnRecordName((string) $input['name'], $zoneDomain);
+        $rules = app(DnsZoneRules::class);
+        $content = app(DnsRecordContent::class);
 
-        return collect(str_split($content, 255))
-            ->map(fn (string $chunk) => '"'.addcslashes($chunk, '\\"').'"')
-            ->implode(' ');
+        try {
+            $content->assertValidName($name);
+        } catch (\InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['name' => $exception->getMessage()]);
+        }
+        try {
+            $normalized = $content->normalize($type, (string) $input['content'], isset($input['priority']) ? (int) $input['priority'] : null, $zoneDomain);
+            $rules->assertNoCnameConflict($this->pdns(), $zoneId, $zoneDomain, $name, $type, $exceptRecordId);
+        } catch (\InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['content' => $exception->getMessage()]);
+        }
+
+        return ['name' => $name] + $normalized;
     }
 
     private function pdns()
@@ -1132,6 +1168,8 @@ class DnsController extends Controller
                 ]);
             }
         }
+
+        app(DnsZoneRules::class)->bumpSerial($this->pdns(), $zoneId);
     }
 
     private function upsertSoaRecord(int $zoneId, string $domain, array $validated): void
@@ -1145,7 +1183,12 @@ class DnsController extends Controller
             ->value('hostname');
 
         $primaryNs = $primaryNs ? $this->normalizeDomain((string) $primaryNs) : "ns1.{$domain}";
-        $serial = now()->format('Ymd').'01';
+        $existing = $this->pdns()->table('records')
+            ->where('domain_id', $zoneId)
+            ->where('type', 'SOA')
+            ->first();
+        // Secondaries ignore a zone whose serial goes down, so never reset it.
+        $serial = DnsZoneRules::nextSerial($existing ? DnsZoneRules::serialFromSoa((string) $existing->content) : 0);
         $soaContent = implode(' ', [
             $primaryNs,
             $this->emailToSoaMailbox((string) $validated['email']),
@@ -1155,11 +1198,6 @@ class DnsController extends Controller
             (int) $validated['expire'],
             (int) $validated['minimum_ttl'],
         ]);
-
-        $existing = $this->pdns()->table('records')
-            ->where('domain_id', $zoneId)
-            ->where('type', 'SOA')
-            ->first();
 
         if ($existing) {
             $this->pdns()->table('records')->where('id', $existing->id)->update([

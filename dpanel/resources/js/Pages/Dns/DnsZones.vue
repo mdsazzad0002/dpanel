@@ -205,7 +205,21 @@ const deleteRecord = (id) => {
     deleteRecordForm.delete(panelRoute('dns.records.destroy', { id }));
 };
 
-const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV'];
+const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR'];
+const contentHints = {
+    A: '203.0.113.10',
+    AAAA: '2001:db8::10',
+    CNAME: 'target.example.net or @',
+    MX: 'mail.example.com (set Priority)',
+    TXT: 'v=spf1 mx -all (quotes are added for you)',
+    NS: 'ns1.example.net',
+    SRV: 'weight port target, e.g. 5 5060 sip.example.com',
+    CAA: '0 issue "letsencrypt.org"',
+    PTR: 'host.example.com',
+};
+const contentHint = computed(() => contentHints[recordForm.type] || 'Record value');
+const priorityUsed = computed(() => ['MX', 'SRV'].includes(recordForm.type));
+const recordError = computed(() => recordForm.errors.name || recordForm.errors.content || recordForm.errors.type || recordForm.errors.ttl || recordForm.errors.priority || '');
 const recordTypeOptions = recordTypes.map((type) => ({ value: type, label: type }));
 const statusOptions = [
     { value: 'active', label: 'active' },
@@ -429,13 +443,14 @@ watch(
                                     <input v-model="recordForm.name" type="text" placeholder="@ or www" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
                                 </td>
                                 <td class="px-4 py-3 align-top">
-                                    <input v-model="recordForm.content" type="text" placeholder="IP, hostname, or text value" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+                                    <input v-model="recordForm.content" type="text" :placeholder="contentHint" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+                                    <p v-if="recordError" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ recordError }}</p>
                                 </td>
                                 <td class="px-4 py-3 align-top">
                                     <input v-model.number="recordForm.ttl" type="number" min="1" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
                                 </td>
                                 <td class="px-4 py-3 align-top">
-                                    <input v-model.number="recordForm.priority" type="number" min="0" max="65535" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+                                    <input v-model.number="recordForm.priority" type="number" min="0" max="65535" :disabled="!priorityUsed" :placeholder="priorityUsed ? '10' : '-'" class="w-full disabled:opacity-40 rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
                                 </td>
                                 <td class="px-4 py-3 align-top">
                                     <SearchableSelect v-model="recordForm.status" :options="statusOptions" />
@@ -468,13 +483,14 @@ watch(
                                         <input v-model="recordForm.name" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
                                     </td>
                                     <td class="px-4 py-3 align-top">
-                                        <input v-model="recordForm.content" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+                                        <input v-model="recordForm.content" type="text" :placeholder="contentHint" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+                                        <p v-if="recordError" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ recordError }}</p>
                                     </td>
                                     <td class="px-4 py-3 align-top">
                                         <input v-model.number="recordForm.ttl" type="number" min="1" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
                                     </td>
                                     <td class="px-4 py-3 align-top">
-                                        <input v-model.number="recordForm.priority" type="number" min="0" max="65535" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+                                        <input v-model.number="recordForm.priority" type="number" min="0" max="65535" :disabled="!priorityUsed" :placeholder="priorityUsed ? '10' : '-'" class="w-full disabled:opacity-40 rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
                                     </td>
                                     <td class="px-4 py-3 align-top">
                                         <SearchableSelect v-model="recordForm.status" :options="statusOptions" />
