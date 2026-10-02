@@ -26,6 +26,25 @@ class MailHostnameDetector
         return strtolower(trim((string) @shell_exec('postconf -h myhostname 2>/dev/null')));
     }
 
+    /** The machine's own name; the hostname script keeps it equal to the mail hostname. */
+    public function systemHostname(): string
+    {
+        return strtolower(trim((string) (@shell_exec('hostname -f 2>/dev/null') ?: gethostname())));
+    }
+
+    /**
+     * The server IP and its reverse DNS. One IP has one PTR, shared by every
+     * mail domain, so it should name the mail hostname.
+     *
+     * @return array{ip: string, ptr: string}
+     */
+    public function reverseDns(): array
+    {
+        $ip = $this->records->serverIp();
+
+        return ['ip' => $ip, 'ptr' => $ip !== '' ? strtolower(rtrim((string) ($this->dns->ptr($ip)[0] ?? ''), '.')) : ''];
+    }
+
     /**
      * @return array<int, array{host: string, source: string, addresses: array<int, string>, usable: bool}>
      */

@@ -70,7 +70,10 @@ class MailDomainProvisioner
         }
 
         // Nothing resolves here yet: any real FQDN beats an invalid HELO name.
-        $target = 'mail.'.strtolower(trim($domain));
+        // The panel's own domain comes first: the server name is shared by
+        // every domain, so it must not belong to a customer who may leave.
+        $panel = strtolower((string) parse_url((string) config('app.url', ''), PHP_URL_HOST));
+        $target = 'mail.'.(self::isValidFqdn($panel) ? $panel : strtolower(trim($domain)));
         $script = ScriptPathResolver::resolveRepositoryRoot().'/scripts/ensure-mail-hostname.sh';
         $result = $this->gateway->execute($script, [$target], [], true);
 

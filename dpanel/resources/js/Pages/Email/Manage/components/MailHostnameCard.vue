@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import axios from 'axios';
+import MailServerIdentity from './MailServerIdentity.vue';
 
 const props = defineProps({
     panelRoute: { type: Function, required: true },
@@ -62,6 +63,8 @@ onMounted(load);
         <div v-if="message" :class="message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'" class="mt-3 rounded-md border px-4 py-3 text-sm">
             {{ message.text }}
         </div>
+
+        <MailServerIdentity v-if="state && !loading" :state="state" />
 
         <div class="mt-4 overflow-x-auto">
             <table class="min-w-full text-left text-sm">

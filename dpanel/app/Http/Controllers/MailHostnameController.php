@@ -46,12 +46,18 @@ class MailHostnameController extends Controller
         return response()->json(['success' => $result['ok'], 'message' => $result['message'], ...$this->state()], $result['ok'] ? 200 : 422);
     }
 
-    /** @return array{current: string, best: string, candidates: array<int, array<string, mixed>>} */
+    /** @return array{current: string, best: string, system: string, ip: string, ptr: string, candidates: array<int, array<string, mixed>>} */
     private function state(): array
     {
         $candidates = $this->detector->candidates();
         $best = collect($candidates)->firstWhere('usable', true)['host'] ?? '';
 
-        return ['current' => $this->detector->current(), 'best' => $best, 'candidates' => $candidates];
+        return [
+            'current' => $this->detector->current(),
+            'best' => $best,
+            'system' => $this->detector->systemHostname(),
+            ...$this->detector->reverseDns(),
+            'candidates' => $candidates,
+        ];
     }
 }
