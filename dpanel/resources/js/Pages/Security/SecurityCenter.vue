@@ -3,9 +3,11 @@ import { ref, computed, onBeforeUnmount, onMounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import ProtectionBreakdown from './components/ProtectionBreakdown.vue';
 
 const props = defineProps({
     score: { type: Object, required: true },
+    unscanned: { type: Object, default: () => ({}) },
     recentFindings: { type: Array, default: () => [] },
     events: { type: Array, default: () => [] },
     scans: { type: Array, default: () => [] },
@@ -46,13 +48,6 @@ const scoreColor = (score) => {
     if (score >= 75) return 'text-lime-600 dark:text-lime-400';
     if (score >= 50) return 'text-amber-600 dark:text-amber-400';
     return 'text-red-600 dark:text-red-400';
-};
-
-const barColor = (score) => {
-    if (score >= 90) return 'bg-emerald-500';
-    if (score >= 75) return 'bg-lime-500';
-    if (score >= 50) return 'bg-amber-500';
-    return 'bg-red-500';
 };
 
 const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—');
@@ -143,18 +138,18 @@ onBeforeUnmount(() => clearInterval(timer));
 
                 <div class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                     <h2 class="text-base font-semibold">Protection</h2>
-                    <div class="mt-4 space-y-3">
-                        <div v-for="category in score.categories" :key="category.key" class="grid grid-cols-[8rem_minmax(0,1fr)_4rem] items-center gap-3 text-sm">
-                            <span>{{ category.label }} <span class="text-xs text-slate-400">{{ category.weight }}%</span></span>
-                            <div class="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                                <div v-if="category.score !== null" class="h-full rounded-full" :class="barColor(category.score)" :style="{ width: category.score + '%' }"></div>
-                            </div>
-                            <span v-if="category.score !== null" class="text-right font-semibold" :class="scoreColor(category.score)">{{ category.score }}</span>
-                            <span v-else class="text-right text-xs text-slate-400">{{ category.planned ? 'Planned' : 'Not scanned' }}</span>
-                        </div>
-                    </div>
+                    <ProtectionBreakdown
+                        :categories="score.categories"
+                        :unscanned="unscanned"
+                        :websites="websites"
+                        :active-scans="activeScans"
+                        :is-admin="isAdmin"
+                        :panel-route="panelRoute"
+                        @message="message = $event"
+                        @queued="router.reload({ only: ['scans', 'events'] })"
+                    />
                     <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">
-                        Categories without data are left out of the overall score. WAF and update checks arrive in a later phase.
+                        Click a row to see what it checks. Categories without data are left out of the overall score. WAF and update checks arrive in a later phase.
                     </p>
                 </div>
             </section>

@@ -45,6 +45,21 @@ return [
     // Not measured before Phase 2; shown on the dashboard as "not measured".
     'unmeasured_categories' => ['waf', 'updates'],
 
+    // What the dashboard tells the user about each category: the scan that
+    // measures it, what it checks and where to fix it (an admin|reseller
+    // route, shown to admins only).
+    'category_guides' => [
+        'firewall' => ['scan' => 'configuration', 'checks' => 'UFW is active and no database or cache port is reachable from outside.', 'fix_route' => 'security.firewall', 'fix_label' => 'Firewall settings'],
+        'waf' => ['scan' => null, 'checks' => 'Web application firewall rules. Not built yet, so it does not affect the score.', 'fix_route' => null, 'fix_label' => null],
+        'malware' => ['scan' => 'full', 'checks' => 'Webshells, obfuscated code and ClamAV signatures in website files. Only Full and Malware scans measure it.', 'fix_route' => null, 'fix_label' => null],
+        'integrity' => ['scan' => 'quick', 'checks' => 'Code files added, changed or removed since the previous scan. The first scan only records hashes.', 'fix_route' => null, 'fix_label' => null],
+        'php' => ['scan' => 'quick', 'checks' => 'PHP in upload folders, odd PHP extensions, shell functions and unsafe file permissions.', 'fix_route' => null, 'fix_label' => null],
+        'ssh' => ['scan' => 'configuration', 'checks' => 'Root login and password login in sshd.', 'fix_route' => 'security.ssh', 'fix_label' => 'SSH settings'],
+        'ssl' => ['scan' => 'configuration', 'checks' => 'Every website has HTTPS and no certificate is expired or about to expire.', 'fix_route' => 'websites.list', 'fix_label' => 'Websites'],
+        'updates' => ['scan' => null, 'checks' => 'Outdated packages and CMS versions. Not built yet, so it does not affect the score.', 'fix_route' => null, 'fix_label' => null],
+        'backup' => ['scan' => 'configuration', 'checks' => 'A backup has completed in the last :days days.', 'fix_route' => 'backups.index', 'fix_label' => 'Backups'],
+    ],
+
     // Finding categories that roll up into a score category.
     'score_category_map' => [
         'permissions' => 'php',

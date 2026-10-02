@@ -43,8 +43,11 @@ class SecurityCenterController extends Controller
             ->limit(8)
             ->get();
 
+        $websites = $this->websites($user);
+
         return Inertia::render('Security/SecurityCenter', [
             'score' => $this->scores->calculate($websiteIds, $isAdmin),
+            'unscanned' => $this->scores->unscannedWebsites(array_column($websites, 'id')),
             'recentFindings' => $recentFindings->map(fn (SecurityFinding $f) => $this->presentFinding($f)),
             'events' => SecurityEvent::query()
                 ->when($websiteIds !== null, fn ($q) => $q->whereIn('website_id', $websiteIds))
@@ -52,7 +55,7 @@ class SecurityCenterController extends Controller
                 ->limit(10)
                 ->get(['id', 'website_id', 'event_type', 'severity', 'message', 'created_at']),
             'scans' => $this->recentScans($websiteIds),
-            'websites' => $this->websites($user),
+            'websites' => $websites,
             'scanTypes' => config('security_center.scan_types'),
             'rules' => $isAdmin ? SecurityRule::query()->orderBy('rule_id')->get(['id', 'rule_id', 'name', 'category', 'severity', 'enabled']) : [],
             'isAdmin' => $isAdmin,
@@ -79,7 +82,7 @@ class SecurityCenterController extends Controller
             ->when($websiteIds !== null, fn ($q) => $q->whereIn('website_id', $websiteIds))
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->when($filters['severity'] ?? null, fn ($q, $v) => $q->where('severity', $v))
-            ->when($filters['category'] ?? null, fn ($q, $v) => $q->where('category', $v))
+            ->when($filters['category'] ?? null, fn ($q, $v) => $q->whereIn('category', $this->findingCategories($v)))
             ->when($filters['website'] ?? null, fn ($q, $v) => $v === 'server' ? $q->whereNull('website_id') : $q->where('website_id', $v))
             ->when($filters['search'] ?? null, fn ($q, $v) => $q->where(fn ($inner) => $inner
                 ->where('title', 'like', "%{$v}%")
@@ -132,6 +135,48 @@ class SecurityCenterController extends Controller
         $scan = $this->scans->queue($website, $data['scan_type'], $user);
 
         return response()->json(['success' => true, 'scan' => $this->presentScan($scan)]);
+    }
+
+    /**
+     * Queue the scan that measures a website category on every visible
+     * website that has not been measured for it yet (all of them when
+     * every website already has a result).
+     */
+    public function scanCategory(Request $request): JsonResponse
+    {
+        $guides = (array) config('security_center.category_guides');
+        $data = $request->validate(['category' => ['required', Rule::in(array_keys($guides))]]);
+        $scanType = $guides[$data['category']]['scan'] ?? null;
+        if ($scanType === null || $scanType === SecurityScanService::SERVER_SCAN_TYPE) {
+            abort(422, 'This category is not measured by a website scan.');
+        }
+
+        $user = $request->user();
+        $visible = array_column($this->websites($user), 'id');
+        $targets = $this->scores->unscannedWebsites($visible)[$data['category']] ?? [];
+        if ($targets === []) {
+            $targets = $visible;
+        }
+
+        $busy = SecurityScan::query()
+            ->whereIn('website_id', $targets)
+            ->whereIn('status', ['queued', 'running'])
+            ->pluck('website_id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
+        $queued = 0;
+        foreach (Website::query()->whereKey(array_diff($targets, $busy))->get() as $website) {
+            $this->scans->queue($website, $scanType, $user);
+            $queued++;
+        }
+
+        return response()->json([
+            'success' => true,
+            'queued' => $queued,
+            'skipped' => count($busy),
+            'message' => $queued === 0 ? 'Every website already has a scan running.' : "Queued {$queued} ".($queued === 1 ? 'scan' : 'scans').'.',
+        ]);
     }
 
     public function scanStatus(Request $request, string $token, int $scan): JsonResponse
@@ -268,6 +313,19 @@ class SecurityCenterController extends Controller
             'first_seen_at' => $finding->first_seen_at?->toIso8601String(),
             'last_seen_at' => $finding->last_seen_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Finding categories behind a filter value: a score category also
+     * matches the finding categories that roll up into it.
+     *
+     * @return array<int, string>
+     */
+    private function findingCategories(string $category): array
+    {
+        $rolled = array_keys((array) config('security_center.score_category_map'), $category, true);
+
+        return array_merge([$category], $rolled);
     }
 
     private function severityOrder(): string

@@ -99,6 +99,32 @@ class SecurityCenterTest extends TestCase
         $this->assertNull($scores->calculate(['site-2'], false)['overall']);
     }
 
+    public function test_categories_report_findings_and_unscanned_websites(): void
+    {
+        $scores = app(SecurityScoreService::class);
+
+        $scan = $this->scan('site-1', 'quick');
+        $scan->update(['status' => 'completed']);
+        app(SecurityScanService::class)->persist($scan, [
+            $this->finding('DP-PHP-001', 'high', 'php', 'uploads/a.php'),
+            $this->finding('DP-PERM-001', 'medium', 'permissions', 'x'),
+        ]);
+        $this->scan('site-2', 'full');
+
+        $categories = collect($scores->calculate()['categories'])->keyBy('key');
+        $this->assertSame(2, $categories['php']['findings']);
+        $this->assertSame('full', $categories['malware']['scan_type']);
+        $this->assertTrue($categories['ssh']['server']);
+        $this->assertFalse($categories['php']['server']);
+
+        // site-2's full scan is still running, so it measures nothing yet.
+        $unscanned = $scores->unscannedWebsites(['site-1', 'site-2']);
+        $this->assertSame(['site-2'], $unscanned['php']);
+        $this->assertSame(['site-1', 'site-2'], $unscanned['malware']);
+        $this->assertArrayNotHasKey('ssh', $unscanned);
+        $this->assertArrayNotHasKey('waf', $unscanned);
+    }
+
     public function test_posture_rules_for_ssh_and_exposed_ports(): void
     {
         $posture = app(ServerPostureCheck::class);

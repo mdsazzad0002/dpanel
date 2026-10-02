@@ -783,6 +783,9 @@ Route::prefix('cpsess{token}')
             Route::post('/security/center/scans', [SecurityCenterController::class, 'startScan'])
                 ->middleware('role:admin|reseller|general|general_user')
                 ->name('security.center.scans.start');
+            Route::post('/security/center/scans/category', [SecurityCenterController::class, 'scanCategory'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('security.center.scans.category');
             Route::get('/security/center/scans/{scan}', [SecurityCenterController::class, 'scanStatus'])
                 ->middleware('role:admin|reseller|general|general_user')
                 ->whereNumber('scan')

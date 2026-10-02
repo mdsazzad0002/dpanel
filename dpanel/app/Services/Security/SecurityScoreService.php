@@ -21,15 +21,18 @@ class SecurityScoreService
         $penalties = (array) config('security_center.severity_penalties');
         $map = (array) config('security_center.score_category_map');
         $unmeasured = (array) config('security_center.unmeasured_categories');
+        $guides = (array) config('security_center.category_guides');
 
         $measured = $this->measuredCategories($websiteIds, $includeServer);
 
         $findings = $this->openFindings($websiteIds, $includeServer)->get(['category', 'severity']);
         $penaltyByCategory = [];
+        $findingsByCategory = [];
         $counts = array_fill_keys(SecurityFinding::SEVERITIES, 0);
         foreach ($findings as $finding) {
             $category = $map[$finding->category] ?? $finding->category;
             $penaltyByCategory[$category] = ($penaltyByCategory[$category] ?? 0) + (int) ($penalties[$finding->severity] ?? 0);
+            $findingsByCategory[$category] = ($findingsByCategory[$category] ?? 0) + 1;
             $counts[$finding->severity] = ($counts[$finding->severity] ?? 0) + 1;
         }
 
@@ -50,6 +53,12 @@ class SecurityScoreService
                 'score' => $score,
                 'measured' => $isMeasured,
                 'planned' => in_array($category, $unmeasured, true),
+                'findings' => $findingsByCategory[$category] ?? 0,
+                'server' => ($guides[$category]['scan'] ?? null) === SecurityScanService::SERVER_SCAN_TYPE,
+                'scan_type' => $guides[$category]['scan'] ?? null,
+                'checks' => str_replace(':days', (string) config('security_center.backup_max_age_days'), (string) ($guides[$category]['checks'] ?? '')),
+                'fix_route' => $guides[$category]['fix_route'] ?? null,
+                'fix_label' => $guides[$category]['fix_label'] ?? null,
             ];
         }
 
@@ -61,6 +70,38 @@ class SecurityScoreService
             'categories' => $categories,
             'counts' => $counts,
         ];
+    }
+
+    /**
+     * Websites that no completed scan has measured yet, per website category.
+     *
+     * @param  array<int, string>  $websiteIds  the websites the user can scan
+     * @return array<string, array<int, string>> category => website ids
+     */
+    public function unscannedWebsites(array $websiteIds): array
+    {
+        $measures = (array) config('security_center.scan_measures');
+        $scanned = SecurityScan::query()
+            ->where('status', 'completed')
+            ->whereIn('website_id', $websiteIds)
+            ->distinct()
+            ->get(['website_id', 'scan_type']);
+
+        $missing = [];
+        foreach ((array) config('security_center.category_guides') as $category => $guide) {
+            $scan = $guide['scan'] ?? null;
+            if ($scan === null || $scan === SecurityScanService::SERVER_SCAN_TYPE) {
+                continue;
+            }
+            $covered = $scanned
+                ->filter(fn ($row) => in_array($category, (array) ($measures[$row->scan_type] ?? []), true))
+                ->pluck('website_id')
+                ->map(fn ($id) => (string) $id)
+                ->all();
+            $missing[$category] = array_values(array_diff($websiteIds, $covered));
+        }
+
+        return $missing;
     }
 
     public function record(): SecurityScore
