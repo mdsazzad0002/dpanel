@@ -1922,6 +1922,16 @@ panel_fix_website_permissions() {
 # connection must follow the panel .env. Writing it only at mail install time
 # left IMAP answering AUTHENTICATIONFAILED after the DB password changed.
 # Safe to run repeatedly; Dovecot is reloaded only when the config changes.
+# True when 10-auth.conf includes the panel's SQL auth before the system
+# (PAM) auth, or includes it with no system auth at all.
+panel_dovecot_sql_first() {
+  awk '
+    /^!include auth-serverpanel\.conf\.ext$/ { if (!sql) sql = NR }
+    /^!include auth-system\.conf\.ext$/ { if (!sys) sys = NR }
+    END { exit !(sql && (!sys || sql < sys)) }
+  ' "$1"
+}
+
 panel_configure_dovecot_sql() {
   local dpanel_env="${DPANEL_ENV_FILE:-${PANEL_APP_DIR:-/var/www/dpanel}/.env}"
   local auth_file=/etc/dovecot/conf.d/auth-serverpanel.conf.ext
@@ -1993,8 +2003,18 @@ user_query = SELECT mail_home AS home, CONCAT('maildir:', mail_home) AS mail, ma
     chmod 0640 "$file"
   done
 
-  if ! grep -Fq '!include auth-serverpanel.conf.ext' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null; then
-    printf '\n!include auth-serverpanel.conf.ext\n' >> /etc/dovecot/conf.d/10-auth.conf
+  # Mailboxes must be looked up before system users. Dovecot tries passdbs in
+  # include order, and PAM answers an unknown user only after its ~2s failure
+  # delay, so with PAM first every mailbox login (webmail, phones, Outlook)
+  # waited that long. A wrong mailbox password still falls through to PAM.
+  local auth_conf=/etc/dovecot/conf.d/10-auth.conf
+  if [[ -f "$auth_conf" ]] && ! panel_dovecot_sql_first "$auth_conf"; then
+    sed -i '/^!include auth-serverpanel\.conf\.ext$/d' "$auth_conf"
+    if grep -q '^!include auth-system\.conf\.ext$' "$auth_conf"; then
+      sed -i 's/^!include auth-system\.conf\.ext$/!include auth-serverpanel.conf.ext\n&/' "$auth_conf"
+    else
+      printf '\n!include auth-serverpanel.conf.ext\n' >> "$auth_conf"
+    fi
     changed=true
   fi
 
