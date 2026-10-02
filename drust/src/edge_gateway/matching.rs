@@ -73,6 +73,7 @@ mod tests {
                 }]),
                 banned_ips: Arc::from([]),
                 allowed_ips: Arc::from([]),
+                cache: Default::default(),
             }]),
             Arc::from([]),
             CachePolicy {
@@ -120,6 +121,7 @@ mod tests {
             ]),
             banned_ips: Arc::from([]),
             allowed_ips: Arc::from([]),
+            cache: Default::default(),
         };
 
         let route = resolve_route(&site, "/api/users").unwrap();

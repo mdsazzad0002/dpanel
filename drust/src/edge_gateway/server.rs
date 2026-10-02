@@ -5,11 +5,11 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use axum::{
     Json, Router,
     body::Body,
-    extract::State,
+    extract::{Query, State},
     http::{HeaderMap, HeaderValue, Request, StatusCode},
     middleware::{map_request, map_response},
     response::{IntoResponse, Response},
-    routing::{any, post},
+    routing::{any, get, post},
 };
 use futures_util::StreamExt;
 use hyper::body::Body as HttpBody;
@@ -24,7 +24,8 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use super::{
-    BandwidthTracker, CachePolicy, DbSnapshotConfig, DispatchContext, DynamicCertResolver,
+    edge_cache,
+    BandwidthTracker, CachePolicy, DbSnapshotConfig, DispatchContext, DynamicCertResolver, EdgeCache,
     ProxyConfig, RouteAction, RouteConfig, RuntimeSnapshot, SiteConfig, SnapshotCacheConfig,
     StaticFileConfig, TlsConfig, TlsIdentity, TlsListenerConfig, TlsStore, UpstreamConfig,
     build_client, build_tls_config, dispatch, health_check_upstream, load_runtime_snapshot,
@@ -42,6 +43,7 @@ pub struct DemoServerState {
     /// Live-swappable SNI cert store. `None` when the process has no HTTPS
     /// listener (no TLS identities configured at startup).
     pub tls_resolver: Option<Arc<DynamicCertResolver>>,
+    pub edge_cache: Arc<EdgeCache>,
 }
 
 pub fn serve_gateway(bind: &str) -> Result<(), String> {
@@ -288,6 +290,8 @@ pub fn build_demo_router(state: DemoServerState) -> Router {
             any(super::terminal_ws::terminal_socket),
         )
         .route("/__admin/reload", post(handle_reload))
+        .route("/__admin/cache/purge", post(handle_cache_purge))
+        .route("/__admin/cache/stats", get(handle_cache_stats))
         .route("/__admin/health", any(handle_health))
         .route("/__admin/upstreams/health", any(handle_upstreams_health))
         .layer(super::compression::layer())
@@ -315,6 +319,24 @@ pub async fn handle_request(
     let snapshot = get_cached_snapshot(&state).await;
     let site = super::resolve_site(snapshot.as_ref(), &host);
     let canonical_domain = site.and_then(|site| site.hostnames.first().cloned());
+    let decision = site.map_or(edge_cache::Decision::Off, |site| {
+        edge_cache::decide(site, &request, edge_cache::unix_now())
+    });
+    let head = request.method() == axum::http::Method::HEAD;
+    let mut stale = None;
+    if let (edge_cache::Decision::Lookup { key, .. }, Some(domain)) = (&decision, &canonical_domain) {
+        match state.edge_cache.lookup(key) {
+            edge_cache::Lookup::Fresh(entry) => {
+                let response = entry.respond(request.headers(), head, "HIT");
+                let bytes = response.body().size_hint().exact().unwrap_or(0);
+                state.edge_cache.record(domain, edge_cache::Outcome::Hit, bytes);
+                state.bandwidth.record(domain, upload_bytes, bytes);
+                return response;
+            }
+            edge_cache::Lookup::Stale(entry) => stale = Some((entry, request.headers().clone())),
+            edge_cache::Lookup::Miss => {}
+        }
+    }
     let response = dispatch(
         site,
         &state.dispatch,
@@ -322,6 +344,12 @@ pub async fn handle_request(
         &state.proxy_client,
     )
     .await;
+    let response = match (site, &canonical_domain) {
+        (Some(site), Some(domain)) => {
+            finish_cacheable(&state, site, domain, decision, head, stale, &host, response).await
+        }
+        _ => response,
+    };
     if let Some(domain) = canonical_domain {
         let download_bytes = response.body().size_hint().exact().unwrap_or(0);
         state
@@ -329,6 +357,150 @@ pub async fn handle_request(
             .record(&domain, upload_bytes, download_bytes);
     }
     response
+}
+
+/// Stores a cacheable origin response and labels what the cache did.
+#[allow(clippy::too_many_arguments)]
+async fn finish_cacheable(
+    state: &Arc<DemoServerState>,
+    site: &SiteConfig,
+    domain: &str,
+    decision: edge_cache::Decision,
+    head: bool,
+    stale: Option<(Arc<edge_cache::CachedResponse>, HeaderMap)>,
+    host: &str,
+    mut response: Response,
+) -> Response {
+    let cache = &state.edge_cache;
+    let (key, static_path) = match decision {
+        edge_cache::Decision::Off => return response,
+        edge_cache::Decision::Bypass => {
+            cache.record(domain, edge_cache::Outcome::Bypass, 0);
+            edge_cache::label(&mut response, "BYPASS");
+            return response;
+        }
+        edge_cache::Decision::Lookup { key, static_path } => (key, static_path),
+    };
+    if response.status().is_server_error() && site.cache.serve_stale {
+        if let Some((entry, request_headers)) = stale {
+            warn!(%domain, status = %response.status(), "origin failed; serving stale cached copy");
+            let response = entry.respond(&request_headers, head, "STALE");
+            cache.record(domain, edge_cache::Outcome::Stale, entry.body.len() as u64);
+            return response;
+        }
+    }
+    if response.extensions().get::<edge_cache::StaticFileResponse>().is_some() {
+        edge_cache::label(&mut response, "STATIC");
+        return response;
+    }
+    let expired = if stale.is_some() { "EXPIRED" } else { "MISS" };
+    let ttl = edge_cache::storable_ttl(&site.cache, static_path, response.status(), response.headers());
+    let size = response.body().size_hint().exact();
+    let (Some(ttl), Some(size), false) = (ttl, size, head) else {
+        let outcome = if ttl.is_some() { edge_cache::Outcome::Miss } else { edge_cache::Outcome::Dynamic };
+        cache.record(domain, outcome, 0);
+        if ttl.is_some() {
+            edge_cache::apply_browser_ttl(&site.cache, response.headers_mut());
+        }
+        edge_cache::label(&mut response, if ttl.is_some() { expired } else { "DYNAMIC" });
+        return response;
+    };
+    if size > cache.max_object_bytes {
+        cache.record(domain, edge_cache::Outcome::Miss, 0);
+        edge_cache::label(&mut response, expired);
+        return response;
+    }
+    let (mut parts, body) = response.into_parts();
+    let body = match axum::body::to_bytes(body, cache.max_object_bytes as usize).await {
+        Ok(body) => body,
+        Err(error) => {
+            warn!(%error, %domain, "could not read origin response for the edge cache");
+            return (StatusCode::BAD_GATEWAY, "origin response could not be read").into_response();
+        }
+    };
+    let target = key.split_once("://").and_then(|(_, rest)| rest.find('/').map(|index| rest[index..].to_string()));
+    cache.store(
+        key,
+        edge_cache::CachedResponse {
+            domain: domain.to_string(),
+            host: host.split(':').next().unwrap_or(host).trim_end_matches('.').to_ascii_lowercase(),
+            target: target.unwrap_or_else(|| "/".to_string()),
+            status: parts.status,
+            headers: parts.headers.clone(),
+            body: body.clone(),
+            stored_at: std::time::Instant::now(),
+            fresh_until: std::time::Instant::now(),
+            stale_until: std::time::Instant::now(),
+        },
+        ttl,
+        site.cache.serve_stale,
+    );
+    cache.record(domain, edge_cache::Outcome::Miss, 0);
+    edge_cache::apply_browser_ttl(&site.cache, &mut parts.headers);
+    let mut response = Response::from_parts(parts, Body::from(body));
+    edge_cache::label(&mut response, expired);
+    response
+}
+
+fn admin_token_ok(headers: &HeaderMap) -> bool {
+    let expected = std::env::var("DRUST_API_TOKEN").unwrap_or_default();
+    let supplied = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+    !expected.is_empty() && supplied.as_bytes() == expected.as_bytes()
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct CachePurgeRequest {
+    /// The site's main domain. Without it, `everything` must be set.
+    #[serde(default)]
+    domain: Option<String>,
+    #[serde(default)]
+    urls: Vec<String>,
+    #[serde(default)]
+    prefixes: Vec<String>,
+    #[serde(default)]
+    everything: bool,
+}
+
+pub async fn handle_cache_purge(
+    State(state): State<Arc<DemoServerState>>,
+    headers: HeaderMap,
+    Json(payload): Json<CachePurgeRequest>,
+) -> Response {
+    if !admin_token_ok(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "success": false, "message": "unauthorized" }))).into_response();
+    }
+    let domain = payload.domain.as_deref().map(str::trim).filter(|domain| !domain.is_empty());
+    if domain.is_none() && !payload.everything {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({ "success": false, "message": "name a domain, or set everything" })),
+        )
+            .into_response();
+    }
+    let purged = state.edge_cache.purge(domain, &payload.urls, &payload.prefixes);
+    info!(domain = domain.unwrap_or("*"), purged, "edge cache purged");
+    Json(serde_json::json!({ "success": true, "purged": purged })).into_response()
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct CacheStatsQuery {
+    #[serde(default)]
+    domain: Option<String>,
+}
+
+pub async fn handle_cache_stats(
+    State(state): State<Arc<DemoServerState>>,
+    headers: HeaderMap,
+    Query(query): Query<CacheStatsQuery>,
+) -> Response {
+    if !admin_token_ok(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "success": false, "message": "unauthorized" }))).into_response();
+    }
+    Json(serde_json::json!({ "success": true, "data": state.edge_cache.stats(query.domain.as_deref()) })).into_response()
 }
 
 pub async fn handle_reload(
@@ -479,6 +651,11 @@ async fn reload_domains(
             *state.snapshot.write().await = Arc::new(updated);
             super::clear_static_cache_under(&roots);
             super::clear_canonical_root_cache_under(&roots);
+            // A site reload follows a settings change (cache mode, TTLs,
+            // runtime), so its old copies must not outlive it.
+            for domain in &domains {
+                state.edge_cache.purge(Some(domain), &[], &[]);
+            }
             Ok(next.version)
         }
         Ok(Err(error)) => Err((error, state.snapshot.read().await.version)),
@@ -606,6 +783,7 @@ pub fn make_demo_state_with_tls(
         bandwidth: BandwidthTracker::from_env(),
         terminal_tickets: Arc::new(Mutex::new(HashMap::new())),
         tls_resolver,
+        edge_cache: Arc::new(EdgeCache::from_env()),
     })
 }
 
@@ -837,6 +1015,7 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
             ]),
             banned_ips: Arc::from([]),
             allowed_ips: Arc::from([]),
+            cache: Default::default(),
         }]),
         Arc::from([TlsConfig {
             hostnames: Arc::from([primary_domain, www_domain]),
@@ -882,4 +1061,122 @@ pub fn serve_sample(bind: &str) -> Result<(), String> {
         bind,
         scaffold_tls_listener_config("127.0.0.1:8443", bind),
     )
+}
+
+#[cfg(test)]
+mod edge_cache_tests {
+    use super::*;
+    use crate::edge_gateway::{CacheMode, SiteCacheConfig};
+    use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
+    use tower::ServiceExt;
+
+    /// An origin that counts requests and answers with `status`.
+    async fn origin(status: Arc<AtomicU16>, hits: Arc<AtomicUsize>) -> std::net::SocketAddr {
+        let app = Router::new().fallback(any(move || {
+            let status = status.clone();
+            let hits = hits.clone();
+            async move {
+                let count = hits.fetch_add(1, Ordering::SeqCst) + 1;
+                let status = StatusCode::from_u16(status.load(Ordering::SeqCst)).unwrap();
+                (status, [("content-type", "text/html")], format!("page {count}"))
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        addr
+    }
+
+    fn gateway(upstream: std::net::SocketAddr, edge_ttl: Duration) -> Router {
+        let site = SiteConfig {
+            id: "1".into(),
+            scope: "user".into(),
+            site_owner: None,
+            hostnames: Arc::from(["shop.test".to_string()]),
+            document_root: None,
+            php_version: None,
+            runtime: "node".into(),
+            project_root: None,
+            node_entry_file: None,
+            node_start_command: None,
+            node_version: None,
+            python_entry_file: None,
+            python_start_command: None,
+            python_version: None,
+            enable_ssl: false,
+            spa_fallback: false,
+            routes: Arc::from([RouteConfig {
+                path_prefix: "/".into(),
+                action: RouteAction::Proxy(UpstreamConfig::Http(upstream)),
+            }]),
+            banned_ips: Arc::from([]),
+            allowed_ips: Arc::from([]),
+            cache: SiteCacheConfig {
+                mode: CacheMode::Everything,
+                edge_ttl,
+                bypass_paths: Arc::from(["/admin".to_string()]),
+                serve_stale: true,
+                ..SiteCacheConfig::default()
+            },
+        };
+        let snapshot = RuntimeSnapshot::new(1, Arc::from([site]), Arc::from([]), CachePolicy {
+            enabled: true,
+            ttl: Duration::from_secs(1),
+            stale_while_revalidate: Duration::from_secs(1),
+        });
+        let state = make_demo_state(snapshot, sample_dispatch_context(), SnapshotCacheConfig::fast(), DbSnapshotConfig::new()).unwrap();
+        build_demo_router(state)
+    }
+
+    async fn get(router: &Router, path: &str) -> (StatusCode, String, String) {
+        let request = Request::builder().uri(path).header("host", "shop.test").body(Body::empty()).unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let label = response.headers().get(edge_cache::CACHE_STATUS_HEADER).map(|v| v.to_str().unwrap().to_string()).unwrap_or_default();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, label, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    #[tokio::test]
+    async fn caches_origin_pages_and_bypasses_admin_paths() {
+        let status = Arc::new(AtomicU16::new(200));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let router = gateway(origin(status.clone(), hits.clone()).await, Duration::from_secs(60));
+
+        assert_eq!(get(&router, "/").await, (StatusCode::OK, "MISS".into(), "page 1".into()));
+        assert_eq!(get(&router, "/").await, (StatusCode::OK, "HIT".into(), "page 1".into()));
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+
+        assert_eq!(get(&router, "/admin").await.1, "BYPASS");
+        assert_eq!(get(&router, "/admin").await.1, "BYPASS");
+        assert_eq!(hits.load(Ordering::SeqCst), 3);
+
+        // Errors are passed through, never stored.
+        status.store(500, Ordering::SeqCst);
+        assert_eq!(get(&router, "/down").await, (StatusCode::INTERNAL_SERVER_ERROR, "DYNAMIC".into(), "page 4".into()));
+    }
+
+    #[tokio::test]
+    async fn purging_needs_the_admin_token() {
+        let router = gateway(origin(Arc::new(AtomicU16::new(200)), Arc::new(AtomicUsize::new(0))).await, Duration::from_secs(60));
+        let purge = Request::builder().method("POST").uri("/__admin/cache/purge").header("content-type", "application/json")
+            .body(Body::from(r#"{"domain":"shop.test"}"#)).unwrap();
+        assert_eq!(router.oneshot(purge).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn serves_the_expired_copy_when_the_origin_fails() {
+        let status = Arc::new(AtomicU16::new(200));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let router = gateway(origin(status.clone(), hits.clone()).await, Duration::from_secs(1));
+        assert_eq!(get(&router, "/").await.1, "MISS");
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+
+        status.store(502, Ordering::SeqCst);
+        assert_eq!(get(&router, "/").await, (StatusCode::OK, "STALE".into(), "page 1".into()));
+
+        status.store(200, Ordering::SeqCst);
+        assert_eq!(get(&router, "/").await, (StatusCode::OK, "EXPIRED".into(), "page 3".into()));
+        assert_eq!(get(&router, "/").await.1, "HIT");
+    }
 }

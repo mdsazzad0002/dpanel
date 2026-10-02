@@ -695,6 +695,7 @@ async fn static_response(
         if let Ok(value) = HeaderValue::from_str(&asset.etag) {
             response.headers_mut().insert(header::ETAG, value);
         }
+        response.extensions_mut().insert(super::edge_cache::StaticFileResponse);
         return response;
     }
     let body = match asset.body {
@@ -727,6 +728,7 @@ async fn static_response(
         header::CACHE_CONTROL,
         HeaderValue::from_static(browser_cache_control(&asset.path, &asset.content_type)),
     );
+    response.extensions_mut().insert(super::edge_cache::StaticFileResponse);
     response
 }
 

@@ -1,6 +1,9 @@
 use std::{collections::HashMap, fs, path::Path, path::PathBuf, process::Command, time::Duration};
 
-use super::{CachePolicy, RouteAction, RouteConfig, RuntimeSnapshot, SiteConfig, UpstreamConfig};
+use super::{
+    CacheMode, CachePolicy, RouteAction, RouteConfig, RuntimeSnapshot, SiteCacheConfig, SiteConfig,
+    UpstreamConfig,
+};
 
 #[derive(Clone, Debug)]
 pub struct DbSnapshotConfig {
@@ -19,50 +22,24 @@ impl DbSnapshotConfig {
 
 pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapshot, String> {
     let env = read_env_file(&config.env_path)?;
-    let host = env
-        .get("DB_HOST")
-        .cloned()
-        .unwrap_or_else(|| "127.0.0.1".to_string());
-    let port = env
-        .get("DB_PORT")
-        .cloned()
-        .unwrap_or_else(|| "3306".to_string());
     let database = env
         .get("DB_DATABASE")
         .cloned()
         .unwrap_or_else(|| "dpanel".to_string());
-    let username = env
-        .get("DB_USERNAME")
-        .cloned()
-        .unwrap_or_else(|| "root".to_string());
-    let password = env.get("DB_PASSWORD").cloned().unwrap_or_default();
-
-    let mut cmd = Command::new(find_mysql_client());
-    cmd.arg("-h")
-        .arg(host)
-        .arg("-P")
-        .arg(port)
-        .arg("-u")
-        .arg(username)
-        .arg("--batch")
-        .arg("--raw")
-        .arg("--skip-column-names")
-        .arg(database.clone())
-        .arg("-e")
-        .arg("SELECT w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='ban' THEN r.ip_address END),''),COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='allow' THEN r.ip_address END),''),COALESCE(w.runtime,'php'),w.node_port,COALESCE(w.node_entry_file,''),COALESCE(w.node_start_command,''),COALESCE(w.node_version,''),COALESCE(w.node_process_status,''),w.python_port,COALESCE(w.python_entry_file,''),COALESCE(w.python_start_command,''),COALESCE(w.python_version,''),COALESCE(w.python_process_status,'') FROM websites w LEFT JOIN website_ip_rules r ON r.website_id=w.id GROUP BY w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,w.updated_at,w.runtime,w.node_port,w.node_entry_file,w.node_start_command,w.node_version,w.node_process_status,w.python_port,w.python_entry_file,w.python_start_command,w.python_version,w.python_process_status ORDER BY w.updated_at DESC");
-    if !password.is_empty() {
-        cmd.env("MYSQL_PWD", password);
-    }
-    let output = cmd
-        .output()
-        .map_err(|error| format!("mysql cli failed: {error}"))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-    }
+    let stdout = run_mysql(&env, "SELECT w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='ban' THEN r.ip_address END),''),COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='allow' THEN r.ip_address END),''),COALESCE(w.runtime,'php'),w.node_port,COALESCE(w.node_entry_file,''),COALESCE(w.node_start_command,''),COALESCE(w.node_version,''),COALESCE(w.node_process_status,''),w.python_port,COALESCE(w.python_entry_file,''),COALESCE(w.python_start_command,''),COALESCE(w.python_version,''),COALESCE(w.python_process_status,'') FROM websites w LEFT JOIN website_ip_rules r ON r.website_id=w.id GROUP BY w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,w.updated_at,w.runtime,w.node_port,w.node_entry_file,w.node_start_command,w.node_version,w.node_process_status,w.python_port,w.python_entry_file,w.python_start_command,w.python_version,w.python_process_status ORDER BY w.updated_at DESC")?;
+    // Cache settings live in their own table and are optional: a panel that
+    // has not migrated yet must not take every website down with it.
+    let mut cache_settings = match run_mysql(&env, CACHE_SETTINGS_SQL) {
+        Ok(rows) => parse_cache_settings(&rows),
+        Err(error) => {
+            tracing::warn!(%error, "edge cache settings unavailable; caching stays off");
+            HashMap::new()
+        }
+    };
 
     let mut sites = Vec::new();
     let mut tls = Vec::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
+    for line in stdout.lines() {
         let cols: Vec<&str> = line.split('\t').collect();
         if cols.len() < 24 {
             continue;
@@ -149,6 +126,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
             routes,
             banned_ips: parse_ip_list(cols[11]),
             allowed_ips: parse_ip_list(cols[12]),
+            cache: cache_settings.remove(cols[0].trim()).unwrap_or_default(),
         });
         if enable_ssl {
             tls.push(super::TlsConfig {
@@ -179,6 +157,71 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
             stale_while_revalidate: Duration::from_secs(1),
         },
     ))
+}
+
+fn run_mysql(env: &HashMap<String, String>, sql: &str) -> Result<String, String> {
+    let setting = |key: &str, default: &str| env.get(key).cloned().unwrap_or_else(|| default.to_string());
+    let mut cmd = Command::new(find_mysql_client());
+    cmd.arg("-h")
+        .arg(setting("DB_HOST", "127.0.0.1"))
+        .arg("-P")
+        .arg(setting("DB_PORT", "3306"))
+        .arg("-u")
+        .arg(setting("DB_USERNAME", "root"))
+        .arg("--batch")
+        .arg("--raw")
+        .arg("--skip-column-names")
+        .arg(setting("DB_DATABASE", "dpanel"))
+        .arg("-e")
+        .arg(sql);
+    let password = setting("DB_PASSWORD", "");
+    if !password.is_empty() {
+        cmd.env("MYSQL_PWD", password);
+    }
+    let output = cmd
+        .output()
+        .map_err(|error| format!("mysql cli failed: {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Lists become space-separated so each row stays on one line.
+const CACHE_SETTINGS_SQL: &str = "SELECT website_id,mode,edge_ttl,COALESCE(browser_ttl,0),REPLACE(REPLACE(COALESCE(bypass_paths,''),CHAR(13),' '),CHAR(10),' '),REPLACE(REPLACE(COALESCE(bypass_cookies,''),CHAR(13),' '),CHAR(10),' '),ignore_query_string,serve_stale,COALESCE(development_mode_until,0) FROM website_edge_cache";
+
+fn parse_cache_settings(rows: &str) -> HashMap<String, SiteCacheConfig> {
+    let words = |value: &str| -> std::sync::Arc<[String]> {
+        value
+            .split_whitespace()
+            .filter(|word| !word.eq_ignore_ascii_case("null"))
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+            .into()
+    };
+    let number = |value: &str| value.trim().parse::<u64>().unwrap_or(0);
+    rows.lines()
+        .filter_map(|line| {
+            let cols: Vec<&str> = line.split('\t').collect();
+            if cols.len() < 9 {
+                return None;
+            }
+            let browser_ttl = number(cols[3]);
+            Some((
+                cols[0].trim().to_string(),
+                SiteCacheConfig {
+                    mode: CacheMode::parse(cols[1]),
+                    edge_ttl: Duration::from_secs(number(cols[2])),
+                    browser_ttl: (browser_ttl > 0).then(|| Duration::from_secs(browser_ttl)),
+                    bypass_paths: words(cols[4]),
+                    bypass_cookies: words(cols[5]),
+                    ignore_query: cols[6].trim() == "1",
+                    serve_stale: cols[7].trim() == "1",
+                    development_mode_until: number(cols[8]),
+                },
+            ))
+        })
+        .collect()
 }
 
 fn parse_ip_list(value: &str) -> std::sync::Arc<[std::net::IpAddr]> {
@@ -377,6 +420,26 @@ fn current_version_hint(database: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_cache_settings_rows() {
+        let settings = parse_cache_settings(
+            "abc\teverything\t3600\t0\t/wp-admin /cart\twordpress_logged_in_\t1\t1\t0\n\
+             def\tbogus\t60\t300\t\t\t0\t0\t1700000000\n\
+             short\trow\n",
+        );
+        let abc = &settings["abc"];
+        assert_eq!(abc.mode, CacheMode::Everything);
+        assert_eq!(abc.edge_ttl, Duration::from_secs(3600));
+        assert_eq!(abc.browser_ttl, None);
+        assert_eq!(&*abc.bypass_paths, ["/wp-admin".to_string(), "/cart".to_string()]);
+        assert!(abc.ignore_query && abc.serve_stale);
+        let def = &settings["def"];
+        assert_eq!(def.mode, CacheMode::Off);
+        assert_eq!(def.browser_ttl, Some(Duration::from_secs(300)));
+        assert_eq!(def.development_mode_until, 1_700_000_000);
+        assert!(!settings.contains_key("short"));
+    }
 
     #[test]
     fn combines_root_path_with_start_directory() {

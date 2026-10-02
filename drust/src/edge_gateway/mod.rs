@@ -2,6 +2,7 @@ mod bandwidth;
 mod compression;
 mod config;
 mod dispatcher;
+pub mod edge_cache;
 mod h3_listener;
 mod matching;
 mod node_process;
@@ -20,6 +21,7 @@ pub use config::{
     TlsConfig, UpstreamConfig,
 };
 pub use dispatcher::{DispatchContext, dispatch};
+pub use edge_cache::{CacheMode, EdgeCache, SiteCacheConfig};
 pub use h3_listener::run_h3_listener;
 pub use matching::{normalize_request_path, resolve_route, resolve_site};
 pub use node_process::{

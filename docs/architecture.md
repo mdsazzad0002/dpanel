@@ -68,6 +68,30 @@ sites; an empty payload (`{}`) reloads everything. Events are batched for
 After a certificate is issued or renewed, both drust and dPanel send a full
 reload, so the new certificate goes live without a restart.
 
+### Edge cache
+
+Each site can turn on a shared response cache in the gateway (settings in the
+`website_edge_cache` table; off by default, never used for system sites):
+
+- **Standard** caches what the origin marks cacheable (`s-maxage`/`max-age`)
+  and static-looking paths. **Everything** also caches HTML.
+- Never stored: responses with `Set-Cookie`, `private`, `no-store` or
+  `no-cache`, a `Vary` other than `Accept-Encoding`, or `Content-Encoding`.
+  Requests with `Authorization`, a `Range`, a bypass cookie or a bypass path
+  go straight to the origin.
+- With **serve stale**, an expired copy is kept for a day and returned when the
+  origin answers 5xx.
+- Static files read from disk are not copied into it; the static file layer
+  already keeps them in memory and notices changes.
+
+Every response carries `x-dpanel-cache`: `HIT`, `MISS`, `EXPIRED`, `STALE`,
+`BYPASS`, `DYNAMIC` (not cacheable) or `STATIC`. A per-domain reload purges
+that site's copies. `POST /__admin/cache/purge` (`{"domain", "urls",
+"prefixes"}` or `{"everything": true}`) and `GET /__admin/cache/stats?domain=`
+take the drust API token. Memory limits: `DRUST_EDGE_CACHE_MAX_BYTES`
+(256 MiB), `DRUST_EDGE_CACHE_MAX_OBJECT_BYTES` (8 MiB) and
+`DRUST_EDGE_CACHE_MAX_ENTRIES` (100000).
+
 ## PHP execution
 
 User-scope PHP websites run in their own PHP-FPM pool:

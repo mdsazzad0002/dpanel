@@ -40,6 +40,7 @@ pub struct SiteConfig {
     pub routes: Arc<[RouteConfig]>,
     pub banned_ips: Arc<[IpAddr]>,
     pub allowed_ips: Arc<[IpAddr]>,
+    pub cache: super::SiteCacheConfig,
 }
 
 #[derive(Clone, Debug)]
