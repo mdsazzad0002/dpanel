@@ -7,6 +7,7 @@ use App\Http\Controllers\FilemanagerTrashController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\Website\WebsiteController;
+use App\Http\Controllers\Website\WebsiteEdgeCacheController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteFtpAccountController;
 use App\Http\Controllers\Website\WebsiteGitController;
@@ -229,6 +230,22 @@ Route::get('/websites/{id}/apps/{app}/install/status/{installId}', [AppInstaller
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->whereIn('app', ['joomla', 'drupal', 'codeigniter', 'whmcs'])
     ->name('websites.apps.install.status');
+
+Route::get('/websites/{id}/edge-cache', [WebsiteEdgeCacheController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.edge-cache.index');
+Route::put('/websites/{id}/edge-cache', [WebsiteEdgeCacheController::class, 'update'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.edge-cache.update');
+Route::post('/websites/{id}/edge-cache/purge', [WebsiteEdgeCacheController::class, 'purge'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])
+    ->name('websites.edge-cache.purge');
+Route::post('/websites/{id}/edge-cache/development-mode', [WebsiteEdgeCacheController::class, 'developmentMode'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.edge-cache.development-mode');
+Route::get('/websites/{id}/edge-cache/stats', [WebsiteEdgeCacheController::class, 'stats'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.edge-cache.stats');
 
 Route::get('/websites/{id}/redis-cache', [RedisCacheController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')

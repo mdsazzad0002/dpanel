@@ -18,6 +18,7 @@ const serviceLinks = computed(() => [
     { label: 'Export & Share', icon: 'bi-file-earmark-zip', color: 'violet', href: panelRoute('websites.quick-export.page', { id: props.website.id }), description: 'Download files/database separately, or share a one-time clone link for another server' },
     { label: 'Import & Clone', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and database — upload directly, clone from another site on this server, or pull a share link' },
     { label: 'Usage Details', icon: 'bi-graph-up', color: 'violet', href: panelRoute('websites.usage', { id: props.website.id }), description: 'Detailed usage history' },
+    { label: 'Edge Cache', icon: 'bi-speedometer2', color: 'emerald', href: panelRoute('websites.edge-cache.index', { id: props.website.id }), description: 'Page caching, purge and development mode' },
     { label: 'Redis Cache', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
     { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
     { label: 'FTP Accounts', icon: 'bi-hdd-network', color: 'cyan', href: panelRoute('websites.ftp.index', { id: props.website.id }), description: 'Create client FTP access' },
