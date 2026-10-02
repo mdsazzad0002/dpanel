@@ -49,7 +49,7 @@ const deleteZone = () => {
 
 <template>
     <div class="fixed inset-0 z-40 bg-slate-950/40" @click="emit('close')"></div>
-    <aside class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-slate-50 shadow-2xl dark:bg-slate-950 lg:w-[80vw]">
+    <aside class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-slate-50 shadow-2xl dark:bg-slate-950 lg:w-[70vw]">
         <header class="border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-800 dark:bg-slate-900">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0">
