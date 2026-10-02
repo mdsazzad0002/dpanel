@@ -25,6 +25,26 @@ const form = useForm({
     description: '',
 });
 
+const schedulePresets = [
+    { label: 'Every minute', expression: '* * * * *' },
+    { label: 'Every 5 min', expression: '*/5 * * * *' },
+    { label: 'Every 10 min', expression: '*/10 * * * *' },
+    { label: 'Every 15 min', expression: '*/15 * * * *' },
+    { label: 'Every 30 min', expression: '*/30 * * * *' },
+    { label: 'Every hour', expression: '0 * * * *' },
+    { label: 'Every 2 hours', expression: '0 */2 * * *' },
+    { label: 'Every 6 hours', expression: '0 */6 * * *' },
+    { label: 'Every 12 hours', expression: '0 */12 * * *' },
+    { label: 'Daily (midnight)', expression: '0 0 * * *' },
+    { label: 'Twice a day', expression: '0 0,12 * * *' },
+    { label: 'Weekly (Sun)', expression: '0 0 * * 0' },
+    { label: 'Monthly (1st)', expression: '0 0 1 * *' },
+    { label: 'Yearly (Jan 1)', expression: '0 0 1 1 *' },
+];
+
+const normalizeExpression = (value) => String(value || '').trim().replace(/\s+/g, ' ');
+const presetLabel = (expression) => schedulePresets.find((preset) => preset.expression === normalizeExpression(expression))?.label || '';
+
 const activeCount = computed(() => props.cronJobs.filter((job) => job.status === 'active').length);
 const disabledCount = computed(() => props.cronJobs.filter((job) => job.status !== 'active').length);
 
@@ -125,6 +145,24 @@ const toggleItem = (item) => {
                     <p v-if="form.errors.expression" class="mt-1 text-xs text-red-600">{{ form.errors.expression }}</p>
                 </div>
                 <div class="md:col-span-2">
+                    <label class="mb-1 block text-sm">Quick Schedule</label>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            v-for="preset in schedulePresets"
+                            :key="preset.expression"
+                            type="button"
+                            :title="preset.expression"
+                            class="rounded-full border px-3 py-1 text-xs"
+                            :class="normalizeExpression(form.expression) === preset.expression
+                                ? 'border-blue-600 bg-blue-600 text-white'
+                                : 'border-slate-300 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800'"
+                            @click="form.expression = preset.expression"
+                        >
+                            {{ preset.label }}
+                        </button>
+                    </div>
+                </div>
+                <div class="md:col-span-2">
                     <label class="mb-1 block text-sm">Command</label>
                     <input v-model="form.command" type="text" placeholder="/usr/bin/php artisan schedule:run" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.command" class="mt-1 text-xs text-red-600">{{ form.errors.command }}</p>
@@ -168,7 +206,10 @@ const toggleItem = (item) => {
                                 <p class="font-medium">{{ job.name }}</p>
                                 <p v-if="job.description" class="text-xs text-slate-500">{{ job.description }}</p>
                             </td>
-                            <td class="px-4 py-3 font-mono text-xs">{{ job.expression }}</td>
+                            <td class="px-4 py-3">
+                                <p class="font-mono text-xs">{{ job.expression }}</p>
+                                <p v-if="presetLabel(job.expression)" class="text-xs text-slate-500">{{ presetLabel(job.expression) }}</p>
+                            </td>
                             <td class="px-4 py-3 max-w-md break-all font-mono text-xs">{{ job.command }}</td>
                             <td class="px-4 py-3">
                                 <span class="rounded px-2 py-1 text-xs" :class="job.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
