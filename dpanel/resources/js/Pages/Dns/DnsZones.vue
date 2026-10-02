@@ -154,7 +154,14 @@ const startEditRecord = (item) => {
     selectedZone.value = item.zone_domain ?? selectedZone.value;
 };
 
+const zoneError = computed(() => Object.values(zoneForm.errors)[0] || '');
+
 const submitZone = () => {
+    zoneForm.domain = String(zoneForm.domain || '').trim().toLowerCase().replace(/\.$/, '');
+    // SOA needs a contact address; hostmaster@ is the usual one.
+    if (!String(zoneForm.email || '').trim() && zoneForm.domain) {
+        zoneForm.email = `hostmaster@${zoneForm.domain}`;
+    }
     if (zoneEditingId.value) {
         zoneForm.patch(panelRoute('dns.zones.update', { id: zoneEditingId.value }), { onSuccess: resetZoneForm });
         return;
@@ -293,6 +300,71 @@ watch(
         </template>
 
         <div class="space-y-4">
+            <div v-if="zoneCanvasOpen" class="fixed inset-0 z-40 bg-slate-950/40" @click="zoneCanvasOpen = false"></div>
+            <form v-if="zoneCanvasOpen" class="fixed inset-y-0 right-0 z-50 grid w-full max-w-lg content-start gap-4 overflow-y-auto bg-white p-6 shadow-2xl dark:bg-slate-900" @submit.prevent="submitZone">
+                <div class="flex items-center justify-between border-b border-slate-200 pb-4 dark:border-slate-700">
+                    <div><h2 class="text-base font-semibold">{{ zoneEditingId ? 'Edit DNS Zone' : 'Create DNS Zone' }}</h2><p class="text-xs text-slate-500">Zone settings and ownership</p></div>
+                    <button type="button" title="Close" class="h-9 w-9 rounded-md border border-slate-300 text-lg dark:border-slate-700" @click="zoneCanvasOpen = false">×</button>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Domain</label>
+                    <input v-model="zoneForm.domain" type="text" placeholder="example.com" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p v-if="zoneForm.errors.domain" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ zoneForm.errors.domain }}</p>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Type</label>
+                    <SearchableSelect v-model="zoneForm.type" :options="zoneTypeOptions" />
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">SOA Email</label>
+                    <input v-model="zoneForm.email" type="email" placeholder="hostmaster@ + domain if left empty" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p v-if="zoneForm.errors.email" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ zoneForm.errors.email }}</p>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Status</label>
+                    <SearchableSelect v-model="zoneForm.status" :options="statusOptions" />
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Refresh</label>
+                    <input v-model.number="zoneForm.refresh" type="number" min="300" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p v-if="zoneForm.errors.refresh" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ zoneForm.errors.refresh }}</p>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Retry</label>
+                    <input v-model.number="zoneForm.retry" type="number" min="60" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p v-if="zoneForm.errors.retry" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ zoneForm.errors.retry }}</p>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Expire</label>
+                    <input v-model.number="zoneForm.expire" type="number" min="3600" max="2592000" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p v-if="zoneForm.errors.expire" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ zoneForm.errors.expire }}</p>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm">Minimum TTL</label>
+                    <input v-model.number="zoneForm.minimum_ttl" type="number" min="60" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <p v-if="zoneForm.errors.minimum_ttl" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ zoneForm.errors.minimum_ttl }}</p>
+                </div>
+                <p v-if="zoneError" class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">{{ zoneError }}</p>
+                <div class="flex items-center gap-2">
+                    <button type="submit" :disabled="zoneForm.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
+                        {{ zoneEditingId ? 'Save Zone' : 'Create Zone' }}
+                    </button>
+                    <button type="button" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="zoneCanvasOpen = false">
+                        Cancel
+                    </button>
+                </div>
+                <div v-if="zoneEditingId && selectedZoneObject?.can_transfer" class="mt-2 border-t border-slate-200 pt-5 dark:border-slate-700">
+                    <h3 class="text-sm font-semibold">Transfer ownership</h3>
+                    <p class="mb-3 text-xs text-slate-500">Creator history remains unchanged after transfer.</p>
+                    <SearchableSelect
+                        v-model="transferForm.owner_user_id"
+                        :options="transferUserOptions"
+                        placeholder="Select user"
+                        search-placeholder="Search users…"
+                    />
+                    <button type="button" :disabled="transferForm.processing || !transferForm.owner_user_id" class="mt-3 rounded-md border border-amber-400 px-4 py-2 text-sm font-medium text-amber-700 disabled:opacity-50 dark:text-amber-300" @click="transferZone">Transfer Zone</button>
+                </div>
+            </form>
             <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                 {{ page.props.flash.success }}
             </div>
@@ -357,64 +429,6 @@ watch(
                     :action="panelRoute('dns.zones.import', { id: selectedZoneObject.zone_uuid || selectedZoneObject.id })"
                     @close="zoneImportOpen = false"
                 />
-                <div v-if="zoneCanvasOpen" class="fixed inset-0 z-40 bg-slate-950/40" @click="zoneCanvasOpen = false"></div>
-                <form v-if="zoneCanvasOpen" class="fixed inset-y-0 right-0 z-50 grid w-full max-w-lg content-start gap-4 overflow-y-auto bg-white p-6 shadow-2xl dark:bg-slate-900" @submit.prevent="submitZone">
-                    <div class="flex items-center justify-between border-b border-slate-200 pb-4 dark:border-slate-700">
-                        <div><h2 class="text-base font-semibold">{{ zoneEditingId ? 'Edit DNS Zone' : 'Create DNS Zone' }}</h2><p class="text-xs text-slate-500">Zone settings and ownership</p></div>
-                        <button type="button" title="Close" class="h-9 w-9 rounded-md border border-slate-300 text-lg dark:border-slate-700" @click="zoneCanvasOpen = false">×</button>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Domain</label>
-                        <input v-model="zoneForm.domain" type="text" placeholder="example.com" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Type</label>
-                        <SearchableSelect v-model="zoneForm.type" :options="zoneTypeOptions" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">SOA Email</label>
-                        <input v-model="zoneForm.email" type="email" placeholder="hostmaster@example.com" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Status</label>
-                        <SearchableSelect v-model="zoneForm.status" :options="statusOptions" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Refresh</label>
-                        <input v-model.number="zoneForm.refresh" type="number" min="300" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Retry</label>
-                        <input v-model.number="zoneForm.retry" type="number" min="60" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Expire</label>
-                        <input v-model.number="zoneForm.expire" type="number" min="3600" max="2592000" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Minimum TTL</label>
-                        <input v-model.number="zoneForm.minimum_ttl" type="number" min="60" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <button type="submit" :disabled="zoneForm.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                            {{ zoneEditingId ? 'Save Zone' : 'Create Zone' }}
-                        </button>
-                        <button type="button" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="zoneCanvasOpen = false">
-                            Cancel
-                        </button>
-                    </div>
-                    <div v-if="zoneEditingId && selectedZoneObject?.can_transfer" class="mt-2 border-t border-slate-200 pt-5 dark:border-slate-700">
-                        <h3 class="text-sm font-semibold">Transfer ownership</h3>
-                        <p class="mb-3 text-xs text-slate-500">Creator history remains unchanged after transfer.</p>
-                        <SearchableSelect
-                            v-model="transferForm.owner_user_id"
-                            :options="transferUserOptions"
-                            placeholder="Select user"
-                            search-placeholder="Search users…"
-                        />
-                        <button type="button" :disabled="transferForm.processing || !transferForm.owner_user_id" class="mt-3 rounded-md border border-amber-400 px-4 py-2 text-sm font-medium text-amber-700 disabled:opacity-50 dark:text-amber-300" @click="transferZone">Transfer Zone</button>
-                    </div>
-                </form>
             </div>
 
             <div v-if="selectedZoneObject" class="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
@@ -541,7 +555,8 @@ watch(
             </div>
 
             <div v-if="zones.length === 0" class="rounded-xl border border-slate-200 bg-white p-6 text-center text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-                No DNS zones found.
+                <p>No DNS zones yet.</p>
+                <button type="button" class="mt-3 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="startCreateZone">+ Create your first zone</button>
             </div>
         </div>
     </AuthenticatedLayout>
