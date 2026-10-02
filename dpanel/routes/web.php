@@ -25,6 +25,7 @@ use App\Http\Controllers\CloneShareController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\DnsController;
+use App\Http\Controllers\DnsZoneFileController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\MailHealthController;
@@ -721,6 +722,12 @@ Route::prefix('cpsess{token}')
             Route::patch('/dns/zones/{id}/transfer', [DnsController::class, 'transferZone'])
                 ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.zones.transfer');
+            Route::get('/dns/zones/{id}/export', [DnsZoneFileController::class, 'export'])
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
+                ->name('dns.zones.export');
+            Route::post('/dns/zones/{id}/import', [DnsZoneFileController::class, 'import'])
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
+                ->name('dns.zones.import');
             Route::get('/dns/cloudflare/review', [DnsController::class, 'reviewCloudflare'])
                 ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.cloudflare.review');

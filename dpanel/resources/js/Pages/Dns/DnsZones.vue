@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
+import ZoneFileImport from '@/Pages/Dns/components/ZoneFileImport.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -24,6 +25,7 @@ const recordEditingId = ref(null);
 const creatingRecordFor = ref('');
 const selectedZone = ref('');
 const zoneCanvasOpen = ref(false);
+const zoneImportOpen = ref(false);
 const recordSaving = ref(false);
 const recordMessage = ref('');
 const cloneRecordMap = (records) => JSON.parse(JSON.stringify(records || {}));
@@ -335,6 +337,8 @@ watch(
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editZone(selectedZoneObject)">Edit Zone</button>
+                        <a :href="panelRoute('dns.zones.export', { id: selectedZoneObject.zone_uuid || selectedZoneObject.id })" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Export zone file</a>
+                        <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="zoneImportOpen = true">Import zone file</button>
                         <Link :href="panelRoute('dns.cloudflare.review', { domain: selectedZoneObject.domain })" class="rounded-md border border-indigo-300 px-3 py-2 text-xs text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300">Review Cloudflare Sync</Link>
                         <button type="button" :disabled="deleteZoneForm.processing" class="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950" @click="deleteZone(selectedZoneObject.zone_uuid || selectedZoneObject.id)">Delete Zone</button>
                     </div>
@@ -347,6 +351,12 @@ watch(
                     <div class="bg-white px-3 py-2.5 dark:bg-slate-900"><span class="text-slate-400">Analytics</span><strong class="ml-2 font-medium" :class="selectedZoneObject.analytics_enabled ? 'text-emerald-600' : 'text-slate-500'">{{ selectedZoneObject.analytics_enabled ? 'Enabled' : 'Ready' }}</strong></div>
                 </div>
 
+                <ZoneFileImport
+                    v-if="zoneImportOpen"
+                    :zone="selectedZoneObject"
+                    :action="panelRoute('dns.zones.import', { id: selectedZoneObject.zone_uuid || selectedZoneObject.id })"
+                    @close="zoneImportOpen = false"
+                />
                 <div v-if="zoneCanvasOpen" class="fixed inset-0 z-40 bg-slate-950/40" @click="zoneCanvasOpen = false"></div>
                 <form v-if="zoneCanvasOpen" class="fixed inset-y-0 right-0 z-50 grid w-full max-w-lg content-start gap-4 overflow-y-auto bg-white p-6 shadow-2xl dark:bg-slate-900" @submit.prevent="submitZone">
                     <div class="flex items-center justify-between border-b border-slate-200 pb-4 dark:border-slate-700">
