@@ -5,7 +5,9 @@ namespace App\Services\Backup;
 use App\Models\DatabaseRequest;
 use App\Models\User;
 use App\Models\Website;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Throwable;
 
 /**
  * Builds a website's zip/tar.gz archive via the dRust execution API. Shared by
@@ -39,8 +41,13 @@ class WebsiteArchiver
             return ['ok' => false, 'message' => 'No approved database is linked to this main domain.'];
         }
 
+        // A drust restart (an update, a config change) refuses connections or
+        // drops the open one for a few seconds. The archive is written to the
+        // same path again, so retrying is safe; a timeout is not retried
+        // because drust may still be working on it.
         $response = Http::acceptJson()->asJson()->withToken($token)
             ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
+            ->retry(6, fn (int $attempt) => min(10000, 1000 * 2 ** ($attempt - 1)), fn (Throwable $e) => self::isDrustRestart($e), throw: false)
             ->post(rtrim($baseUrl, '/').'/api/v1/website/archive', [
                 'zip_path' => $zipPath,
                 'website' => [
@@ -66,5 +73,12 @@ class WebsiteArchiver
         }
 
         return ['ok' => true, 'message' => ''];
+    }
+
+    /** Connection refused (cURL 7) or dropped mid-request (52, 56). */
+    public static function isDrustRestart(Throwable $exception): bool
+    {
+        return $exception instanceof ConnectionException
+            && preg_match('/cURL error (7|52|56):/', $exception->getMessage()) === 1;
     }
 }
