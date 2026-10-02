@@ -300,9 +300,10 @@ class DnsController extends Controller
     {
         $this->ensureDnsTables();
         $validated = $request->validate([
-            'domain' => ['required', 'string', 'max:255'],
+            // One domain, or several separated by new lines, commas or spaces.
+            'domain' => ['required', 'string', 'max:20000'],
             'type' => ['required', 'in:master,slave'],
-            'email' => ['required', 'email', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
             'refresh' => ['required', 'integer', 'min:300', 'max:86400'],
             'retry' => ['required', 'integer', 'min:60', 'max:86400'],
             'expire' => ['required', 'integer', 'min:3600', 'max:2592000'],
@@ -310,11 +311,47 @@ class DnsController extends Controller
             'status' => ['required', 'in:active,disabled'],
         ]);
 
-        $domain = $this->normalizeDomain($validated['domain']);
-        if ($this->findDomainByName($domain)) {
-            return redirect()->route('dns.zones')->with('error', 'Zone already exists.');
+        $domains = collect(preg_split('/[\s,;]+/', (string) $validated['domain']) ?: [])
+            // Pasted URLs work too: https://example.com/path -> example.com
+            ->map(fn ($domain) => $this->normalizeDomain(preg_replace(['#^https?://#i', '#/.*$#'], '', (string) $domain)))
+            ->filter()
+            ->unique()
+            ->values();
+        $invalid = $domains->reject(fn ($domain) => preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$/', $domain) === 1);
+        if ($invalid->isNotEmpty()) {
+            throw ValidationException::withMessages(['domain' => 'Not a valid domain: '.$invalid->implode(', ').'.']);
+        }
+        if ($domains->count() > 100) {
+            throw ValidationException::withMessages(['domain' => 'Add up to 100 domains at a time.']);
         }
 
+        $created = [];
+        $existing = [];
+        foreach ($domains as $domain) {
+            if ($this->findDomainByName($domain)) {
+                $existing[] = $domain;
+
+                continue;
+            }
+            $this->createZone($request, $domain, $validated + ['email' => null]);
+            $created[] = $domain;
+        }
+
+        if ($created === []) {
+            return redirect()->route('dns.zones')->with('error', count($existing) === 1 ? 'Zone already exists.' : 'All of these zones already exist.');
+        }
+        $message = count($created) === 1 ? 'DNS zone created.' : 'Created '.count($created).' DNS zones.';
+        if ($existing !== []) {
+            $message .= ' Already existed: '.implode(', ', $existing).'.';
+        }
+
+        return redirect()->route('dns.zones')->with('success', $message)->with('created_zones', $created);
+    }
+
+    /** @param  array<string, mixed>  $validated */
+    private function createZone(Request $request, string $domain, array $validated): void
+    {
+        $validated['email'] = $validated['email'] ?: "hostmaster@{$domain}";
         $zoneType = $this->uiZoneTypeToPdns($validated['type']);
         $this->pdns()->transaction(function () use ($request, $domain, $zoneType, $validated): void {
             $zoneId = (int) $this->pdns()->table('domains')->insertGetId([
@@ -341,8 +378,6 @@ class DnsController extends Controller
             $this->syncNameserverRecordsForDomain($domain, $zoneId);
             $this->syncRecordEntities($zoneId);
         });
-
-        return redirect()->route('dns.zones')->with('success', 'DNS zone created.');
     }
 
     public function updateZone(Request $request, string $token,  string $id): RedirectResponse
@@ -1126,6 +1161,13 @@ class DnsController extends Controller
             ->where('status', 'active')
             ->orderBy('created_at')
             ->get();
+        if ($allEntries->isEmpty()) {
+            // Like Cloudflare: a zone answers with this server's nameservers
+            // until custom ones are set, so pointing the registrar is enough.
+            $activeEntries = collect($this->defaultNameservers($domain))->map(fn (string $hostname) => (object) [
+                'hostname' => $hostname, 'ttl' => 86400, 'ipv4' => null, 'ipv6' => null,
+            ]);
+        }
 
         foreach ($activeEntries as $entry) {
             $ttl = max(60, (int) $entry->ttl);
@@ -1182,7 +1224,7 @@ class DnsController extends Controller
             ->orderBy('created_at')
             ->value('hostname');
 
-        $primaryNs = $primaryNs ? $this->normalizeDomain((string) $primaryNs) : "ns1.{$domain}";
+        $primaryNs = $primaryNs ? $this->normalizeDomain((string) $primaryNs) : ($this->defaultNameservers($domain)[0] ?? "ns1.{$domain}");
         $existing = $this->pdns()->table('records')
             ->where('domain_id', $zoneId)
             ->where('type', 'SOA')
@@ -1222,6 +1264,21 @@ class DnsController extends Controller
             'disabled' => $validated['status'] === 'disabled' ? 1 : 0,
             'auth' => 1,
         ]);
+    }
+
+    /**
+     * DNS_OUR_NAMESERVERS. A zone that contains them (the nameservers' own
+     * domain) needs glue set up on the Nameservers page instead.
+     *
+     * @return array<int, string>
+     */
+    private function defaultNameservers(string $domain): array
+    {
+        return collect((array) config('dns.our_nameservers', []))
+            ->map(fn ($hostname) => $this->normalizeDomain((string) $hostname))
+            ->filter(fn ($hostname) => $hostname !== '' && $hostname !== $domain && ! str_ends_with($hostname, ".{$domain}"))
+            ->values()
+            ->all();
     }
 
     private function findDomainByName(string $domain): ?object

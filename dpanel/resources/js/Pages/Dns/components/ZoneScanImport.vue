@@ -49,6 +49,7 @@ const importSelected = () => {
         records: selected.value.map(({ name, type, content, priority, ttl }) => ({ name, type, content, priority, ttl })),
     }, {
         preserveScroll: true,
+        preserveState: true,
         onSuccess: () => emit('close'),
         onError: (errors) => { error.value = Object.values(errors)[0] || 'Import failed.'; },
         onFinish: () => { importing.value = false; },
@@ -57,8 +58,8 @@ const importSelected = () => {
 </script>
 
 <template>
-    <div class="fixed inset-0 z-40 bg-slate-950/40" @click="emit('close')"></div>
-    <div class="fixed inset-y-0 right-0 z-50 flex w-full max-w-3xl flex-col bg-white shadow-2xl dark:bg-slate-900">
+    <div class="fixed inset-0 z-[60] bg-slate-950/40" @click="emit('close')"></div>
+    <div class="fixed inset-y-0 right-0 z-[70] flex w-full max-w-3xl flex-col bg-white shadow-2xl dark:bg-slate-900">
         <div class="flex items-center justify-between border-b border-slate-200 p-6 pb-4 dark:border-slate-700">
             <div>
                 <h2 class="text-base font-semibold">Import existing DNS records</h2>

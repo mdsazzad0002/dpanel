@@ -18,14 +18,15 @@ const submit = () => {
     form.post(props.action, {
         forceFormData: true,
         preserveScroll: true,
+        preserveState: true,
         onSuccess: () => emit('close'),
     });
 };
 </script>
 
 <template>
-    <div class="fixed inset-0 z-40 bg-slate-950/40" @click="emit('close')"></div>
-    <form class="fixed inset-y-0 right-0 z-50 grid w-full max-w-xl content-start gap-4 overflow-y-auto bg-white p-6 shadow-2xl dark:bg-slate-900" @submit.prevent="submit">
+    <div class="fixed inset-0 z-[60] bg-slate-950/40" @click="emit('close')"></div>
+    <form class="fixed inset-y-0 right-0 z-[70] grid w-full max-w-xl content-start gap-4 overflow-y-auto bg-white p-6 shadow-2xl dark:bg-slate-900" @submit.prevent="submit">
         <div class="flex items-center justify-between border-b border-slate-200 pb-4 dark:border-slate-700">
             <div>
                 <h2 class="text-base font-semibold">Import zone file</h2>

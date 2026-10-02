@@ -82,6 +82,7 @@ class DnsZoneLifecycleTest extends TestCase
 
         $this->admin = User::factory()->create();
         $this->admin->assignRole('admin');
+        config(['dns.our_nameservers' => ['ns1.panel.test', 'ns2.panel.test']]);
     }
 
     public function test_a_zone_can_be_created_filled_and_exported(): void
@@ -100,7 +101,9 @@ class DnsZoneLifecycleTest extends TestCase
         $zone = DnsZone::query()->sole();
         $this->assertSame($this->admin->id, $zone->owner_user_id);
         $soa = DB::table('records')->where('type', 'SOA')->sole();
-        $this->assertStringStartsWith('ns1.example.com hostmaster.example.com '.now()->format('Ymd'), $soa->content);
+        $this->assertStringStartsWith('ns1.panel.test hostmaster.example.com '.now()->format('Ymd'), $soa->content);
+        // A new zone answers with this server's nameservers straight away.
+        $this->assertSame(['ns1.panel.test', 'ns2.panel.test'], DB::table('records')->where('type', 'NS')->where('name', 'example.com')->orderBy('content')->pluck('content')->all());
 
         $this->request()->post("/cpsess{$this->token}/dns/records", [
             'zone_domain' => 'example.com', 'type' => 'TXT', 'name' => '@',
@@ -191,10 +194,46 @@ class DnsZoneLifecycleTest extends TestCase
         ])->assertSessionHasNoErrors();
     }
 
-    public function test_a_zone_without_an_email_is_rejected_with_a_field_error(): void
+    public function test_several_domains_are_added_at_once(): void
+    {
+        $this->createZone('one.test');
+        $this->request()->post("/cpsess{$this->token}/dns/zones", [
+            'domain' => "https://Two.test/\nthree.test, one.test\n\n", 'type' => 'master', 'email' => '',
+            'refresh' => 3600, 'retry' => 600, 'expire' => 1209600, 'minimum_ttl' => 3600, 'status' => 'active',
+        ])->assertSessionHas('success', 'Created 2 DNS zones. Already existed: one.test.');
+
+        $this->assertSame(['one.test', 'three.test', 'two.test'], DnsZone::query()->orderBy('domain')->pluck('domain')->all());
+        $this->assertStringContainsString('hostmaster.two.test', (string) DB::table('records')->where('type', 'SOA')->where('name', 'two.test')->value('content'));
+
+        $this->request()->post("/cpsess{$this->token}/dns/zones", [
+            'domain' => 'good.test bad_domain', 'type' => 'master', 'email' => '',
+            'refresh' => 3600, 'retry' => 600, 'expire' => 1209600, 'minimum_ttl' => 3600, 'status' => 'active',
+        ])->assertSessionHasErrors('domain');
+        $this->assertFalse(DnsZone::query()->where('domain', 'good.test')->exists());
+    }
+
+    public function test_connection_status_compares_public_nameservers_with_the_zone(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        $public = ['NS here.test' => ['ns2.panel.test', 'ns1.panel.test'], 'NS away.test' => ['ada.ns.cloudflare.com']];
+        Http::fake(['drust.test/api/v1/dns/lookup' => fn ($request) => Http::response(['success' => true, 'data' => ['answers' => array_map(fn ($q) => [
+            'name' => $q['name'], 'type' => $q['type'], 'error' => '', 'values' => $public[$q['type'].' '.$q['name']] ?? [],
+        ], $request['queries'])]])]);
+        foreach (['here.test', 'away.test', 'nowhere.test'] as $domain) {
+            $this->createZone($domain);
+        }
+
+        $zones = $this->request()->getJson("/cpsess{$this->token}/dns/zones/connection")->assertOk()->json('zones');
+        $this->assertSame('connected', $zones['here.test']['status']);
+        $this->assertSame('pending', $zones['away.test']['status']);
+        $this->assertSame(['ns1.panel.test', 'ns2.panel.test'], collect($zones['away.test']['assigned'])->sort()->values()->all());
+        $this->assertSame('unregistered', $zones['nowhere.test']['status']);
+    }
+
+    public function test_an_invalid_soa_email_is_rejected_with_a_field_error(): void
     {
         $this->request()->post("/cpsess{$this->token}/dns/zones", [
-            'domain' => 'example.com', 'type' => 'master', 'email' => '',
+            'domain' => 'example.com', 'type' => 'master', 'email' => 'not-an-email',
             'refresh' => 3600, 'retry' => 600, 'expire' => 1209600, 'minimum_ttl' => 3600, 'status' => 'active',
         ])->assertSessionHasErrors('email');
         $this->assertSame(0, DnsZone::query()->count());

@@ -25,6 +25,7 @@ use App\Http\Controllers\CloneShareController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\DnsController;
+use App\Http\Controllers\DnsZoneConnectionController;
 use App\Http\Controllers\DnsZoneFileController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\MailClientController;
@@ -728,6 +729,9 @@ Route::prefix('cpsess{token}')
             Route::post('/dns/zones/{id}/import', [DnsZoneFileController::class, 'import'])
                 ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.zones.import');
+            Route::get('/dns/zones/connection', [DnsZoneConnectionController::class, 'index'])
+                ->middleware(['role_or_permission:admin|reseller|general|general_user|manage_dns', 'throttle:20,1'])
+                ->name('dns.zones.connection');
             Route::get('/dns/zones/{id}/scan', [DnsZoneFileController::class, 'scan'])
                 ->middleware(['role_or_permission:admin|reseller|general|general_user|manage_dns', 'throttle:10,1'])
                 ->name('dns.zones.scan');
