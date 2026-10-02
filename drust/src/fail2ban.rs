@@ -171,13 +171,21 @@ fn sshd_ports() -> Vec<String> {
     if ports.is_empty() { vec!["ssh".to_string()] } else { ports }
 }
 
+/// Every jail bans for good: a ban only ends when it is removed in the panel.
 pub(crate) fn policy_content(max_retry: u32, ports: &[String]) -> String {
     format!(
         "# Managed by dPanel (Security > Fail2ban). Changes here are overwritten.\n\
-         # {max_retry} failed SSH logins within a day block the IP until it is unblocked in the panel.\n\
+         # Bans from every jail last until they are removed in the panel.\n\
+         [DEFAULT]\nbantime = -1\n\n\
+         # {max_retry} failed SSH logins within a day block the IP.\n\
          [sshd]\nenabled = true\nport = {}\nmaxretry = {max_retry}\nfindtime = 1d\nbantime = -1\n",
         ports.join(",")
     )
+}
+
+/// Policy files written before every jail was made permanent only covered sshd.
+pub(crate) fn policy_is_current(file: &str) -> bool {
+    file.contains("[DEFAULT]\nbantime = -1\n")
 }
 
 pub(crate) fn parse_policy_max_retry(file: &str) -> Option<u32> {
@@ -198,26 +206,41 @@ fn write_policy(max_retry: u32) -> Result<(), String> {
         .map_err(|e| format!("Cannot write {POLICY_FILE}: {e}"))
 }
 
-/// Runs once when drust starts, so every server blocks SSH brute force by
-/// default. An existing policy file is the admin's choice and is left alone.
+/// Runs once when drust starts, so every server blocks SSH brute force and
+/// keeps every ban by default. An existing policy keeps the admin's maxretry
+/// and is only rewritten when it predates permanent bans for all jails.
 pub fn ensure_default_policy() {
-    if client().is_none() || Path::new(POLICY_FILE).exists() {
+    if client().is_none() {
         return;
     }
-    match write_policy(DEFAULT_MAX_RETRY).and_then(|()| run(&["reload"])) {
-        Ok(_) => println!("[INFO] fail2ban: SSH logins now block an IP after {DEFAULT_MAX_RETRY} failures."),
-        Err(error) => eprintln!("[WARN] fail2ban: could not apply the default SSH policy: {error}"),
+    let existing = fs::read_to_string(POLICY_FILE).ok();
+    if existing.as_deref().is_some_and(policy_is_current) {
+        return;
+    }
+    let max_retry = existing
+        .as_deref()
+        .and_then(parse_policy_max_retry)
+        .filter(|n| (1..=MAX_RETRY_LIMIT).contains(n))
+        .unwrap_or(DEFAULT_MAX_RETRY);
+    match write_policy(max_retry).and_then(|()| run(&["reload"])) {
+        Ok(_) => println!("[INFO] fail2ban: bans are permanent; SSH blocks an IP after {max_retry} failures."),
+        Err(error) => eprintln!("[WARN] fail2ban: could not apply the default policy: {error}"),
     }
 }
 
-/// What the running sshd jail enforces, read back from fail2ban itself.
-fn policy() -> Value {
+/// What the running jails enforce, read back from fail2ban itself.
+fn policy(jails: &[String]) -> Value {
     let live = |key: &str| run(&["get", "sshd", key]).ok().and_then(|v| v.trim().parse::<i64>().ok());
+    let temporary: Vec<&String> = jails
+        .iter()
+        .filter(|jail| run(&["get", jail, "bantime"]).ok().and_then(|v| v.trim().parse::<i64>().ok()) != Some(-1))
+        .collect();
     json!({
         "managed": Path::new(POLICY_FILE).exists(),
         "max_retry": live("maxretry")
             .or_else(|| fs::read_to_string(POLICY_FILE).ok().and_then(|f| parse_policy_max_retry(&f).map(i64::from))),
         "permanent": live("bantime") == Some(-1),
+        "temporary_jails": temporary,
         "ports": sshd_ports(),
         "default_max_retry": DEFAULT_MAX_RETRY,
     })
@@ -231,17 +254,18 @@ pub fn status() -> Result<Value, String> {
     let Ok(overview) = run(&["status"]) else {
         return Ok(json!({ "installed": true, "running": false, "jails": [], "whitelist": whitelist, "policy": null }));
     };
-    let jails: Vec<Value> = parse_jail_list(&overview)
+    let names = parse_jail_list(&overview);
+    let jails: Vec<Value> = names
         .iter()
         .filter_map(|name| run(&["status", name]).ok().map(|text| parse_jail(name, &text)))
         .collect();
-    Ok(json!({ "installed": true, "running": true, "jails": jails, "whitelist": whitelist, "policy": policy() }))
+    Ok(json!({ "installed": true, "running": true, "jails": jails, "whitelist": whitelist, "policy": policy(&names) }))
 }
 
 pub fn set_policy(max_retry: u32) -> Result<String, String> {
     write_policy(max_retry)?;
     run(&["reload"])?;
-    Ok(format!("SSH now blocks an IP permanently after {max_retry} failed logins."))
+    Ok(format!("SSH now blocks an IP after {max_retry} failed logins. Bans last until you remove them."))
 }
 
 /// Blocks an IP from SSH until it is unblocked in the panel.
@@ -398,6 +422,11 @@ mod tests {
         assert!(file.contains("port = 2002\n"));
         assert!(file.contains("bantime = -1\n"));
         assert_eq!(parse_policy_max_retry(&file), Some(3));
+        assert!(policy_is_current(&file));
+
+        let old = "[sshd]\nenabled = true\nport = ssh\nmaxretry = 5\nfindtime = 1d\nbantime = -1\n";
+        assert!(!policy_is_current(old));
+        assert_eq!(parse_policy_max_retry(old), Some(5));
     }
 
     #[test]

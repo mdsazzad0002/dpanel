@@ -18,8 +18,8 @@ watch(() => props.policy, (policy) => {
     <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
         <h2 class="text-base font-semibold">SSH login protection</h2>
         <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            An IP that fails to log in to SSH this many times within a day is blocked from SSH permanently, until you unblock it here.
-            The panel stays reachable, so you can always unblock yourself.
+            An IP that fails to log in to SSH this many times within a day is blocked. Bans from every jail never expire on their own;
+            they last until you unblock the IP here. The panel stays reachable, so you can always unblock yourself.
         </p>
 
         <div v-if="policy" class="mt-3 flex flex-wrap gap-2 text-xs">
@@ -33,6 +33,9 @@ watch(() => props.policy, (policy) => {
                 SSH port {{ (policy.ports || []).join(', ') }}
             </span>
         </div>
+        <p v-if="policy?.temporary_jails?.length" class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            These jails still unban on their own: {{ policy.temporary_jails.join(', ') }}. Click Save to make their bans permanent.
+        </p>
 
         <form class="mt-4 flex flex-wrap items-end gap-3" @submit.prevent="emit('save', maxRetry)">
             <label class="text-sm">

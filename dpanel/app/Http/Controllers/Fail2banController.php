@@ -74,7 +74,7 @@ class Fail2banController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "SSH now blocks an IP permanently after {$maxRetry} failed logins.",
+            'message' => "SSH now blocks an IP after {$maxRetry} failed logins. Bans last until you remove them.",
             'data' => $data,
         ]);
     }
