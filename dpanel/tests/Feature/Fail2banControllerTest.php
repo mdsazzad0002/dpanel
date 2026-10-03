@@ -59,6 +59,16 @@ class Fail2banControllerTest extends TestCase
         ]);
     }
 
+    public function test_each_menu_entry_opens_its_own_page(): void
+    {
+        foreach (['' => 'Blocklist', '/ssh-logins' => 'SshLogins', '/whitelist' => 'Whitelist'] as $path => $component) {
+            $this->request()
+                ->get("/cpsess{$this->token}/security/fail2ban{$path}")
+                ->assertOk()
+                ->assertInertia(fn ($page) => $page->component("Security/Fail2ban/{$component}"));
+        }
+    }
+
     public function test_status_is_read_from_drust(): void
     {
         Http::fake(['drust.test/api/v1/fail2ban' => Http::response(['success' => true, 'data' => $this->status])]);

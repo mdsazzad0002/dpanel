@@ -24,7 +24,22 @@ class Fail2banController extends Controller
 
     public function index(Request $request): Response
     {
-        return Inertia::render('Security/Fail2ban/Index', [
+        return $this->page($request, 'Blocklist');
+    }
+
+    public function sshLogins(Request $request): Response
+    {
+        return $this->page($request, 'SshLogins');
+    }
+
+    public function whitelist(Request $request): Response
+    {
+        return $this->page($request, 'Whitelist');
+    }
+
+    private function page(Request $request, string $component): Response
+    {
+        return Inertia::render('Security/Fail2ban/'.$component, [
             'clientIp' => (string) $request->ip(),
         ]);
     }
