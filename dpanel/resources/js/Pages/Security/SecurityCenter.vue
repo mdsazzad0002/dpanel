@@ -4,6 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import ProtectionBreakdown from './components/ProtectionBreakdown.vue';
+import RecentEventsCard from './components/RecentEventsCard.vue';
 
 const props = defineProps({
     score: { type: Object, required: true },
@@ -201,19 +202,7 @@ onBeforeUnmount(() => clearInterval(timer));
                     </ul>
                 </div>
 
-                <div class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 class="text-base font-semibold">Recent security events</h2>
-                    <ul class="mt-4 divide-y divide-slate-100 text-sm dark:divide-slate-800">
-                        <li v-for="event in events" :key="event.id" class="flex items-start gap-2 py-2">
-                            <span class="rounded-full px-2 py-0.5 text-xs capitalize" :class="severityStyles[event.severity] || severityStyles.info">{{ event.severity }}</span>
-                            <div class="min-w-0">
-                                <p>{{ event.message }}</p>
-                                <p class="text-xs text-slate-500">{{ formatDate(event.created_at) }}</p>
-                            </div>
-                        </li>
-                        <li v-if="events.length === 0" class="py-4 text-center text-slate-500">No events yet.</li>
-                    </ul>
-                </div>
+                <RecentEventsCard :events="events" :severity-styles="severityStyles" :panel-route="panelRoute" @deleted="router.reload({ only: ['events'] })" />
             </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">

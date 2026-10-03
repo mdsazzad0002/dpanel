@@ -229,6 +229,27 @@ class SecurityCenterController extends Controller
         ]);
     }
 
+    public function destroyEvents(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:500'],
+            'ids.*' => ['integer'],
+        ]);
+        $websiteIds = $this->websiteIds($request->user());
+
+        $deleted = SecurityEvent::query()
+            ->whereIn('id', $data['ids'])
+            // Same scope as the dashboard list: non-admins never reach server events.
+            ->when($websiteIds !== null, fn ($q) => $q->whereIn('website_id', $websiteIds))
+            ->delete();
+
+        return response()->json([
+            'success' => true,
+            'deleted' => $deleted,
+            'message' => $deleted.' event'.($deleted === 1 ? '' : 's').' deleted.',
+        ]);
+    }
+
     public function toggleRule(Request $request, string $token, string $rule): JsonResponse
     {
         $data = $request->validate(['enabled' => ['required', 'boolean']]);
