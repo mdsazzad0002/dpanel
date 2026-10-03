@@ -13,6 +13,7 @@ use App\Services\Security\SecurityScanService;
 use App\Services\Security\SecurityScoreService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -250,6 +251,64 @@ class SecurityCenterController extends Controller
         ]);
     }
 
+    /**
+     * Deletes scan history rows. The newest completed scan of each target and
+     * type stays, because the score counts a category as measured only while
+     * one exists. Findings point at the last scan that saw them, so they move
+     * to the newest scan left for their target instead of cascading away.
+     */
+    public function destroyScans(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:500'],
+            'ids.*' => ['integer'],
+        ]);
+        $websiteIds = $this->websiteIds($request->user());
+
+        $scans = SecurityScan::query()
+            ->whereIn('id', $data['ids'])
+            ->when($websiteIds !== null, fn ($q) => $q->whereIn('website_id', $websiteIds))
+            ->get(['id', 'website_id', 'scan_type', 'status']);
+        $running = $scans->whereIn('status', ['queued', 'running']);
+        $kept = $scans->whereIn('id', $this->latestCompletedScanIds());
+        $doomed = $scans->diff($running)->diff($kept);
+
+        $deleted = DB::transaction(function () use ($doomed, &$kept) {
+            $ids = $doomed->pluck('id')->all();
+            foreach ($doomed->groupBy(fn ($scan) => (string) $scan->website_id) as $scansOfTarget) {
+                $websiteId = $scansOfTarget->first()->website_id;
+                $heir = SecurityScan::query()
+                    ->where('website_id', $websiteId)
+                    ->whereNotIn('id', $ids)
+                    ->latest('id')
+                    ->value('id');
+                $mine = $scansOfTarget->pluck('id')->all();
+                if ($heir === null) {
+                    // Nothing left to hold this target's findings: keep these scans.
+                    if (SecurityFinding::query()->whereIn('scan_id', $mine)->exists()) {
+                        $kept = $kept->merge($scansOfTarget);
+                        $ids = array_values(array_diff($ids, $mine));
+                    }
+
+                    continue;
+                }
+                SecurityFinding::query()->whereIn('scan_id', $mine)->update(['scan_id' => $heir]);
+            }
+
+            return SecurityScan::query()->whereIn('id', $ids)->delete();
+        });
+
+        $message = $deleted.' scan'.($deleted === 1 ? '' : 's').' deleted.';
+        if ($kept->isNotEmpty()) {
+            $message .= ' Kept '.$kept->count().': the latest scan of each type is needed for the security score and findings.';
+        }
+        if ($running->isNotEmpty()) {
+            $message .= ' Skipped '.$running->count().' still running.';
+        }
+
+        return response()->json(['success' => true, 'deleted' => $deleted, 'message' => $message]);
+    }
+
     public function toggleRule(Request $request, string $token, string $rule): JsonResponse
     {
         $data = $request->validate(['enabled' => ['required', 'boolean']]);
@@ -306,13 +365,33 @@ class SecurityCenterController extends Controller
      */
     private function recentScans(?array $websiteIds)
     {
+        $protected = $this->latestCompletedScanIds();
+
         return SecurityScan::query()
             ->with('website:id,domain')
             ->when($websiteIds !== null, fn ($q) => $q->whereIn('website_id', $websiteIds))
             ->latest('id')
             ->limit(10)
             ->get()
-            ->map(fn (SecurityScan $scan) => $this->presentScan($scan));
+            ->map(fn (SecurityScan $scan) => $this->presentScan($scan) + [
+                'protected' => in_array($scan->id, $protected, true),
+            ]);
+    }
+
+    /**
+     * The newest completed scan of each target and scan type.
+     *
+     * @return array<int, int>
+     */
+    private function latestCompletedScanIds(): array
+    {
+        return SecurityScan::query()
+            ->where('status', 'completed')
+            ->groupBy('website_id', 'scan_type')
+            ->selectRaw('MAX(id) as id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
     }
 
     /**

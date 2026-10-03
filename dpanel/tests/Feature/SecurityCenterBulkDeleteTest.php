@@ -103,6 +103,31 @@ class SecurityCenterBulkDeleteTest extends TestCase
         $this->assertSame(0, SecurityEvent::query()->count());
     }
 
+    public function test_scan_delete_keeps_the_latest_of_each_type_and_moves_findings(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+        $old = $this->scanRow('site-1', 'quick', 'completed');
+        $latest = $this->scanRow('site-1', 'quick', 'completed');
+        $running = $this->scanRow('site-1', 'quick', 'running');
+        $finding = $this->finding('site-1', $old);
+
+        $this->as($admin)
+            ->deleteJson("/cpsess{$this->token}/security/center/scans", ['ids' => [$old->id, $latest->id, $running->id]])
+            ->assertOk()
+            ->assertJsonPath('deleted', 1)
+            ->assertJsonPath('message', '1 scan deleted. Kept 1: the latest scan of each type is needed for the security score and findings. Skipped 1 still running.');
+
+        $this->assertEqualsCanonicalizing([$latest->id, $running->id], SecurityScan::query()->pluck('id')->all());
+        // The finding moved to the newest scan left for its website instead of being deleted with the old one.
+        $this->assertSame($running->id, $finding->fresh()->scan_id);
+    }
+
+    private function scanRow(?string $websiteId, string $type, string $status): SecurityScan
+    {
+        return SecurityScan::query()->create(['website_id' => $websiteId, 'scan_type' => $type, 'status' => $status]);
+    }
+
     private function event(?string $websiteId): SecurityEvent
     {
         return SecurityEvent::query()->create([
@@ -114,9 +139,9 @@ class SecurityCenterBulkDeleteTest extends TestCase
         ]);
     }
 
-    private function finding(?string $websiteId): SecurityFinding
+    private function finding(?string $websiteId, ?SecurityScan $scan = null): SecurityFinding
     {
-        $scan = SecurityScan::query()->create(['website_id' => $websiteId, 'scan_type' => 'quick', 'status' => 'completed']);
+        $scan ??= $this->scanRow($websiteId, 'quick', 'completed');
 
         return SecurityFinding::query()->create([
             'scan_id' => $scan->id,

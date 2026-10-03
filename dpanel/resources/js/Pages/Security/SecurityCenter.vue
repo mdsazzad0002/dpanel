@@ -5,6 +5,7 @@ import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import ProtectionBreakdown from './components/ProtectionBreakdown.vue';
 import RecentEventsCard from './components/RecentEventsCard.vue';
+import ScanHistoryCard from './components/ScanHistoryCard.vue';
 
 const props = defineProps({
     score: { type: Object, required: true },
@@ -50,8 +51,6 @@ const scoreColor = (score) => {
     if (score >= 50) return 'text-amber-600 dark:text-amber-400';
     return 'text-red-600 dark:text-red-400';
 };
-
-const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—');
 
 const startScan = async () => {
     if (!target.value) return;
@@ -205,43 +204,7 @@ onBeforeUnmount(() => clearInterval(timer));
                 <RecentEventsCard :events="events" :severity-styles="severityStyles" :panel-route="panelRoute" @deleted="router.reload({ only: ['events'] })" />
             </section>
 
-            <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-base font-semibold">Scan history</h2>
-                <div class="mt-3 overflow-x-auto">
-                    <table class="min-w-full text-left text-sm">
-                        <thead class="bg-slate-50 dark:bg-slate-800">
-                            <tr>
-                                <th class="px-3 py-2">Target</th>
-                                <th class="px-3 py-2">Type</th>
-                                <th class="px-3 py-2">Status</th>
-                                <th class="px-3 py-2">Files</th>
-                                <th class="px-3 py-2">Threats</th>
-                                <th class="px-3 py-2">Risk</th>
-                                <th class="px-3 py-2">Finished</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="scan in scans" :key="scan.id" class="border-t border-slate-200 align-top dark:border-slate-800">
-                                <td class="px-3 py-2">{{ scan.target }}</td>
-                                <td class="px-3 py-2 capitalize">{{ scan.scan_type }}</td>
-                                <td class="px-3 py-2">
-                                    <span class="capitalize" :class="{ 'text-red-600': scan.status === 'failed', 'text-emerald-600': scan.status === 'completed', 'text-amber-600': ['queued', 'running'].includes(scan.status) }">{{ scan.status }}</span>
-                                    <p v-if="scan.error" class="max-w-xs text-xs text-red-600">{{ scan.error }}</p>
-                                    <p v-else-if="scan.clamav?.error" class="max-w-xs text-xs text-amber-600">ClamAV: {{ scan.clamav.error }}</p>
-                                    <p v-if="scan.truncated" class="text-xs text-amber-600">File limit reached; not every file was scanned.</p>
-                                </td>
-                                <td class="px-3 py-2">{{ scan.files_scanned }}</td>
-                                <td class="px-3 py-2">{{ scan.threats_found }}</td>
-                                <td class="px-3 py-2">{{ scan.risk_score ?? '—' }}</td>
-                                <td class="px-3 py-2 text-xs">{{ formatDate(scan.completed_at) }}</td>
-                            </tr>
-                            <tr v-if="scans.length === 0">
-                                <td colspan="7" class="px-3 py-4 text-center text-slate-500">No scans yet.</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+            <ScanHistoryCard :scans="scans" :panel-route="panelRoute" @deleted="router.reload({ only: ['scans', 'score', 'unscanned'] })" />
 
             <section v-if="isAdmin" class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex items-center justify-between">

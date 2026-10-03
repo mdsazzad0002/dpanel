@@ -821,6 +821,9 @@ Route::prefix('cpsess{token}')
             Route::delete('/security/center/findings', [SecurityCenterController::class, 'destroyFindings'])
                 ->middleware('role:admin|reseller|general|general_user')
                 ->name('security.center.findings.destroy');
+            Route::delete('/security/center/scans', [SecurityCenterController::class, 'destroyScans'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('security.center.scans.destroy');
             Route::delete('/security/center/events', [SecurityCenterController::class, 'destroyEvents'])
                 ->middleware('role:admin|reseller|general|general_user')
                 ->name('security.center.events.destroy');
