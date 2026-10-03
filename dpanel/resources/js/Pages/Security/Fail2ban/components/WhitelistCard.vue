@@ -37,7 +37,7 @@ const add = () => {
                     {{ busy === entry ? 'Removing…' : 'Remove' }}
                 </button>
             </li>
-            <li v-if="props.entries.length === 0" class="px-3 py-3 text-center text-sm text-slate-500">No IPs whitelisted. Localhost is always allowed.</li>
+            <li v-if="props.entries.length === 0" class="px-3 py-3 text-center text-sm text-slate-500">No IPs whitelisted.</li>
         </ul>
     </section>
 </template>

@@ -275,8 +275,9 @@ const menuItems = computed(() => [
         iconClass: 'bi bi-unlock',
         color: 'red',
         children: [
-            { label: 'SSH Login History', hint: 'Login attempts, blocked IPs and block settings', icon: 'SL', iconClass: 'bi bi-clock-history', routeName: 'security.fail2ban', roles: ['admin'] },
+            { label: 'SSH Login History', hint: 'Login attempts and block settings', icon: 'SL', iconClass: 'bi bi-clock-history', routeName: 'security.fail2ban', roles: ['admin'] },
             { label: 'Whitelist', hint: 'IPs that are never blocked', icon: 'WL', iconClass: 'bi bi-check2-circle', routeName: 'security.fail2ban.whitelist', roles: ['admin'] },
+            { label: 'Blocklist', hint: 'Block a new IP or unblock one', icon: 'BL', iconClass: 'bi bi-slash-circle', routeName: 'security.fail2ban.blocklist', roles: ['admin'] },
         ],
     },
     { label: 'Database & Redis', hint: 'Point dpanel at a remote DB/Redis', icon: 'DB', iconClass: 'bi bi-hdd-network', routeName: 'self-connection.manager', roles: ['admin'], color: 'rose' },

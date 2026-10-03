@@ -61,7 +61,7 @@ class Fail2banControllerTest extends TestCase
 
     public function test_each_menu_entry_opens_its_own_page(): void
     {
-        foreach (['' => 'SshLogins', '/whitelist' => 'Whitelist'] as $path => $component) {
+        foreach (['' => 'SshLogins', '/whitelist' => 'Whitelist', '/blocklist' => 'Blocklist'] as $path => $component) {
             $this->request()
                 ->get("/cpsess{$this->token}/security/fail2ban{$path}")
                 ->assertOk()
