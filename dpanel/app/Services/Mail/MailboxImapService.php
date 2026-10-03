@@ -5,6 +5,7 @@ namespace App\Services\Mail;
 use App\Models\Mailbox;
 use App\Models\MailboxMessageMetadata;
 use App\Models\MailboxSyncState;
+use App\Support\MailText;
 use RuntimeException;
 
 class MailboxImapService
@@ -458,7 +459,7 @@ class MailboxImapService
                 'subject' => $this->decodeHeader((string) ($overview->subject ?? '(no subject)')),
                 'sender' => $this->decodeHeader((string) ($overview->from ?? '')),
                 'recipient' => $this->decodeHeader((string) ($overview->to ?? '')),
-                'message_date' => (string) ($overview->date ?? ''),
+                'message_date' => MailText::toUtf8((string) ($overview->date ?? '')),
                 'seen' => (bool) ($overview->seen ?? false),
                 'size' => (int) ($overview->size ?? 0),
                 'snippet' => null,
@@ -487,13 +488,13 @@ class MailboxImapService
     {
         return [
             'uid' => $metadata->uid,
-            'subject' => (string) ($metadata->subject ?: '(no subject)'),
-            'from' => (string) $metadata->sender,
-            'to' => (string) $metadata->recipient,
-            'date' => (string) $metadata->message_date,
+            'subject' => MailText::toUtf8((string) ($metadata->subject ?: '(no subject)')),
+            'from' => MailText::toUtf8((string) $metadata->sender),
+            'to' => MailText::toUtf8((string) $metadata->recipient),
+            'date' => MailText::toUtf8((string) $metadata->message_date),
             'seen' => $metadata->seen,
             'size' => $metadata->size,
-            'snippet' => (string) $metadata->snippet,
+            'snippet' => MailText::toUtf8((string) $metadata->snippet),
         ];
     }
 
@@ -537,14 +538,14 @@ class MailboxImapService
         return [
             'uid' => $uid,
             'folder' => $folder,
-            'subject' => (string) ($metadata?->subject ?: '(no subject)'),
-            'from' => (string) $metadata?->sender,
-            'to' => (string) $metadata?->recipient,
-            'date' => (string) $metadata?->message_date,
+            'subject' => MailText::toUtf8((string) ($metadata?->subject ?: '(no subject)')),
+            'from' => MailText::toUtf8((string) $metadata?->sender),
+            'to' => MailText::toUtf8((string) $metadata?->recipient),
+            'date' => MailText::toUtf8((string) $metadata?->message_date),
             'seen' => (bool) $metadata?->seen,
             'raw_header' => '',
             'raw_body' => '',
-            'text' => $text,
+            'text' => MailText::toUtf8($text),
         ];
     }
 
@@ -578,20 +579,22 @@ class MailboxImapService
                 $body = (string) @imap_fetchbody($stream, $uid, $part['part'], FT_UID | FT_PEEK);
                 $body = $this->decodePart($body, (int) ($part['encoding'] ?? 0));
                 if ($mime === 'text/html') {
-                    $body = strip_tags(html_entity_decode($body, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                    $body = MailText::toUtf8($body, $part['charset'] ?? MailText::htmlMetaCharset($body));
+
+                    return MailText::htmlToText($body);
                 }
 
-                return trim($body);
+                return trim(MailText::toUtf8($body, $part['charset'] ?? null));
             }
         }
 
         $body = (string) @imap_body($stream, $uid, FT_UID | FT_PEEK);
 
-        return trim($body);
+        return trim(MailText::toUtf8($body));
     }
 
     /**
-     * @return array<string, array{part: string, encoding: int}>
+     * @return array<string, array{part: string, encoding: int, charset: string|null}>
      */
     private function findBodyParts(object $structure, string $prefix = ''): array
     {
@@ -599,10 +602,13 @@ class MailboxImapService
         $mime = $this->mimeType($structure);
         $partNumber = $prefix === '' ? '1' : $prefix;
 
-        if ($mime === 'text/plain' || $mime === 'text/html') {
+        $isAttachment = ! empty($structure->ifdisposition)
+            && strtolower((string) ($structure->disposition ?? '')) === 'attachment';
+        if (($mime === 'text/plain' || $mime === 'text/html') && ! $isAttachment) {
             $parts[$mime] = [
                 'part' => $partNumber,
                 'encoding' => (int) ($structure->encoding ?? 0),
+                'charset' => $this->partCharset($structure),
             ];
         }
 
@@ -618,6 +624,17 @@ class MailboxImapService
         }
 
         return $parts;
+    }
+
+    private function partCharset(object $structure): ?string
+    {
+        foreach ((array) ($structure->parameters ?? []) as $parameter) {
+            if (is_object($parameter) && strtolower((string) ($parameter->attribute ?? '')) === 'charset') {
+                return (string) ($parameter->value ?? '') ?: null;
+            }
+        }
+
+        return null;
     }
 
     private function mimeType(object $structure): string
@@ -641,7 +658,7 @@ class MailboxImapService
     private function decodePart(string $body, int $encoding): string
     {
         return match ($encoding) {
-            3 => base64_decode($body, true) ?: '',
+            3 => base64_decode(preg_replace('/[^A-Za-z0-9+\/=]/', '', $body) ?? $body) ?: '',
             4 => quoted_printable_decode($body),
             default => $body,
         };
@@ -655,15 +672,15 @@ class MailboxImapService
 
         $decoded = @imap_mime_header_decode($value);
         if (! is_array($decoded) || $decoded === []) {
-            return trim($value);
+            return trim(MailText::toUtf8($value));
         }
 
         $text = '';
         foreach ($decoded as $part) {
-            $text .= (string) ($part->text ?? '');
+            $text .= MailText::toUtf8((string) ($part->text ?? ''), (string) ($part->charset ?? ''));
         }
 
-        return trim($text !== '' ? $text : $value);
+        return trim($text !== '' ? $text : MailText::toUtf8($value));
     }
 
     /**
