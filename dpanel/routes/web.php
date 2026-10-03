@@ -332,6 +332,10 @@ Route::prefix('cpsess{token}')
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.destroy');
 
+            Route::get('/mail-image', [MailClientController::class, 'image'])
+                ->middleware(['role:admin|reseller', 'throttle:600,1'])
+                ->name('mailbox.image');
+
             Route::get('/mail/{id}', [MailClientController::class, 'show'])
                 ->middleware('role:admin|reseller')
                 ->name('mailbox.open');

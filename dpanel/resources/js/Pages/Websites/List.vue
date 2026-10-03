@@ -22,7 +22,7 @@ const ownershipResellerId = ref('');
 const ownershipSaving = ref(false);
 const toasts = ref([]);
 let toastSequence = 0;
-const perPage = 20;
+const perPage = 50;
 
 const sslValidityLabel = (item) => {
     if (!item?.enable_ssl) return 'SSL disabled';

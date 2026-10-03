@@ -6,6 +6,7 @@ use App\Jobs\SyncMailboxMetadataJob;
 use App\Models\Mailbox;
 use App\Models\MailboxMessageMetadata;
 use App\Services\Mail\MailboxImapService;
+use App\Services\Mail\MailImageProxy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -131,6 +132,25 @@ class MailClientController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => null, 'messageData' => $message]);
+    }
+
+    /**
+     * Remote image from an HTML message, served through the panel.
+     */
+    public function image(Request $request, string $token, MailImageProxy $imageProxy): \Symfony\Component\HttpFoundation\Response
+    {
+        $url = (string) $request->query('url', '');
+        abort_unless($url !== '' && $imageProxy->validSignature($url, (string) $request->query('sig', '')), 403);
+
+        $image = $imageProxy->fetch($url);
+        abort_if($image === null, 404);
+
+        return response($image['body'], 200, [
+            'Content-Type' => $image['type'],
+            'Cache-Control' => 'private, max-age=86400',
+            'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        ]);
     }
 
     public function send(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): RedirectResponse|JsonResponse

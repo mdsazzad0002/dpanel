@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { folderLabel, isOutgoingFolder } from './mailboxFolders';
 
 const props = defineProps({
@@ -228,6 +228,94 @@ const handleKeydown = (event) => {
 
 onMounted(() => document.addEventListener('keydown', handleKeydown));
 onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
+
+// HTML mail is shown in a sandboxed iframe (no scripts) so its own styles
+// cannot leak into the panel; same-origin only lets us measure its height.
+const htmlFrame = ref(null);
+const htmlFrameHeight = ref(200);
+let htmlFrameObserver = null;
+
+const htmlDocument = computed(() => {
+    const html = props.currentMessage?.html;
+    if (!html) return '';
+    return `<!doctype html><html><head><meta charset="utf-8">`
+        + `<meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'">`
+        + `<base target="_blank">`
+        + `<style>html,body{margin:0;padding:0;background:#fff;color:#1f2937;}body{padding:20px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;word-wrap:break-word;overflow-wrap:anywhere;}img{max-width:100%;height:auto;}table{max-width:100%;}pre{white-space:pre-wrap;}a{color:#2563eb;}</style>`
+        + `</head><body>${html}</body></html>`;
+});
+
+const htmlFrameReady = ref(false);
+let htmlFrameWatchedDoc = null;
+let htmlFramePoll = 0;
+
+const resizeHtmlFrame = () => {
+    const doc = htmlFrame.value?.contentDocument;
+    if (!doc?.documentElement) return;
+    // offsetHeight follows the content, so the frame can shrink as well as grow.
+    htmlFrameHeight.value = Math.max(80, Math.ceil(doc.documentElement.offsetHeight));
+};
+
+// The iframe's load event waits for every image, which can take a while through
+// the image proxy. Size the frame as soon as the HTML is parsed instead and let
+// it grow as each image arrives.
+const watchHtmlFrame = () => {
+    const doc = htmlFrame.value?.contentDocument;
+    if (!doc?.body || doc.URL !== 'about:srcdoc' || doc === htmlFrameWatchedDoc) return;
+
+    htmlFrameWatchedDoc = doc;
+    htmlFrameReady.value = true;
+    resizeHtmlFrame();
+
+    htmlFrameObserver?.disconnect();
+    if (typeof ResizeObserver !== 'undefined') {
+        htmlFrameObserver = new ResizeObserver(resizeHtmlFrame);
+        htmlFrameObserver.observe(doc.documentElement);
+    }
+    // Image load/error events do not bubble, but they reach capturing listeners.
+    doc.addEventListener('load', resizeHtmlFrame, true);
+    doc.addEventListener('error', resizeHtmlFrame, true);
+};
+
+const pollHtmlFrame = () => {
+    cancelAnimationFrame(htmlFramePoll);
+    const startedAt = performance.now();
+    const tick = () => {
+        watchHtmlFrame();
+        if (htmlFrameWatchedDoc === htmlFrame.value?.contentDocument || performance.now() - startedAt > 5000) return;
+        htmlFramePoll = requestAnimationFrame(tick);
+    };
+    htmlFramePoll = requestAnimationFrame(tick);
+};
+
+const onHtmlFrameLoad = () => {
+    watchHtmlFrame();
+    resizeHtmlFrame();
+};
+
+// Messages with both parts can be switched between HTML and plain text.
+const bodyView = ref('html');
+const showsHtml = computed(() => bodyView.value === 'html' && htmlDocument.value !== '');
+const plainText = computed(() => props.currentMessage?.text || props.currentMessage?.raw_body || '');
+
+const resetHtmlFrame = () => {
+    htmlFrameObserver?.disconnect();
+    htmlFrameWatchedDoc = null;
+    htmlFrameReady.value = false;
+    nextTick(pollHtmlFrame);
+};
+
+watch(htmlDocument, () => {
+    htmlFrameHeight.value = 200;
+    bodyView.value = 'html';
+    resetHtmlFrame();
+});
+watch(showsHtml, (visible) => { if (visible) resetHtmlFrame(); });
+onMounted(() => { if (showsHtml.value) resetHtmlFrame(); });
+onBeforeUnmount(() => {
+    htmlFrameObserver?.disconnect();
+    cancelAnimationFrame(htmlFramePoll);
+});
 </script>
 
 <template>
@@ -575,7 +663,34 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
                                 </div>
                             </header>
 
-                            <div :class="[ui.body, 'whitespace-pre-wrap break-words px-4 py-6 font-sans text-[15px] leading-7 md:px-6']">{{ currentMessage.text || currentMessage.raw_body || 'No body available.' }}</div>
+                            <div v-if="htmlDocument" :class="[ui.cardDivider, 'flex items-center gap-1 border-b px-4 py-2 md:px-6']" role="tablist" aria-label="Message format">
+                                <button
+                                    v-for="tab in [{ id: 'html', label: 'HTML', icon: 'bi-filetype-html' }, { id: 'text', label: 'Plain text', icon: 'bi-text-left' }]"
+                                    :key="tab.id"
+                                    type="button"
+                                    role="tab"
+                                    :aria-selected="bodyView === tab.id"
+                                    :class="[bodyView === tab.id ? ui.chip : [ui.muted, ui.iconButton], 'inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition']"
+                                    @click="bodyView = tab.id"
+                                >
+                                    <i :class="['bi', tab.icon]"></i> {{ tab.label }}
+                                </button>
+                            </div>
+
+                            <div v-if="showsHtml" class="bg-white">
+                                <iframe
+                                    ref="htmlFrame"
+                                    :key="`${currentMessage.folder}:${currentMessage.uid}`"
+                                    :srcdoc="htmlDocument"
+                                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                                    referrerpolicy="no-referrer"
+                                    title="Message body"
+                                    :class="['block w-full border-0 transition-opacity duration-150', htmlFrameReady ? 'opacity-100' : 'opacity-0']"
+                                    :style="{ height: `${htmlFrameHeight}px` }"
+                                    @load="onHtmlFrameLoad"
+                                ></iframe>
+                            </div>
+                            <div v-else :class="[ui.body, 'whitespace-pre-wrap break-words px-4 py-6 font-sans text-[15px] leading-7 md:px-6']">{{ plainText || 'No body available.' }}</div>
                         </article>
 
                         <!-- Quick actions -->

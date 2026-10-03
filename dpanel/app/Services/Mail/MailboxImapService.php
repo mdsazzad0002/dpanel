@@ -5,12 +5,15 @@ namespace App\Services\Mail;
 use App\Models\Mailbox;
 use App\Models\MailboxMessageMetadata;
 use App\Models\MailboxSyncState;
+use App\Support\MailHtml;
 use App\Support\MailText;
 use RuntimeException;
 
 class MailboxImapService
 {
     private const MAX_CACHED_BODY_BYTES = 1048576;
+
+    public function __construct(private readonly MailImageProxy $imageProxy) {}
 
     /**
      * Return the last database snapshot without opening an IMAP connection.
@@ -48,11 +51,11 @@ class MailboxImapService
     public function cachedMessage(Mailbox $mailbox, string $folder, int $uid): ?array
     {
         $metadata = $this->cacheQuery($mailbox, $folder)->where('uid', $uid)->first();
-        if ($metadata === null || $metadata->body_text === null || ! $metadata->seen) {
+        if ($metadata === null || $metadata->body_text === null || $metadata->body_html === null || ! $metadata->seen) {
             return null;
         }
 
-        return $this->messagePayload($folder, $uid, $metadata, (string) $metadata->body_text);
+        return $this->messagePayload($folder, $uid, $metadata, (string) $metadata->body_text, (string) $metadata->body_html);
     }
 
     /**
@@ -508,7 +511,7 @@ class MailboxImapService
     {
         $metadata = $this->cacheQuery($mailbox, $folder)->where('uid', $uid)->first();
 
-        if ($metadata === null || $metadata->body_text === null) {
+        if ($metadata === null || $metadata->body_text === null || $metadata->body_html === null) {
             $overviewList = @imap_fetch_overview($stream, (string) $uid, FT_UID);
             $overview = is_array($overviewList) && isset($overviewList[0]) ? $overviewList[0] : null;
             if (! is_object($overview)) {
@@ -517,23 +520,24 @@ class MailboxImapService
 
             $this->storeOverviews($mailbox, $folder, [$overview]);
             $metadata = $this->cacheQuery($mailbox, $folder)->where('uid', $uid)->first();
-            $text = $this->extractText($stream, $uid);
-            if ($metadata !== null && strlen($text) <= self::MAX_CACHED_BODY_BYTES) {
-                $metadata->forceFill(['body_text' => $text])->save();
+            ['text' => $text, 'html' => $html] = $this->extractBodies($stream, $uid);
+            if ($metadata !== null && strlen($text) + strlen($html) <= self::MAX_CACHED_BODY_BYTES) {
+                $metadata->forceFill(['body_text' => $text, 'body_html' => $html])->save();
             }
         } else {
             $text = (string) $metadata->body_text;
+            $html = (string) $metadata->body_html;
         }
 
         if ($metadata !== null && ! $metadata->seen && @imap_setflag_full($stream, (string) $uid, '\\Seen', ST_UID)) {
             $metadata->forceFill(['seen' => true])->save();
         }
 
-        return $this->messagePayload($folder, $uid, $metadata, $text);
+        return $this->messagePayload($folder, $uid, $metadata, $text, $html);
     }
 
     /** @return array<string, mixed> */
-    private function messagePayload(string $folder, int $uid, ?MailboxMessageMetadata $metadata, string $text): array
+    private function messagePayload(string $folder, int $uid, ?MailboxMessageMetadata $metadata, string $text, string $html = ''): array
     {
         return [
             'uid' => $uid,
@@ -546,6 +550,7 @@ class MailboxImapService
             'raw_header' => '',
             'raw_body' => '',
             'text' => MailText::toUtf8($text),
+            'html' => $this->imageProxy->rewrite(MailText::toUtf8($html)),
         ];
     }
 
@@ -567,30 +572,113 @@ class MailboxImapService
      */
     private function extractText($stream, int $uid): string
     {
+        return $this->extractBodies($stream, $uid, false)['text'];
+    }
+
+    /**
+     * Plain text for previews, replies and forwards, plus the sanitized HTML
+     * part (inline cid: images embedded) so the message keeps its layout.
+     *
+     * @param  resource  $stream
+     * @return array{text: string, html: string}
+     */
+    private function extractBodies($stream, int $uid, bool $withHtml = true): array
+    {
         $structure = @imap_fetchstructure($stream, $uid, FT_UID);
         if (! is_object($structure)) {
-            return '';
+            return ['text' => '', 'html' => ''];
         }
 
         $parts = $this->findBodyParts($structure);
-        foreach (['text/plain', 'text/html'] as $mime) {
-            if (isset($parts[$mime])) {
-                $part = $parts[$mime];
-                $body = (string) @imap_fetchbody($stream, $uid, $part['part'], FT_UID | FT_PEEK);
-                $body = $this->decodePart($body, (int) ($part['encoding'] ?? 0));
-                if ($mime === 'text/html') {
-                    $body = MailText::toUtf8($body, $part['charset'] ?? MailText::htmlMetaCharset($body));
+        $fetch = function (string $mime) use ($stream, $uid, $parts): ?string {
+            if (! isset($parts[$mime])) {
+                return null;
+            }
 
-                    return MailText::htmlToText($body);
-                }
+            $part = $parts[$mime];
+            $body = (string) @imap_fetchbody($stream, $uid, $part['part'], FT_UID | FT_PEEK);
+            $body = $this->decodePart($body, (int) ($part['encoding'] ?? 0));
 
-                return trim(MailText::toUtf8($body, $part['charset'] ?? null));
+            return $mime === 'text/html'
+                ? MailText::toUtf8($body, $part['charset'] ?? MailText::htmlMetaCharset($body))
+                : trim(MailText::toUtf8($body, $part['charset'] ?? null));
+        };
+
+        $plain = $fetch('text/plain');
+        $html = ($withHtml || $plain === null) ? $fetch('text/html') : null;
+
+        if ($plain === null && $html === null) {
+            $body = (string) @imap_body($stream, $uid, FT_UID | FT_PEEK);
+
+            return ['text' => trim(MailText::toUtf8($body)), 'html' => ''];
+        }
+
+        $text = $plain ?? MailText::htmlToText((string) $html);
+        if (! $withHtml || $html === null) {
+            return ['text' => $text, 'html' => ''];
+        }
+
+        $html = $this->embedInlineImages($stream, $uid, $structure, $html);
+
+        return ['text' => $text, 'html' => MailHtml::sanitize($html)];
+    }
+
+    /**
+     * Replace cid: references with data URIs of the matching MIME parts.
+     *
+     * @param  resource  $stream
+     */
+    private function embedInlineImages($stream, int $uid, object $structure, string $html): string
+    {
+        if (stripos($html, 'cid:') === false) {
+            return $html;
+        }
+
+        $budget = self::MAX_CACHED_BODY_BYTES - strlen($html);
+        foreach ($this->findContentIdParts($structure) as $contentId => $part) {
+            $pattern = '/cid:'.preg_quote($contentId, '/').'(?=["\'\s)>])/i';
+            if (! preg_match($pattern, $html)) {
+                continue;
+            }
+
+            $data = $this->decodePart((string) @imap_fetchbody($stream, $uid, $part['part'], FT_UID | FT_PEEK), $part['encoding']);
+            $uri = 'data:'.$part['mime'].';base64,'.base64_encode($data);
+            if (strlen($uri) > $budget) {
+                continue;
+            }
+
+            $budget -= strlen($uri);
+            $html = preg_replace($pattern, $uri, $html) ?? $html;
+        }
+
+        return $html;
+    }
+
+    /**
+     * @return array<string, array{part: string, encoding: int, mime: string}>
+     */
+    private function findContentIdParts(object $structure, string $prefix = ''): array
+    {
+        $found = [];
+        $mime = $this->mimeType($structure);
+        if (str_starts_with($mime, 'image/') && ! empty($structure->ifid)) {
+            $contentId = trim((string) ($structure->id ?? ''), " <>\t");
+            if ($contentId !== '') {
+                $found[$contentId] = [
+                    'part' => $prefix === '' ? '1' : $prefix,
+                    'encoding' => (int) ($structure->encoding ?? 0),
+                    'mime' => $mime,
+                ];
             }
         }
 
-        $body = (string) @imap_body($stream, $uid, FT_UID | FT_PEEK);
+        foreach ((array) ($structure->parts ?? []) as $index => $part) {
+            if (is_object($part)) {
+                $found += $this->findContentIdParts($part, $prefix === '' ? (string) ($index + 1) : $prefix.'.'.($index + 1));
+            }
+        }
 
-        return trim(MailText::toUtf8($body));
+        return $found;
     }
 
     /**
