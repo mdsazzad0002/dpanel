@@ -10,7 +10,7 @@ const props = defineProps({
     domains: { type: Array, default: () => [] }, selectedDomain: { type: String, default: '' },
     mailHost: { type: String, default: '' }, mailHostResolvesTo: { type: String, default: '' }, serverIp: { type: String, default: '' },
     dkimReady: { type: Boolean, default: false }, dkimConfiguredDomain: { type: String, default: '' },
-    records: { type: Array, default: () => [] },
+    records: { type: Array, default: () => [] }, localZone: { type: String, default: '' },
 });
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -47,6 +47,14 @@ const verifyDns = async () => {
         verifying.value = false;
     }
 };
+const zoneForm = useForm({ domain: '' });
+// Replaces the existing MX, SPF, DKIM, DMARC and mail host A records in the local zone.
+const applyToZone = () => {
+    if (!props.selectedDomain || zoneForm.processing) return;
+    if (!window.confirm(`Add these records to the ${props.localZone} zone on this server? Existing MX, SPF, DKIM, DMARC and mail host records are replaced.`)) return;
+    zoneForm.domain = props.selectedDomain;
+    zoneForm.post(panelRoute('emails.guide.apply-zone'), { preserveScroll: true });
+};
 const generateDkim = (domain) => {
     if (!domain || dkimForm.processing) return;
     dkimForm.domain = domain;
@@ -78,7 +86,7 @@ const generateDkim = (domain) => {
             <div v-if="selectedDomain && !dkimReady" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"><span>DKIM public key is not configured<span v-if="dkimConfiguredDomain"> for {{ selectedDomain }} (configured: {{ dkimConfiguredDomain }})</span>.</span><button :disabled="dkimForm.processing" class="rounded-md bg-amber-700 px-3 py-2 font-medium text-white hover:bg-amber-800 disabled:opacity-50" @click="generateDkim(selectedDomain)"><i class="bi bi-key mr-1"></i>{{ dkimForm.processing ? 'Generating…' : 'Generate DKIM key' }}</button></div>
 
             <section v-if="records.length" class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5 dark:border-slate-800"><div><h2 class="font-semibold">Records to add</h2><p class="mt-1 text-sm text-slate-500">Use the same values in Cloudflare DNS or dPanel DNS Zones. TTL: Auto/3600.</p></div><div class="flex flex-wrap gap-2"><button type="button" :disabled="verifying" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" @click="verifyDns"><i class="bi bi-patch-check mr-1"></i> {{ verifying ? 'Checking…' : 'Verify DNS' }}</button><a :href="panelRoute('emails.guide.export', { domain: selectedDomain })" class="rounded-md bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-700"><i class="bi bi-download mr-1"></i> Download Cloudflare TXT</a></div></div>
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5 dark:border-slate-800"><div><h2 class="font-semibold">Records to add</h2><p class="mt-1 text-sm text-slate-500">Use the same values in Cloudflare DNS or dPanel DNS Zones. TTL: Auto/3600.</p></div><div class="flex flex-wrap gap-2"><button v-if="localZone" type="button" :disabled="zoneForm.processing" :title="`This domain's DNS is hosted here (${localZone} zone)`" class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60" @click="applyToZone"><i class="bi bi-lightning-charge mr-1"></i> {{ zoneForm.processing ? 'Adding…' : 'Add to dPanel DNS' }}</button><button type="button" :disabled="verifying" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" @click="verifyDns"><i class="bi bi-patch-check mr-1"></i> {{ verifying ? 'Checking…' : 'Verify DNS' }}</button><a :href="panelRoute('emails.guide.export', { domain: selectedDomain })" class="rounded-md bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-700"><i class="bi bi-download mr-1"></i> Download Cloudflare TXT</a></div></div>
                 <div v-if="verification?.error" class="mx-5 mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{{ verification.error }}</div>
                 <div class="overflow-x-auto"><table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800"><tr><th class="px-4 py-3">Type</th><th class="px-4 py-3">Name</th><th class="px-4 py-3">Priority</th><th class="px-4 py-3">Content</th><th class="px-4 py-3">Purpose</th><th class="px-4 py-3">Check</th></tr></thead>
@@ -101,7 +109,7 @@ const generateDkim = (domain) => {
 
             <div v-if="selectedDomain" class="grid gap-4 lg:grid-cols-2">
                 <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">Cloudflare</h2><ol class="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-300"><li>Open domain → DNS → Records and add every configured row above.</li><li>The <strong>mail</strong> A record must be <strong>DNS only</strong> (grey cloud), never Proxied.</li><li>MX target is <code>{{ mailHost }}</code>, priority 10. Never put an IP in MX.</li><li>Paste TXT values without adding quotes; Cloudflare handles them.</li></ol></section>
-                <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">dPanel DNS</h2><ol class="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-300"><li>Open DNS Zones and select <strong>{{ selectedDomain }}</strong>.</li><li>Add the same rows above with TTL 3600.</li><li>For MX, enter priority 10 separately and content <code>{{ mailHost }}</code>.</li><li>Do not create duplicate SPF records; merge allowed senders into one SPF TXT record.</li></ol><Link :href="panelRoute('dns.zones')" class="mt-4 inline-flex rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">Open DNS Zones</Link></section>
+                <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">dPanel DNS</h2><ol class="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-300"><li v-if="localZone">This domain's zone is hosted here: use <strong>Add to dPanel DNS</strong> above to add every row in one click (existing mail records are replaced).</li><li>Open DNS Zones and select <strong>{{ localZone || selectedDomain }}</strong>.</li><li>Add the same rows above with TTL 3600.</li><li>For MX, enter priority 10 separately and content <code>{{ mailHost }}</code>.</li><li>Do not create duplicate SPF records; merge allowed senders into one SPF TXT record.</li></ol><Link :href="panelRoute('dns.zones')" class="mt-4 inline-flex rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">Open DNS Zones</Link></section>
             </div>
 
             <section v-if="selectedDomain" class="rounded-xl border border-slate-200 bg-white p-5 text-sm dark:border-slate-800 dark:bg-slate-900"><h2 class="font-semibold">After publishing</h2><p class="mt-2 text-slate-600 dark:text-slate-300">Verify MX, SPF, DKIM and DMARC after propagation. Keep DMARC at <code>p=none</code> while monitoring; move to <code>quarantine</code> or <code>reject</code> only after SPF and DKIM pass consistently. Ask the hosting provider to set reverse DNS/PTR for the server IP to <code>{{ mailHost }}</code>; PTR cannot be created in Cloudflare or dPanel DNS.</p></section>

@@ -239,6 +239,52 @@ class DnsZoneLifecycleTest extends TestCase
         $this->assertSame(0, DnsZone::query()->count());
     }
 
+    public function test_mail_guide_records_replace_the_old_mail_records_in_a_local_zone(): void
+    {
+        $this->request()->post("/cpsess{$this->token}/dns/zones", [
+            'domain' => 'example.com', 'type' => 'master', 'email' => 'hostmaster@example.com',
+            'refresh' => 3600, 'retry' => 600, 'expire' => 1209600, 'minimum_ttl' => 3600, 'status' => 'active',
+        ])->assertSessionHasNoErrors();
+        foreach ([
+            ['MX', '@', 'old-mx.example.net', 10], ['MX', '@', 'backup-mx.example.net', 20],
+            ['TXT', '@', 'v=spf1 include:old.example.net -all', null], ['TXT', '@', 'google-site-verification=abc', null],
+            ['CNAME', '_dmarc', 'dmarc.example.net', null], ['A', 'www', '203.0.113.9', null],
+        ] as [$type, $name, $content, $priority]) {
+            $this->request()->post("/cpsess{$this->token}/dns/records", [
+                'zone_domain' => 'example.com', 'type' => $type, 'name' => $name,
+                'content' => $content, 'ttl' => 300, 'priority' => $priority, 'status' => 'active',
+            ])->assertSessionHasNoErrors();
+        }
+
+        $writer = app(\App\Services\Mail\MailDnsZoneWriter::class);
+        // A subdomain's mail records go into the parent zone.
+        $this->assertNotNull($writer->zoneFor($this->admin, 'shop.example.com'));
+        $this->assertNull($writer->zoneFor(User::factory()->create(), 'example.com'));
+
+        $records = [
+            ['type' => 'MX', 'name' => '@', 'value' => 'mail.panel.test', 'priority' => 10],
+            ['type' => 'TXT', 'name' => '@', 'value' => 'v=spf1 ip4:198.51.100.7 mx ~all', 'priority' => null],
+            ['type' => 'TXT', 'name' => 'default._domainkey', 'value' => '', 'priority' => null],
+            ['type' => 'TXT', 'name' => '_dmarc', 'value' => 'v=DMARC1; p=none', 'priority' => null],
+        ];
+        $result = $writer->apply($writer->zoneFor($this->admin, 'example.com'), 'example.com', $records);
+
+        $this->assertSame(['added' => 0, 'replaced' => 3, 'unchanged' => 0], array_diff_key($result, ['skipped' => true]));
+        $this->assertCount(1, $result['skipped']);
+        $rows = fn (string $type, string $name) => DB::table('records')->where('type', $type)->where('name', $name)->orderBy('content')->pluck('content')->all();
+        $this->assertSame(['mail.panel.test'], $rows('MX', 'example.com'));
+        $this->assertSame(['"google-site-verification=abc"', '"v=spf1 ip4:198.51.100.7 mx ~all"'], $rows('TXT', 'example.com'));
+        $this->assertSame([], $rows('CNAME', '_dmarc.example.com'));
+        $this->assertSame(['"v=DMARC1; p=none"'], $rows('TXT', '_dmarc.example.com'));
+        $this->assertSame(['203.0.113.9'], $rows('A', 'www.example.com'));
+        // The panel's mirror rows follow: none left pointing at a removed record.
+        $this->assertSame([], \App\Models\DnsRecord::query()->whereNotIn('powerdns_record_id', DB::table('records')->pluck('id'))->pluck('name')->all());
+
+        // Running it again changes nothing.
+        $again = $writer->apply($writer->zoneFor($this->admin, 'example.com'), 'example.com', $records);
+        $this->assertSame(['added' => 0, 'replaced' => 0, 'unchanged' => 3], array_diff_key($again, ['skipped' => true]));
+    }
+
     private function request(): static
     {
         return $this

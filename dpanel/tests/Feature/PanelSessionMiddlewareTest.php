@@ -81,6 +81,32 @@ class PanelSessionMiddlewareTest extends TestCase
         ));
     }
 
+    public function test_background_request_that_hits_an_expired_session_remembers_the_open_page(): void
+    {
+        $user = User::factory()->create();
+        $token = bin2hex(random_bytes(32));
+
+        PanelSession::create([
+            'user_id' => $user->id,
+            'token_hash' => hash('sha256', $token),
+            'cookie_hash' => hash('sha256', 'existing-cookie'),
+            'ip_address' => '127.0.0.1',
+            'user_agent_hash' => hash('sha256', 'phpunit'),
+            'expires_at' => now()->subMinute(),
+            'last_seen_at' => now()->subHour(),
+        ]);
+
+        $this->actingAs($user)
+            ->withSession(['panel_session_token' => $token])
+            ->withHeader('referer', url("/cpsess{$token}/websites"))
+            ->getJson("/cpsess{$token}/notifications")
+            ->assertRedirect(route('login'));
+
+        $this->assertGuest();
+        $this->assertSame('/websites', session('panel.last_path'));
+        $this->assertSame($user->id, session('panel.last_path_user'));
+    }
+
     public function test_malformed_panel_token_redirects_to_login_instead_of_404(): void
     {
         $this->get('/cpsess-invalid-token/dashboard')

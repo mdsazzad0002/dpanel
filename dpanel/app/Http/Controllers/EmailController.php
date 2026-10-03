@@ -10,6 +10,7 @@ use App\Models\Website;
 use App\Services\Mail\MailboxImapService;
 use App\Services\Mail\MailDnsRecords;
 use App\Services\Mail\MailDnsVerifier;
+use App\Services\Mail\MailDnsZoneWriter;
 use App\Services\Mail\MailDomainProvisioner;
 use App\Services\ResourceQuotaService;
 use Illuminate\Http\RedirectResponse;
@@ -145,6 +146,7 @@ class EmailController extends Controller
         $dkimReady = ($dkimDomain === '' || $dkimDomain === $domain) && $dkimPublicKey !== '';
 
         $records = $domain === '' ? [] : $mailDns->records($domain, $selector, $dkimReady ? $dkimPublicKey : '');
+        $localZone = $domain !== '' ? app(MailDnsZoneWriter::class)->zoneFor($request->user(), $domain) : null;
 
         return Inertia::render('Email/Manage/EmailDnsGuide', [
             'domains' => $domains->all(),
@@ -155,7 +157,39 @@ class EmailController extends Controller
             'dkimReady' => $dkimReady,
             'dkimConfiguredDomain' => $dkimDomain,
             'records' => $records,
+            'localZone' => $localZone ? (string) DB::table('domains')->where('id', (int) $localZone->powerdns_domain_id)->value('name') : '',
         ]);
+    }
+
+    /** Writes the guide's records into the domain's zone on this server's DNS. */
+    public function applyDnsZone(Request $request, MailDnsZoneWriter $writer): RedirectResponse
+    {
+        $validated = $request->validate([
+            'domain' => ['required', 'string', 'max:253', 'regex:/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/'],
+        ]);
+        $domain = strtolower(trim($validated['domain']));
+        abort_unless(in_array($domain, $this->readWebsiteDomains(), true) || Mailbox::query()->where('domain', $domain)->exists(), 403);
+
+        $zone = $writer->zoneFor($request->user(), $domain);
+        if (! $zone) {
+            return redirect()->route('emails.guide', ['domain' => $domain])->with('error', "{$domain} is not hosted on this server's DNS.");
+        }
+
+        $mailDomain = MailDomain::query()->where('domain', $domain)->first();
+        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('serverpanel.mail.dkim_selector', 'default'))) ?: 'default';
+        $configuredDkimDomain = trim((string) config('serverpanel.mail.dkim_domain', ''));
+        $publicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('serverpanel.mail.dkim_public_key', '')))) ?: '';
+        $dkimReady = ($configuredDkimDomain === '' || $configuredDkimDomain === $domain) && $publicKey !== '';
+        $records = app(MailDnsRecords::class)->records($domain, $selector, $dkimReady ? $publicKey : '');
+
+        $result = $writer->apply($zone, $domain, $records);
+        $message = "Mail DNS records written to the {$domain} zone: {$result['added']} added, {$result['replaced']} replaced, {$result['unchanged']} already correct.";
+        if ($result['skipped'] !== []) {
+            $message .= ' Skipped: '.implode(' ', $result['skipped']);
+        }
+
+        return redirect()->route('emails.guide', ['domain' => $domain])
+            ->with('success', $message);
     }
 
     public function generateDkim(Request $request, MailDomainProvisioner $provisioner): RedirectResponse

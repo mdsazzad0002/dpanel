@@ -387,6 +387,9 @@ Route::prefix('cpsess{token}')
             Route::post('/emails/guide/dkim', [EmailController::class, 'generateDkim'])
                 ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:3,1'])
                 ->name('emails.guide.dkim');
+            Route::post('/emails/guide/apply-zone', [EmailController::class, 'applyDnsZone'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:10,1'])
+                ->name('emails.guide.apply-zone');
             Route::get('/emails/guide/export/{domain}', [EmailController::class, 'exportDnsZone'])
                 ->where('domain', '[A-Za-z0-9.-]+')
                 ->middleware('role_or_permission:admin|reseller|manage_email')

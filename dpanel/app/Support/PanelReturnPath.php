@@ -23,8 +23,12 @@ class PanelReturnPath
     /** Remember the page of the current request (panel page visits only). */
     public static function rememberRequest(Request $request, ?int $userId = null): void
     {
-        // Form posts and background JSON fetches are not pages to return to.
+        // Form posts and background JSON fetches (e.g. the notifications poll
+        // that usually hits an expired session first) are not pages to return
+        // to, but they are sent from one: remember that page instead.
         if (! $request->isMethod('GET') || $request->expectsJson()) {
+            self::rememberUrl($request, (string) $request->headers->get('referer', ''), $userId);
+
             return;
         }
 
