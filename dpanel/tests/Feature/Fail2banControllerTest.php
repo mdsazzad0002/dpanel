@@ -117,6 +117,35 @@ class Fail2banControllerTest extends TestCase
         $this->assertSame(0, ActivityLog::query()->count());
     }
 
+    public function test_bulk_block_sends_each_ip_and_reports_the_ones_that_failed(): void
+    {
+        Http::fake(['drust.test/api/v1/fail2ban' => function ($request) {
+            return $request['ip'] === '198.51.100.4'
+                ? Http::response(['success' => false, 'message' => 'Failed: 198.51.100.4 is whitelisted.'])
+                : Http::response(['success' => true, 'data' => $this->status]);
+        }]);
+
+        $this->request()
+            ->postJson("/cpsess{$this->token}/security/fail2ban/bulk", ['action' => 'ban', 'ips' => ['203.0.113.7', '203.0.113.8', '198.51.100.4', '203.0.113.7']])
+            ->assertOk()
+            ->assertJsonPath('message', '2 IPs blocked from SSH. Not changed: 198.51.100.4 (198.51.100.4 is whitelisted.)');
+
+        Http::assertSentCount(3);
+        $log = ActivityLog::query()->sole();
+        $this->assertSame('fail2ban.bulk_ban', $log->action);
+        $this->assertSame(['203.0.113.7', '203.0.113.8'], $log->properties['ips']);
+    }
+
+    public function test_bulk_rejects_unknown_actions(): void
+    {
+        Http::fake();
+
+        $this->request()
+            ->postJson("/cpsess{$this->token}/security/fail2ban/bulk", ['action' => 'whitelist_remove', 'ips' => ['203.0.113.7']])
+            ->assertStatus(422);
+        Http::assertNothingSent();
+    }
+
     public function test_ip_is_required(): void
     {
         Http::fake();

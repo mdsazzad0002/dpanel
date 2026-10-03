@@ -71,6 +71,14 @@ export function useFail2ban(clientIp = '') {
         if (!confirm(`Block ${ip} from SSH permanently?${warning}`)) return;
         act(() => axios.post(panelRoute('security.fail2ban.ban'), { ip }), ip);
     };
+    const bulk = (action, ips) => {
+        if (!ips.length) return;
+        if (action === 'ban') {
+            const warning = ips.includes(clientIp) ? ' Your own IP is in the selection: you will lose SSH access until you unblock it.' : '';
+            if (!confirm(`Block ${ips.length} IP${ips.length === 1 ? '' : 's'} from SSH permanently?${warning}`)) return;
+        }
+        act(() => axios.post(panelRoute('security.fail2ban.bulk'), { action, ips }), 'bulk');
+    };
     const savePolicy = (maxRetry) => act(() => axios.post(panelRoute('security.fail2ban.policy'), { max_retry: maxRetry }), 'policy');
     const whitelistAdd = (ip) => act(() => axios.post(panelRoute('security.fail2ban.whitelist.store'), { ip }), ip);
     const whitelistRemove = (ip) => {
@@ -81,6 +89,6 @@ export function useFail2ban(clientIp = '') {
     return {
         status, loading, loadError, busy, message, load,
         history, historyLoading, historyError, loadHistory,
-        unban, ban, savePolicy, whitelistAdd, whitelistRemove,
+        unban, ban, bulk, savePolicy, whitelistAdd, whitelistRemove,
     };
 }

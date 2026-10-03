@@ -104,6 +104,48 @@ class Fail2banController extends Controller
         return $this->act($request, 'whitelist_remove', 'removed from the whitelist');
     }
 
+    /**
+     * Blocks or unblocks many IPs in one request, so a big selection is not
+     * cut short by the per-minute limit on single actions.
+     */
+    public function bulk(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'in:ban,unban'],
+            'ips' => ['required', 'array', 'min:1', 'max:100'],
+            'ips.*' => ['required', 'string', 'max:64'],
+        ]);
+        $action = $validated['action'];
+
+        $done = [];
+        $failed = [];
+        $data = null;
+        foreach (array_unique(array_map('trim', $validated['ips'])) as $ip) {
+            try {
+                $data = $this->drust->fail2banAction($action, $ip);
+                $done[] = $ip;
+            } catch (\Throwable $e) {
+                $failed[] = $ip.' ('.preg_replace('/^Failed:\s*/', '', $e->getMessage()).')';
+            }
+        }
+
+        if ($done === []) {
+            return response()->json(['success' => false, 'message' => 'Nothing changed: '.implode('; ', $failed)], 422);
+        }
+        try {
+            $this->activity->log('fail2ban.bulk_'.$action, null, ['ips' => $done], $request);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        $message = count($done).' IP'.(count($done) === 1 ? '' : 's').($action === 'ban' ? ' blocked from SSH.' : ' unblocked.');
+        if ($failed !== []) {
+            $message .= ' Not changed: '.implode('; ', $failed);
+        }
+
+        return response()->json(['success' => true, 'message' => $message, 'data' => $data]);
+    }
+
     private function act(Request $request, string $action, string $done): JsonResponse
     {
         // drust validates the address again; this only rejects obvious junk early.

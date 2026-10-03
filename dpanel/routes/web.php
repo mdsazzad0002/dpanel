@@ -864,6 +864,9 @@ Route::prefix('cpsess{token}')
             Route::post('/security/fail2ban/ban', [Fail2banController::class, 'ban'])
                 ->middleware(['role:admin', 'throttle:30,1'])
                 ->name('security.fail2ban.ban');
+            Route::post('/security/fail2ban/bulk', [Fail2banController::class, 'bulk'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('security.fail2ban.bulk');
             Route::get('/security/fail2ban/ssh-history', [Fail2banController::class, 'history'])
                 ->middleware('role:admin')
                 ->name('security.fail2ban.history');
