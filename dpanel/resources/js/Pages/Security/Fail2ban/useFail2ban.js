@@ -20,8 +20,6 @@ export function useFail2ban(clientIp = '') {
     const busy = ref('');
     const message = ref(null);
 
-    const bannedIn = (ip) => status.value.jails.filter((jail) => (jail.banned_ips || []).includes(ip)).map((jail) => jail.name);
-
     const load = async () => {
         busy.value = 'refresh';
         loadError.value = '';
@@ -81,7 +79,7 @@ export function useFail2ban(clientIp = '') {
     };
 
     return {
-        status, loading, loadError, busy, message, bannedIn, load,
+        status, loading, loadError, busy, message, load,
         history, historyLoading, historyError, loadHistory,
         unban, ban, savePolicy, whitelistAdd, whitelistRemove,
     };
