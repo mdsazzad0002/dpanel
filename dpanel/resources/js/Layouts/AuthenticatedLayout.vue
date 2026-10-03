@@ -265,7 +265,20 @@ const menuItems = computed(() => [
         ],
     },
     { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], permissions: ['manage_php'], color: 'indigo' },
-    { label: 'Security Center', hint: 'Malware scans, findings and security score', icon: 'SS', iconClass: 'bi bi-shield-check', routeName: 'security.center', roles: ['admin', 'reseller', 'general', 'general_user'], color: 'red' },
+    {
+        id: 'security-center',
+        label: 'Security Center',
+        hint: 'Malware scans, findings and security score',
+        icon: 'SS',
+        iconClass: 'bi bi-shield-check',
+        color: 'red',
+        children: [
+            { label: 'Overview', hint: 'Security score, scans and events', icon: 'OV', iconClass: 'bi bi-speedometer2', routeName: 'security.center', roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Findings', hint: 'Every issue the scans found', icon: 'FN', iconClass: 'bi bi-bug', routeName: 'security.center.findings', roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Scan History', hint: 'Every scan and its result', icon: 'SH', iconClass: 'bi bi-clock-history', routeName: 'security.center.scans', roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Detection Rules', hint: 'Turn scanner rules on or off', icon: 'DR', iconClass: 'bi bi-list-check', routeName: 'security.center.rules', roles: ['admin'] },
+        ],
+    },
     { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], permissions: ['manage_security'], color: 'red' },
     {
         id: 'fail2ban',

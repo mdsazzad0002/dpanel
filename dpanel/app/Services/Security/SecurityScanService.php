@@ -52,12 +52,13 @@ class SecurityScanService
                 if ($website === null || $root === '') {
                     throw new \RuntimeException('Website not found or has no root path.');
                 }
-                $report = $this->drust->scanWebsite($root, (string) $website->id, $scan->scan_type);
+                $report = $this->drust->scanWebsite($root, (string) $website->id, $scan->scan_type, ScanProgress::key($scan));
                 $findings = (array) ($report['findings'] ?? []);
                 $summary = collect($report)->except('findings')->all();
                 $filesScanned = (int) ($report['files_scanned'] ?? 0);
             }
 
+            ScanProgress::markSaving($scan);
             $stored = $this->persist($scan, $findings);
 
             $scan->update([
@@ -76,6 +77,7 @@ class SecurityScanService
             $this->event($scan, 'medium', 'scan_failed', $this->scanLabel($scan).' failed: '.mb_substr($e->getMessage(), 0, 500));
         }
 
+        ScanProgress::forget($scan);
         $this->scores->record();
     }
 

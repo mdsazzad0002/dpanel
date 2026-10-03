@@ -17,14 +17,27 @@ class DrustSecurityClient
     /**
      * @return array<string, mixed>
      */
-    public function scanWebsite(string $root, string $siteId, string $scanType): array
+    public function scanWebsite(string $root, string $siteId, string $scanType, ?string $progressKey = null): array
     {
         // A full scan with ClamAV can take close to an hour on a large site.
         return $this->request('post', '/api/v1/security/scan', [
             'root' => $root,
             'site_id' => $siteId,
             'scan_type' => $scanType,
+            'progress_key' => $progressKey,
         ], 3500);
+    }
+
+    /**
+     * Where a running website scan is, or null once drust has finished it.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function scanProgress(string $progressKey): ?array
+    {
+        $data = $this->request('get', '/api/v1/security/scan/progress/'.rawurlencode($progressKey), null, 5);
+
+        return $data === [] ? null : $data;
     }
 
     /**

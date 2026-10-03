@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityRule;
 use App\Models\SecurityScan;
+use App\Models\SecurityScore;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\Security\ScanProgress;
 use App\Services\Security\SecurityRuleCatalog;
 use App\Services\Security\SecurityScanService;
 use App\Services\Security\SecurityScoreService;
@@ -24,6 +25,7 @@ class SecurityCenterController extends Controller
         private readonly SecurityScanService $scans,
         private readonly SecurityScoreService $scores,
         private readonly SecurityRuleCatalog $rules,
+        private readonly ScanProgress $progress,
     ) {
     }
 
@@ -37,28 +39,15 @@ class SecurityCenterController extends Controller
             $this->rules->sync();
         }
 
-        $recentFindings = $this->scores->openFindings($websiteIds, $isAdmin)
-            ->with('website:id,domain')
-            ->orderByRaw($this->severityOrder())
-            ->latest('last_seen_at')
-            ->limit(8)
-            ->get();
-
         $websites = $this->websites($user);
 
         return Inertia::render('Security/SecurityCenter', [
             'score' => $this->scores->calculate($websiteIds, $isAdmin),
             'unscanned' => $this->scores->unscannedWebsites(array_column($websites, 'id')),
-            'recentFindings' => $recentFindings->map(fn (SecurityFinding $f) => $this->presentFinding($f)),
-            'events' => SecurityEvent::query()
-                ->when($websiteIds !== null, fn ($q) => $q->whereIn('website_id', $websiteIds))
-                ->latest('id')
-                ->limit(10)
-                ->get(['id', 'website_id', 'event_type', 'severity', 'message', 'created_at']),
             'scans' => $this->recentScans($websiteIds),
+            'trend' => $this->trend($websiteIds, $isAdmin),
             'websites' => $websites,
             'scanTypes' => config('security_center.scan_types'),
-            'rules' => $isAdmin ? SecurityRule::query()->orderBy('rule_id')->get(['id', 'rule_id', 'name', 'category', 'severity', 'enabled']) : [],
             'isAdmin' => $isAdmin,
         ]);
     }
@@ -185,7 +174,11 @@ class SecurityCenterController extends Controller
         $model = SecurityScan::query()->findOrFail($scan);
         $this->authorizeWebsite($request->user(), $model->website_id);
 
-        return response()->json(['success' => true, 'scan' => $this->presentScan($model)]);
+        return response()->json([
+            'success' => true,
+            'scan' => $this->presentScan($model->load('website:id,domain')),
+            'progress' => $this->progress->for($model),
+        ]);
     }
 
     public function updateFinding(Request $request, string $token, int $finding): JsonResponse
@@ -227,27 +220,6 @@ class SecurityCenterController extends Controller
             'success' => true,
             'deleted' => $deleted,
             'message' => $deleted.' finding'.($deleted === 1 ? '' : 's').' deleted.',
-        ]);
-    }
-
-    public function destroyEvents(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'ids' => ['required', 'array', 'min:1', 'max:500'],
-            'ids.*' => ['integer'],
-        ]);
-        $websiteIds = $this->websiteIds($request->user());
-
-        $deleted = SecurityEvent::query()
-            ->whereIn('id', $data['ids'])
-            // Same scope as the dashboard list: non-admins never reach server events.
-            ->when($websiteIds !== null, fn ($q) => $q->whereIn('website_id', $websiteIds))
-            ->delete();
-
-        return response()->json([
-            'success' => true,
-            'deleted' => $deleted,
-            'message' => $deleted.' event'.($deleted === 1 ? '' : 's').' deleted.',
         ]);
     }
 
@@ -309,6 +281,34 @@ class SecurityCenterController extends Controller
         return response()->json(['success' => true, 'deleted' => $deleted, 'message' => $message]);
     }
 
+    public function scans(Request $request): Response
+    {
+        $websiteIds = $this->websiteIds($request->user());
+        $protected = $this->latestCompletedScanIds();
+
+        return Inertia::render('Security/SecurityScans', [
+            'scans' => SecurityScan::query()
+                ->with('website:id,domain')
+                ->when($websiteIds !== null, fn ($q) => $q->whereIn('website_id', $websiteIds))
+                ->latest('id')
+                ->paginate(50)
+                ->through(fn (SecurityScan $scan) => $this->presentScan($scan) + [
+                    'protected' => in_array($scan->id, $protected, true),
+                ]),
+        ]);
+    }
+
+    public function rules(): Response
+    {
+        $this->rules->sync();
+
+        return Inertia::render('Security/SecurityRules', [
+            'rules' => SecurityRule::query()
+                ->orderBy('rule_id')
+                ->get(['id', 'rule_id', 'name', 'category', 'severity', 'detection_type', 'description', 'remediation', 'enabled']),
+        ]);
+    }
+
     public function toggleRule(Request $request, string $token, string $rule): JsonResponse
     {
         $data = $request->validate(['enabled' => ['required', 'boolean']]);
@@ -365,17 +365,69 @@ class SecurityCenterController extends Controller
      */
     private function recentScans(?array $websiteIds)
     {
-        $protected = $this->latestCompletedScanIds();
-
         return SecurityScan::query()
             ->with('website:id,domain')
             ->when($websiteIds !== null, fn ($q) => $q->whereIn('website_id', $websiteIds))
             ->latest('id')
             ->limit(10)
             ->get()
-            ->map(fn (SecurityScan $scan) => $this->presentScan($scan) + [
-                'protected' => in_array($scan->id, $protected, true),
-            ]);
+            ->map(fn (SecurityScan $scan) => $this->presentScan($scan));
+    }
+
+    /**
+     * One point per day for the last 30 days. Admins get the stored overall
+     * score; the score history is server-wide, so everyone else gets the
+     * threats their own websites' scans found.
+     *
+     * @param  array<int, string>|null  $websiteIds
+     * @return array{metric: string, label: string, max: int|null, points: array<int, array{date: string, value: int|null}>}
+     */
+    private function trend(?array $websiteIds, bool $isAdmin): array
+    {
+        $since = now()->subDays(29)->startOfDay();
+        $days = collect(range(0, 29))->map(fn (int $offset) => $since->copy()->addDays($offset)->toDateString());
+
+        if ($isAdmin) {
+            // The last score of each day. A score holds until the next one, so a
+            // quiet day repeats the day before; days before the first score stay empty.
+            $current = SecurityScore::query()
+                ->whereNull('website_id')
+                ->where('calculated_at', '<', $since)
+                ->latest('calculated_at')
+                ->value('overall_score');
+            $byDay = SecurityScore::query()
+                ->whereNull('website_id')
+                ->where('calculated_at', '>=', $since)
+                ->orderBy('calculated_at')
+                ->get(['overall_score', 'calculated_at'])
+                ->mapWithKeys(fn (SecurityScore $row) => [$row->calculated_at->toDateString() => (int) $row->overall_score]);
+
+            return [
+                'metric' => 'score',
+                'label' => 'Security score',
+                'max' => 100,
+                'points' => $days->map(function (string $day) use ($byDay, &$current) {
+                    $current = $byDay[$day] ?? $current;
+
+                    return ['date' => $day, 'value' => $current === null ? null : (int) $current];
+                })->all(),
+            ];
+        }
+
+        $byDay = SecurityScan::query()
+            ->where('status', 'completed')
+            ->whereIn('website_id', $websiteIds ?? [])
+            ->where('completed_at', '>=', $since)
+            ->get(['threats_found', 'completed_at'])
+            ->groupBy(fn (SecurityScan $scan) => $scan->completed_at->toDateString())
+            ->map(fn ($scans) => (int) $scans->sum('threats_found'));
+
+        return [
+            'metric' => 'threats',
+            'label' => 'Threats found',
+            'max' => null,
+            'points' => $days->map(fn (string $day) => ['date' => $day, 'value' => $byDay[$day] ?? 0])->all(),
+        ];
     }
 
     /**

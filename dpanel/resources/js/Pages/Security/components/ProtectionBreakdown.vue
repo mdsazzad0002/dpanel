@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import axios from 'axios';
 
@@ -34,6 +34,20 @@ const barColor = (score) => {
     return 'bg-red-500';
 };
 
+// Only what this user can actually check: planned categories have no scanner
+// yet, server ones are admin-only, and website ones need a website.
+const checkable = (category) => {
+    if (category.planned) return false;
+    if (category.server) return props.isAdmin;
+    return props.websites.length > 0;
+};
+const visible = computed(() => {
+    const rows = props.categories.filter(checkable);
+    const total = rows.reduce((sum, category) => sum + category.weight, 0) || 1;
+    // Rescale so the shown weights add up to 100%, as the overall score does.
+    return rows.map((category) => ({ ...category, share: Math.round((category.weight / total) * 100) }));
+});
+
 const missing = (category) => props.unscanned[category.key] || [];
 const serverScanRunning = () => props.activeScans.some((scan) => scan.website_id === null);
 const canScanServer = (category) => category.server && props.isAdmin;
@@ -41,18 +55,13 @@ const canScanWebsites = (category) => !category.server && category.scan_type && 
 
 const status = (category) => {
     if (category.score !== null) return null;
-    if (category.planned) return 'Planned';
-    if (category.server && !props.isAdmin) return 'Admin only';
     return 'Not scanned';
 };
 
 // One line saying why the row looks the way it does.
 const summary = (category) => {
-    if (category.planned) return 'Not available yet.';
-    if (category.server && !props.isAdmin) return 'Checked by the server admin.';
     if (category.score === null) {
         if (category.server) return 'No server configuration scan has finished yet.';
-        if (props.websites.length === 0) return 'No websites to scan.';
         return `No website has had a ${scanLabels[category.scan_type]} scan yet.`;
     }
     const parts = [];
@@ -91,14 +100,14 @@ const scan = async (category) => {
 
 <template>
     <div class="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
-        <div v-for="category in categories" :key="category.key" class="py-2.5 text-sm">
+        <div v-for="category in visible" :key="category.key" class="py-2.5 text-sm">
             <button
                 type="button"
                 class="grid w-full grid-cols-[8rem_minmax(0,1fr)_5rem] items-center gap-3 text-left"
                 :aria-expanded="expanded === category.key"
                 @click="expanded = expanded === category.key ? null : category.key"
             >
-                <span>{{ category.label }} <span class="text-xs text-slate-400">{{ category.weight }}%</span></span>
+                <span>{{ category.label }} <span class="text-xs text-slate-400">{{ category.share }}%</span></span>
                 <div class="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                     <div v-if="category.score !== null" class="h-full rounded-full" :class="barColor(category.score)" :style="{ width: category.score + '%' }"></div>
                 </div>
@@ -138,5 +147,6 @@ const scan = async (category) => {
                 <p v-if="category.findings > 0" class="mt-1 text-slate-500">Each open finding lowers this score; resolve or ignore it on the findings page.</p>
             </div>
         </div>
+        <p v-if="visible.length === 0" class="py-4 text-center text-sm text-slate-500">Nothing to check yet. Add a website to scan it.</p>
     </div>
 </template>

@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityScan;
 use App\Models\User;
@@ -79,30 +78,6 @@ class SecurityCenterBulkDeleteTest extends TestCase
         $this->assertEqualsCanonicalizing([$other->id, $server->id], SecurityFinding::query()->pluck('id')->all());
     }
 
-    public function test_events_are_deleted_within_the_users_websites(): void
-    {
-        $user = User::factory()->create();
-        $user->assignRole('general');
-        DB::table('websites')->insert(['id' => 'own-site', 'domain' => 'own.test', 'assigned_user_id' => $user->id]);
-        $own = $this->event('own-site');
-        $other = $this->event('other-site');
-        $server = $this->event(null);
-
-        $this->as($user)
-            ->deleteJson("/cpsess{$this->token}/security/center/events", ['ids' => [$own->id, $other->id, $server->id]])
-            ->assertOk()
-            ->assertJsonPath('message', '1 event deleted.');
-        $this->assertEqualsCanonicalizing([$other->id, $server->id], SecurityEvent::query()->pluck('id')->all());
-
-        $admin = User::factory()->create();
-        $admin->assignRole('admin');
-        $this->as($admin)
-            ->deleteJson("/cpsess{$this->token}/security/center/events", ['ids' => [$other->id, $server->id]])
-            ->assertOk()
-            ->assertJsonPath('deleted', 2);
-        $this->assertSame(0, SecurityEvent::query()->count());
-    }
-
     public function test_scan_delete_keeps_the_latest_of_each_type_and_moves_findings(): void
     {
         $admin = User::factory()->create();
@@ -126,17 +101,6 @@ class SecurityCenterBulkDeleteTest extends TestCase
     private function scanRow(?string $websiteId, string $type, string $status): SecurityScan
     {
         return SecurityScan::query()->create(['website_id' => $websiteId, 'scan_type' => $type, 'status' => $status]);
-    }
-
-    private function event(?string $websiteId): SecurityEvent
-    {
-        return SecurityEvent::query()->create([
-            'website_id' => $websiteId,
-            'event_type' => 'scan_completed',
-            'severity' => 'info',
-            'message' => 'Scan finished.',
-            'created_at' => now(),
-        ]);
     }
 
     private function finding(?string $websiteId, ?SecurityScan $scan = null): SecurityFinding

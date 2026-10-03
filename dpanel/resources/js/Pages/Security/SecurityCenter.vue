@@ -1,21 +1,18 @@
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue';
+import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
-import axios from 'axios';
 import ProtectionBreakdown from './components/ProtectionBreakdown.vue';
-import RecentEventsCard from './components/RecentEventsCard.vue';
-import ScanHistoryCard from './components/ScanHistoryCard.vue';
+import ScanLauncher from './components/ScanLauncher.vue';
+import SecurityTrendChart from './components/SecurityTrendChart.vue';
 
 const props = defineProps({
     score: { type: Object, required: true },
     unscanned: { type: Object, default: () => ({}) },
-    recentFindings: { type: Array, default: () => [] },
-    events: { type: Array, default: () => [] },
     scans: { type: Array, default: () => [] },
+    trend: { type: Object, required: true },
     websites: { type: Array, default: () => [] },
     scanTypes: { type: Object, default: () => ({}) },
-    rules: { type: Array, default: () => [] },
     isAdmin: { type: Boolean, default: false },
 });
 
@@ -25,15 +22,8 @@ const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
 
-const target = ref(props.isAdmin ? 'server' : (props.websites[0]?.id || ''));
-const scanType = ref('quick');
-const starting = ref(false);
 const message = ref(null);
-const rules = ref(props.rules.map((rule) => ({ ...rule })));
-const showRules = ref(false);
-const togglingRule = ref(null);
 
-const isServerTarget = computed(() => target.value === 'server');
 const activeScans = computed(() => props.scans.filter((scan) => ['queued', 'running'].includes(scan.status)));
 
 const severityStyles = {
@@ -52,45 +42,34 @@ const scoreColor = (score) => {
     return 'text-red-600 dark:text-red-400';
 };
 
-const startScan = async () => {
-    if (!target.value) return;
-    starting.value = true;
-    message.value = null;
-    try {
-        await axios.post(panelRoute('security.center.scans.start'), {
-            website_id: isServerTarget.value ? null : target.value,
-            scan_type: isServerTarget.value ? 'configuration' : scanType.value,
-        });
-        message.value = { type: 'success', text: 'Scan queued. This page refreshes when it finishes.' };
-        router.reload({ only: ['scans', 'events'] });
-    } catch (e) {
-        message.value = { type: 'error', text: e.response?.data?.message || 'Could not start the scan.' };
-    } finally {
-        starting.value = false;
-    }
-};
+// Each running scan polls its own progress; the rest of the page reloads once it ends.
+const scanQueued = () => router.reload({ only: ['scans'] });
 
-const toggleRule = async (rule) => {
-    togglingRule.value = rule.rule_id;
-    try {
-        const { data } = await axios.post(panelRoute('security.center.rules.toggle', { rule: rule.rule_id }), { enabled: !rule.enabled });
-        rule.enabled = data.rule.enabled;
-    } catch (e) {
-        message.value = { type: 'error', text: e.response?.data?.message || 'Could not update the rule.' };
-    } finally {
-        togglingRule.value = null;
-    }
-};
-
-// Poll while a scan is queued or running, then reload everything once.
-let timer = null;
-onMounted(() => {
-    timer = setInterval(() => {
-        if (activeScans.value.length === 0) return;
+// Snapshot the score, reload, and say what moved and where.
+const scanFinished = (scan) => {
+    if (scan.status === 'failed') {
+        message.value = { type: 'error', text: `${scan.target} scan failed: ${scan.error || 'unknown error'}` };
         router.reload({ preserveScroll: true });
-    }, 5000);
-});
-onBeforeUnmount(() => clearInterval(timer));
+        return;
+    }
+    const before = { overall: props.score.overall, categories: Object.fromEntries(props.score.categories.map((c) => [c.key, c.score])) };
+    router.reload({
+        preserveScroll: true,
+        onSuccess: () => {
+            const changes = props.score.categories
+                .filter((c) => c.score !== before.categories[c.key])
+                .map((c) => ({ label: c.label, from: before.categories[c.key], to: c.score }));
+            const scoreText = before.overall === props.score.overall
+                ? `score stays ${props.score.overall ?? '—'}`
+                : `score ${before.overall ?? '—'} → ${props.score.overall ?? '—'}`;
+            message.value = {
+                type: props.score.overall !== null && before.overall !== null && props.score.overall < before.overall ? 'error' : 'success',
+                text: `${scan.target} scan finished: ${scan.threats_found} threat(s) found, ${scoreText}.`,
+                changes,
+            };
+        },
+    });
+};
 </script>
 
 <template>
@@ -103,16 +82,37 @@ onBeforeUnmount(() => clearInterval(timer));
                     <h1 class="text-lg font-semibold">Security Center</h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">Malware, file integrity, permissions and server configuration in one score.</p>
                 </div>
-                <Link :href="panelRoute('security.center.findings')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                    All findings
-                </Link>
+                <div class="flex gap-2">
+                    <Link :href="panelRoute('security.center.findings')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                        All findings
+                    </Link>
+                    <Link :href="panelRoute('security.center.scans')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                        Scan history
+                    </Link>
+                </div>
             </div>
         </template>
 
         <div class="space-y-6">
             <div v-if="message" :class="message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'" class="rounded-md border px-4 py-3 text-sm">
-                {{ message.text }}
+                <p>{{ message.text }}</p>
+                <ul v-if="message.changes?.length" class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    <li v-for="change in message.changes" :key="change.label">
+                        {{ change.label }}: {{ change.from ?? 'not scanned' }} → <span class="font-semibold">{{ change.to ?? 'not scanned' }}</span>
+                    </li>
+                </ul>
             </div>
+
+            <ScanLauncher
+                :websites="websites"
+                :scan-types="scanTypes"
+                :active-scans="activeScans"
+                :is-admin="isAdmin"
+                :panel-route="panelRoute"
+                @queued="scanQueued"
+                @finished="scanFinished"
+                @message="message = $event"
+            />
 
             <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
                 <div class="rounded-xl border border-slate-200 bg-white p-6 text-center dark:border-slate-800 dark:bg-slate-900">
@@ -136,98 +136,24 @@ onBeforeUnmount(() => clearInterval(timer));
                     <p v-if="score.overall === null" class="mt-4 text-xs text-slate-500">Run a scan to calculate the score.</p>
                 </div>
 
-                <div class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 class="text-base font-semibold">Protection</h2>
-                    <ProtectionBreakdown
-                        :categories="score.categories"
-                        :unscanned="unscanned"
-                        :websites="websites"
-                        :active-scans="activeScans"
-                        :is-admin="isAdmin"
-                        :panel-route="panelRoute"
-                        @message="message = $event"
-                        @queued="router.reload({ only: ['scans', 'events'] })"
-                    />
-                    <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">
-                        Click a row to see what it checks. Categories without data are left out of the overall score. WAF and update checks arrive in a later phase.
-                    </p>
-                </div>
+                <SecurityTrendChart :trend="trend" />
             </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-base font-semibold">Scan now</h2>
-                <div class="mt-4 grid gap-3 md:grid-cols-[2fr_2fr_auto] md:items-end">
-                    <div>
-                        <label class="mb-1 block text-sm">Target</label>
-                        <select v-model="target" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                            <option v-if="isAdmin" value="server">Server configuration (SSH, firewall, ports, SSL, backups)</option>
-                            <option v-for="website in websites" :key="website.id" :value="website.id">{{ website.domain }}</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Scan type</label>
-                        <select v-model="scanType" :disabled="isServerTarget" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800">
-                            <option v-for="(label, key) in scanTypes" :key="key" :value="key">{{ label }}</option>
-                        </select>
-                    </div>
-                    <button type="button" :disabled="starting || !target" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40" @click="startScan">
-                        {{ starting ? 'Starting…' : 'Scan Now' }}
-                    </button>
-                </div>
-                <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                    The first scan of a website records file hashes; later scans report files that changed since the previous scan.
+                <h2 class="text-base font-semibold">Protection</h2>
+                <ProtectionBreakdown
+                    :categories="score.categories"
+                    :unscanned="unscanned"
+                    :websites="websites"
+                    :active-scans="activeScans"
+                    :is-admin="isAdmin"
+                    :panel-route="panelRoute"
+                    @message="message = $event"
+                    @queued="scanQueued"
+                />
+                <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">
+                    Click a row to see what it checks. Categories without data are left out of the overall score.
                 </p>
-            </section>
-
-            <section class="grid gap-6 lg:grid-cols-2">
-                <div class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-base font-semibold">Top open findings</h2>
-                        <Link :href="panelRoute('security.center.findings')" class="text-xs text-blue-600 hover:underline dark:text-blue-300">View all</Link>
-                    </div>
-                    <ul class="mt-4 divide-y divide-slate-100 text-sm dark:divide-slate-800">
-                        <li v-for="finding in recentFindings" :key="finding.id" class="py-2">
-                            <div class="flex items-start gap-2">
-                                <span class="rounded-full px-2 py-0.5 text-xs capitalize" :class="severityStyles[finding.severity]">{{ finding.severity }}</span>
-                                <div class="min-w-0">
-                                    <p class="font-medium">{{ finding.title }}</p>
-                                    <p class="truncate text-xs text-slate-500">
-                                        {{ finding.website?.domain || 'Server' }}<span v-if="finding.file_path"> · {{ finding.file_path }}<span v-if="finding.line_number">:{{ finding.line_number }}</span></span>
-                                    </p>
-                                </div>
-                            </div>
-                        </li>
-                        <li v-if="recentFindings.length === 0" class="py-4 text-center text-slate-500">No open findings.</li>
-                    </ul>
-                </div>
-
-                <RecentEventsCard :events="events" :severity-styles="severityStyles" :panel-route="panelRoute" @deleted="router.reload({ only: ['events'] })" />
-            </section>
-
-            <ScanHistoryCard :scans="scans" :panel-route="panelRoute" @deleted="router.reload({ only: ['scans', 'score', 'unscanned'] })" />
-
-            <section v-if="isAdmin" class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-base font-semibold">Detection rules</h2>
-                    <button type="button" class="text-xs text-blue-600 hover:underline dark:text-blue-300" @click="showRules = !showRules">{{ showRules ? 'Hide' : 'Show' }} ({{ rules.length }})</button>
-                </div>
-                <div v-if="showRules" class="mt-3 overflow-x-auto">
-                    <table class="min-w-full text-left text-sm">
-                        <tbody>
-                            <tr v-for="rule in rules" :key="rule.rule_id" class="border-t border-slate-200 dark:border-slate-800">
-                                <td class="px-3 py-2 font-mono text-xs">{{ rule.rule_id }}</td>
-                                <td class="px-3 py-2">{{ rule.name }}</td>
-                                <td class="px-3 py-2"><span class="rounded-full px-2 py-0.5 text-xs capitalize" :class="severityStyles[rule.severity]">{{ rule.severity }}</span></td>
-                                <td class="px-3 py-2 text-right">
-                                    <button type="button" :disabled="togglingRule === rule.rule_id" class="rounded-md border px-2 py-1 text-xs disabled:opacity-50" :class="rule.enabled ? 'border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300' : 'border-slate-300 text-slate-500 dark:border-slate-700'" @click="toggleRule(rule)">
-                                        {{ rule.enabled ? 'Enabled' : 'Disabled' }}
-                                    </button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <p class="mt-2 text-xs text-slate-500">Disabled rules are skipped when scan results are saved.</p>
-                </div>
             </section>
         </div>
     </AuthenticatedLayout>

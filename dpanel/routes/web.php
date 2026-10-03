@@ -804,6 +804,9 @@ Route::prefix('cpsess{token}')
             Route::get('/security/center/findings', [SecurityCenterController::class, 'findings'])
                 ->middleware('role:admin|reseller|general|general_user')
                 ->name('security.center.findings');
+            Route::get('/security/center/scans', [SecurityCenterController::class, 'scans'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('security.center.scans');
             Route::post('/security/center/scans', [SecurityCenterController::class, 'startScan'])
                 ->middleware('role:admin|reseller|general|general_user')
                 ->name('security.center.scans.start');
@@ -824,9 +827,9 @@ Route::prefix('cpsess{token}')
             Route::delete('/security/center/scans', [SecurityCenterController::class, 'destroyScans'])
                 ->middleware('role:admin|reseller|general|general_user')
                 ->name('security.center.scans.destroy');
-            Route::delete('/security/center/events', [SecurityCenterController::class, 'destroyEvents'])
-                ->middleware('role:admin|reseller|general|general_user')
-                ->name('security.center.events.destroy');
+            Route::get('/security/center/rules', [SecurityCenterController::class, 'rules'])
+                ->middleware('role:admin')
+                ->name('security.center.rules');
             Route::post('/security/center/rules/{rule}/toggle', [SecurityCenterController::class, 'toggleRule'])
                 ->middleware('role:admin')
                 ->where('rule', 'DP-[A-Z]+-[0-9]+')

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    extract::{Json, State},
+    extract::{Json, Path, State},
     response::IntoResponse,
     routing::{get, post},
 };
@@ -17,6 +17,7 @@ pub(crate) fn routes() -> Router<Arc<ApiState>> {
     Router::new()
         .route("/api/v1/security", get(status).post(control))
         .route("/api/v1/security/scan", post(scan))
+        .route("/api/v1/security/scan/progress/{key}", get(scan_progress))
 }
 
 #[derive(Deserialize)]
@@ -79,6 +80,19 @@ async fn control(
         Ok((message, data)) => ApiResponse::ok_data(&message, data).into_response(),
         Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
     }
+}
+
+/// Live progress of a scan that is still running; null once it has finished.
+async fn scan_progress(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+    Path(key): Path<String>,
+) -> impl IntoResponse {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+    let data = serde_json::to_value(security_scan::progress(&key)).unwrap_or_default();
+    ApiResponse::ok_data("Scan progress loaded.", data).into_response()
 }
 
 /// Runs a fixed set of checks against one website root. The caller picks the

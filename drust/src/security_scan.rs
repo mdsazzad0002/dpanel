@@ -8,12 +8,13 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fs,
-    io::Read,
+    io::{BufRead, BufReader, Read},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
+    sync::{Mutex, OnceLock},
     time::SystemTime,
 };
 
@@ -64,6 +65,103 @@ pub struct ScanRequest {
     #[serde(default = "default_scan_type")]
     pub scan_type: String,
     pub max_files: Option<usize>,
+    /// Key the panel polls for live progress while the scan runs.
+    #[serde(default)]
+    pub progress_key: Option<String>,
+}
+
+/// Where a running scan is, read by the panel while the scan request is still open.
+#[derive(Serialize, Debug, Clone, Default)]
+pub struct Progress {
+    /// counting | files | integrity | signatures | clamav
+    pub phase: &'static str,
+    pub done: u64,
+    pub total: u64,
+    pub started_at: u64,
+    pub updated_at: u64,
+    /// Findings so far by severity, so the panel can say why the score drops
+    /// before the scan ends.
+    pub found: BTreeMap<&'static str, u64>,
+    /// The latest findings, newest first.
+    pub recent: Vec<FoundItem>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct FoundItem {
+    pub rule_id: &'static str,
+    pub severity: &'static str,
+    pub category: &'static str,
+    pub title: String,
+    pub file_path: Option<String>,
+}
+
+const RECENT_FOUND: usize = 6;
+
+fn progress_map() -> &'static Mutex<HashMap<String, Progress>> {
+    static PROGRESS: OnceLock<Mutex<HashMap<String, Progress>>> = OnceLock::new();
+    PROGRESS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn progress(key: &str) -> Option<Progress> {
+    progress_map().lock().ok()?.get(key).cloned()
+}
+
+/// Publishes progress under the request's key and removes it when the scan ends,
+/// however it ends.
+struct Tracker {
+    key: Option<String>,
+}
+
+impl Tracker {
+    fn new(key: Option<&str>) -> Self {
+        let key = key
+            .filter(|key| !key.is_empty() && key.len() <= 64 && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+            .map(str::to_string);
+        if let (Some(key), Ok(mut map)) = (&key, progress_map().lock()) {
+            let now = now_secs();
+            map.insert(key.clone(), Progress { phase: "counting", started_at: now, updated_at: now, ..Default::default() });
+        }
+        Self { key }
+    }
+
+    fn set(&self, phase: &'static str, done: u64, total: u64) {
+        let Some(key) = &self.key else { return };
+        if let Ok(mut map) = progress_map().lock() {
+            if let Some(entry) = map.get_mut(key) {
+                entry.phase = phase;
+                entry.done = done.min(total);
+                entry.total = total;
+                entry.updated_at = now_secs();
+            }
+        }
+    }
+}
+
+impl Tracker {
+    fn found(&self, finding: &Finding) {
+        let Some(key) = &self.key else { return };
+        if let Ok(mut map) = progress_map().lock() {
+            if let Some(entry) = map.get_mut(key) {
+                *entry.found.entry(finding.severity).or_default() += 1;
+                entry.recent.insert(0, FoundItem {
+                    rule_id: finding.rule_id,
+                    severity: finding.severity,
+                    category: finding.category,
+                    title: finding.title.clone(),
+                    file_path: finding.file_path.clone(),
+                });
+                entry.recent.truncate(RECENT_FOUND);
+            }
+        }
+    }
+}
+
+impl Drop for Tracker {
+    fn drop(&mut self) {
+        if let (Some(key), Ok(mut map)) = (&self.key, progress_map().lock()) {
+            map.remove(key);
+        }
+    }
 }
 
 fn default_scan_type() -> String {
@@ -174,10 +272,22 @@ pub fn run(request: &ScanRequest) -> Result<ScanReport, String> {
         scan_type: request.scan_type.clone(),
         ..Default::default()
     };
-    let mut collector = Collector::default();
+    // Counting first is what makes the percentage honest: a directory walk
+    // without reading files is fast next to the checks that follow.
+    let tracker = Tracker::new(request.progress_key.as_deref());
+    let mut collector = Collector { tracker: Some(&tracker), ..Default::default() };
     let mut hashes: BTreeMap<String, String> = BTreeMap::new();
+    let total = count_files(&root, max_files) as u64;
+    let mut checked: u64 = 0;
+    tracker.set("files", 0, total);
 
     walk(&root, max_files, &mut report, |path, relative, metadata| {
+        if metadata.is_file() {
+            checked += 1;
+            if checked % 25 == 0 || checked == total {
+                tracker.set("files", checked, total);
+            }
+        }
         let ext = extension(path);
         let components: Vec<String> = relative
             .components()
@@ -257,11 +367,12 @@ pub fn run(request: &ScanRequest) -> Result<ScanReport, String> {
     })?;
 
     if steps.integrity {
+        tracker.set("integrity", 0, 1);
         report.integrity = compare_integrity(&site_id, &root, hashes, &mut collector)?;
     }
 
     if steps.clamav {
-        report.clamav = run_clamav(&root, &mut collector);
+        report.clamav = run_clamav(&root, &mut collector, &tracker, total);
     }
 
     report.suppressed_findings = collector.suppressed;
@@ -278,13 +389,14 @@ fn report_bytes(bytes: &[u8]) {
 }
 
 #[derive(Default)]
-struct Collector {
+struct Collector<'a> {
+    tracker: Option<&'a Tracker>,
     findings: Vec<Finding>,
     per_rule: BTreeMap<&'static str, usize>,
     suppressed: usize,
 }
 
-impl Collector {
+impl Collector<'_> {
     fn push(&mut self, finding: Finding) {
         let count = self.per_rule.entry(finding.rule_id).or_default();
         if *count >= MAX_FINDINGS_PER_RULE {
@@ -292,6 +404,9 @@ impl Collector {
             return;
         }
         *count += 1;
+        if let Some(tracker) = self.tracker {
+            tracker.found(&finding);
+        }
         self.findings.push(finding);
     }
 }
@@ -330,6 +445,33 @@ fn validate_site_id(site_id: &str) -> Result<String, String> {
     } else {
         Err("Invalid site id.".into())
     }
+}
+
+/// Files `walk` will visit, stopping at the same cap.
+fn count_files(root: &Path, max_files: usize) -> usize {
+    let mut count = 0;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                if entry.file_name() != ".git" {
+                    stack.push(entry.path());
+                }
+            } else if file_type.is_file() {
+                count += 1;
+                if count >= max_files {
+                    return count;
+                }
+            }
+        }
+    }
+    count
 }
 
 fn walk<F>(
@@ -971,7 +1113,7 @@ fn signature_age_hours() -> Option<u64> {
     )
 }
 
-fn run_clamav(root: &Path, collector: &mut Collector) -> ClamavReport {
+fn run_clamav(root: &Path, collector: &mut Collector, tracker: &Tracker, total: u64) -> ClamavReport {
     let mut report = ClamavReport::default();
     let Some(clamscan) = find_binary(&["/usr/bin/clamscan", "/usr/local/bin/clamscan"]) else {
         report.error =
@@ -984,6 +1126,7 @@ fn run_clamav(root: &Path, collector: &mut Collector) -> ClamavReport {
     // they are missing or older than a day. A failed refresh is not fatal.
     let stale = signature_age_hours().is_none_or(|hours| hours >= 24);
     if stale {
+        tracker.set("signatures", 0, 1);
         if let Some(freshclam) = find_binary(&["/usr/bin/freshclam", "/usr/local/bin/freshclam"]) {
             let _ = Command::new("/usr/bin/timeout")
                 .args(["300", &freshclam, "--quiet"])
@@ -992,22 +1135,58 @@ fn run_clamav(root: &Path, collector: &mut Collector) -> ClamavReport {
     }
     report.signature_age_hours = signature_age_hours();
 
-    let output = Command::new("/usr/bin/timeout")
+    // Without --infected clamscan prints one line per file, which is what
+    // lets the panel show how far it has got.
+    let child = Command::new("/usr/bin/timeout")
         .args([
             "3600",
             &clamscan,
             "--recursive",
-            "--infected",
             "--no-summary",
+            "--exclude-dir=/\\.git$",
             "--follow-dir-symlinks=0",
             "--follow-file-symlinks=0",
             "--max-filesize=25M",
             "--max-scansize=100M",
         ])
         .arg(root)
-        .output();
-    let output = match output {
-        Ok(output) => output,
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+    let mut child = match child {
+        Ok(child) => child,
+        Err(error) => {
+            report.error = Some(format!("Could not run clamscan: {error}"));
+            return report;
+        }
+    };
+    tracker.set("clamav", 0, total);
+    // Drain stderr on its own thread so a chatty clamscan cannot block on a full pipe.
+    let stderr_reader = child.stderr.take().map(|mut stderr| {
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            let _ = stderr.read_to_string(&mut text);
+            text
+        })
+    });
+    let mut found = String::new();
+    let mut scanned: u64 = 0;
+    if let Some(stdout) = child.stdout.take() {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            scanned += 1;
+            if scanned % 25 == 0 {
+                tracker.set("clamav", scanned, total.max(scanned));
+            }
+            if line.ends_with(" FOUND") {
+                found.push_str(&line);
+                found.push('\n');
+            }
+        }
+    }
+    let status = child.wait();
+    let stderr = stderr_reader.and_then(|handle| handle.join().ok()).unwrap_or_default();
+    let output = match status {
+        Ok(status) => std::process::Output { status, stdout: found.into_bytes(), stderr: stderr.into_bytes() },
         Err(error) => {
             report.error = Some(format!("Could not run clamscan: {error}"));
             return report;
@@ -1164,6 +1343,56 @@ mod tests {
     }
 
     #[test]
+    fn progress_is_published_while_running_and_removed_after() {
+        let tracker = Tracker::new(Some("scan-42"));
+        assert_eq!(progress("scan-42").unwrap().phase, "counting");
+        tracker.set("files", 30, 20);
+        let live = progress("scan-42").unwrap();
+        assert_eq!((live.phase, live.done, live.total), ("files", 20, 20));
+
+        let mut collector = Collector { tracker: Some(&tracker), ..Default::default() };
+        for title in ["one", "two"] {
+            collector.push(Finding {
+                rule_id: "DP-PHP-002",
+                severity: "critical",
+                category: "malware",
+                title: title.into(),
+                description: String::new(),
+                file_path: Some("x.php".into()),
+                line_number: None,
+                evidence: None,
+                recommendation: "",
+                auto_fix_available: false,
+            });
+        }
+        let live = progress("scan-42").unwrap();
+        assert_eq!(live.found.get("critical"), Some(&2));
+        assert_eq!(live.recent[0].title, "two");
+        drop(collector);
+        drop(tracker);
+        assert!(progress("scan-42").is_none());
+        // Keys that are not plain ids are ignored rather than stored.
+        let _ignored = Tracker::new(Some("../x"));
+        assert!(progress("../x").is_none());
+    }
+
+    #[test]
+    fn counts_files_like_the_walk_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("a/b")).unwrap();
+        fs::create_dir_all(root.join(".git")).unwrap();
+        fs::write(root.join("index.php"), "x").unwrap();
+        fs::write(root.join("a/one.js"), "x").unwrap();
+        fs::write(root.join("a/b/two.php"), "x").unwrap();
+        fs::write(root.join(".git/HEAD"), "x").unwrap();
+        std::os::unix::fs::symlink(root.join("index.php"), root.join("link.php")).unwrap();
+
+        assert_eq!(count_files(root, 50_000), 3);
+        assert_eq!(count_files(root, 2), 2);
+    }
+
+    #[test]
     fn scans_a_site_tree() {
         let base = Path::new("/srv");
         if fs::create_dir_all(base).is_err() {
@@ -1191,6 +1420,7 @@ mod tests {
                 site_id: "test-scan".into(),
                 scan_type: scan_type.into(),
                 max_files: None,
+                progress_key: None,
             })
             .unwrap()
         };
