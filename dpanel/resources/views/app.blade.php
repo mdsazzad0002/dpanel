@@ -9,6 +9,14 @@
         <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}?v=2">
         <link rel="shortcut icon" type="image/x-icon" href="{{ asset('favicon.ico') }}?v=2">
 
+        <!-- PWA -->
+        <link rel="manifest" href="{{ asset('manifest.webmanifest') }}">
+        <link rel="apple-touch-icon" href="{{ asset('pwa/apple-touch-icon.png') }}">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-title" content="dPanel">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
         <title inertia>{{ config('app.name', 'Laravel') }}</title>
 
         <!-- Fonts -->

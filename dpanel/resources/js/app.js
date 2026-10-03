@@ -22,6 +22,19 @@ const applyInitialTheme = () => {
 
 applyInitialTheme();
 
+const registerServiceWorker = () => {
+    // Skipped under the Vite dev server so the worker never sits in front of HMR.
+    if (import.meta.env.DEV || typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+        return;
+    }
+
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+    });
+};
+
+registerServiceWorker();
+
 createInertiaApp({
     title: (title) => `${title} - ${appName}`,
     resolve: (name) =>

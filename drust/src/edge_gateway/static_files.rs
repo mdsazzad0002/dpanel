@@ -209,6 +209,7 @@ fn guess_content_type(path: &Path) -> String {
         "css" => "text/css; charset=utf-8".into(),
         "js" | "mjs" => "application/javascript; charset=utf-8".into(),
         "json" => "application/json; charset=utf-8".into(),
+        "webmanifest" => "application/manifest+json; charset=utf-8".into(),
         "svg" => "image/svg+xml".into(),
         "txt" | "log" => "text/plain; charset=utf-8".into(),
         "xml" => "application/xml; charset=utf-8".into(),
