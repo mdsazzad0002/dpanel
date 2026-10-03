@@ -9,9 +9,12 @@ const panelRoute = (name, params = {}) => (
     panelToken ? route(name, { token: panelToken, ...params }) : route(name, params)
 );
 
-defineProps({
+const props = defineProps({
     scheduledMessages: { type: Array, default: () => [] },
+    filterBusiness: { type: Object, default: null },
 });
+
+const createHref = () => panelRoute('chat-engine.scheduled-messages.create', props.filterBusiness ? { business_id: props.filterBusiness.id } : {});
 
 const cancelForm = useForm({});
 
@@ -33,7 +36,7 @@ const cancel = (s) => {
                 </div>
                 <div class="flex items-center gap-2">
                     <ChatEngineDocsButton title="Scheduled Messages — Guide" :sections="['scheduled', 'worker']" />
-                    <Link :href="panelRoute('chat-engine.scheduled-messages.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">+ Schedule Message</Link>
+                    <Link :href="createHref()" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">+ Schedule Message</Link>
                 </div>
             </div>
         </template>
@@ -41,9 +44,14 @@ const cancel = (s) => {
         <div class="space-y-4">
             <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ page.props.flash.success }}</div>
 
+            <div v-if="filterBusiness" class="flex items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+                <span>Showing scheduled messages for the apps of <Link :href="panelRoute('chat-engine.businesses.edit', { business: filterBusiness.id, tab: 'apps' })" class="font-semibold hover:underline">{{ filterBusiness.name }}</Link>.</span>
+                <Link :href="panelRoute('chat-engine.scheduled-messages.index')" class="font-medium hover:underline">Clear filter</Link>
+            </div>
+
             <div v-if="!scheduledMessages.length" class="rounded-lg border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700">
                 Nothing scheduled yet.
-                <Link :href="panelRoute('chat-engine.scheduled-messages.create')" class="ml-1 text-blue-600 hover:underline">Schedule your first message</Link>.
+                <Link :href="createHref()" class="ml-1 text-blue-600 hover:underline">Schedule your first message</Link>.
             </div>
 
             <div v-else class="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">

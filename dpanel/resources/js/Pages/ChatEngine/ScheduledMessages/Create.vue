@@ -10,10 +10,11 @@ const panelRoute = (name, params = {}) => (
 
 const props = defineProps({
     channels: { type: Array, default: () => [] },
+    preselectChannelId: { type: String, default: null },
 });
 
 const form = useForm({
-    chat_channel_id: props.channels[0]?.id || '',
+    chat_channel_id: props.channels.some((c) => c.id === props.preselectChannelId) ? props.preselectChannelId : (props.channels[0]?.id || ''),
     audience_type: 'broadcast',
     chat_contact_id: '',
     content: '',

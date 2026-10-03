@@ -13,6 +13,7 @@ const panelRoute = (name, params = {}) => (
 const props = defineProps({
     conversations: { type: Array, default: () => [] },
     filterChannelId: { type: String, default: null },
+    filterBusiness: { type: Object, default: null },
 });
 
 const search = ref('');
@@ -56,6 +57,11 @@ const filteredConversations = computed(() => {
 
             <div v-if="filterChannelId" class="flex items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
                 <span>Showing conversations for one channel only.</span>
+                <Link :href="panelRoute('chat-engine.conversations.index')" class="font-medium hover:underline">Clear filter</Link>
+            </div>
+
+            <div v-if="filterBusiness" class="flex items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+                <span>Showing conversations for the apps of <Link :href="panelRoute('chat-engine.businesses.edit', { business: filterBusiness.id, tab: 'apps' })" class="font-semibold hover:underline">{{ filterBusiness.name }}</Link>.</span>
                 <Link :href="panelRoute('chat-engine.conversations.index')" class="font-medium hover:underline">Clear filter</Link>
             </div>
 

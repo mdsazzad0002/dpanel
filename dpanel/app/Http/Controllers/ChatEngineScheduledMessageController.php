@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Business;
 use App\Models\ChatChannel;
 use App\Models\ChatScheduledMessage;
 use Illuminate\Http\RedirectResponse;
@@ -17,6 +18,7 @@ class ChatEngineScheduledMessageController extends Controller
         $scheduled = ChatScheduledMessage::query()
             ->whereIn('chat_channel_id', ChatChannel::query()->visibleTo($request->user())->select('id'))
             ->with('channel:id,name,type')
+            ->when($request->filled('business_id'), fn ($q) => $q->whereIn('chat_channel_id', ChatChannel::query()->where('business_id', $request->input('business_id'))->select('id')))
             ->orderByDesc('run_at')
             ->get()
             ->map(fn (ChatScheduledMessage $s): array => [
@@ -32,14 +34,31 @@ class ChatEngineScheduledMessageController extends Controller
 
         return Inertia::render('ChatEngine/ScheduledMessages/Index', [
             'scheduledMessages' => $scheduled,
+            'filterBusiness' => $this->filterBusiness($request),
         ]);
     }
 
     public function create(Request $request): Response
     {
         return Inertia::render('ChatEngine/ScheduledMessages/Create', [
-            'channels' => ChatChannel::query()->visibleTo($request->user())->where('is_active', true)->get(['id', 'name', 'type']),
+            'channels' => ChatChannel::query()
+                ->visibleTo($request->user())
+                ->where('is_active', true)
+                ->when($request->filled('business_id'), fn ($q) => $q->where('business_id', $request->input('business_id')))
+                ->get(['id', 'name', 'type']),
+            'preselectChannelId' => $request->input('channel_id'),
         ]);
+    }
+
+    private function filterBusiness(Request $request): ?array
+    {
+        if (! $request->filled('business_id')) {
+            return null;
+        }
+
+        $business = Business::query()->visibleTo($request->user())->whereKey($request->input('business_id'))->first(['id', 'name']);
+
+        return $business ? ['id' => $business->id, 'name' => $business->name] : null;
     }
 
     public function store(Request $request): RedirectResponse

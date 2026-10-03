@@ -26,6 +26,10 @@ const search = ref('');
 const ownerFilter = ref('');
 const typeFilter = ref('');
 const statusFilter = ref('');
+const businessFilter = ref('');
+const businesses = computed(() => Array.from(new Map(
+    props.channels.filter((c) => c.business).map((c) => [c.business.id, c.business])
+).values()).sort((a, b) => a.name.localeCompare(b.name)));
 const filteredChannels = computed(() => {
     const needle = search.value.trim().toLowerCase();
 
@@ -35,6 +39,7 @@ const filteredChannels = computed(() => {
         && (!ownerFilter.value || String(channel.owner?.id || '') === ownerFilter.value)
         && (!typeFilter.value || channel.type === typeFilter.value)
         && (!statusFilter.value || (statusFilter.value === 'active' ? channel.is_active : !channel.is_active))
+        && (!businessFilter.value || (businessFilter.value === 'none' ? !channel.business : channel.business?.id === businessFilter.value))
     ));
 });
 
@@ -86,6 +91,7 @@ const typeIcon = (type) => ({
     whatsapp: 'bi-whatsapp',
     instagram: 'bi-instagram',
     slack: 'bi-slack',
+    website: 'bi-window',
 }[type] || 'bi-broadcast');
 </script>
 
@@ -110,7 +116,7 @@ const typeIcon = (type) => ({
             <div v-if="page.props.flash?.success" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ page.props.flash.success }}</div>
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ page.props.flash.error }}</div>
 
-            <div v-if="channels.length" class="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4 dark:border-slate-700 dark:bg-slate-800">
+            <div v-if="channels.length" class="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5 dark:border-slate-700 dark:bg-slate-800">
                 <input v-model="search" type="search" placeholder="Search channel, Page ID or owner…" class="rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
                 <select v-model="ownerFilter" class="rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900">
                     <option value="">All owners</option>
@@ -123,6 +129,12 @@ const typeIcon = (type) => ({
                     <option value="whatsapp">WhatsApp</option>
                     <option value="instagram">Instagram</option>
                     <option value="slack">Slack</option>
+                    <option value="website">Website</option>
+                </select>
+                <select v-model="businessFilter" class="rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900">
+                    <option value="">All businesses</option>
+                    <option value="none">No business</option>
+                    <option v-for="b in businesses" :key="b.id" :value="b.id">{{ b.name }}</option>
                 </select>
                 <select v-model="statusFilter" class="rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900">
                     <option value="">All statuses</option>
@@ -147,6 +159,10 @@ const typeIcon = (type) => ({
                                 <p class="font-medium leading-tight">{{ c.name }}</p>
                                 <p class="text-xs capitalize text-slate-500 dark:text-slate-400">{{ c.type }}</p>
                                 <p v-if="c.owner" class="mt-0.5 text-xs text-slate-400">Owner: {{ c.owner.name }}</p>
+                                <Link v-if="c.business" :href="panelRoute('chat-engine.businesses.edit', { business: c.business.id, tab: 'apps' })" class="mt-1 inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700 hover:underline dark:bg-blue-900/30 dark:text-blue-300">
+                                    <i class="bi bi-briefcase"></i> {{ c.business.name }}
+                                </Link>
+                                <span v-else class="mt-1 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">No business</span>
                             </div>
                         </div>
                         <button @click="toggle(c)" class="rounded px-2 py-0.5 text-xs font-medium" :class="c.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'">

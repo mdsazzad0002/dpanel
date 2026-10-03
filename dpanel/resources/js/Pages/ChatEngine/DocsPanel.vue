@@ -59,6 +59,8 @@ const allGroups = [
     {
         label: 'Business AI Guide',
         sections: [
+            { id: 'business-apps', label: 'Business, Apps & transfer', icon: 'bi-grid-1x2' },
+            { id: 'reply-capabilities', label: 'What the AI can reply', icon: 'bi-chat-quote' },
             { id: 'business-training', label: 'Train the AI (Q&A)', icon: 'bi-mortarboard' },
             { id: 'business-live-data', label: 'Live data & actions', icon: 'bi-plug' },
         ],
@@ -545,6 +547,89 @@ Content-Type: application/json
                 <p class="mt-4 text-xs text-slate-400">
                     The URL must be a public https address — localhost and private/internal IPs are rejected. A capability only becomes active when its checkbox is on <em>and</em> the URL is set; leave the URL blank to disable everything. On any non-2xx response, timeout, or malformed body, the AI is told the action failed and asked to let the customer know rather than guessing.
                 </p>
+            </section>
+
+            <section v-show="activeSection === 'business-apps'" role="tabpanel" class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                <h2 class="text-sm font-semibold">Business first, then its apps</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    A <strong>business</strong> is what the AI speaks for. An <strong>app</strong> is one connected chat channel — a Telegram bot,
+                    Facebook Page, WhatsApp number, Instagram account, Slack workspace or website widget. Every app attached to a business answers
+                    with that business's profile, products, Q&amp;A, reply language and live tools. Open a business from
+                    <Link :href="panelRoute('chat-engine.businesses.index')" class="text-blue-600 hover:underline">Businesses</Link>; it has two tabs.
+                </p>
+
+                <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Apps tab</h3>
+                <ul class="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-slate-300">
+                    <li><strong>Connect new app</strong> — the app is created inside this business straight away.</li>
+                    <li><strong>Attach existing app</strong> — pull in an app that doesn't belong to any business yet.</li>
+                    <li>Per app: <em>Messages</em> (its inbox), <em>Assistant</em> (website apps — chat with the AI from inside the panel to test replies), <em>Edit</em>, <em>Live/Paused</em> toggle, <em>Schedule message</em>, <em>Reconnect webhook</em>, <em>Transfer</em>, <em>Detach</em> and <em>Delete</em>.</li>
+                    <li><em>Inbox</em> and <em>Scheduled</em> at the top show only this business's apps.</li>
+                    <li>Tick several apps (or <em>Select all</em>) to transfer or detach them in one go.</li>
+                </ul>
+
+                <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Manage tab</h3>
+                <ul class="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-slate-300">
+                    <li>Business details, AI-written description, reply language and the client integration (search / order / email / SMS).</li>
+                    <li>Products &amp; Q&amp;A — add, edit, delete, or let AI suggest Q&amp;A drafts you review first.</li>
+                    <li>AI reply usage against the owner's package, an AI-readiness checklist, and deleting the business.</li>
+                </ul>
+
+                <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Transferring an app</h3>
+                <ul class="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-slate-300">
+                    <li>Contacts, conversations and scheduled messages move with the app — nothing is deleted, the webhook keeps working.</li>
+                    <li>From the very next message, replies use the <em>new</em> business's knowledge and tools, and count against its reply credit.</li>
+                    <li>The app's owner becomes the new business's owner, so they can see and manage it.</li>
+                    <li><em>Detach</em> leaves the app running without a business: it then answers only with its own system prompt.</li>
+                    <li>Deleting a business never deletes its apps — they're detached.</li>
+                </ul>
+            </section>
+
+            <section v-show="activeSection === 'reply-capabilities'" role="tabpanel" class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                <h2 class="text-sm font-semibold">What the AI can reply</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    Everything below is what an app's auto-reply can do once it belongs to a business. "Staff-only" means the app has
+                    <em>Internal / staff-only</em> turned on (used from the panel's Assistant page, never embedded publicly).
+                </p>
+
+                <div class="mt-3 overflow-x-auto">
+                    <table class="min-w-full text-left text-xs">
+                        <thead class="border-b border-slate-200 text-slate-500 dark:border-slate-700">
+                            <tr><th class="py-2 pr-3 font-medium">Reply type</th><th class="py-2 pr-3 font-medium">Public app</th><th class="py-2 pr-3 font-medium">Staff-only</th><th class="py-2 font-medium">Needs</th></tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-slate-600 dark:divide-slate-700 dark:text-slate-300">
+                            <tr><td class="py-2 pr-3">Answers from business profile, products &amp; Q&amp;A</td><td class="pr-3">✓</td><td class="pr-3">✓</td><td>Manage → description / Q&amp;A</td></tr>
+                            <tr><td class="py-2 pr-3">Greeting that introduces the business and what it offers</td><td class="pr-3">✓</td><td class="pr-3">✓</td><td>Description or products</td></tr>
+                            <tr><td class="py-2 pr-3">Reply in a fixed language (or the customer's own)</td><td class="pr-3">✓</td><td class="pr-3">✓</td><td>Reply language (optional)</td></tr>
+                            <tr><td class="py-2 pr-3">Reply to a voice note (transcribed first)</td><td class="pr-3">✓</td><td class="pr-3">✓</td><td>Media API configured</td></tr>
+                            <tr><td class="py-2 pr-3">Reply to an image (reads text inside it only)</td><td class="pr-3">✓</td><td class="pr-3">✓</td><td>Media API configured</td></tr>
+                            <tr><td class="py-2 pr-3">Public reply under a Facebook comment</td><td class="pr-3">✓</td><td class="pr-3">—</td><td>Facebook app, <code>feed</code> subscribed</td></tr>
+                            <tr><td class="py-2 pr-3">Save the customer's name / phone / email for follow-up</td><td class="pr-3">✓</td><td class="pr-3">✓</td><td>Always on</td></tr>
+                            <tr><td class="py-2 pr-3">Live product / stock / price search</td><td class="pr-3">✓</td><td class="pr-3">✓</td><td>Integration URL + Search</td></tr>
+                            <tr><td class="py-2 pr-3">Look up a customer, their due, an invoice</td><td class="pr-3">—</td><td class="pr-3">✓</td><td>Integration URL + Search</td></tr>
+                            <tr><td class="py-2 pr-3">Place an order (after confirming details)</td><td class="pr-3">✓</td><td class="pr-3">✓</td><td>Integration URL + Order</td></tr>
+                            <tr><td class="py-2 pr-3">Send an email</td><td class="pr-3">—</td><td class="pr-3">✓</td><td>Integration URL + Email</td></tr>
+                            <tr><td class="py-2 pr-3">Send an SMS</td><td class="pr-3">—</td><td class="pr-3">✓</td><td>Integration URL + SMS</td></tr>
+                            <tr><td class="py-2 pr-3">Bulk due reminders (preview, then send on "yes")</td><td class="pr-3">—</td><td class="pr-3">✓</td><td>Search + SMS</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">How it decides what to say</h3>
+                <ul class="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-slate-300">
+                    <li>It reads the most recent messages of the conversation (20 by default, <code>CHATENGINE_CONTEXT_MESSAGE_LIMIT</code>), so follow-ups ("how much is that one?") work.</li>
+                    <li>It never invents prices, policies, stock or contact details. If neither the knowledge nor a tool can answer, it replies exactly: <em>"I don't have that information yet — let me connect you with a team member who can help."</em> and asks for a contact number so your team can follow up.</li>
+                    <li>On a public app it never reveals another person's phone number, due or order history, even if asked.</li>
+                    <li>It may call up to 3 rounds of tools (e.g. search, then order) before answering, all in the same reply.</li>
+                    <li>An app with no business answers only with its own system prompt, plus saving contact details.</li>
+                </ul>
+
+                <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">When it does not reply</h3>
+                <ul class="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-slate-300">
+                    <li>The app is <em>Paused</em>, or its AI auto-reply setting is off.</li>
+                    <li>That one conversation was switched to manual (human takeover) in the inbox.</li>
+                    <li>The business has used all of its AI reply credit.</li>
+                    <li>The AI provider failed or returned nothing — see Troubleshooting. The message is still saved in the inbox.</li>
+                </ul>
             </section>
 
             <section v-show="activeSection === 'worker'" role="tabpanel" class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">

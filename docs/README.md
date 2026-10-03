@@ -30,6 +30,7 @@
 | [drust API](drust-api.md) | Endpoint reference for the localhost execution API |
 | [Backups](backups.md) | Scheduled backups, remote upload, and restore |
 | [Server Task Runner](ssh-command-runner.md) | SSH connector, command safety rules, and task reports |
+| [AI Chat Engine](chat-engine.md) | Businesses, apps, app transfer, and what the AI can reply |
 | [WHMCS Integration](../dpanel/integrations/whmcs/README.md) | Connecting dPanel to WHMCS billing |
 
 ## Project policies

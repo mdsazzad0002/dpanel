@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Business;
 use App\Models\ChatChannel;
+use App\Models\ChatConversation;
 use App\Services\AiGateway\AiGatewayService;
+use App\Services\ChatEngine\ChannelPresenter;
 use App\Support\SafeUrlValidator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -24,7 +26,8 @@ class ChatEngineBusinessController extends Controller
             ->visibleTo($request->user())
             ->withCount('products')
             ->withCount('channels')
-            ->with('createdBy:id,name,email')
+            ->withCount(['channels as active_channels_count' => fn ($q) => $q->where('is_active', true)])
+            ->with(['createdBy:id,name,email', 'createdBy.package', 'channels:id,business_id,type'])
             ->orderByDesc('created_at')
             ->get()
             ->map(fn (Business $b): array => [
@@ -33,6 +36,10 @@ class ChatEngineBusinessController extends Controller
                 'industry' => $b->industry,
                 'products_count' => $b->products_count,
                 'channels_count' => $b->channels_count,
+                'active_channels_count' => $b->active_channels_count,
+                'app_types' => $b->channels->pluck('type')->unique()->values(),
+                'ai_replies_used' => $b->ai_replies_used,
+                'ai_reply_limit' => $b->aiReplyLimit(),
                 'owner' => $b->createdBy ? ['id' => $b->createdBy->id, 'name' => $b->createdBy->name, 'email' => $b->createdBy->email] : null,
                 'created_at' => $b->created_at?->toDateTimeString(),
             ]);
@@ -61,17 +68,33 @@ class ChatEngineBusinessController extends Controller
         ]);
 
         return redirect()
-            ->route('chat-engine.businesses.edit', ['business' => $business->id])
-            ->with('success', 'Business "'.$business->name.'" created.');
+            ->route('chat-engine.businesses.edit', ['business' => $business->id, 'tab' => 'apps'])
+            ->with('success', 'Business "'.$business->name.'" created — connect its first app below.');
     }
 
+    /**
+     * The business workspace: an "Apps" tab (every chat channel that answers
+     * with this business's knowledge, with all per-app actions) and a
+     * "Manage" tab (profile, AI usage, products & Q&A).
+     */
     public function edit(Request $request, $token, Business $business): Response
     {
         $this->authorizeBusiness($request, $business);
 
         $business->load('products.qnas', 'createdBy.package');
 
+        $apps = ChatChannel::query()
+            ->where('business_id', $business->id)
+            ->with(['createdBy:id,name,email', 'business:id,name'])
+            ->withCount(['contacts', 'conversations'])
+            ->withMax('conversations', 'last_message_at')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $conversationScope = ChatConversation::query()->whereIn('chat_channel_id', $apps->pluck('id'));
+
         return Inertia::render('ChatEngine/Businesses/Edit', [
+            'tab' => in_array($request->query('tab'), ['apps', 'manage'], true) ? $request->query('tab') : 'apps',
             'business' => [
                 'id' => $business->id,
                 'name' => $business->name,
@@ -86,6 +109,15 @@ class ChatEngineBusinessController extends Controller
                 'order_enabled' => $business->order_enabled,
                 'email_enabled' => $business->email_enabled,
                 'sms_enabled' => $business->sms_enabled,
+                'owner' => $business->createdBy ? ['id' => $business->createdBy->id, 'name' => $business->createdBy->name] : null,
+            ],
+            'stats' => [
+                'apps' => $apps->count(),
+                'active_apps' => $apps->where('is_active', true)->count(),
+                'contacts' => (int) $apps->sum('contacts_count'),
+                'conversations' => (int) $apps->sum('conversations_count'),
+                'open_conversations' => (clone $conversationScope)->where('status', 'open')->count(),
+                'manual_conversations' => (clone $conversationScope)->where('is_ai_enabled', false)->count(),
             ],
             'products' => $business->products->map(fn ($product) => [
                 'id' => $product->id,
@@ -97,13 +129,20 @@ class ChatEngineBusinessController extends Controller
                     'answer' => $qna->answer,
                 ]),
             ]),
-            'assignedChannels' => ChatChannel::query()
-                ->where('business_id', $business->id)
-                ->get(['id', 'name', 'type']),
-            'unassignedChannels' => ChatChannel::query()
+            'apps' => $apps->map(fn (ChatChannel $c): array => ChannelPresenter::present($c)),
+            // Apps that exist but belong to no business — can be pulled in.
+            'unassignedApps' => ChatChannel::query()
                 ->visibleTo($request->user())
                 ->whereNull('business_id')
+                ->orderBy('name')
                 ->get(['id', 'name', 'type']),
+            // Where an app can be transferred to.
+            'otherBusinesses' => Business::query()
+                ->visibleTo($request->user())
+                ->whereKeyNot($business->id)
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'facebookWebhookUrl' => route('webhooks.chat.facebook'),
         ]);
     }
 

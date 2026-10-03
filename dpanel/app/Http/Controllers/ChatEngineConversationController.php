@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Business;
 use App\Models\ChatConversation;
 use App\Models\ChatChannel;
 use App\Models\ChatMessage;
@@ -23,6 +24,7 @@ class ChatEngineConversationController extends Controller
             ->whereIn('chat_channel_id', ChatChannel::query()->visibleTo($request->user())->select('id'))
             ->with(['channel:id,name,type', 'contact:id,name,username,external_id'])
             ->when($request->filled('channel_id'), fn ($q) => $q->where('chat_channel_id', $request->input('channel_id')))
+            ->when($request->filled('business_id'), fn ($q) => $q->whereIn('chat_channel_id', ChatChannel::query()->where('business_id', $request->input('business_id'))->select('id')))
             ->orderByDesc('last_message_at')
             ->get()
             ->map(fn (ChatConversation $c): array => [
@@ -38,6 +40,7 @@ class ChatEngineConversationController extends Controller
         return Inertia::render('ChatEngine/Conversations/Index', [
             'conversations' => $conversations,
             'filterChannelId' => $request->input('channel_id'),
+            'filterBusiness' => $this->filterBusiness($request),
         ]);
     }
 
@@ -105,6 +108,17 @@ class ChatEngineConversationController extends Controller
         $conversation->update(['last_message_at' => now()]);
 
         return back()->with('success', 'Reply sent.');
+    }
+
+    private function filterBusiness(Request $request): ?array
+    {
+        if (! $request->filled('business_id')) {
+            return null;
+        }
+
+        $business = Business::query()->visibleTo($request->user())->whereKey($request->input('business_id'))->first(['id', 'name']);
+
+        return $business ? ['id' => $business->id, 'name' => $business->name] : null;
     }
 
     private function authorizeConversation(Request $request, ChatConversation $conversation): void

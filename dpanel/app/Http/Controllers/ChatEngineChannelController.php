@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\ChatChannel;
 use App\Models\User;
+use App\Models\Business;
+use App\Services\ChatEngine\ChannelPresenter;
 use App\Services\ChatEngine\ChatEngineService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,38 +26,10 @@ class ChatEngineChannelController extends Controller
             ->visibleTo($request->user())
             ->with(['createdBy:id,name,email', 'business:id,name'])
             ->withCount(['contacts', 'conversations'])
+            ->withMax('conversations', 'last_message_at')
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn (ChatChannel $c): array => [
-                'id' => $c->id,
-                'type' => $c->type,
-                'name' => $c->name,
-                'external_account_id' => $c->external_account_id,
-                'system_prompt' => ($c->settings ?? [])['system_prompt'] ?? null,
-                'has_bot_token' => (bool) $c->getBotToken(),
-                'has_page_access_token' => (bool) $c->getPageAccessToken(),
-                'has_whatsapp_access_token' => (bool) $c->getWhatsAppAccessToken(),
-                'has_whatsapp_app_secret' => (bool) $c->getWhatsAppAppSecret(),
-                'whatsapp_business_account_id' => $c->getWhatsAppBusinessAccountId(),
-                'whatsapp_webhook_url' => $c->type === 'whatsapp' ? route('webhooks.chat.whatsapp', ['channel' => $c->id]) : null,
-                'whatsapp_verify_token' => $c->type === 'whatsapp' ? $c->webhook_secret : null,
-                'has_instagram_access_token' => (bool) $c->getInstagramAccessToken(),
-                'has_instagram_app_secret' => (bool) $c->getInstagramAppSecret(),
-                'instagram_webhook_url' => $c->type === 'instagram' ? route('webhooks.chat.instagram', ['channel' => $c->id]) : null,
-                'instagram_verify_token' => $c->type === 'instagram' ? $c->webhook_secret : null,
-                'has_slack_bot_token' => (bool) $c->getSlackBotToken(),
-                'has_slack_signing_secret' => (bool) $c->getSlackSigningSecret(),
-                'slack_webhook_url' => $c->type === 'slack' ? route('webhooks.chat.slack', ['channel' => $c->id]) : null,
-                'widget_script_url' => $c->type === 'website' ? url('/widget/chat.js') : null,
-                'is_active' => $c->is_active,
-                'auto_reply_enabled' => $c->isAutoReplyEnabled(),
-                'internal_access' => $c->isInternal(),
-                'business' => $c->business ? ['id' => $c->business->id, 'name' => $c->business->name] : null,
-                'contacts_count' => $c->contacts_count,
-                'conversations_count' => $c->conversations_count,
-                'created_at' => $c->created_at?->toDateTimeString(),
-                'owner' => $c->createdBy ? ['id' => $c->createdBy->id, 'name' => $c->createdBy->name, 'email' => $c->createdBy->email] : null,
-            ]);
+            ->map(fn (ChatChannel $c): array => ChannelPresenter::present($c));
 
         return Inertia::render('ChatEngine/Channels/Index', [
             'channels' => $channels,
@@ -93,9 +67,17 @@ class ChatEngineChannelController extends Controller
             'system_prompt' => ['nullable', 'string', 'max:4000'],
             'auto_reply_enabled' => ['nullable', 'boolean'],
             'internal_access' => ['nullable', 'boolean'],
+            'business_id' => ['nullable', 'uuid'],
         ]);
 
         $type = $validated['type'];
+
+        // Connecting an app from inside a business (its Apps tab) attaches
+        // it to that business straight away instead of making the user
+        // assign it afterwards.
+        $business = ! empty($validated['business_id'])
+            ? Business::query()->visibleTo($request->user())->whereKey($validated['business_id'])->firstOrFail()
+            : null;
 
         $channel = ChatChannel::create([
             'type' => $type,
@@ -136,22 +118,23 @@ class ChatEngineChannelController extends Controller
                 'internal_access' => (bool) ($validated['internal_access'] ?? false),
             ],
             'is_active' => true,
-            'created_by' => $request->user()?->id,
+            'business_id' => $business?->id,
+            'created_by' => $business?->created_by ?? $request->user()?->id,
         ]);
+
+        $done = $business
+            ? redirect()->route('chat-engine.businesses.edit', ['business' => $business->id, 'tab' => 'apps'])
+            : redirect()->route('chat-engine.channels.index');
 
         if ($type !== 'website') {
             try {
                 $this->reconnectWebhook($channel);
             } catch (\Throwable $e) {
-                return redirect()
-                    ->route('chat-engine.channels.index')
-                    ->with('error', 'Channel saved, but registering the webhook failed: '.$e->getMessage());
+                return $done->with('error', 'Channel saved, but registering the webhook failed: '.$e->getMessage());
             }
         }
 
-        return redirect()
-            ->route('chat-engine.channels.index')
-            ->with('success', ucfirst($type).' channel "'.$channel->name.'" connected.');
+        return $done->with('success', ucfirst($type).' channel "'.$channel->name.'" connected.');
     }
 
     public function edit($token, ChatChannel $channel): Response
@@ -282,15 +265,18 @@ class ChatEngineChannelController extends Controller
             try {
                 $this->reconnectWebhook($channel);
             } catch (\Throwable $e) {
-                return redirect()
-                    ->route('chat-engine.channels.edit', ['channel' => $channel->id])
-                    ->with('error', 'Channel saved, but re-registering the webhook failed: '.$e->getMessage());
+                $failed = $request->boolean('from_business')
+                    ? back()
+                    : redirect()->route('chat-engine.channels.edit', ['channel' => $channel->id]);
+
+                return $failed->with('error', 'Channel saved, but re-registering the webhook failed: '.$e->getMessage());
             }
         }
 
-        return redirect()
-            ->route('chat-engine.channels.index')
-            ->with('success', 'Channel "'.$channel->name.'" updated.');
+        // Edited from a business's Apps tab → stay on that tab.
+        $done = $request->boolean('from_business') ? back() : redirect()->route('chat-engine.channels.index');
+
+        return $done->with('success', 'Channel "'.$channel->name.'" updated.');
     }
 
     public function reconnect(Request $request, $token, ChatChannel $channel): RedirectResponse
@@ -352,7 +338,9 @@ class ChatEngineChannelController extends Controller
         $this->authorizeChannel($request, $channel);
         $channel->delete();
 
-        return redirect()->route('chat-engine.channels.index')->with('success', 'Channel deleted.');
+        $done = $request->boolean('from_business') ? back() : redirect()->route('chat-engine.channels.index');
+
+        return $done->with('success', 'Channel deleted.');
     }
 
     private function authorizeChannel(Request $request, ChatChannel $channel): void

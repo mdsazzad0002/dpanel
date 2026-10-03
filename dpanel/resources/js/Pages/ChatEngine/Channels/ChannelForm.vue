@@ -4,6 +4,9 @@ import { useForm, usePage } from '@inertiajs/vue3';
 const props = defineProps({
     channel: { type: Object, default: null }, // null = create mode
     facebookWebhookUrl: { type: String, default: '' },
+    // Set when the form is opened from a business's Apps tab: a new app is
+    // attached to that business, and save/redirect stays on that page.
+    business: { type: Object, default: null },
 });
 
 const emit = defineEmits(['saved', 'cancel']);
@@ -35,6 +38,8 @@ const form = useForm({
     system_prompt: props.channel?.system_prompt || '',
     auto_reply_enabled: props.channel?.auto_reply_enabled ?? true,
     internal_access: props.channel?.internal_access ?? false,
+    business_id: props.business?.id || null,
+    from_business: !!props.business,
 });
 
 const submit = () => {
@@ -257,6 +262,10 @@ const submit = () => {
             Business:
             <span v-if="channel.business" class="font-medium">{{ channel.business.name }}</span>
             <span v-else>Not assigned — manage assignment from <a :href="panelRoute('chat-engine.businesses.index')" class="text-blue-600 hover:underline">Businesses</a>.</span>
+        </div>
+        <div v-else-if="business" class="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+            <i class="bi bi-briefcase"></i>
+            This app will be added to <span class="font-semibold">{{ business.name }}</span> and answer with its knowledge.
         </div>
 
         <div>

@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\WhmcsController;
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\BillingSystemController;
+use App\Http\Controllers\ChatEngineBusinessAppController;
 use App\Http\Controllers\ChatEngineBusinessController;
 use App\Http\Controllers\ChatEngineBusinessProductController;
 use App\Http\Controllers\ChatEngineBusinessQnaController;
@@ -643,6 +644,7 @@ Route::prefix('cpsess{token}')
                     Route::delete('businesses/{business}', [ChatEngineBusinessController::class, 'destroy'])->name('chat-engine.businesses.destroy');
                     Route::post('businesses/{business}/channels', [ChatEngineBusinessController::class, 'assignChannel'])->name('chat-engine.businesses.channels.assign');
                     Route::delete('businesses/{business}/channels/{channel}', [ChatEngineBusinessController::class, 'unassignChannel'])->name('chat-engine.businesses.channels.unassign');
+                    Route::post('businesses/{business}/apps/transfer', [ChatEngineBusinessAppController::class, 'transfer'])->name('chat-engine.businesses.apps.transfer');
 
                     Route::post('businesses/{business}/products', [ChatEngineBusinessProductController::class, 'store'])->name('chat-engine.businesses.products.store');
                     Route::patch('businesses/{business}/products/{product}', [ChatEngineBusinessProductController::class, 'update'])->name('chat-engine.businesses.products.update');
