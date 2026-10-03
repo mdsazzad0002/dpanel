@@ -849,9 +849,6 @@ Route::prefix('cpsess{token}')
             Route::get('/security/fail2ban', [Fail2banController::class, 'index'])
                 ->middleware('role:admin')
                 ->name('security.fail2ban');
-            Route::get('/security/fail2ban/ssh-logins', [Fail2banController::class, 'sshLogins'])
-                ->middleware('role:admin')
-                ->name('security.fail2ban.ssh-logins');
             Route::get('/security/fail2ban/whitelist', [Fail2banController::class, 'whitelist'])
                 ->middleware('role:admin')
                 ->name('security.fail2ban.whitelist');

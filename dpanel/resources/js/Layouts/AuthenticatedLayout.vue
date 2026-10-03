@@ -270,14 +270,13 @@ const menuItems = computed(() => [
     {
         id: 'fail2ban',
         label: 'Fail2ban',
-        hint: 'SSH logins, whitelist and blocked IPs',
+        hint: 'SSH logins, blocked IPs and whitelist',
         icon: 'FB',
         iconClass: 'bi bi-unlock',
         color: 'red',
         children: [
-            { label: 'SSH Login History', hint: 'Recent SSH logins and failed attempts', icon: 'SL', iconClass: 'bi bi-clock-history', routeName: 'security.fail2ban.ssh-logins', roles: ['admin'] },
+            { label: 'SSH Login History', hint: 'Login attempts, blocked IPs and block settings', icon: 'SL', iconClass: 'bi bi-clock-history', routeName: 'security.fail2ban', roles: ['admin'] },
             { label: 'Whitelist', hint: 'IPs that are never blocked', icon: 'WL', iconClass: 'bi bi-check2-circle', routeName: 'security.fail2ban.whitelist', roles: ['admin'] },
-            { label: 'Blocklist', hint: 'Unblock banned IPs', icon: 'BL', iconClass: 'bi bi-slash-circle', routeName: 'security.fail2ban', roles: ['admin'] },
         ],
     },
     { label: 'Database & Redis', hint: 'Point dpanel at a remote DB/Redis', icon: 'DB', iconClass: 'bi bi-hdd-network', routeName: 'self-connection.manager', roles: ['admin'], color: 'rose' },

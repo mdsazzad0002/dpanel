@@ -3,8 +3,8 @@ import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 
 /**
- * Status, actions and SSH history shared by the Blocklist, Whitelist and
- * SSH Login History pages, so each page only lays out its own cards.
+ * Status, actions and SSH history shared by the SSH Login History and
+ * Whitelist pages, so each page only lays out its own cards.
  */
 export function useFail2ban(clientIp = '') {
     const page = usePage();

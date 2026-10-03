@@ -24,11 +24,6 @@ class Fail2banController extends Controller
 
     public function index(Request $request): Response
     {
-        return $this->page($request, 'Blocklist');
-    }
-
-    public function sshLogins(Request $request): Response
-    {
         return $this->page($request, 'SshLogins');
     }
 

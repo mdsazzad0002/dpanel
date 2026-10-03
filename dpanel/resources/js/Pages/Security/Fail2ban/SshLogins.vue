@@ -1,7 +1,9 @@
 <script setup>
 import { onMounted } from 'vue';
 import Fail2banShell from './components/Fail2banShell.vue';
+import SshPolicyCard from './components/SshPolicyCard.vue';
 import SshLoginHistory from './components/SshLoginHistory.vue';
+import BannedIpList from './components/BannedIpList.vue';
 import { useFail2ban } from './useFail2ban';
 
 const props = defineProps({
@@ -9,7 +11,7 @@ const props = defineProps({
 });
 
 const {
-    status, loading, loadError, busy, message, load,
+    status, loading, loadError, busy, message, load, savePolicy, whitelistAdd,
     history, historyLoading, historyError, loadHistory, unban, ban,
 } = useFail2ban(props.clientIp);
 
@@ -32,6 +34,13 @@ onMounted(refresh);
         :refreshing="busy === 'refresh'"
         @refresh="refresh"
     >
+        <SshPolicyCard
+            v-if="status.running"
+            :policy="status.policy"
+            :busy="busy === 'policy'"
+            @save="savePolicy"
+        />
+
         <SshLoginHistory
             :events="history"
             :jails="status.jails"
@@ -43,6 +52,16 @@ onMounted(refresh);
             @unban="unban"
             @ban="ban"
             @refresh="loadHistory"
+        />
+
+        <BannedIpList
+            :jails="status.jails"
+            :whitelist="status.whitelist"
+            :client-ip="props.clientIp"
+            :loading="loading"
+            :busy="busy"
+            @unban="unban"
+            @whitelist="whitelistAdd"
         />
     </Fail2banShell>
 </template>
