@@ -818,6 +818,9 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller|general|general_user')
                 ->whereNumber('finding')
                 ->name('security.center.findings.status');
+            Route::delete('/security/center/findings', [SecurityCenterController::class, 'destroyFindings'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('security.center.findings.destroy');
             Route::post('/security/center/rules/{rule}/toggle', [SecurityCenterController::class, 'toggleRule'])
                 ->middleware('role:admin')
                 ->where('rule', 'DP-[A-Z]+-[0-9]+')

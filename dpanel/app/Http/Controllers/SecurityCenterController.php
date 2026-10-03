@@ -203,6 +203,32 @@ class SecurityCenterController extends Controller
         return response()->json(['success' => true, 'finding' => $this->presentFinding($model->load('website:id,domain'))]);
     }
 
+    /**
+     * Deletes the chosen findings. A finding whose problem is still there comes
+     * back on the next scan, so this clears noise, it does not fix anything.
+     */
+    public function destroyFindings(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:500'],
+            'ids.*' => ['integer'],
+        ]);
+        $websiteIds = $this->websiteIds($request->user());
+
+        $deleted = SecurityFinding::query()
+            ->whereIn('id', $data['ids'])
+            // Non-admins only reach their own websites' findings, never server ones.
+            ->when($websiteIds !== null, fn ($q) => $q->whereIn('website_id', $websiteIds))
+            ->delete();
+        $this->scores->record();
+
+        return response()->json([
+            'success' => true,
+            'deleted' => $deleted,
+            'message' => $deleted.' finding'.($deleted === 1 ? '' : 's').' deleted.',
+        ]);
+    }
+
     public function toggleRule(Request $request, string $token, string $rule): JsonResponse
     {
         $data = $request->validate(['enabled' => ['required', 'boolean']]);

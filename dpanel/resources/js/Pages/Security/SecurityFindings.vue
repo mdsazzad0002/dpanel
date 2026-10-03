@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import FindingsBulkBar from './components/FindingsBulkBar.vue';
 
 const props = defineProps({
     findings: { type: Object, required: true },
@@ -29,6 +30,43 @@ const rows = ref(props.findings.data.map((finding) => ({ ...finding })));
 const expanded = ref(null);
 const busy = ref(null);
 const message = ref(null);
+const total = ref(props.findings.total);
+const selected = ref(new Set());
+const deleting = ref(false);
+
+const allSelected = computed(() => rows.value.length > 0 && rows.value.every((finding) => selected.value.has(finding.id)));
+
+const toggle = (id) => {
+    const next = new Set(selected.value);
+    next.has(id) ? next.delete(id) : next.add(id);
+    selected.value = next;
+};
+const toggleAll = () => {
+    selected.value = allSelected.value ? new Set() : new Set(rows.value.map((finding) => finding.id));
+};
+
+const deleteSelected = async () => {
+    const ids = [...selected.value];
+    if (!confirm(`Delete ${ids.length} finding${ids.length === 1 ? '' : 's'}? A problem that is still there will be reported again on the next scan.`)) return;
+    deleting.value = true;
+    message.value = null;
+    try {
+        const { data } = await axios.delete(panelRoute('security.center.findings.destroy'), { data: { ids } });
+        rows.value = rows.value.filter((finding) => !selected.value.has(finding.id));
+        total.value = Math.max(0, total.value - data.deleted);
+        selected.value = new Set();
+        // An emptied page with more pages behind it: load the next findings in.
+        if (rows.value.length === 0 && total.value > 0) {
+            router.reload({ preserveState: false });
+            return;
+        }
+        message.value = { type: 'success', text: data.message };
+    } catch (e) {
+        message.value = { type: 'error', text: e.response?.data?.message || 'Could not delete the findings.' };
+    } finally {
+        deleting.value = false;
+    }
+};
 
 const severityStyles = {
     critical: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
@@ -67,7 +105,7 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 class="text-lg font-semibold">Security Findings</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ findings.total }} finding(s) match the filters.</p>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ total }} finding(s) match the filters.</p>
                 </div>
                 <Link :href="panelRoute('security.center')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
                     Back to Security Center
@@ -76,7 +114,7 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
         </template>
 
         <div class="space-y-4">
-            <div v-if="message" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            <div v-if="message" :class="message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'" class="rounded-md border px-4 py-3 text-sm">
                 {{ message.text }}
             </div>
 
@@ -119,10 +157,15 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
                 <button type="submit" class="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">Apply</button>
             </form>
 
+            <FindingsBulkBar v-if="selected.size" :count="selected.size" :busy="deleting" @delete="deleteSelected" @clear="selected = new Set()" />
+
             <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800">
                         <tr>
+                            <th class="w-8 px-4 py-3">
+                                <input type="checkbox" :checked="allSelected" :disabled="!rows.length" title="Select all findings on this page" class="rounded border-slate-300 dark:border-slate-600" @change="toggleAll">
+                            </th>
                             <th class="px-4 py-3">Severity</th>
                             <th class="px-4 py-3">Finding</th>
                             <th class="px-4 py-3">Target</th>
@@ -133,7 +176,10 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
                     </thead>
                     <tbody>
                         <template v-for="finding in rows" :key="finding.id">
-                            <tr class="cursor-pointer border-t border-slate-200 align-top hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50" @click="expanded = expanded === finding.id ? null : finding.id">
+                            <tr :class="selected.has(finding.id) ? 'bg-blue-50/60 dark:bg-blue-950/30' : ''" class="cursor-pointer border-t border-slate-200 align-top hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50" @click="expanded = expanded === finding.id ? null : finding.id">
+                                <td class="px-4 py-3" @click.stop>
+                                    <input type="checkbox" :checked="selected.has(finding.id)" class="rounded border-slate-300 dark:border-slate-600" @change="toggle(finding.id)">
+                                </td>
                                 <td class="px-4 py-3"><span class="rounded-full px-2 py-0.5 text-xs capitalize" :class="severityStyles[finding.severity]">{{ finding.severity }}</span></td>
                                 <td class="px-4 py-3">
                                     <p class="font-medium">{{ finding.title }}</p>
@@ -151,7 +197,7 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
                                 </td>
                             </tr>
                             <tr v-if="expanded === finding.id" class="bg-slate-50 dark:bg-slate-800/40">
-                                <td colspan="6" class="px-4 py-3 text-sm">
+                                <td colspan="7" class="px-4 py-3 text-sm">
                                     <p>{{ finding.description }}</p>
                                     <pre v-if="finding.evidence" class="mt-2 overflow-x-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">{{ finding.evidence }}</pre>
                                     <p v-if="finding.recommendation" class="mt-2"><span class="font-semibold">Recommendation:</span> {{ finding.recommendation }}</p>
@@ -163,7 +209,7 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
                             </tr>
                         </template>
                         <tr v-if="rows.length === 0">
-                            <td colspan="6" class="px-4 py-6 text-center text-slate-500">No findings match these filters.</td>
+                            <td colspan="7" class="px-4 py-6 text-center text-slate-500">No findings match these filters.</td>
                         </tr>
                     </tbody>
                 </table>
