@@ -272,7 +272,7 @@ run_interactive_menu() {
     printf '10) fail2ban install | dpanel module fail2ban install\n'
     printf '11) SSL menu | dpanel module ssl install / dpanel script run issue-ssl <domain> <root>\n'
     printf '12) Rust/Drust menu | bash /var/www/drust/deploy/install-service.sh\n'
-    printf '13) Mail menu | apt install postfix dovecot-core / systemctl restart postfix dovecot\n'
+    printf '13) Mail menu | apt install postfix dovecot-core / systemctl restart postfix dovecot / dpanel mail:ip\n'
     printf '14) nodejs install | install package: nodejs\n'
     printf '15) User menu | dpanel filemanager user ensure <user> --home <path> --shell <shell>\n'
     printf '16) Security menu | passwd root / dpanel script run disable-root-login\n'
@@ -434,11 +434,16 @@ run_interactive_menu() {
         fi
         ;;
       9)
+        if confirm_action "Install DNS/53" "module dns install"; then
+          dscript_cli module dns install
+        fi
+        ;;
+      10)
         if confirm_action "Install fail2ban" "module fail2ban install"; then
           dscript_cli module fail2ban install
         fi
         ;;
-      10)
+      11)
         while true; do
           printf '\n'
           printf 'SSL menu\n'
@@ -476,7 +481,7 @@ run_interactive_menu() {
           esac
         done
         ;;
-      11)
+      12)
         while true; do
           printf '\n'
           printf 'Rust/Drust menu\n'
@@ -513,7 +518,7 @@ run_interactive_menu() {
           esac
         done
         ;;
-      12)
+      13)
         while true; do
           printf '\n'
           printf 'Mail menu\n'
@@ -524,6 +529,8 @@ run_interactive_menu() {
           printf '4) Restart dovecot | systemctl restart dovecot\n'
           printf '5) Status postfix | systemctl status postfix --no-pager\n'
           printf '6) Status dovecot | systemctl status dovecot --no-pager\n'
+          printf '7) Show mail server IP | dpanel mail:ip\n'
+          printf '8) Change mail server IP | dpanel mail:ip <ip> / dpanel mail:ip --detect\n'
           printf '0) Back\n'
           printf 'Select option: '
           read -r mail_choice
@@ -551,17 +558,26 @@ run_interactive_menu() {
               ;;
             5) systemctl status postfix --no-pager ;;
             6) systemctl status dovecot --no-pager ;;
+            7) dscript_cli mail:ip ;;
+            8)
+              printf 'New public IP (blank = detect automatically): '
+              read -r mail_ip
+              mail_ip="${mail_ip:---detect}"
+              if confirm_action "Change mail server IP" "dpanel mail:ip ${mail_ip}"; then
+                dscript_cli mail:ip "$mail_ip"
+              fi
+              ;;
             0) break ;;
             *) printf 'Invalid option.\n' ;;
           esac
         done
         ;;
-      13)
+      14)
         if confirm_action "Install nodejs" "install package: nodejs"; then
           install_node_runtime
         fi
         ;;
-      14)
+      15)
         while true; do
           printf '\n'
           printf 'User menu\n'
@@ -599,7 +615,7 @@ run_interactive_menu() {
           esac
         done
         ;;
-      15)
+      16)
         while true; do
           printf '\n'
           printf 'Security menu\n'
@@ -626,7 +642,7 @@ run_interactive_menu() {
           esac
         done
         ;;
-      16)
+      17)
         local permission_fix_scope permission_fix_path permission_fix_user
         if find /home -maxdepth 2 -type d -name public_html -print -quit 2>/dev/null | grep -q .; then
           printf 'Permission fix scope [all/user/path] (default: all): '
@@ -664,12 +680,12 @@ run_interactive_menu() {
             ;;
         esac
         ;;
-      17) dscript_cli module list ;;
-      18) dscript_cli script list ;;
-      19) dscript_cli runtime refresh ;;
-      20) dscript_cli link ;;
-      21) dscript_cli doctor ;;
-      22) dscript_cli help ;;
+      18) dscript_cli module list ;;
+      19) dscript_cli script list ;;
+      20) dscript_cli runtime refresh ;;
+      21) dscript_cli link ;;
+      22) dscript_cli doctor ;;
+      23) dscript_cli help ;;
       0) return 0 ;;
       *) printf 'Invalid option.\n' ;;
     esac

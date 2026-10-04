@@ -4,6 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import ZoneDrawer from '@/Pages/Dns/components/ZoneDrawer.vue';
 import ZoneSettingsForm from '@/Pages/Dns/components/ZoneSettingsForm.vue';
 import ConnectionBadge from '@/Pages/Dns/components/ConnectionBadge.vue';
+import ZoneFindReplace from '@/Pages/Dns/components/ZoneFindReplace.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -25,6 +26,8 @@ const search = ref('');
 const openDomain = ref('');
 const autoScan = ref(false);
 const adding = ref(false);
+// null: closed; '' : all zones; a zone id: that zone.
+const replacing = ref(null);
 const connections = ref({});
 const checking = ref(false);
 
@@ -75,7 +78,10 @@ const created = ({ domains, scan }) => {
                     <h1 class="text-lg font-semibold">DNS Zones</h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">{{ dnsProviderLabel }} · {{ dnsEngine }} · {{ authoritativeMode }}</p>
                 </div>
-                <button type="button" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="adding = true">+ Add domains</button>
+                <div class="flex items-center gap-2">
+                    <button v-if="zones.length" type="button" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="replacing = ''">Find &amp; replace</button>
+                    <button type="button" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="adding = true">+ Add domains</button>
+                </div>
             </div>
         </template>
 
@@ -143,6 +149,8 @@ const created = ({ domains, scan }) => {
             :auto-scan="autoScan"
             @close="openDomain = ''"
             @recheck="checkConnections"
+            @find-replace="replacing = openZone.zone_uuid || ''"
         />
+        <ZoneFindReplace v-if="replacing !== null" :zones="zones" :zone-id="replacing" :panel-route="panelRoute" @close="replacing = null" />
     </AuthenticatedLayout>
 </template>

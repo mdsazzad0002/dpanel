@@ -16,7 +16,7 @@ const props = defineProps({
     panelRoute: { type: Function, required: true },
     autoScan: { type: Boolean, default: false },
 });
-const emit = defineEmits(['close', 'recheck']);
+const emit = defineEmits(['close', 'recheck', 'find-replace']);
 
 const panel = ref('');
 const copied = ref('');
@@ -64,6 +64,7 @@ const deleteZone = () => {
                 <div class="flex flex-wrap items-center gap-2">
                     <button type="button" class="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700" @click="panel = 'scan'">Scan existing records</button>
                     <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="panel = 'file'">Import zone file</button>
+                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="emit('find-replace')">Find &amp; replace</button>
                     <a :href="panelRoute('dns.zones.export', { id: zoneId })" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Export</a>
                     <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="panel = 'settings'">Settings</button>
                     <button type="button" class="rounded-md border border-red-300 px-3 py-2 text-xs text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950" @click="deleteZone">Delete zone</button>

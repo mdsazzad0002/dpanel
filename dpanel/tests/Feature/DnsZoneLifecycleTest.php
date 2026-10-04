@@ -285,6 +285,69 @@ class DnsZoneLifecycleTest extends TestCase
         $this->assertSame(['added' => 0, 'replaced' => 0, 'unchanged' => 3], array_diff_key($again, ['skipped' => true]));
     }
 
+    public function test_record_content_is_found_and_replaced_after_a_preview(): void
+    {
+        $this->createZone('one.test');
+        $this->createZone('two.test');
+        foreach ([
+            ['one.test', 'A', '@', '203.0.113.10'],
+            ['one.test', 'A', 'old', '203.0.113.100'],
+            ['one.test', 'TXT', '@', 'v=spf1 ip4:203.0.113.10 mx -all'],
+            ['two.test', 'A', 'www', '203.0.113.10'],
+            ['two.test', 'CNAME', 'blog', 'host.203.0.113.10.example.net'],
+        ] as [$zone, $type, $name, $content]) {
+            $this->request()->post("/cpsess{$this->token}/dns/records", [
+                'zone_domain' => $zone, 'type' => $type, 'name' => $name,
+                'content' => $content, 'ttl' => 300, 'priority' => null, 'status' => 'active',
+            ])->assertSessionHasNoErrors();
+        }
+        $serial = fn (string $zone) => (int) explode(' ', DB::table('records')->where('type', 'SOA')->where('name', $zone)->value('content'))[2];
+        $before = $serial('two.test');
+        $search = ['find' => '203.0.113.10', 'replace' => '198.51.100.20', 'mode' => 'word', 'match_case' => false, 'types' => ['A', 'TXT']];
+
+        $preview = $this->request()->postJson("/cpsess{$this->token}/dns/zones/find-replace/preview", $search)->assertOk();
+        $changes = collect($preview->json('changes'));
+        // Whole-word matching leaves 203.0.113.100 alone; the type filter leaves the CNAME alone.
+        $this->assertSame(['one.test A', 'one.test TXT', 'www.two.test A'], $changes->map(fn ($c) => "{$c['name']} {$c['type']}")->sort()->values()->all());
+        $this->assertSame('"v=spf1 ip4:198.51.100.20 mx -all"', $changes->firstWhere('type', 'TXT')['after']);
+        $this->assertSame('203.0.113.10', DB::table('records')->where('name', 'one.test')->where('type', 'A')->value('content'));
+
+        // Only the picked records change.
+        $picked = $changes->reject(fn ($c) => $c['name'] === 'www.two.test')->pluck('id')->all();
+        $this->request()->post("/cpsess{$this->token}/dns/zones/find-replace", $search + ['record_ids' => $picked])
+            ->assertSessionHas('success', 'Updated 2 records in 1 zone.');
+        $this->assertSame('198.51.100.20', DB::table('records')->where('name', 'one.test')->where('type', 'A')->value('content'));
+        $this->assertSame('"v=spf1 ip4:198.51.100.20 mx -all"', DB::table('dns_records')->where('type', 'TXT')->value('content'));
+        $this->assertSame('203.0.113.100', DB::table('records')->where('name', 'old.one.test')->value('content'));
+        $this->assertSame('203.0.113.10', DB::table('records')->where('name', 'www.two.test')->value('content'));
+        $this->assertSame($before, $serial('two.test'));
+
+        // A value that is not valid for the record type is reported, not saved.
+        $bad = $this->request()->postJson("/cpsess{$this->token}/dns/zones/find-replace/preview", ['find' => '203.0.113.10', 'replace' => 'not-an-ip', 'mode' => 'exact', 'types' => ['A']]);
+        $this->assertNotNull($bad->json('changes.0.error'));
+        $this->request()->post("/cpsess{$this->token}/dns/zones/find-replace", ['find' => '203.0.113.10', 'replace' => 'not-an-ip', 'mode' => 'exact', 'types' => ['A'], 'record_ids' => [$bad->json('changes.0.id')]])
+            ->assertSessionHas('error');
+        $this->assertSame('203.0.113.10', DB::table('records')->where('name', 'www.two.test')->value('content'));
+    }
+
+    public function test_find_and_replace_only_reaches_the_users_own_zones(): void
+    {
+        $this->createZone('mine.test');
+        $this->request()->post("/cpsess{$this->token}/dns/records", [
+            'zone_domain' => 'mine.test', 'type' => 'A', 'name' => '@',
+            'content' => '203.0.113.10', 'ttl' => 300, 'priority' => null, 'status' => 'active',
+        ])->assertSessionHasNoErrors();
+        $recordId = (int) DB::table('records')->where('type', 'A')->value('id');
+        $this->admin = User::factory()->create();
+        $this->admin->assignRole('general');
+
+        $this->request()->postJson("/cpsess{$this->token}/dns/zones/find-replace/preview", ['find' => '203.0.113.10', 'replace' => '198.51.100.20', 'mode' => 'word'])
+            ->assertOk()->assertJsonPath('changes', []);
+        $this->request()->post("/cpsess{$this->token}/dns/zones/find-replace", ['find' => '203.0.113.10', 'replace' => '198.51.100.20', 'mode' => 'word', 'record_ids' => [$recordId]])
+            ->assertSessionHas('error');
+        $this->assertSame('203.0.113.10', DB::table('records')->where('id', $recordId)->value('content'));
+    }
+
     private function request(): static
     {
         return $this

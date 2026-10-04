@@ -33,6 +33,7 @@ Commands:
   filemanager <action> <args>   Run file-manager operations
   ssh <action> [value]          Install and manage SSH safely
   firewall <action> [value]     Inspect and manage UFW safely
+  mail:ip [<ip>|--detect]       Show or change the mail server public IP
   script <list|help|run> [...]  List or run maintenance shell scripts
   doctor [--fix]                Diagnose dscript and its host dependencies
   info                           Show server and installed-module information
@@ -191,6 +192,7 @@ database-request|Create, update, delete or test a MariaDB database request|<acti
 disable-root-login|Disable SSH root login through the drust execution API|
 set-system-user-password|Change a Linux/system user shell password through drust|<username> [password]
 set-panel-domain|Update panel domain metadata, .env and web-stack config|<domain> [port] [--alias domain] [--no-web-stack]
+set-mail-server-ip|Show or change the public IP used for mail DNS records|[<ip> | --detect]
 fix-permissions|Repair file ownership and writable paths through drust|[--all] [--user USERNAME] [--path PATH]
 fix-dpanel-root|Repair the local panel web-stack configuration|[domain] [options]
 fix-panel-web-stack|Repair panel web configuration through drust|<domain> [options]
@@ -219,7 +221,7 @@ dscript_script_path() {
     script_root="${DPANEL_RUNTIME_DIR}/scripts"
   fi
   case "$name" in
-    configure-phpmyadmin-signon|reconcile-system-records|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-drust|reset-web-stack|sync-vhost)
+    configure-phpmyadmin-signon|reconcile-system-records|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|set-mail-server-ip|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-drust|reset-web-stack|sync-vhost)
       printf '%s/%s.sh' "$script_root" "$name"
       ;;
     *) printf '%s' '' ;;
@@ -592,6 +594,7 @@ dscript_cli() {
     user:create) dscript_run_script create-admin-user "$@" ;;
     user:password) dscript_run_script set-system-user-password "$@" ;;
     panel:domain) dscript_run_script set-panel-domain "$@" ;;
+    mail:ip) dscript_run_script set-mail-server-ip "$@" ;;
     panel:admin) dscript_run_script create-admin-user "$@" ;;
     repair:permissions) dscript_run_script fix-permissions "$@" ;;
     ssh:disable-root) dscript_run_script disable-root-login "$@" ;;
