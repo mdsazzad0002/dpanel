@@ -104,6 +104,9 @@ class MailDnsRecords
             $name = $host === $domain ? '@' : substr($host, 0, -strlen('.'.$domain));
             $records[] = ['type' => 'A', 'name' => $name, 'value' => $this->serverIp(), 'priority' => null, 'purpose' => 'Mail server hostname'];
         }
+        if ($host !== $domain && $this->resolvesOnlyByWildcard($domain)) {
+            $records[] = ['type' => 'A', 'name' => '@', 'value' => $this->serverIp(), 'priority' => null, 'purpose' => 'Website address: the MX and SPF records below stop the *.'.substr($domain, strpos($domain, '.') + 1).' wildcard from answering for '.$domain];
+        }
 
         return [
             ...$records,
@@ -112,5 +115,32 @@ class MailDnsRecords
             ['type' => 'TXT', 'name' => $selector.'._domainkey', 'value' => $dkimPublicKey !== '' ? 'v=DKIM1; k=rsa; p='.$dkimPublicKey : '', 'priority' => null, 'purpose' => 'DKIM signature verification'],
             ['type' => 'TXT', 'name' => '_dmarc', 'value' => 'v=DMARC1; p=none; rua=mailto:postmaster@'.$domain.'; adkim=r; aspf=r', 'priority' => null, 'purpose' => 'Monitor SPF/DKIM alignment'],
         ];
+    }
+
+    /**
+     * True when a parent wildcard is what answers A for $domain (or nothing
+     * does yet). Any record at a name hides the wildcard for every type, so
+     * adding MX/TXT there leaves the website without an address.
+     */
+    private function resolvesOnlyByWildcard(string $domain): bool
+    {
+        if (substr_count($domain, '.') < 2) {
+            return false;
+        }
+        $wildcard = '*.'.substr($domain, strpos($domain, '.') + 1);
+        $dns = app(PublicDnsLookup::class);
+        $dns->prefetch([[$wildcard, 'A'], [$domain, 'A']]);
+        if ($dns->failed($wildcard, 'A') || $dns->failed($domain, 'A')) {
+            return false;
+        }
+        $wildcardIps = $dns->a($wildcard);
+        if ($wildcardIps === []) {
+            return false;
+        }
+        $own = $dns->a($domain);
+        sort($wildcardIps);
+        sort($own);
+
+        return $own === [] || $own === $wildcardIps;
     }
 }

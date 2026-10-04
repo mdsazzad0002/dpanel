@@ -52,6 +52,32 @@ class MailDnsRecordsTest extends TestCase
         $this->assertSame('mail.panel.example.com', (new MailDnsRecords)->mailHost());
     }
 
+    public function test_a_subdomain_served_by_a_wildcard_gets_its_own_a_record(): void
+    {
+        config(['serverpanel.mail.hostname' => 'mail.panel.example.com', 'serverpanel.mail.server_ip' => '203.0.113.5']);
+        $this->app->instance(PublicDnsLookup::class, new FakeDns([
+            'A mail.panel.example.com' => ['203.0.113.5'],
+            'A *.panel.example.com' => ['203.0.113.5'],
+            'A shop.panel.example.com' => ['203.0.113.5'],
+        ]));
+        $records = collect((new MailDnsRecords)->records('shop.panel.example.com', 'default', ''))->keyBy(fn ($r) => $r['type'].' '.$r['name']);
+
+        $this->assertSame('203.0.113.5', $records['A @']['value']);
+    }
+
+    public function test_a_subdomain_with_its_own_address_gets_no_extra_a_record(): void
+    {
+        config(['serverpanel.mail.hostname' => 'mail.panel.example.com', 'serverpanel.mail.server_ip' => '203.0.113.5']);
+        $this->app->instance(PublicDnsLookup::class, new FakeDns([
+            'A mail.panel.example.com' => ['203.0.113.5'],
+            'A *.panel.example.com' => ['203.0.113.5'],
+            'A shop.panel.example.com' => ['198.51.100.9'],
+        ]));
+        $records = collect((new MailDnsRecords)->records('shop.panel.example.com', 'default', ''))->keyBy(fn ($r) => $r['type'].' '.$r['name']);
+
+        $this->assertFalse($records->has('A @'));
+    }
+
     public function test_ipv6_server_uses_ip6_in_spf(): void
     {
         config(['serverpanel.mail.hostname' => 'panel.example.com', 'serverpanel.mail.server_ip' => '2001:db8::5']);
