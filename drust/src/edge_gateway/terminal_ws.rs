@@ -185,6 +185,7 @@ async fn run_terminal(mut socket: WebSocket, ticket: TerminalTicket) {
             _ = &mut idle => { let _ = sender.send(Message::Text("\r\n[session closed after 3 minutes of inactivity]\r\n".into())).await; break; }
         }
     }
+    let _ = sender.send(Message::Close(None)).await;
     let _ = child.kill();
     if let Ok(status) = child.wait() {
         if !status.success() {
