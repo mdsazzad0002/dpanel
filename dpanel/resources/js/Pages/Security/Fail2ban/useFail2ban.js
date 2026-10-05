@@ -37,6 +37,8 @@ export function useFail2ban(clientIp = '') {
     const history = ref([]);
     const historyLoading = ref(true);
     const historyError = ref('');
+    // Rows deleted from the view; the journal itself is never touched.
+    const historyHidden = ref(0);
 
     const loadHistory = async () => {
         historyLoading.value = true;
@@ -44,6 +46,7 @@ export function useFail2ban(clientIp = '') {
         try {
             const { data } = await axios.get(panelRoute('security.fail2ban.history'));
             history.value = data.data.events || [];
+            historyHidden.value = data.data.hidden || 0;
         } catch (e) {
             historyError.value = e.response?.data?.message || 'Could not load SSH login history.';
         } finally {
@@ -73,12 +76,38 @@ export function useFail2ban(clientIp = '') {
     };
     const bulk = (action, ips) => {
         if (!ips.length) return;
+        const count = `${ips.length} IP${ips.length === 1 ? '' : 's'}`;
         if (action === 'ban') {
             const warning = ips.includes(clientIp) ? ' Your own IP is in the selection: you will lose SSH access until you unblock it.' : '';
-            if (!confirm(`Block ${ips.length} IP${ips.length === 1 ? '' : 's'} from SSH permanently?${warning}`)) return;
+            if (!confirm(`Block ${count} from SSH permanently?${warning}`)) return;
         }
+        if (action === 'whitelist_add' && !confirm(`Whitelist ${count}? fail2ban will never block them, and any current block is lifted.`)) return;
         act(() => axios.post(panelRoute('security.fail2ban.bulk'), { action, ips }), 'bulk');
     };
+    // History changes return no fail2ban status, so they reload the history instead.
+    const changeHistory = async (name, payload = {}) => {
+        busy.value = 'history';
+        message.value = null;
+        try {
+            const { data } = await axios.post(panelRoute(`security.fail2ban.history.${name}`), payload);
+            message.value = { type: 'success', text: data.message };
+            await loadHistory();
+        } catch (e) {
+            message.value = { type: 'error', text: e.response?.data?.message || 'Request failed.' };
+        } finally {
+            busy.value = '';
+        }
+    };
+    const deleteHistory = (ips) => {
+        if (!ips.length) return;
+        if (!confirm(`Delete the login history of ${ips.length} IP${ips.length === 1 ? '' : 's'}? Blocks and the whitelist stay as they are, and new attempts from these IPs still show.`)) return;
+        changeHistory('delete', { ips });
+    };
+    const clearHistory = () => {
+        if (!confirm('Clear the whole SSH login history? Blocks and the whitelist stay as they are; only logins after now will show.')) return;
+        changeHistory('clear');
+    };
+    const restoreHistory = () => changeHistory('restore');
     const savePolicy = (maxRetry) => act(() => axios.post(panelRoute('security.fail2ban.policy'), { max_retry: maxRetry }), 'policy');
     const whitelistAdd = (ip) => act(() => axios.post(panelRoute('security.fail2ban.whitelist.store'), { ip }), ip);
     const whitelistRemove = (ip) => {
@@ -88,7 +117,8 @@ export function useFail2ban(clientIp = '') {
 
     return {
         status, loading, loadError, busy, message, load,
-        history, historyLoading, historyError, loadHistory,
+        history, historyLoading, historyError, historyHidden, loadHistory,
+        deleteHistory, clearHistory, restoreHistory,
         unban, ban, bulk, savePolicy, whitelistAdd, whitelistRemove,
     };
 }

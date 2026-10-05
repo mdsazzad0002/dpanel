@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ActivityLog;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
@@ -48,6 +49,11 @@ class Fail2banControllerTest extends TestCase
             $table->json('properties')->nullable();
             $table->string('ip_address', 45)->nullable();
             $table->string('user_agent')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('security_settings', function (Blueprint $table) {
+            $table->string('setting_key')->primary();
+            $table->longText('setting_value');
             $table->timestamps();
         });
         $this->admin = User::factory()->create();
@@ -144,6 +150,64 @@ class Fail2banControllerTest extends TestCase
             ->postJson("/cpsess{$this->token}/security/fail2ban/bulk", ['action' => 'whitelist_remove', 'ips' => ['203.0.113.7']])
             ->assertStatus(422);
         Http::assertNothingSent();
+    }
+
+    public function test_bulk_whitelist_sends_each_ip(): void
+    {
+        Http::fake(['drust.test/api/v1/fail2ban' => Http::response(['success' => true, 'data' => $this->status])]);
+
+        $this->request()
+            ->postJson("/cpsess{$this->token}/security/fail2ban/bulk", ['action' => 'whitelist_add', 'ips' => ['198.51.100.4', '198.51.100.5']])
+            ->assertOk()
+            ->assertJsonPath('message', '2 IPs whitelisted.');
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn ($request) => $request['action'] === 'whitelist_add' && $request['ip'] === '198.51.100.5');
+        $this->assertSame('fail2ban.bulk_whitelist_add', ActivityLog::query()->sole()->action);
+    }
+
+    public function test_deleted_history_rows_stay_hidden_until_a_newer_attempt(): void
+    {
+        Carbon::setTestNow(Carbon::createFromTimestamp(2000));
+        $events = [
+            ['time' => 1500, 'result' => 'failed', 'method' => 'password', 'user' => 'root', 'ip' => '203.0.113.7'],
+            ['time' => 1400, 'result' => 'accepted', 'method' => 'password', 'user' => 'me', 'ip' => '198.51.100.4'],
+        ];
+        Http::fake(['drust.test/api/v1/fail2ban/ssh-history' => function () use (&$events) {
+            return Http::response(['success' => true, 'data' => ['events' => $events, 'limit' => 500]]);
+        }]);
+        $history = fn () => $this->request()->getJson("/cpsess{$this->token}/security/fail2ban/ssh-history")->assertOk();
+
+        $this->request()
+            ->postJson("/cpsess{$this->token}/security/fail2ban/ssh-history/delete", ['ips' => ['203.0.113.7']])
+            ->assertOk()
+            ->assertJsonPath('message', '1 IP removed from the login history.');
+        $history()->assertJsonCount(1, 'data.events')
+            ->assertJsonPath('data.events.0.ip', '198.51.100.4')
+            ->assertJsonPath('data.hidden', 1);
+
+        array_unshift($events, ['time' => 2500, 'result' => 'failed', 'method' => 'password', 'user' => 'root', 'ip' => '203.0.113.7']);
+        $history()->assertJsonCount(2, 'data.events')->assertJsonPath('data.events.0.time', 2500);
+
+        Carbon::setTestNow(Carbon::createFromTimestamp(3000));
+        $this->request()->postJson("/cpsess{$this->token}/security/fail2ban/ssh-history/clear")->assertOk();
+        $history()->assertJsonCount(0, 'data.events')->assertJsonPath('data.hidden', 3);
+
+        $this->request()->postJson("/cpsess{$this->token}/security/fail2ban/ssh-history/restore")->assertOk();
+        $history()->assertJsonCount(3, 'data.events')->assertJsonPath('data.hidden', 0);
+
+        $this->assertEqualsCanonicalizing(
+            ['fail2ban.history_delete', 'fail2ban.history_clear', 'fail2ban.history_restore'],
+            ActivityLog::query()->pluck('action')->all(),
+        );
+        Http::assertNotSent(fn ($request) => $request->method() === 'POST');
+    }
+
+    public function test_history_delete_rejects_invalid_ips(): void
+    {
+        $this->request()
+            ->postJson("/cpsess{$this->token}/security/fail2ban/ssh-history/delete", ['ips' => ['1.2.3.4; rm -rf /']])
+            ->assertStatus(422);
     }
 
     public function test_ip_is_required(): void

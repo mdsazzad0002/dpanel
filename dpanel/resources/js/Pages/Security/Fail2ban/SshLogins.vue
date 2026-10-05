@@ -11,7 +11,8 @@ const props = defineProps({
 
 const {
     status, loading, loadError, busy, message, load, savePolicy,
-    history, historyLoading, historyError, loadHistory, unban, ban, bulk,
+    history, historyLoading, historyError, historyHidden, loadHistory, unban, ban, bulk,
+    deleteHistory, clearHistory, restoreHistory,
 } = useFail2ban(props.clientIp);
 
 const refresh = () => {
@@ -47,10 +48,14 @@ onMounted(refresh);
             :client-ip="props.clientIp"
             :loading="historyLoading"
             :error="historyError"
+            :hidden="historyHidden"
             :busy="busy"
             @unban="unban"
             @ban="ban"
             @bulk="bulk"
+            @delete="deleteHistory"
+            @clear="clearHistory"
+            @restore="restoreHistory"
             @refresh="loadHistory"
         />
     </Fail2banShell>

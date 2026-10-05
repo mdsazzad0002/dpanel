@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\ActivityLogService;
 use App\Services\Security\DrustSecurityClient;
+use App\Services\Security\SshHistoryDismissals;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -19,6 +20,7 @@ class Fail2banController extends Controller
     public function __construct(
         private readonly DrustSecurityClient $drust,
         private readonly ActivityLogService $activity,
+        private readonly SshHistoryDismissals $dismissals,
     ) {
     }
 
@@ -56,10 +58,65 @@ class Fail2banController extends Controller
     public function history(): JsonResponse
     {
         try {
-            return response()->json(['success' => true, 'data' => $this->drust->sshHistory()]);
+            $data = $this->drust->sshHistory();
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 502);
         }
+
+        return response()->json([
+            'success' => true,
+            'data' => array_merge($data, $this->dismissals->filter((array) ($data['events'] ?? []))),
+        ]);
+    }
+
+    /**
+     * Deletes the selected IPs' rows from the panel's history view. The system
+     * journal keeps them (fail2ban reads it), and a newer attempt shows again.
+     */
+    public function historyDelete(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ips' => ['required', 'array', 'min:1', 'max:500'],
+            'ips.*' => ['required', 'ip'],
+        ]);
+        $ips = array_values(array_unique($validated['ips']));
+
+        return $this->changeHistory($request, 'fail2ban.history_delete', ['ips' => $ips],
+            fn () => $this->dismissals->dismissIps($ips),
+            count($ips).' IP'.(count($ips) === 1 ? '' : 's').' removed from the login history.');
+    }
+
+    public function historyClear(Request $request): JsonResponse
+    {
+        return $this->changeHistory($request, 'fail2ban.history_clear', [],
+            fn () => $this->dismissals->clearAll(),
+            'Login history cleared. New SSH logins will show here as they happen.');
+    }
+
+    public function historyRestore(Request $request): JsonResponse
+    {
+        return $this->changeHistory($request, 'fail2ban.history_restore', [],
+            fn () => $this->dismissals->restore(),
+            'Deleted login history rows are shown again.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $properties
+     */
+    private function changeHistory(Request $request, string $action, array $properties, callable $change, string $message): JsonResponse
+    {
+        try {
+            $change();
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+        try {
+            $this->activity->log($action, null, $properties, $request);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return response()->json(['success' => true, 'message' => $message]);
     }
 
     public function unban(Request $request): JsonResponse
@@ -105,13 +162,13 @@ class Fail2banController extends Controller
     }
 
     /**
-     * Blocks or unblocks many IPs in one request, so a big selection is not
-     * cut short by the per-minute limit on single actions.
+     * Blocks, unblocks or whitelists many IPs in one request, so a big
+     * selection is not cut short by the per-minute limit on single actions.
      */
     public function bulk(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'action' => ['required', 'in:ban,unban'],
+            'action' => ['required', 'in:ban,unban,whitelist_add'],
             'ips' => ['required', 'array', 'min:1', 'max:100'],
             'ips.*' => ['required', 'string', 'max:64'],
         ]);
@@ -138,7 +195,11 @@ class Fail2banController extends Controller
             report($e);
         }
 
-        $message = count($done).' IP'.(count($done) === 1 ? '' : 's').($action === 'ban' ? ' blocked from SSH.' : ' unblocked.');
+        $message = count($done).' IP'.(count($done) === 1 ? '' : 's').match ($action) {
+            'ban' => ' blocked from SSH.',
+            'unban' => ' unblocked.',
+            'whitelist_add' => ' whitelisted.',
+        };
         if ($failed !== []) {
             $message .= ' Not changed: '.implode('; ', $failed);
         }

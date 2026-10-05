@@ -891,6 +891,15 @@ Route::prefix('cpsess{token}')
             Route::get('/security/fail2ban/ssh-history', [Fail2banController::class, 'history'])
                 ->middleware('role:admin')
                 ->name('security.fail2ban.history');
+            Route::post('/security/fail2ban/ssh-history/delete', [Fail2banController::class, 'historyDelete'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('security.fail2ban.history.delete');
+            Route::post('/security/fail2ban/ssh-history/clear', [Fail2banController::class, 'historyClear'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('security.fail2ban.history.clear');
+            Route::post('/security/fail2ban/ssh-history/restore', [Fail2banController::class, 'historyRestore'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('security.fail2ban.history.restore');
             Route::post('/security/fail2ban/policy', [Fail2banController::class, 'policy'])
                 ->middleware(['role:admin', 'throttle:30,1'])
                 ->name('security.fail2ban.policy');
