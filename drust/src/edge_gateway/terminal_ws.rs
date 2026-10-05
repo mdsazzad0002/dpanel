@@ -79,6 +79,7 @@ pub async fn terminal_socket(
     let mut tickets = state.terminal_tickets.lock().await;
     tickets.retain(|_, value| value.expires_at >= now());
     let Some(ticket) = tickets.remove(&query.ticket) else {
+        tracing::warn!("terminal websocket rejected: unknown or expired ticket");
         return StatusCode::UNAUTHORIZED.into_response();
     };
     drop(tickets);
@@ -102,6 +103,7 @@ pub async fn terminal_socket(
         || !origin_host.eq_ignore_ascii_case(&ticket.host)
         || validate_ticket(&ticket).is_err()
     {
+        tracing::warn!(host, origin_host, expected = %ticket.host, "terminal websocket rejected: host/origin mismatch or invalid ticket");
         return StatusCode::FORBIDDEN.into_response();
     }
     ws.on_upgrade(move |socket| run_terminal(socket, ticket))
@@ -142,9 +144,16 @@ fn now() -> u64 {
         .as_secs()
 }
 
-async fn run_terminal(socket: WebSocket, ticket: TerminalTicket) {
-    let Ok((mut child, mut reader, writer, master, identity_dir)) = spawn_pty(&ticket) else {
-        return;
+async fn run_terminal(mut socket: WebSocket, ticket: TerminalTicket) {
+    let (mut child, mut reader, writer, master, identity_dir) = match spawn_pty(&ticket) {
+        Ok(parts) => parts,
+        Err(error) => {
+            tracing::error!(owner = %ticket.site_owner, %error, "terminal spawn failed");
+            let _ = socket
+                .send(Message::Text(format!("\r\n[terminal failed to start: {error}]\r\n").into()))
+                .await;
+            return;
+        }
     };
     let writer = Arc::new(std::sync::Mutex::new(writer));
     let (output_tx, mut output_rx) = mpsc::channel::<Vec<u8>>(64);
@@ -177,7 +186,11 @@ async fn run_terminal(socket: WebSocket, ticket: TerminalTicket) {
         }
     }
     let _ = child.kill();
-    let _ = child.wait();
+    if let Ok(status) = child.wait() {
+        if !status.success() {
+            tracing::warn!(owner = %ticket.site_owner, ?status, "terminal shell exited with failure");
+        }
+    }
     let _ = fs::remove_dir_all(identity_dir);
 }
 

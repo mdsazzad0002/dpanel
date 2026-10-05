@@ -38,7 +38,7 @@ const connect = async () => {
     socket.onopen = () => { status.value = 'Connected'; fit(); terminal.focus(); };
     socket.onmessage = async (event) => terminal.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data));
     socket.onerror = () => { status.value = 'Connection error'; };
-    socket.onclose = () => { status.value = 'Session closed'; terminal?.write('\r\n[session closed]\r\n'); };
+    socket.onclose = (event) => { status.value = `Session closed (code ${event.code})`; terminal?.write(`\r\n[session closed, code ${event.code}${event.reason ? `: ${event.reason}` : ''}]\r\n`); };
 };
 
 onMounted(async () => {
