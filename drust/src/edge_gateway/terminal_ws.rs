@@ -312,7 +312,6 @@ fn spawn_pty(
             pixel_height: 0,
         })
         .map_err(|e| e.to_string())?;
-    let mut cmd = CommandBuilder::new("runuser");
     // Drop to the site owner's real uid/gid *before* bubblewrap runs, so the
     // unprivileged user namespace bubblewrap creates (--unshare-user) maps
     // that one real uid to itself. Unprivileged user namespaces still get
@@ -321,7 +320,7 @@ fn spawn_pty(
     // its uid map only has an entry for root's own real uid, so every file
     // actually owned by the site owner (not root) resolves to the "nobody"
     // overflow uid inside the sandbox and every access is denied.
-    for arg in [
+    let sandbox = [
         "--preserve-environment",
         "-u",
         &ticket.site_owner,
@@ -412,13 +411,25 @@ fn spawn_pty(
         "--setenv",
         "PS1",
         &prompt,
-        "script",
-        "-qfec",
-        "bash --noprofile --norc -i",
-        "/dev/null",
-    ] {
-        cmd.arg(arg);
+    ];
+    // A sandbox that cannot start (missing bwrap, AppArmor blocking user
+    // namespaces, a missing bind source) exits before the PTY output reaches
+    // the browser, so run it once with `true` and surface its stderr instead.
+    let preflight = match Command::new("runuser").args(sandbox).arg("true").output() {
+        Ok(output) => output,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&identity_dir);
+            return Err(error.to_string());
+        }
+    };
+    if !preflight.status.success() {
+        let _ = fs::remove_dir_all(&identity_dir);
+        let stderr = String::from_utf8_lossy(&preflight.stderr).trim().to_string();
+        return Err(if stderr.is_empty() { format!("sandbox exited with {}", preflight.status) } else { stderr });
     }
+    let mut cmd = CommandBuilder::new("runuser");
+    cmd.args(sandbox);
+    cmd.args(["script", "-qfec", "bash --noprofile --norc -i", "/dev/null"]);
     let child = match pty.slave.spawn_command(cmd) {
         Ok(child) => child,
         Err(error) => {
