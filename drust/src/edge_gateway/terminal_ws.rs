@@ -12,7 +12,7 @@ use axum::{
     Json,
     extract::{
         Query, State, WebSocketUpgrade,
-        ws::{Message, WebSocket},
+        ws::{CloseFrame, Message, WebSocket},
     },
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
@@ -185,13 +185,18 @@ async fn run_terminal(mut socket: WebSocket, ticket: TerminalTicket) {
             _ = &mut idle => { let _ = sender.send(Message::Text("\r\n[session closed after 3 minutes of inactivity]\r\n".into())).await; break; }
         }
     }
-    let _ = sender.send(Message::Close(None)).await;
     let _ = child.kill();
-    if let Ok(status) = child.wait() {
-        if !status.success() {
+    let reason = match child.wait() {
+        Ok(status) if status.success() => "shell exited".to_string(),
+        Ok(status) => {
             tracing::warn!(owner = %ticket.site_owner, ?status, "terminal shell exited with failure");
+            format!("shell exited with status {}", status.exit_code())
         }
-    }
+        Err(error) => format!("shell wait failed: {error}"),
+    };
+    let _ = sender
+        .send(Message::Close(Some(CloseFrame { code: 1000, reason: reason.into() })))
+        .await;
     let _ = fs::remove_dir_all(identity_dir);
 }
 
