@@ -152,6 +152,11 @@ async fn run_terminal(mut socket: WebSocket, ticket: TerminalTicket) {
             let _ = socket
                 .send(Message::Text(format!("\r\n[terminal failed to start: {error}]\r\n").into()))
                 .await;
+            // Close reasons are capped at 123 bytes by the websocket spec.
+            let reason: String = format!("terminal failed to start: {error}").chars().take(100).collect();
+            let _ = socket
+                .send(Message::Close(Some(CloseFrame { code: 1011, reason: reason.into() })))
+                .await;
             return;
         }
     };

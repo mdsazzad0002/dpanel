@@ -218,15 +218,48 @@ read_env_value() {
 # src/edge_gateway/terminal_ws.rs). Without it the shell exits immediately and
 # the browser only sees the websocket drop (code 1006).
 ensure_terminal_sandbox() {
-  command -v bwrap >/dev/null 2>&1 && return 0
-  echo "[drust] Installing bubblewrap for the website terminal."
-  if command -v apt-get >/dev/null 2>&1; then
-    apt_get install -y bubblewrap || { apt_get update && apt_get install -y bubblewrap; } || true
-  elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y bubblewrap || true
+  if ! command -v bwrap >/dev/null 2>&1; then
+    echo "[drust] Installing bubblewrap for the website terminal."
+    if command -v apt-get >/dev/null 2>&1; then
+      apt_get install -y bubblewrap || { apt_get update && apt_get install -y bubblewrap; } || true
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y bubblewrap || true
+    fi
   fi
-  command -v bwrap >/dev/null 2>&1 \
-    || echo "[drust] bubblewrap is unavailable; the website terminal will not work." >&2
+  if ! command -v bwrap >/dev/null 2>&1; then
+    echo "[drust] bubblewrap is unavailable; the website terminal will not work." >&2
+    return 0
+  fi
+  ensure_bwrap_apparmor_profile
+}
+
+# Ubuntu 24.04+ blocks unprivileged user namespaces through AppArmor
+# (bwrap: "setting up uid map: Permission denied"). Newer releases ship
+# Ubuntu's bwrap-userns-restrict profile for this; install the same profile
+# where it is missing. A distro-owned copy is never overwritten.
+ensure_bwrap_apparmor_profile() {
+  local target=/etc/apparmor.d/bwrap-userns-restrict abi
+  [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" == "1" ]] || return 0
+  command -v apparmor_parser >/dev/null 2>&1 || return 0
+  if [[ -f "${target}" ]] && ! grep -q '^# Managed by dpanel' "${target}"; then
+    return 0
+  fi
+  if [[ -f /etc/apparmor.d/abi/5.0 ]]; then
+    abi=5.0
+  elif [[ -f /etc/apparmor.d/abi/4.0 ]]; then
+    abi=4.0
+  else
+    echo "[drust] AppArmor is too old for a bubblewrap userns profile; the website terminal may not work." >&2
+    return 0
+  fi
+  echo "[drust] Installing the bubblewrap AppArmor profile (ABI ${abi}) for the website terminal."
+  sed "s|@ABI@|${abi}|" "${DRUST_ROOT}/deploy/bwrap-userns-restrict.apparmor" > "${target}"
+  chmod 0644 "${target}"
+  if ! apparmor_parser -r "${target}"; then
+    # A profile that fails to parse would also break the next AppArmor reload.
+    rm -f "${target}"
+    echo "[drust] Could not load the bubblewrap AppArmor profile; the website terminal will not work." >&2
+  fi
 }
 
 install_powerdns() {

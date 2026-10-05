@@ -1,0 +1,41 @@
+# Managed by dpanel: Ubuntu's own bwrap-userns-restrict profile (apparmor
+# package, 24.10+), installed on hosts that restrict unprivileged user
+# namespaces but don't ship it, so the website terminal sandbox can start.
+# bwrap may create user namespaces; everything it runs (unpriv_bwrap) has no
+# capabilities. @ABI@ is replaced with the host's AppArmor ABI on install.
+abi <abi/@ABI@>,
+include <tunables/global>
+profile bwrap /usr/bin/bwrap flags=(attach_disconnected,mediate_deleted) {
+  allow capability,
+  allow file rwlkm /{**,},
+  allow network,
+  allow unix,
+  allow ptrace,
+  allow signal,
+  allow mqueue,
+  allow io_uring,
+  allow userns,
+  allow mount,
+  allow umount,
+  allow pivot_root,
+  allow dbus,
+  allow pix /** -> &bwrap//&unpriv_bwrap,
+  include if exists <local/bwrap-userns-restrict>
+}
+profile unpriv_bwrap flags=(attach_disconnected,mediate_deleted) {
+  allow file rwlkm /{**,},
+  allow network,
+  allow unix,
+  allow ptrace,
+  allow signal,
+  allow mqueue,
+  allow io_uring,
+  allow userns,
+  allow mount,
+  allow umount,
+  allow pivot_root,
+  allow dbus,
+  allow pix /** -> &unpriv_bwrap,
+  audit deny capability,
+  include if exists <local/unpriv_bwrap>
+}
