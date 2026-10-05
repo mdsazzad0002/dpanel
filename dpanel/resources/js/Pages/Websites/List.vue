@@ -577,11 +577,12 @@ const saveOwnership = async () => {
                         </div>
 
                         <!-- Right: Actions -->
-                        <div class="flex items-center gap-1.5">
+                        <div class="flex flex-col items-start gap-1 lg:items-end">
+                            <div class="flex flex-wrap items-center gap-1">
                             <button
                                 v-if="canChangeOwner"
                                 type="button"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-[12px] font-medium text-violet-700 transition hover:border-violet-300 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-500/10 dark:text-violet-400"
+                                class="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 transition hover:border-violet-300 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-500/10 dark:text-violet-400"
                                 @click="openOwnership(item, 'owner')"
                             >
                                 <i class="bi bi-person"></i>
@@ -589,7 +590,7 @@ const saveOwnership = async () => {
                             </button>
                             <span
                                 v-else
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-[12px] font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-500/10 dark:text-violet-400"
+                                class="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-500/10 dark:text-violet-400"
                             >
                                 <i class="bi bi-person"></i>
                                 Owner: {{ item.assigned_user_name || 'Admin' }}
@@ -597,7 +598,7 @@ const saveOwnership = async () => {
                             <button
                                 v-if="canChangeReseller"
                                 type="button"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[12px] font-medium text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-400"
+                                class="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-400"
                                 @click="openOwnership(item, 'reseller')"
                             >
                                 <i class="bi bi-person-workspace"></i>
@@ -605,14 +606,16 @@ const saveOwnership = async () => {
                             </button>
                             <span
                                 v-else
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[12px] font-medium text-indigo-700 dark:border-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-400"
+                                class="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 dark:border-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-400"
                             >
                                 <i class="bi bi-person-workspace"></i>
                                 Reseller: {{ item.assigned_reseller_name || 'None' }}
                             </span>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-1">
                             <Link
                                 :href="panelRoute('websites.manage', { id: item.id })"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[12px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:border-blue-700"
+                                class="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:border-blue-700"
                             >
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>
                                 Manage
@@ -620,7 +623,7 @@ const saveOwnership = async () => {
                             <Link
                                 v-if="String(item.id) !== '1'"
                                 :href="panelRoute('websites.filemanager', { id: item.id })"
-                                class="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:border-emerald-700"
+                                class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:border-emerald-700"
                             >
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" /></svg>
                                 Files
@@ -628,7 +631,7 @@ const saveOwnership = async () => {
                             <button
                                 type="button"
                                 :disabled="Boolean(sslLoadingId)"
-                                class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition disabled:opacity-50"
+                                class="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition disabled:opacity-50"
                                 :class="item.enable_ssl
                                     ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'
                                     : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400'"
@@ -641,7 +644,7 @@ const saveOwnership = async () => {
                                 v-if="String(item.id) !== '1'"
                                 type="button"
                                 :disabled="statusForm.processing"
-                                class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition disabled:opacity-50"
+                                class="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition disabled:opacity-50"
                                 :class="String(item.status || '').toLowerCase() === 'disabled'
                                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400'
                                     : 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'"
@@ -652,12 +655,13 @@ const saveOwnership = async () => {
                             <button
                                 v-if="String(item.id) !== '1'"
                                 :disabled="Boolean(deleteLoadingId)"
-                                class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
+                                class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
                                 @click="deleteRequest(item.id)"
                             >
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg>
                                 {{ deleteLoadingId === String(item.id) ? 'Deleting...' : 'Delete' }}
                             </button>
+                            </div>
                         </div>
                     </div>
 
@@ -700,11 +704,11 @@ const saveOwnership = async () => {
                                     </span>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-1.5">
+                            <div class="flex items-center gap-1">
                                 <button
                                     type="button"
                                     :disabled="Boolean(sslLoadingId)"
-                                    class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition disabled:opacity-50"
+                                    class="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition disabled:opacity-50"
                                     :class="alias.enable_ssl
                                         ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'
                                         : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400'"
@@ -715,14 +719,14 @@ const saveOwnership = async () => {
                                 <button
                                     type="button"
                                     :disabled="Boolean(sslLoadingId)"
-                                    class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
                                     @click="issueAliasSsl(alias)"
                                 >
                                     {{ sslLoadingId === String(alias.id) ? 'Issuing...' : 'Issue SSL' }}
                                 </button>
                                 <button
                                     :disabled="Boolean(deleteLoadingId)"
-                                    class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
                                     @click="deleteRequest(alias.id)"
                                 >
                                     {{ deleteLoadingId === String(alias.id) ? 'Deleting...' : 'Delete' }}
