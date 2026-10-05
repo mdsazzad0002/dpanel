@@ -120,7 +120,7 @@ const appName = computed(() => page.props.app?.name ?? 'dPanel');
             <h2>10. Contact Us</h2>
             <p>
                 Questions about these Terms can be directed to
-                <a v-if="contactEmail" :href="`mailto:${contactEmail}`">{{ contactEmail }}</a><span v-else>the administrator of this panel</span>.
+                <a v-if="contactEmail" :href="`mailto:dev@dengrweb.com`">dev@dengrweb.com</a><span v-else>the administrator of this panel</span>.
             </p>
         </section>
 
