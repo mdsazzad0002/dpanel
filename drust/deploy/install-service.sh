@@ -214,6 +214,21 @@ read_env_value() {
   printf '%s' "${value}"
 }
 
+# The website terminal runs each shell inside bubblewrap (see
+# src/edge_gateway/terminal_ws.rs). Without it the shell exits immediately and
+# the browser only sees the websocket drop (code 1006).
+ensure_terminal_sandbox() {
+  command -v bwrap >/dev/null 2>&1 && return 0
+  echo "[drust] Installing bubblewrap for the website terminal."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt_get install -y bubblewrap || { apt_get update && apt_get install -y bubblewrap; } || true
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y bubblewrap || true
+  fi
+  command -v bwrap >/dev/null 2>&1 \
+    || echo "[drust] bubblewrap is unavailable; the website terminal will not work." >&2
+}
+
 install_powerdns() {
   local laravel_env="${DPANEL_ROOT}/.env"
   if [[ ! -f "${laravel_env}" ]]; then
@@ -364,6 +379,7 @@ if [[ -f "${LARAVEL_ENV}" ]]; then
 fi
 
 install_powerdns
+ensure_terminal_sandbox
 
 # Parallel codegen is what makes rustc peak; on a small VPS that peak is an
 # OOM kill. One job is slower but finishes on a 1 GB machine.
