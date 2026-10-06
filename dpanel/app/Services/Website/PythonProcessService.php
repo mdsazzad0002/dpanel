@@ -38,8 +38,12 @@ class PythonProcessService
             throw new \RuntimeException((string) ($json['message'] ?? $response->body() ?: 'Python process control request failed.'));
         }
 
+        // The gateway routes a site to its app only while the status is not
+        // "stopped", so every status change must reload it: otherwise a start
+        // after a stop keeps serving the static "Website root not ready" page.
         if (in_array($action, ['start', 'restart'], true)) {
             $website->forceFill(['python_process_status' => 'running'])->saveQuietly();
+            $this->reloadGateway($website);
         } elseif ($action === 'stop') {
             $website->forceFill(['python_process_status' => 'stopped'])->saveQuietly();
             $this->reloadGateway($website);
