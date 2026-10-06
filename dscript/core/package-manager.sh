@@ -314,13 +314,66 @@ pkg_ensure_php_repo() {
     debian)
       export DEBIAN_FRONTEND=noninteractive
       pkg_install software-properties-common ca-certificates curl gnupg lsb-release >/dev/null 2>&1 || true
-      if command -v add-apt-repository >/dev/null 2>&1; then
+      local codename
+      codename="$(pkg_os_codename)"
+      # The ondrej PPA only publishes Ubuntu releases it has caught up with
+      # (no 26.04 "resolute" yet) and never Debian; Sury's own repo covers both.
+      if [[ "${DISTRO:-}" == "ubuntu" ]] \
+        && pkg_url_exists "https://ppa.launchpadcontent.net/ondrej/php/ubuntu/dists/${codename}/Release" \
+        && command -v add-apt-repository >/dev/null 2>&1; then
         add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || true
-        export DPANEL_APT_UPDATED=false
-        apt_get update -y >/dev/null 2>&1 || true
+      else
+        pkg_remove_ondrej_php_ppa
+        pkg_add_sury_php_repo "$codename" || true
       fi
+      export DPANEL_APT_UPDATED=false
+      apt_get update -y >/dev/null 2>&1 || true
       ;;
   esac
+}
+
+pkg_os_codename() {
+  local codename=""
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}")"
+  fi
+  if [[ -z "$codename" ]] && command -v lsb_release >/dev/null 2>&1; then
+    codename="$(lsb_release -sc 2>/dev/null || true)"
+  fi
+  printf '%s' "$codename"
+}
+
+pkg_url_exists() {
+  curl -fsSL --max-time 15 -o /dev/null "$1" >/dev/null 2>&1
+}
+
+# A PPA entry for a release it does not publish 404s on every apt update,
+# which makes later installs (e.g. mariadb) fail too.
+pkg_remove_ondrej_php_ppa() {
+  local dir="${DPANEL_APT_SOURCES_DIR:-/etc/apt/sources.list.d}"
+  local file
+  for file in "$dir"/ondrej-ubuntu-php-*.list "$dir"/ondrej-ubuntu-php-*.sources; do
+    [[ -e "$file" ]] && rm -f -- "$file"
+  done
+  return 0
+}
+
+pkg_add_sury_php_repo() {
+  local codename="$1"
+  local dir="${DPANEL_APT_SOURCES_DIR:-/etc/apt/sources.list.d}"
+  local keyring="${DPANEL_APT_KEYRING_DIR:-/usr/share/keyrings}/php-sury.gpg"
+
+  [[ -n "$codename" ]] || return 1
+  if ! pkg_url_exists "https://packages.sury.org/php/dists/${codename}/Release"; then
+    echo "[WARN] No PHP repository publishes ${codename}; only distro PHP packages are available." >&2
+    return 1
+  fi
+  if [[ ! -s "$keyring" ]]; then
+    curl -fsSL --max-time 30 -o "$keyring" https://packages.sury.org/php/apt.gpg || return 1
+  fi
+  printf 'deb [signed-by=%s] https://packages.sury.org/php/ %s main\n' "$keyring" "$codename" \
+    > "$dir/php.list"
 }
 
 pkg_install_php_stack() {
