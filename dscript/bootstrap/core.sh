@@ -1579,11 +1579,25 @@ panel_module_state_label() {
   local module="$1"
   local installed
   installed="$(panel_installed_manifest_value "$module" 2>/dev/null || true)"
-  if [[ -n "$installed" && "$installed" != "no" ]]; then
+  if [[ -n "$installed" && "$installed" != "no" ]] && panel_module_present "$module"; then
     printf 'installed (%s)' "$installed"
   else
     printf 'not installed'
   fi
+}
+
+# The manifest can claim a module is installed after a run that failed part
+# way (e.g. no PHP packages for a new distro release). Check the real binary so
+# re-running the installer repairs it instead of skipping the module.
+panel_module_present() {
+  case "$1" in
+    php) panel_php_version_installed "$(panel_php_default_version)" ;;
+    mariadb) command -v mariadb >/dev/null 2>&1 || command -v mysql >/dev/null 2>&1 ;;
+    redis) command -v redis-server >/dev/null 2>&1 ;;
+    postgresql) command -v psql >/dev/null 2>&1 ;;
+    supervisor) command -v supervisord >/dev/null 2>&1 ;;
+    *) return 0 ;;
+  esac
 }
 
 panel_prompt_module_action() {
