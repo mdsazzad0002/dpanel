@@ -1169,13 +1169,35 @@ panel_php_install_versions() {
 
   [[ ${#selected_versions[@]} -gt 0 ]] || panel_die "No PHP versions available."
 
+  local failed=()
   for version in "${selected_versions[@]}"; do
     panel_php_version_supported "$version" || panel_die "Unsupported PHP version: ${version}"
     if [[ "$force" != "true" ]] && panel_php_version_installed "$version"; then
       panel_info_log "php ${version} already installed; reconciling required extensions."
     fi
-    panel_run_module php install "$version"
+    panel_run_module php install "$version" || failed+=("$version")
   done
+  panel_php_check_failed_versions install "${failed[@]}"
+}
+
+# Optional PHP versions may be missing from a distro's repositories; only the
+# panel's own version is required. Without this, a run that installed no PHP
+# at all was recorded as successful and failed later at composer.
+panel_php_check_failed_versions() {
+  local action="$1"
+  shift
+  [[ $# -gt 0 ]] || return 0
+
+  local required version
+  required="$(panel_php_default_version)"
+  panel_warn_log "php ${action} failed for: $*"
+  for version in "$@"; do
+    if [[ "$version" == "$required" ]]; then
+      panel_error_log "php ${required} is required by the panel and could not be ${action}ed."
+      return 1
+    fi
+  done
+  return 0
 }
 
 panel_php_update_versions() {
@@ -1190,10 +1212,12 @@ panel_php_update_versions() {
 
   [[ ${#selected_versions[@]} -gt 0 ]] || panel_die "No PHP versions available."
 
+  local failed=()
   for version in "${selected_versions[@]}"; do
     panel_php_version_supported "$version" || panel_die "Unsupported PHP version: ${version}"
-    panel_run_module php update "$version"
+    panel_run_module php update "$version" || failed+=("$version")
   done
+  panel_php_check_failed_versions update "${failed[@]}"
 }
 
 panel_php_manage_versions() {
