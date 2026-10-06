@@ -372,6 +372,11 @@ class MainWebsiteController extends Controller
         }
         $message = 'Website created successfully.';
 
+        // Start a new Python app now so its venv is ready before the first visit.
+        if ($runtime === 'python' && $parentWebsite === null) {
+            \App\Jobs\StartPythonProcessJob::dispatch((string) $website->id);
+        }
+
         return response()->json([
             'type' => 'success',
             'message' => $message.' Demo site files created successfully.',

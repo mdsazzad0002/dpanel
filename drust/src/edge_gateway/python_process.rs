@@ -48,6 +48,7 @@ pub async fn ensure_python_process_running(
         python_version,
         workers,
         port,
+        false,
     )
     .await?;
     wait_until_listening(site_id, port).await
@@ -75,6 +76,7 @@ pub async fn reprovision_and_restart_python_process(
         python_version,
         workers,
         port,
+        true,
     )
     .await?;
     restart_python_process(site_id)?;
@@ -91,6 +93,7 @@ async fn provision(
     python_version: Option<&str>,
     workers: Option<u16>,
     port: u16,
+    force: bool,
 ) -> Result<(), String> {
     let owner = validate_system_user(owner)?;
     let site_id = site_id.to_string();
@@ -109,6 +112,7 @@ async fn provision(
             python_version.as_deref(),
             worker_count(workers),
             port,
+            force,
         )
     })
     .await
@@ -212,11 +216,18 @@ fn ensure_unit_provisioned(
     python_version: Option<&str>,
     workers: u16,
     port: u16,
+    force: bool,
 ) -> Result<(), String> {
     let lock = site_provision_lock(site_id)?;
     let _guard = lock
         .lock()
         .map_err(|_| "python process provision lock is poisoned".to_string())?;
+
+    // Requests that queued behind a cold start find the app already up and
+    // must not re-run pip and systemctl one after another.
+    if !force && port_is_listening_blocking(port) {
+        return Ok(());
+    }
 
     if !project_root.is_dir() {
         return Err(format!(
@@ -256,6 +267,7 @@ fn ensure_unit_provisioned(
          [Unit]\n\
          Description=dPanel Python site {site_id}\n\
          After=network.target\n\
+         StartLimitIntervalSec=0\n\
          \n\
          [Service]\n\
          Type=simple\n\
@@ -284,7 +296,15 @@ fn ensure_unit_provisioned(
         run_systemctl(&["daemon-reload"])?;
     }
 
+    // A unit that crashed (e.g. before the code was fixed) sits in "failed";
+    // clear that so this start is not refused.
+    let _ = run_systemctl(&["reset-failed", &unit_name]);
     run_systemctl(&["enable", "--now", &unit_name])
+}
+
+fn port_is_listening_blocking(port: u16) -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
 }
 
 /// Picks the directory gunicorn runs from. The venv lives in the home dir
@@ -341,7 +361,14 @@ fn install_dependencies(venv_path: &Path, project_root: &Path) -> Result<(), Str
     let pip_bin = venv_path.join("bin").join("pip");
     let requirements = project_root.join("requirements.txt");
 
-    if requirements.is_file() {
+    // pip re-resolves every package even when nothing changed, which adds
+    // seconds to every start; skip it while requirements.txt is unchanged.
+    let installed_marker = venv_path.join(".dpanel-installed-requirements.txt");
+    let requirements_content = fs::read(&requirements).ok();
+    let requirements_changed =
+        requirements_content.is_some() && fs::read(&installed_marker).ok() != requirements_content;
+
+    if requirements_changed {
         let output = std::process::Command::new(&pip_bin)
             .args(["install", "-r"])
             .arg(&requirements)
@@ -352,6 +379,9 @@ fn install_dependencies(venv_path: &Path, project_root: &Path) -> Result<(), Str
                 "pip install -r requirements.txt failed: {}",
                 String::from_utf8_lossy(&output.stderr).trim()
             ));
+        }
+        if let Some(content) = &requirements_content {
+            let _ = fs::write(&installed_marker, content);
         }
     }
 

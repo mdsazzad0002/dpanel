@@ -62,7 +62,7 @@ const saveRuntimeSettings = async () => {
     const runtime = String(runtimeInput.value || 'php').trim();
     const nodeEntryFile = String(nodeEntryFileInput.value || '').trim();
     const pythonEntryFile = String(pythonEntryFileInput.value || '').trim();
-    if (!phpVersion) {
+    if (runtime === 'php' && !phpVersion) {
         pushToast?.('Select a PHP version.', 'error');
         return;
     }
