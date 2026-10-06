@@ -352,26 +352,31 @@ class WebsiteController extends Controller
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $validated = $request->validate([
             'start_directory' => ['nullable', 'string', 'max:255'],
-            'php_version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
             'runtime' => ['nullable', 'string', 'in:php,node,python'],
+            'php_version' => [($request->input('runtime') ?? $website['runtime'] ?? 'php') === 'php' ? 'required' : 'nullable', 'string', 'regex:/^\d+\.\d+$/'],
             'node_entry_file' => ['nullable', 'string', 'max:255'],
             'node_start_command' => ['nullable', 'string', 'max:255'],
             'node_version' => ['nullable', 'string', 'max:10'],
             'python_entry_file' => ['nullable', 'string', 'max:255'],
             'python_start_command' => ['nullable', 'string', 'max:255'],
             'python_version' => ['nullable', 'string', 'max:10'],
+            'python_workers' => ['nullable', 'integer', 'min:1', 'max:'.Website::MAX_PYTHON_WORKERS],
         ]);
 
-        $phpVersion = trim((string) $validated['php_version']);
+        $runtime = $validated['runtime'] ?? (string) ($website['runtime'] ?? 'php');
+        // Node/Python sites are created without a PHP version; keep whatever
+        // they have instead of demanding one the sidebar does not even show.
+        $phpVersion = $runtime === 'php'
+            ? trim((string) $validated['php_version'])
+            : (trim((string) ($validated['php_version'] ?? '')) ?: (string) ($website['php_version'] ?? ''));
         $availableVersions = $this->getPhpVersionsForWebsites();
-        if (! in_array($phpVersion, $availableVersions, true)) {
+        if ($runtime === 'php' && ! in_array($phpVersion, $availableVersions, true)) {
             return response()->json([
                 'message' => 'The selected PHP version is not available on this server.',
                 'errors' => ['php_version' => ['The selected PHP version is not available on this server.']],
             ], 422);
         }
 
-        $runtime = $validated['runtime'] ?? (string) ($website['runtime'] ?? 'php');
         if ($runtime === 'node' && trim((string) ($validated['node_entry_file'] ?? '')) === '') {
             return response()->json([
                 'message' => 'An entry file is required for the Node.js runtime.',
@@ -423,6 +428,7 @@ class WebsiteController extends Controller
                 $runtimeSettings['python_entry_file'] = trim((string) ($validated['python_entry_file'] ?? '')) ?: null;
                 $runtimeSettings['python_start_command'] = trim((string) ($validated['python_start_command'] ?? '')) ?: null;
                 $runtimeSettings['python_version'] = trim((string) ($validated['python_version'] ?? '')) ?: null;
+                $runtimeSettings['python_workers'] = (int) ($validated['python_workers'] ?? Website::DEFAULT_PYTHON_WORKERS);
                 if (empty($website['python_port'])) {
                     $runtimeSettings['python_port'] = app(\App\Services\Website\WebsiteService::class)->allocatePythonPort();
                 }
@@ -442,10 +448,17 @@ class WebsiteController extends Controller
 
         $gatewayReloaded = app(EdgeGatewayReloader::class)->reloadDomains($affectedDomains);
 
+        // Apply the new settings right away instead of waiting for a manual restart.
+        if ($runtime === 'python') {
+            \App\Jobs\StartPythonProcessJob::dispatch((string) $website['id']);
+        }
+
         return response()->json([
             'success' => $gatewayReloaded,
             'message' => $gatewayReloaded
-                ? 'Website runtime settings updated and its cache refreshed successfully.'
+                ? ($runtime === 'python'
+                    ? 'Website runtime settings saved. The Python app is restarting with them in the background.'
+                    : 'Website runtime settings updated and its cache refreshed successfully.')
                 : 'Website settings were saved, but its gateway cache could not be refreshed.',
             'cache_scope' => 'website',
             'domains' => $affectedDomains,

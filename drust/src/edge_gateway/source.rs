@@ -36,6 +36,15 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
             HashMap::new()
         }
     };
+    // Queried separately for the same reason: before the column's migration
+    // runs, sites just fall back to the default worker count.
+    let python_workers = match run_mysql(&env, PYTHON_WORKERS_SQL) {
+        Ok(rows) => parse_python_workers(&rows),
+        Err(error) => {
+            tracing::warn!(%error, "python worker settings unavailable; using defaults");
+            HashMap::new()
+        }
+    };
 
     let mut sites = Vec::new();
     let mut tls = Vec::new();
@@ -121,6 +130,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
             python_entry_file,
             python_start_command,
             python_version,
+            python_workers: python_workers.get(cols[0].trim()).copied(),
             enable_ssl,
             spa_fallback: true,
             routes,
@@ -189,6 +199,18 @@ fn run_mysql(env: &HashMap<String, String>, sql: &str) -> Result<String, String>
 
 /// Lists become space-separated so each row stays on one line.
 const CACHE_SETTINGS_SQL: &str = "SELECT website_id,mode,edge_ttl,COALESCE(browser_ttl,0),REPLACE(REPLACE(COALESCE(bypass_paths,''),CHAR(13),' '),CHAR(10),' '),REPLACE(REPLACE(COALESCE(bypass_cookies,''),CHAR(13),' '),CHAR(10),' '),ignore_query_string,serve_stale,COALESCE(development_mode_until,0) FROM website_edge_cache";
+
+const PYTHON_WORKERS_SQL: &str =
+    "SELECT id,python_workers FROM websites WHERE python_workers IS NOT NULL";
+
+fn parse_python_workers(rows: &str) -> HashMap<String, u16> {
+    rows.lines()
+        .filter_map(|line| {
+            let (id, workers) = line.split_once('\t')?;
+            Some((id.trim().to_string(), workers.trim().parse::<u16>().ok()?))
+        })
+        .collect()
+}
 
 fn parse_cache_settings(rows: &str) -> HashMap<String, SiteCacheConfig> {
     let words = |value: &str| -> std::sync::Arc<[String]> {

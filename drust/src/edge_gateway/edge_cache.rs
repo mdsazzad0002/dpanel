@@ -568,6 +568,7 @@ mod tests {
             python_entry_file: None,
             python_start_command: None,
             python_version: None,
+            python_workers: None,
             enable_ssl: false,
             spa_fallback: false,
             routes: Arc::from([RouteConfig {

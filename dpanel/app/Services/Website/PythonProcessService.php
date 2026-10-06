@@ -22,7 +22,9 @@ class PythonProcessService
             throw new \RuntimeException('This website has no Python port assigned.');
         }
 
-        $response = $this->request()->post($this->apiUrl(), [
+        // start/restart may create the venv and pip install requirements.
+        $timeout = in_array($action, ['start', 'restart'], true) ? 280 : 60;
+        $response = $this->request($timeout)->post($this->apiUrl(), [
             'site_id' => (string) $website->id,
             'action' => $action,
             'site_owner' => (string) $website->site_owner,
@@ -30,6 +32,7 @@ class PythonProcessService
             'python_entry_file' => $website->python_entry_file,
             'python_start_command' => $website->python_start_command,
             'python_version' => $website->python_version,
+            'workers' => $website->pythonWorkerCount(),
             'port' => (int) $website->python_port,
         ]);
 
@@ -52,9 +55,9 @@ class PythonProcessService
         return is_array($json['data'] ?? null) ? $json['data'] : [];
     }
 
-    protected function request()
+    protected function request(int $timeout = 60)
     {
-        $request = Http::acceptJson()->asJson()->timeout(60);
+        $request = Http::acceptJson()->asJson()->timeout($timeout);
         $token = trim((string) config('serverpanel.execution_api_token', ''));
 
         return $token !== '' ? $request->withToken($token) : $request;
