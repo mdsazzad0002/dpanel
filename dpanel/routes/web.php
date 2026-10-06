@@ -396,12 +396,21 @@ Route::prefix('cpsess{token}')
                 ->where('domain', '[A-Za-z0-9.-]+')
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.guide.export');
+            Route::get('/emails/mail-ssl', [MailHostnameController::class, 'page'])
+                ->middleware('role_or_permission:admin|manage_mail_server')
+                ->name('emails.mail-ssl');
             Route::get('/emails/mail-hostname', [MailHostnameController::class, 'show'])
                 ->middleware('role_or_permission:admin|manage_mail_server')
                 ->name('emails.mail-hostname.show');
             Route::post('/emails/mail-hostname', [MailHostnameController::class, 'update'])
                 ->middleware(['role_or_permission:admin|manage_mail_server', 'throttle:10,1'])
                 ->name('emails.mail-hostname.update');
+            Route::get('/emails/mail-hostname/tls', [MailHostnameController::class, 'tlsStatus'])
+                ->middleware('role_or_permission:admin|manage_mail_server')
+                ->name('emails.mail-hostname.tls');
+            Route::post('/emails/mail-hostname/tls', [MailHostnameController::class, 'issueTls'])
+                ->middleware(['role_or_permission:admin|manage_mail_server', 'throttle:5,1'])
+                ->name('emails.mail-hostname.tls.issue');
             Route::get('/emails/guide/verify/{domain}', [EmailController::class, 'verifyDns'])
                 ->where('domain', '[A-Za-z0-9.-]+')
                 ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:20,1'])

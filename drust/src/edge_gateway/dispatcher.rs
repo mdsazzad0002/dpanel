@@ -51,6 +51,9 @@ pub async fn dispatch(
     }
 
     let Some(site) = site else {
+        if let Some(response) = shared_acme_challenge_response(&path) {
+            return annotated_response(response, "", "acme-challenge");
+        }
         return annotated_response(
             not_found_response(
                 "Site not found",
@@ -753,6 +756,32 @@ pub fn upstream_health_response(body: String) -> Response {
     let mut response = Response::new(Body::from(body));
     *response.status_mut() = StatusCode::OK;
     response
+}
+
+/// Hostnames that are not websites (the mail hostname) still need HTTP-01
+/// certificates, so certbot writes their tokens to this one shared webroot.
+const SHARED_ACME_ROOT: &str = "/var/lib/dpanel/acme";
+
+fn shared_acme_challenge_response(path: &str) -> Option<Response> {
+    let token = path.strip_prefix("/.well-known/acme-challenge/")?;
+    if token.is_empty()
+        || !token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return None;
+    }
+    let body = fs::read(
+        Path::new(SHARED_ACME_ROOT)
+            .join(".well-known/acme-challenge")
+            .join(token),
+    )
+    .ok()?;
+    let mut response = Response::new(Body::from(body));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain"));
+    Some(response)
 }
 
 fn simple_response(status: StatusCode, message: &str) -> Response {

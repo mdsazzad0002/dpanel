@@ -2191,6 +2191,10 @@ panel_repair_mail_auth() {
   # rejects mail with 550-5.7.25; MX in the Mail DNS Guide follows it.
   (cd "$app_dir" && php artisan mail:hostname --apply) \
     || panel_warn_log "Mail hostname detection failed; run 'php artisan mail:hostname --apply' in the panel directory."
+  # Without a certificate for that name, mail apps fail STARTTLS on the
+  # distro's snakeoil certificate ("subjectAltName did not match").
+  (cd "$app_dir" && php artisan mail:tls) \
+    || panel_warn_log "Mail SSL was not issued; open Email Management > Mail SSL, or run 'php artisan mail:tls' in the panel directory."
   (cd "$app_dir" && php artisan mail:repair-dovecot-auth) \
     || panel_warn_log "Mailbox password check failed; run 'php artisan mail:repair-dovecot-auth' in the panel directory."
 }

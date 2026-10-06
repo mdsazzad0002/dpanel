@@ -20,6 +20,10 @@ Schedule::command('serverpanel:ssl-reconcile')
     ->twiceDaily(3, 15)
     ->withoutOverlapping();
 
+Schedule::command('mail:tls')
+    ->dailyAt('03:30')
+    ->withoutOverlapping();
+
 Schedule::command('dns:reconcile-websites')
     ->hourly()
     ->withoutOverlapping();

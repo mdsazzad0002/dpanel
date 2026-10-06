@@ -113,9 +113,8 @@ class MailHostnameDetector
         if (! MailDomainProvisioner::isValidFqdn($host)) {
             return ['ok' => false, 'changed' => false, 'host' => $host, 'message' => "'{$host}' is not a valid hostname."];
         }
-        $ip = $this->records->serverIp();
-        if ($ip === '' || ! in_array($ip, $this->dns->a($host), true)) {
-            return ['ok' => false, 'changed' => false, 'host' => $host, 'message' => "{$host} does not resolve to this server ({$ip}). Add an A record (DNS only) first."];
+        if (! $this->resolvesHere($host)) {
+            return ['ok' => false, 'changed' => false, 'host' => $host, 'message' => "{$host} does not resolve to this server ({$this->records->serverIp()}). Add an A record (DNS only) first."];
         }
 
         $script = ScriptPathResolver::resolveRepositoryRoot().'/scripts/ensure-mail-hostname.sh';
@@ -126,6 +125,13 @@ class MailHostnameDetector
         $changed = str_contains($result['output'], 'MAIL_HOSTNAME_CHANGED=1');
 
         return ['ok' => true, 'changed' => $changed, 'host' => $host, 'message' => $changed ? "Mail hostname set to {$host}." : "Mail hostname is already {$host}."];
+    }
+
+    public function resolvesHere(string $host): bool
+    {
+        $ip = $this->records->serverIp();
+
+        return $ip !== '' && in_array($ip, $this->dns->a($host), true);
     }
 
     /** @return array{ok: bool, changed: bool, host: string, message: string} */
