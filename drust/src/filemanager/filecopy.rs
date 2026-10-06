@@ -14,6 +14,7 @@ use super::common::{
     ensure_canonical_inside_home, ensure_directory_inside_home, validate_account,
     validate_user_path,
 };
+use super::unzip::{ensure_tree_has_no_symlinks, replace_existing_target};
 
 pub fn copy_user_path(username: &str, source: &str, destination: &str) -> Result<(), String> {
     let (user_home, canonical_home, group) = validate_account(username)?;
@@ -22,6 +23,9 @@ pub fn copy_user_path(username: &str, source: &str, destination: &str) -> Result
 
     if source_path == user_home {
         return Err("The account home cannot be copied.".into());
+    }
+    if destination_path == user_home {
+        return Err("The account home cannot be replaced.".into());
     }
     if source_path == destination_path {
         return Err("Source and destination are the same.".into());
@@ -45,27 +49,28 @@ pub fn copy_user_path(username: &str, source: &str, destination: &str) -> Result
     if !canonical_parent.is_dir() {
         return Err("Destination parent is not a folder.".into());
     }
-    if fs::symlink_metadata(&destination_path).is_ok() {
-        return Err(format!(
-            "Target already exists: {}",
-            destination_path.display()
-        ));
-    }
-
     let source_metadata = fs::symlink_metadata(&source_path)
         .map_err(|e| format!("failed to inspect {}: {e}", source_path.display()))?;
     if source_metadata.file_type().is_symlink() {
         return Err("Symbolic links cannot be copied.".into());
     }
 
+    // An existing target is replaced; folder onto folder merges, with
+    // same-named files overwritten.
+    if replace_existing_target(&destination_path, source_metadata.is_dir())? {
+        ensure_tree_has_no_symlinks(&destination_path)?;
+    }
+
     // Shell out to `cp -a` rather than hand-rolling a recursive walk: it
     // preserves directory structure atomically for large trees, the same
     // way the rest of this module relies on system tools (chown/chmod)
-    // instead of reimplementing them.
+    // instead of reimplementing them. `--remove-destination` unlinks an
+    // existing file before writing, so a merge never writes through it.
     run_status(
         "cp",
         &[
             "-a",
+            "--remove-destination",
             "--no-target-directory",
             source_path.to_string_lossy().as_ref(),
             destination_path.to_string_lossy().as_ref(),

@@ -2,7 +2,7 @@ use std::fs;
 use std::sync::Arc;
 
 use crate::api::{ApiState, check_token, operation_response};
-use crate::app::info;
+use crate::app::{info, run_status};
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -14,6 +14,7 @@ use super::common::{
     ensure_canonical_inside_home, ensure_directory_inside_home, validate_account,
     validate_user_path,
 };
+use super::unzip::{ensure_tree_has_no_symlinks, replace_existing_target};
 
 pub fn move_user_path(username: &str, source: &str, destination: &str) -> Result<(), String> {
     let (user_home, canonical_home, group) = validate_account(username)?;
@@ -22,6 +23,9 @@ pub fn move_user_path(username: &str, source: &str, destination: &str) -> Result
 
     if source_path == user_home {
         return Err("The account home cannot be moved.".into());
+    }
+    if destination_path == user_home {
+        return Err("The account home cannot be replaced.".into());
     }
     if source_path == destination_path {
         return Err("Source and destination are the same.".into());
@@ -45,15 +49,50 @@ pub fn move_user_path(username: &str, source: &str, destination: &str) -> Result
     if !canonical_parent.is_dir() {
         return Err("Destination parent is not a folder.".into());
     }
-    super::unzip::validate_replaceable_existing_target(&destination_path)?;
-
-    fs::rename(&source_path, &destination_path).map_err(|e| {
-        format!(
-            "failed to move {} to {}: {e}",
-            source_path.display(),
-            destination_path.display()
+    let source_is_dir = fs::symlink_metadata(&source_path)
+        .map_err(|e| format!("failed to inspect {}: {e}", source_path.display()))?
+        .is_dir();
+    // An existing target is replaced. A folder moved onto a folder can't be
+    // renamed over it, so merge it in (same-named files overwritten) and then
+    // drop the source.
+    if replace_existing_target(&destination_path, source_is_dir)? {
+        ensure_tree_has_no_symlinks(&destination_path)?;
+        run_status(
+            "cp",
+            &[
+                "-a",
+                "--remove-destination",
+                "--no-target-directory",
+                source_path.to_string_lossy().as_ref(),
+                destination_path.to_string_lossy().as_ref(),
+            ],
         )
-    })?;
+        .map_err(|e| {
+            format!(
+                "failed to move {} to {}: {e}",
+                source_path.display(),
+                destination_path.display()
+            )
+        })?;
+        run_status(
+            "chown",
+            &[
+                "-R",
+                &format!("{username}:{group}"),
+                destination_path.to_string_lossy().as_ref(),
+            ],
+        )?;
+        fs::remove_dir_all(&source_path)
+            .map_err(|e| format!("failed to remove {}: {e}", source_path.display()))?;
+    } else {
+        fs::rename(&source_path, &destination_path).map_err(|e| {
+            format!(
+                "failed to move {} to {}: {e}",
+                source_path.display(),
+                destination_path.display()
+            )
+        })?;
+    }
     info(&format!(
         "path moved: {} -> {}",
         source_path.display(),

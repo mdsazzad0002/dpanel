@@ -709,6 +709,7 @@ export function useFileManager(props) {
             .post(panelRoute('websites.filemanager.unzip', fileManagerRouteParams()), {
                 zip_path: unzipForm.zip_path,
                 current_path: unzipForm.current_path,
+                destination_path: unzipForm.destination_path,
             }, {
                 headers: {
                     Accept: 'application/json',
@@ -848,6 +849,7 @@ export function useFileManager(props) {
                 break;
             case 'unzip':
                 unzipForm.zip_path = item.path;
+                unzipForm.destination_path = props.currentPath || '';
                 openModal('unzip');
                 break;
             case 'delete':
@@ -884,6 +886,7 @@ export function useFileManager(props) {
         if (!isZipSelected.value || !singleSelectedItem.value) return;
 
         unzipForm.zip_path = singleSelectedItem.value.path;
+        unzipForm.destination_path = props.currentPath || '';
         openModal('unzip');
     }
 
@@ -919,7 +922,7 @@ export function useFileManager(props) {
     const permissionForm = useForm({ item_path: '', current_path: props.currentPath, permissions: '644', recursive: false });
     const renameForm = useForm({ item_path: '', current_path: props.currentPath, new_name: '' });
     const zipForm = useForm({ current_path: props.currentPath, item_paths: [], zip_name: '' });
-    const unzipForm = useForm({ zip_path: '', current_path: props.currentPath });
+    const unzipForm = useForm({ zip_path: '', current_path: props.currentPath, destination_path: '' });
     const moveForm = useForm({ item_path: '', item_paths: [], current_path: props.currentPath, destination_path: props.currentPath });
     const copyForm = useForm({ item_path: '', item_paths: [], current_path: props.currentPath, destination_path: props.currentPath, new_name: '' });
 

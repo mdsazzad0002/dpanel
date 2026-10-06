@@ -198,13 +198,14 @@ fn install_package(username: &str, target: &str, package: &[u8]) -> Result<(), S
             continue;
         }
         if entry.is_dir() {
-            ensure_directory_tree(&target, relative, &mut touched_dirs)?;
+            ensure_directory_tree(&target, relative, &mut touched_dirs, false)?;
             continue;
         }
         let parent = ensure_directory_tree(
             &target,
             relative.parent().unwrap_or_else(|| Path::new("")),
             &mut touched_dirs,
+            false,
         )?;
         let destination = target.join(relative);
         validate_replaceable_existing_target(&destination)?;

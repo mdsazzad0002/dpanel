@@ -99,17 +99,17 @@ pub fn unzip_user_archive(
         }
 
         if entry.is_dir() {
-            ensure_directory_tree(&canonical_root, &relative, &mut touched_dirs)?;
+            ensure_directory_tree(&canonical_root, &relative, &mut touched_dirs, true)?;
             continue;
         }
 
         let parent_relative = relative.parent().unwrap_or_else(|| Path::new(""));
-        let parent = ensure_directory_tree(&canonical_root, parent_relative, &mut touched_dirs)?;
+        let parent = ensure_directory_tree(&canonical_root, parent_relative, &mut touched_dirs, true)?;
         let target = canonical_root.join(&relative);
         if target == canonical_archive {
             return Err("Zip archive cannot overwrite itself during extraction.".into());
         }
-        validate_replaceable_existing_target(&target)?;
+        replace_existing_target(&target, false)?;
 
         let temporary = parent.join(format!(
             ".dpanel-unzip-{}-{index}-{}",
@@ -207,10 +207,14 @@ pub(crate) fn is_symlink_entry<R: io::Read>(entry: &zip::read::ZipFile<'_, R>) -
         .unwrap_or(false)
 }
 
+/// With `replace` set (file manager extracts), a file or symbolic link sitting
+/// where a directory is needed is removed instead of failing the extraction.
+/// Removing a link never touches what it points to.
 pub(crate) fn ensure_directory_tree(
     root: &Path,
     relative: &Path,
     touched_dirs: &mut HashSet<PathBuf>,
+    replace: bool,
 ) -> Result<PathBuf, String> {
     let mut current = root.to_path_buf();
     for component in relative.components() {
@@ -221,6 +225,13 @@ pub(crate) fn ensure_directory_tree(
             return Err("Zip entry contains an unsafe directory component.".into());
         };
         current.push(name);
+        if replace
+            && fs::symlink_metadata(&current)
+                .is_ok_and(|metadata| metadata.file_type().is_symlink() || !metadata.is_dir())
+        {
+            fs::remove_file(&current)
+                .map_err(|e| format!("failed to replace {}: {e}", current.display()))?;
+        }
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
                 return Err(format!(
@@ -337,6 +348,56 @@ fn fix_laravel_writable_dirs(root: &str) -> Result<(), String> {
             "+",
         ],
     )
+}
+
+/// Clears whatever sits at `target` so a new file or folder can take its
+/// place. Returns true when both are folders: the caller then merges into the
+/// existing folder (same-named files are replaced, others are kept). A
+/// symbolic link is removed as a link and never followed.
+pub(crate) fn replace_existing_target(target: &Path, source_is_dir: bool) -> Result<bool, String> {
+    let metadata = match fs::symlink_metadata(target) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(format!("failed to inspect {}: {e}", target.display())),
+    };
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        if source_is_dir {
+            return Ok(true);
+        }
+        fs::remove_dir_all(target)
+    } else if source_is_dir || metadata.file_type().is_symlink() {
+        fs::remove_file(target)
+    } else {
+        return Ok(false);
+    }
+    .map_err(|e| format!("failed to replace {}: {e}", target.display()))?;
+    Ok(false)
+}
+
+/// A merge copies into the existing tree as root, so a link planted inside it
+/// could redirect writes outside the account home.
+pub(crate) fn ensure_tree_has_no_symlinks(root: &Path) -> Result<(), String> {
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let entries =
+            fs::read_dir(&dir).map_err(|e| format!("failed to read {}: {e}", dir.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("failed to read {}: {e}", dir.display()))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|e| format!("failed to inspect {}: {e}", entry.path().display()))?;
+            if file_type.is_symlink() {
+                return Err(format!(
+                    "Cannot replace into a folder that contains a symbolic link: {}",
+                    entry.path().display()
+                ));
+            }
+            if file_type.is_dir() {
+                pending.push(entry.path());
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_replaceable_existing_target(target: &Path) -> Result<(), String> {
@@ -459,5 +520,66 @@ pub(crate) async fn handle(
         Err(error) => axum::response::IntoResponse::into_response(ApiResponse::error(&format!(
             "Unzip worker failed: {error}"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod replace_tests {
+    use super::{ensure_directory_tree, ensure_tree_has_no_symlinks, replace_existing_target};
+    use std::{collections::HashSet, fs, path::Path};
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("drust-replace-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn replaces_or_merges_existing_targets() {
+        let root = scratch("targets");
+        assert!(!replace_existing_target(&root.join("missing"), true).unwrap());
+
+        fs::create_dir(root.join("dir")).unwrap();
+        fs::write(root.join("dir/keep.txt"), "x").unwrap();
+        assert!(replace_existing_target(&root.join("dir"), true).unwrap());
+        assert!(root.join("dir/keep.txt").is_file());
+
+        assert!(!replace_existing_target(&root.join("dir"), false).unwrap());
+        assert!(!root.join("dir").exists());
+
+        fs::write(root.join("file"), "x").unwrap();
+        assert!(!replace_existing_target(&root.join("file"), true).unwrap());
+        assert!(!root.join("file").exists());
+
+        let outside = root.join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("secret"), "x").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+        assert!(!replace_existing_target(&root.join("link"), true).unwrap());
+        assert!(fs::symlink_metadata(root.join("link")).is_err());
+        assert!(outside.join("secret").is_file());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn extraction_replaces_files_and_links_in_the_way() {
+        let root = scratch("tree");
+        fs::write(root.join("assets"), "file").unwrap();
+        let mut touched = HashSet::new();
+        assert!(ensure_directory_tree(&root, Path::new("assets/css"), &mut touched, false).is_err());
+        ensure_directory_tree(&root, Path::new("assets/css"), &mut touched, true).unwrap();
+        assert!(root.join("assets/css").is_dir());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn refuses_merging_into_trees_with_links() {
+        let root = scratch("links");
+        fs::create_dir_all(root.join("a/b")).unwrap();
+        assert!(ensure_tree_has_no_symlinks(&root).is_ok());
+        std::os::unix::fs::symlink("/etc", root.join("a/b/etc")).unwrap();
+        assert!(ensure_tree_has_no_symlinks(&root).is_err());
+        fs::remove_dir_all(&root).unwrap();
     }
 }

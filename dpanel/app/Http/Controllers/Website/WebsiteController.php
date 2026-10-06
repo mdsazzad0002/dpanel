@@ -1774,6 +1774,7 @@ class WebsiteController extends Controller
         $validated = $request->validate([
             'zip_path' => ['required', 'string', 'max:1500'],
             'current_path' => ['nullable', 'string', 'max:1500'],
+            'destination_path' => ['nullable', 'string', 'max:1500'],
         ]);
 
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
@@ -1782,7 +1783,12 @@ class WebsiteController extends Controller
         $zipRelative = $this->sanitizeRelativePath((string) $validated['zip_path']);
         $currentPath = $this->sanitizeRelativePath((string) ($validated['current_path'] ?? ''));
         $zipPath = $this->resolvePathInsideBase($basePath, $zipRelative);
-        $destinationPath = $this->resolvePathInsideBase($basePath, $currentPath);
+        // The extract modal sends the chosen folder; older clients only send
+        // the folder being viewed. drust creates the folder when missing.
+        $destinationRelative = $request->has('destination_path')
+            ? $this->sanitizeRelativePath((string) ($validated['destination_path'] ?? ''))
+            : $currentPath;
+        $destinationPath = $this->resolvePathInsideBase($basePath, $destinationRelative);
 
         if (! str_ends_with(strtolower($zipPath), '.zip')) {
             if ($request->expectsJson()) {
