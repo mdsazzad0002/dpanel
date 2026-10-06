@@ -200,7 +200,7 @@ fn run_mysql(env: &HashMap<String, String>, sql: &str) -> Result<String, String>
 /// Lists become space-separated so each row stays on one line.
 const CACHE_SETTINGS_SQL: &str = "SELECT website_id,mode,edge_ttl,COALESCE(browser_ttl,0),REPLACE(REPLACE(COALESCE(bypass_paths,''),CHAR(13),' '),CHAR(10),' '),REPLACE(REPLACE(COALESCE(bypass_cookies,''),CHAR(13),' '),CHAR(10),' '),ignore_query_string,serve_stale,COALESCE(development_mode_until,0) FROM website_edge_cache";
 
-const PYTHON_RUN_SQL: &str = "SELECT id,COALESCE(python_workers,0),COALESCE(python_mode,'') FROM websites WHERE runtime='python'";
+const PYTHON_RUN_SQL: &str = "SELECT id,COALESCE(python_workers,0),COALESCE(python_mode,''),COALESCE(python_timeout,0) FROM websites WHERE runtime='python'";
 
 fn parse_python_run(rows: &str) -> HashMap<String, super::PythonRunOptions> {
     rows.lines()
@@ -209,7 +209,8 @@ fn parse_python_run(rows: &str) -> HashMap<String, super::PythonRunOptions> {
             let id = cols.next()?.trim().to_string();
             let workers = cols.next()?.trim().parse::<u16>().ok().filter(|count| *count > 0);
             let development = cols.next()?.trim().eq_ignore_ascii_case("development");
-            Some((id, super::PythonRunOptions { workers, development }))
+            let timeout = cols.next()?.trim().parse::<u16>().ok().filter(|seconds| *seconds > 0);
+            Some((id, super::PythonRunOptions { workers, development, timeout }))
         })
         .collect()
 }
@@ -447,8 +448,10 @@ mod tests {
 
     #[test]
     fn parses_python_run_mode_and_workers() {
-        let rows = parse_python_run("a\t8\tdevelopment\nb\t0\tproduction\nc\t0\t\n");
+        let rows = parse_python_run("a\t8\tdevelopment\t120\nb\t0\tproduction\t0\nc\t0\t\t0\n");
         assert_eq!(rows["a"].workers, Some(8));
+        assert_eq!(rows["a"].timeout, Some(120));
+        assert_eq!(rows["b"].timeout, None);
         assert!(rows["a"].development);
         assert_eq!(rows["b"].workers, None);
         assert!(!rows["b"].development);

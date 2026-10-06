@@ -66,6 +66,26 @@ pub struct PythonRunOptions {
     /// up without a manual restart. It watches every file, so production
     /// sites leave it off.
     pub development: bool,
+    /// Seconds a request may take before gunicorn kills the worker; the
+    /// gateway waits slightly longer so the app's own limit fires first.
+    pub timeout: Option<u16>,
+}
+
+pub const DEFAULT_PYTHON_TIMEOUT: u16 = 30;
+const MIN_PYTHON_TIMEOUT: u16 = 10;
+const MAX_PYTHON_TIMEOUT: u16 = 300;
+
+impl PythonRunOptions {
+    pub fn timeout_seconds(&self) -> u16 {
+        self.timeout
+            .unwrap_or(DEFAULT_PYTHON_TIMEOUT)
+            .clamp(MIN_PYTHON_TIMEOUT, MAX_PYTHON_TIMEOUT)
+    }
+
+    /// How long the gateway waits for the app's response head.
+    pub fn proxy_timeout(&self) -> Duration {
+        Duration::from_secs(u64::from(self.timeout_seconds()) + 5)
+    }
 }
 
 fn worker_count(workers: Option<u16>) -> u16 {
@@ -278,11 +298,12 @@ fn ensure_unit_provisioned(
     force: bool,
 ) -> Result<(), String> {
     let workers = worker_count(options.workers);
-    let (app_env, flask_debug, gunicorn_cmd_args) = if options.development {
+    let (app_env, flask_debug, mode_args) = if options.development {
         ("development", 1, DEVELOPMENT_GUNICORN_ARGS)
     } else {
         ("production", 0, PRODUCTION_GUNICORN_ARGS)
     };
+    let gunicorn_cmd_args = format!("--timeout {} {mode_args}", options.timeout_seconds());
     let lock = site_provision_lock(site_id)?;
     let _guard = lock
         .lock()
@@ -382,6 +403,33 @@ fn ensure_unit_provisioned(
 fn port_is_listening_blocking(port: u16) -> bool {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
+}
+
+/// Directories checked, in order, for files under `/static/` (Django's
+/// `collectstatic` output, then the conventional Flask/Django source dir).
+const STATIC_DIRS: &[&str] = &["staticfiles", "static"];
+
+/// Finds the file a `/static/...` request names in the site's own static
+/// directory, so the gateway can serve it without a gunicorn worker. Returns
+/// None (the app handles it) when the file is not there. `/media/` is left
+/// to the app on purpose: uploads may sit behind the app's access checks.
+pub fn python_static_file(
+    project_root: &Path,
+    entry_module: Option<&str>,
+    request_path: &str,
+) -> Option<PathBuf> {
+    let relative = request_path.strip_prefix("/static/")?;
+    if relative.is_empty() {
+        return None;
+    }
+    let app_dir = resolve_app_dir(project_root, entry_module);
+    STATIC_DIRS.iter().find_map(|dir| {
+        let root = app_dir.join(dir).canonicalize().ok()?;
+        let candidate = super::resolve_static_path(&root, relative, "", false)?;
+        // drust runs as root: never follow a symlink out of the static dir.
+        let candidate = candidate.canonicalize().ok()?;
+        (candidate.starts_with(&root) && candidate.is_file()).then_some(candidate)
+    })
 }
 
 /// Picks the directory gunicorn runs from. The venv lives in the home dir
@@ -584,6 +632,37 @@ mod tests {
         assert_eq!(worker_count(Some(0)), 4);
         assert_eq!(worker_count(Some(8)), 8);
         assert_eq!(worker_count(Some(500)), MAX_PYTHON_WORKERS);
+    }
+
+    #[test]
+    fn serves_static_files_only_from_inside_the_static_dir() {
+        let root = std::env::temp_dir().join(format!("drust-pystatic-{}", std::process::id()));
+        let static_dir = root.join("staticfiles").join("css");
+        fs::create_dir_all(&static_dir).unwrap();
+        fs::write(root.join("app.py"), "").unwrap();
+        fs::write(root.join("secret.txt"), "no").unwrap();
+        fs::write(static_dir.join("site.css"), "body{}").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(root.join("secret.txt"), static_dir.join("leak.css")).unwrap();
+
+        let found = python_static_file(&root, Some("app:app"), "/static/css/site.css");
+        assert_eq!(found, Some(static_dir.join("site.css").canonicalize().unwrap()));
+        assert_eq!(python_static_file(&root, Some("app:app"), "/static/missing.css"), None);
+        assert_eq!(python_static_file(&root, Some("app:app"), "/static/../secret.txt"), None);
+        assert_eq!(python_static_file(&root, Some("app:app"), "/static/css/leak.css"), None);
+        assert_eq!(python_static_file(&root, Some("app:app"), "/static/css"), None);
+        assert_eq!(python_static_file(&root, Some("app:app"), "/media/site.css"), None);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn timeout_defaults_and_clamps() {
+        let options = |timeout| PythonRunOptions { timeout, ..Default::default() };
+        assert_eq!(options(None).timeout_seconds(), 30);
+        assert_eq!(options(Some(2)).timeout_seconds(), 10);
+        assert_eq!(options(Some(120)).timeout_seconds(), 120);
+        assert_eq!(options(Some(9000)).timeout_seconds(), 300);
+        assert_eq!(options(Some(120)).proxy_timeout(), Duration::from_secs(125));
     }
 
     #[test]

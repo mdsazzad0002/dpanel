@@ -133,6 +133,7 @@ class MainWebsiteController extends Controller
             'python_start_command' => ['nullable', 'string', 'max:255'],
             'python_workers' => ['nullable', 'integer', 'min:1', 'max:'.Website::MAX_PYTHON_WORKERS],
             'python_mode' => ['nullable', 'string', 'in:'.implode(',', Website::PYTHON_MODES)],
+            'python_timeout' => ['nullable', 'integer', 'min:'.Website::MIN_PYTHON_TIMEOUT, 'max:'.Website::MAX_PYTHON_TIMEOUT],
             'domain_type' => ['required', 'string', 'in:main,alis,sub'],
             'enable_ssl' => ['boolean'],
             'manage_dns' => ['boolean'],
@@ -238,6 +239,7 @@ class MainWebsiteController extends Controller
             $pythonPort = $parentWebsite->python_port;
             $pythonWorkers = $parentWebsite->python_workers;
             $pythonMode = $parentWebsite->python_mode;
+            $pythonTimeout = $parentWebsite->python_timeout;
             $demoFiles = [];
         } else {
             $homeSetup = $this->filemanagerService->createAccountHome($siteOwner, null, '/bin/bash', $siteDirectory);
@@ -253,6 +255,7 @@ class MainWebsiteController extends Controller
             $pythonStartCommand = $validated['python_start_command'] ?? null;
             $pythonWorkers = $runtime === 'python' ? (int) ($validated['python_workers'] ?? Website::DEFAULT_PYTHON_WORKERS) : null;
             $pythonMode = $runtime === 'python' ? ($validated['python_mode'] ?? 'production') : null;
+            $pythonTimeout = $runtime === 'python' ? (int) ($validated['python_timeout'] ?? Website::DEFAULT_PYTHON_TIMEOUT) : null;
             if ($runtime === 'node') {
                 $nodePort = $this->websiteService->allocateNodePort();
             }
@@ -324,6 +327,7 @@ class MainWebsiteController extends Controller
             'python_port' => $pythonPort,
             'python_workers' => $pythonWorkers,
             'python_mode' => $pythonMode,
+            'python_timeout' => $pythonTimeout,
             'python_process_status' => $runtime === 'python' ? 'pending' : null,
             'enable_ssl' => $parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false),
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),

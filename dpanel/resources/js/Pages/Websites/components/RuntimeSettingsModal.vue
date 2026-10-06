@@ -37,6 +37,7 @@ const pythonStartCommandInput = ref('');
 const pythonVersionInput = ref('3.10');
 const pythonWorkersInput = ref(4);
 const pythonModeInput = ref('production');
+const pythonTimeoutInput = ref(30);
 const updateLoading = ref(false);
 
 const close = () => emit('update:modelValue', false);
@@ -55,6 +56,7 @@ watch(() => props.modelValue, (isOpen) => {
     pythonVersionInput.value = String(props.website?.python_version || '3.10');
     pythonWorkersInput.value = Number(props.website?.python_workers) || 4;
     pythonModeInput.value = props.website?.python_mode === 'development' ? 'development' : 'production';
+    pythonTimeoutInput.value = Number(props.website?.python_timeout) || 30;
 });
 
 const saveRuntimeSettings = async () => {
@@ -81,6 +83,11 @@ const saveRuntimeSettings = async () => {
         pushToast?.('Worker processes must be a whole number between 1 and 32.', 'error');
         return;
     }
+    const pythonTimeout = Number(pythonTimeoutInput.value);
+    if (runtime === 'python' && (!Number.isInteger(pythonTimeout) || pythonTimeout < 10 || pythonTimeout > 300)) {
+        pushToast?.('Request timeout must be a whole number of seconds between 10 and 300.', 'error');
+        return;
+    }
     updateLoading.value = true;
     try {
         const data = await requestJson(panelRoute('websites.update', { id: props.website.id }), {
@@ -97,6 +104,7 @@ const saveRuntimeSettings = async () => {
                 python_version: String(pythonVersionInput.value || '').trim(),
                 python_workers: pythonWorkers,
                 python_mode: pythonModeInput.value,
+                python_timeout: pythonTimeout,
             },
         });
         pushToast?.(data.message || 'Website settings updated successfully.', 'success');
@@ -195,6 +203,11 @@ const saveRuntimeSettings = async () => {
                                 <label for="python-workers" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Worker processes</label>
                                 <input id="python-workers" v-model.number="pythonWorkersInput" type="number" min="1" max="32" step="1" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
                                 <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">How many requests the app can handle at once (gunicorn <code>--workers</code>, also exported as <code>WEB_CONCURRENCY</code>). Default 4; applied on the next restart.</p>
+                            </div>
+                            <div>
+                                <label for="python-timeout" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Request timeout (seconds)</label>
+                                <input id="python-timeout" v-model.number="pythonTimeoutInput" type="number" min="10" max="300" step="1" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
+                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">How long one request may run before it is stopped (gunicorn <code>--timeout</code>). Default 30; raise it for slow reports or exports.</p>
                             </div>
                         </template>
                     </div>

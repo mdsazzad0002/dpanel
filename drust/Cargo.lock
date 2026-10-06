@@ -468,6 +468,7 @@ dependencies = [
  "hickory-resolver",
  "hound",
  "http",
+ "http-body",
  "hyper",
  "hyper-util",
  "portable-pty",

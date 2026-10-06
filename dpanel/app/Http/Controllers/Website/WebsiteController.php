@@ -362,6 +362,7 @@ class WebsiteController extends Controller
             'python_version' => ['nullable', 'string', 'max:10'],
             'python_workers' => ['nullable', 'integer', 'min:1', 'max:'.Website::MAX_PYTHON_WORKERS],
             'python_mode' => ['nullable', 'string', 'in:'.implode(',', Website::PYTHON_MODES)],
+            'python_timeout' => ['nullable', 'integer', 'min:'.Website::MIN_PYTHON_TIMEOUT, 'max:'.Website::MAX_PYTHON_TIMEOUT],
         ]);
 
         $runtime = $validated['runtime'] ?? (string) ($website['runtime'] ?? 'php');
@@ -431,6 +432,7 @@ class WebsiteController extends Controller
                 $runtimeSettings['python_version'] = trim((string) ($validated['python_version'] ?? '')) ?: null;
                 $runtimeSettings['python_workers'] = (int) ($validated['python_workers'] ?? Website::DEFAULT_PYTHON_WORKERS);
                 $runtimeSettings['python_mode'] = $validated['python_mode'] ?? 'production';
+                $runtimeSettings['python_timeout'] = (int) ($validated['python_timeout'] ?? Website::DEFAULT_PYTHON_TIMEOUT);
                 if (empty($website['python_port'])) {
                     $runtimeSettings['python_port'] = app(\App\Services\Website\WebsiteService::class)->allocatePythonPort();
                 }

@@ -34,6 +34,7 @@ class PythonProcessService
             'python_version' => $website->python_version,
             'workers' => $website->pythonWorkerCount(),
             'mode' => $website->pythonMode(),
+            'timeout' => $website->pythonTimeout(),
             'port' => (int) $website->python_port,
         ]);
 

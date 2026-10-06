@@ -16,7 +16,7 @@ use std::{
 use super::{
     RouteAction, StaticAsset, StaticAssetBody, StaticFileConfig,
     ensure_node_process_running, ensure_python_process_running, execute_php_front_controller,
-    forget_python_liveness,
+    forget_python_liveness, proxy_request_with_timeout, python_static_file,
     browser_cache_control, load_static_asset, normalize_request_path, proxy_request, resolve_route, resolve_static_path,
 };
 
@@ -287,6 +287,19 @@ pub async fn dispatch(
                 if let (Some(owner), Some(project_root)) =
                     (site.site_owner.as_deref(), site.project_root.as_deref())
                 {
+                    // Static assets come straight off disk; a gunicorn worker
+                    // is far too expensive to spend on a CSS file.
+                    if let Some(file) =
+                        python_static_file(project_root, site.python_entry_file.as_deref(), &path)
+                    {
+                        if let Ok(asset) = load_static_asset(&file) {
+                            return annotated_response(
+                                static_response(asset, request.headers()).await,
+                                site_match,
+                                route_match,
+                            );
+                        }
+                    }
                     if let Err(error) = ensure_python_process_running(
                         &site.id,
                         owner,
@@ -313,7 +326,12 @@ pub async fn dispatch(
                     }
                 }
             }
-            let response = proxy_request(proxy_client, upstream, request)
+            let timeout = if site.runtime == "python" {
+                site.python_run.proxy_timeout()
+            } else {
+                super::ProxyConfig::default().request_timeout
+            };
+            let response = proxy_request_with_timeout(proxy_client, upstream, request, timeout)
                 .await
                 .unwrap_or_else(|error| {
                     // The app may have died since it was last seen up; make

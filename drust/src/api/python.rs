@@ -31,6 +31,7 @@ pub(crate) struct Request {
     pub python_version: Option<String>,
     pub workers: Option<u16>,
     pub mode: Option<String>,
+    pub timeout: Option<u16>,
     pub port: u16,
 }
 
@@ -42,6 +43,7 @@ impl Request {
                 .mode
                 .as_deref()
                 .is_some_and(|mode| mode.eq_ignore_ascii_case("development")),
+            timeout: self.timeout,
         }
     }
 }
