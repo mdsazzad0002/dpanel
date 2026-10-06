@@ -878,6 +878,7 @@ fn restore_generic_database(req: &GenericRestoreRequest, sql: &Path) -> Result<(
     }
     let bytes = fs::read(sql).map_err(|e| e.to_string())?;
     let bytes = remap_unsupported_collations(bytes);
+    let bytes = strip_privileged_statements(bytes)?;
     let mut child = Command::new("mysql")
         .env("MYSQL_PWD", &req.database_password)
         .args([
@@ -954,6 +955,95 @@ fn remap_unsupported_collations(bytes: Vec<u8>) -> Vec<u8> {
     out
 }
 
+// The import runs as the site's own database user, which only has rights on
+// the target database. Dumps taken with `--databases` / `-B` (or from another
+// panel) carry `CREATE DATABASE` + `USE` for the source server's database
+// name, so the import tried to switch to e.g. `hstadmin_Katha24webDB` and hit
+// "Access denied". Drop database-level statements so everything lands in the
+// target database, and strip the parts that need SUPER: DEFINER clauses on
+// views/triggers/routines and MySQL's GTID / binlog session settings. Only
+// statement lines are touched, never INSERT data. A dump holding several
+// databases is refused rather than silently merged into one.
+fn strip_privileged_statements(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut source_database: Option<Vec<u8>> = None;
+
+    for line in bytes.split_inclusive(|&b| b == b'\n') {
+        if line.starts_with(b"INSERT ") || line.starts_with(b"(") {
+            out.extend_from_slice(line);
+            continue;
+        }
+        let trimmed = line.trim_ascii_start();
+        let upper: Vec<u8> = trimmed.iter().take(64).map(u8::to_ascii_uppercase).collect();
+
+        if upper.starts_with(b"USE ") {
+            let name: Vec<u8> = trimmed[4..]
+                .iter()
+                .copied()
+                .filter(|b| !matches!(b, b'`' | b';' | b'\r' | b'\n' | b' '))
+                .collect();
+            match &source_database {
+                Some(existing) if *existing != name => {
+                    return Err(format!(
+                        "the SQL dump contains more than one database ({} and {}); export only the website's database and import again",
+                        String::from_utf8_lossy(existing),
+                        String::from_utf8_lossy(&name)
+                    ));
+                }
+                _ => source_database = Some(name),
+            }
+            continue;
+        }
+        if upper.starts_with(b"CREATE DATABASE")
+            || upper.starts_with(b"CREATE SCHEMA")
+            || upper.starts_with(b"DROP DATABASE")
+            || upper.starts_with(b"DROP SCHEMA")
+            || upper.starts_with(b"/*!40000 DROP DATABASE")
+            || upper.starts_with(b"SET @@GLOBAL.GTID_PURGED")
+            || upper.starts_with(b"/*!80000 SET @@GLOBAL.GTID_PURGED")
+            || upper.starts_with(b"SET @@SESSION.SQL_LOG_BIN")
+            || upper.starts_with(b"SET @MYSQLDUMP_TEMP_LOG_BIN")
+        {
+            continue;
+        }
+        out.extend_from_slice(&strip_definer(line));
+    }
+    Ok(out)
+}
+
+// Removes `DEFINER=user@host` (quoted or not, including CURRENT_USER) so the
+// object is created as the importing user. "SQL SECURITY DEFINER" is kept.
+fn strip_definer(line: &[u8]) -> Vec<u8> {
+    const KEY: &[u8] = b"DEFINER=";
+    let mut out = Vec::with_capacity(line.len());
+    let mut i = 0;
+    while i < line.len() {
+        if line[i..].len() >= KEY.len() && line[i..i + KEY.len()].eq_ignore_ascii_case(KEY) {
+            let mut end = i + KEY.len();
+            let mut quote: Option<u8> = None;
+            while end < line.len() {
+                let b = line[end];
+                match quote {
+                    Some(q) if b == q => quote = None,
+                    Some(_) => {}
+                    None if matches!(b, b'`' | b'\'' | b'"') => quote = Some(b),
+                    None if b.is_ascii_whitespace() || b == b'*' => break,
+                    None => {}
+                }
+                end += 1;
+            }
+            while end < line.len() && line[end] == b' ' {
+                end += 1;
+            }
+            i = end;
+            continue;
+        }
+        out.push(line[i]);
+        i += 1;
+    }
+    out
+}
+
 fn detect_generic_application(root: &Path) -> (Option<&'static str>, Option<PathBuf>, PathBuf) {
     if root.join("artisan").is_file() {
         return (
@@ -992,4 +1082,50 @@ fn detect_generic_application(root: &Path) -> (Option<&'static str>, Option<Path
         );
     }
     (None, None, root.to_path_buf())
+}
+
+#[cfg(test)]
+mod sql_sanitize_tests {
+    use super::strip_privileged_statements;
+
+    fn run(sql: &str) -> Result<String, String> {
+        strip_privileged_statements(sql.as_bytes().to_vec())
+            .map(|bytes| String::from_utf8(bytes).unwrap())
+    }
+
+    #[test]
+    fn drops_database_scoping_from_databases_dumps() {
+        let sql = "-- Current Database: `hstadmin_Katha24webDB`\n\
+CREATE DATABASE /*!32312 IF NOT EXISTS*/ `hstadmin_Katha24webDB` /*!40100 DEFAULT CHARACTER SET utf8mb4 */;\n\
+\n\
+USE `hstadmin_Katha24webDB`;\n\
+DROP TABLE IF EXISTS `accounts`;\n\
+INSERT INTO `accounts` VALUES (1,'USE `x`; CREATE DATABASE y; DEFINER=`a`@`b`');\n";
+        let out = run(sql).unwrap();
+        assert!(!out.contains("CREATE DATABASE /*"));
+        assert!(!out.contains("USE `hstadmin_Katha24webDB`"));
+        assert!(out.contains("DROP TABLE IF EXISTS `accounts`;"));
+        assert!(out.contains("'USE `x`; CREATE DATABASE y; DEFINER=`a`@`b`'"));
+    }
+
+    #[test]
+    fn strips_definers_and_super_only_settings() {
+        let sql = "/*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */\n\
+CREATE DEFINER=`cpuser`@`%` TRIGGER t BEFORE INSERT ON a FOR EACH ROW SET NEW.x=1;\n\
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ 'abc:1-5';\n\
+SET @@SESSION.SQL_LOG_BIN= 0;\n";
+        let out = run(sql).unwrap();
+        assert!(!out.contains("DEFINER=`"));
+        assert!(out.contains("SQL SECURITY DEFINER"));
+        assert!(out.contains("CREATE TRIGGER t"));
+        assert!(!out.contains("GTID_PURGED"));
+        assert!(!out.contains("SQL_LOG_BIN"));
+    }
+
+    #[test]
+    fn refuses_dumps_with_several_databases() {
+        let error = run("USE `one`;\nCREATE TABLE a (id int);\nUSE `two`;\n").unwrap_err();
+        assert!(error.contains("more than one database"));
+        assert!(run("USE `one`;\nUSE `one`;\n").is_ok());
+    }
 }

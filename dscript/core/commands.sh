@@ -380,6 +380,16 @@ dscript_run_module() {
       fi
       panel_run_module "$module" "$action" "$@"
       ;;
+    default|versions)
+      [[ "$module" == "php" ]] || panel_die "Unsupported action '${action}' for ${module}."
+      if [[ "$DSCRIPT_DRY_RUN" == "true" ]]; then
+        printf '[DRY-RUN] module %s %s' "$module" "$action"
+        if [[ $# -gt 0 ]]; then printf ' %q' "$@"; fi
+        printf '\n'
+        return 0
+      fi
+      panel_php_manage_versions "$action" "$@"
+      ;;
     install|update|remove|reinstall|start|stop|restart|reload|status)
       if [[ "$DSCRIPT_DRY_RUN" == "true" ]]; then
         printf '[DRY-RUN] module %s %s' "$module" "$action"
