@@ -132,6 +132,7 @@ class MainWebsiteController extends Controller
             'python_entry_file' => [$domainType !== 'alis' && $request->input('runtime') === 'python' ? 'required' : 'nullable', 'string', 'max:255'],
             'python_start_command' => ['nullable', 'string', 'max:255'],
             'python_workers' => ['nullable', 'integer', 'min:1', 'max:'.Website::MAX_PYTHON_WORKERS],
+            'python_mode' => ['nullable', 'string', 'in:'.implode(',', Website::PYTHON_MODES)],
             'domain_type' => ['required', 'string', 'in:main,alis,sub'],
             'enable_ssl' => ['boolean'],
             'manage_dns' => ['boolean'],
@@ -236,6 +237,7 @@ class MainWebsiteController extends Controller
             $pythonStartCommand = $parentWebsite->python_start_command;
             $pythonPort = $parentWebsite->python_port;
             $pythonWorkers = $parentWebsite->python_workers;
+            $pythonMode = $parentWebsite->python_mode;
             $demoFiles = [];
         } else {
             $homeSetup = $this->filemanagerService->createAccountHome($siteOwner, null, '/bin/bash', $siteDirectory);
@@ -250,6 +252,7 @@ class MainWebsiteController extends Controller
             $pythonEntryFile = $validated['python_entry_file'] ?? null;
             $pythonStartCommand = $validated['python_start_command'] ?? null;
             $pythonWorkers = $runtime === 'python' ? (int) ($validated['python_workers'] ?? Website::DEFAULT_PYTHON_WORKERS) : null;
+            $pythonMode = $runtime === 'python' ? ($validated['python_mode'] ?? 'production') : null;
             if ($runtime === 'node') {
                 $nodePort = $this->websiteService->allocateNodePort();
             }
@@ -320,6 +323,7 @@ class MainWebsiteController extends Controller
             'python_start_command' => $pythonStartCommand,
             'python_port' => $pythonPort,
             'python_workers' => $pythonWorkers,
+            'python_mode' => $pythonMode,
             'python_process_status' => $runtime === 'python' ? 'pending' : null,
             'enable_ssl' => $parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false),
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),
@@ -377,9 +381,17 @@ class MainWebsiteController extends Controller
             \App\Jobs\StartPythonProcessJob::dispatch((string) $website->id);
         }
 
+        // Aliases reuse their parent's files and Node/Python sites get no demo
+        // page, so only mention demo files when some were actually written.
+        if ($parentWebsite !== null) {
+            $message = 'Alias created successfully.';
+        } elseif (! empty($demoFiles)) {
+            $message .= ' Demo site files created successfully.';
+        }
+
         return response()->json([
             'type' => 'success',
-            'message' => $message.' Demo site files created successfully.',
+            'message' => $message,
             'demo_files' => $demoFiles,
             'gateway_activation' => $activation,
             'ssl' => $sslResult,

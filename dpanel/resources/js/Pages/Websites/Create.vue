@@ -61,6 +61,7 @@ const form = useForm({
     python_entry_file: 'app:app',
     python_start_command: '',
     python_workers: 4,
+    python_mode: 'production',
     enable_ssl: true,
     manage_dns: false,
     assigned_user_id: '',
@@ -682,6 +683,15 @@ onBeforeUnmount(() => {
                         <input v-model="form.python_start_command" type="text" placeholder="gunicorn app:app" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                         <p class="mt-1 text-xs text-slate-500">Overrides the default `gunicorn {{ form.python_entry_file || 'app:app' }}` command.</p>
                         <p v-if="form.errors.python_start_command" class="mt-1 text-xs text-red-600">{{ form.errors.python_start_command }}</p>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm">Mode</label>
+                        <select v-model="form.python_mode" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                            <option value="production">Production</option>
+                            <option value="development">Development (auto-reload on code change)</option>
+                        </select>
+                        <p class="mt-1 text-xs text-slate-500">Development restarts the app by itself when code changes; use Production for live sites.</p>
+                        <p v-if="form.errors.python_mode" class="mt-1 text-xs text-red-600">{{ form.errors.python_mode }}</p>
                     </div>
                     <div>
                         <label class="mb-1 block text-sm">Worker Processes</label>

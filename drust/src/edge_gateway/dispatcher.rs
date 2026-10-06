@@ -293,7 +293,7 @@ pub async fn dispatch(
                         site.python_entry_file.as_deref(),
                         site.python_start_command.as_deref(),
                         site.python_version.as_deref(),
-                        site.python_workers,
+                        site.python_run,
                         match upstream {
                             super::UpstreamConfig::Http(addr) => addr.port(),
                             super::UpstreamConfig::Unix(_) => 0,

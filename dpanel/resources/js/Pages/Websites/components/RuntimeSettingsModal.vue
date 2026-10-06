@@ -36,6 +36,7 @@ const pythonEntryFileInput = ref('');
 const pythonStartCommandInput = ref('');
 const pythonVersionInput = ref('3.10');
 const pythonWorkersInput = ref(4);
+const pythonModeInput = ref('production');
 const updateLoading = ref(false);
 
 const close = () => emit('update:modelValue', false);
@@ -53,6 +54,7 @@ watch(() => props.modelValue, (isOpen) => {
     pythonStartCommandInput.value = String(props.website?.python_start_command || '');
     pythonVersionInput.value = String(props.website?.python_version || '3.10');
     pythonWorkersInput.value = Number(props.website?.python_workers) || 4;
+    pythonModeInput.value = props.website?.python_mode === 'development' ? 'development' : 'production';
 });
 
 const saveRuntimeSettings = async () => {
@@ -94,6 +96,7 @@ const saveRuntimeSettings = async () => {
                 python_start_command: String(pythonStartCommandInput.value || '').trim(),
                 python_version: String(pythonVersionInput.value || '').trim(),
                 python_workers: pythonWorkers,
+                python_mode: pythonModeInput.value,
             },
         });
         pushToast?.(data.message || 'Website settings updated successfully.', 'success');
@@ -179,6 +182,14 @@ const saveRuntimeSettings = async () => {
                                 <label for="python-start-command" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Start command (optional)</label>
                                 <input id="python-start-command" v-model="pythonStartCommandInput" type="text" placeholder="gunicorn app:app" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
                                 <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Overrides <code>gunicorn {{ pythonEntryFileInput || 'app:app' }}</code>.</p>
+                            </div>
+                            <div>
+                                <label for="python-mode" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Mode</label>
+                                <select id="python-mode" v-model="pythonModeInput" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
+                                    <option value="production">Production</option>
+                                    <option value="development">Development (auto-reload on code change)</option>
+                                </select>
+                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Development restarts the app by itself whenever a file changes and logs in debug detail; it uses more CPU, so switch live sites back to Production. Sets <code>APP_ENV</code> and <code>FLASK_DEBUG</code> to match.</p>
                             </div>
                             <div>
                                 <label for="python-workers" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Worker processes</label>

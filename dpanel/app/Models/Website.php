@@ -15,6 +15,9 @@ class Website extends Model
 
     public const MAX_PYTHON_WORKERS = 32;
 
+    /** production: plain gunicorn. development: auto-reload on code changes. */
+    public const PYTHON_MODES = ['production', 'development'];
+
     protected static function booted(): void
     {
         $reload = static function (self $website): void {
@@ -59,6 +62,7 @@ class Website extends Model
         'python_version',
         'python_start_command',
         'python_workers',
+        'python_mode',
         'python_process_status',
         'client_max_body_size',
         'wordpress_db_prefix',
@@ -100,6 +104,11 @@ class Website extends Model
         $workers = (int) ($this->python_workers ?? 0);
 
         return $workers > 0 ? $workers : self::DEFAULT_PYTHON_WORKERS;
+    }
+
+    public function pythonMode(): string
+    {
+        return in_array($this->python_mode, self::PYTHON_MODES, true) ? $this->python_mode : 'production';
     }
 
     public function parent(): BelongsTo

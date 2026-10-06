@@ -15,6 +15,16 @@ use tokio::{net::TcpStream, time::timeout};
 pub const DEFAULT_PYTHON_WORKERS: u16 = 4;
 const MAX_PYTHON_WORKERS: u16 = 32;
 
+/// How a site's gunicorn runs, beyond its entry point.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PythonRunOptions {
+    pub workers: Option<u16>,
+    /// Development mode reloads workers whenever code changes, so edits show
+    /// up without a manual restart. It watches every file, so production
+    /// sites leave it off.
+    pub development: bool,
+}
+
 fn worker_count(workers: Option<u16>) -> u16 {
     match workers {
         Some(workers) if workers > 0 => workers.min(MAX_PYTHON_WORKERS),
@@ -32,7 +42,7 @@ pub async fn ensure_python_process_running(
     entry_module: Option<&str>,
     start_command: Option<&str>,
     python_version: Option<&str>,
-    workers: Option<u16>,
+    options: PythonRunOptions,
     port: u16,
 ) -> Result<(), String> {
     if port_is_listening(port).await {
@@ -46,7 +56,7 @@ pub async fn ensure_python_process_running(
         entry_module,
         start_command,
         python_version,
-        workers,
+        options,
         port,
         false,
     )
@@ -64,7 +74,7 @@ pub async fn reprovision_and_restart_python_process(
     entry_module: Option<&str>,
     start_command: Option<&str>,
     python_version: Option<&str>,
-    workers: Option<u16>,
+    options: PythonRunOptions,
     port: u16,
 ) -> Result<(), String> {
     provision(
@@ -74,7 +84,7 @@ pub async fn reprovision_and_restart_python_process(
         entry_module,
         start_command,
         python_version,
-        workers,
+        options,
         port,
         true,
     )
@@ -91,7 +101,7 @@ async fn provision(
     entry_module: Option<&str>,
     start_command: Option<&str>,
     python_version: Option<&str>,
-    workers: Option<u16>,
+    options: PythonRunOptions,
     port: u16,
     force: bool,
 ) -> Result<(), String> {
@@ -110,7 +120,7 @@ async fn provision(
             entry_module.as_deref(),
             start_command.as_deref(),
             python_version.as_deref(),
-            worker_count(workers),
+            options,
             port,
             force,
         )
@@ -214,10 +224,16 @@ fn ensure_unit_provisioned(
     entry_module: Option<&str>,
     start_command: Option<&str>,
     python_version: Option<&str>,
-    workers: u16,
+    options: PythonRunOptions,
     port: u16,
     force: bool,
 ) -> Result<(), String> {
+    let workers = worker_count(options.workers);
+    let (app_env, flask_debug, dev_flags) = if options.development {
+        ("development", 1, " --reload --log-level debug")
+    } else {
+        ("production", 0, "")
+    };
     let lock = site_provision_lock(site_id)?;
     let _guard = lock
         .lock()
@@ -253,7 +269,7 @@ fn ensure_unit_provisioned(
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "python entry module (WSGI app path) is not configured".to_string())?;
             format!(
-                "{} {} --bind 127.0.0.1:{port} --workers {workers}",
+                "{} {} --bind 127.0.0.1:{port} --workers {workers}{dev_flags}",
                 gunicorn_bin.display(),
                 shell_quote(module)
             )
@@ -277,6 +293,9 @@ fn ensure_unit_provisioned(
          Environment=PORT={port}\n\
          Environment=PYTHONUNBUFFERED=1\n\
          Environment=WEB_CONCURRENCY={workers}\n\
+         Environment=APP_ENV={app_env}\n\
+         Environment=FLASK_DEBUG={flask_debug}\n\
+         Environment=\"GUNICORN_CMD_ARGS={gunicorn_cmd_args}\"\n\
          ExecStart={exec_start}\n\
          Restart=always\n\
          RestartSec=3\n\
@@ -286,6 +305,8 @@ fn ensure_unit_provisioned(
          [Install]\n\
          WantedBy=multi-user.target\n",
         workdir = app_dir.display(),
+        // Reaches gunicorn even when a custom start command is used.
+        gunicorn_cmd_args = dev_flags.trim(),
     );
 
     let existing = fs::read_to_string(&unit_path).ok();

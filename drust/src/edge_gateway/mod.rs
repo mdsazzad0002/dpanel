@@ -33,7 +33,7 @@ pub use php::{
 };
 pub use proxy::{ProxyConfig, build_client, health_check_upstream, proxy_request};
 pub use python_process::{
-    PythonProcessStatus, ensure_python_process_running, python_process_status,
+    PythonProcessStatus, PythonRunOptions, ensure_python_process_running, python_process_status,
     reprovision_and_restart_python_process, restart_python_process, stop_python_process,
 };
 pub use server::{
