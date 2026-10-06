@@ -16,6 +16,7 @@ use std::{
 use super::{
     RouteAction, StaticAsset, StaticAssetBody, StaticFileConfig,
     ensure_node_process_running, ensure_python_process_running, execute_php_front_controller,
+    forget_python_liveness,
     browser_cache_control, load_static_asset, normalize_request_path, proxy_request, resolve_route, resolve_static_path,
 };
 
@@ -314,7 +315,16 @@ pub async fn dispatch(
             }
             let response = proxy_request(proxy_client, upstream, request)
                 .await
-                .unwrap_or_else(|error| simple_response(StatusCode::BAD_GATEWAY, &error));
+                .unwrap_or_else(|error| {
+                    // The app may have died since it was last seen up; make
+                    // the next request probe and restart it if needed.
+                    if site.runtime == "python" {
+                        if let super::UpstreamConfig::Http(addr) = upstream {
+                            forget_python_liveness(addr.port());
+                        }
+                    }
+                    simple_response(StatusCode::BAD_GATEWAY, &error)
+                });
             return annotated_response(response, site_match, route_match);
         }
         RouteAction::Redirect { location, code } => {
