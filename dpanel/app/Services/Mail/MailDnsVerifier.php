@@ -22,8 +22,9 @@ class MailDnsVerifier
     public function verify(string $domain, string $selector, string $dkimPublicKey): array
     {
         $domain = strtolower(trim($domain));
-        $host = $this->records->mailHost() ?: 'mail.'.$domain;
-        $ip = $this->records->serverIp();
+        $records = $this->records->forDomain($domain);
+        $host = $records->mailHost() ?: 'mail.'.$domain;
+        $ip = $records->serverIp();
         $this->dns->prefetch([
             [$domain, 'MX'], [$domain, 'TXT'], ["{$selector}._domainkey.{$domain}", 'TXT'],
             ["_dmarc.{$domain}", 'TXT'], [$host, 'A'], [$ip, 'PTR'],

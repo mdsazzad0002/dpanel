@@ -405,12 +405,24 @@ Route::prefix('cpsess{token}')
             Route::post('/emails/mail-hostname', [MailHostnameController::class, 'update'])
                 ->middleware(['role_or_permission:admin|manage_mail_server', 'throttle:10,1'])
                 ->name('emails.mail-hostname.update');
-            Route::get('/emails/mail-hostname/tls', [MailHostnameController::class, 'tlsStatus'])
+            Route::get('/emails/mail-ips', [MailHostnameController::class, 'ips'])
                 ->middleware('role_or_permission:admin|manage_mail_server')
-                ->name('emails.mail-hostname.tls');
-            Route::post('/emails/mail-hostname/tls', [MailHostnameController::class, 'issueTls'])
+                ->name('emails.mail-ips');
+            Route::post('/emails/mail-ips', [MailHostnameController::class, 'storeIp'])
+                ->middleware(['role_or_permission:admin|manage_mail_server', 'throttle:10,1'])
+                ->name('emails.mail-ips.store');
+            Route::patch('/emails/mail-ips/{id}', [MailHostnameController::class, 'updateIp'])
+                ->middleware(['role_or_permission:admin|manage_mail_server', 'throttle:10,1'])
+                ->name('emails.mail-ips.update');
+            Route::delete('/emails/mail-ips/{id}', [MailHostnameController::class, 'destroyIp'])
+                ->middleware(['role_or_permission:admin|manage_mail_server', 'throttle:10,1'])
+                ->name('emails.mail-ips.destroy');
+            Route::post('/emails/mail-ips/assign', [MailHostnameController::class, 'assignDomain'])
+                ->middleware(['role_or_permission:admin|manage_mail_server', 'throttle:30,1'])
+                ->name('emails.mail-ips.assign');
+            Route::post('/emails/mail-ips/ssl', [MailHostnameController::class, 'issueTls'])
                 ->middleware(['role_or_permission:admin|manage_mail_server', 'throttle:5,1'])
-                ->name('emails.mail-hostname.tls.issue');
+                ->name('emails.mail-ips.ssl');
             Route::get('/emails/guide/verify/{domain}', [EmailController::class, 'verifyDns'])
                 ->where('domain', '[A-Za-z0-9.-]+')
                 ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:20,1'])

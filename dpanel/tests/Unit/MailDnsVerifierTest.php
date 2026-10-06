@@ -6,10 +6,13 @@ use App\Services\Dns\PublicDnsLookup;
 use App\Services\Mail\MailDnsRecords;
 use App\Services\Mail\MailDnsVerifier;
 use Tests\Support\FakeDns;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class MailDnsVerifierTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();

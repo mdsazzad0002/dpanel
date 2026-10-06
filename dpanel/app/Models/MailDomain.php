@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MailDomain extends Model
@@ -18,6 +19,7 @@ class MailDomain extends Model
     protected $fillable = [
         'domain',
         'server_id',
+        'mail_ip_id',
         'enable_dkim',
         'enable_spf',
         'enable_dmarc',
@@ -41,5 +43,10 @@ class MailDomain extends Model
     public function mailboxes(): HasMany
     {
         return $this->hasMany(Mailbox::class, 'mail_domain_id');
+    }
+
+    public function mailIp(): BelongsTo
+    {
+        return $this->belongsTo(MailIp::class, 'mail_ip_id');
     }
 }

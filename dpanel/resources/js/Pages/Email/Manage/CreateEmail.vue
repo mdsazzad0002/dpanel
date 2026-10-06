@@ -14,6 +14,8 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    mailIps: { type: Array, default: () => [] },
+    domainMailIps: { type: Object, default: () => ({}) },
 });
 
 const form = useForm({
@@ -22,6 +24,7 @@ const form = useForm({
     password: '',
     quota_mb: 1024,
     forwarding_to: '',
+    mail_ip_id: '',
 });
 const websiteDomainOptions = computed(() => props.websiteDomains.map((domain) => ({ value: domain, label: domain })));
 const responseMessage = ref('');
@@ -70,6 +73,9 @@ const generatePassword = () => {
 watch(
     () => form.domain,
     (domain) => {
+        if (props.mailIps.length) {
+            form.mail_ip_id = props.domainMailIps[domain] || props.mailIps.find((mailIp) => mailIp.is_default)?.id || '';
+        }
         if (!domain || form.mailbox) return;
         const prefix = String(domain).split('.')[0] || 'mail';
         form.mailbox = prefix.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 20);
@@ -113,6 +119,14 @@ watch(
                         search-placeholder="Search domains…"
                     />
                     <p v-if="form.errors.domain" class="mt-1 text-xs text-red-600">{{ form.errors.domain }}</p>
+                </div>
+                <div v-if="mailIps.length" class="md:col-span-2">
+                    <label class="mb-1 block text-sm">Sending IP</label>
+                    <select v-model="form.mail_ip_id" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                        <option v-for="mailIp in mailIps" :key="mailIp.id" :value="mailIp.id">{{ mailIp.ip }} — {{ mailIp.hostname || 'no hostname' }}{{ mailIp.is_default ? ' (default)' : '' }}</option>
+                    </select>
+                    <p class="mt-1 text-xs text-slate-500">Applies to the whole domain: MX and SPF must then use this IP and hostname (see Mail DNS Guide).</p>
+                    <p v-if="form.errors.mail_ip_id" class="mt-1 text-xs text-red-600">{{ form.errors.mail_ip_id }}</p>
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">Mailbox</label>

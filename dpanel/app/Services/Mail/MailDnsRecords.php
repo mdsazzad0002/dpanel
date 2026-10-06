@@ -2,6 +2,7 @@
 
 namespace App\Services\Mail;
 
+use App\Models\MailDomain;
 use App\Services\Dns\PublicDnsLookup;
 
 /**
@@ -14,6 +15,28 @@ use App\Services\Dns\PublicDnsLookup;
  */
 class MailDnsRecords
 {
+    /** Set by forDomain() when the domain sends from a non-default mail IP. */
+    private ?string $assignedIp = null;
+
+    private ?string $assignedHost = null;
+
+    /**
+     * These records as seen by one domain: a domain assigned to another mail
+     * IP uses that IP in SPF and that IP's hostname as MX.
+     */
+    public function forDomain(string $domain): static
+    {
+        $mailIp = MailDomain::query()->where('domain', strtolower(trim($domain)))->with('mailIp')->first()?->mailIp;
+        if (! $mailIp || $mailIp->is_default) {
+            return $this;
+        }
+        $scoped = clone $this;
+        $scoped->assignedIp = $mailIp->ip;
+        $scoped->assignedHost = strtolower((string) $mailIp->hostname);
+
+        return $scoped;
+    }
+
     /**
      * The one hostname all domains point MX at: the first of Postfix's name,
      * the configured preference and the panel domain that resolves to this
@@ -22,6 +45,9 @@ class MailDnsRecords
      */
     public function mailHost(): string
     {
+        if ($this->assignedHost !== null) {
+            return $this->assignedHost;
+        }
         $candidates = array_values(array_filter([
             strtolower(trim((string) @shell_exec('postconf -h myhostname 2>/dev/null'))),
             strtolower(trim((string) config('serverpanel.mail.hostname', ''))),
@@ -54,6 +80,9 @@ class MailDnsRecords
      */
     public function serverIp(): string
     {
+        if ($this->assignedIp !== null) {
+            return $this->assignedIp;
+        }
         $configured = trim((string) config('serverpanel.mail.server_ip', ''));
         if (filter_var($configured, FILTER_VALIDATE_IP)) {
             return $configured;
@@ -96,6 +125,9 @@ class MailDnsRecords
     public function records(string $domain, string $selector, string $dkimPublicKey): array
     {
         $domain = strtolower(trim($domain));
+        if ($this->assignedIp === null && ($scoped = $this->forDomain($domain)) !== $this) {
+            return $scoped->records($domain, $selector, $dkimPublicKey);
+        }
         $host = $this->mailHost() ?: 'mail.'.$domain;
         $records = [];
 

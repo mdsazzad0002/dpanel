@@ -2,13 +2,18 @@
 
 namespace Tests\Unit;
 
+use App\Models\MailDomain;
+use App\Models\MailIp;
 use App\Services\Dns\PublicDnsLookup;
 use App\Services\Mail\MailDnsRecords;
 use Tests\Support\FakeDns;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class MailDnsRecordsTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -25,6 +30,20 @@ class MailDnsRecordsTest extends TestCase
         $this->assertSame('v=DKIM1; k=rsa; p=KEY', $records['TXT default._domainkey']['value']);
         // The host lives in another zone, so this domain needs no A record.
         $this->assertFalse($records->has('A mail'));
+    }
+
+    public function test_a_domain_on_another_mail_ip_uses_that_ip_and_hostname(): void
+    {
+        config(['serverpanel.mail.hostname' => 'panel.example.com', 'serverpanel.mail.server_ip' => '203.0.113.5']);
+        $other = MailIp::query()->create(['ip' => '198.51.100.7', 'hostname' => 'mail2.example.com', 'is_default' => false]);
+        MailDomain::query()->create(['domain' => 'shop.test', 'mail_ip_id' => $other->id]);
+
+        $records = collect((new MailDnsRecords)->records('shop.test', 'default', ''))->keyBy(fn ($r) => $r['type'].' '.$r['name']);
+        $this->assertSame('mail2.example.com', $records['MX @']['value']);
+        $this->assertSame('v=spf1 ip4:198.51.100.7 mx ~all', $records['TXT @']['value']);
+
+        // Unassigned domains stay on the default IP.
+        $this->assertSame('v=spf1 ip4:203.0.113.5 mx ~all', (new MailDnsRecords)->forDomain('other.test')->spf());
     }
 
     public function test_a_mail_host_inside_the_domain_gets_an_a_record(): void

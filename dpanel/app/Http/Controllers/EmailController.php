@@ -9,6 +9,7 @@ use App\Support\MailPasswordHash;
 use App\Models\Website;
 use App\Services\Mail\MailboxImapService;
 use App\Services\Mail\MailDnsRecords;
+use App\Services\Mail\MailIps;
 use App\Services\Mail\MailDnsVerifier;
 use App\Services\Mail\MailDnsZoneWriter;
 use App\Services\Mail\MailDomainProvisioner;
@@ -42,6 +43,7 @@ class EmailController extends Controller
     {
         return Inertia::render('Email/Manage/CreateEmail', [
             'websiteDomains' => $this->readWebsiteDomains(),
+            ...$this->mailIpChoices(request()),
         ]);
     }
 
@@ -60,13 +62,25 @@ class EmailController extends Controller
         ]);
     }
 
+    /**
+     * The server name mail apps connect to: the hostname of the domain's mail
+     * IP, which is the name its certificate covers. mail.<domain> only works
+     * when it happens to be that name.
+     */
+    private function clientMailHost(string $domain): string
+    {
+        $domain = strtolower(trim($domain));
+
+        return app(MailDnsRecords::class)->forDomain($domain)->mailHost() ?: 'mail.'.$domain;
+    }
+
     public function connectionGuide(string $token, string $id): Response
     {
         $mailbox = Mailbox::query()->findOrFail($id);
 
         return Inertia::render('Email/Manage/EmailConnectionGuide', [
             'mailbox' => $mailbox->only(['id', 'email', 'domain']),
-            'mailHost' => 'mail.'.trim((string) $mailbox->domain),
+            'mailHost' => $this->clientMailHost((string) $mailbox->domain),
         ]);
     }
 
@@ -81,7 +95,7 @@ class EmailController extends Controller
             'recipient' => ['required', 'email:rfc', 'max:254'],
         ]);
 
-        $mailHost = 'mail.'.trim((string) $mailbox->domain);
+        $mailHost = $this->clientMailHost((string) $mailbox->domain);
         $body = implode("\n", [
             'Your dPanel email client configuration',
             '',
@@ -140,7 +154,7 @@ class EmailController extends Controller
         $selector = trim((string) ($mailDomain?->dkim_selector ?: config('serverpanel.mail.dkim_selector', 'default'))) ?: 'default';
         $dkimDomain = trim((string) config('serverpanel.mail.dkim_domain', ''));
         $dkimPublicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('serverpanel.mail.dkim_public_key', '')))) ?: '';
-        $mailDns = app(MailDnsRecords::class);
+        $mailDns = $domain !== '' ? app(MailDnsRecords::class)->forDomain($domain) : app(MailDnsRecords::class);
         $serverIp = $mailDns->serverIp();
         $mailHost = $domain !== '' ? ($mailDns->mailHost() ?: 'mail.'.$domain) : '';
         $dkimReady = ($dkimDomain === '' || $dkimDomain === $domain) && $dkimPublicKey !== '';
@@ -334,6 +348,10 @@ class EmailController extends Controller
 
         // Mailbox exists at this point; prep failures are reported, not fatal.
         $prepared = $provisioner->ensureReady($domain);
+        // The choice is only offered to mail server admins; anyone else keeps the domain's IP.
+        if (! empty($validated['mail_ip_id']) && $this->mailIpChoices($request)['mailIps'] !== []) {
+            app(MailIps::class)->assign($domain, $validated['mail_ip_id']);
+        }
 
         return response()->json([
             'ok' => true,
@@ -919,6 +937,29 @@ class EmailController extends Controller
     /**
      * @return array<string, mixed>
      */
+    /**
+     * The sending-IP choice for the mailbox form: only for mail server admins,
+     * and only once the server has more than one mail IP.
+     *
+     * @return array{mailIps: array<int, array<string, mixed>>, domainMailIps: array<string, string>}
+     */
+    private function mailIpChoices(Request $request): array
+    {
+        $user = $request->user();
+        if (! ($user?->hasRole('admin') || $user?->can('manage_mail_server'))) {
+            return ['mailIps' => [], 'domainMailIps' => []];
+        }
+        $ips = app(MailIps::class)->all();
+        if ($ips->count() < 2) {
+            return ['mailIps' => [], 'domainMailIps' => []];
+        }
+
+        return [
+            'mailIps' => $ips->map(fn ($mailIp) => $mailIp->only(['id', 'ip', 'hostname', 'is_default']))->values()->all(),
+            'domainMailIps' => MailDomain::query()->whereNotNull('mail_ip_id')->pluck('mail_ip_id', 'domain')->all(),
+        ];
+    }
+
     private function validatePayload(Request $request): array
     {
         return $request->validate([
@@ -929,6 +970,7 @@ class EmailController extends Controller
                 'regex:/^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/',
             ],
             'mailbox' => ['required', 'string', 'max:64', 'regex:/^[a-zA-Z0-9._-]+$/'],
+            'mail_ip_id' => ['nullable', 'string', 'exists:mail_ips,id'],
             'password' => ['required', 'string', 'min:6', 'max:255'],
             'quota_mb' => ['required', 'integer', 'min:1', 'max:102400'],
             'forwarding_to' => ['nullable', 'email', 'max:255'],
