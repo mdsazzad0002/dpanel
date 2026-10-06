@@ -291,9 +291,21 @@ Route::post('/websites/{id}/filemanager/file', [WebsiteFileManagerController::cl
 Route::patch('/websites/{id}/filemanager/file', [WebsiteFileManagerController::class, 'saveFile'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.file.save');
-Route::post('/websites/{id}/filemanager/upload', [WebsiteFileManagerController::class, 'uploadFile'])
-    ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('websites.filemanager.upload');
+Route::post('/websites/{id}/filemanager/upload', [WebsiteFileManagerController::class, 'startUpload'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:120,1'])
+    ->name('websites.filemanager.upload.start');
+Route::post('/websites/{id}/filemanager/upload/{uploadId}/chunks', [WebsiteFileManagerController::class, 'uploadChunk'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:1200,1'])
+    ->whereUuid('uploadId')
+    ->name('websites.filemanager.upload.chunk');
+Route::post('/websites/{id}/filemanager/upload/{uploadId}/complete', [WebsiteFileManagerController::class, 'completeUpload'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:120,1'])
+    ->whereUuid('uploadId')
+    ->name('websites.filemanager.upload.complete');
+Route::delete('/websites/{id}/filemanager/upload/{uploadId}', [WebsiteFileManagerController::class, 'cancelUpload'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:120,1'])
+    ->whereUuid('uploadId')
+    ->name('websites.filemanager.upload.cancel');
 Route::patch('/websites/{id}/filemanager/permissions', [WebsiteFileManagerController::class, 'changePermissions'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.permissions');

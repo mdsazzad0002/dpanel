@@ -28,12 +28,12 @@ defineProps({
                 </p>
             </div>
         </div>
-        <button type="button" :disabled="fm.uploadForm.processing || !fm.uploadForm.uploads?.length" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60" @click="fm.submitUpload">
-            {{ fm.uploadForm.processing ? 'Uploading...' : 'Upload File(s)' }}
+        <button type="button" :disabled="fm.uploadInProgress || !fm.uploadForm.uploads?.length" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60" @click="fm.submitUpload">
+            {{ fm.uploadInProgress ? 'Uploading...' : 'Upload File(s)' }}
         </button>
-        <div v-if="fm.uploadForm.processing || fm.uploadTaskComplete" class="space-y-1">
+        <div v-if="fm.uploadInProgress || fm.uploadTaskComplete" class="space-y-1">
             <div class="flex items-center justify-between text-xs text-slate-500">
-                <span>{{ fm.uploadTaskComplete ? 'Complete' : 'Uploading...' }}</span>
+                <span class="truncate">{{ fm.uploadTaskComplete ? 'Complete' : `Uploading ${fm.uploadCurrentFile}...` }}</span>
                 <span>{{ fm.uploadProgress }}%</span>
             </div>
             <div class="h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">

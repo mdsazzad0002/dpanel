@@ -50,6 +50,8 @@ export function useFileManager(props) {
     const uploadDragActive = ref(false);
     const uploadProgress = ref(0);
     const uploadTaskComplete = ref(false);
+    const uploadInProgress = ref(false);
+    const uploadCurrentFile = ref('');
     const tableDragActive = ref(false);
     const tableDragDepth = ref(0);
     const droppedUploadHint = ref('');
@@ -733,27 +735,87 @@ export function useFileManager(props) {
             });
     }
 
-    function submitUpload() {
-        uploadForm.path = props.currentPath;
+    // Each file goes up in slices: the edge gateway caps a PHP request body at
+    // 64 MiB, so a single multipart request fails for anything larger.
+    async function postChunkWithRetry(url, form, onProgress) {
+        for (let attempt = 1; ; attempt += 1) {
+            try {
+                return await window.axios.post(url, form, { onUploadProgress: onProgress });
+            } catch (error) {
+                const status = error?.response?.status;
+                if (attempt >= 3 || (status && status < 500 && status !== 429)) throw error;
+                await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+            }
+        }
+    }
+
+    async function uploadOneFile(file, onBytes) {
+        const started = await window.axios.post(panelRoute('websites.filemanager.upload.start', fileManagerRouteParams()), {
+            path: props.currentPath,
+            name: file.name,
+            size: file.size,
+        });
+        const uploadId = started.data.upload_id;
+        const chunkSize = started.data.chunk_size;
+        const total = Math.max(1, Math.ceil(file.size / chunkSize));
+        try {
+            for (let index = 0; index < total; index += 1) {
+                const form = new FormData();
+                form.append('index', String(index));
+                form.append('chunk', file.slice(index * chunkSize, Math.min(file.size, (index + 1) * chunkSize)), `${index}.part`);
+                const chunkStart = index * chunkSize;
+                await postChunkWithRetry(
+                    panelRoute('websites.filemanager.upload.chunk', fileManagerRouteParams({ uploadId })),
+                    form,
+                    (event) => onBytes(chunkStart + Math.min(event.loaded || 0, chunkSize)),
+                );
+            }
+            await window.axios.post(panelRoute('websites.filemanager.upload.complete', fileManagerRouteParams({ uploadId })));
+        } catch (error) {
+            window.axios.delete(panelRoute('websites.filemanager.upload.cancel', fileManagerRouteParams({ uploadId }))).catch(() => {});
+            throw error;
+        }
+    }
+
+    async function submitUpload() {
+        const files = Array.isArray(uploadForm.uploads) ? [...uploadForm.uploads] : [];
+        if (uploadInProgress.value || files.length === 0) return;
+
+        uploadInProgress.value = true;
         uploadProgress.value = 0;
         uploadTaskComplete.value = false;
-        uploadForm.post(panelRoute('websites.filemanager.upload', fileManagerRouteParams()), {
-            onProgress: (event) => {
-                uploadProgress.value = Math.round(event?.percentage || 0);
-            },
-            onSuccess: () => {
-                uploadTaskComplete.value = true;
-                uploadProgress.value = 100;
-                const count = Array.isArray(uploadForm.uploads) ? uploadForm.uploads.length : 0;
-                uploadForm.uploads = [];
-                pushToast(count > 1 ? `${count} files uploaded successfully.` : 'File uploaded successfully.', 'success');
+        const totalBytes = files.reduce((sum, file) => sum + file.size, 0) || 1;
+        let doneBytes = 0;
+        let uploaded = 0;
+        try {
+            for (const file of files) {
+                uploadCurrentFile.value = file.name;
+                await uploadOneFile(file, (fileBytes) => {
+                    uploadProgress.value = Math.min(99, Math.round(((doneBytes + fileBytes) / totalBytes) * 100));
+                });
+                doneBytes += file.size;
+                uploaded += 1;
+            }
+            uploadTaskComplete.value = true;
+            uploadProgress.value = 100;
+            uploadForm.uploads = [];
+            pushToast(uploaded > 1 ? `${uploaded} files uploaded successfully.` : 'File uploaded successfully.', 'success');
+        } catch (error) {
+            const errors = error?.response?.data?.errors;
+            const message = errors ? Object.values(errors).flat().join(' ') : (error?.response?.data?.message || 'Upload failed.');
+            pushToast(`${uploadCurrentFile.value}: ${message}`, 'error');
+            uploadForm.uploads = files.slice(uploaded);
+        } finally {
+            uploadInProgress.value = false;
+            uploadCurrentFile.value = '';
+            if (uploaded > 0) {
                 router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ path: props.currentPath })), {}, {
                     preserveScroll: true,
                     preserveState: true,
                     replace: true,
                 });
-            },
-        });
+            }
+        }
     }
 
     function clearProjectCache() {
@@ -1070,7 +1132,7 @@ export function useFileManager(props) {
     const permissionCanSave = computed(() => permissionDigits.value.length === 3);
     const isBusy = computed(() =>
         createFolderForm.processing || createFileForm.processing || saveInProgress.value ||
-        deleteForm.processing || uploadForm.processing || permissionForm.processing ||
+        deleteForm.processing || uploadInProgress.value || permissionForm.processing ||
         renameInProgress.value || zipForm.processing || unzipForm.processing || moveForm.processing ||
         copyForm.processing
     );
@@ -1207,6 +1269,8 @@ export function useFileManager(props) {
         uploadDragActive,
         uploadProgress,
         uploadTaskComplete,
+        uploadInProgress,
+        uploadCurrentFile,
         unzipInProgress,
         cacheClearInProgress,
         tableDragActive,

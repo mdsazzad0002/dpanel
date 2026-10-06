@@ -1347,62 +1347,6 @@ class WebsiteController extends Controller
         return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $path, $scopeRoot, ['file_path' => $fileRelative]))->with('success', 'File saved.');
     }
 
-    public function uploadFile(Request $request, string $token, string $id): RedirectResponse
-    {
-        $website = $this->findAuthorizedWebsiteOrFail($id);
-        // This request is received by the main panel PHP runtime. The target
-        // Website limits do not apply to the panel file manager.
-        $uploadMaxKilobytes = min(
-            $this->iniSizeToKilobytes((string) ini_get('upload_max_filesize'), 2 * 1024 * 1024),
-            $this->iniSizeToKilobytes((string) ini_get('post_max_size'), 2 * 1024 * 1024),
-        );
-
-        $validated = $request->validate([
-            'path' => ['nullable', 'string', 'max:1500'],
-            'upload' => ['nullable', 'file', 'max:'.$uploadMaxKilobytes],
-            'uploads' => ['nullable', 'array', 'max:100'],
-            'uploads.*' => ['file', 'max:'.$uploadMaxKilobytes],
-        ]);
-
-        $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
-        $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
-        $currentPath = $this->sanitizeRelativePath((string) ($validated['path'] ?? ''));
-
-        $uploadedFiles = $request->file('uploads', []);
-        if (! is_array($uploadedFiles)) {
-            $uploadedFiles = [];
-        }
-        if ($request->hasFile('upload')) {
-            $uploadedFiles[] = $request->file('upload');
-        }
-        $uploadedFiles = array_values(array_filter($uploadedFiles));
-
-        if ($uploadedFiles === []) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('error', 'Upload file not found.');
-        }
-
-        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
-        try {
-            foreach ($uploadedFiles as $index => $uploaded) {
-                $filename = $this->sanitizeFilename((string) $uploaded->getClientOriginalName());
-                if ($filename === '') {
-                    $filename = 'uploaded-file-'.($index + 1);
-                }
-
-                $targetPath = $this->resolvePathInsideBase($basePath, $this->sanitizeRelativePath(trim($currentPath.'/'.$filename, '/')));
-                $this->filemanagerService->uploadFile($siteOwner, $targetPath, $uploaded->getPathname());
-            }
-        } catch (\Throwable $e) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('error', 'Failed to upload file. '.$e->getMessage());
-        }
-
-        $message = count($uploadedFiles) === 1
-            ? 'File uploaded successfully.'
-            : count($uploadedFiles).' files uploaded successfully.';
-
-        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot, ['open_upload' => 1]))->with('success', $message);
-    }
-
     public function changePermissions(Request $request, string $token, string $id): RedirectResponse
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
@@ -4041,25 +3985,6 @@ class WebsiteController extends Controller
         }
 
         return implode('/', $parts);
-    }
-
-    protected function iniSizeToKilobytes(string $value, int $fallback): int
-    {
-        $value = strtoupper(trim($value));
-        if (preg_match('/^(\d+)([KMGT])$/', $value, $matches) !== 1) {
-            return $fallback;
-        }
-
-        $number = (int) $matches[1];
-        $multiplier = match ($matches[2]) {
-            'K' => 1,
-            'M' => 1024,
-            'G' => 1024 * 1024,
-            'T' => 1024 * 1024 * 1024,
-            default => 1,
-        };
-
-        return max(1, $number * $multiplier);
     }
 
     protected function resolvePathInsideBase(string $basePath, string $relative): string
