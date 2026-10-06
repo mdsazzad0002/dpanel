@@ -144,8 +144,9 @@ fn ensure_unit_provisioned(
 
     let python_binary = resolve_python_binary(python_version)?;
     let venv_path = project_root.join(".venv");
+    let app_dir = resolve_app_dir(project_root, entry_module);
     ensure_virtualenv(&python_binary, &venv_path)?;
-    install_dependencies(&venv_path, project_root)?;
+    install_dependencies(&venv_path, &app_dir)?;
 
     let gunicorn_bin = venv_path.join("bin").join("gunicorn");
     let exec_start = match start_command {
@@ -188,7 +189,7 @@ fn ensure_unit_provisioned(
          \n\
          [Install]\n\
          WantedBy=multi-user.target\n",
-        workdir = project_root.display(),
+        workdir = app_dir.display(),
     );
 
     let existing = fs::read_to_string(&unit_path).ok();
@@ -200,6 +201,30 @@ fn ensure_unit_provisioned(
     }
 
     run_systemctl(&["enable", "--now", &unit_name])
+}
+
+/// Picks the directory gunicorn runs from. The venv lives in the home dir
+/// (`project_root`), but site code is normally uploaded to `public_html`, so
+/// prefer whichever directory actually contains the entry module.
+fn resolve_app_dir(project_root: &Path, entry_module: Option<&str>) -> PathBuf {
+    let public_html = project_root.join("public_html");
+    let module = entry_module
+        .and_then(|value| value.split(':').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.starts_with('-'));
+    let has_module = |dir: &Path| match module {
+        Some(module) => {
+            let relative = module.replace('.', "/");
+            dir.join(format!("{relative}.py")).is_file()
+                || dir.join(&relative).join("__init__.py").is_file()
+        }
+        None => dir.join("requirements.txt").is_file(),
+    };
+    if !has_module(project_root) && public_html.is_dir() && has_module(&public_html) {
+        public_html
+    } else {
+        project_root.to_path_buf()
+    }
 }
 
 /// Creates the site's virtualenv under `{project_root}/.venv` if it doesn't
@@ -340,5 +365,18 @@ mod tests {
     fn rejects_unsafe_site_owner_names() {
         assert!(validate_system_user("../root").is_err());
         assert!(validate_system_user("bad name").is_err());
+    }
+
+    #[test]
+    fn runs_from_public_html_when_entry_module_lives_there() {
+        let root = std::env::temp_dir().join(format!("drust-pyapp-{}", std::process::id()));
+        let public_html = root.join("public_html");
+        fs::create_dir_all(&public_html).unwrap();
+        fs::write(public_html.join("app.py"), "").unwrap();
+        assert_eq!(resolve_app_dir(&root, Some("app:app")), public_html);
+
+        fs::write(root.join("app.py"), "").unwrap();
+        assert_eq!(resolve_app_dir(&root, Some("app:app")), root);
+        fs::remove_dir_all(&root).unwrap();
     }
 }
