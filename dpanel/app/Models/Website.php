@@ -10,6 +10,11 @@ use Illuminate\Support\Facades\DB;
 
 class Website extends Model
 {
+    /** Gunicorn's own default is a single sync worker, which serializes every request. */
+    public const DEFAULT_PYTHON_WORKERS = 4;
+
+    public const MAX_PYTHON_WORKERS = 32;
+
     protected static function booted(): void
     {
         $reload = static function (self $website): void {
@@ -53,6 +58,7 @@ class Website extends Model
         'python_port',
         'python_version',
         'python_start_command',
+        'python_workers',
         'python_process_status',
         'client_max_body_size',
         'wordpress_db_prefix',
@@ -75,6 +81,7 @@ class Website extends Model
         'assigned_reseller_id' => 'integer',
         'node_port' => 'integer',
         'python_port' => 'integer',
+        'python_workers' => 'integer',
     ];
 
     public function isNodeRuntime(): bool
@@ -85,6 +92,14 @@ class Website extends Model
     public function isPythonRuntime(): bool
     {
         return $this->runtime === 'python';
+    }
+
+    /** Number of gunicorn worker processes; unset sites run the default. */
+    public function pythonWorkerCount(): int
+    {
+        $workers = (int) ($this->python_workers ?? 0);
+
+        return $workers > 0 ? $workers : self::DEFAULT_PYTHON_WORKERS;
     }
 
     public function parent(): BelongsTo

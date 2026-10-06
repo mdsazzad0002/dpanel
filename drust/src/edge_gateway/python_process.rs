@@ -1,13 +1,26 @@
 use std::{
+    collections::HashMap,
     fs,
     net::SocketAddr,
     path::{Path, PathBuf},
     process::Stdio,
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 
 use tokio::{net::TcpStream, time::timeout};
+
+/// Gunicorn's own default is one sync worker, which handles a single request
+/// at a time; every other request queues behind it.
+pub const DEFAULT_PYTHON_WORKERS: u16 = 4;
+const MAX_PYTHON_WORKERS: u16 = 32;
+
+fn worker_count(workers: Option<u16>) -> u16 {
+    match workers {
+        Some(workers) if workers > 0 => workers.min(MAX_PYTHON_WORKERS),
+        _ => DEFAULT_PYTHON_WORKERS,
+    }
+}
 
 /// Ensures the systemd-managed gunicorn process for a Python site is running
 /// and listening on `port`, provisioning (or repairing) its virtualenv and
@@ -19,14 +32,67 @@ pub async fn ensure_python_process_running(
     entry_module: Option<&str>,
     start_command: Option<&str>,
     python_version: Option<&str>,
+    workers: Option<u16>,
     port: u16,
 ) -> Result<(), String> {
     if port_is_listening(port).await {
         return Ok(());
     }
 
+    provision(
+        site_id,
+        owner,
+        project_root,
+        entry_module,
+        start_command,
+        python_version,
+        workers,
+        port,
+    )
+    .await?;
+    wait_until_listening(site_id, port).await
+}
+
+/// Rewrites the site's unit from its current settings (so a changed worker
+/// count or start command takes effect) and restarts it.
+#[allow(clippy::too_many_arguments)]
+pub async fn reprovision_and_restart_python_process(
+    site_id: &str,
+    owner: &str,
+    project_root: &Path,
+    entry_module: Option<&str>,
+    start_command: Option<&str>,
+    python_version: Option<&str>,
+    workers: Option<u16>,
+    port: u16,
+) -> Result<(), String> {
+    provision(
+        site_id,
+        owner,
+        project_root,
+        entry_module,
+        start_command,
+        python_version,
+        workers,
+        port,
+    )
+    .await?;
+    restart_python_process(site_id)?;
+    wait_until_listening(site_id, port).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn provision(
+    site_id: &str,
+    owner: &str,
+    project_root: &Path,
+    entry_module: Option<&str>,
+    start_command: Option<&str>,
+    python_version: Option<&str>,
+    workers: Option<u16>,
+    port: u16,
+) -> Result<(), String> {
     let owner = validate_system_user(owner)?;
-    let unit_name = unit_name(site_id);
     let site_id = site_id.to_string();
     let project_root = project_root.to_path_buf();
     let entry_module = entry_module.map(str::to_string);
@@ -41,12 +107,16 @@ pub async fn ensure_python_process_running(
             entry_module.as_deref(),
             start_command.as_deref(),
             python_version.as_deref(),
+            worker_count(workers),
             port,
         )
     })
     .await
-    .map_err(|error| format!("python process provision worker failed: {error}"))??;
+    .map_err(|error| format!("python process provision worker failed: {error}"))?
+}
 
+async fn wait_until_listening(site_id: &str, port: u16) -> Result<(), String> {
+    let unit_name = unit_name(site_id);
     for _ in 0..60 {
         if port_is_listening(port).await {
             return Ok(());
@@ -120,6 +190,19 @@ fn unit_file_exists(unit: &str) -> bool {
     Path::new(&format!("/etc/systemd/system/{unit}.service")).is_file()
 }
 
+/// Provisioning (venv creation, `pip install`) can take minutes, so the lock
+/// is per site: one site's slow install must not stall every other Python
+/// site's cold start behind it.
+fn site_provision_lock(site_id: &str) -> Result<Arc<Mutex<()>>, String> {
+    static PROVISION_LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    let mut locks = PROVISION_LOCKS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map_err(|_| "python process provision lock table is poisoned".to_string())?;
+    Ok(locks.entry(site_id.to_string()).or_default().clone())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn ensure_unit_provisioned(
     site_id: &str,
     owner: &str,
@@ -127,11 +210,11 @@ fn ensure_unit_provisioned(
     entry_module: Option<&str>,
     start_command: Option<&str>,
     python_version: Option<&str>,
+    workers: u16,
     port: u16,
 ) -> Result<(), String> {
-    static PROVISION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    let _guard = PROVISION_LOCK
-        .get_or_init(|| Mutex::new(()))
+    let lock = site_provision_lock(site_id)?;
+    let _guard = lock
         .lock()
         .map_err(|_| "python process provision lock is poisoned".to_string())?;
 
@@ -159,7 +242,7 @@ fn ensure_unit_provisioned(
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "python entry module (WSGI app path) is not configured".to_string())?;
             format!(
-                "{} {} --bind 127.0.0.1:{port}",
+                "{} {} --bind 127.0.0.1:{port} --workers {workers}",
                 gunicorn_bin.display(),
                 shell_quote(module)
             )
@@ -181,6 +264,7 @@ fn ensure_unit_provisioned(
          WorkingDirectory={workdir}\n\
          Environment=PORT={port}\n\
          Environment=PYTHONUNBUFFERED=1\n\
+         Environment=WEB_CONCURRENCY={workers}\n\
          ExecStart={exec_start}\n\
          Restart=always\n\
          RestartSec=3\n\
@@ -359,6 +443,23 @@ mod tests {
     fn quotes_start_commands_safely() {
         assert_eq!(shell_quote("gunicorn app:app"), "'gunicorn app:app'");
         assert_eq!(shell_quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn defaults_to_four_workers_and_caps_the_count() {
+        assert_eq!(worker_count(None), 4);
+        assert_eq!(worker_count(Some(0)), 4);
+        assert_eq!(worker_count(Some(8)), 8);
+        assert_eq!(worker_count(Some(500)), MAX_PYTHON_WORKERS);
+    }
+
+    #[test]
+    fn provision_locks_are_per_site() {
+        let a = site_provision_lock("lock-test-a").unwrap();
+        let _held = a.lock().unwrap();
+        let b = site_provision_lock("lock-test-b").unwrap();
+        assert!(b.try_lock().is_ok());
+        assert!(Arc::ptr_eq(&a, &site_provision_lock("lock-test-a").unwrap()));
     }
 
     #[test]

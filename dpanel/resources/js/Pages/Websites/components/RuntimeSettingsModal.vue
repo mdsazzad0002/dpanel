@@ -35,6 +35,7 @@ const nodeVersionInput = ref('20');
 const pythonEntryFileInput = ref('');
 const pythonStartCommandInput = ref('');
 const pythonVersionInput = ref('3.10');
+const pythonWorkersInput = ref(4);
 const updateLoading = ref(false);
 
 const close = () => emit('update:modelValue', false);
@@ -51,6 +52,7 @@ watch(() => props.modelValue, (isOpen) => {
     pythonEntryFileInput.value = String(props.website?.python_entry_file || 'app:app');
     pythonStartCommandInput.value = String(props.website?.python_start_command || '');
     pythonVersionInput.value = String(props.website?.python_version || '3.10');
+    pythonWorkersInput.value = Number(props.website?.python_workers) || 4;
 });
 
 const saveRuntimeSettings = async () => {
@@ -72,6 +74,11 @@ const saveRuntimeSettings = async () => {
         pushToast?.('Enter a WSGI app path for the Python runtime.', 'error');
         return;
     }
+    const pythonWorkers = Number(pythonWorkersInput.value);
+    if (runtime === 'python' && (!Number.isInteger(pythonWorkers) || pythonWorkers < 1 || pythonWorkers > 32)) {
+        pushToast?.('Worker processes must be a whole number between 1 and 32.', 'error');
+        return;
+    }
     updateLoading.value = true;
     try {
         const data = await requestJson(panelRoute('websites.update', { id: props.website.id }), {
@@ -86,6 +93,7 @@ const saveRuntimeSettings = async () => {
                 python_entry_file: pythonEntryFile,
                 python_start_command: String(pythonStartCommandInput.value || '').trim(),
                 python_version: String(pythonVersionInput.value || '').trim(),
+                python_workers: pythonWorkers,
             },
         });
         pushToast?.(data.message || 'Website settings updated successfully.', 'success');
@@ -171,6 +179,11 @@ const saveRuntimeSettings = async () => {
                                 <label for="python-start-command" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Start command (optional)</label>
                                 <input id="python-start-command" v-model="pythonStartCommandInput" type="text" placeholder="gunicorn app:app" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
                                 <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Overrides <code>gunicorn {{ pythonEntryFileInput || 'app:app' }}</code>.</p>
+                            </div>
+                            <div>
+                                <label for="python-workers" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Worker processes</label>
+                                <input id="python-workers" v-model.number="pythonWorkersInput" type="number" min="1" max="32" step="1" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
+                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">How many requests the app can handle at once (gunicorn <code>--workers</code>, also exported as <code>WEB_CONCURRENCY</code>). Default 4; applied on the next restart.</p>
                             </div>
                         </template>
                     </div>

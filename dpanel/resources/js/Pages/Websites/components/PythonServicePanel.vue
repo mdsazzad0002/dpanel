@@ -67,6 +67,7 @@ const controlPythonProcess = async (action) => {
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                     {{ website.python_start_command || `gunicorn ${website.python_entry_file || 'app:app'}` }}
                     · port {{ website.python_port || '-' }}
+                    · {{ website.python_workers || 4 }} workers
                     · Python {{ website.python_version || 'default' }}
                 </p>
             </div>

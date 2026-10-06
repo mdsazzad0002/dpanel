@@ -131,6 +131,7 @@ class MainWebsiteController extends Controller
             'python_version' => ['nullable', 'string', 'max:10'],
             'python_entry_file' => [$domainType !== 'alis' && $request->input('runtime') === 'python' ? 'required' : 'nullable', 'string', 'max:255'],
             'python_start_command' => ['nullable', 'string', 'max:255'],
+            'python_workers' => ['nullable', 'integer', 'min:1', 'max:'.Website::MAX_PYTHON_WORKERS],
             'domain_type' => ['required', 'string', 'in:main,alis,sub'],
             'enable_ssl' => ['boolean'],
             'manage_dns' => ['boolean'],
@@ -234,6 +235,7 @@ class MainWebsiteController extends Controller
             $pythonEntryFile = $parentWebsite->python_entry_file;
             $pythonStartCommand = $parentWebsite->python_start_command;
             $pythonPort = $parentWebsite->python_port;
+            $pythonWorkers = $parentWebsite->python_workers;
             $demoFiles = [];
         } else {
             $homeSetup = $this->filemanagerService->createAccountHome($siteOwner, null, '/bin/bash', $siteDirectory);
@@ -247,6 +249,7 @@ class MainWebsiteController extends Controller
             $pythonVersion = $validated['python_version'] ?? null;
             $pythonEntryFile = $validated['python_entry_file'] ?? null;
             $pythonStartCommand = $validated['python_start_command'] ?? null;
+            $pythonWorkers = $runtime === 'python' ? (int) ($validated['python_workers'] ?? Website::DEFAULT_PYTHON_WORKERS) : null;
             if ($runtime === 'node') {
                 $nodePort = $this->websiteService->allocateNodePort();
             }
@@ -316,6 +319,7 @@ class MainWebsiteController extends Controller
             'python_entry_file' => $pythonEntryFile,
             'python_start_command' => $pythonStartCommand,
             'python_port' => $pythonPort,
+            'python_workers' => $pythonWorkers,
             'python_process_status' => $runtime === 'python' ? 'pending' : null,
             'enable_ssl' => $parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false),
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),

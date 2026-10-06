@@ -60,6 +60,7 @@ const form = useForm({
     python_version: '3.10',
     python_entry_file: 'app:app',
     python_start_command: '',
+    python_workers: 4,
     enable_ssl: true,
     manage_dns: false,
     assigned_user_id: '',
@@ -681,6 +682,12 @@ onBeforeUnmount(() => {
                         <input v-model="form.python_start_command" type="text" placeholder="gunicorn app:app" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                         <p class="mt-1 text-xs text-slate-500">Overrides the default `gunicorn {{ form.python_entry_file || 'app:app' }}` command.</p>
                         <p v-if="form.errors.python_start_command" class="mt-1 text-xs text-red-600">{{ form.errors.python_start_command }}</p>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm">Worker Processes</label>
+                        <input v-model.number="form.python_workers" type="number" min="1" max="32" step="1" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <p class="mt-1 text-xs text-slate-500">How many requests the app can handle at once (gunicorn `--workers`). Default 4.</p>
+                        <p v-if="form.errors.python_workers" class="mt-1 text-xs text-red-600">{{ form.errors.python_workers }}</p>
                     </div>
                 </template>
                 <div v-if="!props.aliasMode" class="pt-7">

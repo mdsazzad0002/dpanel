@@ -30,6 +30,7 @@ class PythonProcessService
             'python_entry_file' => $website->python_entry_file,
             'python_start_command' => $website->python_start_command,
             'python_version' => $website->python_version,
+            'workers' => $website->pythonWorkerCount(),
             'port' => (int) $website->python_port,
         ]);
 

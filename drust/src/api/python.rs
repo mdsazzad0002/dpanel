@@ -11,8 +11,8 @@ use serde_json::json;
 
 use crate::api::{ApiResponse, ApiState, check_token};
 use crate::edge_gateway::{
-    ensure_python_process_running, python_process_status, restart_python_process,
-    stop_python_process,
+    ensure_python_process_running, python_process_status, reprovision_and_restart_python_process,
+    restart_python_process, stop_python_process,
 };
 
 pub fn routes() -> Router<Arc<ApiState>> {
@@ -28,6 +28,7 @@ pub(crate) struct Request {
     pub python_entry_file: Option<String>,
     pub python_start_command: Option<String>,
     pub python_version: Option<String>,
+    pub workers: Option<u16>,
     pub port: u16,
 }
 
@@ -55,6 +56,7 @@ pub(crate) async fn handle(
                 request.python_entry_file.as_deref(),
                 request.python_start_command.as_deref(),
                 request.python_version.as_deref(),
+                request.workers,
                 request.port,
             )
             .await
@@ -67,12 +69,32 @@ pub(crate) async fn handle(
             Ok(()) => ApiResponse::ok("Python process stopped").into_response(),
             Err(error) => ApiResponse::error(&format!("Failed to stop: {error}")).into_response(),
         },
-        "restart" => match restart_python_process(&request.site_id) {
-            Ok(()) => ApiResponse::ok("Python process restarted").into_response(),
-            Err(error) => {
-                ApiResponse::error(&format!("Failed to restart: {error}")).into_response()
+        "restart" => {
+            // With the site's settings available, rewrite the unit first so
+            // edits like the worker count apply on this restart.
+            let result = match (request.site_owner.as_deref(), request.project_root.as_deref()) {
+                (Some(owner), Some(project_root)) => {
+                    reprovision_and_restart_python_process(
+                        &request.site_id,
+                        owner,
+                        &PathBuf::from(project_root),
+                        request.python_entry_file.as_deref(),
+                        request.python_start_command.as_deref(),
+                        request.python_version.as_deref(),
+                        request.workers,
+                        request.port,
+                    )
+                    .await
+                }
+                _ => restart_python_process(&request.site_id),
+            };
+            match result {
+                Ok(()) => ApiResponse::ok("Python process restarted").into_response(),
+                Err(error) => {
+                    ApiResponse::error(&format!("Failed to restart: {error}")).into_response()
+                }
             }
-        },
+        }
         "status" => {
             let status = python_process_status(&request.site_id, request.port).await;
             ApiResponse::ok_data(
