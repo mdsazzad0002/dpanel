@@ -17,6 +17,7 @@ use App\Services\PathService;
 use App\Services\Php\PhpService;
 use App\Services\ResourceQuotaService;
 use App\Services\Ssl\SslLifecycleService;
+use App\Services\Website\LaravelQueueService;
 use App\Services\Website\WebsiteService;
 use App\Services\Website\WebsiteTrashService;
 use Illuminate\Http\JsonResponse;
@@ -483,6 +484,8 @@ class MainWebsiteController extends Controller
             return $this->websiteDestroyError($request, 'Website cron cleanup failed.', 'cron_jobs', $e);
         }
 
+        $this->removeQueueWorkers($website);
+
         try {
             $ownerIsShared = Website::query()
                 ->where('site_owner', (string) $website->site_owner)
@@ -652,6 +655,8 @@ class MainWebsiteController extends Controller
 
     private function destroyLinkedDomain(Request $request, Website $website, string $domain): RedirectResponse|JsonResponse
     {
+        $this->removeQueueWorkers($website);
+
         try {
             DB::transaction(function () use ($website, $domain): void {
                 SslCertificate::query()
@@ -770,6 +775,26 @@ class MainWebsiteController extends Controller
             'zip_path' => $zipPath,
             'zip_name' => $zipName,
         ];
+    }
+
+    /**
+     * Queue workers run as the site owner from the site's files, so they are
+     * stopped first: a user with running processes cannot be deleted.
+     */
+    private function removeQueueWorkers(Website $website): void
+    {
+        if (! $website->queueWorkers()->exists()) {
+            return;
+        }
+
+        try {
+            app(LaravelQueueService::class)->removeAll($website);
+        } catch (\Throwable $e) {
+            Log::warning('Queue worker cleanup failed', [
+                'website_id' => (string) $website->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function deleteWebsiteViaDrust(Website $website, bool $deleteUser): void

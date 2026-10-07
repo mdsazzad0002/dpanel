@@ -7,6 +7,7 @@ import WebsiteHeroCard from '@/Pages/Websites/components/WebsiteHeroCard.vue';
 import QuickActionsPanel from '@/Pages/Websites/components/QuickActionsPanel.vue';
 import NodeServicePanel from '@/Pages/Websites/components/NodeServicePanel.vue';
 import PythonServicePanel from '@/Pages/Websites/components/PythonServicePanel.vue';
+import QueueWorkersPanel from '@/Pages/Websites/components/QueueWorkersPanel.vue';
 import MetricsGrid from '@/Pages/Websites/components/MetricsGrid.vue';
 import ServicesGrid from '@/Pages/Websites/components/ServicesGrid.vue';
 import ActivityTimeline from '@/Pages/Websites/components/ActivityTimeline.vue';
@@ -40,6 +41,7 @@ const props = defineProps({
     databaseConnection: { type: Object, default: () => ({ available: false }) },
     connectedDatabase: { type: String, default: null },
     phpVersions: { type: Array, default: () => [] },
+    queueWorkerCount: { type: Number, default: 0 },
 });
 
 const page = usePage();
@@ -75,6 +77,12 @@ const editingRuntimeSettings = ref(false);
 
 const isNodeWebsite = computed(() => String(props.website?.runtime || 'php') === 'node');
 const isPythonWebsite = computed(() => String(props.website?.runtime || 'php') === 'python');
+// Aliases serve the main site's files, so workers there would run every job
+// twice. Sites that already have workers always show the panel so they can
+// be removed, even if the app is no longer detected as Laravel.
+const showQueueWorkers = computed(() => props.queueWorkerCount > 0
+    || (String(props.rootInspection?.detected_app || '').toLowerCase() === 'laravel'
+        && !['alias', 'alis'].includes(String(props.website?.type || '').toLowerCase())));
 </script>
 
 <template>
@@ -130,6 +138,7 @@ const isPythonWebsite = computed(() => String(props.website?.runtime || 'php') =
 
             <NodeServicePanel v-if="isNodeWebsite" :website="website" />
             <PythonServicePanel v-if="isPythonWebsite" :website="website" />
+            <QueueWorkersPanel v-if="showQueueWorkers" :website="website" />
 
             <!-- Services + Activity -->
             <section class="grid gap-4 xl:grid-cols-[minmax(0,2.4fr)_minmax(300px,1fr)]">

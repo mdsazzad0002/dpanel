@@ -16,6 +16,7 @@ mod fail2ban;
 mod filemanager;
 mod ftp;
 mod git_deploy;
+mod laravel_queue;
 mod health;
 mod mailbox_storage;
 mod media;
@@ -114,6 +115,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(migration_ssh::routes())
         .merge(node::routes())
         .merge(python::routes())
+        .merge(laravel_queue::routes())
         .with_state(Arc::new(state))
 }
 

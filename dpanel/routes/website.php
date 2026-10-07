@@ -17,6 +17,7 @@ use App\Http\Controllers\Website\WebsiteSshKeyController;
 use App\Http\Controllers\Website\WebsiteTerminalController;
 use App\Http\Controllers\Website\AppInstallerController;
 use App\Http\Controllers\Website\LaravelInstallerController;
+use App\Http\Controllers\Website\LaravelQueueController;
 use App\Http\Controllers\Website\WordpressController;
 use App\Http\Controllers\WebsiteChatController;
 // Manage Website ===================================================================
@@ -153,6 +154,27 @@ Route::post('/websites/{id}/node/control', [WebsiteOperationsController::class, 
 Route::post('/websites/{id}/python/control', [WebsiteOperationsController::class, 'pythonProcessControl'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
     ->name('websites.python.control');
+Route::get('/websites/{id}/queue-workers', [LaravelQueueController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.queue-workers.index');
+Route::post('/websites/{id}/queue-workers', [LaravelQueueController::class, 'store'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
+    ->name('websites.queue-workers.store');
+Route::post('/websites/{id}/queue-workers/restart', [LaravelQueueController::class, 'restart'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
+    ->name('websites.queue-workers.restart');
+Route::put('/websites/{id}/queue-workers/{worker}', [LaravelQueueController::class, 'update'])
+    ->whereNumber('worker')
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
+    ->name('websites.queue-workers.update');
+Route::delete('/websites/{id}/queue-workers/{worker}', [LaravelQueueController::class, 'destroy'])
+    ->whereNumber('worker')
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
+    ->name('websites.queue-workers.destroy');
+Route::get('/websites/{id}/queue-workers/{worker}/logs', [LaravelQueueController::class, 'logs'])
+    ->whereNumber('worker')
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.queue-workers.logs');
 Route::post('/websites/{id}/project-storage-link', [WebsiteOperationsController::class, 'updateProjectStorageLink'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.project-storage-link.update');

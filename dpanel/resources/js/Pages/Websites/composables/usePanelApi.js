@@ -24,7 +24,8 @@ export function usePanelApi() {
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': csrfToken.value,
             },
-            body: JSON.stringify(body),
+            // fetch() refuses a body on GET.
+            body: method === 'GET' ? undefined : JSON.stringify(body),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {

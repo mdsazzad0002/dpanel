@@ -285,6 +285,9 @@ class WebsiteController extends Controller
 
         return Inertia::render('Websites/Manage', [
             'website' => $website,
+            // Existing workers keep their panel visible even if the app is no
+            // longer detected as Laravel, so they can still be removed.
+            'queueWorkerCount' => \App\Models\WebsiteQueueWorker::query()->where('website_id', $id)->count(),
             'phpVersions' => $this->getPhpVersionsForWebsites(),
             'activities' => $activities,
             // These involve a recursive filesystem scan, a `du` shell-out, and a

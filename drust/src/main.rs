@@ -9,6 +9,7 @@ mod fail2ban;
 mod filemanager;
 mod health;
 mod installer;
+mod laravel_queue;
 mod php;
 mod pgadmin_sso;
 mod php_config;

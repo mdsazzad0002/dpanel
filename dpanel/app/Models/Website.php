@@ -139,6 +139,11 @@ class Website extends Model
         return $this->hasMany(self::class, 'parent_id');
     }
 
+    public function queueWorkers(): HasMany
+    {
+        return $this->hasMany(WebsiteQueueWorker::class);
+    }
+
     public function assignedUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_user_id');
