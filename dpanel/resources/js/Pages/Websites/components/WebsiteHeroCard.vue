@@ -24,6 +24,13 @@ const props = defineProps({
 
 const emit = defineEmits(['edit-runtime']);
 
+const runtimeLabel = computed(() => {
+    const runtime = String(props.website?.runtime || 'php');
+    if (runtime === 'node') return `Node.js ${props.website?.node_version || '-'}`;
+    if (runtime === 'python') return `Python ${props.website?.python_version || '-'}`;
+    return `PHP ${props.website?.php_version || '-'}`;
+});
+
 const pushToast = inject('pushToast');
 const { panelRoute, requestJson } = usePanelApi();
 
@@ -164,7 +171,7 @@ const disableWebsiteSsl = async () => {
                 <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current">
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
                 </svg>
-                PHP {{ website.php_version || '-' }}
+                {{ runtimeLabel }}
                 <span class="border-l border-blue-200 pl-1.5 font-semibold dark:border-blue-800">Edit</span>
             </button>
             <Deferred data="sslStatus">

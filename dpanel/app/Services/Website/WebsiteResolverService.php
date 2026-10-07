@@ -22,6 +22,14 @@ class WebsiteResolverService
     }
 
     /**
+     * @return list<array{id: string, domain: string, type: string, url: string, doc_root: string}>
+     */
+    public function browsableSites(?User $actor = null, string $preferOwner = ''): array
+    {
+        return $this->access->browsableSites($actor, $preferOwner);
+    }
+
+    /**
      * @param array<string,mixed> $website
      * @return array<string,mixed>
      */

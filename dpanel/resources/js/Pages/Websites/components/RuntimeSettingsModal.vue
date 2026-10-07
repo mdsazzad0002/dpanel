@@ -126,14 +126,14 @@ const saveRuntimeSettings = async () => {
                 <div class="flex items-start justify-between border-b border-slate-200 p-5 dark:border-slate-800">
                     <div>
                         <h2 id="runtime-settings-title" class="text-lg font-semibold text-slate-900 dark:text-white">Runtime settings</h2>
-                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Update the web path and PHP version together.</p>
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Update the web path and runtime together.</p>
                     </div>
                     <button type="button" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" @click="close" aria-label="Close settings">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
-                <form class="flex flex-1 flex-col p-5" @submit.prevent="saveRuntimeSettings">
-                    <div class="space-y-5">
+                <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="saveRuntimeSettings">
+                    <div class="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
                         <div>
                             <label for="start-directory" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Start directory</label>
                             <input id="start-directory" v-model="startDirectoryInput" type="text" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" placeholder="Leave blank to use root path" />
@@ -211,7 +211,7 @@ const saveRuntimeSettings = async () => {
                             </div>
                         </template>
                     </div>
-                    <div class="mt-auto flex justify-end gap-3 border-t border-slate-200 pt-5 dark:border-slate-800">
+                    <div class="flex shrink-0 justify-end gap-3 border-t border-slate-200 p-5 dark:border-slate-800">
                         <button type="button" :disabled="updateLoading" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800" @click="close">Cancel</button>
                         <button type="submit" :disabled="updateLoading" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{{ updateLoading ? 'Saving...' : 'Save changes' }}</button>
                     </div>

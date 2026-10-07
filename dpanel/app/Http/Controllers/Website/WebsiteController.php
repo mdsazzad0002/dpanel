@@ -1215,6 +1215,7 @@ class WebsiteController extends Controller
                 'enable_ssl' => (bool) ($website['enable_ssl'] ?? false),
             ],
             'basePath' => $basePath,
+            'browseSites' => $this->websiteResolver->browsableSites($request->user(), $siteOwner),
             'rootFolder' => $scopeRoot,
             'currentPath' => $currentPath,
             'showHidden' => $showHidden,

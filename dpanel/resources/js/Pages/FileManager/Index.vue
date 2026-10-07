@@ -26,6 +26,7 @@ import CreateFileModal from './components/CreateFileModal.vue';
 const props = defineProps({
     website: { type: Object, required: true },
     basePath: { type: String, default: '' },
+    browseSites: { type: Array, default: () => [] },
     rootFolder: { type: String, default: '' },
     currentPath: { type: String, default: '' },
     showHidden: { type: Boolean, default: false },

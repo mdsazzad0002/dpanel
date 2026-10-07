@@ -1,6 +1,7 @@
 <script setup>
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import SiteSwitcher from './SiteSwitcher.vue';
 
 const props = defineProps({
     fm: {
@@ -13,6 +14,34 @@ const liveSiteUrl = computed(() => {
     const domain = String(props.fm.props.website?.domain || '').trim();
     if (!domain) return '';
     return `${props.fm.props.website?.enable_ssl ? 'https' : 'http'}://${domain}`;
+});
+
+const trimSlashes = (value) => String(value || '').replace(/\\/g, '/').replace(/\/+$/, '');
+
+// The URL that serves the folder being viewed: the site whose document root
+// is the deepest prefix of it, preferring this website when aliases share one.
+const currentFolderUrl = computed(() => {
+    const sites = Array.isArray(props.fm.props.browseSites) ? props.fm.props.browseSites : [];
+    const base = trimSlashes(props.fm.props.basePath);
+    const current = trimSlashes(props.fm.props.currentPath).replace(/^\/+/, '');
+    const absolute = current ? `${base}/${current}` : base;
+    const currentId = String(props.fm.props.website?.id || '');
+
+    let match = null;
+    for (const site of sites) {
+        const root = trimSlashes(site.doc_root);
+        if (!root || !site.url) continue;
+        if (absolute !== root && !absolute.startsWith(`${root}/`)) continue;
+        const better = !match
+            || root.length > match.root.length
+            || (root.length === match.root.length && String(site.id) === currentId);
+        if (better) match = { site, root };
+    }
+    // Folders no site serves (.cache, .venv, ...) fall back to this site's home page.
+    if (!match) return liveSiteUrl.value ? `${liveSiteUrl.value}/` : '';
+
+    const relative = absolute.slice(match.root.length).split('/').filter(Boolean).map(encodeURIComponent).join('/');
+    return relative ? `${match.site.url}/${relative}/` : `${match.site.url}/`;
 });
 </script>
 
@@ -50,6 +79,18 @@ const liveSiteUrl = computed(() => {
                     </button>
                 </template>
             </div>
+            <SiteSwitcher :fm="fm" />
+            <a
+                v-if="currentFolderUrl"
+                :href="currentFolderUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-600 transition-all hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+                :title="`Browse ${currentFolderUrl}`"
+                :aria-label="`Browse ${currentFolderUrl}`"
+            >
+                <i class="bi bi-globe2 text-xs"></i>
+            </a>
         </div>
 
         <div class="flex items-center gap-2">
@@ -87,18 +128,6 @@ const liveSiteUrl = computed(() => {
                     </section>
                 </template>
             </div>
-
-            <a
-                v-if="liveSiteUrl"
-                :href="liveSiteUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-600 transition-all hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
-                title="Visit website"
-            >
-                <i class="bi bi-globe2 text-sm"></i>
-                <span class="hidden sm:inline">Browse</span>
-            </a>
         </div>
     </header>
 </template>
