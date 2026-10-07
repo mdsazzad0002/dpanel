@@ -15,6 +15,16 @@ class Website extends Model
 
     public const MAX_PYTHON_WORKERS = 32;
 
+    /** Seconds a request may run before gunicorn gives up on it. */
+    public const DEFAULT_PYTHON_TIMEOUT = 30;
+
+    public const MIN_PYTHON_TIMEOUT = 10;
+
+    public const MAX_PYTHON_TIMEOUT = 300;
+
+    /** production: plain gunicorn. development: auto-reload on code changes. */
+    public const PYTHON_MODES = ['production', 'development'];
+
     protected static function booted(): void
     {
         $reload = static function (self $website): void {
@@ -59,6 +69,8 @@ class Website extends Model
         'python_version',
         'python_start_command',
         'python_workers',
+        'python_mode',
+        'python_timeout',
         'python_process_status',
         'client_max_body_size',
         'wordpress_db_prefix',
@@ -82,6 +94,7 @@ class Website extends Model
         'node_port' => 'integer',
         'python_port' => 'integer',
         'python_workers' => 'integer',
+        'python_timeout' => 'integer',
     ];
 
     public function isNodeRuntime(): bool
@@ -100,6 +113,20 @@ class Website extends Model
         $workers = (int) ($this->python_workers ?? 0);
 
         return $workers > 0 ? $workers : self::DEFAULT_PYTHON_WORKERS;
+    }
+
+    public function pythonTimeout(): int
+    {
+        $timeout = (int) ($this->python_timeout ?? 0);
+
+        return $timeout > 0
+            ? max(self::MIN_PYTHON_TIMEOUT, min(self::MAX_PYTHON_TIMEOUT, $timeout))
+            : self::DEFAULT_PYTHON_TIMEOUT;
+    }
+
+    public function pythonMode(): string
+    {
+        return in_array($this->python_mode, self::PYTHON_MODES, true) ? $this->python_mode : 'production';
     }
 
     public function parent(): BelongsTo

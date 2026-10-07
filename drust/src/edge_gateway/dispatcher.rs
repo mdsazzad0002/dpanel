@@ -16,6 +16,7 @@ use std::{
 use super::{
     RouteAction, StaticAsset, StaticAssetBody, StaticFileConfig,
     ensure_node_process_running, ensure_python_process_running, execute_php_front_controller,
+    forget_python_liveness, proxy_request_with_timeout, python_static_file,
     browser_cache_control, load_static_asset, normalize_request_path, proxy_request, resolve_route, resolve_static_path,
 };
 
@@ -286,6 +287,19 @@ pub async fn dispatch(
                 if let (Some(owner), Some(project_root)) =
                     (site.site_owner.as_deref(), site.project_root.as_deref())
                 {
+                    // Static assets come straight off disk; a gunicorn worker
+                    // is far too expensive to spend on a CSS file.
+                    if let Some(file) =
+                        python_static_file(project_root, site.python_entry_file.as_deref(), &path)
+                    {
+                        if let Ok(asset) = load_static_asset(&file) {
+                            return annotated_response(
+                                static_response(asset, request.headers()).await,
+                                site_match,
+                                route_match,
+                            );
+                        }
+                    }
                     if let Err(error) = ensure_python_process_running(
                         &site.id,
                         owner,
@@ -293,7 +307,7 @@ pub async fn dispatch(
                         site.python_entry_file.as_deref(),
                         site.python_start_command.as_deref(),
                         site.python_version.as_deref(),
-                        site.python_workers,
+                        site.python_run,
                         match upstream {
                             super::UpstreamConfig::Http(addr) => addr.port(),
                             super::UpstreamConfig::Unix(_) => 0,
@@ -312,9 +326,23 @@ pub async fn dispatch(
                     }
                 }
             }
-            let response = proxy_request(proxy_client, upstream, request)
+            let timeout = if site.runtime == "python" {
+                site.python_run.proxy_timeout()
+            } else {
+                super::ProxyConfig::default().request_timeout
+            };
+            let response = proxy_request_with_timeout(proxy_client, upstream, request, timeout)
                 .await
-                .unwrap_or_else(|error| simple_response(StatusCode::BAD_GATEWAY, &error));
+                .unwrap_or_else(|error| {
+                    // The app may have died since it was last seen up; make
+                    // the next request probe and restart it if needed.
+                    if site.runtime == "python" {
+                        if let super::UpstreamConfig::Http(addr) = upstream {
+                            forget_python_liveness(addr.port());
+                        }
+                    }
+                    simple_response(StatusCode::BAD_GATEWAY, &error)
+                });
             return annotated_response(response, site_match, route_match);
         }
         RouteAction::Redirect { location, code } => {

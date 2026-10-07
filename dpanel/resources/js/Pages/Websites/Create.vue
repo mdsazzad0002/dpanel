@@ -61,6 +61,8 @@ const form = useForm({
     python_entry_file: 'app:app',
     python_start_command: '',
     python_workers: 4,
+    python_mode: 'production',
+    python_timeout: 30,
     enable_ssl: true,
     manage_dns: false,
     assigned_user_id: '',
@@ -684,10 +686,25 @@ onBeforeUnmount(() => {
                         <p v-if="form.errors.python_start_command" class="mt-1 text-xs text-red-600">{{ form.errors.python_start_command }}</p>
                     </div>
                     <div>
+                        <label class="mb-1 block text-sm">Mode</label>
+                        <select v-model="form.python_mode" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                            <option value="production">Production</option>
+                            <option value="development">Development (auto-reload on code change)</option>
+                        </select>
+                        <p class="mt-1 text-xs text-slate-500">Development restarts the app by itself when code changes; use Production for live sites.</p>
+                        <p v-if="form.errors.python_mode" class="mt-1 text-xs text-red-600">{{ form.errors.python_mode }}</p>
+                    </div>
+                    <div>
                         <label class="mb-1 block text-sm">Worker Processes</label>
                         <input v-model.number="form.python_workers" type="number" min="1" max="32" step="1" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                         <p class="mt-1 text-xs text-slate-500">How many requests the app can handle at once (gunicorn `--workers`). Default 4.</p>
                         <p v-if="form.errors.python_workers" class="mt-1 text-xs text-red-600">{{ form.errors.python_workers }}</p>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm">Request Timeout (seconds)</label>
+                        <input v-model.number="form.python_timeout" type="number" min="10" max="300" step="1" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <p class="mt-1 text-xs text-slate-500">How long one request may run before it is stopped. Default 30.</p>
+                        <p v-if="form.errors.python_timeout" class="mt-1 text-xs text-red-600">{{ form.errors.python_timeout }}</p>
                     </div>
                 </template>
                 <div v-if="!props.aliasMode" class="pt-7">

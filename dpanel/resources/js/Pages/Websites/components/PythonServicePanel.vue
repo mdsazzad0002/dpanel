@@ -68,6 +68,8 @@ const controlPythonProcess = async (action) => {
                     {{ website.python_start_command || `gunicorn ${website.python_entry_file || 'app:app'}` }}
                     · port {{ website.python_port || '-' }}
                     · {{ website.python_workers || 4 }} workers
+                    · {{ website.python_timeout || 30 }}s timeout
+                    · {{ website.python_mode === 'development' ? 'Development (auto-reload)' : 'Production' }}
                     · Python {{ website.python_version || 'default' }}
                 </p>
             </div>

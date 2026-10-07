@@ -33,6 +33,8 @@ class PythonProcessService
             'python_start_command' => $website->python_start_command,
             'python_version' => $website->python_version,
             'workers' => $website->pythonWorkerCount(),
+            'mode' => $website->pythonMode(),
+            'timeout' => $website->pythonTimeout(),
             'port' => (int) $website->python_port,
         ]);
 

@@ -31,10 +31,12 @@ pub use node_process::{
 pub use php::{
     clear_canonical_root_cache, clear_canonical_root_cache_under, execute_php_front_controller,
 };
-pub use proxy::{ProxyConfig, build_client, health_check_upstream, proxy_request};
+pub use proxy::{
+    ProxyConfig, build_client, health_check_upstream, proxy_request, proxy_request_with_timeout,
+};
 pub use python_process::{
-    PythonProcessStatus, ensure_python_process_running, python_process_status,
-    reprovision_and_restart_python_process, restart_python_process, stop_python_process,
+    PythonProcessStatus, PythonRunOptions, ensure_python_process_running, python_process_status,
+    forget_python_liveness, python_static_file, reprovision_and_restart_python_process, restart_python_process, stop_python_process,
 };
 pub use server::{
     sample_dispatch_context, sample_snapshot, sample_tls_store, serve_demo_with_tls, serve_gateway,

@@ -11,6 +11,7 @@ use serde_json::json;
 
 use crate::api::{ApiResponse, ApiState, check_token};
 use crate::edge_gateway::{
+    PythonRunOptions,
     ensure_python_process_running, python_process_status, reprovision_and_restart_python_process,
     restart_python_process, stop_python_process,
 };
@@ -29,7 +30,22 @@ pub(crate) struct Request {
     pub python_start_command: Option<String>,
     pub python_version: Option<String>,
     pub workers: Option<u16>,
+    pub mode: Option<String>,
+    pub timeout: Option<u16>,
     pub port: u16,
+}
+
+impl Request {
+    fn run_options(&self) -> PythonRunOptions {
+        PythonRunOptions {
+            workers: self.workers,
+            development: self
+                .mode
+                .as_deref()
+                .is_some_and(|mode| mode.eq_ignore_ascii_case("development")),
+            timeout: self.timeout,
+        }
+    }
 }
 
 pub(crate) async fn handle(
@@ -56,7 +72,7 @@ pub(crate) async fn handle(
                 request.python_entry_file.as_deref(),
                 request.python_start_command.as_deref(),
                 request.python_version.as_deref(),
-                request.workers,
+                request.run_options(),
                 request.port,
             )
             .await
@@ -81,7 +97,7 @@ pub(crate) async fn handle(
                         request.python_entry_file.as_deref(),
                         request.python_start_command.as_deref(),
                         request.python_version.as_deref(),
-                        request.workers,
+                        request.run_options(),
                         request.port,
                     )
                     .await

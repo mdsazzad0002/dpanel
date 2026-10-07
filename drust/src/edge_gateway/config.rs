@@ -35,7 +35,7 @@ pub struct SiteConfig {
     pub python_entry_file: Option<String>,
     pub python_start_command: Option<String>,
     pub python_version: Option<String>,
-    pub python_workers: Option<u16>,
+    pub python_run: super::PythonRunOptions,
     pub enable_ssl: bool,
     pub spa_fallback: bool,
     pub routes: Arc<[RouteConfig]>,
