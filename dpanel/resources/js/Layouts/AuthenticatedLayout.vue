@@ -298,6 +298,8 @@ const menuItems = computed(() => [
         id: 'docker',
         label: 'Docker',
         hint: 'Containers and images',
+        // Optional add-on: shown only once `sudo dpanel docker` has installed it.
+        feature: 'docker',
         icon: 'DK',
         iconClass: 'bi bi-box-seam',
         color: 'cyan',
@@ -366,6 +368,7 @@ const hasAccess = (item) => {
 
 const visibleMenu = computed(() => menuItems.value
     .map((item) => {
+        if (item.feature && !page.props.features?.[item.feature]) return null;
         if (!item.children) {
             return hasAccess(item) ? item : null;
         }

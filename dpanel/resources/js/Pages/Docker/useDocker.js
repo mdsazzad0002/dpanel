@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue';
-import { usePage } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 
 /**
@@ -26,6 +26,10 @@ export function useDocker() {
         try {
             const { data } = await axios.get(panelRoute('docker.status'));
             status.value = data.data;
+            // Installed or removed from the shell since this page loaded: refresh the menu too.
+            if (Boolean(data.data?.installed) !== Boolean(page.props.features?.docker)) {
+                router.reload({ only: ['features'] });
+            }
         } catch (e) {
             loadError.value = e.response?.data?.message || 'Could not load Docker status.';
         } finally {

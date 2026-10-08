@@ -9,6 +9,7 @@
 | Find a command quickly | [Quick Reference](quick-reference.md) |
 | Fix an error message | [Troubleshooting](troubleshooting.md) |
 | Install Laravel/WordPress or build a site with npm/composer | [Websites and Apps](websites.md) |
+| Run Docker containers (optional, off by default) | [Docker](docker.md) |
 
 ## Getting started
 
@@ -29,6 +30,7 @@
 | [drust Service](drust-service.md) | Installing and running the privileged Rust service |
 | [drust API](drust-api.md) | Endpoint reference for the localhost execution API |
 | [Backups](backups.md) | Scheduled backups, remote upload, and restore |
+| [Docker](docker.md) | Optional add-on: cost, install, panel pages, security, and removal |
 | [Server Task Runner](ssh-command-runner.md) | SSH connector, command safety rules, and task reports |
 | [AI Chat Engine](chat-engine.md) | Businesses, apps, app transfer, and what the AI can reply |
 | [WHMCS Integration](../dpanel/integrations/whmcs/README.md) | Connecting dPanel to WHMCS billing |

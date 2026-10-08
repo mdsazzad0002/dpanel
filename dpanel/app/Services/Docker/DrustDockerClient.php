@@ -6,6 +6,24 @@ use Illuminate\Support\Facades\Http;
 
 class DrustDockerClient
 {
+    /** Where drust looks for the docker CLI. */
+    private const CLI_PATHS = ['/usr/bin/docker', '/usr/local/bin/docker'];
+
+    /**
+     * Whether Docker is on this server at all. Docker is an optional add-on
+     * (`sudo dpanel docker`), so the panel hides its menu until it is.
+     */
+    public function installed(): bool
+    {
+        foreach (self::CLI_PATHS as $path) {
+            if (@is_file($path)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Whether Docker is installed and running, with every container and image.
      *

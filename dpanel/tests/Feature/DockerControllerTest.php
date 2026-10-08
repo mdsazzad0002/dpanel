@@ -2,9 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\ActivityLog;
+use App\Services\Docker\DrustDockerClient;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
@@ -67,6 +70,16 @@ class DockerControllerTest extends TestCase
                 ->get("/cpsess{$this->token}/docker{$path}")
                 ->assertOk()
                 ->assertInertia(fn ($page) => $page->component("Docker/{$component}"));
+        }
+    }
+
+    public function test_menu_flag_follows_whether_docker_is_installed(): void
+    {
+        foreach ([true, false] as $installed) {
+            $this->mock(DrustDockerClient::class)->shouldReceive('installed')->andReturn($installed);
+            $shared = app(HandleInertiaRequests::class)->share(Request::create('/'));
+
+            $this->assertSame($installed, $shared['features']['docker']());
         }
     }
 

@@ -42,6 +42,7 @@ carry out privileged host operations and serve public website traffic.
 | **Files** | Account-scoped file manager with upload, zip/unzip, permissions repair, and trash |
 | **Backups & migration** | Scheduled backups, portable restore packages, and imports from cPanel and CyberPanel |
 | **Operations** | Cron jobs, FTP accounts, Redis, monitoring, security scans, and a server task runner |
+| **Docker** *(optional)* | Off by default. Add it with `sudo dpanel docker` to run containers and images from the panel ([guide](docs/docker.md)) |
 | **Business** | Resellers, package plans, roles and permissions, and WHMCS integration |
 
 ## Architecture

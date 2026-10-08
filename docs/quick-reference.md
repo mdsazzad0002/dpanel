@@ -16,6 +16,7 @@ see [Troubleshooting](troubleshooting.md).
 | See which version is installed | `sudo grep -E '^(APP_VERSION\|DPANEL_RELEASE_)' /var/www/dpanel/.env` |
 | Install one module | `sudo dpanel chain install php` (several: `php,mariadb`) |
 | Skip a module during an update | Answer `skip` when it asks `[Y/n/skip]` |
+| Add Docker (optional, off by default) | `sudo dpanel docker`; status: `sudo dpanel docker status` ([guide](docker.md)) |
 
 `installer.sh update` downloads new code; `dpanel chain update` does not. Use
 the installer when you want a fix that was just released or merged.

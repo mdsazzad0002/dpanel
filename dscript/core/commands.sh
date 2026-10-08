@@ -58,6 +58,7 @@ Examples:
   sudo dpanel chain install php,mariadb
   sudo dpanel chain update
   sudo dpanel module php install 8.3
+  sudo dpanel docker              # optional Docker add-on (off by default)
   dpanel script list
   sudo dpanel script run reset-web-stack --yes
   dpanel doctor
@@ -207,6 +208,7 @@ php-detect-extensions|Print loaded PHP extensions|[--version VERSION]
 php-detect-versions|Detect installed PHP versions|
 reset-web-stack|Back up and reset legacy web configuration|--yes
 reset-drust|Rebuild drust and/or rotate its synchronized API secret|<--binary|--secret|--all> --yes
+docker-installer|Optional Docker add-on: check, install, status or remove|[install|status|remove] [--yes] [--force] [--purge]
 sync-vhost|Create/update/remove a vhost through drust|<action> <domain> <root-path> [php-version] [options]
 EOF
 }
@@ -221,7 +223,7 @@ dscript_script_path() {
     script_root="${DPANEL_RUNTIME_DIR}/scripts"
   fi
   case "$name" in
-    configure-phpmyadmin-signon|reconcile-system-records|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|set-mail-server-ip|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-drust|reset-web-stack|sync-vhost)
+    configure-phpmyadmin-signon|reconcile-system-records|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|set-mail-server-ip|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-drust|reset-web-stack|sync-vhost|docker-installer)
       printf '%s/%s.sh' "$script_root" "$name"
       ;;
     *) printf '%s' '' ;;
@@ -273,7 +275,7 @@ dscript_run_script() {
     return 0
   fi
 
-  if [[ "$DSCRIPT_ASSUME_YES" == "true" && ( "$name" == "reset-web-stack" || "$name" == "reset-drust" ) ]]; then
+  if [[ "$DSCRIPT_ASSUME_YES" == "true" && ( "$name" == "reset-web-stack" || "$name" == "reset-drust" || "$name" == "docker-installer" ) ]]; then
     set -- --yes "$@"
   fi
 
@@ -582,7 +584,8 @@ dscript_cli() {
       ;;
     info) panel_info ;;
     install)
-      if [[ $# -gt 0 ]] && dscript_module_exists "$1"; then local m="$1"; shift; dscript_run_module "$m" install "$@"; else dscript_run_chain install "$@"; fi
+      if [[ "${1:-}" == "docker" ]]; then shift; dscript_run_script docker-installer install "$@"
+      elif [[ $# -gt 0 ]] && dscript_module_exists "$1"; then local m="$1"; shift; dscript_run_module "$m" install "$@"; else dscript_run_chain install "$@"; fi
       ;;
     update)
       if [[ $# -gt 0 ]] && dscript_module_exists "$1"; then local m="$1"; shift; dscript_run_module "$m" update "$@"; else dscript_run_chain update "$@"; fi
@@ -601,6 +604,8 @@ dscript_cli() {
       shift || true
       dscript_run_module firewall-manager install "$firewall_action" "$@"
       ;;
+    # Optional add-on; never part of the default install or chain.
+    docker) dscript_run_script docker-installer "$@" ;;
     user:create) dscript_run_script create-admin-user "$@" ;;
     user:password) dscript_run_script set-system-user-password "$@" ;;
     panel:domain) dscript_run_script set-panel-domain "$@" ;;

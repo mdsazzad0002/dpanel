@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Http\Controllers\PanelSearchController;
+use App\Services\Docker\DrustDockerClient;
 use App\Support\UserAccessCache;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -50,6 +51,10 @@ class HandleInertiaRequests extends Middleware
             ],
             'phpmyadmin' => [
                 'url' => trim((string) config('app.phpmyadmin_url', '')),
+            ],
+            // Optional add-ons; their menus stay hidden until they are installed.
+            'features' => [
+                'docker' => fn () => app(DrustDockerClient::class)->installed(),
             ],
             'panelSearch' => fn () => app(PanelSearchController::class)->buildItems($request),
             'flash' => [

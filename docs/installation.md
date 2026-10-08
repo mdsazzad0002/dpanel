@@ -269,6 +269,7 @@ sudo dpanel doctor
 ## Next steps
 
 - [Quick Reference](quick-reference.md): the most-used commands by task
+- [Docker](docker.md): optional add-on. The installer does not install Docker; add it with `sudo dpanel docker`
 - [Troubleshooting](troubleshooting.md): find an error message and its fix
 - [Operations](operations.md): everyday commands and troubleshooting
 - [dscript CLI](dscript.md): the full `dpanel` command reference

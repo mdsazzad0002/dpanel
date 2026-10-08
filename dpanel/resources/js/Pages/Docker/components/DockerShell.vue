@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
+import DockerSetupGuide from './DockerSetupGuide.vue';
 
 defineProps({
     title: { type: String, required: true },
@@ -38,18 +39,14 @@ defineEmits(['refresh']);
             <div v-if="loadError" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
                 {{ loadError }}
             </div>
-            <div v-else-if="!loading && !status.installed" class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                Docker is not installed on this server. Install it with <code>sudo dpanel chain install docker</code>.
-            </div>
-            <div v-else-if="!loading && !status.running" class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                Docker is installed but its daemon is not running. Start it with <code>sudo systemctl start docker</code>.
-            </div>
+            <DockerSetupGuide v-else-if="!loading && !status.installed" state="missing" :refreshing="refreshing" @refresh="$emit('refresh')" />
+            <DockerSetupGuide v-else-if="!loading && !status.running" state="stopped" :refreshing="refreshing" @refresh="$emit('refresh')" />
 
             <div v-if="message" :class="message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'" class="whitespace-pre-line rounded-md border px-4 py-3 text-sm">
                 {{ message.text }}
             </div>
 
-            <slot />
+            <slot v-if="loading || (status.installed && status.running)" />
         </div>
     </AuthenticatedLayout>
 </template>

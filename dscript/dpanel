@@ -237,7 +237,6 @@ confirm_action() {
 }
 
 default_install_sequence() {
-  panel_ask_docker
   # The default install is split so Drust can be installed between the module
   # groups. Defer post-install configuration for the first group; otherwise the
   # panel details and system records are collected once per group.
@@ -248,8 +247,6 @@ default_install_sequence() {
   PANEL_DEFER_FINALIZE=true dscript_cli chain install firewall dns fail2ban ssl
   install_mail_services
   install_node_runtime
-  # After the firewall, so Docker adds its iptables chains to the final rule set.
-  panel_install_docker_if_requested
   panel_finalize_default_install
   # Install last so Composer, migrations, the application .env and writable
   # storage directories are ready before Supervisor starts the workers.
@@ -263,7 +260,7 @@ run_interactive_menu() {
     printf '\n'
     printf 'dpanel interactive menu\n'
     printf '=======================\n'
-    printf '1) Default Install (php -> mariadb -> redis -> postgresql (off) -> clamav (off) -> supervisor -> rust/drust -> firewall -> dns -> fail2ban -> ssl -> postfix -> dovecot -> nodejs -> docker (asked, optional) -> queue) | dpanel default-install\n'
+    printf '1) Default Install (php -> mariadb -> redis -> postgresql (off) -> clamav (off) -> supervisor -> rust/drust -> firewall -> dns -> fail2ban -> ssl -> postfix -> dovecot -> nodejs -> queue) | dpanel default-install\n'
     printf '2) Default Update | dpanel chain update\n'
     printf '3) Web stack menu | dpanel script run sync-vhost <action> <domain> <root-path> [php-version]\n'
     printf '4) PHP menu | dpanel php install all / dpanel php default <version>\n'
@@ -286,7 +283,7 @@ run_interactive_menu() {
     printf '21) Link refresh | dpanel link\n'
     printf '22) Doctor check | dpanel doctor\n'
     printf '23) Help | dpanel help\n'
-    printf '24) Docker install (optional, ~90 MB RAM idle) | dpanel install docker\n'
+    printf '24) Docker (optional, off by default) | dpanel docker\n'
     printf '0) Exit\n'
     printf 'Select option: '
     read -r choice
@@ -690,11 +687,7 @@ run_interactive_menu() {
       21) dscript_cli link ;;
       22) dscript_cli doctor ;;
       23) dscript_cli help ;;
-      24)
-        if confirm_action "Install Docker" "module docker install"; then
-          dscript_cli module docker install && panel_store_installed_manifest_value docker "$(panel_manifest_version_for docker)"
-        fi
-        ;;
+      24) dscript_cli docker ;;
       0) return 0 ;;
       *) printf 'Invalid option.\n' ;;
     esac
