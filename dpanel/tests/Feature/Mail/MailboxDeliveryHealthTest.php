@@ -5,6 +5,7 @@ namespace Tests\Feature\Mail;
 use App\Models\Mailbox;
 use App\Services\Mail\MailboxDeliveryHealth;
 use App\Services\ScriptExecutionGateway;
+use App\Support\MailPasswordHash;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Mockery;
@@ -17,12 +18,10 @@ class MailboxDeliveryHealthTest extends TestCase
     /** @var array<int, string> addresses Dovecot cannot find */
     private array $dovecotMissing = [];
 
-    /** Dovecot finds these again once the repair script has run. */
-    private array $fixedByRepair = [];
-
     private ?string $dovecotError = null;
 
-    private int $repairs = 0;
+    /** @var array<int, string> statuses seen by Dovecot lookups, per call */
+    private array $statusDuringLookup = [];
 
     protected function setUp(): void
     {
@@ -30,11 +29,8 @@ class MailboxDeliveryHealthTest extends TestCase
 
         $gateway = Mockery::mock(ScriptExecutionGateway::class);
         $gateway->shouldReceive('execute')->andReturnUsing(function (string $script, array $args) {
-            if (str_ends_with($script, 'mail-repair-dovecot.sh')) {
-                $this->repairs++;
-                $this->dovecotMissing = array_values(array_diff($this->dovecotMissing, $this->fixedByRepair));
-
-                return ['success' => true, 'output' => "MAIL_REPAIR=ok\n"];
+            foreach ($args as $email) {
+                $this->statusDuringLookup[] = (string) Mailbox::query()->where('email', $email)->value('status');
             }
             if ($this->dovecotError !== null) {
                 return ['success' => false, 'output' => "ERROR {$this->dovecotError}\n"];
@@ -50,18 +46,21 @@ class MailboxDeliveryHealthTest extends TestCase
         $this->app->instance(ScriptExecutionGateway::class, $gateway);
     }
 
-    private function mailbox(string $email, string $status = 'active'): Mailbox
+    private function mailbox(string $email, string $status = 'disabled', array $attributes = []): Mailbox
     {
         [$local, $domain] = explode('@', $email);
 
-        return Mailbox::query()->forceCreate([
+        return Mailbox::query()->forceCreate($attributes + [
             'id' => (string) Str::uuid(),
             'domain' => $domain,
             'mailbox' => $local,
             'email' => $email,
-            'password' => 'x',
+            'password' => MailPasswordHash::make('secret-pass'),
+            'client_password' => 'secret-pass',
             'status' => $status,
             'mail_home' => "/home/test/mail/{$domain}/{$local}/Maildir",
+            'mail_uid' => 1001,
+            'mail_gid' => 1001,
         ]);
     }
 
@@ -70,104 +69,99 @@ class MailboxDeliveryHealthTest extends TestCase
         return $this->app->make(MailboxDeliveryHealth::class);
     }
 
-    public function test_mailboxes_dovecot_finds_stay_active(): void
+    public function test_enable_turns_on_when_every_check_passes(): void
     {
-        $a = $this->mailbox('a@example.test');
+        $mailbox = $this->mailbox('a@example.test');
 
-        $report = $this->health()->checkAll();
+        $result = $this->health()->enable($mailbox);
 
-        $this->assertTrue($report['ok']);
-        $this->assertSame([], $report['unhealthy']);
-        $this->assertSame('active', $a->fresh()->status);
-        $this->assertNotNull($a->fresh()->health_checked_at);
-        $this->assertSame(0, $this->repairs);
+        $this->assertTrue($result['enabled']);
+        $this->assertCount(3, $result['checks']);
+        $this->assertSame('active', $mailbox->fresh()->status);
+        $this->assertNull($mailbox->fresh()->health_error);
+        // Dovecot only finds active rows, so it must be asked while the row is active.
+        $this->assertSame(['active'], $this->statusDuringLookup);
     }
 
-    public function test_a_mailbox_still_missing_after_repair_is_switched_off(): void
-    {
-        $ok = $this->mailbox('ok@example.test');
-        $broken = $this->mailbox('security@example.test');
-        $this->dovecotMissing = ['security@example.test'];
-
-        $report = $this->health()->checkAll();
-
-        $this->assertSame(1, $this->repairs);
-        $this->assertSame(['security@example.test'], $report['unhealthy']);
-        $this->assertSame('unhealthy', $broken->fresh()->status);
-        $this->assertStringContainsString("doesn't exist", (string) $broken->fresh()->health_error);
-        $this->assertSame('active', $ok->fresh()->status);
-    }
-
-    public function test_a_mailbox_the_repair_fixes_stays_active(): void
+    public function test_enable_stays_off_when_dovecot_cannot_find_it(): void
     {
         $mailbox = $this->mailbox('security@example.test');
-        $this->dovecotMissing = $this->fixedByRepair = ['security@example.test'];
+        $this->dovecotMissing = ['security@example.test'];
 
-        $report = $this->health()->checkAll();
+        $result = $this->health()->enable($mailbox);
 
-        $this->assertTrue($report['repaired']);
-        $this->assertSame([], $report['unhealthy']);
-        $this->assertSame('active', $mailbox->fresh()->status);
+        $this->assertFalse($result['enabled']);
+        $this->assertFalse($result['checks'][2]['ok']);
+        $this->assertSame('disabled', $mailbox->fresh()->status);
+        $this->assertStringContainsString("doesn't exist", (string) $mailbox->fresh()->health_error);
     }
 
-    public function test_dovecot_failing_to_answer_changes_nothing(): void
+    public function test_enable_skips_dovecot_when_storage_is_missing(): void
+    {
+        $mailbox = $this->mailbox('a@example.test', 'disabled', ['mail_home' => null]);
+
+        $result = $this->health()->enable($mailbox);
+
+        $this->assertFalse($result['enabled']);
+        $this->assertFalse($result['checks'][0]['ok']);
+        $this->assertStringContainsString('mail:migrate-dovecot-sql', $result['checks'][0]['message']);
+        $this->assertSame([], $this->statusDuringLookup);
+        $this->assertSame('disabled', $mailbox->fresh()->status);
+    }
+
+    public function test_enable_fails_on_a_password_hash_that_does_not_match(): void
+    {
+        $mailbox = $this->mailbox('a@example.test', 'disabled', ['password' => MailPasswordHash::make('other')]);
+
+        $result = $this->health()->enable($mailbox);
+
+        $this->assertFalse($result['enabled']);
+        $this->assertFalse($result['checks'][1]['ok']);
+    }
+
+    public function test_enable_stays_off_when_dovecot_cannot_answer(): void
     {
         $mailbox = $this->mailbox('a@example.test');
         $this->dovecotError = 'doveadm user failed (exit 75): auth service down';
 
-        $report = $this->health()->checkAll();
+        $result = $this->health()->enable($mailbox);
 
-        $this->assertFalse($report['ok']);
-        $this->assertStringContainsString('auth service down', (string) $report['error']);
-        $this->assertSame('active', $mailbox->fresh()->status);
+        $this->assertFalse($result['enabled']);
+        $this->assertStringContainsString('auth service down', $result['checks'][2]['message']);
+        $this->assertSame('disabled', $mailbox->fresh()->status);
     }
 
-    public function test_dovecot_finding_no_mailbox_at_all_is_reported_not_applied(): void
+    public function test_disable_always_turns_off(): void
     {
-        $emails = ['a@example.test', 'b@example.test', 'c@example.test'];
-        foreach ($emails as $email) {
-            $this->mailbox($email);
-        }
-        $this->dovecotMissing = $emails;
+        $mailbox = $this->mailbox('a@example.test', 'active');
 
-        $report = $this->health()->checkAll();
+        $this->health()->disable($mailbox);
 
-        $this->assertFalse($report['ok']);
-        $this->assertSame(3, Mailbox::query()->where('status', 'active')->count());
+        $this->assertSame('disabled', $mailbox->fresh()->status);
     }
 
-    public function test_dry_run_reports_without_repairing_or_switching_off(): void
+    public function test_report_records_problems_without_changing_status(): void
     {
-        $mailbox = $this->mailbox('security@example.test');
-        $this->mailbox('ok@example.test');
+        $ok = $this->mailbox('ok@example.test', 'active');
+        $broken = $this->mailbox('security@example.test', 'active');
         $this->dovecotMissing = ['security@example.test'];
 
-        $report = $this->health()->checkAll(dryRun: true);
+        $report = $this->health()->report();
 
-        $this->assertSame(['security@example.test'], $report['unhealthy']);
-        $this->assertSame(0, $this->repairs);
-        $this->assertSame('active', $mailbox->fresh()->status);
+        $this->assertSame(['security@example.test'], $report['problems']);
+        $this->assertSame('active', $broken->fresh()->status);
+        $this->assertNotNull($broken->fresh()->health_error);
+        $this->assertNull($ok->fresh()->health_error);
     }
 
-    public function test_an_unhealthy_mailbox_is_restored_once_dovecot_finds_it(): void
+    public function test_report_with_dovecot_down_records_nothing(): void
     {
-        $mailbox = $this->mailbox('security@example.test', 'unhealthy');
+        $mailbox = $this->mailbox('a@example.test', 'active');
+        $this->dovecotError = 'auth service down';
 
-        $report = $this->health()->checkAll();
+        $report = $this->health()->report();
 
-        $this->assertSame(['security@example.test'], $report['restored']);
-        $this->assertSame('active', $mailbox->fresh()->status);
-        $this->assertNull($mailbox->fresh()->health_error);
-    }
-
-    public function test_recheck_puts_a_still_missing_mailbox_back_to_unhealthy(): void
-    {
-        $mailbox = $this->mailbox('security@example.test', 'unhealthy');
-        $this->dovecotMissing = ['security@example.test'];
-
-        $result = $this->health()->recheck($mailbox);
-
-        $this->assertTrue($result['ok']);
-        $this->assertSame('unhealthy', $mailbox->fresh()->status);
+        $this->assertFalse($report['ok']);
+        $this->assertNull($mailbox->fresh()->health_checked_at);
     }
 }

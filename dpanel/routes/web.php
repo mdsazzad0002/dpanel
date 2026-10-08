@@ -327,9 +327,9 @@ Route::prefix('cpsess{token}')
             Route::post('/mail-health/outbound-check', [MailHealthController::class, 'outboundCheck'])
                 ->middleware(['role:admin|superadmin', 'throttle:5,1'])
                 ->name('mail-health.outbound-check');
-            Route::post('/mail-health/mailboxes/{id}/recheck', [MailHealthController::class, 'recheckMailbox'])
+            Route::patch('/mail-health/outbound-gate', [MailHealthController::class, 'setOutboundGate'])
                 ->middleware(['role:admin|superadmin', 'throttle:10,1'])
-                ->name('mail-health.mailboxes.recheck');
+                ->name('mail-health.outbound-gate');
             Route::post('/emails', [EmailController::class, 'store'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.store');
@@ -342,6 +342,12 @@ Route::prefix('cpsess{token}')
             Route::delete('/emails/{id}', [EmailController::class, 'destroy'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.destroy');
+            Route::post('/emails/{id}/enable', [EmailController::class, 'enable'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:10,1'])
+                ->name('emails.enable');
+            Route::post('/emails/{id}/disable', [EmailController::class, 'disable'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.disable');
 
             Route::get('/mail-image', [MailClientController::class, 'image'])
                 ->middleware(['role:admin|reseller', 'throttle:600,1'])

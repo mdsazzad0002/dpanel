@@ -8,9 +8,9 @@ use Illuminate\Support\Facades\Schema;
 
 class MailMailboxCheckCommand extends Command
 {
-    protected $signature = 'mail:mailbox-check {--dry-run : Report mailboxes Dovecot cannot find without repairing or switching them off}';
+    protected $signature = 'mail:mailbox-check';
 
-    protected $description = 'Find mailboxes Postfix accepts mail for but Dovecot cannot find; repair, else switch them off.';
+    protected $description = 'Report active mailboxes that Postfix accepts mail for but Dovecot cannot find (changes no status).';
 
     public function handle(MailboxDeliveryHealth $health): int
     {
@@ -20,18 +20,16 @@ class MailMailboxCheckCommand extends Command
             return self::SUCCESS;
         }
 
-        $report = $health->checkAll((bool) $this->option('dry-run'));
-        $this->line("Checked {$report['checked']} mailbox(es).".($report['repaired'] ? ' Dovecot/Postfix lookups were rewritten.' : ''));
-        foreach ($report['restored'] as $email) {
-            $this->info("{$email}: Dovecot finds it again; turned back on.");
-        }
-        foreach ($report['unhealthy'] as $email) {
-            $this->warn("{$email}: Dovecot cannot find it".($this->option('dry-run') ? '.' : '; switched off.'));
-        }
+        $report = $health->report();
         if (! $report['ok']) {
             $this->error((string) $report['error']);
 
             return self::FAILURE;
+        }
+
+        $this->line("Checked {$report['checked']} active mailbox(es).");
+        foreach ($report['problems'] as $email) {
+            $this->warn("{$email}: Dovecot cannot find it; mail for it bounces. Turn it off and on in Email Management to see which check fails.");
         }
 
         return self::SUCCESS;

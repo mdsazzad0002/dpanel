@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\PackagePlan;
 use App\Models\MailDomain;
 use App\Models\Mailbox;
+use App\Services\Mail\MailboxDeliveryHealth;
 use App\Support\MailPasswordHash;
 use App\Models\Website;
 use App\Services\Mail\MailboxImapService;
@@ -447,6 +448,39 @@ class EmailController extends Controller
         }
 
         return redirect()->route('emails.list')->with('success', 'Mailbox deleted successfully.');
+    }
+
+    /**
+     * Switches a mailbox on only after every check passes; the result lists
+     * each check so the admin sees what to fix.
+     */
+    public function enable(MailboxDeliveryHealth $health, string $token, string $id): JsonResponse
+    {
+        $mailbox = Mailbox::query()->findOrFail($id);
+        $result = $health->enable($mailbox);
+        $mailbox->refresh();
+
+        return response()->json([
+            'enabled' => $result['enabled'],
+            'title' => $result['enabled'] ? "{$mailbox->email} is on" : "{$mailbox->email} stays off",
+            'message' => $result['enabled']
+                ? 'Every check passed. It receives mail and can log in.'
+                : 'Fix the failed checks below, then turn it on again.',
+            'checks' => $result['checks'],
+            'mailbox' => $mailbox->only(['id', 'status', 'health_error', 'health_checked_at']),
+        ]);
+    }
+
+    public function disable(MailboxDeliveryHealth $health, string $token, string $id): JsonResponse
+    {
+        $mailbox = Mailbox::query()->findOrFail($id);
+        $health->disable($mailbox);
+
+        return response()->json([
+            'title' => "{$mailbox->email} is off",
+            'message' => 'Mail for it is refused and it cannot log in until it is turned on again.',
+            'mailbox' => $mailbox->only(['id', 'status', 'health_error', 'health_checked_at']),
+        ]);
     }
 
     public function login(string $token, string $id)

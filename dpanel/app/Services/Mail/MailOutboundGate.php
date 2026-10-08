@@ -5,6 +5,7 @@ namespace App\Services\Mail;
 use App\Services\Dns\PublicDnsLookup;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
+use App\Support\MailSettings;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -16,7 +17,8 @@ use Illuminate\Support\Facades\Cache;
  * other message. The panel can fix the IPv6 side itself (send over IPv4
  * only); the IPv4 PTR is set at the IP provider, so while it is wrong
  * outbound mail is held in the queue — nothing bounces or is lost — and it
- * leaves on its own once the PTR is corrected.
+ * leaves on its own once the PTR is corrected. Holding is the admin's
+ * choice (Mail Health > Outbound), off by default; the IPv6 fix always applies.
  */
 class MailOutboundGate
 {
@@ -29,6 +31,7 @@ class MailOutboundGate
         private readonly MailDnsRecords $records,
         private readonly PublicDnsLookup $dns,
         private readonly ScriptExecutionGateway $gateway,
+        private readonly MailSettings $settings,
     ) {
     }
 
@@ -44,7 +47,7 @@ class MailOutboundGate
 
         return [
             'relayhost' => trim((string) @shell_exec('postconf -h relayhost 2>/dev/null')),
-            'gate_enabled' => (bool) config('serverpanel.mail.outbound_gate', true),
+            'gate_enabled' => $this->settings->read()['outbound_gate'],
             'ipv4' => $ipv4 !== '' ? $this->reverseCheck($ipv4) : null,
             'ipv6' => $ipv6 !== '' ? $this->reverseCheck($ipv6) : null,
         ];
@@ -104,6 +107,19 @@ class MailOutboundGate
         return $state;
     }
 
+    /**
+     * Turns holding mail on a wrong PTR on or off, and applies it at once:
+     * turning it off releases mail that was held.
+     *
+     * @return array<string, mixed> the new state
+     */
+    public function setEnabled(bool $enabled): array
+    {
+        $this->settings->write(['outbound_gate' => $enabled]);
+
+        return $this->check();
+    }
+
     /** @return array<string, mixed> the last check, or "unknown" before the first */
     public function status(): array
     {
@@ -155,7 +171,7 @@ class MailOutboundGate
             return ['active', 0, "Mail is sent through the relay {$facts['relayhost']}, so this server's PTR is not checked."];
         }
         if (! $facts['gate_enabled']) {
-            return ['active', 0, 'The outbound gate is turned off (SERVERPANEL_MAIL_OUTBOUND_GATE=false).'];
+            return ['active', 0, 'Holding mail on a wrong PTR is turned off, so outbound mail is never paused.'];
         }
         $ipv4 = $facts['ipv4'];
         if ($ipv4 === null) {

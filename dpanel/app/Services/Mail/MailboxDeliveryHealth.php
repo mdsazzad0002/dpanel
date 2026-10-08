@@ -5,22 +5,21 @@ namespace App\Services\Mail;
 use App\Models\Mailbox;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
+use App\Support\MailPasswordHash;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Artisan;
 
 /**
- * Finds mailboxes that Postfix accepts mail for but Dovecot cannot find.
+ * Mailbox on/off, and the checks that decide whether a mailbox can work.
  *
  * Postfix and Dovecot each look an address up in the panel database. When
  * they disagree, mail is accepted, then bounced ("550 5.1.1 User doesn't
- * exist"), and the bounce notice to the sender fails too. The check repairs
- * the lookups once; a mailbox Dovecot still cannot find is set to
- * 'unhealthy'. That status is not 'active', so Postfix refuses mail for it at
- * the door and its SMTP login stops, until a later check finds it again.
+ * exist"). Turning a mailbox on runs every check first and only switches it
+ * on when all pass; turning it off is always allowed. The hourly check only
+ * reports problems on active mailboxes — it never switches anything off.
  */
 class MailboxDeliveryHealth
 {
-    public const UNHEALTHY = 'unhealthy';
+    public const DISABLED = 'disabled';
 
     private const CHUNK = 200;
 
@@ -29,97 +28,116 @@ class MailboxDeliveryHealth
     }
 
     /**
-     * Checks every active mailbox and retries every unhealthy one.
+     * Runs every check and switches the mailbox on only if all pass.
      *
-     * @return array{ok: bool, error: string|null, checked: int, repaired: bool, unhealthy: array<int, string>, restored: array<int, string>}
+     * @return array{enabled: bool, checks: array<int, array{name: string, ok: bool, message: string}>}
      */
-    public function checkAll(bool $dryRun = false): array
+    public function enable(Mailbox $mailbox): array
     {
-        $active = Mailbox::query()->where('status', 'active')->orderBy('email')->get();
-        $unhealthy = Mailbox::query()->where('status', self::UNHEALTHY)->orderBy('email')->get();
-        $report = ['ok' => true, 'error' => null, 'checked' => $active->count() + $unhealthy->count(), 'repaired' => false, 'unhealthy' => [], 'restored' => []];
-
-        $missing = $this->missing($active);
-        if (is_string($missing)) {
-            return ['ok' => false, 'error' => $missing] + $report;
-        }
-
-        if ($missing !== [] && ! $dryRun) {
-            $report['repaired'] = $this->repair($active->whereIn('email', array_keys($missing)));
-            $missing = $this->missing($active->whereIn('email', array_keys($missing)));
-            if (is_string($missing)) {
-                return ['ok' => false, 'error' => $missing] + $report;
+        $checks = [$this->rowCheck($mailbox), $this->passwordCheck($mailbox)];
+        // Dovecot only sees active mailboxes, so it is asked only once
+        // everything else passed, with the mailbox briefly switched on.
+        if (collect($checks)->every('ok')) {
+            $previous = $mailbox->status;
+            $mailbox->forceFill(['status' => 'active'])->save();
+            $checks[] = $dovecot = $this->dovecotCheck($mailbox);
+            if (! $dovecot['ok']) {
+                $mailbox->forceFill(['status' => $previous === 'active' ? self::DISABLED : $previous])->save();
             }
+        } else {
+            $checks[] = ['name' => 'Dovecot can find the mailbox', 'ok' => false, 'message' => 'Not checked: fix the problems above first.'];
         }
 
-        // Dovecot finding none of several mailboxes is its configuration, not
-        // the mailboxes; switching them all off would only hide that.
-        if ($active->count() >= 3 && count($missing) === $active->count()) {
-            return ['ok' => false, 'error' => 'Dovecot cannot find any mailbox. Its SQL settings are broken; run mail-repair-dovecot.sh or check `doveconf -n`.', 'unhealthy' => array_keys($missing)] + $report;
-        }
+        $enabled = collect($checks)->every('ok');
+        $failed = collect($checks)->reject(fn ($check) => $check['ok'])->pluck('message')->implode(' ');
+        $mailbox->forceFill([
+            'status' => $enabled ? 'active' : ($mailbox->status === 'active' ? self::DISABLED : $mailbox->status),
+            'health_error' => $enabled ? null : $failed,
+            'health_checked_at' => now(),
+        ])->save();
 
-        $report['unhealthy'] = array_keys($missing);
-        if ($dryRun) {
-            return $report;
-        }
+        return ['enabled' => $enabled, 'checks' => $checks];
+    }
 
-        foreach ($active as $mailbox) {
-            $this->record($mailbox, $missing[$mailbox->email] ?? null);
-        }
-        foreach ($unhealthy as $mailbox) {
-            $result = $this->recheck($mailbox);
-            if ($result['ok'] && $mailbox->status === 'active') {
-                $report['restored'][] = $mailbox->email;
-            } elseif ($result['ok']) {
-                $report['unhealthy'][] = $mailbox->email;
-            }
-        }
-
-        return $report;
+    public function disable(Mailbox $mailbox): void
+    {
+        $mailbox->forceFill(['status' => self::DISABLED])->save();
     }
 
     /**
-     * Turns one mailbox back on if Dovecot can now find it. Dovecot only sees
-     * active mailboxes, so it is made active for the lookup and put back if
-     * the lookup still fails.
+     * Asks Dovecot about every active mailbox and records problems on them as
+     * warnings. Changes no status.
      *
-     * @return array{ok: bool, error: string|null}
+     * @return array{ok: bool, error: string|null, checked: int, problems: array<int, string>}
      */
-    public function recheck(Mailbox $mailbox): array
+    public function report(): array
     {
-        $previous = $mailbox->status;
-        $mailbox->forceFill(['status' => 'active'])->save();
-
-        $missing = $this->missing(collect([$mailbox]));
+        $active = Mailbox::query()->where('status', 'active')->orderBy('email')->get();
+        $missing = $this->missing($active);
         if (is_string($missing)) {
-            $mailbox->forceFill(['status' => $previous])->save();
-
-            return ['ok' => false, 'error' => $missing];
-        }
-        if ($missing !== []) {
-            $this->repair(collect([$mailbox]));
-            $missing = $this->missing(collect([$mailbox]));
-            if (is_string($missing)) {
-                $mailbox->forceFill(['status' => $previous])->save();
-
-                return ['ok' => false, 'error' => $missing];
-            }
+            return ['ok' => false, 'error' => $missing, 'checked' => $active->count(), 'problems' => []];
         }
 
-        $this->record($mailbox, $missing[$mailbox->email] ?? null);
-
-        return ['ok' => true, 'error' => null];
-    }
-
-    private function record(Mailbox $mailbox, ?string $reason): void
-    {
-        $mailbox->forceFill($reason === null
-            ? ['status' => 'active', 'health_error' => null, 'health_checked_at' => now()]
-            : [
-                'status' => self::UNHEALTHY,
-                'health_error' => 'Dovecot cannot find this mailbox, so mail accepted for it would bounce. Turned off until a check finds it again. Dovecot said: '.$reason,
+        foreach ($active as $mailbox) {
+            $reason = $missing[$mailbox->email] ?? null;
+            $mailbox->forceFill([
+                'health_error' => $reason === null ? null : 'Dovecot cannot find this mailbox, so mail for it bounces. Turn it off and on again in Email Management to see which check fails. Dovecot said: '.$reason,
                 'health_checked_at' => now(),
             ])->save();
+        }
+
+        return ['ok' => true, 'error' => null, 'checked' => $active->count(), 'problems' => array_keys($missing)];
+    }
+
+    /** @return array{name: string, ok: bool, message: string} */
+    private function rowCheck(Mailbox $mailbox): array
+    {
+        $missing = array_keys(array_filter([
+            'mail_home' => trim((string) $mailbox->mail_home) === '',
+            'mail_uid' => $mailbox->mail_uid === null,
+            'mail_gid' => $mailbox->mail_gid === null,
+        ]));
+
+        return [
+            'name' => 'Mailbox storage is set up',
+            'ok' => $missing === [],
+            'message' => $missing === []
+                ? (string) $mailbox->mail_home
+                : 'Missing '.implode(', ', $missing).". Run 'php artisan mail:migrate-dovecot-sql' in the panel directory.",
+        ];
+    }
+
+    /** @return array{name: string, ok: bool, message: string} */
+    private function passwordCheck(Mailbox $mailbox): array
+    {
+        $name = 'Mailbox password works';
+        try {
+            $password = (string) ($mailbox->client_password ?? '');
+        } catch (\Throwable) {
+            return ['name' => $name, 'ok' => false, 'message' => 'The stored password cannot be read (it was encrypted with another APP_KEY). Set a new password in Edit.'];
+        }
+        if ($password === '') {
+            return ['name' => $name, 'ok' => true, 'message' => 'No stored password to compare; login uses the saved hash.'];
+        }
+
+        return MailPasswordHash::verify($password, (string) $mailbox->password)
+            ? ['name' => $name, 'ok' => true, 'message' => 'The saved hash matches the password.']
+            : ['name' => $name, 'ok' => false, 'message' => "The saved hash does not match the password, so logins fail. Run 'php artisan mail:repair-dovecot-auth' or set the password again in Edit."];
+    }
+
+    /** @return array{name: string, ok: bool, message: string} */
+    private function dovecotCheck(Mailbox $mailbox): array
+    {
+        $name = 'Dovecot can find the mailbox';
+        $missing = $this->missing(collect([$mailbox]));
+        if (is_string($missing)) {
+            return ['name' => $name, 'ok' => false, 'message' => 'The check could not run: '.$missing];
+        }
+        if (isset($missing[$mailbox->email])) {
+            return ['name' => $name, 'ok' => false, 'message' => "Dovecot said: {$missing[$mailbox->email]}. Mail for it would bounce. Check the Dovecot SQL settings with 'sudo doveconf -n' on the server, or run 'sudo /opt/dpanel/runtime/scripts/mail-repair-dovecot.sh' to rewrite them."];
+        }
+
+        return ['name' => $name, 'ok' => true, 'message' => 'Mail for it is delivered.'];
     }
 
     /**
@@ -159,22 +177,5 @@ class MailboxDeliveryHealth
         }
 
         return $missing;
-    }
-
-    /** @param  Collection<int, Mailbox>  $mailboxes */
-    private function repair(Collection $mailboxes): bool
-    {
-        // Rows without a Maildir path are fixed by the panel's own migration.
-        if ($mailboxes->contains(fn (Mailbox $mailbox) => trim((string) $mailbox->mail_home) === '')) {
-            Artisan::call('mail:migrate-dovecot-sql');
-        }
-
-        try {
-            $result = $this->gateway->execute(ScriptPathResolver::resolveRepositoryRoot().'/scripts/mail-repair-dovecot.sh', [], [], true);
-        } catch (\Throwable) {
-            return false;
-        }
-
-        return (bool) $result['success'];
     }
 }

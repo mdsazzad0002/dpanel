@@ -6,12 +6,16 @@ use App\Services\Dns\PublicDnsLookup;
 use App\Services\Mail\MailDnsRecords;
 use App\Services\Mail\MailOutboundGate;
 use App\Services\ScriptExecutionGateway;
+use App\Support\MailSettings;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Mockery;
 use Tests\TestCase;
 
 class MailOutboundGateTest extends TestCase
 {
+    use RefreshDatabase;
+
     private const IP = '203.0.113.10';
 
     /** @var array<int, array<int, string>> arguments of every policy-script call */
@@ -25,6 +29,8 @@ class MailOutboundGateTest extends TestCase
     {
         parent::setUp();
         Cache::forget('mail.outbound_gate');
+        // Holding mail is opt-in; most cases test it switched on.
+        app(MailSettings::class)->write(['outbound_gate' => true]);
 
         $records = Mockery::mock(MailDnsRecords::class);
         $records->shouldReceive('serverIp')->andReturn(self::IP);
@@ -139,14 +145,27 @@ class MailOutboundGateTest extends TestCase
         $this->assertSame('active', $state['outbound']);
     }
 
-    public function test_turning_the_gate_off_keeps_outbound_on(): void
+    public function test_holding_is_off_by_default(): void
     {
-        config(['serverpanel.mail.outbound_gate' => false]);
+        \Illuminate\Support\Facades\DB::table('mail_settings')->delete();
         $this->dns('', []);
 
         $this->check();
         $state = $this->check();
 
         $this->assertSame('active', $state['outbound']);
+        $this->assertSame('deny', $state['ipv6']);
+    }
+
+    public function test_turning_holding_off_releases_paused_mail(): void
+    {
+        $this->dns('', []);
+        $this->check();
+        $this->assertSame('paused', $this->check()['outbound']);
+
+        $state = $this->app->make(MailOutboundGate::class)->setEnabled(false);
+
+        $this->assertSame('active', $state['outbound']);
+        $this->assertFalse(app(MailSettings::class)->read()['outbound_gate']);
     }
 }

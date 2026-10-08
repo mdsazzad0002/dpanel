@@ -1,6 +1,8 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { ref, watch } from 'vue';
+import Modal from '@/Components/Modal.vue';
 
 const page = usePage();
 const deleteForm = useForm({});
@@ -20,6 +22,32 @@ const props = defineProps({
 const formatDate = (value) => {
     if (!value) return '-';
     return new Date(value).toLocaleString();
+};
+
+// Status changes in place, so turning a mailbox on/off does not reload the list.
+const rows = ref(props.mailboxes.map((row) => ({ ...row })));
+watch(() => props.mailboxes, (value) => { rows.value = value.map((row) => ({ ...row })); });
+const togglingId = ref('');
+const result = ref(null);
+
+const isOn = (item) => (item.status || 'active') === 'active';
+
+const toggleMailbox = async (item) => {
+    const turningOn = !isOn(item);
+    if (!turningOn && !confirm(`Turn off ${item.email}? Mail for it will be refused and it cannot log in until it is turned on again.`)) return;
+    togglingId.value = item.id;
+    try {
+        const { data } = await window.axios.post(panelRoute(turningOn ? 'emails.enable' : 'emails.disable', { id: item.id }), {}, { headers: { Accept: 'application/json' } });
+        Object.assign(item, data?.mailbox ?? {});
+        // Turning on always shows the checks; turning off needs no modal.
+        if (turningOn) {
+            result.value = { ok: Boolean(data?.enabled), title: data?.title ?? '', message: data?.message ?? '', checks: data?.checks ?? [] };
+        }
+    } catch (error) {
+        result.value = { ok: false, title: 'Could not change the mailbox', message: error?.response?.data?.message || error?.message || 'Request failed.', checks: [] };
+    } finally {
+        togglingId.value = '';
+    }
 };
 
 const deleteMailbox = (id) => {
@@ -90,7 +118,7 @@ const deleteMailbox = (id) => {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="item in mailboxes" :key="item.id" class="border-t border-slate-200 dark:border-slate-800">
+                        <tr v-for="item in rows" :key="item.id" class="border-t border-slate-200 dark:border-slate-800">
                             <td class="px-4 py-3">{{ item.domain || '-' }}</td>
                             <td class="px-4 py-3 font-medium">
                                 <p>{{ item.email }}</p>
@@ -103,15 +131,25 @@ const deleteMailbox = (id) => {
                             </td>
                             <td class="px-4 py-3">{{ item.quota_mb }} MB</td>
                             <td class="px-4 py-3">
-                                <span
-                                    class="rounded-full px-2 py-1 text-xs"
-                                    :class="(item.status || 'active') === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'"
-                                    :title="item.health_error || ''"
-                                >
-                                    {{ item.status || 'active' }}
-                                </span>
-                                <p v-if="item.status === 'unhealthy'" class="mt-1 max-w-xs text-xs text-red-600 dark:text-red-400">
-                                    Mail delivery is off. See Mail Health.
+                                <div class="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        :aria-checked="isOn(item)"
+                                        :disabled="togglingId === item.id"
+                                        :title="isOn(item) ? 'Turn off' : 'Turn on (runs all checks first)'"
+                                        class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition disabled:opacity-60"
+                                        :class="isOn(item) ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
+                                        @click="toggleMailbox(item)"
+                                    >
+                                        <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition" :class="isOn(item) ? 'translate-x-4' : 'translate-x-0.5'"></span>
+                                    </button>
+                                    <span class="text-xs" :class="isOn(item) ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500'">
+                                        {{ togglingId === item.id ? (isOn(item) ? 'Turning off…' : 'Checking…') : (isOn(item) ? 'On' : 'Off') }}
+                                    </span>
+                                </div>
+                                <p v-if="item.health_error" class="mt-1 max-w-xs break-words text-xs" :class="isOn(item) ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'">
+                                    {{ item.health_error }}
                                 </p>
                             </td>
                             <td class="px-4 py-3">{{ formatDate(item.created_at) }}</td>
@@ -154,5 +192,27 @@ const deleteMailbox = (id) => {
                 </table>
             </div>
         </div>
+        <Modal :show="result !== null" max-width="lg" @close="result = null">
+            <div v-if="result" class="p-6">
+                <div class="flex items-start gap-3">
+                    <i class="bi text-2xl" :class="result.ok ? 'bi-check-circle-fill text-emerald-600' : 'bi-x-octagon-fill text-red-600'"></i>
+                    <div class="min-w-0">
+                        <h2 class="break-words text-lg font-semibold text-slate-900 dark:text-slate-100">{{ result.title }}</h2>
+                        <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">{{ result.message }}</p>
+                    </div>
+                </div>
+                <ul v-if="result.checks.length" class="mt-4 space-y-2">
+                    <li v-for="check in result.checks" :key="check.name" class="rounded-lg p-3 text-sm" :class="check.ok ? 'bg-emerald-50 dark:bg-emerald-950/40' : 'bg-red-50 dark:bg-red-950/40'">
+                        <p class="font-medium text-slate-900 dark:text-slate-100">
+                            <i class="bi mr-1" :class="check.ok ? 'bi-check-circle text-emerald-600' : 'bi-x-circle text-red-600'"></i>{{ check.name }}
+                        </p>
+                        <p class="mt-1 break-words text-xs text-slate-600 dark:text-slate-300">{{ check.message }}</p>
+                    </li>
+                </ul>
+                <div class="mt-6 flex justify-end">
+                    <button type="button" class="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white" @click="result = null">Close</button>
+                </div>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>
