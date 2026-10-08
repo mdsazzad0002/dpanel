@@ -72,6 +72,30 @@ class WebsiteService
         throw new \RuntimeException('No free Python ports are available in the configured range.');
     }
 
+    public const DOCKER_PORT_RANGE_START = 50000;
+
+    public const DOCKER_PORT_RANGE_END = 54999;
+
+    /**
+     * Reserve the next free host port for a Docker site's container to publish.
+     */
+    public function allocateDockerPort(): int
+    {
+        $usedPorts = array_flip(Website::query()
+            ->whereNotNull('docker_port')
+            ->pluck('docker_port')
+            ->map(static fn ($port): int => (int) $port)
+            ->all());
+
+        for ($port = self::DOCKER_PORT_RANGE_START; $port <= self::DOCKER_PORT_RANGE_END; $port++) {
+            if (! isset($usedPorts[$port])) {
+                return $port;
+            }
+        }
+
+        throw new \RuntimeException('No free Docker ports are available in the configured range.');
+    }
+
     /**
      * Create or refresh a lightweight demo site page inside the website root.
      *

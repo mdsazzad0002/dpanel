@@ -92,8 +92,11 @@ const small = 'rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-sla
                     <span class="text-xs font-medium text-slate-600 dark:text-slate-300">Volumes</span>
                     <button type="button" :class="small" @click="addVolume">Add volume</button>
                 </div>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    A folder inside a website's home (/home/site-user/docker/my-app) can be edited and uploaded to with that website's File Manager. A plain name makes a named volume that Docker manages.
+                </p>
                 <div v-for="(volume, i) in form.volumes" :key="i" class="mt-2 grid grid-cols-2 items-center gap-2 md:grid-cols-[1fr_1fr_auto_auto]">
-                    <input v-model="volume.source" type="text" placeholder="Volume name or /host/path" :class="input" class="font-mono" />
+                    <input v-model="volume.source" type="text" placeholder="my-data or /home/site-user/docker/my-app" :class="input" class="font-mono" />
                     <input v-model="volume.target" type="text" placeholder="/path/in/container" :class="input" class="font-mono" />
                     <label class="flex items-center gap-1 text-xs"><input v-model="volume.read_only" type="checkbox" /> Read-only</label>
                     <button type="button" :class="small" @click="form.volumes.splice(i, 1)">Remove</button>

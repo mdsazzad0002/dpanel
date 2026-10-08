@@ -9,6 +9,7 @@ import WebsiteHeroCard from '@/Pages/Websites/components/WebsiteHeroCard.vue';
 import QuickActionsPanel from '@/Pages/Websites/components/QuickActionsPanel.vue';
 import NodeServicePanel from '@/Pages/Websites/components/NodeServicePanel.vue';
 import PythonServicePanel from '@/Pages/Websites/components/PythonServicePanel.vue';
+import DockerServicePanel from '@/Pages/Websites/components/docker/DockerServicePanel.vue';
 import QueueWorkersPanel from '@/Pages/Websites/components/QueueWorkersPanel.vue';
 import MetricsGrid from '@/Pages/Websites/components/MetricsGrid.vue';
 import ServicesGrid from '@/Pages/Websites/components/ServicesGrid.vue';
@@ -44,6 +45,8 @@ const props = defineProps({
     connectedDatabase: { type: String, default: null },
     phpVersions: { type: Array, default: () => [] },
     queueWorkerCount: { type: Number, default: 0 },
+    // Admins only: { installed, env, server_ip }.
+    docker: { type: Object, default: null },
 });
 
 const page = usePage();
@@ -80,6 +83,7 @@ const editingRuntimeSettings = ref(false);
 
 const isNodeWebsite = computed(() => String(props.website?.runtime || 'php') === 'node');
 const isPythonWebsite = computed(() => String(props.website?.runtime || 'php') === 'python');
+const isDockerWebsite = computed(() => String(props.website?.runtime || 'php') === 'docker');
 // Aliases serve the main site's files, so workers there would run every job
 // twice. Sites that already have workers always show the panel so they can
 // be removed, even if the app is no longer detected as Laravel.
@@ -152,6 +156,7 @@ const showQueueWorkers = computed(() => props.queueWorkerCount > 0
 
             <NodeServicePanel v-if="isNodeWebsite" :website="website" />
             <PythonServicePanel v-if="isPythonWebsite" :website="website" />
+            <DockerServicePanel v-if="isDockerWebsite && docker" :website="website" :docker="docker" />
             <QueueWorkersPanel v-if="showQueueWorkers" :website="website" />
 
             <!-- Services + Activity -->
@@ -165,6 +170,6 @@ const showQueueWorkers = computed(() => props.queueWorkerCount > 0
             </section>
         </div>
 
-        <RuntimeSettingsModal v-model="editingRuntimeSettings" :website="website" :php-versions="phpVersions" />
+        <RuntimeSettingsModal v-model="editingRuntimeSettings" :website="website" :php-versions="phpVersions" :docker="docker" />
     </AuthenticatedLayout>
 </template>

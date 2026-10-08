@@ -46,6 +46,15 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         }
     };
 
+    // Same again for Docker sites: before their migration runs, none exist.
+    let docker_ports = match run_mysql(&env, DOCKER_PORT_SQL) {
+        Ok(rows) => parse_docker_ports(&rows),
+        Err(error) => {
+            tracing::warn!(%error, "docker site ports unavailable");
+            HashMap::new()
+        }
+    };
+
     let mut sites = Vec::new();
     let mut tls = Vec::new();
     for line in stdout.lines() {
@@ -113,6 +122,12 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         let routes = match runtime.as_str() {
             "node" if node_process_status != "stopped" => proxy_route(node_port),
             "python" if python_process_status != "stopped" => proxy_route(python_port),
+            // Always proxied, even while stopped: the static fallback would
+            // serve the mounted folder's raw files (configs, .env) instead.
+            "docker" => match docker_ports.get(cols[0].trim()) {
+                Some(port) => proxy_route(Some(*port)),
+                None => std::sync::Arc::from([]),
+            },
             _ => static_route(),
         };
         sites.push(SiteConfig {
@@ -199,6 +214,19 @@ fn run_mysql(env: &HashMap<String, String>, sql: &str) -> Result<String, String>
 
 /// Lists become space-separated so each row stays on one line.
 const CACHE_SETTINGS_SQL: &str = "SELECT website_id,mode,edge_ttl,COALESCE(browser_ttl,0),REPLACE(REPLACE(COALESCE(bypass_paths,''),CHAR(13),' '),CHAR(10),' '),REPLACE(REPLACE(COALESCE(bypass_cookies,''),CHAR(13),' '),CHAR(10),' '),ignore_query_string,serve_stale,COALESCE(development_mode_until,0) FROM website_edge_cache";
+
+const DOCKER_PORT_SQL: &str = "SELECT id,COALESCE(docker_port,0) FROM websites WHERE runtime='docker'";
+
+fn parse_docker_ports(rows: &str) -> HashMap<String, u16> {
+    rows.lines()
+        .filter_map(|line| {
+            let mut cols = line.split('\t');
+            let id = cols.next()?.trim().to_string();
+            let port = cols.next()?.trim().parse::<u16>().ok().filter(|port| *port > 0)?;
+            Some((id, port))
+        })
+        .collect()
+}
 
 const PYTHON_RUN_SQL: &str = "SELECT id,COALESCE(python_workers,0),COALESCE(python_mode,''),COALESCE(python_timeout,0) FROM websites WHERE runtime='python'";
 
@@ -456,6 +484,14 @@ mod tests {
         assert_eq!(rows["b"].workers, None);
         assert!(!rows["b"].development);
         assert!(!rows["c"].development);
+    }
+
+    #[test]
+    fn parses_docker_ports_and_skips_unassigned() {
+        let ports = parse_docker_ports("a\t50000\nb\t0\nc\tnope\n");
+        assert_eq!(ports.get("a"), Some(&50000));
+        assert!(!ports.contains_key("b"));
+        assert!(!ports.contains_key("c"));
     }
 
     #[test]

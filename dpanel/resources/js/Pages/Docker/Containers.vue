@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import DockerShell from './components/DockerShell.vue';
+import DockerUsageGuide from './components/DockerUsageGuide.vue';
 import RunContainerCard from './components/RunContainerCard.vue';
 import ContainerList from './components/ContainerList.vue';
 import ContainerLogs from './components/ContainerLogs.vue';
@@ -24,6 +25,8 @@ onMounted(load);
         :refreshing="busy === 'refresh'"
         @refresh="load"
     >
+        <DockerUsageGuide v-if="status.running" />
+
         <RunContainerCard v-if="status.running" :busy="busy" :run="runContainer" />
 
         <ContainerList

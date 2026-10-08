@@ -37,6 +37,13 @@ class Website extends Model
         };
         static::saved($reload);
         static::deleted($reload);
+        // A deleted Docker site must not leave its container serving on its port.
+        static::deleted(static function (self $website): void {
+            if ($website->isDockerRuntime()) {
+                $name = $website->dockerContainerName();
+                DB::afterCommit(static fn () => \App\Jobs\RemoveDockerSiteJob::dispatch($name));
+            }
+        });
     }
     protected $table = 'websites';
 
@@ -72,6 +79,13 @@ class Website extends Model
         'python_mode',
         'python_timeout',
         'python_process_status',
+        'docker_image',
+        'docker_port',
+        'docker_container_port',
+        'docker_mount_target',
+        'docker_env',
+        'docker_public',
+        'docker_process_status',
         'client_max_body_size',
         'wordpress_db_prefix',
         'wordpress_sso_secret',
@@ -95,7 +109,14 @@ class Website extends Model
         'python_port' => 'integer',
         'python_workers' => 'integer',
         'python_timeout' => 'integer',
+        'docker_port' => 'integer',
+        'docker_container_port' => 'integer',
+        'docker_env' => 'encrypted:array',
+        'docker_public' => 'boolean',
     ];
+
+    /** Variable values can hold secrets and reach every page that serializes a website. */
+    protected $hidden = ['docker_env'];
 
     public function isNodeRuntime(): bool
     {
@@ -105,6 +126,17 @@ class Website extends Model
     public function isPythonRuntime(): bool
     {
         return $this->runtime === 'python';
+    }
+
+    public function isDockerRuntime(): bool
+    {
+        return $this->runtime === 'docker';
+    }
+
+    /** The container a Docker site runs in, derived from its ID so it never drifts. */
+    public function dockerContainerName(): string
+    {
+        return 'dpanel-site-'.preg_replace('/[^A-Za-z0-9_.-]/', '', (string) $this->id);
     }
 
     /** Number of gunicorn worker processes; unset sites run the default. */

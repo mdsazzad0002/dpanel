@@ -28,6 +28,7 @@ const runtimeLabel = computed(() => {
     const runtime = String(props.website?.runtime || 'php');
     if (runtime === 'node') return `Node.js ${props.website?.node_version || '-'}`;
     if (runtime === 'python') return `Python ${props.website?.python_version || '-'}`;
+    if (runtime === 'docker') return `Docker ${props.website?.docker_image || '-'}`;
     return `PHP ${props.website?.php_version || '-'}`;
 });
 

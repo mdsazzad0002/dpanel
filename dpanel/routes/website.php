@@ -7,6 +7,7 @@ use App\Http\Controllers\FilemanagerTrashController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\Website\WebsiteController;
+use App\Http\Controllers\Website\WebsiteDockerController;
 use App\Http\Controllers\Website\WebsiteEdgeCacheController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteFtpAccountController;
@@ -157,6 +158,13 @@ Route::post('/websites/{id}/node/control', [WebsiteOperationsController::class, 
 Route::post('/websites/{id}/python/control', [WebsiteOperationsController::class, 'pythonProcessControl'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
     ->name('websites.python.control');
+// A container runs as root on the host, so Docker sites are admin-only.
+Route::post('/websites/{id}/docker/control', [WebsiteDockerController::class, 'control'])
+    ->middleware(['role:admin', 'throttle:20,1'])
+    ->name('websites.docker.control');
+Route::patch('/websites/{id}/docker/public', [WebsiteDockerController::class, 'updatePublic'])
+    ->middleware(['role:admin', 'throttle:10,1'])
+    ->name('websites.docker.public');
 Route::get('/websites/{id}/queue-workers', [LaravelQueueController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.queue-workers.index');

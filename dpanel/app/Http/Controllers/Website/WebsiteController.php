@@ -316,8 +316,20 @@ class WebsiteController extends Controller
         // Rust inspect call runs once per deferred 'diagnostics' request.
         $inspection = null;
 
+        $isAdmin = (bool) request()->user()?->hasRole('admin');
+
         return Inertia::render('Websites/Manage', [
             'website' => $website,
+            // Docker is admin-only; variable values can hold secrets.
+            'docker' => $isAdmin ? [
+                'installed' => app(\App\Services\Docker\DrustDockerClient::class)->installed(),
+                'env' => ($website['runtime'] ?? '') === 'docker'
+                    ? (array) (Website::query()->find($id)?->docker_env ?? [])
+                    : [],
+                'server_ip' => ($website['runtime'] ?? '') === 'docker'
+                    ? app(\App\Services\Mail\MailDnsRecords::class)->serverIp()
+                    : '',
+            ] : null,
             // Existing workers keep their panel visible even if the app is no
             // longer detected as Laravel, so they can still be removed.
             'queueWorkerCount' => \App\Models\WebsiteQueueWorker::query()->where('website_id', $id)->count(),
@@ -388,7 +400,7 @@ class WebsiteController extends Controller
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $validated = $request->validate([
             'start_directory' => ['nullable', 'string', 'max:255'],
-            'runtime' => ['nullable', 'string', 'in:php,node,python'],
+            'runtime' => ['nullable', 'string', 'in:php,node,python,docker'],
             'php_version' => [($request->input('runtime') ?? $website['runtime'] ?? 'php') === 'php' ? 'required' : 'nullable', 'string', 'regex:/^\d+\.\d+$/'],
             'node_entry_file' => ['nullable', 'string', 'max:255'],
             'node_start_command' => ['nullable', 'string', 'max:255'],
@@ -399,9 +411,35 @@ class WebsiteController extends Controller
             'python_workers' => ['nullable', 'integer', 'min:1', 'max:'.Website::MAX_PYTHON_WORKERS],
             'python_mode' => ['nullable', 'string', 'in:'.implode(',', Website::PYTHON_MODES)],
             'python_timeout' => ['nullable', 'integer', 'min:'.Website::MIN_PYTHON_TIMEOUT, 'max:'.Website::MAX_PYTHON_TIMEOUT],
+            'docker_image' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.\/:@-]*$/'],
+            'docker_container_port' => ['nullable', 'integer', 'between:1,65535'],
+            // Absolute, without the ':' or ',' Docker splits -v on, and never '..'.
+            'docker_mount_target' => ['nullable', 'string', 'max:255', 'regex:/^\/[^:,]*$/', 'not_regex:/(^|\/)\.\.(\/|$)/'],
+            'docker_env' => ['nullable', 'array', 'max:100'],
+            'docker_env.*.key' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z_][A-Za-z0-9_]*$/'],
+            'docker_env.*.value' => ['nullable', 'string', 'max:4096'],
+            'docker_public' => ['nullable', 'boolean'],
         ]);
 
         $runtime = $validated['runtime'] ?? (string) ($website['runtime'] ?? 'php');
+        $previousRuntime = (string) ($website['runtime'] ?? 'php');
+        // A container runs as root on the host, so only admins may set one up,
+        // change it, or move a site off it.
+        if (($runtime === 'docker' || $previousRuntime === 'docker') && ! $request->user()?->hasRole('admin')) {
+            return response()->json(['message' => 'Only an administrator can change the Docker runtime.'], 403);
+        }
+        if ($runtime === 'docker' && ! app(\App\Services\Docker\DrustDockerClient::class)->installed()) {
+            return response()->json([
+                'message' => 'Docker is not installed on this server. Install it with: sudo dpanel install docker',
+                'errors' => ['runtime' => ['Docker is not installed on this server.']],
+            ], 422);
+        }
+        if ($runtime === 'docker' && (trim((string) ($validated['docker_image'] ?? '')) === '' || empty($validated['docker_container_port']))) {
+            return response()->json([
+                'message' => 'An image and the port the app listens on are required for the Docker runtime.',
+                'errors' => ['docker_image' => ['An image and the port the app listens on are required for the Docker runtime.']],
+            ], 422);
+        }
         // Node/Python sites are created without a PHP version; keep whatever
         // they have instead of demanding one the sidebar does not even show.
         $phpVersion = $runtime === 'php'
@@ -477,6 +515,26 @@ class WebsiteController extends Controller
                 }
             }
 
+            if ($runtime === 'docker') {
+                $runtimeSettings['docker_image'] = trim((string) $validated['docker_image']);
+                $runtimeSettings['docker_container_port'] = (int) $validated['docker_container_port'];
+                $runtimeSettings['docker_mount_target'] = trim((string) ($validated['docker_mount_target'] ?? '')) ?: null;
+                $runtimeSettings['docker_public'] = (bool) ($validated['docker_public'] ?? false);
+                if (empty($website['docker_port'])) {
+                    $runtimeSettings['docker_port'] = app(\App\Services\Website\WebsiteService::class)->allocateDockerPort();
+                }
+                if (empty($website['docker_process_status']) || $website['docker_process_status'] === 'stopped') {
+                    $runtimeSettings['docker_process_status'] = 'pending';
+                }
+                // Through the model, so the encrypted cast applies; aliases never get a container.
+                Website::query()->findOrFail($website['id'])->forceFill([
+                    'docker_env' => array_values(array_map(static fn (array $env): array => [
+                        'key' => (string) $env['key'],
+                        'value' => (string) ($env['value'] ?? ''),
+                    ], $validated['docker_env'] ?? [])),
+                ])->saveQuietly();
+            }
+
             Website::query()->whereKey($website['id'])->update($runtimeSettings);
 
             // Aliases share their parent's document root and PHP runtime.
@@ -492,13 +550,20 @@ class WebsiteController extends Controller
         if ($runtime === 'python') {
             \App\Jobs\StartPythonProcessJob::dispatch((string) $website['id']);
         }
+        if ($runtime === 'docker') {
+            \App\Jobs\StartDockerSiteJob::dispatch((string) $website['id']);
+        } elseif ($previousRuntime === 'docker') {
+            \App\Jobs\RemoveDockerSiteJob::dispatch(Website::query()->findOrFail($website['id'])->dockerContainerName());
+        }
 
         return response()->json([
             'success' => $gatewayReloaded,
             'message' => $gatewayReloaded
-                ? ($runtime === 'python'
-                    ? 'Website runtime settings saved. The Python app is restarting with them in the background.'
-                    : 'Website runtime settings updated and its cache refreshed successfully.')
+                ? match ($runtime) {
+                    'python' => 'Website runtime settings saved. The Python app is restarting with them in the background.',
+                    'docker' => 'Website runtime settings saved. The container is being created in the background; pulling the image can take a few minutes.',
+                    default => 'Website runtime settings updated and its cache refreshed successfully.',
+                }
                 : 'Website settings were saved, but its gateway cache could not be refreshed.',
             'cache_scope' => 'website',
             'domains' => $affectedDomains,

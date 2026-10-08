@@ -2,6 +2,7 @@
 import { inject, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+import DockerRuntimeFields from '@/Pages/Websites/components/docker/DockerRuntimeFields.vue';
 
 const props = defineProps({
     modelValue: {
@@ -15,6 +16,11 @@ const props = defineProps({
     phpVersions: {
         type: Array,
         default: () => [],
+    },
+    // Admins only: { installed, env, server_ip }; null hides the Docker runtime.
+    docker: {
+        type: Object,
+        default: null,
     },
 });
 
@@ -38,6 +44,7 @@ const pythonVersionInput = ref('3.10');
 const pythonWorkersInput = ref(4);
 const pythonModeInput = ref('production');
 const pythonTimeoutInput = ref(30);
+const dockerInput = ref({ image: '', container_port: 80, mount_target: '', env: [], public: false });
 const updateLoading = ref(false);
 
 const close = () => emit('update:modelValue', false);
@@ -57,6 +64,13 @@ watch(() => props.modelValue, (isOpen) => {
     pythonWorkersInput.value = Number(props.website?.python_workers) || 4;
     pythonModeInput.value = props.website?.python_mode === 'development' ? 'development' : 'production';
     pythonTimeoutInput.value = Number(props.website?.python_timeout) || 30;
+    dockerInput.value = {
+        image: String(props.website?.docker_image || ''),
+        container_port: Number(props.website?.docker_container_port) || 80,
+        mount_target: String(props.website?.docker_mount_target || ''),
+        env: (props.docker?.env || []).map((env) => ({ key: String(env.key || ''), value: String(env.value ?? '') })),
+        public: Boolean(props.website?.docker_public),
+    };
 });
 
 const saveRuntimeSettings = async () => {
@@ -88,6 +102,16 @@ const saveRuntimeSettings = async () => {
         pushToast?.('Request timeout must be a whole number of seconds between 10 and 300.', 'error');
         return;
     }
+    const docker = dockerInput.value;
+    const dockerPort = Number(docker.container_port);
+    if (runtime === 'docker' && !String(docker.image || '').trim()) {
+        pushToast?.('Enter the Docker image to run.', 'error');
+        return;
+    }
+    if (runtime === 'docker' && (!Number.isInteger(dockerPort) || dockerPort < 1 || dockerPort > 65535)) {
+        pushToast?.('The app port must be a whole number between 1 and 65535.', 'error');
+        return;
+    }
     updateLoading.value = true;
     try {
         const data = await requestJson(panelRoute('websites.update', { id: props.website.id }), {
@@ -105,6 +129,15 @@ const saveRuntimeSettings = async () => {
                 python_workers: pythonWorkers,
                 python_mode: pythonModeInput.value,
                 python_timeout: pythonTimeout,
+                ...(runtime === 'docker' ? {
+                    docker_image: String(docker.image).trim(),
+                    docker_container_port: dockerPort,
+                    docker_mount_target: String(docker.mount_target || '').trim(),
+                    docker_env: docker.env
+                        .filter((env) => String(env.key || '').trim())
+                        .map((env) => ({ key: String(env.key).trim(), value: String(env.value ?? '') })),
+                    docker_public: Boolean(docker.public),
+                } : {}),
             },
         });
         pushToast?.(data.message || 'Website settings updated successfully.', 'success');
@@ -145,9 +178,12 @@ const saveRuntimeSettings = async () => {
                                 <option value="php">PHP</option>
                                 <option value="node">Node.js (Next.js, Express, …)</option>
                                 <option value="python">Python (Django, Flask, FastAPI, …)</option>
+                                <option v-if="docker && (docker.installed || website.runtime === 'docker')" value="docker">Docker container (any image)</option>
                             </select>
                             <p v-if="runtimeInput === 'node'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Switching to Node.js stops PHP handling for this domain; requests will be reverse-proxied to your Node process instead.</p>
                             <p v-if="runtimeInput === 'python'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Switching to Python stops PHP handling for this domain; requests will be reverse-proxied to your gunicorn process instead.</p>
+                            <p v-if="runtimeInput === 'docker'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Switching to Docker stops PHP handling for this domain; requests will be reverse-proxied to the container instead. Saving again recreates the container with the new settings.</p>
+                            <p v-if="website.runtime === 'docker' && runtimeInput !== 'docker'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Leaving Docker removes this site's container. Files in the site folder stay.</p>
                         </div>
                         <div v-if="runtimeInput === 'php'">
                             <label for="php-version" class="block text-sm font-medium text-slate-700 dark:text-slate-200">PHP version</label>
@@ -210,6 +246,7 @@ const saveRuntimeSettings = async () => {
                                 <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">How long one request may run before it is stopped (gunicorn <code>--timeout</code>). Default 30; raise it for slow reports or exports.</p>
                             </div>
                         </template>
+                        <DockerRuntimeFields v-else-if="runtimeInput === 'docker'" v-model="dockerInput" :root-path="String(website.root_path || '')" />
                     </div>
                     <div class="flex shrink-0 justify-end gap-3 border-t border-slate-200 p-5 dark:border-slate-800">
                         <button type="button" :disabled="updateLoading" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800" @click="close">Cancel</button>

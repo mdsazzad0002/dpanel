@@ -103,10 +103,10 @@ pub async fn dispatch(
         .await;
     }
     // Certbot's webroot authenticator writes its token to the site's root
-    // path regardless of runtime. Node/Python sites route "/" through a
+    // path regardless of runtime. Node/Python/Docker sites route "/" through a
     // reverse proxy, so serve this one path straight off disk or SSL
     // issuance breaks.
-    if (site.runtime == "node" || site.runtime == "python")
+    if (site.runtime == "node" || site.runtime == "python" || site.runtime == "docker")
         && path.starts_with("/.well-known/acme-challenge/")
     {
         if let Some(document_root) = site.document_root.as_ref() {
@@ -340,6 +340,12 @@ pub async fn dispatch(
                         if let super::UpstreamConfig::Http(addr) = upstream {
                             forget_python_liveness(addr.port());
                         }
+                    }
+                    if site.runtime == "docker" {
+                        return simple_response(
+                            StatusCode::BAD_GATEWAY,
+                            &format!("Docker application unavailable: the container is stopped or not answering yet ({error})"),
+                        );
                     }
                     simple_response(StatusCode::BAD_GATEWAY, &error)
                 });
