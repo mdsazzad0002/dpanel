@@ -7,3 +7,17 @@ backend = systemd
 [sshd]
 enabled = true
 port = ssh
+
+# Wrong mailbox passwords on SMTP 465/587.
+[postfix-sasl]
+enabled = true
+
+# Relay attempts and other rejected senders on port 25.
+[postfix]
+enabled = true
+mode = more
+
+# Wrong mailbox passwords on IMAP/POP3 (webmail logs in from localhost,
+# which fail2ban never bans).
+[dovecot]
+enabled = true

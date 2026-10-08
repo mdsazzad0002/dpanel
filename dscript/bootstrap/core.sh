@@ -2146,6 +2146,37 @@ query = ${query}"
     fi
   done
 
+  # Port 465 (implicit TLS) is what the mailbox connection guide lists first,
+  # and the firewall opens it, so it must exist with the same login rules.
+  if [[ -z "$(postconf -M submissions/inet 2>/dev/null)" ]]; then
+    postconf -M submissions/inet="submissions inet n - y - - smtpd"
+    changed=true
+  fi
+  for setting in \
+    "syslog_name=postfix/submissions" \
+    "smtpd_tls_wrappermode=yes" \
+    "smtpd_sasl_auth_enable=yes" \
+    "smtpd_client_restrictions=permit_sasl_authenticated,reject" \
+    "smtpd_relay_restrictions=permit_sasl_authenticated,reject"; do
+    if [[ "$(postconf -Ph "submissions/inet/${setting%%=*}" 2>/dev/null)" != "${setting#*=}" ]]; then
+      postconf -P "submissions/inet/${setting}"
+      changed=true
+    fi
+  done
+
+  # Password guessing: SMTP AUTH stays off on port 25 (only 465/587 enable
+  # it), and one IP gets a limited number of login attempts per minute.
+  # Webmail and sites on this server connect from mynetworks, which
+  # smtpd_client_event_limit_exceptions leaves unlimited.
+  for setting in "smtpd_sasl_auth_enable=no" "smtpd_client_auth_rate_limit=20"; do
+    key="${setting%%=*}"
+    value="${setting#*=}"
+    if [[ "$(postconf -h "$key" 2>/dev/null)" != "$value" ]]; then
+      postconf -e "${key}=${value}"
+      changed=true
+    fi
+  done
+
   content="# Managed by dPanel: Postfix delivers to mailboxes over LMTP and checks
 # SMTP logins through Dovecot.
 service lmtp {
@@ -2197,6 +2228,12 @@ panel_repair_mail_auth() {
     || panel_warn_log "Mail SSL was not issued; open Email Management > Mail SSL, or run 'php artisan mail:tls' in the panel directory."
   (cd "$app_dir" && php artisan mail:repair-dovecot-auth) \
     || panel_warn_log "Mailbox password check failed; run 'php artisan mail:repair-dovecot-auth' in the panel directory."
+  # Sends over IPv4 only when the IPv6 PTR is missing, and holds outbound
+  # mail while the IPv4 PTR is wrong, instead of letting Gmail bounce it.
+  (cd "$app_dir" && php artisan mail:outbound-check) \
+    || panel_warn_log "Outbound mail check failed; run 'php artisan mail:outbound-check' in the panel directory."
+  (cd "$app_dir" && php artisan mail:mailbox-check) \
+    || panel_warn_log "Mailbox delivery check failed; run 'php artisan mail:mailbox-check' in the panel directory."
 }
 
 # Record the installed release in the panel .env. installer.sh resolves the

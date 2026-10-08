@@ -18,6 +18,8 @@ class MailDeliveryDiagnosticsServiceTest extends TestCase
             'authentication policy' => ['550 5.7.26 Unauthenticated email: DKIM fail', 'bounced', 'authentication_policy', false],
             'rate limit' => ['421 4.7.0 Too many messages', 'deferred', 'rate_limit', true],
             'network' => ['connect to mx.example.test: Connection timed out', 'deferred', 'network', true],
+            'missing ptr' => ['550-5.7.25 [2a02:c207::1] The IP address sending this message does not have a PTR record setup. As a policy, Gmail does not accept messages from IPs with missing PTR records.', 'bounced', 'ptr', false],
+            'longer status code is not 5.7.1' => ['550 5.7.10 something new', 'bounced', 'other', false],
             'residential ip' => ["550-5.7.1 [203.0.113.5] The IP you're using to send mail is not authorized to 550-5.7.1 send email directly to our servers. Please use the SMTP relay at your service provider instead.", 'bounced', 'reputation', false],
         ];
     }

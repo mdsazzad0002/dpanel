@@ -24,6 +24,14 @@ Schedule::command('mail:tls')
     ->dailyAt('03:30')
     ->withoutOverlapping();
 
+Schedule::command('mail:outbound-check')
+    ->everyThirtyMinutes()
+    ->withoutOverlapping();
+
+Schedule::command('mail:mailbox-check')
+    ->hourly()
+    ->withoutOverlapping();
+
 Schedule::command('dns:reconcile-websites')
     ->hourly()
     ->withoutOverlapping();

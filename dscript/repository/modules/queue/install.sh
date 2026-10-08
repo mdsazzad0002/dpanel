@@ -69,7 +69,7 @@ queue_install() {
   queue_install_dependencies
   queue_configure_application
   queue_write_config
-  supervisorctl start dpanel-queue dpanel-heavy-queue >/dev/null 2>&1 || true
+  supervisorctl start dpanel-queue dpanel-heavy-queue dpanel-scheduler >/dev/null 2>&1 || true
   panel_info_log "queue runtime installed."
 }
 
@@ -82,7 +82,7 @@ queue_remove() {
 
 queue_update() {
   queue_install
-  supervisorctl restart dpanel-queue dpanel-heavy-queue >/dev/null 2>&1 || pkg_restart_service supervisor
+  supervisorctl restart dpanel-queue dpanel-heavy-queue dpanel-scheduler >/dev/null 2>&1 || pkg_restart_service supervisor
   panel_info_log "queue runtime updated."
 }
 

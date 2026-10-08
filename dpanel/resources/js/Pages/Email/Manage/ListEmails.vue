@@ -103,9 +103,16 @@ const deleteMailbox = (id) => {
                             </td>
                             <td class="px-4 py-3">{{ item.quota_mb }} MB</td>
                             <td class="px-4 py-3">
-                                <span class="rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-700">
+                                <span
+                                    class="rounded-full px-2 py-1 text-xs"
+                                    :class="(item.status || 'active') === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'"
+                                    :title="item.health_error || ''"
+                                >
                                     {{ item.status || 'active' }}
                                 </span>
+                                <p v-if="item.status === 'unhealthy'" class="mt-1 max-w-xs text-xs text-red-600 dark:text-red-400">
+                                    Mail delivery is off. See Mail Health.
+                                </p>
                             </td>
                             <td class="px-4 py-3">{{ formatDate(item.created_at) }}</td>
                             <td class="px-4 py-3">

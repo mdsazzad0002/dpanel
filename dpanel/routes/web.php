@@ -324,6 +324,12 @@ Route::prefix('cpsess{token}')
             Route::get('/mail-health/download-log', [MailHealthController::class, 'downloadLog'])
                 ->middleware(['role:admin|superadmin', 'throttle:10,1'])
                 ->name('mail-health.download-log');
+            Route::post('/mail-health/outbound-check', [MailHealthController::class, 'outboundCheck'])
+                ->middleware(['role:admin|superadmin', 'throttle:5,1'])
+                ->name('mail-health.outbound-check');
+            Route::post('/mail-health/mailboxes/{id}/recheck', [MailHealthController::class, 'recheckMailbox'])
+                ->middleware(['role:admin|superadmin', 'throttle:10,1'])
+                ->name('mail-health.mailboxes.recheck');
             Route::post('/emails', [EmailController::class, 'store'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.store');

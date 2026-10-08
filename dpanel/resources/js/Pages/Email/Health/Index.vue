@@ -5,6 +5,8 @@ import { computed, ref } from 'vue';
 
 const props = defineProps({
     mailHealth: { type: Object, required: true },
+    outboundGate: { type: Object, default: () => ({}) },
+    unhealthyMailboxes: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -28,6 +30,29 @@ const downloadLogUrl = computed(() => {
     const token = page.props.panel?.token;
     return token ? route('mail-health.download-log', { token }) : route('mail-health.download-log');
 });
+
+const panelRoute = (name, params = {}) => {
+    const token = page.props.panel?.token;
+    return route(name, token ? { token, ...params } : params);
+};
+const gate = computed(() => props.outboundGate ?? {});
+const gateIpRows = computed(() => [gate.value.facts?.ipv4, gate.value.facts?.ipv6].filter(Boolean));
+const checkingOutbound = ref(false);
+const runOutboundCheck = () => {
+    checkingOutbound.value = true;
+    router.post(panelRoute('mail-health.outbound-check'), {}, {
+        preserveScroll: true,
+        onFinish: () => { checkingOutbound.value = false; },
+    });
+};
+const recheckingId = ref('');
+const recheckMailbox = (id) => {
+    recheckingId.value = id;
+    router.post(panelRoute('mail-health.mailboxes.recheck', { id }), {}, {
+        preserveScroll: true,
+        onFinish: () => { recheckingId.value = ''; },
+    });
+};
 
 const activeTab = ref('failures');
 const statusFilter = ref('all');
@@ -74,7 +99,7 @@ const toneTextClass = {
 const refresh = () => {
     refreshing.value = true;
     router.reload({
-        only: ['mailHealth'],
+        only: ['mailHealth', 'outboundGate', 'unhealthyMailboxes'],
         preserveScroll: true,
         onFinish: () => { refreshing.value = false; },
     });
@@ -115,6 +140,43 @@ const statusClass = (status) => ({
             <div v-if="flash.success" class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">{{ flash.success }}</div>
             <div v-if="flash.error" class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">{{ flash.error }}</div>
 
+            <section
+                v-if="gate.outbound === 'paused'"
+                class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+            >
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="flex min-w-0 gap-3">
+                        <i class="bi bi-pause-circle mt-0.5"></i>
+                        <div class="min-w-0">
+                            <p class="font-semibold">Outbound mail is paused</p>
+                            <p class="mt-1">{{ gate.reason }}</p>
+                            <p class="mt-1">Mail to other servers waits in the queue and is sent automatically once the PTR is fixed. Ask your IP provider to set the PTR (reverse DNS) of the server IP to your mail hostname, and make sure that hostname's A record points back to the IP.</p>
+                        </div>
+                    </div>
+                    <button v-if="canClearLog" type="button" :disabled="checkingOutbound" class="inline-flex items-center gap-1.5 rounded-md border border-red-300 px-2.5 py-1 text-xs font-medium hover:bg-red-100 disabled:opacity-60 dark:border-red-800 dark:hover:bg-red-900/40" @click="runOutboundCheck">
+                        <i class="bi bi-arrow-repeat" :class="{ 'animate-spin': checkingOutbound }"></i>
+                        {{ checkingOutbound ? 'Checking…' : 'Check again' }}
+                    </button>
+                </div>
+            </section>
+
+            <section v-if="unhealthyMailboxes.length" class="rounded-xl border border-red-200 bg-white p-4 dark:border-red-900 dark:bg-slate-900">
+                <p class="font-semibold text-red-700 dark:text-red-300"><i class="bi bi-envelope-x mr-1"></i>{{ unhealthyMailboxes.length }} mailbox(es) switched off</p>
+                <p class="mt-1 text-sm text-slate-500">Postfix accepted mail for these, but Dovecot could not find them, so the mail bounced. They stay off — mail to them is refused and their SMTP login stops — until a check finds them again. The check runs hourly.</p>
+                <ul class="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
+                    <li v-for="mailbox in unhealthyMailboxes" :key="mailbox.id" class="flex flex-wrap items-start justify-between gap-3 py-2">
+                        <div class="min-w-0">
+                            <p class="font-mono text-sm font-semibold">{{ mailbox.email }}</p>
+                            <p class="break-words text-xs text-slate-500">{{ mailbox.health_error }}</p>
+                        </div>
+                        <button v-if="canClearLog" type="button" :disabled="recheckingId === mailbox.id" class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" @click="recheckMailbox(mailbox.id)">
+                            <i class="bi bi-arrow-repeat" :class="{ 'animate-spin': recheckingId === mailbox.id }"></i>
+                            {{ recheckingId === mailbox.id ? 'Checking…' : 'Check again' }}
+                        </button>
+                    </li>
+                </ul>
+            </section>
+
             <div v-if="!mailHealth.diagnostics?.log_source" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                 <div class="flex gap-3">
                     <i class="bi bi-exclamation-triangle mt-0.5"></i>
@@ -141,9 +203,21 @@ const statusClass = (status) => ({
             </div>
 
             <section class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     <div><p class="text-xs uppercase tracking-wide text-slate-500">Delivery rate</p><p class="mt-1 text-lg font-semibold">{{ mailHealth.delivery_rate === null ? 'No data' : `${mailHealth.delivery_rate}%` }}</p></div>
                     <div><p class="text-xs uppercase tracking-wide text-slate-500">Queued messages</p><p class="mt-1 text-lg font-semibold">{{ queue.available ? queue.count : 'Unavailable' }}</p></div>
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Outbound</p>
+                        <p class="mt-1 text-lg font-semibold capitalize" :class="gate.outbound === 'paused' ? 'text-red-600' : ''">{{ gate.outbound ?? 'unknown' }}</p>
+                        <p class="text-xs text-slate-500">IPv6 {{ gate.ipv6 === 'allow' ? 'on' : gate.ipv6 === 'deny' ? 'off (IPv4 only)' : 'unknown' }}</p>
+                        <p v-for="row in gateIpRows" :key="row.ip" class="truncate text-xs" :class="row.ok ? 'text-emerald-600' : 'text-red-600'" :title="row.message">
+                            <i class="bi" :class="row.ok ? 'bi-check-circle' : 'bi-x-circle'"></i> {{ row.ip }} → {{ row.ptr || 'no PTR' }}
+                        </p>
+                        <button v-if="canClearLog && gate.outbound !== 'paused'" type="button" :disabled="checkingOutbound" class="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" @click="runOutboundCheck">
+                            <i class="bi bi-arrow-repeat" :class="{ 'animate-spin': checkingOutbound }"></i>
+                            {{ checkingOutbound ? 'Checking…' : 'Check PTR' }}
+                        </button>
+                    </div>
                     <div><p class="text-xs uppercase tracking-wide text-slate-500">Spam engine</p><p class="mt-1 text-lg font-semibold">{{ mailHealth.diagnostics?.spam_engine?.name ?? 'Not detected' }}</p></div>
                     <div>
                         <p class="text-xs uppercase tracking-wide text-slate-500">Log sample</p>

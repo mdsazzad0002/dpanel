@@ -15,6 +15,10 @@ return [
             'SERVERPANEL_MAIL_HEALTH_LOG_PATHS',
             '/var/log/mail.log,/var/log/maillog'
         ))))),
+        // Hold outbound mail in the queue while the server IP's PTR does not
+        // resolve back to it (Gmail rejects such mail with 550-5.7.25).
+        // Ignored when Postfix sends through a relayhost.
+        'outbound_gate' => (bool) env('SERVERPANEL_MAIL_OUTBOUND_GATE', true),
     ],
     'panel_cookie_name' => env('SERVERPANEL_PANEL_COOKIE', 'panel_session_proof'),
     // Safety-net absolute session age, independent of activity — forces a
