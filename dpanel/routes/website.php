@@ -45,6 +45,9 @@ Route::get('/websites/alias/create', [AlisWebsiteController::class, 'create'])
 Route::get('/websites/parent-domains/search', [WebsiteController::class, 'searchParentDomains'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.parent-domains.search');
+Route::get('/websites/switcher', [WebsiteController::class, 'switcherOptions'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.switcher');
 Route::post('/websites/cache/reload', [WebsiteController::class, 'reloadGatewayCache'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.cache.reload');

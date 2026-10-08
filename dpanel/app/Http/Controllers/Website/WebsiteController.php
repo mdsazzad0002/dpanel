@@ -128,6 +128,39 @@ class WebsiteController extends Controller
     }
 
     /**
+     * Options for the Manage page's website switcher — every site the actor
+     * can see (primary, alias and subdomain), fetched only when the dropdown
+     * is opened or searched.
+     */
+    public function switcherOptions(Request $request): JsonResponse
+    {
+        $query = strtolower(trim((string) $request->query('q', '')));
+        $like = '%'.addcslashes($query, '\\%_').'%';
+
+        $websites = Website::query()
+            ->visibleTo($request->user())
+            ->when($query !== '', fn ($builder) => $builder->where(function ($q) use ($like): void {
+                $q->where('domain', 'like', $like)->orWhere('hostname', 'like', $like);
+            }))
+            ->orderBy('domain')
+            ->limit(30)
+            ->get(['id', 'domain', 'type', 'status'])
+            ->map(fn (Website $item): array => [
+                'id' => (string) $item->id,
+                'domain' => $this->normalizeDomain((string) $item->domain),
+                'type' => (string) ($item->type ?: 'primary'),
+                'status' => (string) ($item->status ?: 'pending'),
+            ])
+            ->filter(fn (array $item): bool => $item['domain'] !== '')
+            ->values()
+            ->all();
+
+        return response()->json([
+            'data' => $websites,
+        ]);
+    }
+
+    /**
      * List created website requests/commands.
      */
     public function index(Request $request): Response

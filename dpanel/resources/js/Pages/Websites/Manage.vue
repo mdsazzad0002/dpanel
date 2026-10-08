@@ -1,7 +1,9 @@
 <script setup>
 import { computed, provide, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, usePage } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
+import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+import WebsiteSwitcher from '@/Pages/Websites/components/WebsiteSwitcher.vue';
 import ToastStack from '@/Pages/Websites/components/ToastStack.vue';
 import WebsiteHeroCard from '@/Pages/Websites/components/WebsiteHeroCard.vue';
 import QuickActionsPanel from '@/Pages/Websites/components/QuickActionsPanel.vue';
@@ -45,6 +47,7 @@ const props = defineProps({
 });
 
 const page = usePage();
+const { panelRoute } = usePanelApi();
 
 const toasts = ref([]);
 let toastSeq = 0;
@@ -90,10 +93,21 @@ const showQueueWorkers = computed(() => props.queueWorkerCount > 0
 
     <AuthenticatedLayout>
         <template #header>
-            <div>
-                <h1 class="text-lg font-semibold">Website Management</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Tools and configuration for {{ website.domain }}.
-                </p>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div class="min-w-0">
+                    <nav class="flex min-w-0 items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                        <Link :href="panelRoute('dashboard')" class="hover:text-slate-700 dark:hover:text-slate-300">
+                            <i class="bi bi-house-door"></i>
+                        </Link>
+                        <i class="bi bi-chevron-right text-xs"></i>
+                        <Link :href="panelRoute('websites.list')" class="hover:text-slate-700 dark:hover:text-slate-300">Websites</Link>
+                        <i class="bi bi-chevron-right text-xs"></i>
+                        <span class="truncate font-medium text-slate-900 dark:text-slate-100">{{ website.domain }}</span>
+                    </nav>
+                    <h1 class="mt-2 text-lg font-semibold">Website Management</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">Tools and configuration for {{ website.domain }}.</p>
+                </div>
+                <WebsiteSwitcher :website="website" />
             </div>
         </template>
 

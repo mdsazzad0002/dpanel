@@ -33,20 +33,22 @@ class PanelSearchController extends Controller
      */
     public function matches(Request $request, string $query, int $limit = 12): array
     {
-        return $this->filterItems($this->buildItems($request), trim($query), max(1, min(20, $limit)));
+        $query = trim($query);
+
+        return $this->filterItems($this->buildItems($request, $query), $query, max(1, min(20, $limit)));
     }
 
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function buildItems(Request $request): array
+    public function buildItems(Request $request, string $query = ''): array
     {
         $actor = $request->user();
         $token = (string) ($request->hasSession() ? $request->session()->get('panel_session_token', '') : '');
 
         $items = array_merge(
             $this->buildNavigationItems($actor, $token),
-            $this->buildWebsiteItems($actor, $token),
+            $this->buildWebsiteItems($actor, $token, $query),
         );
 
         return array_values($items);
@@ -234,7 +236,7 @@ class PanelSearchController extends Controller
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function buildWebsiteItems(?User $actor, string $token): array
+    private function buildWebsiteItems(?User $actor, string $token, string $query = ''): array
     {
         if ($actor === null || ! Route::has('websites.manage')) {
             return [];
@@ -248,18 +250,43 @@ class PanelSearchController extends Controller
             return [];
         }
 
-        return Website::query()
+        $baseQuery = fn () => Website::query()
             ->with([
                 'assignedReseller:id,name,email',
                 'assignedUser:id,name,email',
             ])
             ->visibleTo($actor)
             ->orderByDesc('updated_at')
-            ->orderByDesc('created_at')
-            ->limit(25)
-            ->get()
+            ->orderByDesc('created_at');
+
+        // The 25 most recent sites cover the empty palette and generic
+        // keyword hits ("website", "ssl"); a typed term additionally searches
+        // every visible site in SQL so older domains are still found.
+        $websites = $baseQuery()->limit(25)->get();
+
+        $needle = $this->normalizeSearchText($query);
+        if ($needle !== '') {
+            $like = '%'.addcslashes($needle, '\\%_').'%';
+            $matched = $baseQuery()
+                ->where(function ($q) use ($like): void {
+                    $q->where('domain', 'like', $like)
+                        ->orWhere('hostname', 'like', $like)
+                        ->orWhere('root_path', 'like', $like)
+                        ->orWhere('php_version', 'like', $like)
+                        ->orWhere('status', 'like', $like)
+                        ->orWhereHas('assignedUser', fn ($u) => $u->where('name', 'like', $like))
+                        ->orWhereHas('assignedReseller', fn ($u) => $u->where('name', 'like', $like));
+                })
+                ->limit(50)
+                ->get();
+
+            $websites = $matched->concat($websites)->unique('id')->values();
+        }
+
+        return $websites
             ->map(function (Website $website) use ($token): array {
                 $domain = strtolower(trim((string) ($website->domain ?? '')));
+                $hostname = strtolower(trim((string) ($website->hostname ?? '')));
                 $rootPath = str_replace('\\', '/', trim((string) ($website->root_path ?? '')));
                 $status = strtolower(trim((string) ($website->status ?? 'pending'))) ?: 'pending';
                 $phpVersion = trim((string) ($website->php_version ?? ''));
@@ -282,6 +309,7 @@ class PanelSearchController extends Controller
                     'iconClass' => 'bi bi-globe2',
                     'keywords' => array_values(array_filter([
                         $domain,
+                        $hostname,
                         $rootPath,
                         $status,
                         $phpVersion,
