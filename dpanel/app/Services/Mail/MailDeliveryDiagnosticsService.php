@@ -10,6 +10,8 @@ class MailDeliveryDiagnosticsService
     private const MAX_LOG_BYTES = 4_194_304;
     private const MAX_LOG_LINES = 5000;
     private const MAX_EVENTS = 120;
+    // mail-log-tail.sh refuses anything above this.
+    private const MAX_DOWNLOAD_LINES = 20000;
 
     /** @return array<string, mixed> */
     public function snapshot(): array
@@ -38,6 +40,22 @@ class MailDeliveryDiagnosticsService
                 'spam_engine' => $this->spamEngine($lines),
                 'scope_note' => 'Metrics are calculated from the most recent available mail log sample.',
             ],
+        ];
+    }
+
+    /**
+     * The recent mail log for download — read the same way as the snapshot
+     * (directly, else through the root tail script), with a larger window.
+     *
+     * @return array{content: string, source: string|null}
+     */
+    public function downloadLog(): array
+    {
+        [$lines, $source] = $this->readLogLines(self::MAX_DOWNLOAD_LINES);
+
+        return [
+            'content' => $lines === [] ? '' : implode("\n", $lines)."\n",
+            'source' => $source,
         ];
     }
 
@@ -92,9 +110,10 @@ class MailDeliveryDiagnosticsService
             ['quota', 'Mailbox quota exceeded', 'The recipient mailbox or your mail storage has reached its limit.', 'Ask the recipient to free storage or increase the mailbox quota, then retry.', 'medium', true, ['quota exceeded', 'mailbox full', 'over quota', 'insufficient system storage', '5.2.2']],
             ['authentication', 'Authentication failed', 'The sending server could not authenticate with the configured credentials or relay policy.', 'Verify the mailbox username/password and ensure SMTP authentication is enabled.', 'high', false, ['authentication failed', 'sasl authentication', 'relay access denied', 'not permitted to relay', '5.7.8']],
             ['dns', 'DNS or domain problem', 'A required domain, MX record, or destination hostname could not be resolved.', 'Check the domain MX/A records and confirm that the destination domain is active.', 'high', true, ['domain not found', 'host not found', 'name service error', 'no mx', 'nxdomain', 'temporary lookup failure', '5.4.4']],
+            ['ptr', 'Missing reverse DNS (PTR)', 'The destination rejected this server because its IP has no PTR record, or the PTR hostname does not resolve back to the same IP.', 'Ask the server/IP provider to set a PTR record for the sending IP that matches the mail hostname, and make sure that hostname has an A record pointing back to the IP.', 'high', false, ['ptr record', 'reverse dns', 'reverse lookup', '5.7.25']],
             ['reputation', 'IP or domain reputation blocked', 'The destination rejected this server because of a blocklist or poor sending reputation.', 'Check IP blocklists, PTR/rDNS, sending history, and request delisting where required.', 'high', false, ['blacklist', 'blocklist', 'listed in', 'reputation', 'spamhaus', 'barracuda', 'not authorized to send email directly', 'use the smtp relay']],
             ['authentication_policy', 'SPF, DKIM, or DMARC failed', 'The message did not satisfy the destination domain authentication policy.', 'Review SPF, enable DKIM signing, and confirm DMARC alignment in Mail DNS Guide.', 'high', false, ['spf fail', 'dkim fail', 'dmarc fail', 'authentication-results', 'unauthenticated email', '5.7.26']],
-            ['spam', 'Rejected as spam', 'The receiving system classified the content or sender as spam.', 'Review the spam score/rules, remove suspicious links or attachments, and verify sender reputation.', 'high', false, ['spam detected', 'message considered spam', 'spam message rejected', 'spam content', '5.7.1']],
+            ['spam', 'Rejected as spam', 'The receiving system classified the content or sender as spam.', 'Review the spam score/rules, remove suspicious links or attachments, and verify sender reputation.', 'high', false, ['spam detected', 'message considered spam', 'spam message rejected', 'spam content', 'unsolicited']],
             ['rate_limit', 'Sending rate limited', 'Too many messages or connections were sent in a short period.', 'Slow the sending rate and retry after the provider cooldown period.', 'medium', true, ['rate limit', 'too many messages', 'too many connections', 'throttl', '4.7.0']],
             ['tls', 'TLS negotiation failed', 'The sending and receiving servers could not establish a secure TLS connection.', 'Check the mail hostname certificate, TLS versions, and system time.', 'high', true, ['tls', 'ssl', 'certificate verify failed', 'handshake failure']],
             ['network', 'Connection or timeout problem', 'The destination server could not be reached or did not respond in time.', 'Check network/firewall connectivity and retry later; persistent failures may indicate a remote outage.', 'medium', true, ['connection timed out', 'connection refused', 'network is unreachable', 'lost connection', 'connect to', '4.4.1', '4.4.2']],
@@ -103,7 +122,11 @@ class MailDeliveryDiagnosticsService
 
         foreach ($rules as [$category, $label, $explanation, $suggestion, $severity, $temporary, $needles]) {
             foreach ($needles as $needle) {
-                if (str_contains($text, $needle)) {
+                // Enhanced status codes must match whole: "5.7.1" is not "5.7.10".
+                $matched = preg_match('/^\d\.\d\.\d+$/', $needle) === 1
+                    ? preg_match('/(?<![\d.])'.preg_quote($needle, '/').'(?![\d])/', $text) === 1
+                    : str_contains($text, $needle);
+                if ($matched) {
                     return compact('category', 'label', 'explanation', 'suggestion', 'severity', 'temporary');
                 }
             }
@@ -180,15 +203,31 @@ class MailDeliveryDiagnosticsService
     /** @return array<string, mixed> */
     private function failureEvent(string $line, string $queueId, string $status, string $sender, string $recipient, string $reason): array
     {
+        $diagnosis = $this->classifyFailure($reason, $status);
+        // An empty envelope sender is Postfix's own bounce notice back to the
+        // original sender — failing here means the sending address itself has
+        // no mailbox, not that a user mistyped a recipient.
+        $isBounceNotice = $sender === '' && $queueId !== 'NOQUEUE';
+        if ($isBounceNotice && $diagnosis['category'] === 'mailbox_missing') {
+            $diagnosis = array_merge($diagnosis, [
+                'category' => 'bounce_notice_undeliverable',
+                'label' => 'Bounce notice could not be returned',
+                'explanation' => "An earlier message from {$recipient} failed, and the server's failure notice could not be delivered back because {$recipient} has no mailbox.",
+                'suggestion' => "Create a mailbox (or forwarder) for {$recipient}, or make the sending app use an address that has one. Then fix the original failure listed next to this event.",
+                'severity' => 'medium',
+            ]);
+        }
+
         return [
             'id' => sha1($line),
             'timestamp' => $this->timestamp($line),
             'queue_id' => $queueId,
             'status' => $status,
-            'sender' => $sender,
+            'sender' => $isBounceNotice ? 'MAILER-DAEMON (bounce notice)' : $sender,
+            'is_bounce_notice' => $isBounceNotice,
             'recipient' => $recipient,
             'reason' => $reason,
-            'diagnosis' => $this->classifyFailure($reason, $status),
+            'diagnosis' => $diagnosis,
         ];
     }
 
@@ -235,25 +274,25 @@ class MailDeliveryDiagnosticsService
     }
 
     /** @return array{0: array<int, string>, 1: string|null} */
-    private function readLogLines(): array
+    private function readLogLines(int $maxLines = self::MAX_LOG_LINES): array
     {
         $paths = array_values(array_filter((array) config('serverpanel.mail.health_log_paths', []), 'is_string'));
         foreach ($paths as $path) {
             if (is_file($path) && is_readable($path)) {
-                return [$this->tailLines($path), $path];
+                return [array_slice($this->tailLines($path), -$maxLines), $path];
             }
         }
 
         // The mail log is normally root/adm-only; read it through the root
         // execution API instead of widening the web user's permissions.
-        $viaRoot = $this->readLogLinesAsRoot($paths);
+        $viaRoot = $this->readLogLinesAsRoot($paths, $maxLines);
         if ($viaRoot !== null) {
             return $viaRoot;
         }
 
-        $journal = @shell_exec('journalctl -u postfix -u rspamd -u spamassassin --no-pager -n '.self::MAX_LOG_LINES.' 2>/dev/null');
+        $journal = @shell_exec('journalctl -u postfix -u rspamd -u spamassassin --no-pager -n '.$maxLines.' 2>/dev/null');
         if (is_string($journal) && trim($journal) !== '' && ! str_contains($journal, 'No journal files were found')) {
-            return [$this->normalizeLines($journal), 'systemd journal'];
+            return [array_slice($this->normalizeLines($journal), -$maxLines), 'systemd journal'];
         }
 
         return [[], null];
@@ -263,11 +302,11 @@ class MailDeliveryDiagnosticsService
      * @param  array<int, string>  $paths
      * @return array{0: array<int, string>, 1: string}|null
      */
-    private function readLogLinesAsRoot(array $paths): ?array
+    private function readLogLinesAsRoot(array $paths, int $maxLines = self::MAX_LOG_LINES): ?array
     {
         try {
             $script = ScriptPathResolver::resolveRepositoryRoot().'/scripts/mail-log-tail.sh';
-            $result = app(ScriptExecutionGateway::class)->execute($script, [(string) self::MAX_LOG_LINES, ...$paths], [], true);
+            $result = app(ScriptExecutionGateway::class)->execute($script, [(string) $maxLines, ...$paths], [], true);
         } catch (\Throwable) {
             return null;
         }
@@ -278,7 +317,7 @@ class MailDeliveryDiagnosticsService
 
         $body = (string) preg_replace('/^LOG_SOURCE=.*\R?/m', '', $result['output'], 1);
 
-        return [$this->normalizeLines($body), trim($match[1])];
+        return [array_slice($this->normalizeLines($body), -$maxLines), trim($match[1])];
     }
 
     /** @return array<int, string> */
@@ -302,9 +341,7 @@ class MailDeliveryDiagnosticsService
     /** @return array<int, string> */
     private function normalizeLines(string $contents): array
     {
-        $lines = array_values(array_filter(preg_split('/\R/', $contents) ?: [], static fn ($line) => trim((string) $line) !== ''));
-
-        return array_slice($lines, -self::MAX_LOG_LINES);
+        return array_values(array_filter(preg_split('/\R/', $contents) ?: [], static fn ($line) => trim((string) $line) !== ''));
     }
 
     /** @return array<string, mixed> */

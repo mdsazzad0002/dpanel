@@ -23,6 +23,12 @@ const clearLog = () => {
     });
 };
 
+// A plain link (not an Inertia visit) so the browser handles the file download.
+const downloadLogUrl = computed(() => {
+    const token = page.props.panel?.token;
+    return token ? route('mail-health.download-log', { token }) : route('mail-health.download-log');
+});
+
 const activeTab = ref('failures');
 const statusFilter = ref('all');
 const refreshing = ref(false);
@@ -145,16 +151,25 @@ const statusClass = (status) => ({
                         <p class="truncate text-xs text-slate-500">
                             {{ mailHealth.diagnostics?.log_source ?? 'No source' }}<span v-if="logSize !== null && logSize !== undefined"> · {{ formatBytes(logSize) }}</span>
                         </p>
-                        <button
-                            v-if="canClearLog && logSize"
-                            type="button"
-                            :disabled="clearingLog"
-                            class="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300"
-                            @click="clearLog"
-                        >
-                            <i class="bi" :class="clearingLog ? 'bi-arrow-repeat animate-spin' : 'bi-trash3'"></i>
-                            {{ clearingLog ? 'Clearing…' : 'Clear log' }}
-                        </button>
+                        <div v-if="canClearLog && logSize" class="mt-2 flex flex-wrap gap-2">
+                            <a
+                                :href="downloadLogUrl"
+                                title="Downloads the most recent 20,000 mail log lines"
+                                class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-cyan-900 dark:hover:bg-cyan-950/40 dark:hover:text-cyan-300"
+                            >
+                                <i class="bi bi-download"></i>
+                                Download log
+                            </a>
+                            <button
+                                type="button"
+                                :disabled="clearingLog"
+                                class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                                @click="clearLog"
+                            >
+                                <i class="bi" :class="clearingLog ? 'bi-arrow-repeat animate-spin' : 'bi-trash3'"></i>
+                                {{ clearingLog ? 'Clearing…' : 'Clear log' }}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </section>
