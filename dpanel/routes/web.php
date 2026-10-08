@@ -47,6 +47,7 @@ use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SecurityCenterController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\Fail2banController;
+use App\Http\Controllers\DockerController;
 use App\Http\Controllers\MailHostnameController;
 use App\Http\Controllers\SelfConnectionController;
 use App\Http\Controllers\ServerController;
@@ -945,6 +946,35 @@ Route::prefix('cpsess{token}')
             Route::delete('/security/fail2ban/whitelist', [Fail2banController::class, 'whitelistRemove'])
                 ->middleware(['role:admin', 'throttle:30,1'])
                 ->name('security.fail2ban.whitelist.destroy');
+
+            // Docker access is root access, so admins only.
+            Route::get('/docker', [DockerController::class, 'containers'])
+                ->middleware('role:admin')
+                ->name('docker.containers');
+            Route::get('/docker/images', [DockerController::class, 'images'])
+                ->middleware('role:admin')
+                ->name('docker.images');
+            Route::get('/docker/status', [DockerController::class, 'status'])
+                ->middleware('role:admin')
+                ->name('docker.status');
+            Route::post('/docker/containers/action', [DockerController::class, 'containerAction'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('docker.containers.action');
+            Route::post('/docker/containers/run', [DockerController::class, 'run'])
+                ->middleware(['role:admin', 'throttle:10,1'])
+                ->name('docker.containers.run');
+            Route::post('/docker/containers/logs', [DockerController::class, 'logs'])
+                ->middleware(['role:admin', 'throttle:60,1'])
+                ->name('docker.containers.logs');
+            Route::post('/docker/images/pull', [DockerController::class, 'pull'])
+                ->middleware(['role:admin', 'throttle:10,1'])
+                ->name('docker.images.pull');
+            Route::delete('/docker/images', [DockerController::class, 'removeImage'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('docker.images.destroy');
+            Route::post('/docker/images/prune', [DockerController::class, 'pruneImages'])
+                ->middleware(['role:admin', 'throttle:10,1'])
+                ->name('docker.images.prune');
 
             Route::get('/integrations/github', [GithubIntegrationController::class, 'index'])
                 ->middleware('role_or_permission:admin|reseller|manage_websites')

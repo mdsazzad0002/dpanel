@@ -294,6 +294,18 @@ const menuItems = computed(() => [
             { label: 'Blocklist', hint: 'Block a new IP or unblock one', icon: 'BL', iconClass: 'bi bi-slash-circle', routeName: 'security.fail2ban.blocklist', roles: ['admin'] },
         ],
     },
+    {
+        id: 'docker',
+        label: 'Docker',
+        hint: 'Containers and images',
+        icon: 'DK',
+        iconClass: 'bi bi-box-seam',
+        color: 'cyan',
+        children: [
+            { label: 'Containers', hint: 'Run, stop and view logs', icon: 'CT', iconClass: 'bi bi-boxes', routeName: 'docker.containers', roles: ['admin'] },
+            { label: 'Images', hint: 'Pull and remove images', icon: 'IM', iconClass: 'bi bi-layers', routeName: 'docker.images', roles: ['admin'] },
+        ],
+    },
     { label: 'Database & Redis', hint: 'Point dpanel at a remote DB/Redis', icon: 'DB', iconClass: 'bi bi-hdd-network', routeName: 'self-connection.manager', roles: ['admin'], color: 'rose' },
     { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'], permissions: ['manage_backups'], color: 'teal' },
     { label: 'Migrate', hint: 'Import cPanel accounts', icon: 'MG', iconClass: 'bi bi-box-arrow-in-down', routeName: 'migrations.index', roles: ['admin', 'reseller'], permissions: ['manage_migrations'], color: 'cyan' },

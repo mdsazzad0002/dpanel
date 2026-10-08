@@ -14,5 +14,6 @@
   "supervisor": "1.0.0",
   "admin-user": "1.0.0",
   "ssh-root-login": "1.0.0",
-  "ssh-manager": "1.0.0"
+  "ssh-manager": "1.0.0",
+  "docker": "1.0.0"
 }

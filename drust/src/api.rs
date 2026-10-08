@@ -12,6 +12,7 @@ mod database;
 mod database_config;
 mod dependencies;
 mod dns;
+mod docker;
 mod fail2ban;
 mod filemanager;
 mod ftp;
@@ -103,6 +104,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(security::routes())
         .merge(fail2ban::routes())
         .merge(dns::routes())
+        .merge(docker::routes())
         .merge(ssh_key::routes())
         .merge(terminal::routes())
         .merge(database::routes())

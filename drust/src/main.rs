@@ -4,6 +4,7 @@ mod app;
 mod cron;
 mod database;
 mod dns_lookup;
+mod docker;
 mod edge_gateway;
 mod fail2ban;
 mod filemanager;

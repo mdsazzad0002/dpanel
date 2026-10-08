@@ -95,6 +95,7 @@ Every endpoint except `GET /health` requires the bearer token.
 | Backups | `backup/run`, `backup/delete` |
 | Migration | `migration/cpanel/{inspect, restore}`, `migration/cyberpanel-ssh/{discover, transfer}`, `migration/generic/restore` |
 | Security | `security`, `security/scan` |
+| Docker | `docker` (GET status, POST actions), `docker/logs` |
 | Media | `media/ocr`, `media/transcribe` |
 | Scripts | `script/run` |
 
@@ -371,6 +372,32 @@ Allowed actions are `create` and `upsert`. Both are idempotent: the database is
 created first when absent, the user account/password is synchronized, and the
 user receives `ALL PRIVILEGES` on that database only. Local requests synchronize
 both `user@127.0.0.1` and `user@localhost`. They do not grant global privileges.
+
+### Docker
+
+```http
+GET  /api/v1/docker
+POST /api/v1/docker
+POST /api/v1/docker/logs
+```
+
+`GET` returns `installed`, `running`, `version`, `containers` and `images`.
+`POST` takes an `action` and returns the same status after the change:
+
+| Action | Fields |
+| --- | --- |
+| `start`, `stop`, `restart`, `remove` | `id` (container ID or name; `remove` force-stops first) |
+| `run` | `spec`: `image`, `name`, `restart`, `ports[{host, container, protocol, public}]`, `env[{key, value}]`, `volumes[{source, target, read_only}]` |
+| `pull`, `remove_image` | `image` |
+| `prune_images` | none (dangling layers only) |
+
+`docker/logs` takes `{"id": "web", "lines": 200}` (1 to 5000).
+
+Only the docker CLI runs, with an argument list and no shell. Names, images,
+ports, variable names and mounts are validated, and nothing may start with
+`-`. Ports bind to `127.0.0.1` unless `public` is true: Docker writes its own
+iptables rules, so ufw does not guard a public port. Install Docker with
+`sudo dpanel chain install docker`.
 
 ### Run script
 
