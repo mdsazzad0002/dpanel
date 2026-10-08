@@ -1596,8 +1596,62 @@ panel_module_present() {
     redis) command -v redis-server >/dev/null 2>&1 ;;
     postgresql) command -v psql >/dev/null 2>&1 ;;
     supervisor) command -v supervisord >/dev/null 2>&1 ;;
+    docker) command -v docker >/dev/null 2>&1 ;;
     *) return 0 ;;
   esac
+}
+
+# Modules that are never part of the default chain. `chain update` leaves them
+# alone unless they are already on the server, so an update never installs one.
+panel_module_is_optional() {
+  [[ " docker " == *" $1 "* ]]
+}
+
+# Asked once at the start of a first install, so nobody is stopped halfway
+# through a long run. Docker only powers the panel's Docker manager; its daemon
+# costs memory and disk on a server that never runs a container, so the default
+# is no. Non-interactive installs use PANEL_INSTALL_DOCKER=yes|no (default no).
+panel_ask_docker() {
+  local answer="${PANEL_INSTALL_DOCKER:-}" memory
+
+  if panel_module_present docker; then
+    PANEL_INSTALL_DOCKER=no
+    export PANEL_INSTALL_DOCKER
+    return 0
+  fi
+
+  if [[ -z "$answer" ]] && panel_is_interactive && [[ "${PANEL_SKIP_FIRST_INSTALL_PROMPTS:-false}" != "true" ]]; then
+    memory="$(panel_total_memory_mb)"
+    printf '\nOptional: Docker (for Panel > Docker: run containers and images)\n'
+    printf '  Idle cost: about 90 MB RAM (dockerd + containerd), near 0%% CPU.\n'
+    printf '  Disk: about 350 MB for the engine; every image and container adds more.\n'
+    printf '  Container logs are capped at 3 x 10 MB per container.\n'
+    if [[ "$memory" =~ ^[0-9]+$ ]] && (( memory > 0 && memory < 2048 )); then
+      printf '  This server has %s MB RAM; with Docker running containers it can get tight.\n' "$memory"
+    fi
+    printf '  You can install it later with: sudo dpanel install docker\n'
+    read -rp "Install Docker now? [y/N] " answer || answer=""
+  fi
+
+  case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]' | xargs)" in
+    y|yes|1|true) PANEL_INSTALL_DOCKER=yes ;;
+    *) PANEL_INSTALL_DOCKER=no ;;
+  esac
+  export PANEL_INSTALL_DOCKER
+}
+
+# Runs the answer from panel_ask_docker. A failed Docker install never fails
+# the panel install; the panel works without it.
+panel_install_docker_if_requested() {
+  if [[ "${PANEL_INSTALL_DOCKER:-no}" != "yes" ]]; then
+    panel_module_present docker || panel_info_log "Docker skipped. Install it later with: sudo dpanel install docker"
+    return 0
+  fi
+  if panel_run_module docker install; then
+    panel_store_installed_manifest_value docker "$(panel_manifest_version_for docker)"
+  else
+    panel_warn_log "Docker install failed; the panel works without it. Retry with: sudo dpanel install docker"
+  fi
 }
 
 panel_prompt_module_action() {
@@ -2481,6 +2535,9 @@ panel_bootstrap() {
       panel_sync_manifest
       local module
       for module in $(dscript_manifest_modules); do
+        if panel_module_is_optional "$module" && ! panel_module_present "$module"; then
+          continue
+        fi
         local module_action
         module_action="$(panel_prompt_module_action "$module" update)"
         [[ "$module_action" == "skip" ]] && { panel_info_log "Skipping module ${module}."; continue; }

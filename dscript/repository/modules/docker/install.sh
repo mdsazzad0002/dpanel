@@ -29,11 +29,33 @@ docker_install() {
         panel_die "Docker install is not supported on this distribution."
         ;;
     esac
+    # Only on a fresh install: restarting an existing Docker would restart its containers.
+    docker_write_daemon_config
   fi
 
   pkg_enable_service docker
   systemctl start docker >/dev/null 2>&1 || panel_warn_log "Docker installed but its service did not start; check 'systemctl status docker'."
   panel_info_log "Docker installed."
+}
+
+# Docker keeps every container log forever by default, which fills the disk on
+# a busy container. Cap them, and keep containers running across daemon
+# restarts. An existing daemon.json belongs to the admin and is never touched.
+docker_write_daemon_config() {
+  local config=/etc/docker/daemon.json
+  if [[ -e "$config" ]]; then
+    panel_info_log "Keeping existing ${config}."
+    return 0
+  fi
+  mkdir -p /etc/docker
+  cat > "$config" <<'JSON'
+{
+  "log-driver": "json-file",
+  "log-opts": { "max-size": "10m", "max-file": "3" },
+  "live-restore": true
+}
+JSON
+  systemctl restart docker >/dev/null 2>&1 || true
 }
 
 docker_remove() {

@@ -397,7 +397,7 @@ Only the docker CLI runs, with an argument list and no shell. Names, images,
 ports, variable names and mounts are validated, and nothing may start with
 `-`. Ports bind to `127.0.0.1` unless `public` is true: Docker writes its own
 iptables rules, so ufw does not guard a public port. Install Docker with
-`sudo dpanel chain install docker`.
+`sudo dpanel install docker`.
 
 ### Run script
 
