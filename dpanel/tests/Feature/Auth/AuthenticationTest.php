@@ -4,6 +4,7 @@ namespace Tests\Feature\Auth;
 
 use App\Http\Middleware\EnsurePanelSessionIsValid;
 use App\Models\User;
+use App\Services\TwoFactorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -29,6 +30,32 @@ class AuthenticationTest extends TestCase
 
         $this->assertAuthenticated();
         $response->assertRedirect(route('dashboard', absolute: false));
+    }
+
+    public function test_xhr_login_with_two_factor_returns_challenge_redirect(): void
+    {
+        $user = User::factory()->create(['two_factor_enabled' => true]);
+
+        $twoFactor = $this->mock(TwoFactorService::class);
+        $twoFactor->shouldReceive('availableMethods')->andReturn(['email']);
+        $twoFactor->shouldReceive('requiresChallenge')->andReturn(true);
+        $twoFactor->shouldReceive('preferredMethod')->andReturn('email');
+        $twoFactor->shouldReceive('generateNumericCode')->andReturn('123456');
+        $twoFactor->shouldReceive('normalizeCode')->andReturnArg(0);
+        $twoFactor->shouldReceive('policy')->andReturn(['code_ttl_minutes' => 10]);
+        $twoFactor->shouldReceive('sendChallenge')->once();
+
+        $this->postJson('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ])
+            ->assertOk()
+            ->assertJson([
+                'two_factor' => true,
+                'redirect' => route('two-factor.challenge'),
+            ]);
+
+        $this->assertGuest();
     }
 
     public function test_users_can_not_authenticate_with_invalid_password(): void

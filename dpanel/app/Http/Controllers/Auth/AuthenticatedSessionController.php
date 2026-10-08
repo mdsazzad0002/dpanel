@@ -43,9 +43,7 @@ class AuthenticatedSessionController extends Controller
         }
 
         if ((bool) $user->two_factor_enabled && $twoFactor->availableMethods($user) === []) {
-            return back()->withErrors([
-                'email' => 'Two-factor is enabled for your account, but no verification method is configured.',
-            ]);
+            return $this->loginError($request, 'Two-factor is enabled for your account, but no verification method is configured.');
         }
 
         if ($twoFactor->requiresChallenge($user)) {
@@ -68,8 +66,16 @@ class AuthenticatedSessionController extends Controller
             } catch (\Throwable $e) {
                 $request->session()->forget('two_factor.challenge');
 
-                return back()->withErrors([
-                    'email' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to send two-factor code.',
+                return $this->loginError($request, $e->getMessage() !== '' ? $e->getMessage() : 'Unable to send two-factor code.');
+            }
+
+            // The login form posts via XHR and navigates to `redirect` itself,
+            // so a plain redirect would leave it with no target (/undefined).
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'two_factor' => true,
+                    'redirect' => route('two-factor.challenge'),
                 ]);
             }
 
@@ -102,6 +108,18 @@ class AuthenticatedSessionController extends Controller
 
         return redirect(PanelReturnPath::consume($request, $token, (int) $user->id))
             ->withCookie($panelCookie);
+    }
+
+    private function loginError(Request $request, string $message): RedirectResponse|JsonResponse
+    {
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'message' => $message,
+                'errors' => ['email' => [$message]],
+            ], 422);
+        }
+
+        return back()->withErrors(['email' => $message]);
     }
 
     private function issuePanelSessionProof(Request $request, ?string $token = null)

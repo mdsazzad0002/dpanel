@@ -35,7 +35,12 @@ const submit = async () => {
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         });
         await new Promise((resolve) => setTimeout(resolve, 700));
-        window.location.assign(response.data.redirect);
+        const target = response?.data?.redirect;
+        if (typeof target !== 'string' || target === '') {
+            form.setError('email', 'Login succeeded but no redirect was returned. Please try again.');
+            return;
+        }
+        window.location.assign(target);
     } catch (error) {
         const data = error?.response?.data || {};
         Object.entries(data.errors || {}).forEach(([key, messages]) => {
