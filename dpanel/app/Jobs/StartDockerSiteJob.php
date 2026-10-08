@@ -26,7 +26,8 @@ class StartDockerSiteJob implements ShouldQueue
     public function handle(DockerSiteService $sites): void
     {
         $website = Website::query()->find($this->websiteId);
-        if ($website === null || ! $website->isDockerRuntime() || $website->docker_process_status === 'stopped') {
+        // A site that fronts a stack has no container of its own to start.
+        if ($website === null || ! $website->isDockerRuntime() || $website->usesDockerPort() || $website->docker_process_status === 'stopped') {
             return;
         }
 

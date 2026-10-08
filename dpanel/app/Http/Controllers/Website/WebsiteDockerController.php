@@ -42,10 +42,10 @@ class WebsiteDockerController extends Controller
         return response()->json([
             'success' => true,
             'message' => match ($action) {
-                'start' => 'Container started.',
-                'stop' => 'Container stopped.',
-                'restart' => 'Container restarted.',
-                'recreate' => 'Container recreated with the current settings.',
+                'start' => $website->usesDockerPort() ? 'Stack started.' : 'Container started.',
+                'stop' => $website->usesDockerPort() ? 'Stack stopped.' : 'Container stopped.',
+                'restart' => $website->usesDockerPort() ? 'Stack restarted.' : 'Container restarted.',
+                'recreate' => $website->usesDockerPort() ? 'Stack deployed again from its compose file.' : 'Container recreated with the current settings.',
                 default => 'Container status refreshed.',
             },
             'data' => $data,
@@ -61,6 +61,7 @@ class WebsiteDockerController extends Controller
     {
         $website = $this->website($request, $id);
         abort_unless($website->isDockerRuntime(), 422, 'This website does not use the Docker runtime.');
+        abort_if($website->usesDockerPort(), 422, 'This website fronts a stack; publish or close its ports in the stack\'s compose file.');
         $public = (bool) $request->validate(['public' => ['required', 'boolean']])['public'];
 
         $website->forceFill([

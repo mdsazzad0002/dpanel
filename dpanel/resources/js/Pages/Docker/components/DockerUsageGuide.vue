@@ -67,9 +67,9 @@ const siteSteps = [
             <div class="rounded-md border border-slate-200 p-4 dark:border-slate-700">
                 <h3 class="text-sm font-medium">Run a container without a domain</h3>
                 <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                    For databases, workers or tools that need no website, use "Run a container" below. Keep data the container writes
+                    For databases, workers or tools that need no website, use "Run container" at the top of this page. Keep data the container writes
                     in a named volume (a plain name such as <code>my-app-data</code>), which Docker creates and keeps across recreates.
-                    Containers here and their sites appear in the list below; a site's container is named <code>dpanel-site-…</code>,
+                    Containers here, their sites and stack services all appear in the list above; a site's container is named <code>dpanel-site-…</code>,
                     manage it from its website instead.
                 </p>
             </div>

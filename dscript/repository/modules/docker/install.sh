@@ -33,6 +33,15 @@ docker_install() {
     docker_write_daemon_config
   fi
 
+  # Stacks in the panel need the compose plugin; a Docker installed before
+  # dPanel may not have it.
+  if ! docker compose version >/dev/null 2>&1; then
+    case "$(pkg_distro_family)" in
+      debian) pkg_install docker-compose-v2 || panel_warn_log "docker-compose-v2 is not available; stacks will not work." ;;
+      rpm) pkg_install docker-compose-plugin || panel_warn_log "docker-compose-plugin is not available; stacks will not work." ;;
+    esac
+  fi
+
   pkg_enable_service docker
   systemctl start docker >/dev/null 2>&1 || panel_warn_log "Docker installed but its service did not start; check 'systemctl status docker'."
   panel_info_log "Docker installed."

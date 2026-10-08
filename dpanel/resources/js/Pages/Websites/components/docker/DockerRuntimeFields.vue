@@ -1,8 +1,59 @@
 <script setup>
-// The Docker part of the runtime settings drawer: which image to run, the
-// port it listens on, where the site's folder appears inside it, and its
-// variables. Edits the parent's object in place through v-model.
+import { onMounted, ref, watch } from 'vue';
+import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+
+// The Docker part of the runtime settings drawer. Either the site runs its
+// own container (which image, the port it listens on, where the site's folder
+// appears inside it, its variables), or the domain is sent to a port that a
+// running compose stack already publishes. Edits the parent's object through v-model.
 const model = defineModel({ type: Object, required: true });
+const { panelRoute, requestJson } = usePanelApi();
+
+const stacks = ref([]);
+const stackPorts = ref([]);
+const stacksError = ref('');
+
+const loadStacks = async () => {
+    stacksError.value = '';
+    try {
+        const data = await requestJson(panelRoute('docker.stacks.list'), { method: 'GET' });
+        stacks.value = (data.data?.stacks || []).filter((s) => s.total > 0 || s.managed);
+    } catch (error) {
+        stacksError.value = error?.message || 'Could not load stacks.';
+    }
+};
+
+// The ports the chosen stack publishes, so picking one is a click.
+const loadPorts = async (name) => {
+    stackPorts.value = [];
+    if (!name) return;
+    try {
+        const data = await requestJson(panelRoute('docker.stacks.show'), { body: { name } });
+        const seen = new Map();
+        for (const p of data.data?.ports || []) seen.set(Number(p.published), { port: Number(p.published), service: p.service, target: p.target });
+        for (const s of data.data?.services || []) {
+            for (const p of s.publishers || []) {
+                if (!seen.has(Number(p.published))) seen.set(Number(p.published), { port: Number(p.published), service: s.service, target: p.target });
+            }
+        }
+        stackPorts.value = [...seen.values()].sort((a, b) => a.port - b.port);
+        if (!model.value.target_port && stackPorts.value.length) model.value.target_port = stackPorts.value[0].port;
+    } catch {
+        stackPorts.value = [];
+    }
+};
+
+watch(() => model.value.source, (source) => { if (source === 'port' && !stacks.value.length) loadStacks(); });
+watch(() => model.value.stack, (name) => {
+    model.value.target_port = '';
+    loadPorts(name);
+});
+onMounted(() => {
+    if (model.value.source === 'port') {
+        loadStacks();
+        loadPorts(model.value.stack);
+    }
+});
 
 defineProps({
     rootPath: { type: String, default: '' },
@@ -27,6 +78,41 @@ const hint = 'mt-1.5 text-xs text-slate-500 dark:text-slate-400';
 </script>
 
 <template>
+    <div>
+        <span :class="label">What serves this domain</span>
+        <div class="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button type="button" class="rounded-lg border px-3 py-2 text-left text-xs" :class="model.source !== 'port' ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'" @click="model.source = 'image'">
+                <span class="block font-medium">Run an image</span>
+                <span class="opacity-80">The panel runs one container for this site.</span>
+            </button>
+            <button type="button" class="rounded-lg border px-3 py-2 text-left text-xs" :class="model.source === 'port' ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'" @click="model.source = 'port'">
+                <span class="block font-medium">Use a running stack or port</span>
+                <span class="opacity-80">WordPress + MySQL, Kibana, any compose app.</span>
+            </button>
+        </div>
+    </div>
+    <template v-if="model.source === 'port'">
+        <div>
+            <label for="docker-stack" :class="label">Stack</label>
+            <select id="docker-stack" v-model="model.stack" :class="input">
+                <option value="">None: just a port on this server</option>
+                <option v-for="s in stacks" :key="s.name" :value="s.name">{{ s.name }} ({{ s.total ? `${s.running}/${s.total} running` : 'not deployed' }})</option>
+            </select>
+            <p v-if="stacksError" class="mt-1.5 text-xs text-red-600">{{ stacksError }}</p>
+            <p :class="hint">With a stack, this site's Start, Stop, Restart and Logs act on it. Create stacks under Docker → Stacks.</p>
+        </div>
+        <div>
+            <label for="docker-target-port" :class="label">Server port to send the domain to</label>
+            <div v-if="stackPorts.length" class="mt-1.5 flex flex-wrap gap-1.5">
+                <button v-for="p in stackPorts" :key="p.port" type="button" class="rounded-full border px-2.5 py-1 text-xs" :class="Number(model.target_port) === p.port ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300' : 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300'" @click="model.target_port = p.port">
+                    {{ p.port }} · {{ p.service }}
+                </button>
+            </div>
+            <input id="docker-target-port" v-model.number="model.target_port" type="number" min="1" max="65535" required placeholder="8085" :class="input" />
+            <p :class="hint">The port the app publishes on the server, e.g. <code>"127.0.0.1:8085:80"</code> in a compose file means 8085. SSL, IP rules and redirects of this site keep working.</p>
+        </div>
+    </template>
+    <template v-else>
     <div>
         <span :class="label">Start from</span>
         <div class="mt-1.5 flex flex-wrap gap-2">
@@ -77,4 +163,5 @@ const hint = 'mt-1.5 text-xs text-slate-500 dark:text-slate-400';
             <span class="block text-xs text-slate-500 dark:text-slate-400">Off: reachable only through this domain. On: also at http://server-ip:port. Docker opens the port itself, so the server firewall does not block it.</span>
         </span>
     </label>
+    </template>
 </template>

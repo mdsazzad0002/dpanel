@@ -416,9 +416,12 @@ class WebsiteController extends Controller
             // Absolute, without the ':' or ',' Docker splits -v on, and never '..'.
             'docker_mount_target' => ['nullable', 'string', 'max:255', 'regex:/^\/[^:,]*$/', 'not_regex:/(^|\/)\.\.(\/|$)/'],
             'docker_env' => ['nullable', 'array', 'max:100'],
-            'docker_env.*.key' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z_][A-Za-z0-9_]*$/'],
+            'docker_env.*.key' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z_][A-Za-z0-9_.-]*$/'],
             'docker_env.*.value' => ['nullable', 'string', 'max:4096'],
             'docker_public' => ['nullable', 'boolean'],
+            'docker_source' => ['nullable', 'string', 'in:image,port'],
+            'docker_stack' => ['nullable', 'string', 'regex:/^[a-z0-9][a-z0-9_-]{0,62}$/'],
+            'docker_target_port' => ['nullable', 'integer', 'between:1,65535'],
         ]);
 
         $runtime = $validated['runtime'] ?? (string) ($website['runtime'] ?? 'php');
@@ -434,7 +437,43 @@ class WebsiteController extends Controller
                 'errors' => ['runtime' => ['Docker is not installed on this server.']],
             ], 422);
         }
-        if ($runtime === 'docker' && (trim((string) ($validated['docker_image'] ?? '')) === '' || empty($validated['docker_container_port']))) {
+        $dockerSource = (string) ($validated['docker_source'] ?? ($website['docker_source'] ?? null) ?: 'image');
+        $previousDockerSource = (string) (($website['docker_source'] ?? null) ?: 'image');
+        if ($runtime === 'docker' && $dockerSource === 'port') {
+            $targetPort = (int) ($validated['docker_target_port'] ?? 0);
+            if ($targetPort < 1) {
+                return response()->json([
+                    'message' => 'Choose the port this domain should be sent to.',
+                    'errors' => ['docker_target_port' => ['Choose the port this domain should be sent to.']],
+                ], 422);
+            }
+            // Only a port a container publishes: never drust, the panel, MySQL or
+            // anything else that listens on the server.
+            try {
+                $published = app(\App\Services\Docker\DrustDockerClient::class)->publishedPorts();
+            } catch (\Throwable $e) {
+                return response()->json(['message' => 'Could not read Docker containers: '.$e->getMessage()], 422);
+            }
+            if (! in_array($targetPort, $published, true)) {
+                return response()->json([
+                    'message' => "No Docker container publishes port {$targetPort}. Deploy the stack first, then pick one of its ports.",
+                    'errors' => ['docker_target_port' => ["No Docker container publishes port {$targetPort}."]],
+                ], 422);
+            }
+            // Two sites on one port would serve the same app under two configurations.
+            $owner = Website::query()
+                ->where('docker_port', $targetPort)
+                ->where('runtime', 'docker')
+                ->whereKeyNot($website['id'])
+                ->where(fn ($q) => $q->whereNull('parent_id')->orWhere('parent_id', '!=', (string) $website['id']))
+                ->value('domain');
+            if ($owner !== null) {
+                return response()->json([
+                    'message' => "Port {$targetPort} is already used by {$owner}.",
+                    'errors' => ['docker_target_port' => ["Port {$targetPort} is already used by {$owner}."]],
+                ], 422);
+            }
+        } elseif ($runtime === 'docker' && (trim((string) ($validated['docker_image'] ?? '')) === '' || empty($validated['docker_container_port']))) {
             return response()->json([
                 'message' => 'An image and the port the app listens on are required for the Docker runtime.',
                 'errors' => ['docker_image' => ['An image and the port the app listens on are required for the Docker runtime.']],
@@ -480,7 +519,7 @@ class WebsiteController extends Controller
             ->pluck('domain')
             ->all();
 
-        DB::transaction(function () use ($website, $startDirectory, $phpVersion, $runtime, $validated): void {
+        DB::transaction(function () use ($website, $startDirectory, $phpVersion, $runtime, $validated, $dockerSource, $previousDockerSource): void {
             $runtimeSettings = [
                 'start_directory' => $startDirectory,
                 'php_version' => $phpVersion,
@@ -515,15 +554,25 @@ class WebsiteController extends Controller
                 }
             }
 
-            if ($runtime === 'docker') {
+            if ($runtime === 'docker' && $dockerSource === 'port') {
+                $runtimeSettings['docker_source'] = 'port';
+                $runtimeSettings['docker_stack'] = ($validated['docker_stack'] ?? '') ?: null;
+                $runtimeSettings['docker_port'] = (int) $validated['docker_target_port'];
+                // Nothing for the panel to start: the app is already running there.
+                $runtimeSettings['docker_process_status'] = 'running';
+                $runtimeSettings['docker_public'] = false;
+            } elseif ($runtime === 'docker') {
+                $runtimeSettings['docker_source'] = 'image';
+                $runtimeSettings['docker_stack'] = null;
                 $runtimeSettings['docker_image'] = trim((string) $validated['docker_image']);
                 $runtimeSettings['docker_container_port'] = (int) $validated['docker_container_port'];
                 $runtimeSettings['docker_mount_target'] = trim((string) ($validated['docker_mount_target'] ?? '')) ?: null;
                 $runtimeSettings['docker_public'] = (bool) ($validated['docker_public'] ?? false);
-                if (empty($website['docker_port'])) {
+                // A port that fronted a stack belongs to that stack; the site's own container gets a fresh one.
+                if (empty($website['docker_port']) || $previousDockerSource === 'port') {
                     $runtimeSettings['docker_port'] = app(\App\Services\Website\WebsiteService::class)->allocateDockerPort();
                 }
-                if (empty($website['docker_process_status']) || $website['docker_process_status'] === 'stopped') {
+                if (empty($website['docker_process_status']) || $website['docker_process_status'] === 'stopped' || $previousDockerSource === 'port') {
                     $runtimeSettings['docker_process_status'] = 'pending';
                 }
                 // Through the model, so the encrypted cast applies; aliases never get a container.
@@ -550,9 +599,12 @@ class WebsiteController extends Controller
         if ($runtime === 'python') {
             \App\Jobs\StartPythonProcessJob::dispatch((string) $website['id']);
         }
-        if ($runtime === 'docker') {
+        if ($runtime === 'docker' && $dockerSource === 'image') {
             \App\Jobs\StartDockerSiteJob::dispatch((string) $website['id']);
-        } elseif ($previousRuntime === 'docker') {
+        } elseif ($runtime === 'docker' && $previousRuntime === 'docker' && $previousDockerSource === 'image') {
+            // Now fronting a stack: the site's own container would only hold a port.
+            \App\Jobs\RemoveDockerSiteJob::dispatch(Website::query()->findOrFail($website['id'])->dockerContainerName());
+        } elseif ($runtime !== 'docker' && $previousRuntime === 'docker') {
             \App\Jobs\RemoveDockerSiteJob::dispatch(Website::query()->findOrFail($website['id'])->dockerContainerName());
         }
 
@@ -561,7 +613,9 @@ class WebsiteController extends Controller
             'message' => $gatewayReloaded
                 ? match ($runtime) {
                     'python' => 'Website runtime settings saved. The Python app is restarting with them in the background.',
-                    'docker' => 'Website runtime settings saved. The container is being created in the background; pulling the image can take a few minutes.',
+                    'docker' => $dockerSource === 'port'
+                        ? 'Website runtime settings saved. The domain now opens the app on port '.(int) ($validated['docker_target_port'] ?? 0).'.'
+                        : 'Website runtime settings saved. The container is being created in the background; pulling the image can take a few minutes.',
                     default => 'Website runtime settings updated and its cache refreshed successfully.',
                 }
                 : 'Website settings were saved, but its gateway cache could not be refreshed.',

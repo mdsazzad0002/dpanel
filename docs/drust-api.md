@@ -95,7 +95,7 @@ Every endpoint except `GET /health` requires the bearer token.
 | Backups | `backup/run`, `backup/delete` |
 | Migration | `migration/cpanel/{inspect, restore}`, `migration/cyberpanel-ssh/{discover, transfer}`, `migration/generic/restore` |
 | Security | `security`, `security/scan` |
-| Docker | `docker` (GET status, POST actions), `docker/logs` |
+| Docker | `docker` (GET status, POST actions), `docker/{logs, inspect, stats, exec}`, `docker/{networks, volumes, system, stacks}` (GET list, POST actions), `docker/stacks/{show, logs}` |
 | Media | `media/ocr`, `media/transcribe` |
 | Scripts | `script/run` |
 
@@ -376,22 +376,60 @@ both `user@127.0.0.1` and `user@localhost`. They do not grant global privileges.
 ### Docker
 
 ```http
-GET  /api/v1/docker
-POST /api/v1/docker
-POST /api/v1/docker/logs
+GET  /api/v1/docker              POST /api/v1/docker
+POST /api/v1/docker/logs         POST /api/v1/docker/inspect
+GET  /api/v1/docker/stats        POST /api/v1/docker/exec
+GET  /api/v1/docker/networks     POST /api/v1/docker/networks
+GET  /api/v1/docker/volumes      POST /api/v1/docker/volumes
+GET  /api/v1/docker/system       POST /api/v1/docker/system
+GET  /api/v1/docker/stacks       POST /api/v1/docker/stacks
+POST /api/v1/docker/stacks/show  POST /api/v1/docker/stacks/logs
 ```
 
-`GET` returns `installed`, `running`, `version`, `containers` and `images`.
-`POST` takes an `action` and returns the same status after the change:
+`GET docker` returns `installed`, `running`, `version`, `compose`,
+`containers` (with `project`, `service`, `networks`, `mounts`), `images` and
+`networks` (names). `POST docker` takes an `action` and returns the same status:
 
 | Action | Fields |
 | --- | --- |
-| `start`, `stop`, `restart`, `remove` | `id` (container ID or name; `remove` force-stops first) |
-| `run` | `spec`: `image`, `name`, `restart`, `ports[{host, container, protocol, public}]`, `env[{key, value}]`, `volumes[{source, target, read_only}]` |
-| `pull`, `remove_image` | `image` |
-| `prune_images` | none (dangling layers only) |
+| `start`, `stop`, `restart`, `remove`, `pause`, `unpause`, `kill` | `id` |
+| `rename` | `id`, `name` |
+| `run` | `spec` (below) |
+| `recreate` | `id`, `spec`: the old container is stopped and renamed aside, and put back if the new one fails |
+| `update` | `id`: pull its image again and recreate with the same settings |
+| `pull` | `image` |
+| `remove_image` | `image`, `force` |
+| `prune_images` | `all` (also tagged images no container uses) |
+| `prune_containers` | none |
 
-`docker/logs` takes `{"id": "web", "lines": 200}` (1 to 5000).
+A `spec` is `image`, `name`, `restart`, `ports[{host, container, protocol, public}]`,
+`env[{key, value}]`, `volumes[{source, target, read_only}]`, `network`,
+`aliases[]`, `hostname`, `memory` (`512m`), `cpus` (`0.5`), `entrypoint`,
+`command[]` (arguments after the image) and `pull`.
+
+- `docker/logs`: `{"id", "lines"}` (1 to 5000).
+- `docker/inspect`: `{"id"}` → state, mounts, networks, env, ports, limits, and
+  the `spec` that recreates the container.
+- `docker/stats`: CPU, memory, network and disk use of running containers.
+- `docker/exec`: `{"id", "command", "user", "workdir"}` → `output`,
+  `exit_code`, `timed_out`. Runs `sh -c` under `timeout --signal=KILL 60s`;
+  output is cut at 256 KB.
+- `docker/networks` actions: `create` (`spec: {name, internal, subnet}`),
+  `remove` (`name`), `connect` (`name`, `container`, `aliases`), `disconnect`,
+  `prune`. Built-in networks cannot be created or removed.
+- `docker/volumes` actions: `create`, `remove` (`name`), `prune` (`all`).
+- `docker/system`: `GET` → engine info and `system df`; actions `prune`
+  (`all` adds unused images; never volumes) and `prune_build_cache`.
+- `docker/stacks`: `GET` → stacks the panel manages plus `compose ls`.
+  Actions take `name` (lowercase, `[a-z0-9][a-z0-9_-]*`) and optionally
+  `service`: `create`/`save` (`compose`, `env`; checked with
+  `docker compose config` in a staging folder first), `deploy`/`deploy_new`
+  (save, then up), `up`, `pull`, `update`, `start`, `stop`, `restart`, `down`,
+  `remove` (`remove_volumes`). Stacks started from the shell support start,
+  stop, restart, down and remove only. Files live in
+  `/opt/dpanel/docker/stacks/<name>/` (override with `DPANEL_DOCKER_STACKS_DIR`).
+- `docker/stacks/show`: file, variables, services with published ports, and
+  warnings (public ports, privileged, host network, Docker socket).
 
 Only the docker CLI runs, with an argument list and no shell. Names, images,
 ports, variable names and mounts are validated, and nothing may start with

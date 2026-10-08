@@ -33,6 +33,10 @@ const domainUrl = computed(() => `${scheme.value}://${props.website?.domain || '
 const host = computed(() => props.docker?.server_ip || window.location.hostname);
 const publicUrl = computed(() => `http://${host.value}:${props.website?.docker_port || ''}`);
 const fileManagerUrl = computed(() => panelRoute('websites.filemanager', { id: props.website.id }));
+// The site fronts a port a stack (or anything else) already serves, instead of running its own container.
+const fronting = computed(() => props.website?.docker_source === 'port');
+const stackName = computed(() => String(props.website?.docker_stack || ''));
+const stackUrl = computed(() => `${panelRoute('docker.stacks')}?open=${encodeURIComponent(stackName.value)}`);
 
 // Pulling an image runs in the background; keep the status fresh until it settles.
 let poll = null;
@@ -50,8 +54,8 @@ onBeforeUnmount(stopPolling);
 
 const control = async (action) => {
     if (loading.value) return;
-    if (action === 'stop' && !window.confirm('Stop the container? The site shows an error page until it starts again.')) return;
-    if (action === 'recreate' && !window.confirm('Recreate the container with the current settings? Files in the site folder stay; anything else inside the container is lost.')) return;
+    if (action === 'stop' && !window.confirm(fronting.value ? `Stop stack ${stackName.value}? The site shows an error page until it starts again.` : 'Stop the container? The site shows an error page until it starts again.')) return;
+    if (action === 'recreate' && !window.confirm(fronting.value ? `Deploy stack ${stackName.value} again from its compose file?` : 'Recreate the container with the current settings? Files in the site folder stay; anything else inside the container is lost.')) return;
     loading.value = action;
     try {
         const data = await requestJson(panelRoute('websites.docker.control', { id: props.website.id }), { body: { action } });
@@ -101,7 +105,10 @@ const neutral = `${button} border-slate-200 bg-white text-slate-700 hover:border
                     <i class="bi bi-box-seam text-base text-sky-600 dark:text-sky-400"></i>
                     Docker Service
                 </h3>
-                <p class="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">
+                <p v-if="fronting" class="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">
+                    {{ stackName ? `stack ${stackName}` : 'an app on this server' }} · server port {{ website.docker_port || '-' }}
+                </p>
+                <p v-else class="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">
                     {{ website.docker_image || 'no image set' }}
                     · app port {{ website.docker_container_port || '-' }}
                     · server port {{ website.docker_port || '-' }}
@@ -117,10 +124,26 @@ const neutral = `${button} border-slate-200 bg-white text-slate-700 hover:border
             Docker is no longer installed on this server, so this container cannot run. Install it with <code>sudo dpanel install docker</code>.
         </p>
         <p v-else-if="status === 'error'" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-            The container could not start. Open Logs, or check the image name and port in Runtime settings, then press Recreate.
+            {{ fronting ? 'The last action on the stack failed. Open Logs, or open the stack to see which service is down.' : '' }}<template v-if="!fronting">The container could not start. Open Logs, or check the image name and port in Runtime settings, then press Recreate.</template>
         </p>
 
-        <div class="mt-4 grid gap-3 md:grid-cols-2">
+        <div v-if="fronting" class="mt-4 grid gap-3 md:grid-cols-2">
+            <div class="rounded-lg border border-slate-100 p-3 dark:border-slate-800">
+                <div class="text-xs font-medium text-slate-600 dark:text-slate-300">Open the app</div>
+                <a :href="domainUrl" target="_blank" rel="noopener" class="mt-1 block break-all text-sm text-blue-600 hover:underline dark:text-blue-400">{{ domainUrl }}</a>
+                <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">The domain is sent to 127.0.0.1:{{ website.docker_port }}. If it shows an error page, check that the app is running and publishes that port.</p>
+            </div>
+            <div class="rounded-lg border border-slate-100 p-3 dark:border-slate-800">
+                <div class="text-xs font-medium text-slate-600 dark:text-slate-300">Behind it</div>
+                <template v-if="stackName">
+                    <p class="mt-1 text-sm">Stack <strong>{{ stackName }}</strong></p>
+                    <a :href="stackUrl" class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"><i class="bi bi-stack"></i> Open the stack: services, logs, compose file</a>
+                </template>
+                <p v-else class="mt-1 text-xs text-slate-500 dark:text-slate-400">No stack is linked, so start and stop the app where it runs. Pick its stack in Runtime settings to control it from here.</p>
+            </div>
+        </div>
+
+        <div v-else class="mt-4 grid gap-3 md:grid-cols-2">
             <div class="rounded-lg border border-slate-100 p-3 dark:border-slate-800">
                 <div class="text-xs font-medium text-slate-600 dark:text-slate-300">Open the app</div>
                 <a :href="domainUrl" target="_blank" rel="noopener" class="mt-1 block break-all text-sm text-blue-600 hover:underline dark:text-blue-400">{{ domainUrl }}</a>
@@ -153,7 +176,7 @@ const neutral = `${button} border-slate-200 bg-white text-slate-700 hover:border
             docker: {{ container.state || 'unknown' }} · {{ container.status || '' }}
         </div>
 
-        <div class="mt-4 flex flex-wrap gap-2">
+        <div v-if="!fronting || stackName" class="mt-4 flex flex-wrap gap-2">
             <button type="button" :disabled="Boolean(loading)" :class="button" class="border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400" @click="control('start')">
                 <i class="bi bi-play-fill"></i> {{ loading === 'start' ? 'Starting…' : 'Start' }}
             </button>
@@ -164,7 +187,7 @@ const neutral = `${button} border-slate-200 bg-white text-slate-700 hover:border
                 <i class="bi bi-stop-fill"></i> {{ loading === 'stop' ? 'Stopping…' : 'Stop' }}
             </button>
             <button type="button" :disabled="Boolean(loading)" :class="neutral" @click="control('recreate')">
-                <i class="bi bi-arrow-repeat"></i> {{ loading === 'recreate' ? 'Recreating…' : 'Recreate' }}
+                <i class="bi bi-arrow-repeat"></i> {{ loading === 'recreate' ? (fronting ? 'Deploying…' : 'Recreating…') : (fronting ? 'Redeploy' : 'Recreate') }}
             </button>
             <button type="button" :disabled="Boolean(loading)" :class="neutral" @click="control('logs')">
                 <i class="bi bi-journal-text"></i> {{ loading === 'logs' ? 'Loading…' : 'Logs' }}
@@ -182,7 +205,7 @@ const neutral = `${button} border-slate-200 bg-white text-slate-700 hover:border
             <pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-100">{{ logs }}</pre>
         </div>
 
-        <ol class="mt-4 list-decimal space-y-1 pl-5 text-xs text-slate-500 dark:text-slate-400">
+        <ol v-if="!fronting" class="mt-4 list-decimal space-y-1 pl-5 text-xs text-slate-500 dark:text-slate-400">
             <li>Upload your files to the site folder with the File Manager (zips can be extracted there).</li>
             <li>Press Restart so the app picks up changed config files. Use Recreate after a new image tag or changed settings.</li>
             <li>If the site shows an error page, open Logs: a missing variable or a wrong port is the usual cause.</li>

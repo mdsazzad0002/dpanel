@@ -27,6 +27,9 @@ class DockerSiteService
         if (! $website->isDockerRuntime()) {
             throw new \RuntimeException('This website does not use the Docker runtime.');
         }
+        if ($website->usesDockerPort()) {
+            return $this->controlStack($website, $action);
+        }
 
         $name = $website->dockerContainerName();
         $container = $this->container($name);
@@ -63,9 +66,47 @@ class DockerSiteService
         return ['container' => $this->container($name)];
     }
 
+    /**
+     * A site that fronts a port: its controls act on the stack behind it, when
+     * there is one. A bare port belongs to whatever serves it, so the panel
+     * only reports on it.
+     *
+     * @return array<string, mixed>
+     */
+    private function controlStack(Website $website, string $action): array
+    {
+        $stack = (string) $website->docker_stack;
+        if ($stack === '') {
+            if ($action === 'status') {
+                return ['container' => null, 'stack' => null];
+            }
+            throw new \RuntimeException("This website sends its domain to port {$website->docker_port}; start, stop and read the logs of that app where it runs.");
+        }
+
+        if ($action === 'logs') {
+            return $this->drust->call('stacks/logs', ['name' => $stack, 'service' => '', 'lines' => 300], 60)['data'];
+        }
+        if ($action !== 'status') {
+            // Recreate on a stack means deploy: apply its compose file again.
+            $this->drust->call('stacks', ['action' => $action === 'recreate' ? 'up' : $action, 'name' => $stack], 900);
+            $this->markStatus($website, $action === 'stop' ? 'stopped' : 'running');
+        }
+        $show = $this->drust->call('stacks/show', ['name' => $stack])['data'];
+        $services = (array) ($show['services'] ?? []);
+        $running = count(array_filter($services, fn ($s) => ($s['state'] ?? '') === 'running'));
+
+        return [
+            'container' => ['state' => $running > 0 ? 'running' : 'exited', 'status' => "stack {$stack}: {$running}/".count($services).' running'],
+            'stack' => $stack,
+        ];
+    }
+
     /** Removes the site's container, if it has one; files in the mounted folder stay. */
     public function remove(Website $website): void
     {
+        if ($website->usesDockerPort()) {
+            return;
+        }
         $name = $website->dockerContainerName();
         if ($this->container($name) !== null) {
             $this->drust->action('remove', ['id' => $name]);

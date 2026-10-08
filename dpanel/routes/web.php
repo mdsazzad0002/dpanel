@@ -48,6 +48,10 @@ use App\Http\Controllers\SecurityCenterController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\Fail2banController;
 use App\Http\Controllers\DockerController;
+use App\Http\Controllers\Docker\DockerNetworkController;
+use App\Http\Controllers\Docker\DockerStackController;
+use App\Http\Controllers\Docker\DockerSystemController;
+use App\Http\Controllers\Docker\DockerVolumeController;
 use App\Http\Controllers\MailHostnameController;
 use App\Http\Controllers\SelfConnectionController;
 use App\Http\Controllers\ServerController;
@@ -948,33 +952,45 @@ Route::prefix('cpsess{token}')
                 ->name('security.fail2ban.whitelist.destroy');
 
             // Docker access is root access, so admins only.
-            Route::get('/docker', [DockerController::class, 'containers'])
-                ->middleware('role:admin')
-                ->name('docker.containers');
-            Route::get('/docker/images', [DockerController::class, 'images'])
-                ->middleware('role:admin')
-                ->name('docker.images');
-            Route::get('/docker/status', [DockerController::class, 'status'])
-                ->middleware('role:admin')
-                ->name('docker.status');
-            Route::post('/docker/containers/action', [DockerController::class, 'containerAction'])
-                ->middleware(['role:admin', 'throttle:30,1'])
-                ->name('docker.containers.action');
-            Route::post('/docker/containers/run', [DockerController::class, 'run'])
-                ->middleware(['role:admin', 'throttle:10,1'])
-                ->name('docker.containers.run');
-            Route::post('/docker/containers/logs', [DockerController::class, 'logs'])
-                ->middleware(['role:admin', 'throttle:60,1'])
-                ->name('docker.containers.logs');
-            Route::post('/docker/images/pull', [DockerController::class, 'pull'])
-                ->middleware(['role:admin', 'throttle:10,1'])
-                ->name('docker.images.pull');
-            Route::delete('/docker/images', [DockerController::class, 'removeImage'])
-                ->middleware(['role:admin', 'throttle:30,1'])
-                ->name('docker.images.destroy');
-            Route::post('/docker/images/prune', [DockerController::class, 'pruneImages'])
-                ->middleware(['role:admin', 'throttle:10,1'])
-                ->name('docker.images.prune');
+            Route::middleware('role:admin')->prefix('docker')->name('docker.')->group(function () {
+                Route::get('/', [DockerController::class, 'containers'])->name('containers');
+                Route::get('/overview', [DockerSystemController::class, 'index'])->name('overview');
+                Route::get('/images', [DockerController::class, 'images'])->name('images');
+                Route::get('/stacks', [DockerStackController::class, 'index'])->name('stacks');
+                Route::get('/networks', [DockerNetworkController::class, 'index'])->name('networks');
+                Route::get('/volumes', [DockerVolumeController::class, 'index'])->name('volumes');
+                Route::get('/templates', [DockerSystemController::class, 'templates'])->name('templates');
+
+                Route::get('/status', [DockerController::class, 'status'])->name('status');
+                Route::get('/system/overview', [DockerSystemController::class, 'overview'])->name('system.overview');
+                Route::post('/system/action', [DockerSystemController::class, 'action'])->middleware('throttle:10,1')->name('system.action');
+
+                Route::post('/containers/action', [DockerController::class, 'containerAction'])->middleware('throttle:30,1')->name('containers.action');
+                Route::post('/containers/bulk', [DockerController::class, 'bulk'])->middleware('throttle:10,1')->name('containers.bulk');
+                Route::post('/containers/rename', [DockerController::class, 'rename'])->middleware('throttle:30,1')->name('containers.rename');
+                Route::post('/containers/run', [DockerController::class, 'run'])->middleware('throttle:10,1')->name('containers.run');
+                Route::post('/containers/recreate', [DockerController::class, 'recreate'])->middleware('throttle:10,1')->name('containers.recreate');
+                Route::post('/containers/prune', [DockerController::class, 'pruneContainers'])->middleware('throttle:10,1')->name('containers.prune');
+                Route::post('/containers/logs', [DockerController::class, 'logs'])->middleware('throttle:60,1')->name('containers.logs');
+                Route::post('/containers/inspect', [DockerController::class, 'inspect'])->middleware('throttle:60,1')->name('containers.inspect');
+                Route::get('/containers/stats', [DockerController::class, 'stats'])->middleware('throttle:60,1')->name('containers.stats');
+                Route::post('/containers/exec', [DockerController::class, 'exec'])->middleware('throttle:30,1')->name('containers.exec');
+
+                Route::post('/images/pull', [DockerController::class, 'pull'])->middleware('throttle:10,1')->name('images.pull');
+                Route::delete('/images', [DockerController::class, 'removeImage'])->middleware('throttle:30,1')->name('images.destroy');
+                Route::post('/images/prune', [DockerController::class, 'pruneImages'])->middleware('throttle:10,1')->name('images.prune');
+
+                Route::get('/networks/list', [DockerNetworkController::class, 'list'])->name('networks.list');
+                Route::post('/networks/action', [DockerNetworkController::class, 'action'])->middleware('throttle:30,1')->name('networks.action');
+
+                Route::get('/volumes/list', [DockerVolumeController::class, 'list'])->name('volumes.list');
+                Route::post('/volumes/action', [DockerVolumeController::class, 'action'])->middleware('throttle:30,1')->name('volumes.action');
+
+                Route::get('/stacks/list', [DockerStackController::class, 'list'])->name('stacks.list');
+                Route::post('/stacks/show', [DockerStackController::class, 'show'])->middleware('throttle:60,1')->name('stacks.show');
+                Route::post('/stacks/action', [DockerStackController::class, 'action'])->middleware('throttle:20,1')->name('stacks.action');
+                Route::post('/stacks/logs', [DockerStackController::class, 'logs'])->middleware('throttle:60,1')->name('stacks.logs');
+            });
 
             Route::get('/integrations/github', [GithubIntegrationController::class, 'index'])
                 ->middleware('role_or_permission:admin|reseller|manage_websites')

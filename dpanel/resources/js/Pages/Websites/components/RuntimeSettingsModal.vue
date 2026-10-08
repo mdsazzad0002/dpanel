@@ -44,7 +44,7 @@ const pythonVersionInput = ref('3.10');
 const pythonWorkersInput = ref(4);
 const pythonModeInput = ref('production');
 const pythonTimeoutInput = ref(30);
-const dockerInput = ref({ image: '', container_port: 80, mount_target: '', env: [], public: false });
+const dockerInput = ref({ source: 'image', stack: '', target_port: '', image: '', container_port: 80, mount_target: '', env: [], public: false });
 const updateLoading = ref(false);
 
 const close = () => emit('update:modelValue', false);
@@ -64,7 +64,11 @@ watch(() => props.modelValue, (isOpen) => {
     pythonWorkersInput.value = Number(props.website?.python_workers) || 4;
     pythonModeInput.value = props.website?.python_mode === 'development' ? 'development' : 'production';
     pythonTimeoutInput.value = Number(props.website?.python_timeout) || 30;
+    const fronting = props.website?.docker_source === 'port';
     dockerInput.value = {
+        source: fronting ? 'port' : 'image',
+        stack: String(props.website?.docker_stack || ''),
+        target_port: fronting ? Number(props.website?.docker_port) || '' : '',
         image: String(props.website?.docker_image || ''),
         container_port: Number(props.website?.docker_container_port) || 80,
         mount_target: String(props.website?.docker_mount_target || ''),
@@ -104,11 +108,17 @@ const saveRuntimeSettings = async () => {
     }
     const docker = dockerInput.value;
     const dockerPort = Number(docker.container_port);
-    if (runtime === 'docker' && !String(docker.image || '').trim()) {
+    const fronting = docker.source === 'port';
+    const targetPort = Number(docker.target_port);
+    if (runtime === 'docker' && fronting && (!Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65535)) {
+        pushToast?.('Choose the server port to send this domain to.', 'error');
+        return;
+    }
+    if (runtime === 'docker' && !fronting && !String(docker.image || '').trim()) {
         pushToast?.('Enter the Docker image to run.', 'error');
         return;
     }
-    if (runtime === 'docker' && (!Number.isInteger(dockerPort) || dockerPort < 1 || dockerPort > 65535)) {
+    if (runtime === 'docker' && !fronting && (!Number.isInteger(dockerPort) || dockerPort < 1 || dockerPort > 65535)) {
         pushToast?.('The app port must be a whole number between 1 and 65535.', 'error');
         return;
     }
@@ -129,7 +139,13 @@ const saveRuntimeSettings = async () => {
                 python_workers: pythonWorkers,
                 python_mode: pythonModeInput.value,
                 python_timeout: pythonTimeout,
-                ...(runtime === 'docker' ? {
+                ...(runtime === 'docker' && fronting ? {
+                    docker_source: 'port',
+                    docker_stack: String(docker.stack || ''),
+                    docker_target_port: targetPort,
+                } : {}),
+                ...(runtime === 'docker' && !fronting ? {
+                    docker_source: 'image',
                     docker_image: String(docker.image).trim(),
                     docker_container_port: dockerPort,
                     docker_mount_target: String(docker.mount_target || '').trim(),

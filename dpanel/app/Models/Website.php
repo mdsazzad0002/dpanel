@@ -86,6 +86,8 @@ class Website extends Model
         'docker_env',
         'docker_public',
         'docker_process_status',
+        'docker_source',
+        'docker_stack',
         'client_max_body_size',
         'wordpress_db_prefix',
         'wordpress_sso_secret',
@@ -131,6 +133,15 @@ class Website extends Model
     public function isDockerRuntime(): bool
     {
         return $this->runtime === 'docker';
+    }
+
+    /**
+     * A Docker site that fronts a port something else serves (usually a
+     * compose stack) instead of running its own container.
+     */
+    public function usesDockerPort(): bool
+    {
+        return $this->isDockerRuntime() && $this->docker_source === 'port';
     }
 
     /** The container a Docker site runs in, derived from its ID so it never drifts. */

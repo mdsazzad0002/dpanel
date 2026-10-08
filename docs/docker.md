@@ -104,12 +104,41 @@ above and a **Check again** button.
 
 | Page | What you can do |
 | --- | --- |
-| **Docker → Containers** | Run a container (image, name, restart policy, ports, environment variables, volumes), then start, stop, restart, remove it or read its logs |
-| **Docker → Images** | Pull an image, see which containers use it, remove it, or remove unused layers |
+| **Overview** | Running and stopped counts, containers that need a look (crash-looping, unhealthy, exited with an error), disk use, one-click clean-up, engine facts |
+| **Containers** | Run any image, or paste a `docker run …` command to fill the form. Filter, select several for start/stop/restart/remove, watch live CPU and RAM. Each container has Overview, Logs (live, filter, download), Console (one command at a time, `sh -c`, one-minute limit), Variables, Storage and Network tabs, plus Edit & recreate, Duplicate, Update image, Rename, Pause, Kill |
+| **Stacks** | Paste or upload a `docker-compose.yml` with a `.env`, then deploy, start, stop, restart, update images, take down or delete. Per-service controls and logs, editing with a check before saving, warnings for public ports, privileged services and the Docker socket |
+| **App templates** | One-click Redis, PostgreSQL, MySQL, MariaDB, MongoDB, Elasticsearch, Meilisearch, Typesense, Qdrant, MinIO, RabbitMQ, Uptime Kuma, n8n, Gitea, Metabase and more, plus stacks: Elasticsearch + Kibana, WordPress + MySQL, Ghost, Nextcloud, Gitea + PostgreSQL, n8n + PostgreSQL, Umami, Metabase + PostgreSQL, MongoDB + Mongo Express, Redis + RedisInsight. Passwords are generated in the browser, ports avoid ones already taken and listen on `127.0.0.1` |
+| **Images** | Pull (or pick a popular image), run a container from an image, pull again for a newer build, remove (forced when a container still uses it), remove untagged layers or every unused image |
+| **Networks** | Create a network (optionally internal-only or with a subnet), add and remove containers with extra names, remove unused networks |
+| **Volumes** | Create, see size and which containers use each, delete one (type its name to confirm), remove unused anonymous volumes, or every unused volume (type `DELETE`) |
 
-To put a container behind a domain, run it on a local port (for example host
-`8080` to container `80`, not public), then point a website's reverse proxy at
-`127.0.0.1:8080`.
+Keyboard shortcuts work on every Docker page: `?` lists them, `r` refreshes,
+`/` searches, `n` creates (container, stack, network or volume), and `g` then
+`o c s t i n v` jumps between sections.
+
+### Containers that talk to each other
+
+Containers on the same network you created reach each other by container
+name. Create a network (for example `search`), put Elasticsearch and Kibana on
+it, and Kibana uses `http://elasticsearch:9200`. The default `bridge` network
+does not resolve names. Compose stacks get their own network automatically;
+their services reach each other by service name.
+
+### Put an app on a domain
+
+- **One image**: create a website, open **Runtime settings → Docker → Run an
+  image**, enter the image and the port it listens on. The panel runs the
+  container and sends the domain to it.
+- **A stack (or any container port)**: deploy the stack with its web service
+  published on `127.0.0.1`, e.g. `"127.0.0.1:8085:80"`. Then on the website
+  choose **Runtime settings → Docker → Use a running stack or port**, pick the
+  stack and the port. Only a port a container actually publishes is accepted,
+  so a domain can never be pointed at drust, MySQL or another server service.
+  The site's Start, Stop, Restart, Redeploy and Logs act on the stack.
+
+Stack files live in `/opt/dpanel/docker/stacks/<name>/` (`compose.yaml` and
+`.env`, readable by root only). Stacks started from the shell are listed too;
+start, stop, restart and take down work on them.
 
 ## How it works
 
@@ -143,7 +172,12 @@ The API is documented in [drust API → Docker](drust-api.md#docker).
   container port**.
 - **Every action is logged** in the activity log as `docker.<action>`.
   Environment variable values are never logged, only their names, because they
-  often hold passwords.
+  often hold passwords. Stack files and `.env` are never logged either. Console
+  commands are logged (first 500 characters), since they are the audit trail.
+- **Clean-up never removes volumes.** Volumes hold data and are only removed
+  from the Volumes page, on purpose.
+- **Recreating is safe.** Edit & recreate and Update image set the old
+  container aside first; if the new one fails to start, the old one is put back.
 
 ## Log limits
 

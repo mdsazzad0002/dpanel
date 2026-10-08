@@ -6,7 +6,13 @@
 //! Published ports bind to 127.0.0.1 unless the panel asks for a public port:
 //! Docker writes its own iptables rules, so ufw does not guard them.
 
-use serde::Deserialize;
+pub mod inspect;
+pub mod network;
+pub mod stack;
+pub mod system;
+pub mod volume;
+
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{path::Path, process::Command};
 
@@ -17,8 +23,11 @@ const MAX_LOG_LINES: u32 = 5000;
 const MAX_PORTS: usize = 20;
 const MAX_ENV: usize = 100;
 const MAX_VOLUMES: usize = 20;
+const MAX_ALIASES: usize = 10;
+const MAX_COMMAND_ARGS: usize = 64;
+const MAX_CPUS: f64 = 256.0;
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default, Debug, PartialEq)]
 pub struct PortSpec {
     pub host: u32,
     pub container: u32,
@@ -28,14 +37,14 @@ pub struct PortSpec {
     pub public: bool,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default, Debug, PartialEq)]
 pub struct EnvSpec {
     pub key: String,
     #[serde(default)]
     pub value: String,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default, Debug, PartialEq)]
 pub struct VolumeSpec {
     pub source: String,
     pub target: String,
@@ -43,7 +52,7 @@ pub struct VolumeSpec {
     pub read_only: bool,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default, Debug, PartialEq)]
 pub struct RunSpec {
     pub image: String,
     #[serde(default)]
@@ -56,16 +65,38 @@ pub struct RunSpec {
     pub env: Vec<EnvSpec>,
     #[serde(default)]
     pub volumes: Vec<VolumeSpec>,
+    /// A user-defined network to join; containers on it reach each other by name.
+    #[serde(default)]
+    pub network: String,
+    /// Extra names this container answers to on `network`.
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    #[serde(default)]
+    pub hostname: String,
+    /// Memory limit such as `512m` or `2g`; empty means no limit.
+    #[serde(default)]
+    pub memory: String,
+    /// CPU limit such as `0.5` or `2`; empty means no limit.
+    #[serde(default)]
+    pub cpus: String,
+    #[serde(default)]
+    pub entrypoint: String,
+    /// Arguments passed to the image after its name, replacing its default command.
+    #[serde(default)]
+    pub command: Vec<String>,
+    /// Pull the image again before running, so `:latest` really is the latest.
+    #[serde(default)]
+    pub pull: bool,
 }
 
-fn client() -> Option<&'static str> {
+pub(crate) fn client() -> Option<&'static str> {
     CLIENT_CANDIDATES
         .iter()
         .copied()
         .find(|path| Path::new(path).is_file())
 }
 
-fn run(args: &[String]) -> Result<String, String> {
+pub(crate) fn run(args: &[String]) -> Result<String, String> {
     let client = client().ok_or("Docker is not installed on this server.")?;
     let output = Command::new(client)
         .args(args)
@@ -80,7 +111,7 @@ fn run(args: &[String]) -> Result<String, String> {
     }
 }
 
-fn args(list: &[&str]) -> Vec<String> {
+pub(crate) fn args(list: &[&str]) -> Vec<String> {
     list.iter().map(|arg| arg.to_string()).collect()
 }
 
@@ -112,7 +143,7 @@ pub(crate) fn validate_image(value: &str) -> Result<String, String> {
     }
 }
 
-fn validate_port(port: u32, label: &str) -> Result<u16, String> {
+pub(crate) fn validate_port(port: u32, label: &str) -> Result<u16, String> {
     u16::try_from(port)
         .ok()
         .filter(|port| *port > 0)
@@ -122,8 +153,10 @@ fn validate_port(port: u32, label: &str) -> Result<u16, String> {
 fn validate_env_key(key: &str) -> Result<String, String> {
     let key = key.trim();
     let mut chars = key.chars();
-    let valid = chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+    // Dots and dashes too: Elasticsearch documents `discovery.type=single-node`.
+    let valid = key.len() <= 255
+        && chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
     if valid {
         Ok(key.to_string())
     } else {
@@ -199,9 +232,79 @@ pub(crate) fn run_args(spec: &RunSpec) -> Result<Vec<String>, String> {
             validate_mount_target(&volume.target)?
         ));
     }
+    let network = spec.network.trim();
+    if !network.is_empty() {
+        list.push("--network".into());
+        list.push(validate_container(network).map_err(|_| format!("'{network}' is not a valid network name."))?);
+        if spec.aliases.len() > MAX_ALIASES {
+            return Err(format!("Use at most {MAX_ALIASES} network aliases."));
+        }
+        for alias in spec.aliases.iter().map(|a| a.trim()).filter(|a| !a.is_empty()) {
+            list.push("--network-alias".into());
+            list.push(validate_container(alias).map_err(|_| format!("'{alias}' is not a valid network alias."))?);
+        }
+    } else if spec.aliases.iter().any(|a| !a.trim().is_empty()) {
+        return Err("Network aliases need a network; the default bridge has none.".into());
+    }
+    if !spec.hostname.trim().is_empty() {
+        list.push("--hostname".into());
+        list.push(validate_container(&spec.hostname).map_err(|_| format!("'{}' is not a valid hostname.", spec.hostname.trim()))?);
+    }
+    if !spec.memory.trim().is_empty() {
+        list.push("--memory".into());
+        list.push(validate_memory(&spec.memory)?);
+    }
+    if !spec.cpus.trim().is_empty() {
+        list.push("--cpus".into());
+        list.push(validate_cpus(&spec.cpus)?);
+    }
+    if !spec.entrypoint.trim().is_empty() {
+        let entrypoint = spec.entrypoint.trim();
+        if entrypoint.contains('\0') {
+            return Err("The entrypoint cannot contain NUL bytes.".into());
+        }
+        // Joined with `=`, so a value starting with `-` is still the value.
+        list.push(format!("--entrypoint={entrypoint}"));
+    }
+    if spec.pull {
+        list.push("--pull".into());
+        list.push("always".into());
+    }
+    if spec.command.len() > MAX_COMMAND_ARGS {
+        return Err(format!("Use at most {MAX_COMMAND_ARGS} command arguments."));
+    }
+    if spec.command.iter().any(|arg| arg.contains('\0')) {
+        return Err("Command arguments cannot contain NUL bytes.".into());
+    }
     list.push("--".into());
     list.push(image);
+    // After the image every argument belongs to the container, never to docker.
+    list.extend(spec.command.iter().cloned());
     Ok(list)
+}
+
+/// `512m`, `1.5g`, `1048576`: a number with an optional b/k/m/g unit.
+pub(crate) fn validate_memory(value: &str) -> Result<String, String> {
+    let value = value.trim().to_ascii_lowercase();
+    let digits = value.trim_end_matches(['b', 'k', 'm', 'g']);
+    let unit_len = value.len() - digits.len();
+    let valid = unit_len <= 1
+        && !digits.is_empty()
+        && digits.parse::<f64>().is_ok_and(|n| n > 0.0 && n.is_finite())
+        && digits.chars().all(|c| c.is_ascii_digit() || c == '.');
+    if valid {
+        Ok(value)
+    } else {
+        Err(format!("'{value}' is not a valid memory limit; use a value such as 512m or 2g."))
+    }
+}
+
+pub(crate) fn validate_cpus(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    match value.parse::<f64>() {
+        Ok(n) if n > 0.0 && n <= MAX_CPUS && value.chars().all(|c| c.is_ascii_digit() || c == '.') => Ok(value.to_string()),
+        _ => Err(format!("'{value}' is not a valid CPU limit; use a value such as 0.5 or 2.")),
+    }
 }
 
 /// `docker … --format '{{json .}}'` prints one JSON object per line.
@@ -211,11 +314,30 @@ pub(crate) fn parse_json_lines(text: &str) -> Vec<Value> {
         .collect()
 }
 
-fn text(value: &Value, key: &str) -> String {
+pub(crate) fn text(value: &Value, key: &str) -> String {
     value.get(key).and_then(Value::as_str).unwrap_or("").to_string()
 }
 
+/// One label's value from `ps`'s `a=b,c=d` label list.
+fn label(labels: &str, key: &str) -> String {
+    labels
+        .split(',')
+        .find_map(|pair| pair.strip_prefix(key).and_then(|rest| rest.strip_prefix('=')))
+        .unwrap_or("")
+        .to_string()
+}
+
+fn list_field(value: &Value, key: &str) -> Vec<String> {
+    text(value, key)
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 pub(crate) fn container_row(raw: &Value) -> Value {
+    let labels = text(raw, "Labels");
     json!({
         "id": text(raw, "ID"),
         "name": text(raw, "Names"),
@@ -224,6 +346,12 @@ pub(crate) fn container_row(raw: &Value) -> Value {
         "status": text(raw, "Status"),
         "ports": text(raw, "Ports"),
         "created": text(raw, "RunningFor"),
+        "command": text(raw, "Command").trim_matches('"').to_string(),
+        "networks": list_field(raw, "Networks"),
+        "mounts": list_field(raw, "Mounts"),
+        // Containers a compose stack made carry its project and service name.
+        "project": label(&labels, "com.docker.compose.project"),
+        "service": label(&labels, "com.docker.compose.service"),
     })
 }
 
@@ -239,19 +367,23 @@ pub(crate) fn image_row(raw: &Value) -> Value {
 
 pub fn status() -> Result<Value, String> {
     if client().is_none() {
-        return Ok(json!({ "installed": false, "running": false, "version": null, "containers": [], "images": [] }));
+        return Ok(json!({ "installed": false, "running": false, "version": null, "compose": false, "containers": [], "images": [], "networks": [] }));
     }
     let Ok(version) = run(&args(&["version", "--format", "{{.Server.Version}}"])) else {
-        return Ok(json!({ "installed": true, "running": false, "version": null, "containers": [], "images": [] }));
+        return Ok(json!({ "installed": true, "running": false, "version": null, "compose": false, "containers": [], "images": [], "networks": [] }));
     };
     let containers = run(&args(&["ps", "-a", "--format", "{{json .}}"]))?;
     let images = run(&args(&["images", "--format", "{{json .}}"]))?;
+    // Names only, for the run form's network picker; the Networks page has the detail.
+    let networks = run(&args(&["network", "ls", "--format", "{{.Name}}"])).unwrap_or_default();
     Ok(json!({
         "installed": true,
         "running": true,
         "version": version,
+        "compose": stack::compose_available(),
         "containers": parse_json_lines(&containers).iter().map(container_row).collect::<Vec<_>>(),
         "images": parse_json_lines(&images).iter().map(image_row).collect::<Vec<_>>(),
+        "networks": networks.lines().map(str::trim).filter(|n| !n.is_empty()).collect::<Vec<_>>(),
     }))
 }
 
@@ -262,6 +394,9 @@ pub fn container_action(action: &str, id: &str) -> Result<String, String> {
         "stop" => (&["stop"], "stopped"),
         "restart" => (&["restart"], "restarted"),
         "remove" => (&["rm", "-f"], "removed"),
+        "pause" => (&["pause"], "paused"),
+        "unpause" => (&["unpause"], "resumed"),
+        "kill" => (&["kill"], "killed"),
         _ => return Err("Unsupported container action.".into()),
     };
     let mut list = args(command);
@@ -269,6 +404,13 @@ pub fn container_action(action: &str, id: &str) -> Result<String, String> {
     list.push(id.clone());
     run(&list)?;
     Ok(format!("Container {id} {done}."))
+}
+
+pub fn rename(id: &str, name: &str) -> Result<String, String> {
+    let id = validate_container(id)?;
+    let name = validate_container(name)?;
+    run(&args(&["rename", "--", &id, &name]))?;
+    Ok(format!("Container renamed to {name}."))
 }
 
 pub fn run_container(spec: &RunSpec) -> Result<String, String> {
@@ -303,20 +445,33 @@ pub fn pull(image: &str) -> Result<String, String> {
     Ok(format!("Image {image} pulled."))
 }
 
-pub fn remove_image(image: &str) -> Result<String, String> {
+pub fn remove_image(image: &str, force: bool) -> Result<String, String> {
     let image = validate_image(image)?;
-    run(&args(&["rmi", "--", &image]))?;
+    let mut list = args(if force { &["rmi", "-f"] } else { &["rmi"] });
+    list.push("--".into());
+    list.push(image.clone());
+    run(&list)?;
     Ok(format!("Image {image} removed."))
 }
 
-pub fn prune_images() -> Result<String, String> {
-    let output = run(&args(&["image", "prune", "-f"]))?;
-    let reclaimed = output
+/// `all` also removes tagged images no container uses, not just dangling layers.
+pub fn prune_images(all: bool) -> Result<String, String> {
+    let output = run(&args(if all { &["image", "prune", "-a", "-f"] } else { &["image", "prune", "-f"] }))?;
+    let reclaimed = reclaimed(&output);
+    Ok(if all {
+        format!("Images no container uses were removed; {reclaimed} freed.")
+    } else {
+        format!("Unused image layers removed; {reclaimed} freed.")
+    })
+}
+
+/// The "Total reclaimed space: 1.2GB" line every prune prints.
+pub(crate) fn reclaimed(output: &str) -> String {
+    output
         .lines()
         .find_map(|line| line.strip_prefix("Total reclaimed space:"))
-        .map(str::trim)
-        .unwrap_or("0B");
-    Ok(format!("Unused image layers removed; {reclaimed} freed."))
+        .map(|size| size.trim().to_string())
+        .unwrap_or_else(|| "0B".to_string())
 }
 
 #[cfg(test)]
@@ -358,6 +513,7 @@ mod tests {
                 VolumeSpec { source: "data".into(), target: "/data".into(), read_only: false },
                 VolumeSpec { source: "/srv/site".into(), target: "/usr/share/nginx/html".into(), read_only: true },
             ],
+            ..Default::default()
         };
         assert_eq!(
             run_args(&spec).unwrap(),
@@ -369,6 +525,63 @@ mod tests {
                 "--", "nginx:alpine",
             ]
         );
+    }
+
+    #[test]
+    fn builds_advanced_run_arguments() {
+        let spec = RunSpec {
+            image: "elasticsearch:8.15.0".into(),
+            name: "es".into(),
+            restart: "always".into(),
+            network: "search".into(),
+            aliases: vec!["elasticsearch".into(), " ".into()],
+            hostname: "es1".into(),
+            memory: "1G".into(),
+            cpus: "1.5".into(),
+            entrypoint: "-weird".into(),
+            command: vec!["--flag".into(), "a b".into()],
+            pull: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            run_args(&spec).unwrap(),
+            vec![
+                "run", "-d", "--restart", "always", "--name", "es",
+                "--network", "search", "--network-alias", "elasticsearch",
+                "--hostname", "es1", "--memory", "1g", "--cpus", "1.5",
+                "--entrypoint=-weird", "--pull", "always",
+                "--", "elasticsearch:8.15.0", "--flag", "a b",
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_bad_limits_and_aliases() {
+        let base = || RunSpec { image: "nginx".into(), ..Default::default() };
+        assert!(run_args(&RunSpec { memory: "lots".into(), ..base() }).is_err());
+        assert!(run_args(&RunSpec { memory: "1gb".into(), ..base() }).is_err());
+        assert!(run_args(&RunSpec { memory: "-1m".into(), ..base() }).is_err());
+        assert!(run_args(&RunSpec { cpus: "0".into(), ..base() }).is_err());
+        assert!(run_args(&RunSpec { cpus: "1e3".into(), ..base() }).is_err());
+        assert!(run_args(&RunSpec { aliases: vec!["db".into()], ..base() }).is_err());
+        assert!(run_args(&RunSpec { network: "--host".into(), ..base() }).is_err());
+        assert!(run_args(&RunSpec { command: vec!["a\0b".into()], ..base() }).is_err());
+        assert!(validate_memory("512m").is_ok());
+        assert!(validate_env_key("discovery.type").is_ok());
+        assert!(validate_env_key("A=B").is_err());
+        assert!(validate_env_key("-x").is_err());
+        assert!(validate_memory("1.5g").is_ok());
+        assert!(validate_cpus("0.25").is_ok());
+    }
+
+    #[test]
+    fn reads_compose_labels_from_ps() {
+        let ps = "{\"ID\":\"1\",\"Names\":\"wp-db-1\",\"Labels\":\"com.docker.compose.project=wp,com.docker.compose.service=db\",\"Networks\":\"wp_default,shared\",\"Mounts\":\"wp_db\"}";
+        let row = container_row(&parse_json_lines(ps)[0]);
+        assert_eq!(row["project"], "wp");
+        assert_eq!(row["service"], "db");
+        assert_eq!(row["networks"], json!(["wp_default", "shared"]));
+        assert_eq!(row["mounts"], json!(["wp_db"]));
     }
 
     #[test]

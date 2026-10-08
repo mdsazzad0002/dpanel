@@ -35,16 +35,46 @@ class DrustDockerClient
     }
 
     /**
-     * @param  'start'|'stop'|'restart'|'remove'|'run'|'pull'|'remove_image'|'prune_images'  $action
+     * Server ports Docker containers publish, from `ps`'s "127.0.0.1:8080->80/tcp".
+     *
+     * @return list<int>
+     */
+    public function publishedPorts(): array
+    {
+        $ports = [];
+        foreach ((array) ($this->status()['containers'] ?? []) as $container) {
+            preg_match_all('/:(\d+)->/', (string) ($container['ports'] ?? ''), $matches);
+            foreach ($matches[1] as $port) {
+                $ports[(int) $port] = true;
+            }
+        }
+
+        return array_keys($ports);
+    }
+
+    /**
+     * @param  string  $action  a container or image action drust knows (start, run, recreate, update, pull, …)
      * @param  array<string, mixed>  $payload
      * @return array{message: string, data: array<string, mixed>} the Docker status after the change
      */
     public function action(string $action, array $payload = []): array
     {
-        // Pulling a large image, or running one that has to be pulled first, takes minutes.
-        $timeout = in_array($action, ['pull', 'run'], true) ? 900 : 120;
+        // Pulling a large image, or anything that may have to pull one first, takes minutes.
+        $timeout = in_array($action, ['pull', 'run', 'recreate', 'update'], true) ? 900 : 120;
 
         return $this->send('/api/v1/docker', ['action' => $action] + $payload, $timeout);
+    }
+
+    /**
+     * One of drust's other Docker endpoints (`networks`, `volumes`, `system`,
+     * `stacks`, `inspect`, `stats`, `exec`, …): GET without a payload, POST with one.
+     *
+     * @param  array<string, mixed>|null  $payload
+     * @return array{message: string, data: array<string, mixed>}
+     */
+    public function call(string $endpoint, ?array $payload = null, int $timeout = 120): array
+    {
+        return $this->send('/api/v1/docker/'.ltrim($endpoint, '/'), $payload, $timeout);
     }
 
     /**

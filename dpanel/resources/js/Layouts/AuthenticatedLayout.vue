@@ -297,15 +297,20 @@ const menuItems = computed(() => [
     {
         id: 'docker',
         label: 'Docker',
-        hint: 'Containers and images',
+        hint: 'Containers, stacks and apps',
         // Optional add-on: shown only once `sudo dpanel docker` has installed it.
         feature: 'docker',
         icon: 'DK',
         iconClass: 'bi bi-box-seam',
         color: 'cyan',
         children: [
-            { label: 'Containers', hint: 'Run, stop and view logs', icon: 'CT', iconClass: 'bi bi-boxes', routeName: 'docker.containers', roles: ['admin'] },
+            { label: 'Overview', hint: 'Status, disk use, clean-up', icon: 'OV', iconClass: 'bi bi-speedometer2', routeName: 'docker.overview', roles: ['admin'] },
+            { label: 'Containers', hint: 'Run, inspect, console, logs', icon: 'CT', iconClass: 'bi bi-boxes', routeName: 'docker.containers', roles: ['admin'] },
+            { label: 'Stacks', hint: 'docker-compose apps', icon: 'ST', iconClass: 'bi bi-stack', routeName: 'docker.stacks', roles: ['admin'] },
+            { label: 'App templates', hint: 'One-click apps and stacks', icon: 'AT', iconClass: 'bi bi-grid-3x3-gap', routeName: 'docker.templates', roles: ['admin'] },
             { label: 'Images', hint: 'Pull and remove images', icon: 'IM', iconClass: 'bi bi-layers', routeName: 'docker.images', roles: ['admin'] },
+            { label: 'Networks', hint: 'Connect containers by name', icon: 'NW', iconClass: 'bi bi-diagram-3', routeName: 'docker.networks', roles: ['admin'] },
+            { label: 'Volumes', hint: 'Persistent data', icon: 'VL', iconClass: 'bi bi-hdd-stack', routeName: 'docker.volumes', roles: ['admin'] },
         ],
     },
     { label: 'Database & Redis', hint: 'Point dpanel at a remote DB/Redis', icon: 'DB', iconClass: 'bi bi-hdd-network', routeName: 'self-connection.manager', roles: ['admin'], color: 'rose' },

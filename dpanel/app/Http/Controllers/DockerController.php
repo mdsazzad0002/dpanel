@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Docker\Concerns\CallsDrust;
 use App\Services\ActivityLogService;
 use App\Services\Docker\DrustDockerClient;
+use App\Services\Docker\RunSpecInput;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -16,9 +18,13 @@ use Inertia\Response;
  */
 class DockerController extends Controller
 {
-    private const NAME = 'regex:/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/';
+    use CallsDrust;
 
-    private const IMAGE = 'regex:/^[A-Za-z0-9][A-Za-z0-9_.\/:@-]{0,254}$/';
+    private const NAME = RunSpecInput::NAME;
+
+    private const IMAGE = RunSpecInput::IMAGE;
+
+    private const CONTAINER_ACTIONS = ['start', 'stop', 'restart', 'remove', 'pause', 'unpause', 'kill', 'update'];
 
     public function __construct(
         private readonly DrustDockerClient $drust,
@@ -48,56 +54,73 @@ class DockerController extends Controller
     public function containerAction(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'action' => ['required', 'in:start,stop,restart,remove'],
+            'action' => ['required', 'in:'.implode(',', self::CONTAINER_ACTIONS)],
             'id' => ['required', 'string', self::NAME],
         ]);
 
         return $this->act($request, $validated['action'], ['id' => $validated['id']]);
     }
 
+    /**
+     * The same action on several containers, one after another; one failure
+     * does not stop the rest, and the answer says which ones failed.
+     */
+    public function bulk(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'in:start,stop,restart,remove,pause,unpause'],
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['required', 'string', self::NAME],
+        ]);
+
+        $failed = [];
+        $data = null;
+        foreach (array_unique($validated['ids']) as $id) {
+            try {
+                $data = $this->drust->action($validated['action'], ['id' => $id])['data'];
+            } catch (\Throwable $e) {
+                $failed[] = $id.': '.$this->clean($e);
+            }
+        }
+        $done = count(array_unique($validated['ids'])) - count($failed);
+        if ($done > 0) {
+            $this->audit($request, 'bulk_'.$validated['action'], ['ids' => array_values(array_unique($validated['ids'])), 'failed' => count($failed)]);
+        }
+        try {
+            $data ??= $this->drust->status();
+        } catch (\Throwable) {
+            $data = null;
+        }
+
+        $message = "{$done} container(s) done.".($failed ? "\nFailed:\n".implode("\n", $failed) : '');
+
+        return response()->json(['success' => $failed === [], 'message' => $message, 'data' => $data], $failed && $done === 0 ? 422 : 200);
+    }
+
+    public function rename(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'id' => ['required', 'string', self::NAME],
+            'name' => ['required', 'string', self::NAME],
+        ]);
+
+        return $this->act($request, 'rename', $validated);
+    }
+
     public function run(Request $request): JsonResponse
     {
-        $spec = $request->validate([
-            'image' => ['required', 'string', self::IMAGE],
-            'name' => ['nullable', 'string', self::NAME],
-            'restart' => ['nullable', 'in:no,always,unless-stopped,on-failure'],
-            'ports' => ['array', 'max:20'],
-            'ports.*.host' => ['required', 'integer', 'between:1,65535'],
-            'ports.*.container' => ['required', 'integer', 'between:1,65535'],
-            'ports.*.protocol' => ['nullable', 'in:tcp,udp'],
-            'ports.*.public' => ['boolean'],
-            'env' => ['array', 'max:100'],
-            'env.*.key' => ['required', 'string', 'regex:/^[A-Za-z_][A-Za-z0-9_]*$/'],
-            'env.*.value' => ['nullable', 'string', 'max:4096'],
-            'volumes' => ['array', 'max:20'],
-            'volumes.*.source' => ['required', 'string', 'max:512'],
-            'volumes.*.target' => ['required', 'string', 'max:512', 'starts_with:/'],
-            'volumes.*.read_only' => ['boolean'],
-        ]);
-        $spec['name'] = (string) ($spec['name'] ?? '');
-        $spec['restart'] = (string) ($spec['restart'] ?? '');
-        // drust reads missing fields as defaults but rejects nulls, so every field is filled in.
-        $spec['ports'] = array_map(fn ($port) => [
-            'host' => (int) $port['host'],
-            'container' => (int) $port['container'],
-            'protocol' => (string) ($port['protocol'] ?? 'tcp'),
-            'public' => (bool) ($port['public'] ?? false),
-        ], $spec['ports'] ?? []);
-        $spec['env'] = array_map(fn ($env) => ['key' => $env['key'], 'value' => (string) ($env['value'] ?? '')], $spec['env'] ?? []);
-        $spec['volumes'] = array_map(fn ($volume) => [
-            'source' => $volume['source'],
-            'target' => $volume['target'],
-            'read_only' => (bool) ($volume['read_only'] ?? false),
-        ], $spec['volumes'] ?? []);
+        $spec = RunSpecInput::normalize($request->validate(RunSpecInput::rules()));
 
-        // Variable values can hold secrets, so only their names are logged.
-        return $this->act($request, 'run', ['spec' => $spec], [
-            'image' => $spec['image'],
-            'name' => $spec['name'],
-            'ports' => $spec['ports'],
-            'env' => array_column($spec['env'], 'key'),
-            'volumes' => $spec['volumes'],
-        ]);
+        return $this->act($request, 'run', ['spec' => $spec], RunSpecInput::forLog($spec));
+    }
+
+    /** Replaces a container with one made from changed settings; the old one comes back if the new one fails. */
+    public function recreate(Request $request): JsonResponse
+    {
+        $validated = $request->validate(['id' => ['required', 'string', self::NAME]] + RunSpecInput::rules('spec'));
+        $spec = RunSpecInput::normalize($validated['spec']);
+
+        return $this->act($request, 'recreate', ['id' => $validated['id'], 'spec' => $spec], ['id' => $validated['id']] + RunSpecInput::forLog($spec));
     }
 
     public function logs(Request $request): JsonResponse
@@ -116,6 +139,48 @@ class DockerController extends Controller
         return response()->json(['success' => true, 'data' => $data]);
     }
 
+    /** Settings, state, mounts and networks of one container, plus the spec that recreates it. */
+    public function inspect(Request $request): JsonResponse
+    {
+        $id = $request->validate(['id' => ['required', 'string', self::NAME]])['id'];
+
+        return $this->fetch('inspect', ['id' => $id]);
+    }
+
+    public function stats(): JsonResponse
+    {
+        return $this->fetch('stats', null, 60);
+    }
+
+    /** One command inside a running container, killed after a minute. */
+    public function exec(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'id' => ['required', 'string', self::NAME],
+            'command' => ['required', 'string', 'max:8192'],
+            'user' => ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9_][A-Za-z0-9_.:-]*$/'],
+            'workdir' => ['nullable', 'string', 'max:512', 'starts_with:/'],
+        ]);
+        $payload = [
+            'id' => $validated['id'],
+            'command' => $validated['command'],
+            'user' => (string) ($validated['user'] ?? ''),
+            'workdir' => (string) ($validated['workdir'] ?? ''),
+        ];
+
+        // The command is the audit trail here, so it is logged (shortened).
+        return $this->change($request, 'exec', $payload, 'exec', [
+            'id' => $payload['id'],
+            'command' => mb_substr($payload['command'], 0, 500),
+            'user' => $payload['user'],
+        ], 90);
+    }
+
+    public function pruneContainers(Request $request): JsonResponse
+    {
+        return $this->act($request, 'prune_containers');
+    }
+
     public function pull(Request $request): JsonResponse
     {
         $image = $request->validate(['image' => ['required', 'string', self::IMAGE]])['image'];
@@ -125,14 +190,19 @@ class DockerController extends Controller
 
     public function removeImage(Request $request): JsonResponse
     {
-        $image = $request->validate(['image' => ['required', 'string', self::IMAGE]])['image'];
+        $validated = $request->validate([
+            'image' => ['required', 'string', self::IMAGE],
+            'force' => ['boolean'],
+        ]);
 
-        return $this->act($request, 'remove_image', ['image' => $image]);
+        return $this->act($request, 'remove_image', ['image' => $validated['image'], 'force' => (bool) ($validated['force'] ?? false)]);
     }
 
     public function pruneImages(Request $request): JsonResponse
     {
-        return $this->act($request, 'prune_images');
+        $all = (bool) ($request->validate(['all' => ['boolean']])['all'] ?? false);
+
+        return $this->act($request, 'prune_images', ['all' => $all]);
     }
 
     /**
@@ -146,18 +216,8 @@ class DockerController extends Controller
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => $this->clean($e)], 422);
         }
-        try {
-            $this->activity->log('docker.'.$action, null, $logged ?? $payload, $request);
-        } catch (\Throwable $e) {
-            // The change is already live on the server; a missing audit row must not report it as failed.
-            report($e);
-        }
+        $this->audit($request, $action, $logged ?? $payload);
 
         return response()->json(['success' => true, 'message' => $result['message'], 'data' => $result['data']]);
-    }
-
-    private function clean(\Throwable $e): string
-    {
-        return (string) preg_replace('/^Failed:\s*/', '', $e->getMessage());
     }
 }
