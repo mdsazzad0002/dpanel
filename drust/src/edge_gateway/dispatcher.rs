@@ -336,7 +336,7 @@ pub async fn dispatch(
                 .unwrap_or_else(|error| {
                     // The app may have died since it was last seen up; make
                     // the next request probe and restart it if needed.
-                    if site.runtime == "python" {
+                    if site.runtime == "python" || site.runtime == "node" {
                         if let super::UpstreamConfig::Http(addr) = upstream {
                             forget_python_liveness(addr.port());
                         }
@@ -736,6 +736,10 @@ async fn static_response(
         response.extensions_mut().insert(super::edge_cache::StaticFileResponse);
         return response;
     }
+    let memory_body = match &asset.body {
+        StaticAssetBody::Memory(body) => Some(body.clone()),
+        StaticAssetBody::Stream(_) => None,
+    };
     let body = match asset.body {
         StaticAssetBody::Memory(body) => Body::from(body),
         StaticAssetBody::Stream(path) => match tokio::fs::File::open(path).await {
@@ -767,7 +771,10 @@ async fn static_response(
         HeaderValue::from_static(browser_cache_control(&asset.path, &asset.content_type)),
     );
     response.extensions_mut().insert(super::edge_cache::StaticFileResponse);
-    response
+    match memory_body {
+        Some(body) => super::precompress::encode(response, request_headers, &body, &asset.variants).await,
+        None => response,
+    }
 }
 
 fn redirect_response(code: u16, location: &str) -> Response {

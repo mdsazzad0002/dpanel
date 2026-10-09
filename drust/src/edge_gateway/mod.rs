@@ -7,6 +7,7 @@ mod h3_listener;
 mod matching;
 mod node_process;
 mod php;
+mod precompress;
 mod proxy;
 mod python_process;
 mod server;

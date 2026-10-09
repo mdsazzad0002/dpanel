@@ -475,14 +475,18 @@ async fn resolve_fpm_socket(
     site_owner: Option<&str>,
 ) -> Result<PathBuf, String> {
     let version = php_version.unwrap_or("8.3");
-    let site_pools_enabled = std::env::var("DRUST_SITE_POOLS")
-        .map(|value| {
-            !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "0" | "false" | "off" | "no"
-            )
-        })
-        .unwrap_or(true);
+    // Read once: this runs on every PHP request and env lookups take a lock.
+    static SITE_POOLS: OnceLock<bool> = OnceLock::new();
+    let site_pools_enabled = *SITE_POOLS.get_or_init(|| {
+        std::env::var("DRUST_SITE_POOLS")
+            .map(|value| {
+                !matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "0" | "false" | "off" | "no"
+                )
+            })
+            .unwrap_or(true)
+    });
 
     if site_pools_enabled {
         if let Some(raw_owner) = site_owner {

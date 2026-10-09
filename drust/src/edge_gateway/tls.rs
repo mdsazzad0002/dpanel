@@ -159,7 +159,18 @@ pub fn build_tls_config(store: &TlsStore) -> Result<(ServerConfig, Arc<DynamicCe
         .with_no_client_auth()
         .with_cert_resolver(resolver.clone());
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    enable_session_resumption(&mut config)?;
     Ok((config, resolver))
+}
+
+/// Returning visitors resume their TLS session instead of a full handshake
+/// (the costliest part of HTTPS). rustls defaults to no tickets and a
+/// 256-entry session cache, which a busy server outgrows at once.
+fn enable_session_resumption(config: &mut ServerConfig) -> Result<(), String> {
+    config.session_storage = rustls::server::ServerSessionMemoryCache::new(10_240);
+    config.ticketer = rustls::crypto::ring::Ticketer::new()
+        .map_err(|error| format!("tls session tickets failed: {error}"))?;
+    Ok(())
 }
 
 /// QUIC transport config for the HTTP/3 (UDP) listener. Shares the same
@@ -175,6 +186,7 @@ pub fn build_quic_server_config(
         .map_err(|error| format!("quic tls versions failed: {error}"))?;
     let mut tls_config = builder.with_no_client_auth().with_cert_resolver(resolver);
     tls_config.alpn_protocols = vec![b"h3".to_vec()];
+    enable_session_resumption(&mut tls_config)?;
 
     let quic_crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls_config)
         .map_err(|error| format!("quic crypto config failed: {error}"))?;
@@ -199,4 +211,15 @@ fn load_private_key(path: &PathBuf) -> Result<PrivateKeyDer<'static>, String> {
     private_key(&mut reader)
         .map_err(|error| format!("read key failed: {error}"))?
         .ok_or_else(|| "no private key found".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tls_config_resumes_sessions() {
+        let (config, _) = build_tls_config(&TlsStore { identities: Arc::from([]) }).unwrap();
+        assert!(config.ticketer.enabled());
+    }
 }

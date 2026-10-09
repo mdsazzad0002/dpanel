@@ -24,6 +24,8 @@ pub struct StaticAsset {
     pub body: StaticAssetBody,
     pub etag: String,
     pub last_modified: SystemTime,
+    /// gzip/brotli copies of an in-memory body, kept with the cached file.
+    pub variants: std::sync::Arc<super::precompress::Variants>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,6 +103,7 @@ pub fn load_static_asset(path: &Path) -> Result<StaticAsset, String> {
         body,
         etag,
         last_modified,
+        variants: Default::default(),
     };
     if meta.len() <= static_cache_max_file_bytes() {
         if let Ok(mut cache) = cache.write() {
@@ -371,6 +374,7 @@ mod tests {
             body: StaticAssetBody::Memory(Bytes::from_static(b"x")),
             etag: String::new(),
             last_modified: SystemTime::UNIX_EPOCH,
+            variants: Default::default(),
         }
     }
 

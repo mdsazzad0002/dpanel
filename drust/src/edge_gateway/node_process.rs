@@ -9,6 +9,8 @@ use std::{
 
 use tokio::{net::TcpStream, time::timeout};
 
+use super::python_process::{mark_live, recently_live};
+
 /// Ensures the systemd-managed process for a Node.js site is running and
 /// listening on `port`, provisioning (or repairing) its unit file on demand.
 /// Mirrors `php::resolve_fpm_socket`'s lazy-provision-then-poll pattern.
@@ -21,7 +23,13 @@ pub async fn ensure_node_process_running(
     node_version: Option<&str>,
     port: u16,
 ) -> Result<(), String> {
+    // Probing the port on every request doubled the connections the app
+    // had to accept; a recent "up" is trusted for a few seconds instead.
+    if recently_live(port) {
+        return Ok(());
+    }
     if port_is_listening(port).await {
+        mark_live(port);
         return Ok(());
     }
 
@@ -49,6 +57,7 @@ pub async fn ensure_node_process_running(
 
     for _ in 0..60 {
         if port_is_listening(port).await {
+            mark_live(port);
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(250)).await;

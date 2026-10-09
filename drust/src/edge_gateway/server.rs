@@ -128,12 +128,7 @@ pub fn serve_gateway_with_tls(
             } else {
                 app_router.clone()
             };
-            axum::serve(
-                http_listener,
-                router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-            )
-                .await
-                .map_err(|error| format!("http server failed: {error}"))
+            serve_listener(http_listener, router, None).await
         });
 
         let https_task = if let Some((server_config, resolver)) = tls_built {
@@ -332,15 +327,19 @@ pub async fn handle_request(
         // Only the headers: `Body` is not Sync, so borrowing the whole
         // request across the wait below would make this future non-Send.
         let request_headers = request.headers();
-        let serve = |entry: Arc<edge_cache::CachedResponse>, label, outcome| {
-            let response = entry.respond(request_headers, head, label);
+        let shared = &state;
+        let serve = |entry: Arc<edge_cache::CachedResponse>, label, outcome| async move {
+            let mut response = entry.respond(request_headers, head, label);
+            if !head {
+                response = super::precompress::encode(response, request_headers, &entry.body, &entry.variants).await;
+            }
             let bytes = response.body().size_hint().exact().unwrap_or(0);
-            state.edge_cache.record(domain, outcome, bytes);
-            state.bandwidth.record(domain, upload_bytes, bytes);
+            shared.edge_cache.record(domain, outcome, bytes);
+            shared.bandwidth.record(domain, upload_bytes, bytes);
             response
         };
         match state.edge_cache.lookup(key) {
-            edge_cache::Lookup::Fresh(entry) => return serve(entry, "HIT", edge_cache::Outcome::Hit),
+            edge_cache::Lookup::Fresh(entry) => return serve(entry, "HIT", edge_cache::Outcome::Hit).await,
             edge_cache::Lookup::Stale(entry) => stale = Some(entry),
             edge_cache::Lookup::Miss => {}
         }
@@ -352,11 +351,11 @@ pub async fn handle_request(
                     // Someone is already refreshing this copy; the old one
                     // stands in meanwhile when the site allows stale copies.
                     if let (Some(entry), true) = (&stale, site.cache.serve_stale) {
-                        return serve(entry.clone(), "STALE", edge_cache::Outcome::Stale);
+                        return serve(entry.clone(), "STALE", edge_cache::Outcome::Stale).await;
                     }
                     edge_cache::wait_for_fill(receiver, state.edge_cache.fill_wait).await;
                     if let edge_cache::Lookup::Fresh(entry) = state.edge_cache.lookup(key) {
-                        return serve(entry, "HIT", edge_cache::Outcome::Hit);
+                        return serve(entry, "HIT", edge_cache::Outcome::Hit).await;
                     }
                 }
             }
@@ -465,6 +464,7 @@ async fn finish_cacheable(
             stored_at: std::time::Instant::now(),
             fresh_until: std::time::Instant::now(),
             stale_until: std::time::Instant::now(),
+            variants: Default::default(),
         },
         ttl,
         site.cache.serve_stale,
@@ -932,12 +932,7 @@ pub fn serve_demo_with_tls(
         let http_task = tokio::spawn({
             let router = router.clone();
             async move {
-                axum::serve(
-                    http_listener,
-                    router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-                )
-                    .await
-                    .map_err(|error| format!("http server failed: {error}"))
+                serve_listener(http_listener, router, None).await
             }
         });
 
@@ -995,48 +990,110 @@ async fn run_https_listener(
         .await
         .map_err(|error| format!("https bind failed: {error}"))?;
     info!(bind = %bind, "HTTPS listener ready");
+    serve_listener(listener, router, Some(acceptor)).await
+}
 
+/// A client that has not finished the TLS handshake by then is dropped, so
+/// idle or slowloris connections cannot pile up.
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Same for an HTTP/1 client that never finishes sending its headers.
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Open connections over both listeners (`DRUST_MAX_CONNECTIONS`, 30000).
+/// At the limit new ones wait in the kernel backlog instead of failing.
+fn connection_permits() -> Arc<tokio::sync::Semaphore> {
+    static PERMITS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    PERMITS
+        .get_or_init(|| {
+            let limit = std::env::var("DRUST_MAX_CONNECTIONS")
+                .ok()
+                .and_then(|value| value.trim().parse::<usize>().ok())
+                .filter(|value| *value > 0)
+                .unwrap_or(30_000);
+            Arc::new(tokio::sync::Semaphore::new(limit))
+        })
+        .clone()
+}
+
+/// Accept loop shared by the HTTP and HTTPS listeners.
+async fn serve_listener(
+    listener: tokio::net::TcpListener,
+    router: Router,
+    tls: Option<tokio_rustls::TlsAcceptor>,
+) -> Result<(), String> {
+    let permits = connection_permits();
     loop {
-        let (stream, peer) = listener
-            .accept()
+        let permit = permits
+            .clone()
+            .acquire_owned()
             .await
-            .map_err(|error| format!("https accept failed: {error}"))?;
-        let acceptor = acceptor.clone();
+            .map_err(|_| "connection limit closed".to_string())?;
+        let (stream, peer) = match listener.accept().await {
+            Ok(connection) => connection,
+            Err(error) => {
+                // Out of file descriptors and the like: back off and keep
+                // listening. Returning here used to stop the listener.
+                warn!(%error, "accept failed");
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+        };
+        let tls = tls.clone();
         let router = router.clone();
         tokio::spawn(async move {
-            match acceptor.accept(stream).await {
-                Ok(tls_stream) => {
-                    tracing::info!(peer = %peer, "TLS connection accepted");
-                    let io = TokioIo::new(tls_stream);
-                    let router = router.clone().layer(map_request(
-                        move |mut request: Request<Body>| async move {
-                            request.extensions_mut().insert(peer);
-                            request
-                        },
-                    ));
-                    let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
-                    // hyper's HTTP/2 default max_header_list_size is 16KB. Real
-                    // browsers routinely exceed that once several large
-                    // encrypted Laravel cookies (session, XSRF-TOKEN, panel
-                    // proof, plus other same-domain app cookies) stack up
-                    // alongside normal browser headers — h2 then silently
-                    // drops the headers that don't fit, which showed up as
-                    // requests arriving at PHP missing their session/XSRF
-                    // cookies (CSRF mismatch) on HTTPS (h2) but not on HTTP/1.1
-                    // (no such limit), even with a fresh/incognito browser.
-                    builder.http2().max_header_list_size(256 * 1024);
-                    if let Err(error) = builder
-                        .serve_connection_with_upgrades(io, TowerToHyperService::new(router.into_service()))
-                        .await
-                    {
-                        tracing::error!(peer = %peer, error = %error, "HTTPS connection failed");
-                    }
+            let _permit = permit;
+            let router = router.layer(map_request(move |mut request: Request<Body>| async move {
+                request.extensions_mut().insert(peer);
+                request.extensions_mut().insert(axum::extract::ConnectInfo(peer));
+                request
+            }));
+            let Some(acceptor) = tls else {
+                serve_connection(TokioIo::new(stream), router, peer).await;
+                return;
+            };
+            match tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
+                Ok(Ok(tls_stream)) => {
+                    tracing::debug!(peer = %peer, "TLS connection accepted");
+                    serve_connection(TokioIo::new(tls_stream), router, peer).await;
                 }
-                Err(error) => {
+                Ok(Err(error)) => {
                     tracing::error!(peer = %peer, error = %error, "TLS handshake failed");
                 }
+                Err(_) => tracing::debug!(peer = %peer, "TLS handshake timed out"),
             }
         });
+    }
+}
+
+async fn serve_connection<I>(io: I, router: Router, peer: std::net::SocketAddr)
+where
+    I: hyper::rt::Read + hyper::rt::Write + Unpin + Send + 'static,
+{
+    let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+    builder
+        .http1()
+        .timer(hyper_util::rt::TokioTimer::new())
+        .header_read_timeout(HEADER_READ_TIMEOUT);
+    // hyper's HTTP/2 default max_header_list_size is 16KB. Real
+    // browsers routinely exceed that once several large
+    // encrypted Laravel cookies (session, XSRF-TOKEN, panel
+    // proof, plus other same-domain app cookies) stack up
+    // alongside normal browser headers — h2 then silently
+    // drops the headers that don't fit, which showed up as
+    // requests arriving at PHP missing their session/XSRF
+    // cookies (CSRF mismatch) on HTTPS (h2) but not on HTTP/1.1
+    // (no such limit), even with a fresh/incognito browser.
+    builder
+        .http2()
+        .timer(hyper_util::rt::TokioTimer::new())
+        .max_header_list_size(256 * 1024)
+        // Pings find dead peers, so their connections are closed.
+        .keep_alive_interval(Some(Duration::from_secs(30)));
+    if let Err(error) = builder
+        .serve_connection_with_upgrades(io, TowerToHyperService::new(router.into_service()))
+        .await
+    {
+        tracing::debug!(peer = %peer, error = %error, "connection ended with an error");
     }
 }
 
@@ -1296,6 +1353,40 @@ mod edge_cache_tests {
         reversed[0].cache.serve_stale = !reversed[0].cache.serve_stale;
         let changed = RuntimeSnapshot::new(snapshot.version, Arc::from(reversed), snapshot.tls.clone(), snapshot.cache.clone());
         assert_ne!(snapshot_fingerprint(&snapshot), snapshot_fingerprint(&changed));
+    }
+
+    #[tokio::test]
+    async fn cache_hits_reuse_one_compressed_copy() {
+        use std::io::Read;
+        let page = "<p>hello world</p>".repeat(400);
+        let app = Router::new().fallback(any({
+            let page = page.clone();
+            move || {
+                let page = page.clone();
+                async move { ([("content-type", "text/html")], page) }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let router = gateway(addr, Duration::from_secs(60));
+
+        let fetch = |router: Router| async move {
+            let request = Request::builder().uri("/").header("host", "shop.test").header("accept-encoding", "gzip")
+                .body(Body::empty()).unwrap();
+            let response = router.oneshot(request).await.unwrap();
+            let label = response.headers()[edge_cache::CACHE_STATUS_HEADER].to_str().unwrap().to_string();
+            let encoding = response.headers()[axum::http::header::CONTENT_ENCODING].to_str().unwrap().to_string();
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            (label, encoding, body)
+        };
+        assert_eq!(fetch(router.clone()).await.0, "MISS");
+        let (label, encoding, first) = fetch(router.clone()).await;
+        assert_eq!((label.as_str(), encoding.as_str()), ("HIT", "gzip"));
+        let mut decoded = String::new();
+        flate2::read::GzDecoder::new(&first[..]).read_to_string(&mut decoded).unwrap();
+        assert_eq!(decoded, page, "compressed exactly once");
+        assert_eq!(fetch(router).await.2, first, "the same copy is reused");
     }
 
     #[tokio::test]

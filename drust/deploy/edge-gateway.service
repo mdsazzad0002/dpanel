@@ -11,6 +11,9 @@ Environment=DRUST_EDGE_GATEWAY_BIND=0.0.0.0:80
 ExecStart=/usr/local/bin/drust-edge-gateway
 Restart=always
 RestartSec=3
+# Every client connection (and each upstream one) is a file descriptor; the
+# systemd default soft limit of 1024 caps the gateway near 1000 connections.
+LimitNOFILE=1048576
 User=root
 Group=root
 NoNewPrivileges=no

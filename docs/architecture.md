@@ -105,6 +105,23 @@ take the drust API token. Memory limits: `DRUST_EDGE_CACHE_MAX_BYTES`
 by key, each with an equal part of these limits, so storing or evicting in one
 does not block lookups in the others.
 
+Cached copies (edge cache entries and in-memory static files) are compressed
+once per encoding (brotli, gzip) on the first request that asks for it, and
+that copy is reused afterwards instead of compressing on every hit. The copies
+live next to the cached body and are not counted in the cache limits; for text
+they add roughly a third of its size.
+
+### Connections
+
+Both listeners share a limit of `DRUST_MAX_CONNECTIONS` (30000) open
+connections; past it, new ones wait in the kernel backlog. A TLS handshake must
+finish within 10 s and HTTP/1 request headers within 30 s, so idle or slowloris
+clients are dropped. TLS sessions resume through session tickets and a
+10240-entry session cache. `edge-gateway.service` raises `LimitNOFILE`, since
+the systemd default of 1024 file descriptors caps the gateway near 1000
+connections. Node, Python and Docker responses without a `Content-Length` are
+read up to 2 MiB and streamed beyond that.
+
 ## PHP execution
 
 User-scope PHP websites run in their own PHP-FPM pool:

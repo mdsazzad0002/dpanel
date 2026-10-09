@@ -36,7 +36,8 @@ fn liveness_cache() -> &'static Mutex<HashMap<u16, Instant>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn recently_live(port: u16) -> bool {
+/// Shared with Node sites: app ports are unique per site.
+pub(super) fn recently_live(port: u16) -> bool {
     liveness_cache()
         .lock()
         .ok()
@@ -44,7 +45,7 @@ fn recently_live(port: u16) -> bool {
         .is_some_and(|seen| seen.elapsed() < LIVENESS_TTL)
 }
 
-fn mark_live(port: u16) {
+pub(super) fn mark_live(port: u16) {
     if let Ok(mut cache) = liveness_cache().lock() {
         cache.insert(port, Instant::now());
     }

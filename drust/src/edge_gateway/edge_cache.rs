@@ -293,6 +293,8 @@ pub struct CachedResponse {
     pub stored_at: Instant,
     pub fresh_until: Instant,
     pub stale_until: Instant,
+    /// gzip/brotli copies of `body`, made on the first hit that asks.
+    pub variants: Arc<super::precompress::Variants>,
 }
 
 impl CachedResponse {
@@ -842,6 +844,7 @@ mod tests {
             stored_at: now,
             fresh_until: now,
             stale_until: now,
+            variants: Default::default(),
         }
     }
 
