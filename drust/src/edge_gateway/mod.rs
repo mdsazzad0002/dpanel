@@ -41,7 +41,7 @@ pub use python_process::{
 pub use server::{
     sample_dispatch_context, sample_snapshot, sample_tls_store, serve_demo_with_tls, serve_gateway,
 };
-pub use source::{DbSnapshotConfig, load_runtime_snapshot};
+pub use source::{DbSnapshotConfig, load_domain_sites, load_runtime_snapshot};
 pub use static_files::{
     StaticAsset, StaticAssetBody, StaticFileConfig, browser_cache_control, clear_static_cache, clear_static_cache_under,
     load_static_asset, resolve_static_path,

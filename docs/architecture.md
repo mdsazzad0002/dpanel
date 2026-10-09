@@ -68,6 +68,11 @@ sites; an empty payload (`{}`) reloads everything. Events are batched for
 After a certificate is issued or renewed, both drust and dPanel send a full
 reload, so the new certificate goes live without a restart.
 
+A per-domain reload queries only those domains' rows, not every website. As a
+safety net for a lost reload event, the gateway also re-reads the database every
+`DRUST_SNAPSHOT_POLL_SECONDS` (60; `0` turns it off) and applies the result
+only when something changed, so its caches are not cleared for nothing.
+
 ### Edge cache
 
 Each site can turn on a shared response cache in the gateway (settings in the
@@ -96,7 +101,9 @@ that site's copies. `POST /__admin/cache/purge` (`{"domain", "urls",
 "prefixes"}` or `{"everything": true}`) and `GET /__admin/cache/stats?domain=`
 take the drust API token. Memory limits: `DRUST_EDGE_CACHE_MAX_BYTES`
 (256 MiB), `DRUST_EDGE_CACHE_MAX_OBJECT_BYTES` (8 MiB) and
-`DRUST_EDGE_CACHE_MAX_ENTRIES` (100000).
+`DRUST_EDGE_CACHE_MAX_ENTRIES` (100000). The cache is split into 16 shards
+by key, each with an equal part of these limits, so storing or evicting in one
+does not block lookups in the others.
 
 ## PHP execution
 

@@ -113,6 +113,7 @@ pub fn serve_gateway_with_tls(
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
         spawn_redis_reload_listener(state.clone());
+        spawn_snapshot_poll(state.clone());
         let app_router = build_demo_router(state).layer(map_request(ensure_host_header));
         let https_router = app_router.clone().layer(map_request(mark_https_request));
 
@@ -598,19 +599,7 @@ async fn reload_snapshot(state: &Arc<DemoServerState>) -> Result<u64, (String, u
     let source = state.source_config.clone();
     let loaded = tokio::task::spawn_blocking(move || load_runtime_snapshot(&source)).await;
     match loaded {
-        Ok(Ok(next)) => {
-            let version = next.version;
-            if let Some(resolver) = &state.tls_resolver {
-                let store = tls_store_from_snapshot(&next);
-                if let Err(error) = resolver.update(&store) {
-                    warn!(%error, version, "TLS certificate reload failed; keeping previously loaded certificates");
-                }
-            }
-            *state.snapshot.write().await = Arc::new(next);
-            super::clear_static_cache();
-            super::clear_canonical_root_cache();
-            Ok(version)
-        }
+        Ok(Ok(next)) => Ok(apply_snapshot(state, next).await),
         Ok(Err(error)) => Err((error, state.snapshot.read().await.version)),
         Err(error) => Err((
             format!("snapshot reload worker failed: {error}"),
@@ -633,54 +622,58 @@ async fn reload_domains(
     }
 
     let source = state.source_config.clone();
-    let loaded = tokio::task::spawn_blocking(move || load_runtime_snapshot(&source)).await;
+    let wanted = domains.iter().cloned().collect::<Vec<_>>();
+    let loaded =
+        tokio::task::spawn_blocking(move || super::load_domain_sites(&source, &wanted)).await;
     match loaded {
-        Ok(Ok(next)) => {
+        Ok(Ok((fresh_sites, fresh_tls))) => {
             let current = state.snapshot.read().await.clone();
+            let targeted = |hostnames: &[String]| {
+                hostnames.first().is_some_and(|domain| domains.contains(domain))
+            };
             let mut roots = Vec::new();
             let mut sites = current
                 .sites
                 .iter()
                 .filter(|site| {
-                    let targeted = site
-                        .hostnames
-                        .first()
-                        .is_some_and(|domain| domains.contains(domain));
-                    if targeted {
+                    if targeted(&site.hostnames) {
                         if let Some(root) = &site.document_root {
                             roots.push(root.clone());
                         }
+                        return false;
                     }
-                    !targeted
+                    true
                 })
                 .cloned()
                 .collect::<Vec<_>>();
-            for site in next.sites.iter().filter(|site| {
-                site.hostnames
-                    .first()
-                    .is_some_and(|domain| domains.contains(domain))
-            }) {
+            for site in fresh_sites {
                 if let Some(root) = &site.document_root {
                     roots.push(root.clone());
                 }
-                sites.push(site.clone());
+                sites.push(site);
             }
-
-            // TLS is refreshed from the fresh snapshot: enabling SSL or
-            // issuing a certificate arrives as a per-domain reload, and
-            // keeping `current.tls` left the new certificate unserved.
-            if let Some(resolver) = &state.tls_resolver {
-                let store = tls_store_from_snapshot(&next);
-                if let Err(error) = resolver.update(&store) {
-                    warn!(%error, version = next.version, "TLS certificate reload failed; keeping previously loaded certificates");
-                }
-            }
+            // Only the targeted domains' certificates change: enabling SSL or
+            // issuing a certificate arrives as a per-domain reload.
+            let mut tls = current
+                .tls
+                .iter()
+                .filter(|config| !targeted(&config.hostnames))
+                .cloned()
+                .collect::<Vec<_>>();
+            tls.extend(fresh_tls);
             let updated = RuntimeSnapshot::new(
-                next.version,
+                current.version,
                 Arc::from(sites),
-                next.tls.clone(),
+                Arc::from(tls),
                 current.cache.clone(),
             );
+            if let Some(resolver) = &state.tls_resolver {
+                let store = tls_store_from_snapshot(&updated);
+                if let Err(error) = resolver.update(&store) {
+                    warn!(%error, version = updated.version, "TLS certificate reload failed; keeping previously loaded certificates");
+                }
+            }
+            let version = updated.version;
             *state.snapshot.write().await = Arc::new(updated);
             super::clear_static_cache_under(&roots);
             super::clear_canonical_root_cache_under(&roots);
@@ -689,7 +682,7 @@ async fn reload_domains(
             for domain in &domains {
                 state.edge_cache.purge(Some(domain), &[], &[]);
             }
-            Ok(next.version)
+            Ok(version)
         }
         Ok(Err(error)) => Err((error, state.snapshot.read().await.version)),
         Err(error) => Err((
@@ -697,6 +690,77 @@ async fn reload_domains(
             state.snapshot.read().await.version,
         )),
     }
+}
+
+async fn apply_snapshot(state: &Arc<DemoServerState>, next: RuntimeSnapshot) -> u64 {
+    let version = next.version;
+    if let Some(resolver) = &state.tls_resolver {
+        let store = tls_store_from_snapshot(&next);
+        if let Err(error) = resolver.update(&store) {
+            warn!(%error, version, "TLS certificate reload failed; keeping previously loaded certificates");
+        }
+    }
+    *state.snapshot.write().await = Arc::new(next);
+    super::clear_static_cache();
+    super::clear_canonical_root_cache();
+    version
+}
+
+/// Identifies a snapshot's content regardless of site order (a per-domain
+/// reload appends its sites, a full load sorts by last update).
+fn snapshot_fingerprint(snapshot: &RuntimeSnapshot) -> u64 {
+    use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+    let hasher = BuildHasherDefault::<DefaultHasher>::default();
+    let mut parts = snapshot
+        .sites
+        .iter()
+        .map(|site| hasher.hash_one(format!("{site:?}")))
+        .chain(snapshot.tls.iter().map(|tls| hasher.hash_one(format!("tls {tls:?}"))))
+        .collect::<Vec<_>>();
+    parts.sort_unstable();
+    hasher.hash_one(parts)
+}
+
+/// Safety net for lost reload signals (Redis down and the HTTP fallback
+/// failing, or a database edit made outside the panel): re-reads the
+/// database every `DRUST_SNAPSHOT_POLL_SECONDS` (60; 0 turns it off) and
+/// applies it only when something actually changed, so the in-memory
+/// caches are not thrown away for nothing.
+fn spawn_snapshot_poll(state: DemoServerState) {
+    let seconds = std::env::var("DRUST_SNAPSHOT_POLL_SECONDS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(60);
+    if seconds == 0 {
+        return;
+    }
+    let state = Arc::new(state);
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(seconds.max(5)));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            let source = state.source_config.clone();
+            let next = match tokio::task::spawn_blocking(move || load_runtime_snapshot(&source)).await {
+                Ok(Ok(next)) => next,
+                Ok(Err(error)) => {
+                    warn!(%error, "snapshot poll failed; keeping the current snapshot");
+                    continue;
+                }
+                Err(error) => {
+                    warn!(%error, "snapshot poll worker failed");
+                    continue;
+                }
+            };
+            let current = state.snapshot.read().await.clone();
+            if snapshot_fingerprint(&next) == snapshot_fingerprint(&current) {
+                continue;
+            }
+            info!("website settings changed without a reload signal; applying them");
+            apply_snapshot(&state, next).await;
+        }
+    });
 }
 
 fn spawn_redis_reload_listener(state: DemoServerState) {
@@ -858,6 +922,7 @@ pub fn serve_demo_with_tls(
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
         spawn_redis_reload_listener(state.clone());
+        spawn_snapshot_poll(state.clone());
         let router = build_demo_router(state);
         let http_listener = tokio::net::TcpListener::bind(http_bind)
             .await
@@ -1213,6 +1278,24 @@ mod edge_cache_tests {
         status.store(200, Ordering::SeqCst);
         assert_eq!(get(&router, "/").await, (StatusCode::OK, "EXPIRED".into(), "page 3".into()));
         assert_eq!(get(&router, "/").await.1, "HIT");
+    }
+
+    #[test]
+    fn snapshot_fingerprint_ignores_site_order_but_not_content() {
+        let sample = sample_snapshot();
+        let mut other = sample.sites[0].clone();
+        other.id = "other".into();
+        other.hostnames = Arc::from(["other.test".to_string()]);
+        let mut sites = sample.sites.to_vec();
+        sites.push(other);
+        let snapshot = RuntimeSnapshot::new(sample.version, Arc::from(sites), sample.tls.clone(), sample.cache.clone());
+        let mut reversed = snapshot.sites.to_vec();
+        reversed.reverse();
+        let reordered = RuntimeSnapshot::new(snapshot.version, Arc::from(reversed.clone()), snapshot.tls.clone(), snapshot.cache.clone());
+        assert_eq!(snapshot_fingerprint(&snapshot), snapshot_fingerprint(&reordered));
+        reversed[0].cache.serve_stale = !reversed[0].cache.serve_stale;
+        let changed = RuntimeSnapshot::new(snapshot.version, Arc::from(reversed), snapshot.tls.clone(), snapshot.cache.clone());
+        assert_ne!(snapshot_fingerprint(&snapshot), snapshot_fingerprint(&changed));
     }
 
     #[tokio::test]
