@@ -298,7 +298,8 @@ const menuItems = computed(() => [
         id: 'docker',
         label: 'Docker',
         hint: 'Containers, stacks and apps',
-        // Optional add-on: shown only once `sudo dpanel docker` has installed it.
+        // Optional add-on: always listed so its pages can show the setup steps;
+        // the hint flags it until `sudo dpanel docker` has installed it.
         feature: 'docker',
         icon: 'DK',
         iconClass: 'bi bi-box-seam',
@@ -373,7 +374,9 @@ const hasAccess = (item) => {
 
 const visibleMenu = computed(() => menuItems.value
     .map((item) => {
-        if (item.feature && !page.props.features?.[item.feature]) return null;
+        if (item.feature && !page.props.features?.[item.feature]) {
+            item = { ...item, hint: 'Not installed — open for setup steps' };
+        }
         if (!item.children) {
             return hasAccess(item) ? item : null;
         }
