@@ -115,6 +115,12 @@ System-scope websites, the panel, and phpMyAdmin always use the shared
 `www-data` pool. Per-site pools are enabled with `DRUST_SITE_POOLS=1` (the
 default) so one site's PHP cannot read another site's files.
 
+PHP output up to 1 MiB is read whole, so the edge cache can store it; larger
+output (downloads, exports) is streamed to the client as PHP writes it. Request
+bodies over 1 MiB with a `Content-Length` are streamed into PHP-FPM, so upload
+size is limited only by PHP's `post_max_size`; bodies without a length are
+still read first, up to 64 MiB.
+
 ## Database provisioning
 
 When dPanel creates a database, drust:

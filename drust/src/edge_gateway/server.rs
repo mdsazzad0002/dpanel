@@ -376,7 +376,15 @@ pub async fn handle_request(
         _ => response,
     };
     if let Some(domain) = canonical_domain {
-        let download_bytes = response.body().size_hint().exact().unwrap_or(0);
+        // Streamed bodies (large PHP output) have no exact size up front.
+        let download_bytes = response.body().size_hint().exact().unwrap_or_else(|| {
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0)
+        });
         state
             .bandwidth
             .record(&domain, upload_bytes, download_bytes);

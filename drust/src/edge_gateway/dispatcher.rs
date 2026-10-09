@@ -25,6 +25,39 @@ pub struct DispatchContext {
     pub static_files: Option<StaticFileConfig>,
 }
 
+enum StaticPlan {
+    Php,
+    Asset(Result<StaticAsset, String>),
+    Missing,
+}
+
+/// Decides how a static-route request is answered. Touches the disk, so it is
+/// called from a blocking task.
+fn plan_static_request(config: &StaticFileConfig, path: &str) -> StaticPlan {
+    let has_front_controller = || config.document_root.join("index.php").is_file();
+    // Prefer a PHP front controller for directory requests. This prevents a
+    // leftover starter index.html from shadowing a real application
+    // index.php in the same document root.
+    if (path == "/" || path.ends_with('/')) && has_front_controller() {
+        return StaticPlan::Php;
+    }
+    let exact_static_path = if is_php_path(path) {
+        None
+    } else {
+        resolve_static_path(&config.document_root, path, &config.index_file, false)
+    };
+    if let Some(path_on_disk) = exact_static_path {
+        return StaticPlan::Asset(load_static_asset(&path_on_disk));
+    }
+    if has_front_controller() {
+        return StaticPlan::Php;
+    }
+    match resolve_static_path(&config.document_root, path, &config.index_file, config.spa_fallback) {
+        Some(path_on_disk) => StaticPlan::Asset(load_static_asset(&path_on_disk)),
+        None => StaticPlan::Missing,
+    }
+}
+
 pub async fn dispatch(
     site: Option<&super::SiteConfig>,
     ctx: &DispatchContext,
@@ -160,78 +193,44 @@ pub async fn dispatch(
                 );
             }
 
-            // Prefer a PHP front controller for directory requests. This
-            // prevents a leftover starter index.html from shadowing a real
-            // application index.php in the same document root.
-            if (path == "/" || path.ends_with('/'))
-                && config.document_root.join("index.php").is_file()
-            {
-                let response = execute_php_front_controller(
-                    request,
-                    &config.document_root,
-                    site.php_version.as_deref(),
-                    user_pool_owner(site.scope.as_str(), site.site_owner.as_deref()),
-                )
-                .await
-                .unwrap_or_else(|error| {
-                    simple_response(
-                        StatusCode::BAD_GATEWAY,
-                        &format!("PHP application unavailable: {error}"),
-                    )
-                });
-                return annotated_response(response, site_match, route_match);
-            }
-
-            let exact_static_path = if is_php_path(&path) {
-                None
-            } else {
-                resolve_static_path(&config.document_root, &path, &config.index_file, false)
+            // Disk lookups block, so they run off the async workers: on a slow
+            // or busy disk they would otherwise stall every site's requests.
+            let plan = {
+                let config = config.clone();
+                let path = path.clone();
+                tokio::task::spawn_blocking(move || plan_static_request(&config, &path)).await
             };
-            if let Some(path_on_disk) = exact_static_path {
-                let asset = match load_static_asset(&path_on_disk) {
-                    Ok(asset) => asset,
-                    Err(error) => {
-                        return simple_response(StatusCode::INTERNAL_SERVER_ERROR, &error);
-                    }
-                };
-                return annotated_response(
+            match plan {
+                Ok(StaticPlan::Php) => {
+                    let response = execute_php_front_controller(
+                        request,
+                        &config.document_root,
+                        site.php_version.as_deref(),
+                        user_pool_owner(site.scope.as_str(), site.site_owner.as_deref()),
+                    )
+                    .await
+                    .unwrap_or_else(|error| {
+                        simple_response(
+                            StatusCode::BAD_GATEWAY,
+                            &format!("PHP application unavailable: {error}"),
+                        )
+                    });
+                    annotated_response(response, site_match, route_match)
+                }
+                Ok(StaticPlan::Asset(Ok(asset))) => annotated_response(
                     static_response(asset, request.headers()).await,
                     site_match,
                     route_match,
-                );
-            }
-
-            if config.document_root.join("index.php").is_file() {
-                let response = execute_php_front_controller(
-                    request,
-                    &config.document_root,
-                    site.php_version.as_deref(),
-                    user_pool_owner(site.scope.as_str(), site.site_owner.as_deref()),
-                )
-                .await
-                .unwrap_or_else(|error| {
-                    simple_response(
-                        StatusCode::BAD_GATEWAY,
-                        &format!("PHP application unavailable: {error}"),
-                    )
-                });
-                return annotated_response(response, site_match, route_match);
-            }
-
-            let Some(path_on_disk) = resolve_static_path(
-                &config.document_root,
-                &path,
-                &config.index_file,
-                config.spa_fallback,
-            ) else {
-                if path == "/" {
-                    return annotated_response(
-                        site_root_error_response(site_match, &config.document_root),
-                        site_match,
-                        route_match,
-                    );
+                ),
+                Ok(StaticPlan::Asset(Err(error))) => {
+                    simple_response(StatusCode::INTERNAL_SERVER_ERROR, &error)
                 }
-                return annotated_response(
+                Ok(StaticPlan::Missing) if path == "/" => annotated_response(
+                    site_root_error_response(site_match, &config.document_root),
+                    site_match,
+                    route_match,
+                ),
+                Ok(StaticPlan::Missing) => annotated_response(
                     not_found_response(
                         "Page not found",
                         "The site matched, but this specific file or page is missing.",
@@ -240,19 +239,12 @@ pub async fn dispatch(
                     ),
                     site_match,
                     route_match,
-                );
-            };
-
-            let asset = match load_static_asset(&path_on_disk) {
-                Ok(asset) => asset,
-                Err(error) => return simple_response(StatusCode::INTERNAL_SERVER_ERROR, &error),
-            };
-
-            return annotated_response(
-                static_response(asset, request.headers()).await,
-                site_match,
-                route_match,
-            );
+                ),
+                Err(error) => simple_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("static file worker failed: {error}"),
+                ),
+            }
         }
         RouteAction::Proxy(upstream) => {
             if site.runtime == "node" {
@@ -289,16 +281,24 @@ pub async fn dispatch(
                 {
                     // Static assets come straight off disk; a gunicorn worker
                     // is far too expensive to spend on a CSS file.
-                    if let Some(file) =
-                        python_static_file(project_root, site.python_entry_file.as_deref(), &path)
-                    {
-                        if let Ok(asset) = load_static_asset(&file) {
-                            return annotated_response(
-                                static_response(asset, request.headers()).await,
-                                site_match,
-                                route_match,
-                            );
-                        }
+                    let static_asset = {
+                        let project_root = project_root.to_path_buf();
+                        let entry_file = site.python_entry_file.clone();
+                        let path = path.clone();
+                        tokio::task::spawn_blocking(move || {
+                            python_static_file(&project_root, entry_file.as_deref(), &path)
+                                .and_then(|file| load_static_asset(&file).ok())
+                        })
+                        .await
+                        .ok()
+                        .flatten()
+                    };
+                    if let Some(asset) = static_asset {
+                        return annotated_response(
+                            static_response(asset, request.headers()).await,
+                            site_match,
+                            route_match,
+                        );
                     }
                     if let Err(error) = ensure_python_process_running(
                         &site.id,
