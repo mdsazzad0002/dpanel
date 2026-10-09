@@ -9,7 +9,7 @@ use axum::http::{Extensions, HeaderMap, StatusCode, Version, header};
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 
 /// Smaller bodies gain nothing from compression.
-const MIN_BYTES: u64 = 1024;
+pub(crate) const MIN_BYTES: u64 = 1024;
 
 /// Put in a response's extensions to send it uncompressed.
 #[derive(Clone, Copy, Debug)]

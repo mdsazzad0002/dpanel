@@ -26,10 +26,73 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         .get("DB_DATABASE")
         .cloned()
         .unwrap_or_else(|| "dpanel".to_string());
-    let stdout = run_mysql(&env, "SELECT w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='ban' THEN r.ip_address END),''),COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='allow' THEN r.ip_address END),''),COALESCE(w.runtime,'php'),w.node_port,COALESCE(w.node_entry_file,''),COALESCE(w.node_start_command,''),COALESCE(w.node_version,''),COALESCE(w.node_process_status,''),w.python_port,COALESCE(w.python_entry_file,''),COALESCE(w.python_start_command,''),COALESCE(w.python_version,''),COALESCE(w.python_process_status,'') FROM websites w LEFT JOIN website_ip_rules r ON r.website_id=w.id GROUP BY w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,w.updated_at,w.runtime,w.node_port,w.node_entry_file,w.node_start_command,w.node_version,w.node_process_status,w.python_port,w.python_entry_file,w.python_start_command,w.python_version,w.python_process_status ORDER BY w.updated_at DESC")?;
+    let (sites, tls) = load_sites(&env, None)?;
+    if sites.is_empty() {
+        return Err("database snapshot returned no active websites".to_string());
+    }
+
+    Ok(RuntimeSnapshot::new(
+        current_version_hint(&database),
+        std::sync::Arc::from(sites),
+        std::sync::Arc::from(tls),
+        CachePolicy {
+            enabled: true,
+            ttl: config.ttl,
+            stale_while_revalidate: Duration::from_secs(1),
+        },
+    ))
+}
+
+/// The sites (and certificates) of just these domains, for a reload after
+/// one site changed: the queries are filtered in SQL instead of reading
+/// every website. A domain with no active site comes back absent, which is
+/// how a deleted or disabled site leaves the gateway.
+pub fn load_domain_sites(
+    config: &DbSnapshotConfig,
+    domains: &[String],
+) -> Result<(Vec<SiteConfig>, Vec<super::TlsConfig>), String> {
+    // Only plain hostnames go into the SQL; anything else cannot be a site.
+    let domains = domains
+        .iter()
+        .map(|domain| normalize_domain(domain))
+        .filter(|domain| {
+            !domain.is_empty()
+                && domain
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+        })
+        .collect::<Vec<_>>();
+    if domains.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    let env = read_env_file(&config.env_path)?;
+    load_sites(&env, Some(&domains))
+}
+
+/// `domains` must already be validated (see `load_domain_sites`).
+fn load_sites(
+    env: &HashMap<String, String>,
+    domains: Option<&[String]>,
+) -> Result<(Vec<SiteConfig>, Vec<super::TlsConfig>), String> {
+    let domain_filter = domains.map(|domains| {
+        let list = domains
+            .iter()
+            .map(|domain| format!("'{domain}'"))
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("LOWER(TRIM(TRAILING '.' FROM TRIM(w.domain))) IN ({list})")
+    });
+    let site_filter = |prefix: &str| {
+        domain_filter.as_ref().map_or(String::new(), |filter| format!(" {prefix} {filter}"))
+    };
+    let stdout = run_mysql(env, &format!("SELECT w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='ban' THEN r.ip_address END),''),COALESCE(GROUP_CONCAT(CASE WHEN r.rule_type='allow' THEN r.ip_address END),''),COALESCE(w.runtime,'php'),w.node_port,COALESCE(w.node_entry_file,''),COALESCE(w.node_start_command,''),COALESCE(w.node_version,''),COALESCE(w.node_process_status,''),w.python_port,COALESCE(w.python_entry_file,''),COALESCE(w.python_start_command,''),COALESCE(w.python_version,''),COALESCE(w.python_process_status,'') FROM websites w LEFT JOIN website_ip_rules r ON r.website_id=w.id{} GROUP BY w.id,w.domain,w.scope,w.site_owner,w.root_path,w.project_root,w.start_directory,w.php_version,w.enable_ssl,w.status,w.type,w.updated_at,w.runtime,w.node_port,w.node_entry_file,w.node_start_command,w.node_version,w.node_process_status,w.python_port,w.python_entry_file,w.python_start_command,w.python_version,w.python_process_status ORDER BY w.updated_at DESC", site_filter("WHERE")))?;
     // Cache settings live in their own table and are optional: a panel that
     // has not migrated yet must not take every website down with it.
-    let mut cache_settings = match run_mysql(&env, CACHE_SETTINGS_SQL) {
+    let cache_sql = match &domain_filter {
+        Some(filter) => format!("{CACHE_SETTINGS_SQL} WHERE website_id IN (SELECT w.id FROM websites w WHERE {filter})"),
+        None => CACHE_SETTINGS_SQL.to_string(),
+    };
+    let mut cache_settings = match run_mysql(env, &cache_sql) {
         Ok(rows) => parse_cache_settings(&rows),
         Err(error) => {
             tracing::warn!(%error, "edge cache settings unavailable; caching stays off");
@@ -38,7 +101,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
     };
     // Queried separately for the same reason: before the column's migration
     // runs, sites just fall back to the default worker count.
-    let python_run = match run_mysql(&env, PYTHON_RUN_SQL) {
+    let python_run = match run_mysql(env, &format!("{PYTHON_RUN_SQL}{}", site_filter("AND"))) {
         Ok(rows) => parse_python_run(&rows),
         Err(error) => {
             tracing::warn!(%error, "python worker settings unavailable; using defaults");
@@ -47,7 +110,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
     };
 
     // Same again for Docker sites: before their migration runs, none exist.
-    let docker_ports = match run_mysql(&env, DOCKER_PORT_SQL) {
+    let docker_ports = match run_mysql(env, &format!("{DOCKER_PORT_SQL}{}", site_filter("AND"))) {
         Ok(rows) => parse_docker_ports(&rows),
         Err(error) => {
             tracing::warn!(%error, "docker site ports unavailable");
@@ -168,20 +231,7 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
         }
     }
 
-    if sites.is_empty() {
-        return Err("database snapshot returned no active websites".to_string());
-    }
-
-    Ok(RuntimeSnapshot::new(
-        current_version_hint(&database),
-        std::sync::Arc::from(sites),
-        std::sync::Arc::from(tls),
-        CachePolicy {
-            enabled: true,
-            ttl: config.ttl,
-            stale_while_revalidate: Duration::from_secs(1),
-        },
-    ))
+    Ok((sites, tls))
 }
 
 fn run_mysql(env: &HashMap<String, String>, sql: &str) -> Result<String, String> {
@@ -215,7 +265,7 @@ fn run_mysql(env: &HashMap<String, String>, sql: &str) -> Result<String, String>
 /// Lists become space-separated so each row stays on one line.
 const CACHE_SETTINGS_SQL: &str = "SELECT website_id,mode,edge_ttl,COALESCE(browser_ttl,0),REPLACE(REPLACE(COALESCE(bypass_paths,''),CHAR(13),' '),CHAR(10),' '),REPLACE(REPLACE(COALESCE(bypass_cookies,''),CHAR(13),' '),CHAR(10),' '),ignore_query_string,serve_stale,COALESCE(development_mode_until,0) FROM website_edge_cache";
 
-const DOCKER_PORT_SQL: &str = "SELECT id,COALESCE(docker_port,0) FROM websites WHERE runtime='docker'";
+const DOCKER_PORT_SQL: &str = "SELECT w.id,COALESCE(w.docker_port,0) FROM websites w WHERE w.runtime='docker'";
 
 fn parse_docker_ports(rows: &str) -> HashMap<String, u16> {
     rows.lines()
@@ -228,7 +278,7 @@ fn parse_docker_ports(rows: &str) -> HashMap<String, u16> {
         .collect()
 }
 
-const PYTHON_RUN_SQL: &str = "SELECT id,COALESCE(python_workers,0),COALESCE(python_mode,''),COALESCE(python_timeout,0) FROM websites WHERE runtime='python'";
+const PYTHON_RUN_SQL: &str = "SELECT w.id,COALESCE(w.python_workers,0),COALESCE(w.python_mode,''),COALESCE(w.python_timeout,0) FROM websites w WHERE w.runtime='python'";
 
 fn parse_python_run(rows: &str) -> HashMap<String, super::PythonRunOptions> {
     rows.lines()

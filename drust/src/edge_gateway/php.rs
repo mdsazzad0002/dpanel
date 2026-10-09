@@ -11,12 +11,31 @@ use axum::{
     body::Body,
     http::{HeaderName, HeaderValue, Request, Response, StatusCode, header},
 };
+use bytes::Bytes;
+use futures_util::StreamExt;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader},
     net::UnixStream,
-    time::timeout,
+    sync::mpsc,
+    time::{Instant, timeout_at},
 };
 use tracing::warn;
+
+/// PHP output up to this size is read whole and returned with an exact
+/// length, so the edge cache can store it. Anything larger (downloads,
+/// exports) is streamed to the client as PHP produces it instead of being
+/// held in memory first.
+const BUFFERED_RESPONSE_BYTES: usize = 1024 * 1024;
+/// Request bodies with a declared length above this are streamed to PHP-FPM
+/// rather than read into memory; PHP's own post_max_size still applies.
+const STREAMED_REQUEST_BYTES: u64 = 1024 * 1024;
+/// Request bodies without a declared length must be read to learn it.
+const MAX_UNSIZED_REQUEST_BYTES: usize = 64 * 1024 * 1024;
+
+enum RequestInput {
+    Buffered(Bytes),
+    Streamed { body: Body, length: u64 },
+}
 
 pub async fn execute_php_front_controller(
     request: Request<Body>,
@@ -26,9 +45,23 @@ pub async fn execute_php_front_controller(
 ) -> Result<Response<Body>, String> {
     let socket = resolve_fpm_socket(php_version, site_owner).await?;
     let (parts, body) = request.into_parts();
-    let body = axum::body::to_bytes(body, 64 * 1024 * 1024)
-        .await
-        .map_err(|error| format!("read PHP request body failed: {error}"))?;
+    let declared_length = parts
+        .headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok());
+    let (input, content_length) = match declared_length {
+        Some(length) if length > STREAMED_REQUEST_BYTES => {
+            (RequestInput::Streamed { body, length }, length)
+        }
+        _ => {
+            let body = axum::body::to_bytes(body, MAX_UNSIZED_REQUEST_BYTES)
+                .await
+                .map_err(|error| format!("read PHP request body failed: {error}"))?;
+            let length = body.len() as u64;
+            (RequestInput::Buffered(body), length)
+        }
+    };
     let host = parts
         .headers
         .get(header::HOST)
@@ -41,7 +74,14 @@ pub async fn execute_php_front_controller(
         .map(|value| value.as_str())
         .unwrap_or("/");
     let query_string = parts.uri.query().unwrap_or("");
-    let (script, script_name) = resolve_php_script(document_root, parts.uri.path())?;
+    // canonicalize() and is_file() hit the disk; keep them off the async workers.
+    let (script, script_name) = {
+        let root = document_root.to_path_buf();
+        let path = parts.uri.path().to_string();
+        tokio::task::spawn_blocking(move || resolve_php_script(&root, &path))
+            .await
+            .map_err(|error| format!("PHP script lookup failed: {error}"))??
+    };
     let is_https = forwarded_request_is_https(&parts.headers);
 
     let mut params = vec![
@@ -69,7 +109,7 @@ pub async fn execute_php_front_controller(
         ("REDIRECT_STATUS".into(), "200".into()),
         ("REMOTE_ADDR".into(), "127.0.0.1".into()),
         ("HTTP_HOST".into(), host.into()),
-        ("CONTENT_LENGTH".into(), body.len().to_string()),
+        ("CONTENT_LENGTH".into(), content_length.to_string()),
         ("PHP_VALUE".into(), "zlib.output_compression=0".into()),
         ("PHP_ADMIN_VALUE".into(), "zlib.output_compression=0".into()),
     ];
@@ -123,82 +163,155 @@ pub async fn execute_php_front_controller(
     // Most requests finish in milliseconds, but a few (website backup/quick-export,
     // restore) block on a synchronous dRust archive call that can legitimately run
     // for minutes on a large site/database. PHP-FPM's own request_terminate_timeout
-    // is disabled, so this wrapper is the only hard cap — keep it well above those.
-    let (stdout, stderr) = timeout(
-        Duration::from_secs(3600),
-        fastcgi_request(&socket, &params, &body),
-    )
-    .await
-    .map_err(|_| "PHP-FPM request timed out".to_string())??;
-    if !stderr.is_empty() {
-        warn!(message = %String::from_utf8_lossy(&stderr).trim(), "PHP-FPM stderr");
-    }
-    parse_cgi_response(&stdout)
+    // is disabled, so this deadline is the only hard cap — keep it well above those.
+    // It covers the whole exchange, including a streamed response body.
+    let deadline = Instant::now() + Duration::from_secs(3600);
+    timeout_at(deadline, fastcgi_request(&socket, &params, input, deadline))
+        .await
+        .map_err(|_| "PHP-FPM request timed out".to_string())?
 }
 
 async fn fastcgi_request(
     socket: &Path,
     params: &[(String, String)],
-    body: &[u8],
-) -> Result<(Vec<u8>, Vec<u8>), String> {
+    input: RequestInput,
+    deadline: Instant,
+) -> Result<Response<Body>, String> {
     let mut stream = UnixStream::connect(socket)
         .await
         .map_err(|e| format!("connect PHP-FPM failed: {e}"))?;
-    fastcgi_exchange(&mut stream, params, body).await
+    send_fastcgi_request(&mut stream, params, input).await?;
+    let mut stream = BufReader::new(stream);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    loop {
+        match read_fcgi_record(&mut stream).await? {
+            FcgiRecord::Stdout(content) => stdout.extend(content),
+            FcgiRecord::Stderr(content) => stderr.extend(content),
+            FcgiRecord::End => {
+                log_php_stderr(&stderr);
+                return parse_cgi_response(&stdout);
+            }
+            FcgiRecord::Other => {}
+        }
+        if stdout.len() > BUFFERED_RESPONSE_BYTES {
+            break;
+        }
+    }
+
+    // Too big to hold: send what is here and stream the rest as it comes.
+    let (header_end, separator) = find_header_end(&stdout)
+        .ok_or_else(|| "invalid FastCGI response: headers missing".to_string())?;
+    let first = Bytes::from(stdout.split_off(header_end + separator));
+    let mut response = parse_cgi_head(&String::from_utf8_lossy(&stdout[..header_end]))?;
+    let (sender, receiver) = mpsc::channel::<Result<Bytes, std::io::Error>>(8);
+    let _ = sender.try_send(Ok(first));
+    tokio::spawn(async move {
+        loop {
+            let item = match timeout_at(deadline, read_fcgi_record(&mut stream)).await {
+                Ok(Ok(FcgiRecord::Stdout(content))) => Ok(Bytes::from(content)),
+                Ok(Ok(FcgiRecord::Stderr(content))) => {
+                    stderr.extend(content);
+                    continue;
+                }
+                Ok(Ok(FcgiRecord::End)) => break,
+                Ok(Ok(FcgiRecord::Other)) => continue,
+                Ok(Err(error)) => Err(std::io::Error::other(error)),
+                Err(_) => Err(std::io::Error::other("PHP-FPM request timed out")),
+            };
+            let failed = item.is_err();
+            // A send error means the client went away; dropping the socket
+            // tells PHP-FPM to stop.
+            if sender.send(item).await.is_err() || failed {
+                break;
+            }
+        }
+        log_php_stderr(&stderr);
+    });
+    let body = futures_util::stream::unfold(receiver, |mut receiver| async move {
+        receiver.recv().await.map(|item| (item, receiver))
+    });
+    *response.body_mut() = Body::from_stream(body);
+    Ok(response)
 }
 
-async fn fastcgi_exchange(
-    stream: &mut UnixStream,
+fn log_php_stderr(stderr: &[u8]) {
+    if !stderr.is_empty() {
+        warn!(message = %String::from_utf8_lossy(stderr).trim(), "PHP-FPM stderr");
+    }
+}
+
+async fn send_fastcgi_request<W: AsyncWrite + Unpin>(
+    stream: &mut W,
     params: &[(String, String)],
-    body: &[u8],
-) -> Result<(Vec<u8>, Vec<u8>), String> {
+    input: RequestInput,
+) -> Result<(), String> {
     write_fcgi_record(stream, 1, &[0, 1, 0, 0, 0, 0, 0, 0]).await?;
     let encoded = encode_params(params)?;
     for chunk in encoded.chunks(u16::MAX as usize) {
         write_fcgi_record(stream, 4, chunk).await?;
     }
     write_fcgi_record(stream, 4, &[]).await?;
-    for chunk in body.chunks(u16::MAX as usize) {
-        write_fcgi_record(stream, 5, chunk).await?;
+    match input {
+        RequestInput::Buffered(body) => {
+            for chunk in body.chunks(u16::MAX as usize) {
+                write_fcgi_record(stream, 5, chunk).await?;
+            }
+        }
+        RequestInput::Streamed { body, length } => {
+            let mut remaining = length;
+            let mut data = body.into_data_stream();
+            while remaining > 0 {
+                let Some(chunk) = data.next().await else {
+                    return Err("request body ended before its Content-Length".into());
+                };
+                let chunk = chunk.map_err(|error| format!("read PHP request body failed: {error}"))?;
+                let take = chunk.len().min(usize::try_from(remaining).unwrap_or(usize::MAX));
+                for piece in chunk[..take].chunks(u16::MAX as usize) {
+                    write_fcgi_record(stream, 5, piece).await?;
+                }
+                remaining -= take as u64;
+            }
+        }
     }
     write_fcgi_record(stream, 5, &[]).await?;
-    stream.flush().await.map_err(|e| e.to_string())?;
-    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
-    loop {
-        let mut header = [0u8; 8];
-        stream
-            .read_exact(&mut header)
-            .await
-            .map_err(|e| format!("read FastCGI header failed: {e}"))?;
-        if header[0] != 1 {
-            return Err("unsupported FastCGI version".into());
-        }
-        let length = u16::from_be_bytes([header[4], header[5]]) as usize;
-        let padding = header[6] as usize;
-        let mut content = vec![0; length];
-        stream
-            .read_exact(&mut content)
-            .await
-            .map_err(|e| e.to_string())?;
-        if padding > 0 {
-            let mut discard = vec![0; padding];
-            stream
-                .read_exact(&mut discard)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-        match header[1] {
-            6 => stdout.extend(content),
-            7 => stderr.extend(content),
-            3 => break,
-            _ => {}
-        }
-    }
-    Ok((stdout, stderr))
+    stream.flush().await.map_err(|e| e.to_string())
 }
 
-async fn write_fcgi_record(
-    stream: &mut UnixStream,
+enum FcgiRecord {
+    Stdout(Vec<u8>),
+    Stderr(Vec<u8>),
+    End,
+    Other,
+}
+
+async fn read_fcgi_record<R: AsyncRead + Unpin>(stream: &mut R) -> Result<FcgiRecord, String> {
+    let mut header = [0u8; 8];
+    stream
+        .read_exact(&mut header)
+        .await
+        .map_err(|e| format!("read FastCGI header failed: {e}"))?;
+    if header[0] != 1 {
+        return Err("unsupported FastCGI version".into());
+    }
+    let length = u16::from_be_bytes([header[4], header[5]]) as usize;
+    let padding = header[6] as usize;
+    let mut content = vec![0; length + padding];
+    stream
+        .read_exact(&mut content)
+        .await
+        .map_err(|e| e.to_string())?;
+    content.truncate(length);
+    Ok(match header[1] {
+        6 => FcgiRecord::Stdout(content),
+        7 => FcgiRecord::Stderr(content),
+        3 => FcgiRecord::End,
+        _ => FcgiRecord::Other,
+    })
+}
+
+async fn write_fcgi_record<W: AsyncWrite + Unpin>(
+    stream: &mut W,
     kind: u8,
     content: &[u8],
 ) -> Result<(), String> {
@@ -362,14 +475,18 @@ async fn resolve_fpm_socket(
     site_owner: Option<&str>,
 ) -> Result<PathBuf, String> {
     let version = php_version.unwrap_or("8.3");
-    let site_pools_enabled = std::env::var("DRUST_SITE_POOLS")
-        .map(|value| {
-            !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "0" | "false" | "off" | "no"
-            )
-        })
-        .unwrap_or(true);
+    // Read once: this runs on every PHP request and env lookups take a lock.
+    static SITE_POOLS: OnceLock<bool> = OnceLock::new();
+    let site_pools_enabled = *SITE_POOLS.get_or_init(|| {
+        std::env::var("DRUST_SITE_POOLS")
+            .map(|value| {
+                !matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "0" | "false" | "off" | "no"
+                )
+            })
+            .unwrap_or(true)
+    });
 
     if site_pools_enabled {
         if let Some(raw_owner) = site_owner {
@@ -649,8 +766,9 @@ fn reload_fpm_service(version: &str) -> Result<(), String> {
     }
 }
 
-fn parse_cgi_response(output: &[u8]) -> Result<Response<Body>, String> {
-    let split = output
+/// Where the CGI header block ends, and how long the blank line after it is.
+fn find_header_end(output: &[u8]) -> Option<(usize, usize)> {
+    output
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
         .map(|position| (position, 4))
@@ -660,11 +778,27 @@ fn parse_cgi_response(output: &[u8]) -> Result<Response<Body>, String> {
                 .position(|window| window == b"\n\n")
                 .map(|position| (position, 2))
         })
-        .ok_or_else(|| "invalid FastCGI response: headers missing".to_string())?;
-    let header_block = String::from_utf8_lossy(&output[..split.0]);
-    let body_bytes = &output[split.0 + split.1..];
-    let mut response = Response::new(Body::from(body_bytes.to_vec()));
+}
 
+fn parse_cgi_response(output: &[u8]) -> Result<Response<Body>, String> {
+    let split = find_header_end(output)
+        .ok_or_else(|| "invalid FastCGI response: headers missing".to_string())?;
+    let body_bytes = &output[split.0 + split.1..];
+    let mut response = parse_cgi_head(&String::from_utf8_lossy(&output[..split.0]))?;
+    *response.body_mut() = Body::from(body_bytes.to_vec());
+
+    // Some PHP handlers emit gzip metadata on an empty redirect response.
+    // Browsers treat that as a corrupt compressed payload.
+    if body_bytes.is_empty() {
+        response.headers_mut().remove(header::CONTENT_ENCODING);
+        response.headers_mut().remove(header::CONTENT_LENGTH);
+    }
+
+    Ok(response)
+}
+
+fn parse_cgi_head(header_block: &str) -> Result<Response<Body>, String> {
+    let mut response = Response::new(Body::empty());
     for line in header_block.lines() {
         let Some((name, value)) = line.trim_end_matches('\r').split_once(':') else {
             continue;
@@ -682,20 +816,95 @@ fn parse_cgi_response(output: &[u8]) -> Result<Response<Body>, String> {
             .map_err(|error| format!("invalid PHP response header value: {error}"))?;
         response.headers_mut().append(name, value);
     }
-
-    // Some PHP handlers emit gzip metadata on an empty redirect response.
-    // Browsers treat that as a corrupt compressed payload.
-    if body_bytes.is_empty() {
-        response.headers_mut().remove(header::CONTENT_ENCODING);
-        response.headers_mut().remove(header::CONTENT_LENGTH);
-    }
-
     Ok(response)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http_body::Body as _;
+
+    /// A PHP-FPM stand-in: counts the stdin bytes it gets, then answers with
+    /// `body_len` bytes of output split into many records.
+    async fn fake_fpm(name: &str, body_len: usize) -> (PathBuf, tokio::task::JoinHandle<usize>) {
+        let socket = std::env::temp_dir().join(format!("drust-fpm-{name}-{}.sock", std::process::id()));
+        let _ = fs::remove_file(&socket);
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut stream = BufReader::new(stream);
+            let mut stdin = 0;
+            loop {
+                let mut header = [0u8; 8];
+                if stream.read_exact(&mut header).await.is_err() {
+                    return stdin;
+                }
+                let length = u16::from_be_bytes([header[4], header[5]]) as usize;
+                let mut content = vec![0; length + header[6] as usize];
+                stream.read_exact(&mut content).await.unwrap();
+                if header[1] == 5 {
+                    if length == 0 {
+                        break;
+                    }
+                    stdin += length;
+                }
+            }
+            let stream = stream.get_mut();
+            write_fcgi_record(stream, 6, b"Content-Type: text/plain\r\n\r\n").await.unwrap();
+            let chunk = vec![b'x'; 32 * 1024];
+            let mut left = body_len;
+            while left > 0 {
+                let take = left.min(chunk.len());
+                if write_fcgi_record(stream, 6, &chunk[..take]).await.is_err() {
+                    return stdin;
+                }
+                left -= take;
+            }
+            let _ = write_fcgi_record(stream, 3, &[0; 8]).await;
+            stdin
+        });
+        (socket, server)
+    }
+
+    fn deadline() -> Instant {
+        Instant::now() + Duration::from_secs(10)
+    }
+
+    #[tokio::test]
+    async fn small_php_output_is_returned_whole() {
+        let (socket, server) = fake_fpm("small", 1000).await;
+        let input = RequestInput::Buffered(Bytes::from_static(b"name=value"));
+        let response = fastcgi_request(&socket, &[], input, deadline()).await.unwrap();
+        // An exact size is what lets the edge cache store the page.
+        assert_eq!(response.body().size_hint().exact(), Some(1000));
+        assert_eq!(server.await.unwrap(), 10);
+        let _ = fs::remove_file(&socket);
+    }
+
+    #[tokio::test]
+    async fn large_uploads_and_output_are_streamed() {
+        let output_len = 3 * BUFFERED_RESPONSE_BYTES;
+        let (socket, server) = fake_fpm("large", output_len).await;
+        let upload = vec![b'u'; 2 * 1024 * 1024 + 1];
+        let input = RequestInput::Streamed { length: upload.len() as u64, body: Body::from(upload) };
+        let response = fastcgi_request(&socket, &[], input, deadline()).await.unwrap();
+        assert_eq!(response.headers().get(header::CONTENT_TYPE).unwrap(), "text/plain");
+        assert_eq!(response.body().size_hint().exact(), None);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(body.len(), output_len);
+        assert!(body.iter().all(|byte| *byte == b'x'));
+        assert_eq!(server.await.unwrap(), 2 * 1024 * 1024 + 1);
+        let _ = fs::remove_file(&socket);
+    }
+
+    #[tokio::test]
+    async fn an_upload_shorter_than_its_length_fails() {
+        let (socket, _server) = fake_fpm("short", 10).await;
+        let input = RequestInput::Streamed { length: 5000, body: Body::from(vec![0u8; 100]) };
+        let error = fastcgi_request(&socket, &[], input, deadline()).await.unwrap_err();
+        assert!(error.contains("Content-Length"), "{error}");
+        let _ = fs::remove_file(&socket);
+    }
 
     #[test]
     fn parses_cgi_status_headers_and_body() {

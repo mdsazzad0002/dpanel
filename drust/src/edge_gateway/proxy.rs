@@ -135,12 +135,36 @@ pub async fn proxy_request_with_timeout(
             stream: Box::pin(response.bytes_stream()),
             remaining: response_length,
         })
-    } else {
+    } else if response_length.is_some() || is_head {
         let bytes = tokio::time::timeout_at(deadline, response.bytes())
             .await
             .map_err(|_| format!("upstream did not finish within {}s", timeout.as_secs()))?
             .map_err(|error| format!("read upstream response failed: {error}"))?;
         Body::from(bytes)
+    } else {
+        // No Content-Length (chunked): read up to the threshold, so small
+        // pages stay cacheable, then stream the rest. Buffering it all held
+        // a large download in memory and cut it off at the head timeout.
+        let mut upstream = Box::pin(response.bytes_stream());
+        let mut buffered = Vec::new();
+        let mut overflow = false;
+        while let Some(chunk) = tokio::time::timeout_at(deadline, upstream.next())
+            .await
+            .map_err(|_| format!("upstream did not finish within {}s", timeout.as_secs()))?
+        {
+            let chunk = chunk.map_err(|error| format!("read upstream response failed: {error}"))?;
+            buffered.extend_from_slice(&chunk);
+            if buffered.len() as u64 > STREAM_THRESHOLD_BYTES {
+                overflow = true;
+                break;
+            }
+        }
+        if overflow {
+            let head = futures_util::stream::once(async move { Ok(Bytes::from(buffered)) });
+            Body::new(UpstreamBody { stream: Box::pin(head.chain(upstream)), remaining: None })
+        } else {
+            Body::from(buffered)
+        }
     };
 
     let mut axum_response = Response::new(body);
@@ -287,6 +311,31 @@ mod tests {
             .route("/big", get(|| async { vec![b'x'; 5 * 1024 * 1024] }))
             .route("/small", get(|| async { "hello" }))
             .route(
+                "/chunked",
+                get(|| async {
+                    // 3 MiB at once, then more after a pause longer than the
+                    // test's timeout: it must stream, not time out.
+                    let chunks = futures_util::stream::unfold(0, |count| async move {
+                        match count {
+                            0 => Some((Ok::<_, std::io::Error>(Bytes::from(vec![b'c'; 3 * 1024 * 1024])), 1)),
+                            1 => {
+                                tokio::time::sleep(Duration::from_millis(1500)).await;
+                                Some((Ok(Bytes::from(vec![b'c'; 1024 * 1024])), 2))
+                            }
+                            _ => None,
+                        }
+                    });
+                    Body::from_stream(chunks)
+                }),
+            )
+            .route(
+                "/chunked-small",
+                get(|| async {
+                    let chunks = futures_util::stream::iter([Ok::<_, std::io::Error>(Bytes::from_static(b"ab")), Ok(Bytes::from_static(b"cd"))]);
+                    Body::from_stream(chunks)
+                }),
+            )
+            .route(
                 "/slow",
                 get(|| async {
                     tokio::time::sleep(Duration::from_secs(3)).await;
@@ -339,6 +388,24 @@ mod tests {
         assert_eq!(big.body().size_hint().exact(), Some(5 * 1024 * 1024));
         let body = axum::body::to_bytes(big.into_body(), usize::MAX).await.unwrap();
         assert_eq!(body.len(), 5 * 1024 * 1024);
+    }
+
+    #[tokio::test]
+    async fn chunked_responses_buffer_when_small_and_stream_when_large() {
+        let upstream = UpstreamConfig::Http(spawn_upstream().await);
+        let client = build_client(&ProxyConfig::default()).unwrap();
+
+        let small = proxy_request_with_timeout(&client, &upstream, get_request("/chunked-small"), Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(small.body().size_hint().exact(), Some(4));
+
+        let large = proxy_request_with_timeout(&client, &upstream, get_request("/chunked"), Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert_eq!(large.body().size_hint().exact(), None);
+        let body = axum::body::to_bytes(large.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(body.len(), 4 * 1024 * 1024);
     }
 
     #[tokio::test]

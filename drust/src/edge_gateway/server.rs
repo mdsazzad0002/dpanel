@@ -113,6 +113,7 @@ pub fn serve_gateway_with_tls(
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
         spawn_redis_reload_listener(state.clone());
+        spawn_snapshot_poll(state.clone());
         let app_router = build_demo_router(state).layer(map_request(ensure_host_header));
         let https_router = app_router.clone().layer(map_request(mark_https_request));
 
@@ -127,12 +128,7 @@ pub fn serve_gateway_with_tls(
             } else {
                 app_router.clone()
             };
-            axum::serve(
-                http_listener,
-                router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-            )
-                .await
-                .map_err(|error| format!("http server failed: {error}"))
+            serve_listener(http_listener, router, None).await
         });
 
         let https_task = if let Some((server_config, resolver)) = tls_built {
@@ -324,19 +320,48 @@ pub async fn handle_request(
     });
     let head = request.method() == axum::http::Method::HEAD;
     let mut stale = None;
-    if let (edge_cache::Decision::Lookup { key, .. }, Some(domain)) = (&decision, &canonical_domain) {
-        match state.edge_cache.lookup(key) {
-            edge_cache::Lookup::Fresh(entry) => {
-                let response = entry.respond(request.headers(), head, "HIT");
-                let bytes = response.body().size_hint().exact().unwrap_or(0);
-                state.edge_cache.record(domain, edge_cache::Outcome::Hit, bytes);
-                state.bandwidth.record(domain, upload_bytes, bytes);
-                return response;
+    let mut _fill_guard = None;
+    if let (edge_cache::Decision::Lookup { key, .. }, Some(domain), Some(site)) =
+        (&decision, &canonical_domain, site)
+    {
+        // Only the headers: `Body` is not Sync, so borrowing the whole
+        // request across the wait below would make this future non-Send.
+        let request_headers = request.headers();
+        let shared = &state;
+        let serve = |entry: Arc<edge_cache::CachedResponse>, label, outcome| async move {
+            let mut response = entry.respond(request_headers, head, label);
+            if !head {
+                response = super::precompress::encode(response, request_headers, &entry.body, &entry.variants).await;
             }
-            edge_cache::Lookup::Stale(entry) => stale = Some((entry, request.headers().clone())),
+            let bytes = response.body().size_hint().exact().unwrap_or(0);
+            shared.edge_cache.record(domain, outcome, bytes);
+            shared.bandwidth.record(domain, upload_bytes, bytes);
+            response
+        };
+        match state.edge_cache.lookup(key) {
+            edge_cache::Lookup::Fresh(entry) => return serve(entry, "HIT", edge_cache::Outcome::Hit).await,
+            edge_cache::Lookup::Stale(entry) => stale = Some(entry),
             edge_cache::Lookup::Miss => {}
         }
+        // HEAD responses are never stored, so they neither lead nor wait.
+        if !head {
+            match state.edge_cache.begin_fill(key) {
+                edge_cache::Fill::Leader(guard) => _fill_guard = guard,
+                edge_cache::Fill::Wait(receiver) => {
+                    // Someone is already refreshing this copy; the old one
+                    // stands in meanwhile when the site allows stale copies.
+                    if let (Some(entry), true) = (&stale, site.cache.serve_stale) {
+                        return serve(entry.clone(), "STALE", edge_cache::Outcome::Stale).await;
+                    }
+                    edge_cache::wait_for_fill(receiver, state.edge_cache.fill_wait).await;
+                    if let edge_cache::Lookup::Fresh(entry) = state.edge_cache.lookup(key) {
+                        return serve(entry, "HIT", edge_cache::Outcome::Hit).await;
+                    }
+                }
+            }
+        }
     }
+    let stale = stale.map(|entry| (entry, request.headers().clone()));
     let response = dispatch(
         site,
         &state.dispatch,
@@ -351,7 +376,15 @@ pub async fn handle_request(
         _ => response,
     };
     if let Some(domain) = canonical_domain {
-        let download_bytes = response.body().size_hint().exact().unwrap_or(0);
+        // Streamed bodies (large PHP output) have no exact size up front.
+        let download_bytes = response.body().size_hint().exact().unwrap_or_else(|| {
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0)
+        });
         state
             .bandwidth
             .record(&domain, upload_bytes, download_bytes);
@@ -431,6 +464,7 @@ async fn finish_cacheable(
             stored_at: std::time::Instant::now(),
             fresh_until: std::time::Instant::now(),
             stale_until: std::time::Instant::now(),
+            variants: Default::default(),
         },
         ttl,
         site.cache.serve_stale,
@@ -565,19 +599,7 @@ async fn reload_snapshot(state: &Arc<DemoServerState>) -> Result<u64, (String, u
     let source = state.source_config.clone();
     let loaded = tokio::task::spawn_blocking(move || load_runtime_snapshot(&source)).await;
     match loaded {
-        Ok(Ok(next)) => {
-            let version = next.version;
-            if let Some(resolver) = &state.tls_resolver {
-                let store = tls_store_from_snapshot(&next);
-                if let Err(error) = resolver.update(&store) {
-                    warn!(%error, version, "TLS certificate reload failed; keeping previously loaded certificates");
-                }
-            }
-            *state.snapshot.write().await = Arc::new(next);
-            super::clear_static_cache();
-            super::clear_canonical_root_cache();
-            Ok(version)
-        }
+        Ok(Ok(next)) => Ok(apply_snapshot(state, next).await),
         Ok(Err(error)) => Err((error, state.snapshot.read().await.version)),
         Err(error) => Err((
             format!("snapshot reload worker failed: {error}"),
@@ -600,54 +622,58 @@ async fn reload_domains(
     }
 
     let source = state.source_config.clone();
-    let loaded = tokio::task::spawn_blocking(move || load_runtime_snapshot(&source)).await;
+    let wanted = domains.iter().cloned().collect::<Vec<_>>();
+    let loaded =
+        tokio::task::spawn_blocking(move || super::load_domain_sites(&source, &wanted)).await;
     match loaded {
-        Ok(Ok(next)) => {
+        Ok(Ok((fresh_sites, fresh_tls))) => {
             let current = state.snapshot.read().await.clone();
+            let targeted = |hostnames: &[String]| {
+                hostnames.first().is_some_and(|domain| domains.contains(domain))
+            };
             let mut roots = Vec::new();
             let mut sites = current
                 .sites
                 .iter()
                 .filter(|site| {
-                    let targeted = site
-                        .hostnames
-                        .first()
-                        .is_some_and(|domain| domains.contains(domain));
-                    if targeted {
+                    if targeted(&site.hostnames) {
                         if let Some(root) = &site.document_root {
                             roots.push(root.clone());
                         }
+                        return false;
                     }
-                    !targeted
+                    true
                 })
                 .cloned()
                 .collect::<Vec<_>>();
-            for site in next.sites.iter().filter(|site| {
-                site.hostnames
-                    .first()
-                    .is_some_and(|domain| domains.contains(domain))
-            }) {
+            for site in fresh_sites {
                 if let Some(root) = &site.document_root {
                     roots.push(root.clone());
                 }
-                sites.push(site.clone());
+                sites.push(site);
             }
-
-            // TLS is refreshed from the fresh snapshot: enabling SSL or
-            // issuing a certificate arrives as a per-domain reload, and
-            // keeping `current.tls` left the new certificate unserved.
-            if let Some(resolver) = &state.tls_resolver {
-                let store = tls_store_from_snapshot(&next);
-                if let Err(error) = resolver.update(&store) {
-                    warn!(%error, version = next.version, "TLS certificate reload failed; keeping previously loaded certificates");
-                }
-            }
+            // Only the targeted domains' certificates change: enabling SSL or
+            // issuing a certificate arrives as a per-domain reload.
+            let mut tls = current
+                .tls
+                .iter()
+                .filter(|config| !targeted(&config.hostnames))
+                .cloned()
+                .collect::<Vec<_>>();
+            tls.extend(fresh_tls);
             let updated = RuntimeSnapshot::new(
-                next.version,
+                current.version,
                 Arc::from(sites),
-                next.tls.clone(),
+                Arc::from(tls),
                 current.cache.clone(),
             );
+            if let Some(resolver) = &state.tls_resolver {
+                let store = tls_store_from_snapshot(&updated);
+                if let Err(error) = resolver.update(&store) {
+                    warn!(%error, version = updated.version, "TLS certificate reload failed; keeping previously loaded certificates");
+                }
+            }
+            let version = updated.version;
             *state.snapshot.write().await = Arc::new(updated);
             super::clear_static_cache_under(&roots);
             super::clear_canonical_root_cache_under(&roots);
@@ -656,7 +682,7 @@ async fn reload_domains(
             for domain in &domains {
                 state.edge_cache.purge(Some(domain), &[], &[]);
             }
-            Ok(next.version)
+            Ok(version)
         }
         Ok(Err(error)) => Err((error, state.snapshot.read().await.version)),
         Err(error) => Err((
@@ -664,6 +690,77 @@ async fn reload_domains(
             state.snapshot.read().await.version,
         )),
     }
+}
+
+async fn apply_snapshot(state: &Arc<DemoServerState>, next: RuntimeSnapshot) -> u64 {
+    let version = next.version;
+    if let Some(resolver) = &state.tls_resolver {
+        let store = tls_store_from_snapshot(&next);
+        if let Err(error) = resolver.update(&store) {
+            warn!(%error, version, "TLS certificate reload failed; keeping previously loaded certificates");
+        }
+    }
+    *state.snapshot.write().await = Arc::new(next);
+    super::clear_static_cache();
+    super::clear_canonical_root_cache();
+    version
+}
+
+/// Identifies a snapshot's content regardless of site order (a per-domain
+/// reload appends its sites, a full load sorts by last update).
+fn snapshot_fingerprint(snapshot: &RuntimeSnapshot) -> u64 {
+    use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+    let hasher = BuildHasherDefault::<DefaultHasher>::default();
+    let mut parts = snapshot
+        .sites
+        .iter()
+        .map(|site| hasher.hash_one(format!("{site:?}")))
+        .chain(snapshot.tls.iter().map(|tls| hasher.hash_one(format!("tls {tls:?}"))))
+        .collect::<Vec<_>>();
+    parts.sort_unstable();
+    hasher.hash_one(parts)
+}
+
+/// Safety net for lost reload signals (Redis down and the HTTP fallback
+/// failing, or a database edit made outside the panel): re-reads the
+/// database every `DRUST_SNAPSHOT_POLL_SECONDS` (60; 0 turns it off) and
+/// applies it only when something actually changed, so the in-memory
+/// caches are not thrown away for nothing.
+fn spawn_snapshot_poll(state: DemoServerState) {
+    let seconds = std::env::var("DRUST_SNAPSHOT_POLL_SECONDS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(60);
+    if seconds == 0 {
+        return;
+    }
+    let state = Arc::new(state);
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(seconds.max(5)));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            let source = state.source_config.clone();
+            let next = match tokio::task::spawn_blocking(move || load_runtime_snapshot(&source)).await {
+                Ok(Ok(next)) => next,
+                Ok(Err(error)) => {
+                    warn!(%error, "snapshot poll failed; keeping the current snapshot");
+                    continue;
+                }
+                Err(error) => {
+                    warn!(%error, "snapshot poll worker failed");
+                    continue;
+                }
+            };
+            let current = state.snapshot.read().await.clone();
+            if snapshot_fingerprint(&next) == snapshot_fingerprint(&current) {
+                continue;
+            }
+            info!("website settings changed without a reload signal; applying them");
+            apply_snapshot(&state, next).await;
+        }
+    });
 }
 
 fn spawn_redis_reload_listener(state: DemoServerState) {
@@ -825,6 +922,7 @@ pub fn serve_demo_with_tls(
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
         spawn_redis_reload_listener(state.clone());
+        spawn_snapshot_poll(state.clone());
         let router = build_demo_router(state);
         let http_listener = tokio::net::TcpListener::bind(http_bind)
             .await
@@ -834,12 +932,7 @@ pub fn serve_demo_with_tls(
         let http_task = tokio::spawn({
             let router = router.clone();
             async move {
-                axum::serve(
-                    http_listener,
-                    router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-                )
-                    .await
-                    .map_err(|error| format!("http server failed: {error}"))
+                serve_listener(http_listener, router, None).await
             }
         });
 
@@ -897,48 +990,110 @@ async fn run_https_listener(
         .await
         .map_err(|error| format!("https bind failed: {error}"))?;
     info!(bind = %bind, "HTTPS listener ready");
+    serve_listener(listener, router, Some(acceptor)).await
+}
 
+/// A client that has not finished the TLS handshake by then is dropped, so
+/// idle or slowloris connections cannot pile up.
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Same for an HTTP/1 client that never finishes sending its headers.
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Open connections over both listeners (`DRUST_MAX_CONNECTIONS`, 30000).
+/// At the limit new ones wait in the kernel backlog instead of failing.
+fn connection_permits() -> Arc<tokio::sync::Semaphore> {
+    static PERMITS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    PERMITS
+        .get_or_init(|| {
+            let limit = std::env::var("DRUST_MAX_CONNECTIONS")
+                .ok()
+                .and_then(|value| value.trim().parse::<usize>().ok())
+                .filter(|value| *value > 0)
+                .unwrap_or(30_000);
+            Arc::new(tokio::sync::Semaphore::new(limit))
+        })
+        .clone()
+}
+
+/// Accept loop shared by the HTTP and HTTPS listeners.
+async fn serve_listener(
+    listener: tokio::net::TcpListener,
+    router: Router,
+    tls: Option<tokio_rustls::TlsAcceptor>,
+) -> Result<(), String> {
+    let permits = connection_permits();
     loop {
-        let (stream, peer) = listener
-            .accept()
+        let permit = permits
+            .clone()
+            .acquire_owned()
             .await
-            .map_err(|error| format!("https accept failed: {error}"))?;
-        let acceptor = acceptor.clone();
+            .map_err(|_| "connection limit closed".to_string())?;
+        let (stream, peer) = match listener.accept().await {
+            Ok(connection) => connection,
+            Err(error) => {
+                // Out of file descriptors and the like: back off and keep
+                // listening. Returning here used to stop the listener.
+                warn!(%error, "accept failed");
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+        };
+        let tls = tls.clone();
         let router = router.clone();
         tokio::spawn(async move {
-            match acceptor.accept(stream).await {
-                Ok(tls_stream) => {
-                    tracing::info!(peer = %peer, "TLS connection accepted");
-                    let io = TokioIo::new(tls_stream);
-                    let router = router.clone().layer(map_request(
-                        move |mut request: Request<Body>| async move {
-                            request.extensions_mut().insert(peer);
-                            request
-                        },
-                    ));
-                    let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
-                    // hyper's HTTP/2 default max_header_list_size is 16KB. Real
-                    // browsers routinely exceed that once several large
-                    // encrypted Laravel cookies (session, XSRF-TOKEN, panel
-                    // proof, plus other same-domain app cookies) stack up
-                    // alongside normal browser headers — h2 then silently
-                    // drops the headers that don't fit, which showed up as
-                    // requests arriving at PHP missing their session/XSRF
-                    // cookies (CSRF mismatch) on HTTPS (h2) but not on HTTP/1.1
-                    // (no such limit), even with a fresh/incognito browser.
-                    builder.http2().max_header_list_size(256 * 1024);
-                    if let Err(error) = builder
-                        .serve_connection_with_upgrades(io, TowerToHyperService::new(router.into_service()))
-                        .await
-                    {
-                        tracing::error!(peer = %peer, error = %error, "HTTPS connection failed");
-                    }
+            let _permit = permit;
+            let router = router.layer(map_request(move |mut request: Request<Body>| async move {
+                request.extensions_mut().insert(peer);
+                request.extensions_mut().insert(axum::extract::ConnectInfo(peer));
+                request
+            }));
+            let Some(acceptor) = tls else {
+                serve_connection(TokioIo::new(stream), router, peer).await;
+                return;
+            };
+            match tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
+                Ok(Ok(tls_stream)) => {
+                    tracing::debug!(peer = %peer, "TLS connection accepted");
+                    serve_connection(TokioIo::new(tls_stream), router, peer).await;
                 }
-                Err(error) => {
+                Ok(Err(error)) => {
                     tracing::error!(peer = %peer, error = %error, "TLS handshake failed");
                 }
+                Err(_) => tracing::debug!(peer = %peer, "TLS handshake timed out"),
             }
         });
+    }
+}
+
+async fn serve_connection<I>(io: I, router: Router, peer: std::net::SocketAddr)
+where
+    I: hyper::rt::Read + hyper::rt::Write + Unpin + Send + 'static,
+{
+    let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+    builder
+        .http1()
+        .timer(hyper_util::rt::TokioTimer::new())
+        .header_read_timeout(HEADER_READ_TIMEOUT);
+    // hyper's HTTP/2 default max_header_list_size is 16KB. Real
+    // browsers routinely exceed that once several large
+    // encrypted Laravel cookies (session, XSRF-TOKEN, panel
+    // proof, plus other same-domain app cookies) stack up
+    // alongside normal browser headers — h2 then silently
+    // drops the headers that don't fit, which showed up as
+    // requests arriving at PHP missing their session/XSRF
+    // cookies (CSRF mismatch) on HTTPS (h2) but not on HTTP/1.1
+    // (no such limit), even with a fresh/incognito browser.
+    builder
+        .http2()
+        .timer(hyper_util::rt::TokioTimer::new())
+        .max_header_list_size(256 * 1024)
+        // Pings find dead peers, so their connections are closed.
+        .keep_alive_interval(Some(Duration::from_secs(30)));
+    if let Err(error) = builder
+        .serve_connection_with_upgrades(io, TowerToHyperService::new(router.into_service()))
+        .await
+    {
+        tracing::debug!(peer = %peer, error = %error, "connection ended with an error");
     }
 }
 
@@ -1180,5 +1335,88 @@ mod edge_cache_tests {
         status.store(200, Ordering::SeqCst);
         assert_eq!(get(&router, "/").await, (StatusCode::OK, "EXPIRED".into(), "page 3".into()));
         assert_eq!(get(&router, "/").await.1, "HIT");
+    }
+
+    #[test]
+    fn snapshot_fingerprint_ignores_site_order_but_not_content() {
+        let sample = sample_snapshot();
+        let mut other = sample.sites[0].clone();
+        other.id = "other".into();
+        other.hostnames = Arc::from(["other.test".to_string()]);
+        let mut sites = sample.sites.to_vec();
+        sites.push(other);
+        let snapshot = RuntimeSnapshot::new(sample.version, Arc::from(sites), sample.tls.clone(), sample.cache.clone());
+        let mut reversed = snapshot.sites.to_vec();
+        reversed.reverse();
+        let reordered = RuntimeSnapshot::new(snapshot.version, Arc::from(reversed.clone()), snapshot.tls.clone(), snapshot.cache.clone());
+        assert_eq!(snapshot_fingerprint(&snapshot), snapshot_fingerprint(&reordered));
+        reversed[0].cache.serve_stale = !reversed[0].cache.serve_stale;
+        let changed = RuntimeSnapshot::new(snapshot.version, Arc::from(reversed), snapshot.tls.clone(), snapshot.cache.clone());
+        assert_ne!(snapshot_fingerprint(&snapshot), snapshot_fingerprint(&changed));
+    }
+
+    #[tokio::test]
+    async fn cache_hits_reuse_one_compressed_copy() {
+        use std::io::Read;
+        let page = "<p>hello world</p>".repeat(400);
+        let app = Router::new().fallback(any({
+            let page = page.clone();
+            move || {
+                let page = page.clone();
+                async move { ([("content-type", "text/html")], page) }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let router = gateway(addr, Duration::from_secs(60));
+
+        let fetch = |router: Router| async move {
+            let request = Request::builder().uri("/").header("host", "shop.test").header("accept-encoding", "gzip")
+                .body(Body::empty()).unwrap();
+            let response = router.oneshot(request).await.unwrap();
+            let label = response.headers()[edge_cache::CACHE_STATUS_HEADER].to_str().unwrap().to_string();
+            let encoding = response.headers()[axum::http::header::CONTENT_ENCODING].to_str().unwrap().to_string();
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            (label, encoding, body)
+        };
+        assert_eq!(fetch(router.clone()).await.0, "MISS");
+        let (label, encoding, first) = fetch(router.clone()).await;
+        assert_eq!((label.as_str(), encoding.as_str()), ("HIT", "gzip"));
+        let mut decoded = String::new();
+        flate2::read::GzDecoder::new(&first[..]).read_to_string(&mut decoded).unwrap();
+        assert_eq!(decoded, page, "compressed exactly once");
+        assert_eq!(fetch(router).await.2, first, "the same copy is reused");
+    }
+
+    #[tokio::test]
+    async fn concurrent_misses_reach_the_origin_once() {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+        let app = Router::new().fallback(any(move || {
+            let counter = counter.clone();
+            async move {
+                let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                ([("content-type", "text/html")], format!("page {count}"))
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let router = gateway(addr, Duration::from_secs(60));
+
+        let requests = (0..20).map(|_| {
+            let router = router.clone();
+            tokio::spawn(async move { get(&router, "/").await })
+        });
+        let mut labels = Vec::new();
+        for request in requests.collect::<Vec<_>>() {
+            let (status, label, body) = request.await.unwrap();
+            assert_eq!((status, body.as_str()), (StatusCode::OK, "page 1"));
+            labels.push(label);
+        }
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        assert_eq!(labels.iter().filter(|label| *label == "MISS").count(), 1);
     }
 }

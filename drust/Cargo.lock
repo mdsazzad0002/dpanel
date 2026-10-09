@@ -460,8 +460,10 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64",
+ "brotli",
  "bytes",
  "chrono",
+ "flate2",
  "futures-util",
  "h3",
  "h3-quinn",

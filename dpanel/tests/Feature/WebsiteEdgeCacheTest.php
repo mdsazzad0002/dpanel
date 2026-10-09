@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
+use Mockery;
 use Tests\TestCase;
 
 class WebsiteEdgeCacheTest extends TestCase
@@ -58,7 +59,7 @@ class WebsiteEdgeCacheTest extends TestCase
 
     public function test_settings_are_saved_cleaned_and_applied_to_the_gateway(): void
     {
-        Redis::shouldReceive('publish')->once()
+        $this->expectPublish()
             ->withArgs(fn ($channel, $payload) => $channel === 'edge:reload' && json_decode($payload, true)['domains'] === ['shop.test'])
             ->andReturn(1);
 
@@ -81,7 +82,7 @@ class WebsiteEdgeCacheTest extends TestCase
 
     public function test_bypass_paths_must_be_paths(): void
     {
-        Redis::shouldReceive('publish')->never();
+        Redis::shouldReceive('connection')->never();
 
         $this->request()->putJson("/cpsess{$this->token}/websites/site-1/edge-cache", [
             'mode' => 'standard', 'edge_ttl' => 3600, 'bypass_paths' => 'wp-admin', 'bypass_cookies' => '',
@@ -114,7 +115,7 @@ class WebsiteEdgeCacheTest extends TestCase
 
     public function test_development_mode_lasts_three_hours(): void
     {
-        Redis::shouldReceive('publish')->once()->andReturn(1);
+        $this->expectPublish()->andReturn(1);
 
         $this->request()->postJson("/cpsess{$this->token}/websites/site-1/edge-cache/development-mode", ['enabled' => true])->assertOk();
 
@@ -138,5 +139,13 @@ class WebsiteEdgeCacheTest extends TestCase
             ->withoutMiddleware()
             ->actingAs($this->admin)
             ->withSession(['panel_session_token' => $this->token]);
+    }
+
+    private function expectPublish(): \Mockery\Expectation
+    {
+        $connection = Mockery::mock();
+        Redis::shouldReceive('connection')->once()->with('website_cache')->andReturn($connection);
+
+        return $connection->shouldReceive('publish')->once();
     }
 }

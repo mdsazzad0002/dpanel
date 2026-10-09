@@ -4,7 +4,10 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 use tracing::warn;
@@ -16,10 +19,45 @@ pub struct DomainBandwidth {
     pub requests: u64,
 }
 
+/// Bumped on every request without taking a write lock.
+#[derive(Default)]
+struct Counters {
+    upload_bytes: AtomicU64,
+    download_bytes: AtomicU64,
+    requests: AtomicU64,
+}
+
+impl Counters {
+    fn from_usage(usage: DomainBandwidth) -> Self {
+        Self {
+            upload_bytes: AtomicU64::new(usage.upload_bytes),
+            download_bytes: AtomicU64::new(usage.download_bytes),
+            requests: AtomicU64::new(usage.requests),
+        }
+    }
+
+    fn usage(&self) -> DomainBandwidth {
+        DomainBandwidth {
+            upload_bytes: self.upload_bytes.load(Ordering::Relaxed),
+            download_bytes: self.download_bytes.load(Ordering::Relaxed),
+            requests: self.requests.load(Ordering::Relaxed),
+        }
+    }
+}
+
+type CounterMap = HashMap<String, Arc<Counters>>;
+
 #[derive(Clone)]
 pub struct BandwidthTracker {
     directory: Arc<PathBuf>,
-    counters: Arc<Mutex<HashMap<String, DomainBandwidth>>>,
+    counters: Arc<RwLock<CounterMap>>,
+}
+
+fn counter_map(usage: HashMap<String, DomainBandwidth>) -> CounterMap {
+    usage
+        .into_iter()
+        .map(|(domain, usage)| (domain, Arc::new(Counters::from_usage(usage))))
+        .collect()
 }
 
 impl BandwidthTracker {
@@ -37,7 +75,7 @@ impl BandwidthTracker {
         let counters = read_month(&month_path(&directory)).unwrap_or_default();
         Self {
             directory: Arc::new(directory),
-            counters: Arc::new(Mutex::new(counters)),
+            counters: Arc::new(RwLock::new(counter_map(counters))),
         }
     }
 
@@ -46,12 +84,18 @@ impl BandwidthTracker {
         if domain.is_empty() {
             return;
         }
-        if let Ok(mut counters) = self.counters.lock() {
-            let usage = counters.entry(domain).or_default();
-            usage.upload_bytes = usage.upload_bytes.saturating_add(upload_bytes);
-            usage.download_bytes = usage.download_bytes.saturating_add(download_bytes);
-            usage.requests = usage.requests.saturating_add(1);
-        }
+        let existing = self.counters.read().ok().and_then(|counters| counters.get(&domain).cloned());
+        let usage = match existing {
+            Some(usage) => usage,
+            // Only a domain's first request takes the write lock.
+            None => match self.counters.write() {
+                Ok(mut counters) => counters.entry(domain).or_default().clone(),
+                Err(_) => return,
+            },
+        };
+        usage.upload_bytes.fetch_add(upload_bytes, Ordering::Relaxed);
+        usage.download_bytes.fetch_add(download_bytes, Ordering::Relaxed);
+        usage.requests.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn spawn_periodic_flush(&self) {
@@ -76,11 +120,7 @@ impl BandwidthTracker {
     pub fn flush(&self) -> Result<(), String> {
         fs::create_dir_all(self.directory.as_ref())
             .map_err(|error| format!("create bandwidth directory failed: {error}"))?;
-        let snapshot = self
-            .counters
-            .lock()
-            .map_err(|_| "bandwidth counter lock poisoned".to_string())?
-            .clone();
+        let snapshot = self.usage()?;
         let path = month_path(self.directory.as_ref());
         let temporary = path.with_extension("json.tmp");
         let payload = serde_json::to_vec(&snapshot)
@@ -89,6 +129,18 @@ impl BandwidthTracker {
             .map_err(|error| format!("write bandwidth counters failed: {error}"))?;
         fs::rename(&temporary, &path)
             .map_err(|error| format!("commit bandwidth counters failed: {error}"))
+    }
+}
+
+impl BandwidthTracker {
+    fn usage(&self) -> Result<HashMap<String, DomainBandwidth>, String> {
+        Ok(self
+            .counters
+            .read()
+            .map_err(|_| "bandwidth counter lock poisoned".to_string())?
+            .iter()
+            .map(|(domain, counters)| (domain.clone(), counters.usage()))
+            .collect())
     }
 }
 
@@ -114,11 +166,11 @@ mod tests {
     fn aggregates_domain_usage_case_insensitively() {
         let tracker = BandwidthTracker {
             directory: Arc::new(PathBuf::from("/tmp")),
-            counters: Arc::new(Mutex::new(HashMap::new())),
+            counters: Arc::new(RwLock::new(HashMap::new())),
         };
         tracker.record("Example.COM.", 10, 20);
         tracker.record("example.com", 5, 7);
-        let counters = tracker.counters.lock().unwrap();
+        let counters = tracker.usage().unwrap();
         let usage = counters.get("example.com").unwrap();
         assert_eq!(usage.upload_bytes, 15);
         assert_eq!(usage.download_bytes, 27);

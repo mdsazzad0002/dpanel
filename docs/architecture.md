@@ -68,6 +68,11 @@ sites; an empty payload (`{}`) reloads everything. Events are batched for
 After a certificate is issued or renewed, both drust and dPanel send a full
 reload, so the new certificate goes live without a restart.
 
+A per-domain reload queries only those domains' rows, not every website. As a
+safety net for a lost reload event, the gateway also re-reads the database every
+`DRUST_SNAPSHOT_POLL_SECONDS` (60; `0` turns it off) and applies the result
+only when something changed, so its caches are not cleared for nothing.
+
 ### Edge cache
 
 Each site can turn on a shared response cache in the gateway (settings in the
@@ -80,9 +85,15 @@ Each site can turn on a shared response cache in the gateway (settings in the
   Requests with `Authorization`, a `Range`, a bypass cookie or a bypass path
   go straight to the origin.
 - With **serve stale**, an expired copy is kept for a day and returned when the
-  origin answers 5xx.
+  origin answers 5xx, and to everyone else while one request refreshes it.
+- A missing or expired copy is fetched by one request per URL; the others
+  wait for it (up to `DRUST_EDGE_CACHE_LOCK_TIMEOUT_MS`, 5000) instead of all
+  reaching PHP at once.
 - Static files read from disk are not copied into it; the static file layer
-  already keeps them in memory and notices changes.
+  already keeps them in memory and notices changes. That layer holds files up
+  to `DRUST_STATIC_CACHE_MAX_FILE_BYTES` (1 MiB), at most
+  `DRUST_STATIC_CACHE_MAX_ENTRIES` (8192) and `DRUST_STATIC_CACHE_MAX_BYTES`
+  (128 MiB) in all, dropping the least recently used when full.
 
 Every response carries `x-dpanel-cache`: `HIT`, `MISS`, `EXPIRED`, `STALE`,
 `BYPASS`, `DYNAMIC` (not cacheable) or `STATIC`. A per-domain reload purges
@@ -90,7 +101,26 @@ that site's copies. `POST /__admin/cache/purge` (`{"domain", "urls",
 "prefixes"}` or `{"everything": true}`) and `GET /__admin/cache/stats?domain=`
 take the drust API token. Memory limits: `DRUST_EDGE_CACHE_MAX_BYTES`
 (256 MiB), `DRUST_EDGE_CACHE_MAX_OBJECT_BYTES` (8 MiB) and
-`DRUST_EDGE_CACHE_MAX_ENTRIES` (100000).
+`DRUST_EDGE_CACHE_MAX_ENTRIES` (100000). The cache is split into 16 shards
+by key, each with an equal part of these limits, so storing or evicting in one
+does not block lookups in the others.
+
+Cached copies (edge cache entries and in-memory static files) are compressed
+once per encoding (brotli, gzip) on the first request that asks for it, and
+that copy is reused afterwards instead of compressing on every hit. The copies
+live next to the cached body and are not counted in the cache limits; for text
+they add roughly a third of its size.
+
+### Connections
+
+Both listeners share a limit of `DRUST_MAX_CONNECTIONS` (30000) open
+connections; past it, new ones wait in the kernel backlog. A TLS handshake must
+finish within 10 s and HTTP/1 request headers within 30 s, so idle or slowloris
+clients are dropped. TLS sessions resume through session tickets and a
+10240-entry session cache. `edge-gateway.service` raises `LimitNOFILE`, since
+the systemd default of 1024 file descriptors caps the gateway near 1000
+connections. Node, Python and Docker responses without a `Content-Length` are
+read up to 2 MiB and streamed beyond that.
 
 ## PHP execution
 
@@ -108,6 +138,12 @@ back to the shared pool (`/run/php/php<version>-fpm.sock`) instead of failing.
 System-scope websites, the panel, and phpMyAdmin always use the shared
 `www-data` pool. Per-site pools are enabled with `DRUST_SITE_POOLS=1` (the
 default) so one site's PHP cannot read another site's files.
+
+PHP output up to 1 MiB is read whole, so the edge cache can store it; larger
+output (downloads, exports) is streamed to the client as PHP writes it. Request
+bodies over 1 MiB with a `Content-Length` are streamed into PHP-FPM, so upload
+size is limited only by PHP's `post_max_size`; bodies without a length are
+still read first, up to 64 MiB.
 
 ## Database provisioning
 

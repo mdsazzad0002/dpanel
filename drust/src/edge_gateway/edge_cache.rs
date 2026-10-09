@@ -24,6 +24,7 @@ use axum::{
 };
 use bytes::Bytes;
 use serde::Serialize;
+use tokio::sync::watch;
 
 use super::SiteConfig;
 
@@ -72,6 +73,33 @@ pub struct SiteCacheConfig {
 /// static file layer already keeps those in memory and checks mtimes.
 #[derive(Clone, Copy, Debug)]
 pub struct StaticFileResponse;
+
+pub enum Fill {
+    /// Go to the origin; waiters wake when the guard drops, also if this
+    /// request fails or the client hangs up.
+    Leader(Option<FillGuard>),
+    Wait(watch::Receiver<()>),
+}
+
+pub struct FillGuard {
+    cache: Arc<EdgeCache>,
+    key: String,
+}
+
+impl Drop for FillGuard {
+    fn drop(&mut self) {
+        if let Ok(mut filling) = self.cache.filling.lock() {
+            filling.remove(&self.key);
+        }
+    }
+}
+
+/// Waits for another request's origin fetch, at most `limit`, like nginx's
+/// proxy_cache_lock_timeout: a response that turns out uncacheable must not
+/// hold the waiters up for long.
+pub async fn wait_for_fill(mut receiver: watch::Receiver<()>, limit: Duration) {
+    let _ = tokio::time::timeout(limit, receiver.changed()).await;
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Decision {
@@ -265,6 +293,8 @@ pub struct CachedResponse {
     pub stored_at: Instant,
     pub fresh_until: Instant,
     pub stale_until: Instant,
+    /// gzip/brotli copies of `body`, made on the first hit that asks.
+    pub variants: Arc<super::precompress::Variants>,
 }
 
 impl CachedResponse {
@@ -343,10 +373,36 @@ pub struct DomainStats {
     pub stored_bytes: u64,
 }
 
-pub struct EdgeCache {
+/// Per-domain counters, bumped without a lock on every request.
+#[derive(Default)]
+struct DomainCounters {
+    hits: AtomicU64,
+    misses: AtomicU64,
+    stale: AtomicU64,
+    bypass: AtomicU64,
+    dynamic: AtomicU64,
+    bytes_served_from_cache: AtomicU64,
+}
+
+/// One slice of the cache. Keys are spread over shards by hash, so a write
+/// or an eviction locks only its own shard and the others keep serving.
+#[derive(Default)]
+struct Shard {
     entries: RwLock<HashMap<String, Arc<CachedResponse>>>,
     bytes: AtomicU64,
-    stats: Mutex<HashMap<String, DomainStats>>,
+}
+
+const SHARDS: usize = 16;
+
+pub struct EdgeCache {
+    shards: Box<[Shard]>,
+    /// Keys an origin fetch is under way for. Dropping the sender wakes
+    /// everyone who subscribed while waiting on that fetch.
+    filling: Mutex<HashMap<String, watch::Sender<()>>>,
+    pub fill_wait: Duration,
+    /// Total over all shards.
+    bytes: AtomicU64,
+    stats: RwLock<HashMap<String, Arc<DomainCounters>>>,
     pub max_bytes: u64,
     pub max_object_bytes: u64,
     max_entries: usize,
@@ -354,10 +410,19 @@ pub struct EdgeCache {
 
 impl EdgeCache {
     pub fn new(max_bytes: u64, max_object_bytes: u64, max_entries: usize) -> Self {
+        // Each shard gets an equal part of the limits, so only shard when a
+        // part still holds a good number of the largest objects.
+        let shards = if max_entries >= SHARDS * 100 && max_bytes >= SHARDS as u64 * 2 * max_object_bytes {
+            SHARDS
+        } else {
+            1
+        };
         Self {
-            entries: RwLock::new(HashMap::new()),
+            shards: (0..shards).map(|_| Shard::default()).collect(),
+            filling: Mutex::new(HashMap::new()),
+            fill_wait: Duration::from_secs(5),
             bytes: AtomicU64::new(0),
-            stats: Mutex::new(HashMap::new()),
+            stats: RwLock::new(HashMap::new()),
             max_bytes,
             max_object_bytes,
             max_entries,
@@ -371,15 +436,36 @@ impl EdgeCache {
                 .and_then(|value| value.parse::<u64>().ok())
                 .unwrap_or(default)
         };
-        Self::new(
+        let mut cache = Self::new(
             env("DRUST_EDGE_CACHE_MAX_BYTES", 256 * 1024 * 1024),
             env("DRUST_EDGE_CACHE_MAX_OBJECT_BYTES", 8 * 1024 * 1024),
             env("DRUST_EDGE_CACHE_MAX_ENTRIES", 100_000) as usize,
-        )
+        );
+        cache.fill_wait = Duration::from_millis(env("DRUST_EDGE_CACHE_LOCK_TIMEOUT_MS", 5_000));
+        cache
+    }
+
+    /// Lets one request per key go to the origin when a copy is missing or
+    /// expired; the rest wait for it instead of all hitting PHP at once.
+    pub fn begin_fill(self: &Arc<Self>, key: &str) -> Fill {
+        let Ok(mut filling) = self.filling.lock() else {
+            return Fill::Leader(None);
+        };
+        if let Some(sender) = filling.get(key) {
+            return Fill::Wait(sender.subscribe());
+        }
+        filling.insert(key.to_string(), watch::channel(()).0);
+        Fill::Leader(Some(FillGuard { cache: self.clone(), key: key.to_string() }))
+    }
+
+    fn shard(&self, key: &str) -> &Shard {
+        use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+        let hash = BuildHasherDefault::<DefaultHasher>::default().hash_one(key);
+        &self.shards[hash as usize % self.shards.len()]
     }
 
     pub fn lookup(&self, key: &str) -> Lookup {
-        let Some(entry) = self.entries.read().ok().and_then(|entries| entries.get(key).cloned()) else {
+        let Some(entry) = self.shard(key).entries.read().ok().and_then(|entries| entries.get(key).cloned()) else {
             return Lookup::Miss;
         };
         let now = Instant::now();
@@ -404,31 +490,49 @@ impl EdgeCache {
         if size > self.max_object_bytes.saturating_add(64 * 1024) {
             return;
         }
-        let Ok(mut entries) = self.entries.write() else {
+        let shard = self.shard(&key);
+        let Ok(mut entries) = shard.entries.write() else {
             return;
         };
         if let Some(old) = entries.insert(key, Arc::new(entry)) {
-            self.bytes.fetch_sub(old.size(), Ordering::Relaxed);
+            self.forget_bytes(shard, old.size());
         }
+        shard.bytes.fetch_add(size, Ordering::Relaxed);
         self.bytes.fetch_add(size, Ordering::Relaxed);
-        if self.bytes.load(Ordering::Relaxed) > self.max_bytes || entries.len() > self.max_entries {
-            self.evict(&mut entries);
+        let parts = self.shards.len() as u64;
+        let (max_bytes, max_entries) = (self.max_bytes / parts, self.max_entries / parts as usize);
+        if shard.bytes.load(Ordering::Relaxed) > max_bytes || entries.len() > max_entries {
+            self.evict(shard, &mut entries, max_bytes, max_entries);
         }
     }
 
-    /// Drops dead copies, then the oldest, until well under the limits.
-    fn evict(&self, entries: &mut HashMap<String, Arc<CachedResponse>>) {
+    fn forget_bytes(&self, shard: &Shard, size: u64) {
+        shard.bytes.fetch_sub(size, Ordering::Relaxed);
+        self.bytes.fetch_sub(size, Ordering::Relaxed);
+    }
+
+    /// Drops dead copies, then the oldest, until well under the shard's limits.
+    fn evict(
+        &self,
+        shard: &Shard,
+        entries: &mut HashMap<String, Arc<CachedResponse>>,
+        max_bytes: u64,
+        max_entries: usize,
+    ) {
         let now = Instant::now();
         entries.retain(|_, entry| {
             let keep = now < entry.stale_until;
             if !keep {
-                self.bytes.fetch_sub(entry.size(), Ordering::Relaxed);
+                self.forget_bytes(shard, entry.size());
             }
             keep
         });
-        let byte_target = self.max_bytes / 10 * 9;
-        let entry_target = self.max_entries / 10 * 9;
-        if self.bytes.load(Ordering::Relaxed) <= byte_target && entries.len() <= entry_target {
+        let byte_target = max_bytes / 10 * 9;
+        let entry_target = max_entries / 10 * 9;
+        let within = |entries: &HashMap<_, _>| {
+            shard.bytes.load(Ordering::Relaxed) <= byte_target && entries.len() <= entry_target
+        };
+        if within(entries) {
             return;
         }
         let mut by_age = entries
@@ -437,11 +541,11 @@ impl EdgeCache {
             .collect::<Vec<_>>();
         by_age.sort_unstable();
         for (_, key) in by_age {
-            if self.bytes.load(Ordering::Relaxed) <= byte_target && entries.len() <= entry_target {
+            if within(entries) {
                 break;
             }
             if let Some(entry) = entries.remove(&key) {
-                self.bytes.fetch_sub(entry.size(), Ordering::Relaxed);
+                self.forget_bytes(shard, entry.size());
             }
         }
     }
@@ -453,59 +557,95 @@ impl EdgeCache {
         let domain = domain.map(|value| value.trim().trim_end_matches('.').to_ascii_lowercase());
         let urls = urls.iter().map(|url| split_url(url)).collect::<Vec<_>>();
         let prefixes = prefixes.iter().map(|url| split_url(url)).collect::<Vec<_>>();
-        let Ok(mut entries) = self.entries.write() else {
-            return 0;
-        };
-        let before = entries.len();
-        entries.retain(|_, entry| {
-            if domain.as_deref().is_some_and(|domain| entry.domain != domain) {
-                return true;
-            }
-            let host_ok = |host: &Option<String>| host.as_deref().is_none_or(|host| host == entry.host);
-            let path_only = entry.target.split('?').next().unwrap_or("");
-            let matched = (urls.is_empty() && prefixes.is_empty())
-                || urls.iter().any(|(host, target)| {
-                    host_ok(host) && (entry.target == *target || (!target.contains('?') && path_only == target))
-                })
-                || prefixes
-                    .iter()
-                    .any(|(host, prefix)| host_ok(host) && entry.target.starts_with(prefix.as_str()));
-            if matched {
-                self.bytes.fetch_sub(entry.size(), Ordering::Relaxed);
-            }
-            !matched
-        });
-        before - entries.len()
+        let mut purged = 0;
+        for shard in self.shards.iter() {
+            let Ok(mut entries) = shard.entries.write() else {
+                continue;
+            };
+            let before = entries.len();
+            entries.retain(|_, entry| {
+                if domain.as_deref().is_some_and(|domain| entry.domain != domain) {
+                    return true;
+                }
+                let host_ok = |host: &Option<String>| host.as_deref().is_none_or(|host| host == entry.host);
+                let path_only = entry.target.split('?').next().unwrap_or("");
+                let matched = (urls.is_empty() && prefixes.is_empty())
+                    || urls.iter().any(|(host, target)| {
+                        host_ok(host) && (entry.target == *target || (!target.contains('?') && path_only == target))
+                    })
+                    || prefixes
+                        .iter()
+                        .any(|(host, prefix)| host_ok(host) && entry.target.starts_with(prefix.as_str()));
+                if matched {
+                    self.forget_bytes(shard, entry.size());
+                }
+                !matched
+            });
+            purged += before - entries.len();
+        }
+        purged
     }
 
     pub fn record(&self, domain: &str, outcome: Outcome, bytes: u64) {
-        let Ok(mut stats) = self.stats.lock() else {
-            return;
+        let existing = self.stats.read().ok().and_then(|stats| stats.get(domain).cloned());
+        let counters = match existing {
+            Some(counters) => counters,
+            // Only a domain's first request takes the write lock.
+            None => match self.stats.write() {
+                Ok(mut stats) => stats.entry(domain.to_string()).or_default().clone(),
+                Err(_) => return,
+            },
         };
-        let stats = stats.entry(domain.to_string()).or_default();
+        let add = |counter: &AtomicU64, value: u64| {
+            counter.fetch_add(value, Ordering::Relaxed);
+        };
         match outcome {
             Outcome::Hit => {
-                stats.hits += 1;
-                stats.bytes_served_from_cache += bytes;
+                add(&counters.hits, 1);
+                add(&counters.bytes_served_from_cache, bytes);
             }
             Outcome::Stale => {
-                stats.stale += 1;
-                stats.bytes_served_from_cache += bytes;
+                add(&counters.stale, 1);
+                add(&counters.bytes_served_from_cache, bytes);
             }
-            Outcome::Miss => stats.misses += 1,
-            Outcome::Bypass => stats.bypass += 1,
-            Outcome::Dynamic => stats.dynamic += 1,
+            Outcome::Miss => add(&counters.misses, 1),
+            Outcome::Bypass => add(&counters.bypass, 1),
+            Outcome::Dynamic => add(&counters.dynamic, 1),
         }
     }
 
     /// Counters since the gateway started, plus what is stored now.
     pub fn stats(&self, domain: Option<&str>) -> serde_json::Value {
-        let mut per_domain = self.stats.lock().map(|stats| stats.clone()).unwrap_or_default();
-        if let Ok(entries) = self.entries.read() {
-            for entry in entries.values() {
-                let stats = per_domain.entry(entry.domain.clone()).or_default();
-                stats.entries += 1;
-                stats.stored_bytes += entry.size();
+        let load = |counter: &AtomicU64| counter.load(Ordering::Relaxed);
+        let mut per_domain = self
+            .stats
+            .read()
+            .map(|stats| {
+                stats
+                    .iter()
+                    .map(|(name, counters)| {
+                        (name.clone(), DomainStats {
+                            hits: load(&counters.hits),
+                            misses: load(&counters.misses),
+                            stale: load(&counters.stale),
+                            bypass: load(&counters.bypass),
+                            dynamic: load(&counters.dynamic),
+                            bytes_served_from_cache: load(&counters.bytes_served_from_cache),
+                            ..DomainStats::default()
+                        })
+                    })
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+        let mut total_entries = 0;
+        for shard in self.shards.iter() {
+            if let Ok(entries) = shard.entries.read() {
+                total_entries += entries.len();
+                for entry in entries.values() {
+                    let stats = per_domain.entry(entry.domain.clone()).or_default();
+                    stats.entries += 1;
+                    stats.stored_bytes += entry.size();
+                }
             }
         }
         if let Some(domain) = domain {
@@ -516,7 +656,7 @@ impl EdgeCache {
             "max_bytes": self.max_bytes,
             "max_object_bytes": self.max_object_bytes,
             "stored_bytes": self.bytes.load(Ordering::Relaxed),
-            "entries": self.entries.read().map(|entries| entries.len()).unwrap_or(0),
+            "entries": total_entries,
             "domains": per_domain,
         })
     }
@@ -551,6 +691,28 @@ pub fn unix_now() -> u64 {
 mod tests {
     use super::*;
     use crate::edge_gateway::{RouteAction, RouteConfig};
+
+    #[tokio::test]
+    async fn one_request_fills_while_the_others_wait() {
+        let cache = Arc::new(EdgeCache::new(1024 * 1024, 64 * 1024, 1000));
+        let Fill::Leader(Some(guard)) = cache.begin_fill("k") else { panic!("first request must lead") };
+        let Fill::Wait(receiver) = cache.begin_fill("k") else { panic!("second request must wait") };
+        assert!(matches!(cache.begin_fill("other"), Fill::Leader(Some(_))));
+        let waiter = tokio::spawn(wait_for_fill(receiver, Duration::from_secs(30)));
+        drop(guard);
+        tokio::time::timeout(Duration::from_secs(1), waiter).await.unwrap().unwrap();
+        assert!(matches!(cache.begin_fill("k"), Fill::Leader(Some(_))));
+    }
+
+    #[tokio::test]
+    async fn waiting_gives_up_after_the_lock_timeout() {
+        let cache = Arc::new(EdgeCache::new(1024 * 1024, 64 * 1024, 1000));
+        let _guard = cache.begin_fill("k");
+        let Fill::Wait(receiver) = cache.begin_fill("k") else { panic!("second request must wait") };
+        let started = Instant::now();
+        wait_for_fill(receiver, Duration::from_millis(50)).await;
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 
     fn site(mode: CacheMode) -> SiteConfig {
         SiteConfig {
@@ -682,6 +844,7 @@ mod tests {
             stored_at: now,
             fresh_until: now,
             stale_until: now,
+            variants: Default::default(),
         }
     }
 
@@ -729,5 +892,36 @@ mod tests {
         assert!(cache.bytes.load(Ordering::Relaxed) <= cache.max_bytes);
         assert!(matches!(cache.lookup("k19"), Lookup::Fresh(_)));
         assert!(matches!(cache.lookup("k0"), Lookup::Miss));
+    }
+
+    #[test]
+    fn sharded_cache_keeps_its_limits_and_counts() {
+        let cache = EdgeCache::new(64 * 1024, 1024, 1600);
+        assert_eq!(cache.shards.len(), SHARDS);
+        for index in 0..400 {
+            let body = "x".repeat(400);
+            cache.store(format!("k{index}"), entry("example.com", "example.com", "/", &body), Duration::from_secs(60), false);
+        }
+        assert!(cache.bytes.load(Ordering::Relaxed) <= cache.max_bytes);
+        let shard_total: u64 = cache.shards.iter().map(|shard| shard.bytes.load(Ordering::Relaxed)).sum();
+        assert_eq!(shard_total, cache.bytes.load(Ordering::Relaxed));
+        assert!(matches!(cache.lookup("k399"), Lookup::Fresh(_)));
+        let stored = cache.stats(None)["entries"].as_u64().unwrap() as usize;
+        assert_eq!(cache.purge(Some("example.com"), &[], &[]), stored);
+        assert_eq!(cache.bytes.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn counts_outcomes_per_domain() {
+        let cache = EdgeCache::new(1024 * 1024, 64 * 1024, 1000);
+        cache.record("a.test", Outcome::Hit, 10);
+        cache.record("a.test", Outcome::Hit, 5);
+        cache.record("a.test", Outcome::Miss, 0);
+        cache.record("b.test", Outcome::Bypass, 0);
+        let stats = cache.stats(Some("a.test"));
+        assert_eq!(stats["domains"]["a.test"]["hits"], 2);
+        assert_eq!(stats["domains"]["a.test"]["misses"], 1);
+        assert_eq!(stats["domains"]["a.test"]["bytes_served_from_cache"], 15);
+        assert!(stats["domains"].get("b.test").is_none());
     }
 }
