@@ -31,7 +31,10 @@ class EdgeGatewayReloader
     private function dispatchReload(array $payload): bool
     {
         try {
-            $listeners = (int) Redis::publish(
+            // Unprefixed connection: phpredis prefixes PUBLISH channels too, so
+            // the default one sends to "dpanel_database_edge:reload" and the
+            // gateway, subscribed to the bare name, never hears it.
+            $listeners = (int) Redis::connection('website_cache')->publish(
                 (string) config('serverpanel.edge_gateway_reload_channel', 'edge:reload'),
                 json_encode($payload, JSON_THROW_ON_ERROR),
             );
