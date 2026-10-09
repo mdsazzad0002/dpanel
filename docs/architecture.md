@@ -80,9 +80,15 @@ Each site can turn on a shared response cache in the gateway (settings in the
   Requests with `Authorization`, a `Range`, a bypass cookie or a bypass path
   go straight to the origin.
 - With **serve stale**, an expired copy is kept for a day and returned when the
-  origin answers 5xx.
+  origin answers 5xx, and to everyone else while one request refreshes it.
+- A missing or expired copy is fetched by one request per URL; the others
+  wait for it (up to `DRUST_EDGE_CACHE_LOCK_TIMEOUT_MS`, 5000) instead of all
+  reaching PHP at once.
 - Static files read from disk are not copied into it; the static file layer
-  already keeps them in memory and notices changes.
+  already keeps them in memory and notices changes. That layer holds files up
+  to `DRUST_STATIC_CACHE_MAX_FILE_BYTES` (1 MiB), at most
+  `DRUST_STATIC_CACHE_MAX_ENTRIES` (8192) and `DRUST_STATIC_CACHE_MAX_BYTES`
+  (128 MiB) in all, dropping the least recently used when full.
 
 Every response carries `x-dpanel-cache`: `HIT`, `MISS`, `EXPIRED`, `STALE`,
 `BYPASS`, `DYNAMIC` (not cacheable) or `STATIC`. A per-domain reload purges

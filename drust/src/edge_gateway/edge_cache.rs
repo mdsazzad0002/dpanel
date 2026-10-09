@@ -24,6 +24,7 @@ use axum::{
 };
 use bytes::Bytes;
 use serde::Serialize;
+use tokio::sync::watch;
 
 use super::SiteConfig;
 
@@ -72,6 +73,33 @@ pub struct SiteCacheConfig {
 /// static file layer already keeps those in memory and checks mtimes.
 #[derive(Clone, Copy, Debug)]
 pub struct StaticFileResponse;
+
+pub enum Fill {
+    /// Go to the origin; waiters wake when the guard drops, also if this
+    /// request fails or the client hangs up.
+    Leader(Option<FillGuard>),
+    Wait(watch::Receiver<()>),
+}
+
+pub struct FillGuard {
+    cache: Arc<EdgeCache>,
+    key: String,
+}
+
+impl Drop for FillGuard {
+    fn drop(&mut self) {
+        if let Ok(mut filling) = self.cache.filling.lock() {
+            filling.remove(&self.key);
+        }
+    }
+}
+
+/// Waits for another request's origin fetch, at most `limit`, like nginx's
+/// proxy_cache_lock_timeout: a response that turns out uncacheable must not
+/// hold the waiters up for long.
+pub async fn wait_for_fill(mut receiver: watch::Receiver<()>, limit: Duration) {
+    let _ = tokio::time::timeout(limit, receiver.changed()).await;
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Decision {
@@ -345,6 +373,10 @@ pub struct DomainStats {
 
 pub struct EdgeCache {
     entries: RwLock<HashMap<String, Arc<CachedResponse>>>,
+    /// Keys an origin fetch is under way for. Dropping the sender wakes
+    /// everyone who subscribed while waiting on that fetch.
+    filling: Mutex<HashMap<String, watch::Sender<()>>>,
+    pub fill_wait: Duration,
     bytes: AtomicU64,
     stats: Mutex<HashMap<String, DomainStats>>,
     pub max_bytes: u64,
@@ -356,6 +388,8 @@ impl EdgeCache {
     pub fn new(max_bytes: u64, max_object_bytes: u64, max_entries: usize) -> Self {
         Self {
             entries: RwLock::new(HashMap::new()),
+            filling: Mutex::new(HashMap::new()),
+            fill_wait: Duration::from_secs(5),
             bytes: AtomicU64::new(0),
             stats: Mutex::new(HashMap::new()),
             max_bytes,
@@ -371,11 +405,26 @@ impl EdgeCache {
                 .and_then(|value| value.parse::<u64>().ok())
                 .unwrap_or(default)
         };
-        Self::new(
+        let mut cache = Self::new(
             env("DRUST_EDGE_CACHE_MAX_BYTES", 256 * 1024 * 1024),
             env("DRUST_EDGE_CACHE_MAX_OBJECT_BYTES", 8 * 1024 * 1024),
             env("DRUST_EDGE_CACHE_MAX_ENTRIES", 100_000) as usize,
-        )
+        );
+        cache.fill_wait = Duration::from_millis(env("DRUST_EDGE_CACHE_LOCK_TIMEOUT_MS", 5_000));
+        cache
+    }
+
+    /// Lets one request per key go to the origin when a copy is missing or
+    /// expired; the rest wait for it instead of all hitting PHP at once.
+    pub fn begin_fill(self: &Arc<Self>, key: &str) -> Fill {
+        let Ok(mut filling) = self.filling.lock() else {
+            return Fill::Leader(None);
+        };
+        if let Some(sender) = filling.get(key) {
+            return Fill::Wait(sender.subscribe());
+        }
+        filling.insert(key.to_string(), watch::channel(()).0);
+        Fill::Leader(Some(FillGuard { cache: self.clone(), key: key.to_string() }))
     }
 
     pub fn lookup(&self, key: &str) -> Lookup {
@@ -551,6 +600,28 @@ pub fn unix_now() -> u64 {
 mod tests {
     use super::*;
     use crate::edge_gateway::{RouteAction, RouteConfig};
+
+    #[tokio::test]
+    async fn one_request_fills_while_the_others_wait() {
+        let cache = Arc::new(EdgeCache::new(1024 * 1024, 64 * 1024, 1000));
+        let Fill::Leader(Some(guard)) = cache.begin_fill("k") else { panic!("first request must lead") };
+        let Fill::Wait(receiver) = cache.begin_fill("k") else { panic!("second request must wait") };
+        assert!(matches!(cache.begin_fill("other"), Fill::Leader(Some(_))));
+        let waiter = tokio::spawn(wait_for_fill(receiver, Duration::from_secs(30)));
+        drop(guard);
+        tokio::time::timeout(Duration::from_secs(1), waiter).await.unwrap().unwrap();
+        assert!(matches!(cache.begin_fill("k"), Fill::Leader(Some(_))));
+    }
+
+    #[tokio::test]
+    async fn waiting_gives_up_after_the_lock_timeout() {
+        let cache = Arc::new(EdgeCache::new(1024 * 1024, 64 * 1024, 1000));
+        let _guard = cache.begin_fill("k");
+        let Fill::Wait(receiver) = cache.begin_fill("k") else { panic!("second request must wait") };
+        let started = Instant::now();
+        wait_for_fill(receiver, Duration::from_millis(50)).await;
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 
     fn site(mode: CacheMode) -> SiteConfig {
         SiteConfig {

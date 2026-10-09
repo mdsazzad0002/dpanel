@@ -324,19 +324,44 @@ pub async fn handle_request(
     });
     let head = request.method() == axum::http::Method::HEAD;
     let mut stale = None;
-    if let (edge_cache::Decision::Lookup { key, .. }, Some(domain)) = (&decision, &canonical_domain) {
+    let mut _fill_guard = None;
+    if let (edge_cache::Decision::Lookup { key, .. }, Some(domain), Some(site)) =
+        (&decision, &canonical_domain, site)
+    {
+        // Only the headers: `Body` is not Sync, so borrowing the whole
+        // request across the wait below would make this future non-Send.
+        let request_headers = request.headers();
+        let serve = |entry: Arc<edge_cache::CachedResponse>, label, outcome| {
+            let response = entry.respond(request_headers, head, label);
+            let bytes = response.body().size_hint().exact().unwrap_or(0);
+            state.edge_cache.record(domain, outcome, bytes);
+            state.bandwidth.record(domain, upload_bytes, bytes);
+            response
+        };
         match state.edge_cache.lookup(key) {
-            edge_cache::Lookup::Fresh(entry) => {
-                let response = entry.respond(request.headers(), head, "HIT");
-                let bytes = response.body().size_hint().exact().unwrap_or(0);
-                state.edge_cache.record(domain, edge_cache::Outcome::Hit, bytes);
-                state.bandwidth.record(domain, upload_bytes, bytes);
-                return response;
-            }
-            edge_cache::Lookup::Stale(entry) => stale = Some((entry, request.headers().clone())),
+            edge_cache::Lookup::Fresh(entry) => return serve(entry, "HIT", edge_cache::Outcome::Hit),
+            edge_cache::Lookup::Stale(entry) => stale = Some(entry),
             edge_cache::Lookup::Miss => {}
         }
+        // HEAD responses are never stored, so they neither lead nor wait.
+        if !head {
+            match state.edge_cache.begin_fill(key) {
+                edge_cache::Fill::Leader(guard) => _fill_guard = guard,
+                edge_cache::Fill::Wait(receiver) => {
+                    // Someone is already refreshing this copy; the old one
+                    // stands in meanwhile when the site allows stale copies.
+                    if let (Some(entry), true) = (&stale, site.cache.serve_stale) {
+                        return serve(entry.clone(), "STALE", edge_cache::Outcome::Stale);
+                    }
+                    edge_cache::wait_for_fill(receiver, state.edge_cache.fill_wait).await;
+                    if let edge_cache::Lookup::Fresh(entry) = state.edge_cache.lookup(key) {
+                        return serve(entry, "HIT", edge_cache::Outcome::Hit);
+                    }
+                }
+            }
+        }
     }
+    let stale = stale.map(|entry| (entry, request.headers().clone()));
     let response = dispatch(
         site,
         &state.dispatch,
@@ -1180,5 +1205,36 @@ mod edge_cache_tests {
         status.store(200, Ordering::SeqCst);
         assert_eq!(get(&router, "/").await, (StatusCode::OK, "EXPIRED".into(), "page 3".into()));
         assert_eq!(get(&router, "/").await.1, "HIT");
+    }
+
+    #[tokio::test]
+    async fn concurrent_misses_reach_the_origin_once() {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+        let app = Router::new().fallback(any(move || {
+            let counter = counter.clone();
+            async move {
+                let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                ([("content-type", "text/html")], format!("page {count}"))
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let router = gateway(addr, Duration::from_secs(60));
+
+        let requests = (0..20).map(|_| {
+            let router = router.clone();
+            tokio::spawn(async move { get(&router, "/").await })
+        });
+        let mut labels = Vec::new();
+        for request in requests.collect::<Vec<_>>() {
+            let (status, label, body) = request.await.unwrap();
+            assert_eq!((status, body.as_str()), (StatusCode::OK, "page 1"));
+            labels.push(label);
+        }
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        assert_eq!(labels.iter().filter(|label| *label == "MISS").count(), 1);
     }
 }
