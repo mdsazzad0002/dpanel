@@ -623,7 +623,7 @@ onBeforeUnmount(() => {
                     <p v-if="form.errors.php_version" class="mt-1 text-xs text-red-600">{{ form.errors.php_version }}</p>
                 </div>
                 <p v-if="!props.aliasMode" class="text-xs text-slate-500 md:col-span-2">
-                    Websites run PHP. For a Node.js or Python app, create it under <a :href="panelRoute('projects.index')" class="text-blue-600 hover:underline">Node &amp; Python → Projects</a> and publish its port on this domain with <a :href="panelRoute('port-shares.index')" class="text-blue-600 hover:underline">Port Share</a>.
+                    Websites run PHP. For a Node.js or Python app, create it under <a :href="panelRoute('apps.node.index')" class="text-blue-600 hover:underline">Node.js Apps</a> or <a :href="panelRoute('apps.python.index')" class="text-blue-600 hover:underline">Python Apps</a>, then publish it from this website's Manage page → Port Share.
                 </p>
                 <div v-if="!props.aliasMode" class="pt-7">
                     <div class="flex items-center gap-2">

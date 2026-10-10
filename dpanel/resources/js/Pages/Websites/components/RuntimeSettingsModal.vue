@@ -194,7 +194,7 @@ const saveRuntimeSettings = async () => {
                                 <option value="php">PHP</option>
                                 <option v-if="docker && (docker.installed || website.runtime === 'docker')" value="docker">Docker container (any image)</option>
                             </select>
-                            <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Node.js and Python apps run as Projects now; publish one on this domain with Port Share.</p>
+                            <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Node.js and Python apps live under Node.js Apps / Python Apps; serve one on this domain from Port Share on this page.</p>
                             <p v-if="runtimeInput === 'docker'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Switching to Docker stops PHP handling for this domain; requests will be reverse-proxied to the container instead. Saving again recreates the container with the new settings.</p>
                             <p v-if="website.runtime === 'docker' && runtimeInput !== 'docker'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Leaving Docker removes this site's container. Files in the site folder stay.</p>
                         </div>

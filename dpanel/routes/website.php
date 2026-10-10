@@ -385,33 +385,36 @@ Route::get('/websites/list', [WebsiteController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.list');
 
-// Projects → Node / Python ===========================================================
-Route::get('/projects', [AppProjectController::class, 'index'])
+// Node.js Apps / Python Apps =========================================================
+Route::get('/apps/node', [AppProjectController::class, 'nodeIndex'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('projects.index');
-Route::post('/projects', [AppProjectController::class, 'store'])
+    ->name('apps.node.index');
+Route::get('/apps/python', [AppProjectController::class, 'pythonIndex'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('apps.python.index');
+Route::post('/apps', [AppProjectController::class, 'store'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
-    ->name('projects.store');
-Route::put('/projects/{project}', [AppProjectController::class, 'update'])
+    ->name('apps.store');
+Route::put('/apps/{project}', [AppProjectController::class, 'update'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('projects.update');
-Route::post('/projects/{project}/control', [AppProjectController::class, 'control'])
+    ->name('apps.update');
+Route::post('/apps/{project}/control', [AppProjectController::class, 'control'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])
-    ->name('projects.control');
-Route::get('/projects/{project}/status', [AppProjectController::class, 'status'])
+    ->name('apps.control');
+Route::get('/apps/{project}/status', [AppProjectController::class, 'status'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('projects.status');
-Route::delete('/projects/{project}', [AppProjectController::class, 'destroy'])
+    ->name('apps.status');
+Route::delete('/apps/{project}', [AppProjectController::class, 'destroy'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('projects.destroy');
+    ->name('apps.destroy');
 
-// Projects → Port Share ==============================================================
-Route::get('/port-shares', [PortShareController::class, 'index'])
+// Manage Website → Port Share (JSON) =================================================
+Route::get('/websites/{id}/port-shares', [PortShareController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('port-shares.index');
-Route::post('/port-shares', [PortShareController::class, 'store'])
-    ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('port-shares.store');
+    ->name('websites.port-shares.index');
+Route::post('/websites/{id}/port-shares', [PortShareController::class, 'store'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])
+    ->name('websites.port-shares.store');
 Route::put('/port-shares/{share}', [PortShareController::class, 'update'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('port-shares.update');

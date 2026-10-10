@@ -24,26 +24,38 @@ class AppProjectController extends Controller
 {
     public function __construct(protected AppProjectProcessService $process) {}
 
-    public function index(Request $request): Response
+    public function nodeIndex(Request $request): Response
     {
-        $projects = AppProject::query()->visibleTo($request->user())->orderBy('name')->get();
+        return $this->index($request, 'node', 'NodeApps/Index', ['18', '20', '22']);
+    }
+
+    public function pythonIndex(Request $request): Response
+    {
+        return $this->index($request, 'python', 'PythonApps/Index', ['3.8', '3.10', '3.12']);
+    }
+
+    /** @param array<int, string> $versions */
+    private function index(Request $request, string $runtime, string $page, array $versions): Response
+    {
+        $projects = AppProject::query()->visibleTo($request->user())->where('runtime', $runtime)->orderBy('name')->get();
         $shares = PortShare::query()
             ->whereIn('app_project_id', $projects->pluck('id'))
             ->with('website:id,domain,enable_ssl')
             ->get()
             ->groupBy('app_project_id');
 
-        return Inertia::render('Projects/Index', [
+        return Inertia::render($page, [
             'projects' => $projects->map(fn (AppProject $project): array => $project->toRow() + [
+                // Read-only here: sharing is done from the website's Manage page.
                 'shares' => ($shares->get($project->id) ?? collect())->map(fn (PortShare $share): array => [
                     'id' => $share->id,
+                    'website_id' => (string) $share->website_id,
                     'url' => ($share->website?->enable_ssl ? 'https://' : 'http://').$share->website?->domain.($share->path_prefix === '/' ? '' : $share->path_prefix),
                     'enabled' => $share->enabled,
                 ])->values(),
             ])->values(),
             'owners' => AppProject::ownersVisibleTo($request->user()),
-            'nodeVersions' => ['18', '20', '22'],
-            'pythonVersions' => ['3.8', '3.10', '3.12'],
+            'versions' => $versions,
         ]);
     }
 

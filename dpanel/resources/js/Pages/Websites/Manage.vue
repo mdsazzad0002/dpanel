@@ -7,10 +7,9 @@ import WebsiteSwitcher from '@/Pages/Websites/components/WebsiteSwitcher.vue';
 import ToastStack from '@/Pages/Websites/components/ToastStack.vue';
 import WebsiteHeroCard from '@/Pages/Websites/components/WebsiteHeroCard.vue';
 import QuickActionsPanel from '@/Pages/Websites/components/QuickActionsPanel.vue';
-import NodeServicePanel from '@/Pages/Websites/components/NodeServicePanel.vue';
-import PythonServicePanel from '@/Pages/Websites/components/PythonServicePanel.vue';
 import DockerServicePanel from '@/Pages/Websites/components/docker/DockerServicePanel.vue';
 import QueueWorkersPanel from '@/Pages/Websites/components/QueueWorkersPanel.vue';
+import PortSharePanel from '@/Pages/Websites/PortShare/PortSharePanel.vue';
 import MetricsGrid from '@/Pages/Websites/components/MetricsGrid.vue';
 import ServicesGrid from '@/Pages/Websites/components/ServicesGrid.vue';
 import ActivityTimeline from '@/Pages/Websites/components/ActivityTimeline.vue';
@@ -81,8 +80,6 @@ provide('pushToast', pushToast);
 
 const editingRuntimeSettings = ref(false);
 
-const isNodeWebsite = computed(() => String(props.website?.runtime || 'php') === 'node');
-const isPythonWebsite = computed(() => String(props.website?.runtime || 'php') === 'python');
 const isDockerWebsite = computed(() => String(props.website?.runtime || 'php') === 'docker');
 // Aliases serve the main site's files, so workers there would run every job
 // twice. Sites that already have workers always show the panel so they can
@@ -154,9 +151,8 @@ const showQueueWorkers = computed(() => props.queueWorkerCount > 0
                 </div>
             </section>
 
-            <NodeServicePanel v-if="isNodeWebsite" :website="website" />
-            <PythonServicePanel v-if="isPythonWebsite" :website="website" />
             <DockerServicePanel v-if="isDockerWebsite && docker" :website="website" :docker="docker" />
+            <PortSharePanel :website="website" />
             <QueueWorkersPanel v-if="showQueueWorkers" :website="website" />
 
             <!-- Services + Activity -->
