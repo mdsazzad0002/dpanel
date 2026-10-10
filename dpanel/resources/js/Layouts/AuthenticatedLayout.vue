@@ -198,6 +198,7 @@ const dynamicUserManagementChildren = computed(() => {
 const menuItems = computed(() => [
     { label: 'Dashboard', hint: 'Overview and stats', icon: 'DB', iconClass: 'bi bi-speedometer2', routeName: 'dashboard', color: 'blue' },
     {
+        section: 'Hosting',
         id: 'web-management',
         label: 'Web Management',
         hint: 'Website operations',
@@ -210,118 +211,11 @@ const menuItems = computed(() => [
             { label: 'GitHub Accounts', hint: 'Connect GitHub for deployments', icon: 'GH', iconClass: 'bi bi-github', routeName: 'github.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
         ],
     },
-    { label: 'Node.js Apps', hint: 'Run Node.js apps from your home directory', icon: 'NJ', iconClass: 'bi bi-hexagon', routeName: 'apps.node.index', color: 'emerald', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
-    { label: 'Python Apps', hint: 'Run Python apps from your home directory', icon: 'PY', iconClass: 'bi bi-filetype-py', routeName: 'apps.python.index', color: 'cyan', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+    { section: 'Hosting', label: 'Node.js Apps', hint: 'Run Node.js apps from your home directory', icon: 'NJ', iconClass: 'bi bi-hexagon', routeName: 'apps.node.index', color: 'emerald', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+    { section: 'Hosting', label: 'Python Apps', hint: 'Run Python apps from your home directory', icon: 'PY', iconClass: 'bi bi-filetype-py', routeName: 'apps.python.index', color: 'cyan', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+    { section: 'Hosting', label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], permissions: ['manage_php'], color: 'indigo' },
     {
-        id: 'rules',
-        label: 'Rules',
-        hint: 'Edge rules for your websites',
-        icon: 'RL',
-        iconClass: 'bi bi-signpost-2',
-        color: 'amber',
-        children: [
-            { label: 'Redirect Rules', hint: 'HTTPS, www and domain redirects', icon: 'RR', iconClass: 'bi bi-arrow-return-right', routeName: 'rules.redirects.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
-            { label: 'Port Share', hint: 'Serve a website path from a Node.js/Python app or local port', icon: 'PS', iconClass: 'bi bi-ethernet', routeName: 'rules.port-shares.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
-        ],
-    },
-    {
-        id: 'seo-tools',
-        label: 'SEO Tools',
-        hint: 'Check how search engines see your sites',
-        icon: 'SE',
-        iconClass: 'bi bi-search',
-        color: 'teal',
-        children: [
-            { label: 'Sitemap Verify', hint: 'robots.txt, sitemaps and listed pages', icon: 'SV', iconClass: 'bi bi-diagram-2', routeName: 'seo.sitemap-verify.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
-            { label: 'URL Inspection', hint: 'Indexing, search previews, favicon, share cards and PWA', icon: 'UI', iconClass: 'bi bi-binoculars', routeName: 'seo.url-inspection.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
-            { label: 'Icon Generator', hint: 'Favicons, PWA icons, manifest and share image', icon: 'IG', iconClass: 'bi bi-images', routeName: 'seo.icon-generator.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
-        ],
-    },
-    {
-        id: 'email-management',
-        label: 'Email Management',
-        hint: 'Mailbox operations',
-        icon: 'EM',
-        iconClass: 'bi bi-envelope',
-        color: 'violet',
-        children: [
-            { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
-            { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
-            { label: 'Mail DNS Guide', hint: 'Configure MX, SPF, DKIM and DMARC', icon: 'DG', iconClass: 'bi bi-diagram-3', routeName: 'emails.guide', activeRouteNames: ['emails.guide', 'emails.guide.dkim', 'emails.guide.export'], roles: ['admin', 'reseller'], permissions: ['manage_email'] },
-            { label: 'Mail IPs & SSL', hint: 'Mail IPs, hostnames and SMTP/IMAP certificates', icon: 'MS', iconClass: 'bi bi-shield-lock', routeName: 'emails.mail-ssl', roles: ['admin'], permissions: ['manage_mail_server'] },
-            { label: 'Mail Health', hint: 'Failures, queue and spam signals', icon: 'MH', iconClass: 'bi bi-heart-pulse', routeName: 'mail-health.index', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
-        ],
-    },
-    { label: 'Resource Packages', hint: 'Manage user quotas', icon: 'PK', iconClass: 'bi bi-box-seam', routeName: 'packages.index', roles: ['admin', 'superadmin', 'reseller'], permissions: ['manage_packages'] },
-    {
-        id: 'billing-system',
-        label: 'Billing System',
-        hint: 'Billing integrations and guides',
-        icon: 'BL',
-        iconClass: 'bi bi-credit-card',
-        color: 'emerald',
-        roles: ['admin', 'superadmin'],
-        children: [
-            { label: 'Services', hint: 'Available billing services', icon: 'BS', iconClass: 'bi bi-grid', routeName: 'billing.index', roles: ['admin', 'superadmin'] },
-            { label: 'Billing with WHMCS', hint: 'Setup and operations guide', icon: 'WH', iconClass: 'bi bi-arrow-left-right', routeName: 'billing.whmcs', roles: ['admin', 'superadmin'] },
-        ],
-    },
-    {
-        id: 'database-management',
-        label: 'Database Management',
-        hint: 'Database operations and phpMyAdmin',
-        icon: 'DM',
-        iconClass: 'bi bi-database',
-        color: 'amber',
-        children: [
-            { label: 'Create Database', hint: 'Create a new database', icon: 'CD', iconClass: 'bi bi-database-add', routeName: 'databases.create', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
-            { label: 'List Databases', hint: 'View all databases', icon: 'LD', iconClass: 'bi bi-table', routeName: 'databases.list', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
-            { label: 'Remote Access', hint: 'Allow specific IPs to reach MySQL', icon: 'RA', iconClass: 'bi bi-globe2', routeName: 'databases.remote-access', roles: ['admin'] },
-            { label: 'PostgreSQL', hint: 'Turn PostgreSQL and pgAdmin on or off', icon: 'PG', iconClass: 'bi bi-database-gear', routeName: 'databases.postgresql', roles: ['admin'] },
-        ],
-    },
-    {
-        id: 'dns-management',
-        label: 'DNS Management',
-        hint: 'DNS zones and nameservers',
-        icon: 'DN',
-        iconClass: 'bi bi-diagram-3',
-        color: 'cyan',
-        children: [
-            { label: 'Nameservers', hint: 'Manage NS records', icon: 'NS', iconClass: 'bi bi-signpost-split', routeName: 'dns.nameservers', roles: ['admin', 'reseller'], permissions: ['manage_dns'] },
-            { label: 'DNS Zones', hint: 'Manage DNS zones', icon: 'DZ', iconClass: 'bi bi-bounding-box-circles', routeName: 'dns.zones', roles: ['admin', 'reseller', 'general', 'general_user'], permissions: ['manage_dns'] },
-        ],
-    },
-    { label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], permissions: ['manage_php'], color: 'indigo' },
-    {
-        id: 'security-center',
-        label: 'Security Center',
-        hint: 'Malware scans, findings and security score',
-        icon: 'SS',
-        iconClass: 'bi bi-shield-check',
-        color: 'red',
-        children: [
-            { label: 'Overview', hint: 'Security score, scans and events', icon: 'OV', iconClass: 'bi bi-speedometer2', routeName: 'security.center', roles: ['admin', 'reseller', 'general', 'general_user'] },
-            { label: 'Findings', hint: 'Every issue the scans found', icon: 'FN', iconClass: 'bi bi-bug', routeName: 'security.center.findings', roles: ['admin', 'reseller', 'general', 'general_user'] },
-            { label: 'Scan History', hint: 'Every scan and its result', icon: 'SH', iconClass: 'bi bi-clock-history', routeName: 'security.center.scans', roles: ['admin', 'reseller', 'general', 'general_user'] },
-            { label: 'Detection Rules', hint: 'Turn scanner rules on or off', icon: 'DR', iconClass: 'bi bi-list-check', routeName: 'security.center.rules', roles: ['admin'] },
-        ],
-    },
-    { label: 'Security', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], permissions: ['manage_security'], color: 'red' },
-    {
-        id: 'fail2ban',
-        label: 'Fail2ban',
-        hint: 'SSH logins, blocked IPs and whitelist',
-        icon: 'FB',
-        iconClass: 'bi bi-unlock',
-        color: 'red',
-        children: [
-            { label: 'SSH Login History', hint: 'Login attempts and block settings', icon: 'SL', iconClass: 'bi bi-clock-history', routeName: 'security.fail2ban', roles: ['admin'] },
-            { label: 'Whitelist', hint: 'IPs that are never blocked', icon: 'WL', iconClass: 'bi bi-check2-circle', routeName: 'security.fail2ban.whitelist', roles: ['admin'] },
-            { label: 'Blocklist', hint: 'Block a new IP or unblock one', icon: 'BL', iconClass: 'bi bi-slash-circle', routeName: 'security.fail2ban.blocklist', roles: ['admin'] },
-        ],
-    },
-    {
+        section: 'Hosting',
         id: 'docker',
         label: 'Docker',
         hint: 'Containers, stacks and apps',
@@ -341,12 +235,114 @@ const menuItems = computed(() => [
             { label: 'Volumes', hint: 'Persistent data', icon: 'VL', iconClass: 'bi bi-hdd-stack', routeName: 'docker.volumes', roles: ['admin'] },
         ],
     },
-    { label: 'Database & Redis', hint: 'Point dpanel at a remote DB/Redis', icon: 'DB', iconClass: 'bi bi-hdd-network', routeName: 'self-connection.manager', roles: ['admin'], color: 'rose' },
-    { label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'], permissions: ['manage_backups'], color: 'teal' },
-    { label: 'Migrate', hint: 'Import cPanel accounts', icon: 'MG', iconClass: 'bi bi-box-arrow-in-down', routeName: 'migrations.index', roles: ['admin', 'reseller'], permissions: ['manage_migrations'], color: 'cyan' },
-    { label: 'Trash Backup', hint: 'Deleted website archives', icon: 'TB', iconClass: 'bi bi-trash3', routeName: 'trash-backups.index', roles: ['admin', 'reseller', 'general', 'general_user'], permissions: ['manage_backups'], color: 'orange' },
-    { label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN', iconClass: 'bi bi-activity', routeName: 'monitoring.index', roles: ['admin', 'reseller'], permissions: ['view_monitoring'], color: 'orange' },
     {
+        section: 'Domains & Email',
+        id: 'dns-management',
+        label: 'DNS Management',
+        hint: 'DNS zones and nameservers',
+        icon: 'DN',
+        iconClass: 'bi bi-diagram-3',
+        color: 'cyan',
+        children: [
+            { label: 'Nameservers', hint: 'Manage NS records', icon: 'NS', iconClass: 'bi bi-signpost-split', routeName: 'dns.nameservers', roles: ['admin', 'reseller'], permissions: ['manage_dns'] },
+            { label: 'DNS Zones', hint: 'Manage DNS zones', icon: 'DZ', iconClass: 'bi bi-bounding-box-circles', routeName: 'dns.zones', roles: ['admin', 'reseller', 'general', 'general_user'], permissions: ['manage_dns'] },
+        ],
+    },
+    {
+        section: 'Domains & Email',
+        id: 'email-management',
+        label: 'Email Management',
+        hint: 'Mailbox operations',
+        icon: 'EM',
+        iconClass: 'bi bi-envelope',
+        color: 'violet',
+        children: [
+            { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+            { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+            { label: 'Mail DNS Guide', hint: 'Configure MX, SPF, DKIM and DMARC', icon: 'DG', iconClass: 'bi bi-diagram-3', routeName: 'emails.guide', activeRouteNames: ['emails.guide', 'emails.guide.dkim', 'emails.guide.export'], roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+            { label: 'Mail IPs & SSL', hint: 'Mail IPs, hostnames and SMTP/IMAP certificates', icon: 'MS', iconClass: 'bi bi-shield-lock', routeName: 'emails.mail-ssl', roles: ['admin'], permissions: ['manage_mail_server'] },
+            { label: 'Mail Health', hint: 'Failures, queue and spam signals', icon: 'MH', iconClass: 'bi bi-heart-pulse', routeName: 'mail-health.index', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+        ],
+    },
+    {
+        section: 'Traffic & SEO',
+        id: 'rules',
+        label: 'Rules',
+        hint: 'Edge rules for your websites',
+        icon: 'RL',
+        iconClass: 'bi bi-signpost-2',
+        color: 'amber',
+        children: [
+            { label: 'Redirect Rules', hint: 'HTTPS, www and domain redirects', icon: 'RR', iconClass: 'bi bi-arrow-return-right', routeName: 'rules.redirects.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+            { label: 'Port Share', hint: 'Serve a website path from a Node.js/Python app or local port', icon: 'PS', iconClass: 'bi bi-ethernet', routeName: 'rules.port-shares.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+        ],
+    },
+    {
+        section: 'Traffic & SEO',
+        id: 'seo-tools',
+        label: 'SEO Tools',
+        hint: 'Check how search engines see your sites',
+        icon: 'SE',
+        iconClass: 'bi bi-search',
+        color: 'teal',
+        children: [
+            { label: 'Sitemap Verify', hint: 'robots.txt, sitemaps and listed pages', icon: 'SV', iconClass: 'bi bi-diagram-2', routeName: 'seo.sitemap-verify.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+            { label: 'URL Inspection', hint: 'Indexing, search previews, favicon, share cards and PWA', icon: 'UI', iconClass: 'bi bi-binoculars', routeName: 'seo.url-inspection.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+            { label: 'Icon Generator', hint: 'Favicons, PWA icons, manifest and share image', icon: 'IG', iconClass: 'bi bi-images', routeName: 'seo.icon-generator.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+        ],
+    },
+    {
+        section: 'Data & Backups',
+        id: 'database-management',
+        label: 'Database Management',
+        hint: 'Database operations and phpMyAdmin',
+        icon: 'DM',
+        iconClass: 'bi bi-database',
+        color: 'amber',
+        children: [
+            { label: 'Create Database', hint: 'Create a new database', icon: 'CD', iconClass: 'bi bi-database-add', routeName: 'databases.create', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
+            { label: 'List Databases', hint: 'View all databases', icon: 'LD', iconClass: 'bi bi-table', routeName: 'databases.list', roles: ['admin', 'reseller'], permissions: ['manage_databases'] },
+            { label: 'Remote Access', hint: 'Allow specific IPs to reach MySQL', icon: 'RA', iconClass: 'bi bi-globe2', routeName: 'databases.remote-access', roles: ['admin'] },
+            { label: 'PostgreSQL', hint: 'Turn PostgreSQL and pgAdmin on or off', icon: 'PG', iconClass: 'bi bi-database-gear', routeName: 'databases.postgresql', roles: ['admin'] },
+        ],
+    },
+    { section: 'Data & Backups', label: 'Database & Redis', hint: 'Point dpanel at a remote DB/Redis', icon: 'DB', iconClass: 'bi bi-hdd-network', routeName: 'self-connection.manager', roles: ['admin'], color: 'rose' },
+    { section: 'Data & Backups', label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'], permissions: ['manage_backups'], color: 'teal' },
+    { section: 'Data & Backups', label: 'Trash Backup', hint: 'Deleted website archives', icon: 'TB', iconClass: 'bi bi-trash3', routeName: 'trash-backups.index', roles: ['admin', 'reseller', 'general', 'general_user'], permissions: ['manage_backups'], color: 'orange' },
+    { section: 'Data & Backups', label: 'Migrate', hint: 'Import cPanel accounts', icon: 'MG', iconClass: 'bi bi-box-arrow-in-down', routeName: 'migrations.index', roles: ['admin', 'reseller'], permissions: ['manage_migrations'], color: 'cyan' },
+    {
+        section: 'Security',
+        id: 'security-center',
+        label: 'Security Center',
+        hint: 'Malware scans, findings and security score',
+        icon: 'SS',
+        iconClass: 'bi bi-shield-check',
+        color: 'red',
+        children: [
+            { label: 'Overview', hint: 'Security score, scans and events', icon: 'OV', iconClass: 'bi bi-speedometer2', routeName: 'security.center', roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Findings', hint: 'Every issue the scans found', icon: 'FN', iconClass: 'bi bi-bug', routeName: 'security.center.findings', roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Scan History', hint: 'Every scan and its result', icon: 'SH', iconClass: 'bi bi-clock-history', routeName: 'security.center.scans', roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Detection Rules', hint: 'Turn scanner rules on or off', icon: 'DR', iconClass: 'bi bi-list-check', routeName: 'security.center.rules', roles: ['admin'] },
+        ],
+    },
+    { section: 'Security', label: 'Firewall & SSH', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], permissions: ['manage_security'], color: 'red' },
+    {
+        section: 'Security',
+        id: 'fail2ban',
+        label: 'Fail2ban',
+        hint: 'SSH logins, blocked IPs and whitelist',
+        icon: 'FB',
+        iconClass: 'bi bi-unlock',
+        color: 'red',
+        children: [
+            { label: 'SSH Login History', hint: 'Login attempts and block settings', icon: 'SL', iconClass: 'bi bi-clock-history', routeName: 'security.fail2ban', roles: ['admin'] },
+            { label: 'Whitelist', hint: 'IPs that are never blocked', icon: 'WL', iconClass: 'bi bi-check2-circle', routeName: 'security.fail2ban.whitelist', roles: ['admin'] },
+            { label: 'Blocklist', hint: 'Block a new IP or unblock one', icon: 'BL', iconClass: 'bi bi-slash-circle', routeName: 'security.fail2ban.blocklist', roles: ['admin'] },
+        ],
+    },
+    { section: 'System', label: 'Monitoring', hint: 'CPU, RAM, disk, logs', icon: 'MN', iconClass: 'bi bi-activity', routeName: 'monitoring.index', roles: ['admin', 'reseller'], permissions: ['view_monitoring'], color: 'orange' },
+    {
+        section: 'System',
         id: 'user-management',
         label: 'User Management',
         hint: 'Admin, reseller and user panels',
@@ -355,7 +351,23 @@ const menuItems = computed(() => [
         color: 'pink',
         children: dynamicUserManagementChildren.value,
     },
+    { section: 'System', label: 'Resource Packages', hint: 'Manage user quotas', icon: 'PK', iconClass: 'bi bi-box-seam', routeName: 'packages.index', roles: ['admin', 'superadmin', 'reseller'], permissions: ['manage_packages'] },
     {
+        section: 'System',
+        id: 'billing-system',
+        label: 'Billing System',
+        hint: 'Billing integrations and guides',
+        icon: 'BL',
+        iconClass: 'bi bi-credit-card',
+        color: 'emerald',
+        roles: ['admin', 'superadmin'],
+        children: [
+            { label: 'Services', hint: 'Available billing services', icon: 'BS', iconClass: 'bi bi-grid', routeName: 'billing.index', roles: ['admin', 'superadmin'] },
+            { label: 'Billing with WHMCS', hint: 'Setup and operations guide', icon: 'WH', iconClass: 'bi bi-arrow-left-right', routeName: 'billing.whmcs', roles: ['admin', 'superadmin'] },
+        ],
+    },
+    {
+        section: 'AI',
         id: 'ai-gateway',
         label: 'AI Gateway',
         hint: 'Providers, models and routing',
@@ -372,6 +384,7 @@ const menuItems = computed(() => [
         ],
     },
     {
+        section: 'AI',
         id: 'chat-engine',
         label: 'AI Chat Engine',
         hint: 'Channels, conversations and broadcasts',
@@ -416,7 +429,13 @@ const visibleMenu = computed(() => menuItems.value
             children: allowedChildren,
         };
     })
-    .filter(Boolean));
+    .filter(Boolean)
+    // A section heading goes above the first visible item of each section,
+    // so a section the user cannot see leaves no empty heading behind.
+    .map((item, index, items) => ({
+        ...item,
+        sectionStart: item.section && item.section !== items[index - 1]?.section ? item.section : null,
+    })));
 
 const colorClasses = {
     blue: {
@@ -909,6 +928,9 @@ watch(isSearchOpen, async (open) => {
             <!-- Navigation -->
             <nav ref="sidebarNavRef" :class="sidebarCollapsed ? 'px-2' : 'px-3'" class="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto pb-4 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700" @scroll="updateSidebarScrollTop">
                 <template v-for="item in visibleMenu" :key="item.id || item.label">
+                    <div v-if="item.sectionStart" :class="sidebarCollapsed ? 'mx-2 my-3 border-t border-slate-200 dark:border-slate-700' : 'px-3 pb-1 pt-4'">
+                        <span v-if="!sidebarCollapsed" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ item.sectionStart }}</span>
+                    </div>
                     <!-- Grouped Items -->
                     <div v-if="item.children" class="mb-2">
                         <button
