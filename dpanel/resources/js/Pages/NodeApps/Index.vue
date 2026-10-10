@@ -47,7 +47,7 @@ const openEdit = (app) => { editing.value = app; panelOpen.value = true; };
                 <i class="bi bi-hexagon text-3xl text-slate-400"></i>
                 <p class="mt-2 text-sm font-medium">{{ owners.length ? 'No Node.js apps yet' : 'No home directory available' }}</p>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {{ owners.length ? 'Create one, then publish it from a website\'s Manage page → Port Share.' : 'Apps run inside a website user\'s home. Create a website first.' }}
+                    {{ owners.length ? 'Create one, then publish it from Rules → Port Share.' : 'Apps run inside a website user\'s home. Create a website first.' }}
                 </p>
                 <button v-if="owners.length" @click="openCreate" class="mt-4 rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700">New Node.js app</button>
             </div>

@@ -46,7 +46,7 @@ class AppProjectController extends Controller
 
         return Inertia::render($page, [
             'projects' => $projects->map(fn (AppProject $project): array => $project->toRow() + [
-                // Read-only here: sharing is done from the website's Manage page.
+                // Read-only here: sharing is done from Rules → Port Share.
                 'shares' => ($shares->get($project->id) ?? collect())->map(fn (PortShare $share): array => [
                     'id' => $share->id,
                     'website_id' => (string) $share->website_id,

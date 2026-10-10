@@ -35,7 +35,7 @@ const { busy, live, control, checkStatus, remove } = useAppProjectActions(() => 
             <div v-if="app.shares.length" class="flex flex-wrap gap-1">
                 <a v-for="share in app.shares" :key="share.id" :href="share.url" target="_blank" rel="noopener" class="rounded bg-blue-50 px-2 py-0.5 font-mono text-blue-700 hover:underline dark:bg-blue-900/30 dark:text-blue-300" :class="{ 'opacity-50': !share.enabled }">{{ share.url }}</a>
             </div>
-            <p v-else class="text-slate-500 dark:text-slate-400">Not public. Open a website's Manage page → Port Share to publish it.</p>
+            <p v-else class="text-slate-500 dark:text-slate-400">Not public. <a :href="panelRoute('rules.port-shares.index')" class="text-blue-600 hover:underline dark:text-blue-400">Publish it from Rules → Port Share</a>.</p>
         </div>
 
         <p v-if="live" class="mx-4 mb-3 rounded bg-slate-50 px-2 py-1 text-xs dark:bg-slate-900">

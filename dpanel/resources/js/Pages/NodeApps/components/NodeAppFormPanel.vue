@@ -62,7 +62,7 @@ const submit = () => {
         :show="show"
         width="lg"
         :title="editing ? `Edit ${app.name}` : 'New Node.js app'"
-        subtitle="Runs as the home's Linux user from any folder you choose. Publish it from a website's Manage page."
+        subtitle="Runs as the home's Linux user from any folder you choose. Publish it from Rules → Port Share."
         @close="emit('close')"
     >
         <form class="space-y-4" @submit.prevent="submit">

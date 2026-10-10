@@ -9,7 +9,6 @@ import WebsiteHeroCard from '@/Pages/Websites/components/WebsiteHeroCard.vue';
 import QuickActionsPanel from '@/Pages/Websites/components/QuickActionsPanel.vue';
 import DockerServicePanel from '@/Pages/Websites/components/docker/DockerServicePanel.vue';
 import QueueWorkersPanel from '@/Pages/Websites/components/QueueWorkersPanel.vue';
-import PortSharePanel from '@/Pages/Websites/PortShare/PortSharePanel.vue';
 import MetricsGrid from '@/Pages/Websites/components/MetricsGrid.vue';
 import ServicesGrid from '@/Pages/Websites/components/ServicesGrid.vue';
 import ActivityTimeline from '@/Pages/Websites/components/ActivityTimeline.vue';
@@ -152,7 +151,6 @@ const showQueueWorkers = computed(() => props.queueWorkerCount > 0
             </section>
 
             <DockerServicePanel v-if="isDockerWebsite && docker" :website="website" :docker="docker" />
-            <PortSharePanel :website="website" />
             <QueueWorkersPanel v-if="showQueueWorkers" :website="website" />
 
             <!-- Services + Activity -->

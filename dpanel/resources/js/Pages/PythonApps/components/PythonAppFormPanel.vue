@@ -68,7 +68,7 @@ const submit = () => {
         :show="show"
         width="lg"
         :title="editing ? `Edit ${app.name}` : 'New Python app'"
-        subtitle="Gets its own .venv and requirements.txt install, runs with gunicorn as the home's Linux user. Publish it from a website's Manage page."
+        subtitle="Gets its own .venv and requirements.txt install, runs with gunicorn as the home's Linux user. Publish it from Rules → Port Share."
         @close="emit('close')"
     >
         <form class="space-y-4" @submit.prevent="submit">

@@ -408,23 +408,6 @@ Route::delete('/apps/{project}', [AppProjectController::class, 'destroy'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('apps.destroy');
 
-// Manage Website → Port Share (JSON) =================================================
-Route::get('/websites/{id}/port-shares', [PortShareController::class, 'index'])
-    ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('websites.port-shares.index');
-Route::post('/websites/{id}/port-shares', [PortShareController::class, 'store'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])
-    ->name('websites.port-shares.store');
-Route::put('/port-shares/{share}', [PortShareController::class, 'update'])
-    ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('port-shares.update');
-Route::patch('/port-shares/{share}/toggle', [PortShareController::class, 'toggle'])
-    ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('port-shares.toggle');
-Route::delete('/port-shares/{share}', [PortShareController::class, 'destroy'])
-    ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('port-shares.destroy');
-
 // Rules → Redirect Rules ============================================================
 Route::get('/rules/redirects', [RedirectRuleController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
@@ -441,6 +424,23 @@ Route::patch('/rules/redirects/{rule}/toggle', [RedirectRuleController::class, '
 Route::delete('/rules/redirects/{rule}', [RedirectRuleController::class, 'destroy'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('rules.redirects.destroy');
+
+// Rules → Port Share ================================================================
+Route::get('/rules/port-shares', [PortShareController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.port-shares.index');
+Route::post('/rules/port-shares', [PortShareController::class, 'store'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])
+    ->name('rules.port-shares.store');
+Route::put('/rules/port-shares/{share}', [PortShareController::class, 'update'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.port-shares.update');
+Route::patch('/rules/port-shares/{share}/toggle', [PortShareController::class, 'toggle'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.port-shares.toggle');
+Route::delete('/rules/port-shares/{share}', [PortShareController::class, 'destroy'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.port-shares.destroy');
 
 // SEO Tools → Sitemap Verify =========================================================
 Route::get('/seo/sitemap-verify', [SitemapVerifyController::class, 'index'])
