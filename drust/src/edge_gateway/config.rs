@@ -56,6 +56,9 @@ pub struct RouteConfig {
 pub enum RouteAction {
     Static,
     Proxy(UpstreamConfig),
+    /// A panel "port share": any local port published on a path of the
+    /// site. Never lazy-starts a process; the port's owner keeps it up.
+    PortShare { port: u16, strip_prefix: bool },
     Redirect { location: String, code: u16 },
 }
 

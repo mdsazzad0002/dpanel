@@ -400,7 +400,8 @@ class WebsiteController extends Controller
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $validated = $request->validate([
             'start_directory' => ['nullable', 'string', 'max:255'],
-            'runtime' => ['nullable', 'string', 'in:php,node,python,docker'],
+            // Node/Python apps are projects now (Projects + Port Share).
+            'runtime' => ['nullable', 'string', 'in:php,docker'],
             'php_version' => [($request->input('runtime') ?? $website['runtime'] ?? 'php') === 'php' ? 'required' : 'nullable', 'string', 'regex:/^\d+\.\d+$/'],
             'node_entry_file' => ['nullable', 'string', 'max:255'],
             'node_start_command' => ['nullable', 'string', 'max:255'],

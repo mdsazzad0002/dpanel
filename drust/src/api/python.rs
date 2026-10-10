@@ -11,9 +11,10 @@ use serde_json::json;
 
 use crate::api::{ApiResponse, ApiState, check_token};
 use crate::edge_gateway::{
+    forget_python_liveness,
     PythonRunOptions,
     ensure_python_process_running, python_process_status, reprovision_and_restart_python_process,
-    restart_python_process, stop_python_process,
+    remove_python_process, restart_python_process, stop_python_process,
 };
 
 pub fn routes() -> Router<Arc<ApiState>> {
@@ -81,7 +82,7 @@ pub(crate) async fn handle(
                 Err(error) => ApiResponse::error(&format!("Failed to start: {error}")).into_response(),
             }
         }
-        "stop" => match stop_python_process(&request.site_id) {
+        "stop" => match stop_python_process(&request.site_id).inspect(|()| forget_python_liveness(request.port)) {
             Ok(()) => ApiResponse::ok("Python process stopped").into_response(),
             Err(error) => ApiResponse::error(&format!("Failed to stop: {error}")).into_response(),
         },
@@ -111,6 +112,10 @@ pub(crate) async fn handle(
                 }
             }
         }
+        "remove" => match remove_python_process(&request.site_id).inspect(|()| forget_python_liveness(request.port)) {
+            Ok(()) => ApiResponse::ok("Python process removed").into_response(),
+            Err(error) => ApiResponse::error(&format!("Failed to remove: {error}")).into_response(),
+        },
         "status" => {
             let status = python_process_status(&request.site_id, request.port).await;
             ApiResponse::ok_data(

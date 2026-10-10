@@ -192,12 +192,9 @@ const saveRuntimeSettings = async () => {
                             <label for="runtime" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Runtime</label>
                             <select id="runtime" v-model="runtimeInput" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
                                 <option value="php">PHP</option>
-                                <option value="node">Node.js (Next.js, Express, …)</option>
-                                <option value="python">Python (Django, Flask, FastAPI, …)</option>
                                 <option v-if="docker && (docker.installed || website.runtime === 'docker')" value="docker">Docker container (any image)</option>
                             </select>
-                            <p v-if="runtimeInput === 'node'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Switching to Node.js stops PHP handling for this domain; requests will be reverse-proxied to your Node process instead.</p>
-                            <p v-if="runtimeInput === 'python'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Switching to Python stops PHP handling for this domain; requests will be reverse-proxied to your gunicorn process instead.</p>
+                            <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Node.js and Python apps run as Projects now; publish one on this domain with Port Share.</p>
                             <p v-if="runtimeInput === 'docker'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Switching to Docker stops PHP handling for this domain; requests will be reverse-proxied to the container instead. Saving again recreates the container with the new settings.</p>
                             <p v-if="website.runtime === 'docker' && runtimeInput !== 'docker'" class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Leaving Docker removes this site's container. Files in the site folder stay.</p>
                         </div>
@@ -208,60 +205,6 @@ const saveRuntimeSettings = async () => {
                                 <option v-for="version in phpVersions" :key="version" :value="version">PHP {{ version }}</option>
                             </select>
                         </div>
-                        <template v-else-if="runtimeInput === 'node'">
-                            <div>
-                                <label for="node-version" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Node version</label>
-                                <select id="node-version" v-model="nodeVersionInput" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
-                                    <option v-for="version in nodeVersionOptions" :key="version" :value="version">{{ version }}</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label for="node-entry-file" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Entry file</label>
-                                <input id="node-entry-file" v-model="nodeEntryFileInput" type="text" required placeholder="server.js" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
-                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">The file dPanel runs, relative to the project root. It must read the <code>PORT</code> env var and call <code>listen()</code> on it.</p>
-                            </div>
-                            <div>
-                                <label for="node-start-command" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Start command (optional)</label>
-                                <input id="node-start-command" v-model="nodeStartCommandInput" type="text" placeholder="npm run start" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
-                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Overrides <code>node {{ nodeEntryFileInput || 'server.js' }}</code>, e.g. for <code>next start</code>.</p>
-                            </div>
-                        </template>
-                        <template v-else-if="runtimeInput === 'python'">
-                            <div>
-                                <label for="python-version" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Python version</label>
-                                <select id="python-version" v-model="pythonVersionInput" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
-                                    <option v-for="version in pythonVersionOptions" :key="version" :value="version">{{ version }}</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label for="python-entry-file" class="block text-sm font-medium text-slate-700 dark:text-slate-200">WSGI app path</label>
-                                <input id="python-entry-file" v-model="pythonEntryFileInput" type="text" required placeholder="app:app" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
-                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">The <code>module:variable</code> path to your WSGI app object, e.g. <code>app:app</code> for Flask or <code>myproject.wsgi:application</code> for Django.</p>
-                            </div>
-                            <div>
-                                <label for="python-start-command" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Start command (optional)</label>
-                                <input id="python-start-command" v-model="pythonStartCommandInput" type="text" placeholder="gunicorn app:app" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
-                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Overrides <code>gunicorn {{ pythonEntryFileInput || 'app:app' }}</code>.</p>
-                            </div>
-                            <div>
-                                <label for="python-mode" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Mode</label>
-                                <select id="python-mode" v-model="pythonModeInput" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
-                                    <option value="production">Production</option>
-                                    <option value="development">Development (auto-reload on code change)</option>
-                                </select>
-                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Development restarts the app by itself whenever a file changes and logs in debug detail; it uses more CPU, so switch live sites back to Production. Sets <code>APP_ENV</code> and <code>FLASK_DEBUG</code> to match.</p>
-                            </div>
-                            <div>
-                                <label for="python-workers" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Worker processes</label>
-                                <input id="python-workers" v-model.number="pythonWorkersInput" type="number" min="1" max="32" step="1" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
-                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">How many requests the app can handle at once (gunicorn <code>--workers</code>, also exported as <code>WEB_CONCURRENCY</code>). Default 4; applied on the next restart.</p>
-                            </div>
-                            <div>
-                                <label for="python-timeout" class="block text-sm font-medium text-slate-700 dark:text-slate-200">Request timeout (seconds)</label>
-                                <input id="python-timeout" v-model.number="pythonTimeoutInput" type="number" min="10" max="300" step="1" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100" />
-                                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">How long one request may run before it is stopped (gunicorn <code>--timeout</code>). Default 30; raise it for slow reports or exports.</p>
-                            </div>
-                        </template>
                         <DockerRuntimeFields v-else-if="runtimeInput === 'docker'" v-model="dockerInput" :root-path="String(website.root_path || '')" />
                     </div>
                     <div class="flex shrink-0 justify-end gap-3 border-t border-slate-200 p-5 dark:border-slate-800">

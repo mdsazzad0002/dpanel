@@ -11,7 +11,9 @@ use serde_json::json;
 
 use crate::api::{ApiResponse, ApiState, check_token};
 use crate::edge_gateway::{
-    ensure_node_process_running, node_process_status, restart_node_process, stop_node_process,
+    forget_python_liveness,
+    ensure_node_process_running, node_process_status, remove_node_process,
+    reprovision_and_restart_node_process, restart_node_process, stop_node_process,
 };
 
 pub fn routes() -> Router<Arc<ApiState>> {
@@ -62,15 +64,38 @@ pub(crate) async fn handle(
                 Err(error) => ApiResponse::error(&format!("Failed to start: {error}")).into_response(),
             }
         }
-        "stop" => match stop_node_process(&request.site_id) {
+        "stop" => match stop_node_process(&request.site_id).inspect(|()| forget_python_liveness(request.port)) {
             Ok(()) => ApiResponse::ok("Node process stopped").into_response(),
             Err(error) => ApiResponse::error(&format!("Failed to stop: {error}")).into_response(),
         },
-        "restart" => match restart_node_process(&request.site_id) {
-            Ok(()) => ApiResponse::ok("Node process restarted").into_response(),
-            Err(error) => {
-                ApiResponse::error(&format!("Failed to restart: {error}")).into_response()
+        "restart" => {
+            // With the settings available, rewrite the unit first so edits
+            // like the start command apply on this restart.
+            let result = match (request.site_owner.as_deref(), request.project_root.as_deref()) {
+                (Some(owner), Some(project_root)) => {
+                    reprovision_and_restart_node_process(
+                        &request.site_id,
+                        owner,
+                        &PathBuf::from(project_root),
+                        request.node_entry_file.as_deref(),
+                        request.node_start_command.as_deref(),
+                        request.node_version.as_deref(),
+                        request.port,
+                    )
+                    .await
+                }
+                _ => restart_node_process(&request.site_id),
+            };
+            match result {
+                Ok(()) => ApiResponse::ok("Node process restarted").into_response(),
+                Err(error) => {
+                    ApiResponse::error(&format!("Failed to restart: {error}")).into_response()
+                }
             }
+        }
+        "remove" => match remove_node_process(&request.site_id).inspect(|()| forget_python_liveness(request.port)) {
+            Ok(()) => ApiResponse::ok("Node process removed").into_response(),
+            Err(error) => ApiResponse::error(&format!("Failed to remove: {error}")).into_response(),
         },
         "status" => {
             let status = node_process_status(&request.site_id, request.port).await;

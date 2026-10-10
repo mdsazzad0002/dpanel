@@ -139,7 +139,10 @@ pub async fn dispatch(
     // path regardless of runtime. Node/Python/Docker sites route "/" through a
     // reverse proxy, so serve this one path straight off disk or SSL
     // issuance breaks.
-    if (site.runtime == "node" || site.runtime == "python" || site.runtime == "docker")
+    if (site.runtime == "node"
+        || site.runtime == "python"
+        || site.runtime == "docker"
+        || site.routes.iter().any(|route| matches!(route.action, RouteAction::PortShare { .. })))
         && path.starts_with("/.well-known/acme-challenge/")
     {
         if let Some(document_root) = site.document_root.as_ref() {
@@ -351,10 +354,44 @@ pub async fn dispatch(
                 });
             return annotated_response(response, site_match, route_match);
         }
+        RouteAction::PortShare { port, strip_prefix } => {
+            let mut request = request;
+            if *strip_prefix {
+                if let Some(uri) = strip_uri_prefix(request.uri(), route_match) {
+                    *request.uri_mut() = uri;
+                }
+            }
+            let upstream = super::UpstreamConfig::Http(SocketAddr::from(([127, 0, 0, 1], *port)));
+            let timeout = super::ProxyConfig::default().request_timeout;
+            let response = proxy_request_with_timeout(proxy_client, &upstream, request, timeout)
+                .await
+                .unwrap_or_else(|error| {
+                    simple_response(
+                        StatusCode::BAD_GATEWAY,
+                        &format!("Nothing is answering on shared port {port} yet ({error})"),
+                    )
+                });
+            return annotated_response(response, site_match, route_match);
+        }
         RouteAction::Redirect { location, code } => {
             return annotated_response(redirect_response(*code, location), site_match, route_match);
         }
     }
+}
+
+/// "/app/x?y" under the "/app" share becomes "/x?y" for the upstream.
+fn strip_uri_prefix(uri: &axum::http::Uri, prefix: &str) -> Option<axum::http::Uri> {
+    let prefix = prefix.trim_end_matches('/');
+    if prefix.is_empty() {
+        return None;
+    }
+    let rest = uri.path().strip_prefix(prefix)?;
+    let path = if rest.is_empty() { "/" } else { rest };
+    let path_and_query = match uri.query() {
+        Some(query) => format!("{path}?{query}"),
+        None => path.to_string(),
+    };
+    path_and_query.parse().ok()
 }
 
 fn request_client_ips(request: &Request<Body>) -> Vec<IpAddr> {
@@ -974,6 +1011,15 @@ fn format_http_date(_value: std::time::SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strips_share_prefix_and_keeps_query() {
+        let uri: axum::http::Uri = "/app/x/y?z=1".parse().unwrap();
+        assert_eq!(strip_uri_prefix(&uri, "/app").unwrap(), "/x/y?z=1");
+        let uri: axum::http::Uri = "/app".parse().unwrap();
+        assert_eq!(strip_uri_prefix(&uri, "/app/").unwrap(), "/");
+        assert!(strip_uri_prefix(&uri, "/").is_none());
+    }
     use std::sync::Arc;
     use std::time::Duration;
 

@@ -27,8 +27,8 @@ pub use edge_cache::{CacheMode, EdgeCache, SiteCacheConfig};
 pub use h3_listener::run_h3_listener;
 pub use matching::{normalize_request_path, resolve_route, resolve_site};
 pub use node_process::{
-    NodeProcessStatus, ensure_node_process_running, node_process_status, restart_node_process,
-    stop_node_process,
+    NodeProcessStatus, ensure_node_process_running, node_process_status, remove_node_process,
+    reprovision_and_restart_node_process, restart_node_process, stop_node_process,
 };
 pub use php::{
     clear_canonical_root_cache, clear_canonical_root_cache_under, execute_php_front_controller,
@@ -39,7 +39,7 @@ pub use proxy::{
 };
 pub use python_process::{
     PythonProcessStatus, PythonRunOptions, ensure_python_process_running, python_process_status,
-    forget_python_liveness, python_static_file, reprovision_and_restart_python_process, restart_python_process, stop_python_process,
+    forget_python_liveness, python_static_file, reprovision_and_restart_python_process, remove_python_process, restart_python_process, stop_python_process,
 };
 pub use server::{
     sample_dispatch_context, sample_snapshot, sample_tls_store, serve_demo_with_tls, serve_gateway,

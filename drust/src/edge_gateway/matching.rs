@@ -17,8 +17,17 @@ pub fn resolve_site<'a>(snapshot: &'a RuntimeSnapshot, host: &str) -> Option<&'a
 pub fn resolve_route<'a>(site: &'a SiteConfig, path: &str) -> Option<&'a RouteConfig> {
     site.routes
         .iter()
-        .filter(|route| path.starts_with(route.path_prefix.as_str()))
+        .filter(|route| prefix_matches(route.path_prefix.as_str(), path))
         .max_by_key(|route| route.path_prefix.len())
+}
+
+/// Segment-aware: "/api" (or "/api/") covers "/api" and "/api/x" but not
+/// "/apix", so a shared path never swallows a sibling page.
+fn prefix_matches(prefix: &str, path: &str) -> bool {
+    let prefix = prefix.trim_end_matches('/');
+    prefix.is_empty()
+        || path == prefix
+        || (path.starts_with(prefix) && path[prefix.len()..].starts_with('/'))
 }
 
 pub fn normalize_request_path(path: &str) -> String {
@@ -130,6 +139,8 @@ mod tests {
 
         let route = resolve_route(&site, "/api/users").unwrap();
         assert_eq!(route.path_prefix, "/api/");
+        assert_eq!(resolve_route(&site, "/api").unwrap().path_prefix, "/api/");
+        assert_eq!(resolve_route(&site, "/apix").unwrap().path_prefix, "/");
     }
 
     #[test]

@@ -54,28 +54,11 @@ const form = useForm({
     root_path: '',
     php_version: props.defaultPhpVersion || '',
     runtime: 'php',
-    node_version: '20',
-    node_entry_file: 'server.js',
-    node_start_command: '',
-    python_version: '3.10',
-    python_entry_file: 'app:app',
-    python_start_command: '',
-    python_workers: 4,
-    python_mode: 'production',
-    python_timeout: 30,
     enable_ssl: true,
     manage_dns: false,
     assigned_user_id: '',
 });
 
-const runtimeOptions = [
-    { value: 'php', label: 'PHP' },
-    { value: 'node', label: 'Node.js (Next.js, Express, …)' },
-    { value: 'python', label: 'Python (Django, Flask, FastAPI, …)' },
-];
-
-const nodeVersionOptions = ['18', '20', '22'];
-const pythonVersionOptions = ['3.8', '3.10', '3.12'];
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
@@ -631,11 +614,6 @@ onBeforeUnmount(() => {
                     <p v-if="form.errors.root_path" class="mt-1 text-xs text-red-600">{{ form.errors.root_path }}</p>
                 </div>
                 <div v-if="!props.aliasMode">
-                    <label class="mb-1 block text-sm">Runtime</label>
-                    <SearchableSelect v-model="form.runtime" :options="runtimeOptions" />
-                    <p v-if="form.errors.runtime" class="mt-1 text-xs text-red-600">{{ form.errors.runtime }}</p>
-                </div>
-                <div v-if="!props.aliasMode && form.runtime === 'php'">
                     <label class="mb-1 block text-sm">PHP Version </label>
                     <select v-model="form.php_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option v-for="version in availablePhpVersions" :key="version" :value="version">
@@ -644,69 +622,9 @@ onBeforeUnmount(() => {
                     </select>
                     <p v-if="form.errors.php_version" class="mt-1 text-xs text-red-600">{{ form.errors.php_version }}</p>
                 </div>
-                <template v-if="!props.aliasMode && form.runtime === 'node'">
-                    <div>
-                        <label class="mb-1 block text-sm">Node Version</label>
-                        <select v-model="form.node_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                            <option v-for="version in nodeVersionOptions" :key="version" :value="version">{{ version }}</option>
-                        </select>
-                        <p v-if="form.errors.node_version" class="mt-1 text-xs text-red-600">{{ form.errors.node_version }}</p>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Entry File</label>
-                        <input v-model="form.node_entry_file" type="text" placeholder="server.js" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                        <p class="mt-1 text-xs text-slate-500">The file dPanel runs to start your app, e.g. server.js for a custom Next.js server, or app.js for Express. It must call listen() on the port dPanel assigns via the PORT environment variable.</p>
-                        <p v-if="form.errors.node_entry_file" class="mt-1 text-xs text-red-600">{{ form.errors.node_entry_file }}</p>
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="mb-1 block text-sm">Start Command (optional)</label>
-                        <input v-model="form.node_start_command" type="text" placeholder="npm run start" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                        <p class="mt-1 text-xs text-slate-500">Overrides the default `node {{ form.node_entry_file || 'server.js' }}` command, e.g. for `next start`.</p>
-                        <p v-if="form.errors.node_start_command" class="mt-1 text-xs text-red-600">{{ form.errors.node_start_command }}</p>
-                    </div>
-                </template>
-                <template v-if="!props.aliasMode && form.runtime === 'python'">
-                    <div>
-                        <label class="mb-1 block text-sm">Python Version</label>
-                        <select v-model="form.python_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                            <option v-for="version in pythonVersionOptions" :key="version" :value="version">{{ version }}</option>
-                        </select>
-                        <p v-if="form.errors.python_version" class="mt-1 text-xs text-red-600">{{ form.errors.python_version }}</p>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">WSGI App Path</label>
-                        <input v-model="form.python_entry_file" type="text" placeholder="app:app" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                        <p class="mt-1 text-xs text-slate-500">The `module:variable` path to your WSGI application object that dPanel runs with gunicorn, e.g. `app:app` for Flask or `myproject.wsgi:application` for Django.</p>
-                        <p v-if="form.errors.python_entry_file" class="mt-1 text-xs text-red-600">{{ form.errors.python_entry_file }}</p>
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="mb-1 block text-sm">Start Command (optional)</label>
-                        <input v-model="form.python_start_command" type="text" placeholder="gunicorn app:app" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                        <p class="mt-1 text-xs text-slate-500">Overrides the default `gunicorn {{ form.python_entry_file || 'app:app' }}` command.</p>
-                        <p v-if="form.errors.python_start_command" class="mt-1 text-xs text-red-600">{{ form.errors.python_start_command }}</p>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Mode</label>
-                        <select v-model="form.python_mode" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                            <option value="production">Production</option>
-                            <option value="development">Development (auto-reload on code change)</option>
-                        </select>
-                        <p class="mt-1 text-xs text-slate-500">Development restarts the app by itself when code changes; use Production for live sites.</p>
-                        <p v-if="form.errors.python_mode" class="mt-1 text-xs text-red-600">{{ form.errors.python_mode }}</p>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Worker Processes</label>
-                        <input v-model.number="form.python_workers" type="number" min="1" max="32" step="1" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                        <p class="mt-1 text-xs text-slate-500">How many requests the app can handle at once (gunicorn `--workers`). Default 4.</p>
-                        <p v-if="form.errors.python_workers" class="mt-1 text-xs text-red-600">{{ form.errors.python_workers }}</p>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm">Request Timeout (seconds)</label>
-                        <input v-model.number="form.python_timeout" type="number" min="10" max="300" step="1" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                        <p class="mt-1 text-xs text-slate-500">How long one request may run before it is stopped. Default 30.</p>
-                        <p v-if="form.errors.python_timeout" class="mt-1 text-xs text-red-600">{{ form.errors.python_timeout }}</p>
-                    </div>
-                </template>
+                <p v-if="!props.aliasMode" class="text-xs text-slate-500 md:col-span-2">
+                    Websites run PHP. For a Node.js or Python app, create it under <a :href="panelRoute('projects.index')" class="text-blue-600 hover:underline">Node &amp; Python → Projects</a> and publish its port on this domain with <a :href="panelRoute('port-shares.index')" class="text-blue-600 hover:underline">Port Share</a>.
+                </p>
                 <div v-if="!props.aliasMode" class="pt-7">
                     <div class="flex items-center gap-2">
                         <input id="enable_ssl" v-model="form.enable_ssl" type="checkbox" :disabled="isReservedSslDomain" class="rounded border-slate-300" />

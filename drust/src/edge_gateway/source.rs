@@ -131,6 +131,19 @@ fn load_sites(
         }
     };
 
+    // Optional too: before the port_shares migration, no site has any.
+    let share_sql = match &domain_filter {
+        Some(filter) => format!("{PORT_SHARES_SQL} AND website_id IN (SELECT w.id FROM websites w WHERE {filter})"),
+        None => PORT_SHARES_SQL.to_string(),
+    };
+    let mut port_shares = match run_mysql(env, &share_sql) {
+        Ok(rows) => parse_port_shares(&rows),
+        Err(error) => {
+            tracing::warn!(%error, "port shares unavailable; none applied");
+            HashMap::new()
+        }
+    };
+
     let mut sites = Vec::new();
     let mut tls = Vec::new();
     for line in stdout.lines() {
@@ -205,6 +218,10 @@ fn load_sites(
                 None => std::sync::Arc::from([]),
             },
             _ => static_route(),
+        };
+        let routes = match port_shares.remove(cols[0].trim()) {
+            Some(shares) => merge_port_shares(&routes, shares),
+            None => routes,
         };
         sites.push(SiteConfig {
             id: cols[0].trim().to_string(),
@@ -293,6 +310,45 @@ fn parse_redirect_rules(rows: &str) -> HashMap<String, Vec<super::RedirectRule>>
         }
     }
     rules
+}
+
+const PORT_SHARES_SQL: &str = "SELECT website_id,path_prefix,target_port,strip_prefix FROM port_shares WHERE enabled=1";
+
+fn parse_port_shares(rows: &str) -> HashMap<String, Vec<RouteConfig>> {
+    let mut shares: HashMap<String, Vec<RouteConfig>> = HashMap::new();
+    for line in rows.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 4 {
+            continue;
+        }
+        let prefix = cols[1].trim();
+        let Ok(port) = cols[2].trim().parse::<u16>() else {
+            continue;
+        };
+        if !prefix.starts_with('/') || port == 0 {
+            continue;
+        }
+        shares.entry(cols[0].trim().to_string()).or_default().push(RouteConfig {
+            path_prefix: prefix.to_string(),
+            action: RouteAction::PortShare {
+                port,
+                strip_prefix: cols[3].trim() == "1",
+            },
+        });
+    }
+    shares
+}
+
+/// A share on the same path as a runtime route (e.g. "/") replaces it.
+fn merge_port_shares(base: &[RouteConfig], shares: Vec<RouteConfig>) -> std::sync::Arc<[RouteConfig]> {
+    let key = |prefix: &str| prefix.trim_end_matches('/').to_string();
+    let mut routes: Vec<RouteConfig> = base
+        .iter()
+        .filter(|route| !shares.iter().any(|share| key(&share.path_prefix) == key(&route.path_prefix)))
+        .cloned()
+        .collect();
+    routes.extend(shares);
+    std::sync::Arc::from(routes)
 }
 
 const DOCKER_PORT_SQL: &str = "SELECT w.id,COALESCE(w.docker_port,0) FROM websites w WHERE w.runtime='docker'";
@@ -564,6 +620,17 @@ mod tests {
         assert_eq!(rows["b"].workers, None);
         assert!(!rows["b"].development);
         assert!(!rows["c"].development);
+    }
+
+    #[test]
+    fn port_shares_replace_the_same_path_and_add_others() {
+        let shares = parse_port_shares("site-1\t/\t3000\t0\nsite-1\t/api\t4000\t1\nsite-2\tbad\t1\t0\n");
+        assert!(!shares.contains_key("site-2"));
+        let base = [RouteConfig { path_prefix: "/".to_string(), action: RouteAction::Static }];
+        let routes = merge_port_shares(&base, shares["site-1"].clone());
+        assert_eq!(routes.len(), 2);
+        assert!(routes.iter().all(|route| matches!(route.action, RouteAction::PortShare { .. })));
+        assert!(routes.iter().any(|route| matches!(route.action, RouteAction::PortShare { port: 4000, strip_prefix: true })));
     }
 
     #[test]

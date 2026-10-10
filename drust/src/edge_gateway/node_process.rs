@@ -87,7 +87,57 @@ pub fn stop_node_process(site_id: &str) -> Result<(), String> {
     if !unit_file_exists(&unit) {
         return Ok(());
     }
-    run_systemctl(&["stop", &unit])
+    // Disabled too, so a stopped app stays stopped across a reboot; the
+    // next start re-enables it.
+    run_systemctl(&["disable", "--now", &unit])
+}
+
+/// Stops the app and deletes its unit, for a deleted project.
+pub fn remove_node_process(site_id: &str) -> Result<(), String> {
+    let unit = unit_name(site_id);
+    if !unit_file_exists(&unit) {
+        return Ok(());
+    }
+    let _ = run_systemctl(&["disable", "--now", &unit]);
+    fs::remove_file(format!("/etc/systemd/system/{unit}.service"))
+        .map_err(|error| format!("cannot remove systemd unit {unit}: {error}"))?;
+    let _ = run_systemctl(&["reset-failed", &unit]);
+    run_systemctl(&["daemon-reload"])
+}
+
+/// Rewrites the unit from the current settings, then restarts it, so an
+/// edited start command or port applies on this restart.
+#[allow(clippy::too_many_arguments)]
+pub async fn reprovision_and_restart_node_process(
+    site_id: &str,
+    owner: &str,
+    project_root: &Path,
+    entry_file: Option<&str>,
+    start_command: Option<&str>,
+    node_version: Option<&str>,
+    port: u16,
+) -> Result<(), String> {
+    let owner = validate_system_user(owner)?;
+    let unit = unit_name(site_id);
+    let site_id = site_id.to_string();
+    let project_root = project_root.to_path_buf();
+    let entry_file = entry_file.map(str::to_string);
+    let start_command = start_command.map(str::to_string);
+    let node_version = node_version.map(str::to_string);
+    tokio::task::spawn_blocking(move || {
+        ensure_unit_provisioned(
+            &site_id,
+            &owner,
+            &project_root,
+            entry_file.as_deref(),
+            start_command.as_deref(),
+            node_version.as_deref(),
+            port,
+        )?;
+        run_systemctl(&["restart", &unit])
+    })
+    .await
+    .map_err(|error| format!("node process provision worker failed: {error}"))?
 }
 
 pub fn restart_node_process(site_id: &str) -> Result<(), String> {

@@ -232,7 +232,22 @@ pub fn stop_python_process(site_id: &str) -> Result<(), String> {
     if !unit_file_exists(&unit) {
         return Ok(());
     }
-    run_systemctl(&["stop", &unit])
+    // Disabled too, so a stopped app stays stopped across a reboot; the
+    // next start re-enables it.
+    run_systemctl(&["disable", "--now", &unit])
+}
+
+/// Stops the app and deletes its unit, for a deleted project.
+pub fn remove_python_process(site_id: &str) -> Result<(), String> {
+    let unit = unit_name(site_id);
+    if !unit_file_exists(&unit) {
+        return Ok(());
+    }
+    let _ = run_systemctl(&["disable", "--now", &unit]);
+    fs::remove_file(format!("/etc/systemd/system/{unit}.service"))
+        .map_err(|error| format!("cannot remove systemd unit {unit}: {error}"))?;
+    let _ = run_systemctl(&["reset-failed", &unit]);
+    run_systemctl(&["daemon-reload"])
 }
 
 pub fn restart_python_process(site_id: &str) -> Result<(), String> {

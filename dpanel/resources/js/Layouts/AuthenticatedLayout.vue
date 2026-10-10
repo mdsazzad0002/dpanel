@@ -211,6 +211,18 @@ const menuItems = computed(() => [
         ],
     },
     {
+        id: 'projects',
+        label: 'Node & Python',
+        hint: 'Apps from your home directory and port sharing',
+        icon: 'NP',
+        iconClass: 'bi bi-boxes',
+        color: 'violet',
+        children: [
+            { label: 'Projects', hint: 'Run Node.js and Python apps', icon: 'PJ', iconClass: 'bi bi-boxes', routeName: 'projects.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+            { label: 'Port Share', hint: 'Reverse proxy a local port onto a website', icon: 'PS', iconClass: 'bi bi-ethernet', routeName: 'port-shares.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+        ],
+    },
+    {
         id: 'rules',
         label: 'Rules',
         hint: 'Edge rules for your websites',

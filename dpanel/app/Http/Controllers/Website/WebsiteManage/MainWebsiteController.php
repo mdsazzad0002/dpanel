@@ -124,7 +124,8 @@ class MainWebsiteController extends Controller
                 },
             ],
             'start_directory' => ['nullable', 'string', 'max:255'],
-            'runtime' => ['nullable', 'string', 'in:php,node,python'],
+            // Node/Python apps are projects now (Projects + Port Share).
+            'runtime' => ['nullable', 'string', 'in:php'],
             'php_version' => [$domainType === 'alis' || in_array($request->input('runtime'), ['node', 'python'], true) ? 'nullable' : 'required', 'string', 'max:10'],
             'node_version' => ['nullable', 'string', 'max:10'],
             'node_entry_file' => [$domainType !== 'alis' && $request->input('runtime') === 'node' ? 'required' : 'nullable', 'string', 'max:255'],

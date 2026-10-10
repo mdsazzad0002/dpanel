@@ -6,6 +6,8 @@ use App\Http\Controllers\CronJobController;
 use App\Http\Controllers\FilemanagerTrashController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\RedisCacheController;
+use App\Http\Controllers\Projects\AppProjectController;
+use App\Http\Controllers\Projects\PortShareController;
 use App\Http\Controllers\Rules\RedirectRuleController;
 use App\Http\Controllers\Seo\IconGeneratorController;
 use App\Http\Controllers\Seo\SitemapVerifyController;
@@ -382,6 +384,43 @@ Route::delete('/websites/{id}/filemanager/trash', [FilemanagerTrashController::c
 Route::get('/websites/list', [WebsiteController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.list');
+
+// Projects → Node / Python ===========================================================
+Route::get('/projects', [AppProjectController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('projects.index');
+Route::post('/projects', [AppProjectController::class, 'store'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
+    ->name('projects.store');
+Route::put('/projects/{project}', [AppProjectController::class, 'update'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('projects.update');
+Route::post('/projects/{project}/control', [AppProjectController::class, 'control'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])
+    ->name('projects.control');
+Route::get('/projects/{project}/status', [AppProjectController::class, 'status'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('projects.status');
+Route::delete('/projects/{project}', [AppProjectController::class, 'destroy'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('projects.destroy');
+
+// Projects → Port Share ==============================================================
+Route::get('/port-shares', [PortShareController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('port-shares.index');
+Route::post('/port-shares', [PortShareController::class, 'store'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('port-shares.store');
+Route::put('/port-shares/{share}', [PortShareController::class, 'update'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('port-shares.update');
+Route::patch('/port-shares/{share}/toggle', [PortShareController::class, 'toggle'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('port-shares.toggle');
+Route::delete('/port-shares/{share}', [PortShareController::class, 'destroy'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('port-shares.destroy');
 
 // Rules → Redirect Rules ============================================================
 Route::get('/rules/redirects', [RedirectRuleController::class, 'index'])
