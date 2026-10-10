@@ -118,6 +118,19 @@ fn load_sites(
         }
     };
 
+    // Optional like the cache settings: no table yet means no redirects.
+    let redirect_sql = match &domain_filter {
+        Some(filter) => format!("{REDIRECT_RULES_SQL} AND website_id IN (SELECT w.id FROM websites w WHERE {filter}) ORDER BY website_id,position,id"),
+        None => format!("{REDIRECT_RULES_SQL} ORDER BY website_id,position,id"),
+    };
+    let mut redirects = match run_mysql(env, &redirect_sql) {
+        Ok(rows) => parse_redirect_rules(&rows),
+        Err(error) => {
+            tracing::warn!(%error, "redirect rules unavailable; none applied");
+            HashMap::new()
+        }
+    };
+
     let mut sites = Vec::new();
     let mut tls = Vec::new();
     for line in stdout.lines() {
@@ -215,6 +228,7 @@ fn load_sites(
             banned_ips: parse_ip_list(cols[11]),
             allowed_ips: parse_ip_list(cols[12]),
             cache: cache_settings.remove(cols[0].trim()).unwrap_or_default(),
+            redirects: redirects.remove(cols[0].trim()).map(Into::into).unwrap_or_else(|| std::sync::Arc::from([])),
         });
         if enable_ssl {
             tls.push(super::TlsConfig {
@@ -264,6 +278,22 @@ fn run_mysql(env: &HashMap<String, String>, sql: &str) -> Result<String, String>
 
 /// Lists become space-separated so each row stays on one line.
 const CACHE_SETTINGS_SQL: &str = "SELECT website_id,mode,edge_ttl,COALESCE(browser_ttl,0),REPLACE(REPLACE(COALESCE(bypass_paths,''),CHAR(13),' '),CHAR(10),' '),REPLACE(REPLACE(COALESCE(bypass_cookies,''),CHAR(13),' '),CHAR(10),' '),ignore_query_string,serve_stale,COALESCE(development_mode_until,0) FROM website_edge_cache";
+
+const REDIRECT_RULES_SQL: &str = "SELECT website_id,kind,COALESCE(target,''),status_code,preserve_query FROM website_redirect_rules WHERE enabled=1";
+
+fn parse_redirect_rules(rows: &str) -> HashMap<String, Vec<super::RedirectRule>> {
+    let mut rules: HashMap<String, Vec<super::RedirectRule>> = HashMap::new();
+    for line in rows.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 5 {
+            continue;
+        }
+        if let Some(rule) = super::RedirectRule::parse(cols[1], cols[2], cols[3], cols[4]) {
+            rules.entry(cols[0].trim().to_string()).or_default().push(rule);
+        }
+    }
+    rules
+}
 
 const DOCKER_PORT_SQL: &str = "SELECT w.id,COALESCE(w.docker_port,0) FROM websites w WHERE w.runtime='docker'";
 

@@ -42,6 +42,8 @@ pub struct SiteConfig {
     pub banned_ips: Arc<[IpAddr]>,
     pub allowed_ips: Arc<[IpAddr]>,
     pub cache: super::SiteCacheConfig,
+    /// In panel order; empty for most sites.
+    pub redirects: Arc<[super::RedirectRule]>,
 }
 
 #[derive(Clone, Debug)]

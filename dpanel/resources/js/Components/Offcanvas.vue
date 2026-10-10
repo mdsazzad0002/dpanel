@@ -1,3 +1,8 @@
+<script>
+// Open panels across every Offcanvas, so closing a stacked one keeps the page locked.
+let openPanels = 0;
+</script>
+
 <script setup>
 import { onMounted, onUnmounted, watch } from 'vue';
 
@@ -6,6 +11,10 @@ const props = defineProps({
     title: { type: String, default: '' },
     subtitle: { type: String, default: '' },
     width: { type: String, default: 'md' }, // sm | md | lg | wide
+    // Any CSS width (e.g. "60vw") from the sm breakpoint up; overrides `width`.
+    maxWidth: { type: String, default: '' },
+    // Stacked panels: only the topmost one closes on Escape.
+    closeOnEscape: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(['close']);
@@ -16,21 +25,27 @@ const widthClass = {
     lg: 'sm:max-w-lg',
     wide: 'sm:max-w-[70vw]',
 }[props.width] || 'sm:max-w-md';
+const panelClass = props.maxWidth ? 'sm:max-w-[var(--offcanvas-width)]' : widthClass;
 
 const close = () => emit('close');
 
-const closeOnEscape = (e) => {
-    if (e.key === 'Escape' && props.show) close();
+const onKeydown = (e) => {
+    if (e.key === 'Escape' && props.show && props.closeOnEscape) close();
 };
 
-watch(() => props.show, (value) => {
-    document.body.style.overflow = value ? 'hidden' : '';
-});
+let counted = false;
+const track = (open) => {
+    if (open === counted) return;
+    counted = open;
+    openPanels += open ? 1 : -1;
+    document.body.style.overflow = openPanels > 0 ? 'hidden' : '';
+};
+watch(() => props.show, track, { immediate: true });
 
-onMounted(() => document.addEventListener('keydown', closeOnEscape));
+onMounted(() => document.addEventListener('keydown', onKeydown));
 onUnmounted(() => {
-    document.removeEventListener('keydown', closeOnEscape);
-    document.body.style.overflow = '';
+    document.removeEventListener('keydown', onKeydown);
+    track(false);
 });
 </script>
 
@@ -58,7 +73,8 @@ onUnmounted(() => {
             <div
                 v-if="show"
                 class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-xl dark:bg-slate-900"
-                :class="widthClass"
+                :class="panelClass"
+                :style="maxWidth ? { '--offcanvas-width': maxWidth } : undefined"
             >
                 <div class="flex items-start justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-700">
                     <div>

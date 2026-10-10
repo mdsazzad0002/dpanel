@@ -884,10 +884,14 @@ fn is_blocked_htaccess_path(path: &str) -> bool {
     {
         return true;
     }
-    let extension = path
-        .rsplit('/')
-        .next()
-        .and_then(|name| name.rsplit_once('.'))
+    let file_name = path.rsplit('/').next().unwrap_or("");
+    // A web app manifest is public by design; every other .json file stays
+    // blocked so project files (composer.json, package.json, auth.json) never leak.
+    if file_name.eq_ignore_ascii_case("manifest.json") {
+        return false;
+    }
+    let extension = file_name
+        .rsplit_once('.')
         .map(|(_, extension)| extension.to_ascii_lowercase());
     matches!(
         extension.as_deref(),
@@ -997,6 +1001,16 @@ mod tests {
         assert!(is_blocked_htaccess_path("/.env"));
         assert!(is_blocked_htaccess_path("/.well-known/private.txt"));
         assert!(is_blocked_htaccess_path("/.well-known/acme-challenge"));
+    }
+
+    #[test]
+    fn serves_web_app_manifests_but_not_other_json() {
+        assert!(!is_blocked_htaccess_path("/manifest.json"));
+        assert!(!is_blocked_htaccess_path("/app/Manifest.JSON"));
+        assert!(is_blocked_htaccess_path("/composer.json"));
+        assert!(is_blocked_htaccess_path("/auth.json"));
+        assert!(is_blocked_htaccess_path("/manifest.json.bak.json"));
+        assert!(is_blocked_htaccess_path("/.git/manifest.json"));
     }
 
     #[test]

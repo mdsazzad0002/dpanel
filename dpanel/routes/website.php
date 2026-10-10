@@ -6,6 +6,10 @@ use App\Http\Controllers\CronJobController;
 use App\Http\Controllers\FilemanagerTrashController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\RedisCacheController;
+use App\Http\Controllers\Rules\RedirectRuleController;
+use App\Http\Controllers\Seo\IconGeneratorController;
+use App\Http\Controllers\Seo\SitemapVerifyController;
+use App\Http\Controllers\Seo\UrlInspectionController;
 use App\Http\Controllers\Website\WebsiteController;
 use App\Http\Controllers\Website\WebsiteDockerController;
 use App\Http\Controllers\Website\WebsiteEdgeCacheController;
@@ -378,3 +382,56 @@ Route::delete('/websites/{id}/filemanager/trash', [FilemanagerTrashController::c
 Route::get('/websites/list', [WebsiteController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.list');
+
+// Rules → Redirect Rules ============================================================
+Route::get('/rules/redirects', [RedirectRuleController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.redirects.index');
+Route::post('/rules/redirects', [RedirectRuleController::class, 'store'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.redirects.store');
+Route::put('/rules/redirects/{rule}', [RedirectRuleController::class, 'update'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.redirects.update');
+Route::patch('/rules/redirects/{rule}/toggle', [RedirectRuleController::class, 'toggle'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.redirects.toggle');
+Route::delete('/rules/redirects/{rule}', [RedirectRuleController::class, 'destroy'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.redirects.destroy');
+
+// SEO Tools → Sitemap Verify =========================================================
+Route::get('/seo/sitemap-verify', [SitemapVerifyController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('seo.sitemap-verify.index');
+Route::post('/seo/sitemap-verify', [SitemapVerifyController::class, 'verify'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('seo.sitemap-verify.run');
+Route::post('/seo/sitemap-verify/inspect', [SitemapVerifyController::class, 'inspect'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:60,1'])
+    ->name('seo.sitemap-verify.inspect');
+Route::post('/seo/sitemap-verify/pages', [SitemapVerifyController::class, 'pages'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('seo.sitemap-verify.pages');
+Route::put('/seo/sitemap-verify/robots', [SitemapVerifyController::class, 'saveRobots'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
+    ->name('seo.sitemap-verify.robots');
+
+// SEO Tools → URL Inspection =========================================================
+Route::get('/seo/url-inspection', [UrlInspectionController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('seo.url-inspection.index');
+Route::post('/seo/url-inspection', [UrlInspectionController::class, 'inspect'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('seo.url-inspection.run');
+
+// SEO Tools → Icon Generator =========================================================
+Route::get('/seo/icon-generator', [IconGeneratorController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('seo.icon-generator.index');
+Route::post('/seo/icon-generator/target', [IconGeneratorController::class, 'target'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])
+    ->name('seo.icon-generator.target');
+Route::post('/seo/icon-generator/install', [IconGeneratorController::class, 'install'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('seo.icon-generator.install');

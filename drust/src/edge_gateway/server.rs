@@ -315,6 +315,12 @@ pub async fn handle_request(
     let snapshot = get_cached_snapshot(&state).await;
     let site = super::resolve_site(snapshot.as_ref(), &host);
     let canonical_domain = site.and_then(|site| site.hostnames.first().cloned());
+    if let Some(response) = site.and_then(|site| super::redirect_for(site, &request)) {
+        if let Some(domain) = &canonical_domain {
+            state.bandwidth.record(domain, upload_bytes, 0);
+        }
+        return response;
+    }
     let decision = site.map_or(edge_cache::Decision::Off, |site| {
         edge_cache::decide(site, &request, edge_cache::unix_now())
     });
@@ -1172,6 +1178,7 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
             banned_ips: Arc::from([]),
             allowed_ips: Arc::from([]),
             cache: Default::default(),
+            redirects: Arc::from([]),
         }]),
         Arc::from([TlsConfig {
             hostnames: Arc::from([primary_domain, www_domain]),
@@ -1275,6 +1282,7 @@ mod edge_cache_tests {
                 serve_stale: true,
                 ..SiteCacheConfig::default()
             },
+            redirects: Arc::from([]),
         };
         let snapshot = RuntimeSnapshot::new(1, Arc::from([site]), Arc::from([]), CachePolicy {
             enabled: true,

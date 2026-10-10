@@ -211,6 +211,30 @@ const menuItems = computed(() => [
         ],
     },
     {
+        id: 'rules',
+        label: 'Rules',
+        hint: 'Edge rules for your websites',
+        icon: 'RL',
+        iconClass: 'bi bi-signpost-2',
+        color: 'amber',
+        children: [
+            { label: 'Redirect Rules', hint: 'HTTPS, www and domain redirects', icon: 'RR', iconClass: 'bi bi-arrow-return-right', routeName: 'rules.redirects.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+        ],
+    },
+    {
+        id: 'seo-tools',
+        label: 'SEO Tools',
+        hint: 'Check how search engines see your sites',
+        icon: 'SE',
+        iconClass: 'bi bi-search',
+        color: 'teal',
+        children: [
+            { label: 'Sitemap Verify', hint: 'robots.txt, sitemaps and listed pages', icon: 'SV', iconClass: 'bi bi-diagram-2', routeName: 'seo.sitemap-verify.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+            { label: 'URL Inspection', hint: 'Indexing, search previews, favicon, share cards and PWA', icon: 'UI', iconClass: 'bi bi-binoculars', routeName: 'seo.url-inspection.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+            { label: 'Icon Generator', hint: 'Favicons, PWA icons, manifest and share image', icon: 'IG', iconClass: 'bi bi-images', routeName: 'seo.icon-generator.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+        ],
+    },
+    {
         id: 'email-management',
         label: 'Email Management',
         hint: 'Mailbox operations',

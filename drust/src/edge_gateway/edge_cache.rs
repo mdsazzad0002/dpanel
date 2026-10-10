@@ -746,6 +746,7 @@ mod tests {
                 bypass_cookies: Arc::from(["wordpress_logged_in_".to_string()]),
                 ..SiteCacheConfig::default()
             },
+            redirects: Arc::from([]),
         }
     }
 

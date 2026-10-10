@@ -10,6 +10,7 @@ mod php;
 mod precompress;
 mod proxy;
 mod python_process;
+mod redirects;
 mod server;
 mod source;
 mod static_files;
@@ -32,6 +33,7 @@ pub use node_process::{
 pub use php::{
     clear_canonical_root_cache, clear_canonical_root_cache_under, execute_php_front_controller,
 };
+pub use redirects::{RedirectRule, redirect_for};
 pub use proxy::{
     ProxyConfig, build_client, health_check_upstream, proxy_request, proxy_request_with_timeout,
 };
