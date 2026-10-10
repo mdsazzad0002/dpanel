@@ -12,6 +12,7 @@
 
 [Installation](docs/installation.md) ·
 [Documentation](docs/README.md) ·
+[Screenshots](docs/screenshots.md) ·
 [Contributing](CONTRIBUTING.md) ·
 [Security](SECURITY.md)
 
@@ -28,6 +29,14 @@ carry out privileged host operations and serve public website traffic.
 > **Free forever.** Every user gets the same software, the same features, and
 > the same updates. There are no license fees, no feature locks, and no forced
 > subscriptions. Paid help is available only if you ask for it.
+
+<p align="center">
+  <a href="docs/screenshots.md">
+    <img src="docs/images/dashboard.png" alt="dPanel dashboard" width="100%">
+  </a>
+  <br>
+  <sub>📸 <a href="docs/screenshots.md"><b>See all screenshots →</b></a></sub>
+</p>
 
 ## Features
 
@@ -126,6 +135,7 @@ Full steps, configuration, and permission setup are in the
 | [Troubleshooting](docs/troubleshooting.md) | Error messages and how to fix them |
 | [Websites and Apps](docs/websites.md) | App installers, Quick Actions, Git deploys, Composer and npm |
 | [Operations](docs/operations.md) | Everyday commands, rebuilds, and troubleshooting |
+| [Screenshots](docs/screenshots.md) | A visual tour of every main panel page |
 | [dscript CLI](docs/dscript.md) | The `dpanel` command: chains, modules, scripts, and recovery |
 | [drust Service](docs/drust-service.md) | Installing and running the privileged Rust service |
 | [drust API](docs/drust-api.md) | Endpoint reference for the localhost execution API |

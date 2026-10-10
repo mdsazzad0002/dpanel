@@ -10,6 +10,7 @@
 | Fix an error message | [Troubleshooting](troubleshooting.md) |
 | Install Laravel/WordPress or build a site with npm/composer | [Websites and Apps](websites.md) |
 | Run Docker containers (optional, off by default) | [Docker](docker.md) |
+| See what the panel looks like | [Screenshots](screenshots.md) |
 
 ## Getting started
 
