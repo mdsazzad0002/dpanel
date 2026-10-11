@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import MailAvatar from './MailAvatar.vue';
 import ContactCard from './ContactCard.vue';
+import MessageActions from './MessageActions.vue';
 import { avatarColorOf, emailOf, initialsOf, nameOrEmail, sameAddress } from './mailAddresses';
 import { mailDocument } from './mailFrame';
 
@@ -10,6 +11,7 @@ import { mailDocument } from './mailFrame';
 const props = defineProps({
     item: { type: Object, required: true },
     messageEndpoint: { type: String, default: '' },
+    rawDownloadEndpoint: { type: String, default: '' },
     avatarEndpoint: { type: String, default: '' },
     selfEmail: { type: String, default: '' },
     isDark: { type: Boolean, default: false },
@@ -20,7 +22,15 @@ const props = defineProps({
 const emit = defineEmits(['compose-to', 'reply']);
 
 // Replies need the loaded body for the quote; folder comes from the thread row.
-const replyTo = () => emit('reply', message.value ? { ...message.value, folder: props.item.folder } : props.item);
+const onAction = async (id) => {
+    if (id === 'reply' || id === 'reply-all' || id === 'forward') {
+        await load();
+        emit('reply', { mode: id, message: message.value ? { ...message.value, folder: props.item.folder } : props.item });
+    }
+};
+const menuItems = computed(() => (props.rawDownloadEndpoint
+    ? [{ id: 'download', label: 'Download message', icon: 'bi-download', href: `${props.rawDownloadEndpoint}${props.rawDownloadEndpoint.includes('?') ? '&' : '?'}${new URLSearchParams({ folder: props.item.folder, uid: String(props.item.uid) })}` }]
+    : []));
 
 const open = ref(props.initiallyOpen);
 const message = ref(null);
@@ -93,7 +103,7 @@ onBeforeUnmount(() => observer?.disconnect());
 <template>
     <article>
         <header
-            :class="[open ? 'pb-2 pt-4' : ['py-3', ui.hover], 'flex cursor-pointer items-start gap-3 px-4 transition md:px-6']"
+            :class="[open ? 'pb-2 pt-4' : ['py-3', ui.hover], 'group flex cursor-pointer items-start gap-3 px-4 transition md:px-6']"
             role="button"
             tabindex="0"
             :aria-expanded="open"
@@ -110,9 +120,12 @@ onBeforeUnmount(() => observer?.disconnect());
                         <span v-if="open && !fromSelf" :class="[ui.muted, 'truncate text-xs']">&lt;{{ emailOf(item.from) }}&gt;</span>
                     </p>
                     <time :class="[ui.muted, 'shrink-0 text-xs']" :title="item.date">{{ shortDate }}</time>
-                    <button v-if="open" type="button" :class="[ui.icon, '-my-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full']" title="Reply" @click.stop="replyTo">
-                        <i class="bi bi-reply"></i>
-                    </button>
+                    <MessageActions
+                        :is-dark="isDark"
+                        :items="menuItems"
+                        class="-my-1.5"
+                        @action="onAction"
+                    />
                 </div>
                 <p v-if="!open" :class="[ui.muted, 'mt-0.5 truncate text-sm']">{{ item.snippet || '(no preview)' }}</p>
                 <p v-else :class="[ui.muted, 'truncate text-xs']">to {{ item.to }}</p>
@@ -122,7 +135,7 @@ onBeforeUnmount(() => observer?.disconnect());
         <div v-if="open" class="pb-2">
             <p v-if="loading" :class="[ui.muted, 'py-4 pl-[68px] text-sm md:pl-[76px]']"><i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i> Loading…</p>
             <p v-else-if="error" class="py-3 pl-[68px] text-sm text-rose-600 md:pl-[76px]">{{ error }} <button type="button" class="ml-2 underline" @click="load">Retry</button></p>
-            <div v-else-if="srcdoc" class="md:pl-[52px]">
+            <div v-else-if="srcdoc" class="pr-4 md:pl-[52px] md:pr-6">
                 <iframe
                     ref="frame"
                     :srcdoc="srcdoc"

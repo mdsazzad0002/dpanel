@@ -6,6 +6,7 @@ import MessageHeaderDetails from './MessageHeaderDetails.vue';
 import ContactCard from './ContactCard.vue';
 import InlineReplyBox from './InlineReplyBox.vue';
 import ThreadMessageCard from './ThreadMessageCard.vue';
+import MessageActions from './MessageActions.vue';
 import { mailDocument } from './mailFrame';
 
 const props = defineProps({
@@ -112,6 +113,25 @@ const startReply = async (mode, target = null) => {
     await nextTick();
     replyBox.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 };
+// The open message's "more" menu: view modes, source, read state, delete.
+const mainMenuItems = computed(() => [
+    ...(bodyView.value !== 'text' ? [{ id: 'text', label: 'Show plain text', icon: 'bi-text-left' }] : []),
+    ...(bodyView.value !== 'html' && htmlDocument.value ? [{ id: 'html', label: 'Show formatted', icon: 'bi-filetype-html' }] : []),
+    ...(props.rawEndpoint ? [
+        { id: 'analysis', label: 'Security analysis', icon: 'bi-shield-check' },
+        { id: 'raw', label: 'Show original', icon: 'bi-code-slash' },
+    ] : []),
+    ...(downloadHref.value ? [{ id: 'download', label: 'Download message', icon: 'bi-download', href: downloadHref.value }] : []),
+    { id: 'toggle-read', label: props.currentMessage?.seen ? 'Mark as unread' : 'Mark as read', icon: props.currentMessage?.seen ? 'bi-envelope' : 'bi-envelope-open' },
+    { id: 'delete', label: 'Delete', icon: 'bi-trash3', danger: true },
+]);
+const onMainAction = (id) => {
+    if (['reply', 'reply-all', 'forward'].includes(id)) startReply(id);
+    else if (['text', 'html', 'analysis', 'raw'].includes(id)) selectTab(id);
+    else if (id === 'toggle-read') emit('toggle-read', props.currentMessage);
+    else if (id === 'delete') emit('delete-message', props.currentMessage.uid);
+};
+
 const onReplySent = (notice) => {
     replyMode.value = '';
     replyTarget.value = null;
@@ -250,6 +270,15 @@ const formatListDate = (value) => {
     }
 
     return parsed.toLocaleDateString([], { month: 'short', day: 'numeric', year: parsed.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+};
+
+// Matches the conversation rows: time today, otherwise day and time.
+const formatShortDate = (value) => {
+    const parsed = parseDate(value);
+    if (!parsed) return value || '';
+    if (parsed.toDateString() === new Date().toDateString()) return parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+    return parsed.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 };
 
 const formatFullDate = (value) => {
@@ -876,12 +905,13 @@ onBeforeUnmount(() => {
                                 <ThreadMessageCard
                                     :item="item"
                                     :message-endpoint="messageEndpoint"
+                                    :raw-download-endpoint="rawDownloadEndpoint"
                                     :avatar-endpoint="avatarEndpoint"
                                     :self-email="selfEmail"
                                     :is-dark="isDark"
                                     :class="i === 0 ? 'rounded-t-2xl' : ''"
                                     @compose-to="emit('compose-to', $event)"
-                                    @reply="startReply('reply', $event)"
+                                    @reply="startReply($event.mode, $event.message)"
                                 />
                                 <button
                                     v-if="i === 0 && foldedCount"
@@ -920,7 +950,10 @@ onBeforeUnmount(() => {
                                                 </p>
                                             </ContactCard>
                                         </div>
-                                        <time :class="[ui.muted, 'shrink-0 pt-0.5 text-xs']" :title="currentMessage.date">{{ formatFullDate(currentMessage.date) }}</time>
+                                        <div class="flex shrink-0 items-baseline gap-3">
+                                            <time :class="[ui.muted, 'text-xs']" :title="formatFullDate(currentMessage.date)">{{ formatShortDate(currentMessage.date) }}</time>
+                                            <MessageActions :is-dark="isDark" :items="mainMenuItems" class="-my-1.5" @action="onMainAction" />
+                                        </div>
                                     </div>
                                     <MessageHeaderDetails
                                         :message="currentMessage"
@@ -937,22 +970,16 @@ onBeforeUnmount(() => {
                                 </div>
                             </header>
 
-                            <div class="flex flex-wrap items-center gap-1 pb-1 pl-[60px] pr-4 md:pl-[76px] md:pr-6" role="tablist" aria-label="Message view">
-                                <button
-                                    v-for="tab in bodyTabs"
-                                    :key="tab.id"
-                                    type="button"
-                                    role="tab"
-                                    :aria-selected="activeTab === tab.id"
-                                    :class="[activeTab === tab.id ? ui.chip : [ui.muted, ui.iconButton], 'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium transition']"
-                                    @click="selectTab(tab.id)"
-                                >
-                                    <i :class="['bi', tab.icon]"></i> {{ tab.label }}
-                                </button>
+                            <!-- Other views live in the ⋮ menu, as in Gmail; show the way back from them. -->
+                            <div v-if="activeTab !== 'html' && activeTab !== (htmlDocument ? '' : 'text')" class="flex items-center gap-2 pb-1 pl-[68px] pr-4 md:pl-[76px] md:pr-6">
+                                <span :class="[ui.chip, 'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium']">
+                                    <i :class="['bi', bodyTabs.find((tab) => tab.id === activeTab)?.icon]"></i>{{ bodyTabs.find((tab) => tab.id === activeTab)?.label }}
+                                </span>
+                                <button type="button" :class="[ui.muted, 'text-xs font-medium hover:underline']" @click="selectTab(htmlDocument ? 'html' : 'text')">Back to message</button>
                             </div>
 
                             <template v-if="showsBody">
-                                <div v-if="showsHtml" class="pb-2 md:pl-[52px]">
+                                <div v-if="showsHtml" class="pb-2 pr-4 md:pl-[52px] md:pr-6">
                                     <iframe
                                         ref="htmlFrame"
                                         :key="`${currentMessage.folder}:${currentMessage.uid}`"
@@ -1125,13 +1152,14 @@ onBeforeUnmount(() => {
                                 :key="`${item.folder}:${item.uid}`"
                                 :item="item"
                                 :message-endpoint="messageEndpoint"
+                                :raw-download-endpoint="rawDownloadEndpoint"
                                 :avatar-endpoint="avatarEndpoint"
                                 :self-email="selfEmail"
                                 :is-dark="isDark"
                                 :initially-open="i === threadAfter.length - 1"
                                 :class="i === threadAfter.length - 1 ? 'rounded-b-2xl' : ''"
                                 @compose-to="emit('compose-to', $event)"
-                                @reply="startReply('reply', $event)"
+                                @reply="startReply($event.mode, $event.message)"
                             />
                         </div>
 
