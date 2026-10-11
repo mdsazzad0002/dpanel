@@ -1,7 +1,7 @@
 //! One-time sign-in tickets that the drust API hands the panel and the edge
 //! gateway redeems. Each ticket is a file named by 32 random bytes (hex) in a
-//! root-only directory; its contents say who it signs in. Shared by pgAdmin
-//! and mongo-express sign-on.
+//! root-only directory; its contents say who it signs in. Used by pgAdmin
+//! sign-on.
 
 use std::{
     fs,

@@ -15,7 +15,6 @@ mod php;
 mod pgadmin_sso;
 mod php_config;
 mod mongo_admin;
-mod mongo_express_sso;
 mod mongodb;
 mod service_toggle;
 mod sso_ticket;

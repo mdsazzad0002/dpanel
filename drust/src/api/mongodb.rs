@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::{
     api::{ApiResponse, ApiState, check_token},
-    mongo_express_sso, mongodb,
+    mongodb,
 };
 
 #[derive(Deserialize)]
@@ -21,9 +21,7 @@ pub(crate) struct Request {
 }
 
 pub(crate) fn routes() -> Router<Arc<ApiState>> {
-    Router::new()
-        .route("/api/v1/mongodb/service", post(set_service))
-        .route("/api/v1/mongodb/express-login", post(express_login))
+    Router::new().route("/api/v1/mongodb/service", post(set_service))
 }
 
 async fn set_service(
@@ -40,26 +38,6 @@ async fn set_service(
     .await;
     match result {
         Ok(Ok(message)) => ApiResponse::ok(&message).into_response(),
-        Ok(Err(error)) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
-        Err(error) => ApiResponse::error(&format!("Failed: task crashed: {error}")).into_response(),
-    }
-}
-
-/// A one-time URL (valid for a minute) that signs the browser into
-/// mongo-express through the edge gateway.
-async fn express_login(
-    State(state): State<Arc<ApiState>>,
-    headers: axum::http::HeaderMap,
-) -> impl IntoResponse {
-    if let Err(error) = check_token(&state, &headers) {
-        return error.into_response();
-    }
-    match tokio::task::spawn_blocking(mongo_express_sso::issue).await {
-        Ok(Ok(ticket)) => ApiResponse::ok_data(
-            "mongo-express login ready.",
-            serde_json::json!({ "url": format!("{}?ticket={ticket}", mongo_express_sso::SSO_PATH) }),
-        )
-        .into_response(),
         Ok(Err(error)) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
         Err(error) => ApiResponse::error(&format!("Failed: task crashed: {error}")).into_response(),
     }

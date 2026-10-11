@@ -153,20 +153,20 @@ EOF
       ;;
     mongodb)
       cat <<'EOF'
-MongoDB + mongo-express module (installed by default, services left OFF):
+MongoDB module (installed by default, service left OFF):
   sudo dpanel mongodb install
-  sudo dpanel mongodb start [mongodb|mongo-express|all]   Turn on and enable at boot
-  sudo dpanel mongodb stop [mongodb|mongo-express|all]    Turn off and disable at boot
-  sudo dpanel mongodb restart [mongodb|mongo-express|all]
-  dpanel mongodb status [mongodb|mongo-express|all]
+  sudo dpanel mongodb start       Turn on and enable at boot
+  sudo dpanel mongodb stop        Turn off and disable at boot
+  sudo dpanel mongodb restart
+  dpanel mongodb status
   sudo dpanel mongodb update | remove
 MongoDB listens on 127.0.0.1:27017 with access control on; the admin login is
 saved to the panel's .env (MONGODB_ADMIN_USERNAME / MONGODB_ADMIN_PASSWORD).
 The version follows the kernel: 7.0 on Linux 6.19 - 7.0.13 (MongoDB 8 can't
 start there), 8.0 everywhere else. Re-running install switches a MongoDB that
 holds no data yet; force one with MONGODB_SERIES=7.0|8.0.
-mongo-express is served on the panel domain at /mongo-express/ and signs in
-through dPanel (Database Management > MongoDB > Open mongo-express).
+Browse and edit it in the panel with Mongo Admin (Database Management >
+MongoDB > Open Mongo Admin, or DB Login on a MongoDB database).
 EOF
       ;;
     clamav)

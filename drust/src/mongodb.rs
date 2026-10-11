@@ -3,12 +3,11 @@
 fn unit_for(service: &str) -> Option<&'static str> {
     match service {
         "mongodb" => Some("mongod"),
-        "mongo-express" => Some("dpanel-mongo-express"),
         _ => None,
     }
 }
 
-/// Turns MongoDB or mongo-express on (start + enable at boot) or off (stop + disable at boot).
+/// Turns MongoDB on (start + enable at boot) or off (stop + disable at boot).
 /// Runs in drust for the same reason as PostgreSQL: php-fpm can't write /etc.
 pub fn set_service(service: &str, enabled: bool) -> Result<String, String> {
     let unit = unit_for(service).ok_or_else(|| "Unknown service.".to_string())?;
@@ -22,7 +21,7 @@ mod tests {
     #[test]
     fn only_known_services_map_to_units() {
         assert_eq!(unit_for("mongodb"), Some("mongod"));
-        assert_eq!(unit_for("mongo-express"), Some("dpanel-mongo-express"));
+        assert_eq!(unit_for("mongo-express"), None);
         assert_eq!(unit_for("postgresql"), None);
         assert_eq!(unit_for("mongodb; rm -rf /"), None);
     }

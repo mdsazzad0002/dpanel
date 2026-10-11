@@ -7,7 +7,6 @@ import axios from 'axios';
 const props = defineProps({
     services: { type: Array, default: () => [] },
     connection: { type: Object, default: () => ({}) },
-    mongoExpress: { type: Object, default: () => ({}) },
 });
 
 const page = usePage();
@@ -26,9 +25,6 @@ const refreshing = ref(false);
 const message = ref(null);
 const revealed = ref(false);
 
-const mongodService = computed(() => state.value.services.find((service) => service.key === 'mongodb'));
-// Signs in through dPanel (one-time link); the gateway holds the login.
-const mongoExpressLoginUrl = computed(() => panelRoute('databases.mongodb.express'));
 const flashError = computed(() => page.props.flash?.error || '');
 
 const connectionString = computed(() => {
@@ -51,8 +47,6 @@ const applyState = (data) => {
 const toggle = async (service) => {
     const turningOn = !service.active;
     if (!turningOn && !confirm(`Turn off ${service.label}? It will also stay off after a reboot.`)) return;
-    if (turningOn && service.key === 'mongo-express' && !mongodService.value?.active
-        && !confirm('MongoDB is off. mongo-express needs it to show anything. Turn on MongoDB first?\n\nOK continues anyway.')) return;
 
     busyService.value = service.key;
     message.value = null;
@@ -95,7 +89,7 @@ const copy = async (value) => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">MongoDB</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">MongoDB and mongo-express are installed but off by default. Turn them on here when you need them.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">MongoDB is installed but off by default. Turn it on here when you need it, then browse it with Mongo Admin.</p>
             </div>
         </template>
 
@@ -156,15 +150,6 @@ const copy = async (value) => {
                             >
                                 Open Mongo Admin
                             </Link>
-                            <a
-                                v-if="service.key === 'mongo-express' && service.active"
-                                :href="mongoExpressLoginUrl"
-                                target="_blank"
-                                rel="noopener"
-                                class="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200"
-                            >
-                                Open mongo-express
-                            </a>
                             <p v-if="!service.installed" class="text-xs text-slate-500 dark:text-slate-400">
                                 Install on the server with <code>sudo dpanel mongodb install</code>.
                             </p>
@@ -190,9 +175,6 @@ const copy = async (value) => {
                     </div>
                 </dl>
                 <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">MongoDB only listens on this server (localhost), with access control on. The admin user has the root role.</p>
-                <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                    mongo-express runs at <code>{{ mongoExpress.path || '/mongo-express/' }}</code> on the panel domain and signs you in through dPanel; it has no password to type.
-                </p>
             </section>
         </div>
     </AuthenticatedLayout>

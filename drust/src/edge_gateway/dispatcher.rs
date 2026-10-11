@@ -20,8 +20,6 @@ use super::{
     browser_cache_control, load_static_asset, normalize_request_path, proxy_request, resolve_route, resolve_static_path,
 };
 
-mod mongo_express;
-
 #[derive(Clone, Debug)]
 pub struct DispatchContext {
     pub static_files: Option<StaticFileConfig>,
@@ -127,15 +125,6 @@ pub async fn dispatch(
         response.headers_mut().remove(header::CONTENT_ENCODING);
         response.extensions_mut().insert(super::compression::SkipCompression);
         return response;
-    }
-    if site.scope == "system" && mongo_express::is_path(&path) {
-        return mongo_express::handle(
-            request,
-            &path,
-            proxy_client,
-            site.hostnames.first().map(String::as_str).unwrap_or(""),
-        )
-        .await;
     }
     if site.scope == "system" && is_system_pgadmin_path(&path) {
         return handle_system_pgadmin(

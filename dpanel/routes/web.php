@@ -1126,11 +1126,8 @@ Route::prefix('cpsess{token}')
                 ->name('databases.mongodb.refresh');
             Route::post('/databases/mongodb/{service}/toggle', [MongodbController::class, 'toggle'])
                 ->middleware('role:admin')
-                ->where('service', 'mongodb|mongo-express')
+                ->where('service', 'mongodb')
                 ->name('databases.mongodb.toggle');
-            Route::get('/databases/mongodb/mongo-express', [MongodbController::class, 'openMongoExpress'])
-                ->middleware('role:admin')
-                ->name('databases.mongodb.express');
             Route::get('/databases/mongodb/admin', [MongoAdminController::class, 'index'])
                 // Admins open every database; others only their own (checked in the controller).
                 ->middleware('role_or_permission:admin|reseller|manage_databases')

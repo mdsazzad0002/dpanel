@@ -11,17 +11,10 @@ return [
 
     'admin_password' => env('MONGODB_ADMIN_PASSWORD', ''),
 
-    // Fixed system path proxied by the drust edge gateway on the panel domain.
-    'mongo_express_path' => '/mongo-express/',
-
     'services' => [
         'mongodb' => [
             'label' => 'MongoDB',
             'unit' => env('MONGODB_SERVICE', 'mongod'),
-        ],
-        'mongo-express' => [
-            'label' => 'mongo-express',
-            'unit' => env('MONGO_EXPRESS_SERVICE', 'dpanel-mongo-express'),
         ],
     ],
 
