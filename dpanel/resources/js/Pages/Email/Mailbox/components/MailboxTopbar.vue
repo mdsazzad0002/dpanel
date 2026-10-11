@@ -71,6 +71,7 @@ const emit = defineEmits([
     'toggle-mobile-sidebar',
     'upload-photo',
     'remove-photo',
+    'open-contacts',
 ]);
 
 const onPhotoPicked = (event) => {
@@ -427,6 +428,15 @@ onBeforeUnmount(() => {
                                     <i :class="[ui.muted, 'bi bi-grid text-[15px]']"></i>
                                     Manage mailboxes
                                 </Link>
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    :class="[ui.menuItem, 'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition']"
+                                    @click="accountMenuOpen = false; emit('open-contacts')"
+                                >
+                                    <i :class="[ui.muted, 'bi bi-person-lines-fill text-[15px]']"></i>
+                                    Contacts
+                                </button>
                                 <button
                                     type="button"
                                     role="menuitem"

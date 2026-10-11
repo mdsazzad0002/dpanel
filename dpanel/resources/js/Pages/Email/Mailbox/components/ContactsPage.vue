@@ -1,17 +1,16 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useMailContacts } from '../composables/useMailContacts';
 import MailAvatar from './MailAvatar.vue';
 import { avatarColorOf, formatAddress, initialsOf } from './mailAddresses';
 
-// The mailbox address book: saved contacts, plus people you have written to.
+// The mailbox address book page: saved contacts, plus people you have written to.
 const props = defineProps({
-    open: { type: Boolean, default: false },
     isDark: { type: Boolean, default: false },
     avatarEndpoint: { type: String, default: '' },
 });
 
-const emit = defineEmits(['close', 'compose', 'notify']);
+const emit = defineEmits(['compose', 'notify']);
 
 const contacts = useMailContacts();
 const tab = ref('saved');
@@ -24,19 +23,14 @@ const editing = ref(null);
 const editName = ref('');
 const searchInput = ref(null);
 
-watch(() => props.open, async (isOpen) => {
-    if (!isOpen) return;
+onMounted(() => {
     contacts?.load(true);
-    search.value = '';
-    adding.value = false;
-    editing.value = null;
-    await nextTick();
     searchInput.value?.focus();
 });
 
 const ui = computed(() => (props.isDark
-    ? { dialog: 'border-slate-700 bg-slate-900 text-slate-200', muted: 'text-slate-400', strong: 'text-slate-100', divider: 'border-slate-800', row: 'hover:bg-slate-800/60', input: 'border-slate-700 bg-slate-950 text-slate-100 placeholder:text-slate-500 focus:border-blue-500', tab: 'text-slate-400 hover:text-slate-100', tabOn: 'border-blue-400 text-blue-300', icon: 'text-slate-400 hover:bg-slate-700 hover:text-slate-100' }
-    : { dialog: 'border-slate-200 bg-white text-slate-800', muted: 'text-slate-500', strong: 'text-slate-900', divider: 'border-slate-100', row: 'hover:bg-slate-50', input: 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500', tab: 'text-slate-500 hover:text-slate-900', tabOn: 'border-blue-600 text-blue-700', icon: 'text-slate-500 hover:bg-slate-100 hover:text-slate-900' }));
+    ? { page: 'text-slate-200', muted: 'text-slate-400', strong: 'text-slate-100', divider: 'border-slate-800', row: 'hover:bg-slate-800/60', input: 'border-slate-700 bg-slate-950 text-slate-100 placeholder:text-slate-500 focus:border-blue-500', tab: 'text-slate-400 hover:text-slate-100', tabOn: 'border-blue-400 text-blue-300', icon: 'text-slate-400 hover:bg-slate-700 hover:text-slate-100' }
+    : { page: 'text-slate-800', muted: 'text-slate-500', strong: 'text-slate-900', divider: 'border-slate-100', row: 'hover:bg-slate-50', input: 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500', tab: 'text-slate-500 hover:text-slate-900', tabOn: 'border-blue-600 text-blue-700', icon: 'text-slate-500 hover:bg-slate-100 hover:text-slate-900' }));
 
 const all = computed(() => contacts?.contacts.value || []);
 const savedCount = computed(() => all.value.filter((c) => c.saved).length);
@@ -87,16 +81,12 @@ const remove = (contact) => {
     act(contact.email, () => contacts.remove(contact));
 };
 
-const compose = (contact) => {
-    emit('compose', formatAddress(contact.name, contact.email));
-    emit('close');
-};
+const compose = (contact) => emit('compose', formatAddress(contact.name, contact.email));
 </script>
 
 <template>
-    <transition enter-active-class="transition duration-150" enter-from-class="opacity-0" leave-active-class="transition duration-100" leave-to-class="opacity-0">
-        <div v-if="open" class="fixed inset-0 z-[60] flex items-start justify-center bg-slate-950/50 p-4 pt-[8vh] backdrop-blur-sm" @mousedown.self="emit('close')" @keydown.esc="emit('close')">
-            <section :class="[ui.dialog, 'flex max-h-[84vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border shadow-2xl']" role="dialog" aria-modal="true" aria-label="Contacts">
+    <div class="h-full overflow-y-auto">
+            <section :class="[ui.page, 'mx-auto flex w-full max-w-3xl flex-col py-2']" aria-label="Contacts">
                 <header class="flex items-center gap-3 px-5 pb-3 pt-5">
                     <span class="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600/10 text-blue-600"><i class="bi bi-person-lines-fill text-lg"></i></span>
                     <div class="min-w-0 flex-1">
@@ -105,9 +95,6 @@ const compose = (contact) => {
                     </div>
                     <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-4 text-sm font-medium text-white transition hover:bg-blue-700" @click="adding = !adding">
                         <i class="bi bi-person-plus"></i> New
-                    </button>
-                    <button type="button" :class="[ui.icon, 'flex h-9 w-9 items-center justify-center rounded-full transition']" aria-label="Close" @click="emit('close')">
-                        <i class="bi bi-x-lg"></i>
                     </button>
                 </header>
 
@@ -128,7 +115,7 @@ const compose = (contact) => {
                     </div>
                 </div>
 
-                <ul class="min-h-[12rem] flex-1 overflow-y-auto px-2 py-2">
+                <ul class="px-2 py-2">
                     <li v-for="contact in list" :key="contact.email" :class="[ui.row, 'group flex items-center gap-3 rounded-xl px-3 py-2.5']">
                         <MailAvatar :email="contact.email" :initials="initialsOf(contact.name || contact.email)" :color-class="avatarColorOf(contact.email)" :endpoint="avatarEndpoint" class="h-10 w-10 shrink-0 text-sm" />
                         <div class="min-w-0 flex-1">
@@ -156,6 +143,5 @@ const compose = (contact) => {
                     </li>
                 </ul>
             </section>
-        </div>
-    </transition>
+    </div>
 </template>

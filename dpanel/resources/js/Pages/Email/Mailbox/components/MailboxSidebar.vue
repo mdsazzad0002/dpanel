@@ -31,6 +31,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    contactsActive: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const emit = defineEmits(['compose', 'open-folder', 'close-mobile', 'toggle-collapse', 'open-contacts']);
@@ -175,11 +179,12 @@ const barColor = computed(() => {
             <div :class="[ui.divider, 'my-2 border-t']"></div>
             <button
                 type="button"
-                :class="['group mb-0.5 flex w-full items-center gap-3 rounded-md text-left text-sm font-medium transition', compact ? 'h-10 justify-center' : 'h-9 px-3', ui.item]"
+                :class="['group mb-0.5 flex w-full items-center gap-3 rounded-md text-left text-sm transition', compact ? 'h-10 justify-center' : 'h-9 px-3', contactsActive ? [ui.itemActive, 'font-semibold'] : [ui.item, 'font-medium']]"
+                :aria-current="contactsActive ? 'page' : undefined"
                 :title="compact ? 'Contacts' : ''"
                 @click="emit('open-contacts')"
             >
-                <i :class="['bi bi-person-lines-fill shrink-0 text-[15px]', ui.icon]"></i>
+                <i :class="['bi bi-person-lines-fill shrink-0 text-[15px]', contactsActive ? ui.iconActive : ui.icon]"></i>
                 <span v-if="!compact" class="flex-1 truncate">Contacts</span>
             </button>
         </nav>

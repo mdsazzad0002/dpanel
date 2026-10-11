@@ -6,7 +6,7 @@ import MailboxThreadPanel from './components/MailboxThreadPanel.vue';
 import MailboxToastStack from './components/MailboxToastStack.vue';
 import MailboxComposeWindow from './components/MailboxComposeWindow.vue';
 import MailboxTopbar from './components/MailboxTopbar.vue';
-import ContactsDialog from './components/ContactsDialog.vue';
+import ContactsPage from './components/ContactsPage.vue';
 import { provideMailContacts } from './composables/useMailContacts';
 
 const page = usePage();
@@ -134,7 +134,20 @@ const removePhoto = async () => {
 };
 
 const contacts = provideMailContacts(props.contactsEndpoint);
-const contactsOpen = ref(false);
+// 'mail' shows the folder view, 'contacts' the address book page (?view=contacts).
+const readView = () => {
+    try {
+        return new URL(window.location.href).searchParams.get('view') === 'contacts' ? 'contacts' : 'mail';
+    }
+    catch {
+        return 'mail';
+    }
+};
+const activeView = ref(readView());
+const openContacts = () => {
+    activeView.value = 'contacts';
+    sidebarOpen.value = false;
+};
 const composeOpen = ref(false);
 const loading = ref(false);
 const messageLoading = ref(false);
@@ -481,6 +494,7 @@ const handleVisibilityChange = () => {
 };
 
 const openFolder = async (folder) => {
+    activeView.value = 'mail';
     filterMenuOpen.value = false;
     await loadMailbox(folder.name);
 };
@@ -808,6 +822,18 @@ watch(activeFolder, (folder) => {
     }
 });
 
+watch(activeView, (view) => {
+    try {
+        const url = new URL(window.location.href);
+        if (view === 'contacts') url.searchParams.set('view', 'contacts');
+        else url.searchParams.delete('view');
+        if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url);
+    }
+    catch {
+        // URL sync is a convenience only.
+    }
+});
+
 watch(() => searchQuery.value, () => {
     currentPage.value = 1;
 });
@@ -831,7 +857,8 @@ watch(() => messageFilter.value, () => {
         <!-- Fixed Sidebar -->
         <MailboxSidebar
             :folders="compactFolders"
-            :active-folder="activeFolder"
+            :active-folder="activeView === 'mail' ? activeFolder : ''"
+            :contacts-active="activeView === 'contacts'"
             :loading="loading"
             :is-dark="isDark"
             :mailbox="mailbox"
@@ -842,7 +869,7 @@ watch(() => messageFilter.value, () => {
             @open-folder="openFolder"
             @close-mobile="sidebarOpen = false"
             @toggle-collapse="toggleSidebar"
-            @open-contacts="contactsOpen = true; sidebarOpen = false"
+            @open-contacts="openContacts"
         />
 
         <!-- Main Content Area -->
@@ -875,6 +902,7 @@ watch(() => messageFilter.value, () => {
                 @toggle-mobile-sidebar="toggleMobileSidebar"
                 @upload-photo="uploadPhoto"
                 @remove-photo="removePhoto"
+                @open-contacts="openContacts"
             />
 
             <div
@@ -896,7 +924,15 @@ watch(() => messageFilter.value, () => {
             </div>
 
             <main class="min-h-0 flex-1">
+                <ContactsPage
+                    v-if="activeView === 'contacts'"
+                    :is-dark="isDark"
+                    :avatar-endpoint="avatarEndpoint"
+                    @compose="composeToAddress"
+                    @notify="(text, type) => pushToast(text, type)"
+                />
                 <MailboxThreadPanel
+                    v-else
                     :active-folder="activeFolder"
                     :filtered-messages="filteredMessages"
                     :current-message="currentMessage"
@@ -951,15 +987,6 @@ watch(() => messageFilter.value, () => {
             :sandbox="mailbox.delivery_mode === 'sandbox'"
             @send="submitSend"
             @discard="discardCompose"
-        />
-
-        <ContactsDialog
-            :open="contactsOpen"
-            :is-dark="isDark"
-            :avatar-endpoint="avatarEndpoint"
-            @close="contactsOpen = false"
-            @compose="composeToAddress"
-            @notify="(text, type) => pushToast(text, type)"
         />
 
         <MailboxToastStack
