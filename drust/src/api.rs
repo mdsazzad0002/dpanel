@@ -25,6 +25,7 @@ mod migration;
 mod migration_ssh;
 mod node;
 mod php;
+mod mongo_admin;
 mod mongodb;
 mod postgresql;
 mod python;
@@ -98,6 +99,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(ftp::routes())
         .merge(git_deploy::routes())
         .merge(php::routes())
+        .merge(mongo_admin::routes())
         .merge(mongodb::routes())
         .merge(postgresql::routes())
         .merge(redis_config::routes())

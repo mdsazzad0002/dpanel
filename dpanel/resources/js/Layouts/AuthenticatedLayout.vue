@@ -305,6 +305,7 @@ const menuItems = computed(() => [
             { label: 'Remote Access', hint: 'Allow specific IPs to reach MySQL', icon: 'RA', iconClass: 'bi bi-globe2', routeName: 'databases.remote-access', roles: ['admin'] },
             { label: 'PostgreSQL', hint: 'Turn PostgreSQL and pgAdmin on or off', icon: 'PG', iconClass: 'bi bi-database-gear', routeName: 'databases.postgresql', roles: ['admin'] },
             { label: 'MongoDB', hint: 'Turn MongoDB on or off', icon: 'MO', iconClass: 'bi bi-database-gear', routeName: 'databases.mongodb', roles: ['admin'] },
+            { label: 'Mongo Admin', hint: 'Browse and edit MongoDB, like phpMyAdmin', icon: 'MA', iconClass: 'bi bi-braces', routeName: 'databases.mongodb.admin', roles: ['admin'] },
         ],
     },
     { section: 'Data & Backups', label: 'Database & Redis', hint: 'Point dpanel at a remote DB/Redis', icon: 'DB', iconClass: 'bi bi-hdd-network', routeName: 'self-connection.manager', roles: ['admin'], color: 'rose' },
