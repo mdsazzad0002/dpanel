@@ -281,6 +281,25 @@ ls -l /var/spool/postfix/private/dovecot-lmtp /var/spool/postfix/private/auth
 The domain's MX record must point to this server, and the mailbox must be
 `active` in the panel.
 
+### Spam lands in the Inbox (or real mail lands in Junk)
+
+`chain update` installs Rspamd on mail servers with 1 GB of RAM or more
+(`sudo dpanel module rspamd install` does it on smaller ones; set
+`DPANEL_SKIP_RSPAMD=true` to opt out). Postfix passes every message through it;
+a score of 6 or more adds `X-Spam: Yes` and Dovecot files the message into the
+mailbox's Junk folder, and 15 or more is rejected. If Rspamd stops, mail is
+delivered unfiltered rather than lost. To check:
+
+```bash
+systemctl is-active rspamd
+postconf -h smtpd_milters                 # starts with inet:127.0.0.1:11332
+sudo rspamc stat                          # messages scanned and actions taken
+sudo tail -f /var/log/rspamd/rspamd.log   # score and symbols for each message
+```
+
+The webmail's Analysis tab shows the score Rspamd gave a message
+(`X-Spam-Status`) next to the panel's own spam check.
+
 ### A mailbox's mail never reaches outside addresses
 
 Check the mailbox's **Mode** in Emails → List Emails. A **Sandbox** (test)

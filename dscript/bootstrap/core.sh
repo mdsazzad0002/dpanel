@@ -2282,6 +2282,23 @@ panel_repair_mail_auth() {
     || panel_warn_log "Outbound mail check failed; run 'php artisan mail:outbound-check' in the panel directory."
   (cd "$app_dir" && php artisan mail:mailbox-check) \
     || panel_warn_log "Mailbox delivery check failed; run 'php artisan mail:mailbox-check' in the panel directory."
+  panel_ensure_spam_filter
+}
+
+# Automatic spam filtering (Rspamd + a Dovecot Sieve rule filing spam into
+# Junk) on every mail server. Skipped with DPANEL_SKIP_RSPAMD=true, or on
+# machines under ~1 GB of RAM, where Rspamd's ~200 MB would crowd out the rest;
+# `dpanel module rspamd install` still installs it there on request.
+panel_ensure_spam_filter() {
+  local mem_kb
+  command -v postconf >/dev/null 2>&1 && command -v dovecot >/dev/null 2>&1 || return 0
+  [[ "${DPANEL_SKIP_RSPAMD:-false}" == "true" ]] && return 0
+  mem_kb="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+  if [[ "${mem_kb:-0}" -lt 900000 ]] && ! command -v rspamd >/dev/null 2>&1; then
+    panel_warn_log "Less than 1 GB of RAM: spam filter not installed automatically. Install it with 'dpanel module rspamd install'."
+    return 0
+  fi
+  panel_run_module rspamd install || panel_warn_log "Spam filter (Rspamd) setup failed; run 'dpanel module rspamd install' to see why."
 }
 
 # Record the installed release in the panel .env. installer.sh resolves the

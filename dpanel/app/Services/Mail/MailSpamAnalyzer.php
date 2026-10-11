@@ -109,7 +109,7 @@ class MailSpamAnalyzer
             $hit('NOT_ALIGNED', 1.0, 'Neither SPF nor DKIM matches the From domain.');
         }
         if (($h['spam']['flag'] ?? '') === 'yes') {
-            $hit('UPSTREAM_SPAM', 3.0, 'An earlier mail server already marked it as spam.');
+            $hit('UPSTREAM_SPAM', 3.0, 'A spam filter (Rspamd here, or an earlier server) already marked it as spam.');
         }
     }
 
