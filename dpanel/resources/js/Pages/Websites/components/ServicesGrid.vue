@@ -69,13 +69,13 @@ const serviceColorClasses = {
 </script>
 
 <template>
-    <div class="order-1 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50 xl:row-span-2">
+    <div class="order-1 min-w-0 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-800/80 dark:bg-slate-900/50 xl:row-span-2">
         <section v-for="(section, index) in sections" :key="section.title" :class="index > 0 ? 'mt-6 border-t border-slate-100 pt-5 dark:border-slate-800' : ''">
         <div class="flex items-center justify-between">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{{ section.title }}</h2>
             <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ section.items.length }} {{ section.unit }}</span>
         </div>
-        <div class="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             <Link v-for="service in section.items" :key="service.label" :href="service.href"
                 class="group flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:shadow-lg">
                 <div :class="['flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition', serviceColorClasses[service.color]]">

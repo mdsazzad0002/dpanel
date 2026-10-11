@@ -154,7 +154,7 @@ const showQueueWorkers = computed(() => props.queueWorkerCount > 0
             <QueueWorkersPanel v-if="showQueueWorkers" :website="website" />
 
             <!-- Services + Activity -->
-            <section class="grid gap-4 xl:grid-cols-[minmax(0,2.4fr)_minmax(300px,1fr)]">
+            <section class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,2.4fr)_minmax(300px,1fr)]">
                 <div class="contents">
                     <MetricsGrid :website="website" :metrics="metrics" :root-inspection="rootInspection" />
                     <ServicesGrid :website="website" />

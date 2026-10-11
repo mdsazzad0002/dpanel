@@ -72,7 +72,7 @@ const copyToClipboard = (text, toastMessage = '') => {
 </script>
 
 <template>
-    <section class="order-2 grid gap-3 sm:grid-cols-2 xl:col-start-2 xl:row-start-1 xl:grid-cols-1">
+    <section class="order-2 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:col-start-2 xl:row-start-1 xl:grid-cols-1">
         <div v-if="localDevPermissionCommand" class=" rounded-xl border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-800 dark:bg-blue-500/10">
             <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
