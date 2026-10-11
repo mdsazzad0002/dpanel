@@ -66,6 +66,7 @@ class MailClientController extends Controller
             'deleteEndpoint' => route('mailbox.delete-message', ['token' => $token, 'id' => $id]),
             'markReadEndpoint' => route('mailbox.mark-read', ['token' => $token, 'id' => $id]),
             'bulkEndpoint' => route('mailbox.bulk', ['token' => $token, 'id' => $id]),
+            'contactsEndpoint' => route('mailbox.contacts', ['token' => $token, 'id' => $id]),
             'composeDefaults' => [
                 'to' => '',
                 'subject' => '',
@@ -306,17 +307,31 @@ class MailClientController extends Controller
             'bcc' => ['nullable', 'string', 'max:2000'],
             'subject' => ['required', 'string', 'max:255'],
             'body' => ['required', 'string'],
+            'html' => ['nullable', 'string', 'max:2000000'],
             'folder' => ['nullable', 'string'],
+            // The message being replied to, for In-Reply-To/References.
+            'reply_folder' => ['nullable', 'string', 'max:255'],
+            'reply_uid' => ['nullable', 'integer', 'min:1'],
         ]);
 
         try {
+            $thread = [];
+            if (! empty($validated['reply_folder']) && ! empty($validated['reply_uid'])) {
+                try {
+                    $thread = $mailboxImapService->threadHeaders($mailbox, (string) $validated['reply_folder'], (int) $validated['reply_uid']);
+                } catch (RuntimeException) {
+                    // The original was moved or deleted; send unthreaded.
+                }
+            }
             $result = $mailboxImapService->sendMessage(
                 $mailbox,
                 $this->addresses((string) $validated['to']),
                 (string) $validated['subject'],
                 (string) $validated['body'],
                 $this->addresses((string) ($validated['cc'] ?? '')),
-                $this->addresses((string) ($validated['bcc'] ?? ''))
+                $this->addresses((string) ($validated['bcc'] ?? '')),
+                (string) ($validated['html'] ?? ''),
+                $thread,
             );
         } catch (RuntimeException $e) {
             if ($request->expectsJson()) {
@@ -327,6 +342,10 @@ class MailClientController extends Controller
                 ->route('mailbox.open', ['token' => $token, 'id' => $id, 'folder' => (string) ($validated['folder'] ?? 'INBOX')])
                 ->with('error', $e->getMessage());
         }
+
+        MailContactController::remember($mailbox, preg_split('/[,;]+/', implode(',', [
+            (string) $validated['to'], (string) ($validated['cc'] ?? ''), (string) ($validated['bcc'] ?? ''),
+        ])) ?: []);
 
         $notice = $result['held'] === []
             ? 'Message sent successfully.'

@@ -207,9 +207,10 @@ class MailboxImapService
      * @param  array<int, string>  $to
      * @param  array<int, string>  $cc
      * @param  array<int, string>  $bcc
+     * @param  array{message_id?: string, references?: string}  $thread  headers of the message being replied to
      * @return array{held: array<int, string>} held: external recipients a sandbox mailbox did not send to
      */
-    public function sendMessage(Mailbox $mailbox, array $to, string $subject, string $body, array $cc = [], array $bcc = []): array
+    public function sendMessage(Mailbox $mailbox, array $to, string $subject, string $body, array $cc = [], array $bcc = [], string $html = '', array $thread = []): array
     {
         $subject = trim($subject);
         $body = trim($body);
@@ -231,15 +232,33 @@ class MailboxImapService
             'Date: '.date(DATE_RFC2822),
             'Message-ID: <'.bin2hex(random_bytes(16)).'@'.$domain.'>',
             'MIME-Version: 1.0',
-            'Content-Type: text/plain; charset=UTF-8',
-            'Content-Transfer-Encoding: 8bit',
         ];
+        // Threading: clients group a reply with its original by these.
+        $parentId = trim((string) ($thread['message_id'] ?? ''));
+        if ($parentId !== '') {
+            $headers[] = 'In-Reply-To: '.$parentId;
+            $headers[] = 'References: '.trim(trim((string) ($thread['references'] ?? '')).' '.$parentId);
+        }
 
         $encodedSubject = function_exists('mb_encode_mimeheader')
             ? mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n")
             : $subject;
 
         $body = str_replace(["\r\n", "\r"], "\n", $body);
+        $html = MailHtml::sanitize($html);
+        if ($html === '') {
+            $headers[] = 'Content-Type: text/plain; charset=UTF-8';
+            $headers[] = 'Content-Transfer-Encoding: 8bit';
+        } else {
+            // The editor's formatting as HTML, with the plain text for clients that want it.
+            $boundary = 'dpanel-'.bin2hex(random_bytes(12));
+            $headers[] = 'Content-Type: multipart/alternative; boundary="'.$boundary.'"';
+            $part = fn (string $type, string $content): string => "--{$boundary}\nContent-Type: {$type}; charset=UTF-8\nContent-Transfer-Encoding: base64\n\n"
+                .rtrim(chunk_split(base64_encode($content), 76, "\n"))."\n";
+            $body = $part('text/plain', $body)
+                .$part('text/html', '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>'.$html.'</body></html>')
+                ."--{$boundary}--";
+        }
 
         // Sandbox (test) mailboxes only reach mailboxes hosted here. Postfix
         // enforces the same rule for SMTP clients; filtering here as well
@@ -316,6 +335,30 @@ class MailboxImapService
             $addresses,
             fn (string $address): bool => in_array(strtolower(substr((string) strrchr($address, '@'), 1)), $hosted, true),
         ));
+    }
+
+    /**
+     * Message-ID and References of a message, for threading a reply to it.
+     *
+     * @return array{message_id: string, references: string}
+     */
+    public function threadHeaders(Mailbox $mailbox, string $folder, int $uid): array
+    {
+        $stream = $this->open($mailbox, $folder);
+        try {
+            $raw = (string) @imap_fetchheader($stream, $uid, FT_UID);
+        } finally {
+            $this->close($stream);
+        }
+        // Unfold continuation lines so long References stay whole.
+        $raw = (string) preg_replace('/\r?\n[ \t]+/', ' ', $raw);
+        $header = fn (string $name): string => preg_match('/^'.$name.':\s*(.+)$/mi', $raw, $match) ? trim($match[1]) : '';
+        $messageId = preg_match('/<[^<>\s]+>/', $header('Message-ID'), $match) ? $match[0] : '';
+
+        // Keep the chain short enough for a header line and free of junk.
+        preg_match_all('/<[^<>\s]+>/', $header('References'), $refs);
+
+        return ['message_id' => $messageId, 'references' => implode(' ', array_slice($refs[0], -10))];
     }
 
     private function appendToSent(Mailbox $mailbox, string $raw): void

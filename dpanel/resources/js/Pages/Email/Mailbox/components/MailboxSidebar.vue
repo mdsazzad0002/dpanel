@@ -33,7 +33,7 @@ const props = defineProps({
     },
 });
 
-const emit = defineEmits(['compose', 'open-folder', 'close-mobile', 'toggle-collapse']);
+const emit = defineEmits(['compose', 'open-folder', 'close-mobile', 'toggle-collapse', 'open-contacts']);
 
 const ui = computed(() => (props.isDark
     ? {
@@ -170,6 +170,17 @@ const barColor = computed(() => {
                     v-if="folder.unread > 0 && compact"
                     :class="['absolute right-3 top-2 h-2 w-2 rounded-full bg-blue-600 ring-2', isDark ? 'ring-slate-950' : 'ring-white']"
                 ></span>
+            </button>
+
+            <div :class="[ui.divider, 'my-2 border-t']"></div>
+            <button
+                type="button"
+                :class="['group mb-0.5 flex w-full items-center gap-3 rounded-md text-left text-sm font-medium transition', compact ? 'h-10 justify-center' : 'h-9 px-3', ui.item]"
+                :title="compact ? 'Contacts' : ''"
+                @click="emit('open-contacts')"
+            >
+                <i :class="['bi bi-person-lines-fill shrink-0 text-[15px]', ui.icon]"></i>
+                <span v-if="!compact" class="flex-1 truncate">Contacts</span>
             </button>
         </nav>
 

@@ -6,6 +6,8 @@ import MailboxThreadPanel from './components/MailboxThreadPanel.vue';
 import MailboxToastStack from './components/MailboxToastStack.vue';
 import MailboxComposeWindow from './components/MailboxComposeWindow.vue';
 import MailboxTopbar from './components/MailboxTopbar.vue';
+import ContactsDialog from './components/ContactsDialog.vue';
+import { provideMailContacts } from './composables/useMailContacts';
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -79,6 +81,10 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    contactsEndpoint: {
+        type: String,
+        default: '',
+    },
     composeDefaults: {
         type: Object,
         default: () => ({
@@ -123,6 +129,8 @@ const removePhoto = async () => {
     }
 };
 
+const contacts = provideMailContacts(props.contactsEndpoint);
+const contactsOpen = ref(false);
 const composeOpen = ref(false);
 const loading = ref(false);
 const messageLoading = ref(false);
@@ -142,6 +150,7 @@ const activeMessage = ref(props.message);
 const composeTo = ref(props.composeDefaults.to || '');
 const composeSubject = ref(props.composeDefaults.subject || '');
 const composeBody = ref('');
+const composeHtml = ref('');
 const composeCc = ref('');
 const composeBcc = ref('');
 const theme = ref('light');
@@ -566,6 +575,7 @@ const clearDraft = () => {
     composeBcc.value = '';
     composeSubject.value = '';
     composeBody.value = '';
+    composeHtml.value = '';
 };
 
 const discardCompose = () => {
@@ -586,6 +596,7 @@ const submitSend = async () => {
                 bcc: composeBcc.value,
                 subject: composeSubject.value,
                 body: composeBody.value,
+                html: composeHtml.value,
                 folder: activeFolder.value,
             },
             { headers: { Accept: 'application/json' } },
@@ -594,6 +605,7 @@ const submitSend = async () => {
         pushToast(response?.data?.message || 'Message sent successfully.', 'success');
         composeOpen.value = false;
         clearDraft();
+        contacts.load(true);
         refreshInBackground();
     }
     catch (error) {
@@ -702,49 +714,32 @@ const deleteMessage = async (uid) => {
     }
 };
 
-const addressOf = (value) => {
-    const match = String(value || '').match(/<(.+?)>/);
-
-    return (match ? match[1] : String(value || '')).trim().toLowerCase();
-};
-const selfAddress = computed(() => String(props.mailbox?.email || '').trim().toLowerCase());
-const isFromSelf = (message) => selfAddress.value !== '' && addressOf(message?.from) === selfAddress.value;
-const withoutSelf = (list) => String(list || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item && addressOf(item) !== selfAddress.value)
-    .join(', ');
-
-// Replying to your own sent mail goes back to its recipients, not to yourself.
-const replyToMessage = (message) => {
-    if (!message) return;
-    composeTo.value = isFromSelf(message) ? (withoutSelf(message.to) || message.to || '') : (message.from || '');
-    composeSubject.value = `Re: ${(message.subject || '').replace(/^Re:\s*/i, '')}`;
-    composeBody.value = '';
-    composeCc.value = '';
-    composeBcc.value = '';
+// "Send mail" from a contact card or the contacts list.
+const composeToAddress = (address) => {
+    if (composeOpen.value && (composeTo.value.trim() || composeBody.value.trim())) {
+        composeTo.value = `${composeTo.value.replace(/[,\s]+$/, '')}, ${address}`;
+        return;
+    }
+    clearDraft();
+    composeTo.value = address;
     composeOpen.value = true;
 };
 
-const replyAllToMessage = (message) => {
-    if (!message) return;
-    const fromSelf = isFromSelf(message);
-    composeTo.value = fromSelf ? (withoutSelf(message.to) || message.to || '') : (message.from || '');
-    composeSubject.value = `Re: ${(message.subject || '').replace(/^Re:\s*/i, '')}`;
-    composeBody.value = '';
-    composeCc.value = fromSelf ? '' : withoutSelf(message.to);
-    composeBcc.value = '';
+// The inline reply's pop-out button moves the draft into the compose window.
+const popOutReply = (draft) => {
+    composeTo.value = draft.to;
+    composeCc.value = draft.cc;
+    composeBcc.value = draft.bcc;
+    composeSubject.value = draft.subject;
+    composeHtml.value = '';
+    composeBody.value = draft.body;
     composeOpen.value = true;
 };
 
-const forwardMessage = (message) => {
-    if (!message) return;
-    composeTo.value = '';
-    composeSubject.value = `Fwd: ${(message.subject || '').replace(/^Fwd:\s*/i, '')}`;
-    composeBody.value = `\n\n--- Forwarded message ---\nFrom: ${message.from || ''}\nDate: ${message.date || ''}\nSubject: ${message.subject || ''}\n\n${message.text || message.raw_body || ''}`;
-    composeCc.value = '';
-    composeBcc.value = '';
-    composeOpen.value = true;
+const onReplySent = (notice) => {
+    pushToast(notice, 'success');
+    contacts.load(true);
+    refreshInBackground();
 };
 
 const toggleRead = async (message) => {
@@ -843,6 +838,7 @@ watch(() => messageFilter.value, () => {
             @open-folder="openFolder"
             @close-mobile="sidebarOpen = false"
             @toggle-collapse="toggleSidebar"
+            @open-contacts="contactsOpen = true; sidebarOpen = false"
         />
 
         <!-- Main Content Area -->
@@ -915,13 +911,16 @@ watch(() => messageFilter.value, () => {
                     :raw-endpoint="rawEndpoint"
                     :raw-download-endpoint="rawDownloadEndpoint"
                     :avatar-endpoint="avatarEndpoint"
+                    :send-endpoint="sendEndpoint"
+                    :sandbox="mailbox.delivery_mode === 'sandbox'"
                     @open-message="openMessage"
                     @close-preview="closePreview"
                     @start-compose="startCompose"
                     @delete-message="deleteMessage"
-                    @reply="replyToMessage"
-                    @reply-all="replyAllToMessage"
-                    @forward="forwardMessage"
+                    @compose-to="composeToAddress"
+                    @pop-out-reply="popOutReply"
+                    @reply-sent="onReplySent"
+                    @notify="(text, type) => pushToast(text, type)"
                     @toggle-read="toggleRead"
                     @change-page="currentPage = $event"
                     @toggle-select="toggleSelect"
@@ -939,12 +938,22 @@ watch(() => messageFilter.value, () => {
             v-model:bcc="composeBcc"
             v-model:subject="composeSubject"
             v-model:body="composeBody"
+            v-model:html="composeHtml"
             :is-dark="isDark"
             :sending="sending"
             :from-email="mailbox.email"
             :sandbox="mailbox.delivery_mode === 'sandbox'"
             @send="submitSend"
             @discard="discardCompose"
+        />
+
+        <ContactsDialog
+            :open="contactsOpen"
+            :is-dark="isDark"
+            :avatar-endpoint="avatarEndpoint"
+            @close="contactsOpen = false"
+            @compose="composeToAddress"
+            @notify="(text, type) => pushToast(text, type)"
         />
 
         <MailboxToastStack

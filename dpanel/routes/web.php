@@ -32,6 +32,7 @@ use App\Http\Controllers\DnsZoneFileController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\MailBimiController;
 use App\Http\Controllers\MailClientController;
+use App\Http\Controllers\MailContactController;
 use App\Http\Controllers\MailHealthController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\MonitoringController;
@@ -404,6 +405,17 @@ Route::prefix('cpsess{token}')
             Route::post('/mail/{id}/send', [MailClientController::class, 'send'])
                 ->middleware('role:admin|reseller')
                 ->name('mailbox.send');
+
+            Route::get('/mail/{id}/contacts', [MailContactController::class, 'index'])
+                ->middleware('role:admin|reseller')
+                ->name('mailbox.contacts');
+            Route::post('/mail/{id}/contacts', [MailContactController::class, 'store'])
+                ->middleware(['role:admin|reseller', 'throttle:60,1'])
+                ->name('mailbox.contacts.store');
+            Route::delete('/mail/{id}/contacts/{contact}', [MailContactController::class, 'destroy'])
+                ->where('contact', '[0-9]+')
+                ->middleware('role:admin|reseller')
+                ->name('mailbox.contacts.destroy');
 
             Route::post('/mail/{id}/delete', [MailClientController::class, 'delete'])
                 ->middleware('role:admin|reseller')

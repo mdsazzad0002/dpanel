@@ -1,5 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import RichTextEditor from './RichTextEditor.vue';
+import RecipientInput from './RecipientInput.vue';
 
 const props = defineProps({
     open: {
@@ -29,6 +31,7 @@ const cc = defineModel('cc', { type: String, default: '' });
 const bcc = defineModel('bcc', { type: String, default: '' });
 const subject = defineModel('subject', { type: String, default: '' });
 const body = defineModel('body', { type: String, default: '' });
+const html = defineModel('html', { type: String, default: '' });
 
 const emit = defineEmits(['update:open', 'send', 'discard']);
 
@@ -38,6 +41,7 @@ const ccRequested = ref(false);
 const bccRequested = ref(false);
 const toInput = ref(null);
 const bodyInput = ref(null);
+const showToolbar = ref(true);
 
 const showCc = computed(() => ccRequested.value || cc.value.trim() !== '');
 const showBcc = computed(() => bccRequested.value || bcc.value.trim() !== '');
@@ -73,11 +77,16 @@ const ui = computed(() => (props.isDark
 
 const focusFirstField = async () => {
     await nextTick();
-    (to.value.trim() === '' ? toInput.value : bodyInput.value)?.focus?.();
+    if (to.value.trim() === '') toInput.value?.focus?.();
+    else bodyInput.value?.focus?.(true);
 };
 
 watch(() => props.open, (isOpen) => {
     if (isOpen) {
+        // Plain-text drafts (a popped-out reply) become editor content.
+        if (html.value === '' && body.value.trim() !== '') {
+            html.value = body.value.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]).replace(/\n/g, '<br>');
+        }
         minimized.value = false;
         ccRequested.value = false;
         bccRequested.value = false;
@@ -186,7 +195,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
                     ? 'bottom-0 right-5 h-11 w-72 rounded-t-xl'
                     : maximized
                         ? 'inset-3 rounded-xl md:inset-x-[max(1.5rem,calc((100vw-72rem)/2))] md:inset-y-8'
-                        : 'bottom-5 right-5 h-[min(620px,calc(100vh-2.5rem))] w-[min(560px,calc(100vw-2.5rem))] rounded-xl max-sm:inset-0 max-sm:h-auto max-sm:w-auto max-sm:rounded-none',
+                        : 'bottom-5 right-5 h-[min(760px,calc(100vh-2.5rem))] w-[min(720px,calc(100vw-2.5rem))] rounded-2xl max-sm:inset-0 max-sm:h-auto max-sm:w-auto max-sm:rounded-none',
             ]"
             @keydown="handleWindowKeydown"
         >
@@ -222,27 +231,26 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
                 <!-- To -->
                 <div :class="[ui.field, 'flex items-center gap-3 border-b px-4 text-sm']">
                     <label for="compose-to" :class="[ui.label, 'w-14 shrink-0']">To</label>
-                    <input
+                    <RecipientInput
                         id="compose-to"
                         ref="toInput"
                         v-model="to"
-                        type="text"
-                        autocomplete="email"
-                        :class="[ui.input, 'h-10 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']"
-                        placeholder="name@example.com"
-                    >
+                        :is-dark="isDark"
+                        :input-class="[ui.input, 'h-11 w-full border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']"
+                        placeholder="Name or email"
+                    />
                     <button v-if="!showCc" type="button" :class="[ui.link, 'text-xs font-medium transition']" @click="ccRequested = true">Cc</button>
                     <button v-if="!showBcc" type="button" :class="[ui.link, 'text-xs font-medium transition']" @click="bccRequested = true">Bcc</button>
                 </div>
 
                 <div v-if="showCc" :class="[ui.field, 'flex items-center gap-3 border-b px-4 text-sm']">
                     <label for="compose-cc" :class="[ui.label, 'w-14 shrink-0']">Cc</label>
-                    <input id="compose-cc" v-model="cc" type="text" :class="[ui.input, 'h-10 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']" placeholder="Separate addresses with commas">
+                    <RecipientInput id="compose-cc" v-model="cc" :is-dark="isDark" :input-class="[ui.input, 'h-11 w-full border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']" placeholder="Separate addresses with commas" />
                 </div>
 
                 <div v-if="showBcc" :class="[ui.field, 'flex items-center gap-3 border-b px-4 text-sm']">
                     <label for="compose-bcc" :class="[ui.label, 'w-14 shrink-0']">Bcc</label>
-                    <input id="compose-bcc" v-model="bcc" type="text" :class="[ui.input, 'h-10 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']" placeholder="Hidden recipients">
+                    <RecipientInput id="compose-bcc" v-model="bcc" :is-dark="isDark" :input-class="[ui.input, 'h-11 w-full border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']" placeholder="Hidden recipients" />
                 </div>
 
                 <!-- Subject -->
@@ -258,25 +266,33 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
                 </div>
 
                 <!-- Body -->
-                <label for="compose-body" class="sr-only">Message</label>
-                <textarea
-                    id="compose-body"
+                <RichTextEditor
                     ref="bodyInput"
-                    v-model="body"
-                    :class="[ui.input, 'min-h-0 flex-1 resize-none border-0 bg-transparent px-4 py-3 text-sm leading-6 outline-none focus:ring-0']"
-                    placeholder="Write your message…"
-                ></textarea>
+                    v-model:html="html"
+                    v-model:text="body"
+                    :is-dark="isDark"
+                    :show-toolbar="showToolbar"
+                    min-height="8rem"
+                    @submit="send"
+                />
 
                 <!-- Footer -->
                 <footer :class="[ui.footer, 'flex shrink-0 items-center gap-3 border-t px-3 py-2.5']">
                     <button
                         type="submit"
-                        class="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
+                        class="inline-flex h-10 items-center gap-2 rounded-full bg-blue-600 px-6 text-sm font-semibold text-white shadow-sm shadow-blue-600/30 transition hover:bg-blue-700 hover:shadow-md disabled:cursor-wait disabled:opacity-70"
                         :disabled="sending"
                     >
                         <i :class="['bi', sending ? 'bi-arrow-repeat animate-spin' : 'bi-send']"></i>
                         {{ sending ? 'Sending…' : 'Send' }}
                     </button>
+                    <button
+                        type="button"
+                        :class="[showToolbar ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-200' : ui.iconButton, 'flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition']"
+                        title="Formatting options"
+                        :aria-pressed="showToolbar"
+                        @click="showToolbar = !showToolbar"
+                    >Aa</button>
                     <span :class="[ui.hint, 'hidden text-xs sm:inline']">{{ isMac ? '⌘' : 'Ctrl' }} + Enter</span>
 
                     <button

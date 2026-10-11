@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { folderLabel, isOutgoingFolder } from './mailboxFolders';
 import MailAvatar from './MailAvatar.vue';
 import MessageHeaderDetails from './MessageHeaderDetails.vue';
+import ContactCard from './ContactCard.vue';
+import InlineReplyBox from './InlineReplyBox.vue';
 
 const props = defineProps({
     activeFolder: {
@@ -77,9 +79,34 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    sendEndpoint: {
+        type: String,
+        default: '',
+    },
+    sandbox: {
+        type: Boolean,
+        default: false,
+    },
 });
 
-const emit = defineEmits(['open-message', 'close-preview', 'start-compose', 'delete-message', 'reply', 'reply-all', 'forward', 'toggle-read', 'change-page', 'toggle-select', 'select-all', 'bulk-action']);
+const emit = defineEmits(['open-message', 'close-preview', 'start-compose', 'compose-to', 'pop-out-reply', 'reply-sent', 'notify', 'delete-message', 'toggle-read', 'change-page', 'toggle-select', 'select-all', 'bulk-action']);
+
+// Reply, reply all and forward open inline under the message, like Gmail.
+const replyMode = ref('');
+const replyBox = ref(null);
+const startReply = async (mode) => {
+    replyMode.value = mode;
+    await nextTick();
+    replyBox.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+const onReplySent = (notice) => {
+    replyMode.value = '';
+    emit('reply-sent', notice);
+};
+const popOutReply = (draft) => {
+    replyMode.value = '';
+    emit('pop-out-reply', draft);
+};
 
 const ui = computed(() => (props.isDark
     ? {
@@ -238,6 +265,10 @@ const handleKeydown = (event) => {
     else if (event.key === 'j' && nextMessage.value) {
         emit('open-message', nextMessage.value.uid);
     }
+    else if (!event.ctrlKey && !event.metaKey && !event.altKey && ['r', 'a', 'f'].includes(event.key)) {
+        event.preventDefault();
+        startReply({ r: 'reply', a: 'reply-all', f: 'forward' }[event.key]);
+    }
 };
 
 onMounted(() => document.addEventListener('keydown', handleKeydown));
@@ -361,6 +392,7 @@ const selectTab = (id) => {
 };
 
 watch(messageKey, () => {
+    replyMode.value = '';
     bodyView.value = 'html';
     source.value = null;
     sourceError.value = '';
@@ -707,13 +739,13 @@ onBeforeUnmount(() => {
 
                     <span :class="[ui.divider, 'mx-1 h-6 border-l']"></span>
 
-                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" title="Reply" @click="emit('reply', currentMessage)">
+                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" title="Reply" @click="startReply('reply')">
                         <i class="bi bi-reply text-base"></i><span class="hidden sm:inline">Reply</span>
                     </button>
-                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" title="Reply all" @click="emit('reply-all', currentMessage)">
+                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" title="Reply all" @click="startReply('reply-all')">
                         <i class="bi bi-reply-all text-base"></i><span class="hidden md:inline">Reply all</span>
                     </button>
-                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" title="Forward" @click="emit('forward', currentMessage)">
+                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" title="Forward" @click="startReply('forward')">
                         <i class="bi bi-forward text-base"></i><span class="hidden md:inline">Forward</span>
                     </button>
 
@@ -772,7 +804,7 @@ onBeforeUnmount(() => {
 
                 <!-- Content -->
                 <div :class="[ui.canvas, 'min-h-0 flex-1 overflow-y-auto transition-opacity', messageLoading ? 'opacity-60' : '']">
-                    <div class="mx-auto w-full max-w-4xl px-3 py-5 md:px-8 md:py-8">
+                    <div class="mx-auto w-full max-w-5xl px-3 py-5 md:px-8 md:py-8">
                         <!-- Subject -->
                         <div class="px-1">
                             <div class="mb-2 flex flex-wrap items-center gap-2">
@@ -786,40 +818,42 @@ onBeforeUnmount(() => {
                         </div>
 
                         <!-- Message card -->
-                        <article :class="[ui.card, 'mt-5 overflow-hidden rounded-xl border shadow-sm']">
+                        <article :class="[ui.card, 'mt-5 rounded-xl border shadow-sm']">
                             <header :class="[ui.cardDivider, 'flex items-start gap-3 border-b px-4 py-4 md:px-6']">
-                                <MailAvatar
-                                    :email="senderEmail(currentMessage.from)"
-                                    :initials="senderInitials(currentMessage.from)"
-                                    :color-class="avatarColor(currentMessage.from)"
-                                    :verified="Boolean(currentMessage.sender_verified)"
-                                    :endpoint="avatarEndpoint"
-                                    class="h-11 w-11 text-sm"
-                                />
+                                <ContactCard :address="currentMessage.from" :is-dark="isDark" :avatar-endpoint="avatarEndpoint" :verified="Boolean(currentMessage.sender_verified)" class="shrink-0" @compose="emit('compose-to', $event)">
+                                    <MailAvatar
+                                        :email="senderEmail(currentMessage.from)"
+                                        :initials="senderInitials(currentMessage.from)"
+                                        :color-class="avatarColor(currentMessage.from)"
+                                        :verified="Boolean(currentMessage.sender_verified)"
+                                        :endpoint="avatarEndpoint"
+                                        class="h-11 w-11 cursor-pointer text-sm"
+                                    />
+                                </ContactCard>
                                 <div class="min-w-0 flex-1">
                                     <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
                                         <div class="min-w-0">
-                                            <p :class="[ui.strong, 'truncate text-[15px] font-semibold']">
-                                                {{ senderName(currentMessage.from) }}
-                                                <i v-if="currentMessage.sender_verified" class="bi bi-patch-check-fill ml-0.5 align-[-1px] text-sm text-blue-600" title="Sender verified: DMARC or DKIM passed for this domain"></i>
-                                            </p>
-                                            <p v-if="senderEmail(currentMessage.from) && senderEmail(currentMessage.from) !== senderName(currentMessage.from)" :class="[ui.muted, 'truncate text-xs']">
-                                                {{ senderEmail(currentMessage.from) }}
-                                            </p>
+                                            <ContactCard :address="currentMessage.from" :is-dark="isDark" :avatar-endpoint="avatarEndpoint" :verified="Boolean(currentMessage.sender_verified)" @compose="emit('compose-to', $event)">
+                                                <p class="min-w-0 truncate text-[15px]">
+                                                    <span :class="[ui.strong, 'cursor-pointer font-semibold hover:underline']">{{ senderName(currentMessage.from) }}</span>
+                                                    <i v-if="currentMessage.sender_verified" class="bi bi-patch-check-fill ml-0.5 align-[-1px] text-sm text-blue-600" title="Sender verified: DMARC or DKIM passed for this domain"></i>
+                                                    <span v-if="senderEmail(currentMessage.from) && senderEmail(currentMessage.from) !== senderName(currentMessage.from)" :class="[ui.muted, 'ml-1 text-xs']">&lt;{{ senderEmail(currentMessage.from) }}&gt;</span>
+                                                </p>
+                                            </ContactCard>
                                         </div>
                                         <time :class="[ui.muted, 'shrink-0 pt-0.5 text-xs']" :title="currentMessage.date">{{ formatFullDate(currentMessage.date) }}</time>
                                     </div>
-                                    <p v-if="currentMessage.to" :class="[ui.muted, 'mt-1.5 truncate text-xs']">
-                                        <span class="font-medium">To:</span> {{ currentMessage.to }}
-                                    </p>
                                     <MessageHeaderDetails
-                                        v-if="rawEndpoint"
+                                        :message="currentMessage"
+                                        :self-email="selfEmail"
                                         :analysis="analysis"
                                         :loading="sourceLoading"
                                         :error="sourceError"
                                         :message-key="messageKey"
-                                        :ui="ui"
+                                        :is-dark="isDark"
+                                        class="mt-0.5"
                                         @load="loadSource"
+                                        @show-original="selectTab('raw')"
                                     />
                                 </div>
                             </header>
@@ -839,7 +873,7 @@ onBeforeUnmount(() => {
                             </div>
 
                             <template v-if="showsBody">
-                                <div v-if="showsHtml" class="bg-white">
+                                <div v-if="showsHtml" class="overflow-hidden rounded-b-xl bg-white">
                                     <iframe
                                         ref="htmlFrame"
                                         :key="`${currentMessage.folder}:${currentMessage.uid}`"
@@ -1006,16 +1040,33 @@ onBeforeUnmount(() => {
                         </article>
 
                         <!-- Quick actions -->
-                        <div class="mt-5 flex flex-wrap gap-2 px-1 pb-24">
-                            <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="emit('reply', currentMessage)">
+                        <div v-if="!replyMode" class="mt-5 flex flex-wrap gap-2 px-1 pb-24">
+                            <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="startReply('reply')">
                                 <i class="bi bi-reply"></i> Reply
                             </button>
-                            <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="emit('reply-all', currentMessage)">
+                            <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="startReply('reply-all')">
                                 <i class="bi bi-reply-all"></i> Reply all
                             </button>
-                            <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="emit('forward', currentMessage)">
+                            <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="startReply('forward')">
                                 <i class="bi bi-forward"></i> Forward
                             </button>
+                        </div>
+
+                        <div v-if="replyMode" ref="replyBox" class="mt-6 pb-24">
+                            <InlineReplyBox
+                                v-model:mode="replyMode"
+                                :message="currentMessage"
+                                :folder="currentMessage.folder || activeFolder"
+                                :self-email="selfEmail"
+                                :avatar-endpoint="avatarEndpoint"
+                                :send-endpoint="sendEndpoint"
+                                :sandbox="sandbox"
+                                :is-dark="isDark"
+                                @sent="onReplySent"
+                                @discard="replyMode = ''"
+                                @pop-out="popOutReply"
+                                @notify="(text, type) => emit('notify', text, type)"
+                            />
                         </div>
                     </div>
                 </div>
