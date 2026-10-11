@@ -12,7 +12,10 @@ const props = defineProps({
     collapsed: { type: Boolean, default: false },
     mobileOpen: { type: Boolean, default: false },
     panelHref: { type: String, required: true },
-    serviceHref: { type: String, required: true },
+    // Empty hides the link (a database login can't manage the service).
+    serviceHref: { type: String, default: '' },
+    // A single database's login: no server view and no new databases.
+    scoped: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['go', 'toggle-collapse', 'close-mobile']);
@@ -76,7 +79,7 @@ const active = 'bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald
 
         <!-- Collapsed rail: one icon per database -->
         <nav v-if="compact" class="flex-1 space-y-1 overflow-y-auto p-2">
-            <button type="button" :class="[item, 'justify-center', !location.db ? active : idle]" title="Server" @click="go()"><i class="bi bi-hdd-rack text-base"></i></button>
+            <button v-if="!scoped" type="button" :class="[item, 'justify-center', !location.db ? active : idle]" title="Server" @click="go()"><i class="bi bi-hdd-rack text-base"></i></button>
             <button v-for="db in databases" :key="db.name" type="button" :class="[item, 'justify-center', location.db === db.name ? active : idle]" :title="db.name" @click="go(db.name)">
                 <span class="text-xs font-semibold uppercase">{{ db.name.slice(0, 2) }}</span>
             </button>
@@ -84,7 +87,7 @@ const active = 'bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald
 
         <template v-else>
             <div class="space-y-2 p-3">
-                <button type="button" class="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700" @click="go()">
+                <button v-if="!scoped" type="button" class="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700" @click="go()">
                     <i class="bi bi-plus-lg"></i> New database
                 </button>
                 <div class="relative">
@@ -94,10 +97,10 @@ const active = 'bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald
             </div>
 
             <nav class="flex-1 overflow-y-auto px-3 pb-3">
-                <button type="button" :class="[item, !location.db ? active : idle]" @click="go()">
+                <button v-if="!scoped" type="button" :class="[item, !location.db ? active : idle]" @click="go()">
                     <i class="bi bi-hdd-rack"></i> Server
                 </button>
-                <p class="mb-1 mt-4 px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Databases</p>
+                <p :class="scoped ? 'mt-1' : 'mt-4'" class="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Databases</p>
                 <div v-for="db in visible" :key="db.name">
                     <div :class="[item, 'pr-1', location.db === db.name && !location.collection ? active : idle]">
                         <button type="button" class="flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800" :aria-label="`Toggle ${db.name}`" @click="toggle(db.name)">
@@ -129,7 +132,7 @@ const active = 'bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald
         </template>
 
         <div :class="['shrink-0 space-y-1 border-t border-slate-200 p-3 dark:border-slate-800', compact && 'px-2']">
-            <Link :href="serviceHref" :class="[item, idle, compact && 'justify-center']" title="Service & connection">
+            <Link v-if="serviceHref" :href="serviceHref" :class="[item, idle, compact && 'justify-center']" title="Service & connection">
                 <i class="bi bi-power"></i><span v-if="!compact">Service &amp; connection</span>
             </Link>
             <Link :href="panelHref" :class="[item, idle, compact && 'justify-center']" title="Back to dPanel">

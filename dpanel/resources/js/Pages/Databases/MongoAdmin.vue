@@ -12,15 +12,17 @@ import { useAppChrome } from './MongoAdmin/lib/useAppChrome';
 
 // Mongo Admin: a standalone app outside the panel layout, like dPanel Mail,
 // laid out like mongo-express — server › database › collection › document.
-defineProps({
+// With a `scope` it opens one database signed in as that database's user.
+const props = defineProps({
     initialDb: { type: String, default: '' },
     initialCollection: { type: String, default: '' },
+    scope: { type: Object, default: null },
 });
 
 const {
     panelRoute, databases, version, loading, unreachable, message, busy,
     run, refresh, exportUrl, location, go, onPopState, currentDatabase,
-} = useMongoAdmin();
+} = useMongoAdmin(props.scope);
 const { isDark, toggleTheme, sidebarCollapsed, sidebarOpen, toggleSidebar } = useAppChrome();
 
 onMounted(() => {
@@ -43,7 +45,8 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState));
             :collapsed="sidebarCollapsed"
             :mobile-open="sidebarOpen"
             :panel-href="panelRoute('dashboard')"
-            :service-href="panelRoute('databases.mongodb')"
+:service-href="scope ? '' : panelRoute('databases.mongodb')"
+            :scoped="!!scope"
             class="md:sticky md:top-0 md:shrink-0"
             @go="go"
             @toggle-collapse="toggleSidebar"
@@ -53,6 +56,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState));
         <div class="flex min-w-0 flex-1 flex-col">
             <AppTopbar
                 :location="location"
+                :scoped="!!scope"
                 :loading="loading"
                 :is-dark="isDark"
                 @go="go"
@@ -70,7 +74,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState));
                 <div v-if="unreachable" class="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                     <p class="font-medium">{{ unreachable }}</p>
                     <div class="mt-3 flex gap-2">
-                        <Link :href="panelRoute('databases.mongodb')" class="rounded-md bg-amber-600 px-3 py-2 font-medium text-white hover:bg-amber-700">Open MongoDB service</Link>
+                        <Link v-if="!scope" :href="panelRoute('databases.mongodb')" class="rounded-md bg-amber-600 px-3 py-2 font-medium text-white hover:bg-amber-700">Open MongoDB service</Link>
                         <button type="button" class="rounded-md border border-amber-300 px-3 py-2 hover:bg-amber-100 dark:border-amber-800 dark:hover:bg-amber-900/40" @click="refresh">Try again</button>
                     </div>
                 </div>

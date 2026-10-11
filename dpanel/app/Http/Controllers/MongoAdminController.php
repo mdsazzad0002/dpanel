@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DatabaseRequest;
 use App\Services\MongoAdminClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,9 +20,12 @@ class MongoAdminController extends Controller
 
     public function index(Request $request): Response
     {
+        $database = $this->scopedDatabase($request);
+
         return Inertia::render('Databases/MongoAdmin', [
-            'initialDb' => (string) $request->query('db', ''),
+            'initialDb' => $database?->database_name ?? (string) $request->query('db', ''),
             'initialCollection' => (string) $request->query('collection', ''),
+            'scope' => $database ? ['id' => (string) $database->id, 'name' => (string) $database->database_name] : null,
         ]);
     }
 
@@ -29,14 +33,15 @@ class MongoAdminController extends Controller
     {
         $request->validate([
             'op' => ['required', 'array'],
-            'op.action' => ['required', 'string', Rule::in(array_diff(MongoAdminClient::ACTIONS, ['export']))],
+            'op.action' => ['required', 'string', Rule::in(array_diff(MongoAdminClient::ACTIONS, MongoAdminClient::INTERNAL_ACTIONS))],
         ]);
+        $database = $this->scopedDatabase($request);
 
         // Forward `op` exactly as sent: decoding it into PHP arrays would turn
         // every empty object ({} filters, {} fields in documents) into [].
         $body = json_decode($request->getContent());
         $op = is_object($body) && is_object($body->op ?? null) ? $body->op : (array) $request->input('op');
-        $result = $this->mongo->run($op);
+        $result = $this->mongo->run($op, $database);
 
         return response()->json($result, $result['success'] ? 200 : 422);
     }
@@ -52,6 +57,7 @@ class MongoAdminController extends Controller
             'collection' => ['required', 'string', 'max:255'],
             'filter' => ['nullable', 'string', 'max:65535'],
         ]);
+        $database = $this->scopedDatabase($request);
 
         $filter = null;
         if (($data['filter'] ?? '') !== '') {
@@ -67,7 +73,7 @@ class MongoAdminController extends Controller
             'db' => $data['db'],
             'collection' => $data['collection'],
             'filter' => $filter,
-        ]);
+        ], $database);
         if (! $result['success']) {
             return response()->json($result, 422);
         }
@@ -78,5 +84,28 @@ class MongoAdminController extends Controller
         return response()->streamDownload(function () use ($documents) {
             echo json_encode($documents, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         }, $filename, ['Content-Type' => 'application/json']);
+    }
+
+    /**
+     * The MongoDB database a `scope` (database list id) opens with its own
+     * login. Without a scope the page runs as the MongoDB admin, which only
+     * panel admins may do.
+     */
+    private function scopedDatabase(Request $request): ?DatabaseRequest
+    {
+        $scope = trim((string) $request->input('scope', ''));
+        if ($scope === '') {
+            abort_unless($request->user()?->hasRole('admin'), 403, 'Only admins can open every MongoDB database.');
+
+            return null;
+        }
+
+        $database = DatabaseRequest::query()
+            ->visibleTo($request->user())
+            ->where('engine', DatabaseRequest::ENGINE_MONGODB)
+            ->find($scope);
+        abort_if($database === null, 404);
+
+        return $database;
     }
 }

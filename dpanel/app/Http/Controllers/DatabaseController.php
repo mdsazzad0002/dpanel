@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\DatabaseRequest as DatabaseRequestModel;
 use App\Models\Website;
+use App\Services\MongoAdminClient;
+use App\Services\MongodbServiceManager;
 use App\Services\PgAdminSsoService;
 use App\Services\PostgresqlServiceManager;
 use App\Services\ResourceQuotaService;
@@ -28,6 +30,8 @@ class DatabaseController extends Controller
         private readonly ResourceQuotaService $quotas,
         private readonly PostgresqlServiceManager $postgresql,
         private readonly PgAdminSsoService $pgAdmin,
+        private readonly MongodbServiceManager $mongodb,
+        private readonly MongoAdminClient $mongoAdmin,
     ) {
     }
 
@@ -53,6 +57,7 @@ class DatabaseController extends Controller
                 ])
                 ->all(),
             'postgresql' => $this->postgresqlAvailability(),
+            'mongodb' => $this->mongodbAvailability(),
         ]);
     }
 
@@ -298,6 +303,9 @@ class DatabaseController extends Controller
         if ($requestItem->isPostgresql()) {
             return redirect()->route('databases.pgadmin.autologin', ['id' => $requestItem->id]);
         }
+        if ($requestItem->isMongodb()) {
+            return redirect()->route('databases.mongodb.admin', ['scope' => $requestItem->id]);
+        }
 
         return $this->renderPhpMyAdminAutologin(
             (string) $requestItem->database_user,
@@ -319,6 +327,9 @@ class DatabaseController extends Controller
 
         if ($requestItem->isPostgresql()) {
             return redirect()->route('databases.postgresql.pgadmin');
+        }
+        if ($requestItem->isMongodb()) {
+            return redirect()->route('databases.mongodb.admin', ['db' => $requestItem->database_name]);
         }
 
         $username = trim((string) config('app.phpmyadmin_admin_username', ''));
@@ -367,6 +378,7 @@ class DatabaseController extends Controller
         abort_if($requestItem === null, 404);
 
         if (! $requestItem->isPostgresql()) {
+            // Sends MongoDB on to Mongo Admin.
             return redirect()->route('databases.phpmyadmin.autologin', ['id' => $requestItem->id]);
         }
 
@@ -470,7 +482,7 @@ class DatabaseController extends Controller
         return Validator::make($payload, [
             'domain' => ['required', 'string', 'max:255'],
             'database_name' => ['required', 'string', $max, $pattern],
-            'database_user' => ['required', 'string', $max, $pattern, Rule::notIn(['postgres', 'root'])],
+            'database_user' => ['required', 'string', $max, $pattern, Rule::notIn(['postgres', 'root', 'admin'])],
             'database_password' => ['required', 'string', 'max:255'],
             'database_host' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9._%-]+$/'],
             'charset' => ['required', 'string', 'max:32'],
@@ -493,6 +505,12 @@ class DatabaseController extends Controller
             // server's default collation.
             $host = '127.0.0.1';
             $charset = 'UTF8';
+            $collation = 'default';
+        }
+        if ($engine === DatabaseRequestModel::ENGINE_MONGODB) {
+            // Local server only; MongoDB stores everything as UTF-8 BSON.
+            $host = '127.0.0.1';
+            $charset = 'UTF-8';
             $collation = 'default';
         }
 
@@ -589,6 +607,9 @@ class DatabaseController extends Controller
         if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
             return ['ran' => false, 'success' => false, 'output' => 'Database sync skipped on Windows environment.'];
         }
+        if ($engine === DatabaseRequestModel::ENGINE_MONGODB) {
+            return $this->syncMongodbUser($payload);
+        }
 
         $apiUrl = trim((string) config('serverpanel.database_api_url', ''));
         if ($apiUrl === '') {
@@ -658,24 +679,58 @@ class DatabaseController extends Controller
     }
 
     /**
+     * MongoDB creates a database on first write, so syncing only creates the
+     * database's own user (dbOwner of it), or resets its password.
+     *
+     * @param array<string, mixed> $payload
+     * @return array{ran: bool, success: bool, output: string}
+     */
+    private function syncMongodbUser(array $payload): array
+    {
+        $result = $this->mongoAdmin->run([
+            'action' => 'provision_user',
+            'db' => (string) $payload['database_name'],
+            'user' => (string) $payload['database_user'],
+            'password' => (string) $payload['database_password'],
+        ]);
+        if (! $result['success']) {
+            Log::warning('MongoDB user sync failed', [
+                'output' => $result['message'],
+                'database_name' => (string) $payload['database_name'],
+                'database_user' => (string) $payload['database_user'],
+            ]);
+        }
+
+        return [
+            'ran' => true,
+            'success' => $result['success'],
+            'output' => $result['message'] !== '' ? $result['message'] : ($result['success'] ? 'Database sync completed.' : 'Database sync failed.'),
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $input
      */
     private function engineFrom(array $input): string
     {
         return Validator::make($input, [
-            'engine' => ['nullable', Rule::in([DatabaseRequestModel::ENGINE_MARIADB, DatabaseRequestModel::ENGINE_POSTGRESQL])],
+            'engine' => ['nullable', Rule::in([DatabaseRequestModel::ENGINE_MARIADB, DatabaseRequestModel::ENGINE_POSTGRESQL, DatabaseRequestModel::ENGINE_MONGODB])],
         ])->validate()['engine'] ?? DatabaseRequestModel::ENGINE_MARIADB;
     }
 
     private function maxIdentifierLength(string $engine): int
     {
-        // PostgreSQL truncates identifiers at 63 bytes.
-        return $engine === DatabaseRequestModel::ENGINE_POSTGRESQL ? 63 : 64;
+        // PostgreSQL truncates identifiers at 63 bytes; MongoDB database names must be under 64.
+        return $engine === DatabaseRequestModel::ENGINE_MARIADB ? 64 : 63;
     }
 
     private function engineLabel(string $engine): string
     {
-        return $engine === DatabaseRequestModel::ENGINE_POSTGRESQL ? 'PostgreSQL' : 'MySQL/MariaDB';
+        return match ($engine) {
+            DatabaseRequestModel::ENGINE_POSTGRESQL => 'PostgreSQL',
+            DatabaseRequestModel::ENGINE_MONGODB => 'MongoDB',
+            default => 'MySQL/MariaDB',
+        };
     }
 
     /**
@@ -684,6 +739,19 @@ class DatabaseController extends Controller
     private function postgresqlAvailability(): array
     {
         $service = $this->postgresql->statuses()['postgresql'] ?? null;
+
+        return [
+            'installed' => (bool) ($service['installed'] ?? false),
+            'active' => (bool) ($service['active'] ?? false),
+        ];
+    }
+
+    /**
+     * @return array{installed: bool, active: bool}
+     */
+    private function mongodbAvailability(): array
+    {
+        $service = $this->mongodb->statuses()['mongodb'] ?? null;
 
         return [
             'installed' => (bool) ($service['installed'] ?? false),

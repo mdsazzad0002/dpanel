@@ -35,6 +35,8 @@ class DatabaseEngineTest extends TestCase
             'serverpanel.execution_api_token' => 'secret',
             'postgresql.admin_username' => 'postgres',
             'postgresql.admin_password' => 'superpw',
+            'mongodb.admin_username' => 'admin',
+            'mongodb.admin_password' => 'mongopw',
         ]);
         $this->createWebsite();
     }
@@ -72,6 +74,68 @@ class DatabaseEngineTest extends TestCase
         $this->assertSame('UTF8', $database->charset);
         Http::assertSent(fn ($request) => $request['engine'] === 'postgresql'
             && $request['database_name'] === 'siteowner_shop_db');
+    }
+
+    public function test_mongodb_databases_get_their_own_user_through_drust(): void
+    {
+        Http::fake(['drust.test/api/v1/mongodb/admin' => Http::response(['success' => true, 'message' => 'ok'])]);
+
+        $this->request()
+            ->post("/cpsess{$this->token}/databases", $this->payload([
+                'engine' => 'mongodb',
+                'database_host' => '203.0.113.10',
+            ]))
+            ->assertRedirect();
+
+        $database = DatabaseRequest::query()->sole();
+        $this->assertSame('mongodb', $database->engine);
+        $this->assertSame('active', $database->status);
+        $this->assertSame('127.0.0.1', $database->database_host);
+        $this->assertSame('UTF-8', $database->charset);
+        // Created as the MongoDB admin, owning only its own database.
+        Http::assertSent(fn ($request) => $request['connection']['username'] === 'admin'
+            && $request['op'] === [
+                'action' => 'provision_user',
+                'db' => 'siteowner_shop_db',
+                'user' => 'siteowner_shop_user',
+                'password' => 'Secret123!',
+            ]);
+    }
+
+    public function test_mongodb_db_login_opens_mongo_admin_as_the_database_user(): void
+    {
+        Http::fake(['drust.test/api/v1/mongodb/admin' => Http::response(['success' => true, 'message' => 'OK', 'data' => []])]);
+        $mongo = $this->createDatabase('mongodb');
+
+        $this->request()
+            ->get("/cpsess{$this->token}/databases/{$mongo->id}/phpmyadmin/autologin")
+            ->assertRedirectContains("/databases/mongodb/admin?scope={$mongo->id}");
+
+        $this->request()
+            ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview'], 'scope' => $mongo->id])
+            ->assertOk();
+
+        Http::assertSent(fn ($request) => $request['connection']['username'] === 'siteowner_mongodb_user'
+            && $request['connection']['password'] === 'pw-mongodb'
+            && $request['connection']['database'] === 'siteowner_mongodb_db');
+    }
+
+    public function test_users_can_not_open_other_peoples_mongodb_databases(): void
+    {
+        Http::fake();
+        $mongo = $this->createDatabase('mongodb');
+        $mariadb = $this->createDatabase('mariadb');
+        $user = User::factory()->create();
+
+        foreach ([$mongo, $mariadb] as $database) {
+            $this
+                ->withoutMiddleware()
+                ->actingAs($user)
+                ->withSession(['panel_session_token' => $this->token])
+                ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview'], 'scope' => $database->id])
+                ->assertNotFound();
+        }
+        Http::assertNothingSent();
     }
 
     public function test_unknown_engines_are_rejected(): void

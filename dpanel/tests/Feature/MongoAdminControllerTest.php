@@ -60,6 +60,31 @@ class MongoAdminControllerTest extends TestCase
         }
     }
 
+    public function test_only_admins_open_every_database(): void
+    {
+        $this->mock(MongoAdminClient::class, function (MockInterface $mock) {
+            $mock->shouldNotReceive('run');
+        });
+
+        $this
+            ->withoutMiddleware()
+            ->actingAs(User::factory()->make(['role' => 'user']))
+            ->withSession(['panel_session_token' => $this->token])
+            ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview']])
+            ->assertForbidden();
+    }
+
+    public function test_the_page_can_not_provision_users(): void
+    {
+        $this->mock(MongoAdminClient::class, function (MockInterface $mock) {
+            $mock->shouldNotReceive('run');
+        });
+
+        $this->request()
+            ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'provision_user', 'db' => 'x', 'user' => 'root', 'password' => 'p']])
+            ->assertStatus(422);
+    }
+
     public function test_export_downloads_documents_as_json(): void
     {
         $this->mock(MongoAdminClient::class, function (MockInterface $mock) {
@@ -109,7 +134,7 @@ class MongoAdminControllerTest extends TestCase
     {
         return $this
             ->withoutMiddleware()
-            ->actingAs(User::factory()->make())
+            ->actingAs(User::factory()->make(['role' => 'admin']))
             ->withSession(['panel_session_token' => $this->token]);
     }
 }

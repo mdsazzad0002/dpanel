@@ -3,6 +3,7 @@
 //! ObjectIds, dates and the like survive a round trip through the browser.
 
 use std::{
+    collections::HashMap,
     sync::Mutex,
     time::Duration,
 };
@@ -23,12 +24,16 @@ const EXPORT_LIMIT: i64 = 100_000;
 /// Databases MongoDB needs for itself; they can be read but not dropped.
 const SYSTEM_DATABASES: [&str; 3] = ["admin", "local", "config"];
 
-#[derive(Deserialize, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Connection {
     pub host: String,
     pub port: u16,
     pub username: String,
     pub password: String,
+    /// A database's own login: the user is authenticated against this
+    /// database and the page can only open it. None means the admin login.
+    #[serde(default)]
+    pub database: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -58,17 +63,46 @@ pub(crate) enum Op {
     Aggregate { db: String, collection: String, pipeline: Value },
     Command { db: String, command: Value },
     Export { db: String, collection: String, filter: Option<Value> },
+    /// Create a database's own user (dbOwner of it), or reset its password.
+    ProvisionUser { db: String, user: String, password: String },
 }
 
+impl Op {
+    /// The database this operation touches; None for the server overview.
+    fn database(&self) -> Option<&str> {
+        match self {
+            Op::Overview => None,
+            Op::CreateCollection { db, .. }
+            | Op::DropCollection { db, .. }
+            | Op::RenameCollection { db, .. }
+            | Op::DropDatabase { db }
+            | Op::Find { db, .. }
+            | Op::Insert { db, .. }
+            | Op::Replace { db, .. }
+            | Op::Delete { db, .. }
+            | Op::DeleteMany { db, .. }
+            | Op::Indexes { db, .. }
+            | Op::CreateIndex { db, .. }
+            | Op::DropIndex { db, .. }
+            | Op::Aggregate { db, .. }
+            | Op::Command { db, .. }
+            | Op::Export { db, .. }
+            | Op::ProvisionUser { db, .. } => Some(db),
+        }
+    }
+}
+
+/// Most logins kept connected at once (the admin plus recent database logins).
+const CACHED_CLIENTS: usize = 16;
+
 /// One client per connection settings; the driver pools connections inside it.
-static CLIENT: Mutex<Option<(Connection, Client)>> = Mutex::new(None);
+static CLIENTS: Mutex<Option<HashMap<Connection, Client>>> = Mutex::new(None);
 
 fn client(connection: &Connection) -> Result<Client, String> {
-    let mut cached = CLIENT.lock().map_err(|_| "client cache poisoned".to_string())?;
-    if let Some((settings, client)) = cached.as_ref() {
-        if settings == connection {
-            return Ok(client.clone());
-        }
+    let mut cached = CLIENTS.lock().map_err(|_| "client cache poisoned".to_string())?;
+    let cached = cached.get_or_insert_with(HashMap::new);
+    if let Some(client) = cached.get(connection) {
+        return Ok(client.clone());
     }
 
     let mut options = ClientOptions::default();
@@ -80,7 +114,7 @@ fn client(connection: &Connection) -> Result<Client, String> {
         let mut credential = Credential::default();
         credential.username = Some(connection.username.clone());
         credential.password = Some(connection.password.clone());
-        credential.source = Some("admin".to_string());
+        credential.source = Some(connection.database.clone().unwrap_or_else(|| "admin".to_string()));
         options.credential = Some(credential);
     }
     options.app_name = Some("dpanel".to_string());
@@ -90,13 +124,31 @@ fn client(connection: &Connection) -> Result<Client, String> {
     options.connect_timeout = Some(Duration::from_secs(3));
 
     let client = Client::with_options(options).map_err(|e| e.to_string())?;
-    *cached = Some((connection.clone(), client.clone()));
+    if cached.len() >= CACHED_CLIENTS {
+        cached.clear();
+    }
+    cached.insert(connection.clone(), client.clone());
     Ok(client)
 }
 
+/// A database login may only reach its own database, and never manage users.
+fn check_scope(connection: &Connection, op: &Op) -> Result<(), String> {
+    let Some(scope) = connection.database.as_deref() else {
+        return Ok(());
+    };
+    if matches!(op, Op::ProvisionUser { .. }) {
+        return Err("Only the admin login can manage database users.".to_string());
+    }
+    match op.database() {
+        Some(db) if db != scope => Err(format!("This login can only open the {scope} database.")),
+        _ => Ok(()),
+    }
+}
+
 pub(crate) async fn run(connection: &Connection, op: Op) -> Result<Value, String> {
+    check_scope(connection, &op)?;
     let client = client(connection)?;
-    execute(&client, op).await.map_err(|error| {
+    execute(&client, op, connection.database.as_deref()).await.map_err(|error| {
         if error.contains("Server selection timeout") {
             "MongoDB is not reachable. Turn it on under Database Management > MongoDB.".to_string()
         } else {
@@ -105,9 +157,9 @@ pub(crate) async fn run(connection: &Connection, op: Op) -> Result<Value, String
     })
 }
 
-async fn execute(client: &Client, op: Op) -> Result<Value, String> {
+async fn execute(client: &Client, op: Op, scope: Option<&str>) -> Result<Value, String> {
     match op {
-        Op::Overview => overview(client).await,
+        Op::Overview => overview(client, scope).await,
         Op::CreateCollection { db, collection } => {
             database(client, &db)?
                 .create_collection(checked_collection(&collection)?)
@@ -275,13 +327,50 @@ async fn execute(client: &Client, op: Op) -> Result<Value, String> {
                 .map_err(err)?;
             Ok(json!({ "documents": to_json(documents), "limit": EXPORT_LIMIT }))
         }
+        Op::ProvisionUser { db, user, password } => {
+            if user.is_empty() || password.is_empty() {
+                return Err("A database user and password are required.".to_string());
+            }
+            let database = database(client, &db)?;
+            let existing = database.run_command(doc! { "usersInfo": &user }).await.map_err(err)?;
+            let exists = existing.get_array("users").is_ok_and(|users| !users.is_empty());
+            let roles = vec![Bson::Document(doc! { "role": "dbOwner", "db": &db })];
+            let command = if exists {
+                doc! { "updateUser": &user, "pwd": &password, "roles": roles }
+            } else {
+                doc! { "createUser": &user, "pwd": &password, "roles": roles }
+            };
+            database.run_command(command).await.map_err(err)?;
+            Ok(json!({ "message": format!("MongoDB database/user synced successfully: {db} / {user}") }))
+        }
     }
 }
 
-async fn overview(client: &Client) -> Result<Value, String> {
+async fn overview(client: &Client, scope: Option<&str>) -> Result<Value, String> {
+    // A database login can't list databases, and MongoDB only shows a
+    // database once it holds data, so a scoped login always gets its own.
+    let specs: Vec<(String, u64)> = match scope {
+        Some(name) => {
+            let stats = client.database(name).run_command(doc! { "dbStats": 1 }).await.map_err(err)?;
+            let size = match stats.get("storageSize") {
+                Some(Bson::Int32(n)) => *n as u64,
+                Some(Bson::Int64(n)) => *n as u64,
+                Some(Bson::Double(n)) => *n as u64,
+                _ => 0,
+            };
+            vec![(name.to_string(), size)]
+        }
+        None => client
+            .list_databases()
+            .await
+            .map_err(err)?
+            .into_iter()
+            .map(|spec| (spec.name, spec.size_on_disk))
+            .collect(),
+    };
     let mut databases = Vec::new();
-    for spec in client.list_databases().await.map_err(err)? {
-        let db = client.database(&spec.name);
+    for (name, size) in specs {
+        let db = client.database(&name);
         let mut collections = Vec::new();
         let mut cursor = db.list_collections().await.map_err(err)?;
         while let Some(collection) = cursor.try_next().await.map_err(err)? {
@@ -298,9 +387,9 @@ async fn overview(client: &Client) -> Result<Value, String> {
         }
         collections.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
         databases.push(json!({
-            "name": spec.name,
-            "size": spec.size_on_disk,
-            "system": SYSTEM_DATABASES.contains(&spec.name.as_str()),
+            "system": SYSTEM_DATABASES.contains(&name.as_str()),
+            "name": name,
+            "size": size,
             "collections": collections,
         }));
     }
@@ -419,6 +508,24 @@ mod tests {
     }
 
     #[test]
+    fn database_logins_stay_in_their_database() {
+        let scoped = Connection {
+            host: "127.0.0.1".into(),
+            port: 27017,
+            username: "shop_user".into(),
+            password: "pw".into(),
+            database: Some("shop".into()),
+        };
+        let op = |value: Value| serde_json::from_value::<Op>(value).unwrap();
+        assert!(check_scope(&scoped, &op(json!({"action": "overview"}))).is_ok());
+        assert!(check_scope(&scoped, &op(json!({"action": "find", "db": "shop", "collection": "c"}))).is_ok());
+        assert!(check_scope(&scoped, &op(json!({"action": "find", "db": "admin", "collection": "c"}))).is_err());
+        assert!(check_scope(&scoped, &op(json!({"action": "provision_user", "db": "shop", "user": "u", "password": "p"}))).is_err());
+        let admin = Connection { database: None, ..scoped };
+        assert!(check_scope(&admin, &op(json!({"action": "find", "db": "admin", "collection": "c"}))).is_ok());
+    }
+
+    #[test]
     fn rejects_non_object_documents() {
         assert!(document(json!([1, 2]), "document").is_err());
         assert!(optional_document(None, "filter").unwrap().is_empty());
@@ -438,6 +545,7 @@ mod live_tests {
             port: 27017,
             username: std::env::var("MONGO_TEST_USER").unwrap_or_else(|_| "admin".into()),
             password: std::env::var("MONGO_TEST_PASSWORD").expect("MONGO_TEST_PASSWORD"),
+            database: None,
         };
         let op = |value: Value| serde_json::from_value::<Op>(value).unwrap();
         let db = "dpanel_live_test";
@@ -481,5 +589,45 @@ mod live_tests {
 
         assert!(run(&connection, op(json!({"action": "drop_database", "db": "admin"}))).await.is_err());
         run(&connection, op(json!({"action": "drop_database", "db": db}))).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn database_login_round_trip_against_local_mongod() {
+        let admin = Connection {
+            host: "127.0.0.1".into(),
+            port: 27017,
+            username: std::env::var("MONGO_TEST_USER").unwrap_or_else(|_| "admin".into()),
+            password: std::env::var("MONGO_TEST_PASSWORD").expect("MONGO_TEST_PASSWORD"),
+            database: None,
+        };
+        let op = |value: Value| serde_json::from_value::<Op>(value).unwrap();
+        let db = "dpanel_live_scope";
+        let provision = json!({"action": "provision_user", "db": db, "user": "dpanel_live_user", "password": "first-pw"});
+
+        run(&admin, op(provision.clone())).await.unwrap();
+        // Running it again resets the password instead of failing.
+        let mut reset = provision.clone();
+        reset["password"] = json!("second-pw");
+        run(&admin, op(reset)).await.unwrap();
+
+        let user = Connection {
+            username: "dpanel_live_user".into(),
+            password: "second-pw".into(),
+            database: Some(db.into()),
+            ..admin.clone()
+        };
+        // An empty database still shows up for its own login.
+        let overview = run(&user, op(json!({"action": "overview"}))).await.unwrap();
+        assert_eq!(overview["databases"].as_array().unwrap().len(), 1);
+        assert_eq!(overview["databases"][0]["name"], db);
+
+        run(&user, op(json!({"action": "insert", "db": db, "collection": "notes", "documents": {"text": "hi"}}))).await.unwrap();
+        assert!(run(&user, op(json!({"action": "find", "db": "admin", "collection": "system.users"}))).await.is_err());
+        let old_password = Connection { password: "first-pw".into(), ..user.clone() };
+        assert!(run(&old_password, op(json!({"action": "overview"}))).await.is_err());
+
+        run(&admin, op(json!({"action": "command", "db": db, "command": {"dropUser": "dpanel_live_user"}}))).await.unwrap();
+        run(&admin, op(json!({"action": "drop_database", "db": db}))).await.unwrap();
     }
 }

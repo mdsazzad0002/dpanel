@@ -93,11 +93,22 @@ const deleteRequest = (id) => {
 };
 
 const isPostgresql = (item) => item.engine === 'postgresql';
+const isMongodb = (item) => item.engine === 'mongodb';
 
-// phpMyAdmin for MariaDB, pgAdmin for PostgreSQL; both sign in automatically.
-const databaseLoginUrl = (item) => (isPostgresql(item)
-    ? panelRoute('databases.pgadmin.autologin', { id: item.id })
-    : panelRoute('databases.phpmyadmin.autologin', { id: item.id }));
+const engines = {
+    mariadb: { label: 'MariaDB', tool: 'phpMyAdmin', badge: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300' },
+    postgresql: { label: 'PostgreSQL', tool: 'pgAdmin', badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' },
+    mongodb: { label: 'MongoDB', tool: 'Mongo Admin', badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' },
+};
+const engineOf = (item) => engines[item.engine] || engines.mariadb;
+
+// phpMyAdmin for MariaDB, pgAdmin for PostgreSQL, Mongo Admin for MongoDB;
+// each signs in automatically as that database's own user.
+const databaseLoginUrl = (item) => {
+    if (isPostgresql(item)) return panelRoute('databases.pgadmin.autologin', { id: item.id });
+    if (isMongodb(item)) return panelRoute('databases.mongodb.admin', { scope: item.id });
+    return panelRoute('databases.phpmyadmin.autologin', { id: item.id });
+};
 
 const openRootPhpMyAdmin = () => {
     window.location.href = panelRoute('phpmyadmin.root-autologin');
@@ -105,6 +116,10 @@ const openRootPhpMyAdmin = () => {
 
 const openRootPgAdmin = () => {
     window.location.href = panelRoute('databases.postgresql.pgadmin');
+};
+
+const openRootMongoAdmin = () => {
+    window.open(panelRoute('databases.mongodb.admin'), '_blank', 'noopener');
 };
 
 </script>
@@ -144,6 +159,14 @@ const openRootPgAdmin = () => {
                     @click="openRootPgAdmin"
                 >
                     pgAdmin
+                </button>
+                <button
+                    v-if="canOpenAllDatabases"
+                    type="button"
+                    class="rounded-md border border-teal-300 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-950/30 dark:text-teal-200 dark:hover:bg-teal-950/50"
+                    @click="openRootMongoAdmin"
+                >
+                    Mongo Admin
                 </button>
                 <Link :href="panelRoute('databases.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
                     Create Database
@@ -225,13 +248,8 @@ const openRootPgAdmin = () => {
                                 {{ item.assigned_user_name || item.assigned_user_email || 'dPanel user' }}
                             </td>
                             <td class="px-4 py-3">
-                                <span
-                                    :class="isPostgresql(item)
-                                        ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
-                                        : 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300'"
-                                    class="rounded-full px-2 py-1 text-xs"
-                                >
-                                    {{ isPostgresql(item) ? 'PostgreSQL' : 'MariaDB' }}
+                                <span :class="engineOf(item).badge" class="rounded-full px-2 py-1 text-xs">
+                                    {{ engineOf(item).label }}
                                 </span>
                             </td>
                             <td class="px-4 py-3 font-medium">{{ item.database_name }}</td>
@@ -253,7 +271,7 @@ const openRootPgAdmin = () => {
                                         target="_blank"
                                         rel="noopener"
                                         class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
-                                        :title="isPostgresql(item) ? 'Open in pgAdmin (new tab)' : 'Open in phpMyAdmin (new tab)'"
+                                        :title="`Open in ${engineOf(item).tool} (new tab)`"
                                     >
                                         DB Login
                                     </a>

@@ -6,8 +6,11 @@ import axios from 'axios';
  * Shared state for the Mongo Admin page: where you are (server, database,
  * collection or document, kept in the URL like mongo-express), the database
  * list, and one `run(op)` that sends an operation through the panel.
+ *
+ * `scope` ({ id, name }) opens one database with its own login: every
+ * request carries the id, and you never leave that database.
  */
-export function useMongoAdmin() {
+export function useMongoAdmin(scope = null) {
     const page = usePage();
     const panelToken = computed(() => String(page.props.panel?.token || ''));
     const panelRoute = (name, params = {}) => (
@@ -33,7 +36,7 @@ export function useMongoAdmin() {
     const run = async (op, { notify = false, key = op.action } = {}) => {
         busy.value = key;
         try {
-            const { data } = await axios.post(panelRoute('databases.mongodb.admin.run'), { op });
+            const { data } = await axios.post(panelRoute('databases.mongodb.admin.run'), scope ? { op, scope: scope.id } : { op });
             if (notify) message.value = { type: 'success', text: data.message };
             return data.data ?? {};
         } catch (e) {
@@ -69,6 +72,7 @@ export function useMongoAdmin() {
 
     const exportUrl = (db, collection, filter) => {
         const params = new URLSearchParams({ db, collection });
+        if (scope) params.set('scope', scope.id);
         if (filter && Object.keys(filter).length) params.set('filter', JSON.stringify(filter));
         return `${panelRoute('databases.mongodb.admin.export')}?${params}`;
     };
@@ -77,7 +81,7 @@ export function useMongoAdmin() {
     const readLocation = () => {
         const params = new URLSearchParams(window.location.search);
         return {
-            db: params.get('db') || '',
+            db: scope ? scope.name : params.get('db') || '',
             collection: params.get('collection') || '',
             doc: params.get('doc') || '',
         };
@@ -86,6 +90,7 @@ export function useMongoAdmin() {
 
     const go = (db = '', collection = '', doc = '') => {
         message.value = null;
+        if (scope) db = scope.name;
         location.value = { db, collection: db ? collection : '', doc: db && collection ? doc : '' };
         const url = new URL(window.location.href);
         ['db', 'collection', 'doc'].forEach((key) => {

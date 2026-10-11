@@ -14,6 +14,8 @@ class DatabaseRequest extends Model
 
     public const ENGINE_POSTGRESQL = 'postgresql';
 
+    public const ENGINE_MONGODB = 'mongodb';
+
     protected $fillable = [
         'id',
         'engine',
@@ -35,6 +37,11 @@ class DatabaseRequest extends Model
     public function isPostgresql(): bool
     {
         return $this->engine === self::ENGINE_POSTGRESQL;
+    }
+
+    public function isMongodb(): bool
+    {
+        return $this->engine === self::ENGINE_MONGODB;
     }
 
     public function assignedUser(): BelongsTo

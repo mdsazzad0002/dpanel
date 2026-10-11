@@ -1132,13 +1132,14 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin')
                 ->name('databases.mongodb.express');
             Route::get('/databases/mongodb/admin', [MongoAdminController::class, 'index'])
-                ->middleware('role:admin')
+                // Admins open every database; others only their own (checked in the controller).
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.mongodb.admin');
             Route::post('/databases/mongodb/admin/run', [MongoAdminController::class, 'run'])
-                ->middleware('role:admin')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.mongodb.admin.run');
             Route::get('/databases/mongodb/admin/export', [MongoAdminController::class, 'export'])
-                ->middleware('role:admin')
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.mongodb.admin.export');
 
             Route::get('/admin', [UserManagementController::class, 'index'])
