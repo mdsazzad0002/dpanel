@@ -14,6 +14,17 @@ class MailboxImapService
 {
     private const MAX_CACHED_BODY_BYTES = 1048576;
 
+    /** Thrown (as the exception code) when the requested folder does not exist. */
+    public const FOLDER_MISSING = 404;
+
+    /** Standard folders and the names that already count as them. */
+    private const DEFAULT_FOLDERS = [
+        'Sent' => '/sent/i',
+        'Drafts' => '/draft/i',
+        'Junk' => '/junk|spam/i',
+        'Trash' => '/trash|deleted/i',
+    ];
+
     public function __construct(private readonly MailImageProxy $imageProxy) {}
 
     /**
@@ -389,12 +400,21 @@ class MailboxImapService
         if ($clientPassword === '') {
             throw new RuntimeException('Mailbox password must be reset before the webmail client can connect.');
         }
+        // Drop errors left by earlier calls so the one reported below is ours.
+        imap_errors();
         $stream = @imap_open($mailboxPath, (string) $mailbox->email, $clientPassword, 0, 1, [
             'DISABLE_AUTHENTICATOR' => 'GSSAPI',
         ]);
 
         if ($stream === false) {
-            throw new RuntimeException(imap_last_error() ?: 'IMAP login failed.');
+            $error = imap_last_error() ?: 'IMAP login failed.';
+            imap_errors();
+            // Login worked but SELECT did not: the folder was deleted or renamed elsewhere.
+            if (strcasecmp($folder, 'INBOX') !== 0 && preg_match("/doesn't exist|does not exist|no such mailbox|nonexistent/i", $error)) {
+                MailboxSyncState::query()->where('mailbox_id', $mailbox->id)->update(['folders_synced_at' => null]);
+                throw new RuntimeException("Folder \"{$folder}\" was not found on the mail server.", self::FOLDER_MISSING);
+            }
+            throw new RuntimeException($error);
         }
 
         return $stream;
@@ -421,7 +441,8 @@ class MailboxImapService
         foreach ($mailboxes as $mailbox) {
             $fullName = (string) ($mailbox->name ?? '');
             $folder = $this->stripMailboxPrefix($fullName);
-            if ($folder === '') {
+            // \Noselect entries are namespace parents that cannot be opened.
+            if ($folder === '' || ((int) ($mailbox->attributes ?? 0) & LATT_NOSELECT)) {
                 continue;
             }
 
@@ -432,6 +453,19 @@ class MailboxImapService
                 'exists' => is_object($status) ? (int) ($status->messages ?? 0) : 0,
             ];
         }
+
+        // Like Roundcube: Sent, Drafts, Junk and Trash always exist, so the
+        // sidebar never offers a folder that IMAP cannot open. Runs only
+        // while one is missing, at most once per folder-list refresh.
+        foreach ($this->missingDefaultFolders(array_column($folders, 'name')) as $name) {
+            if (@imap_createmailbox($stream, imap_utf7_encode($prefix.$name))) {
+                @imap_subscribe($stream, imap_utf7_encode($prefix.$name));
+                $folders[] = ['name' => $name, 'unread' => 0, 'exists' => 0];
+            }
+        }
+        // A failed create (another namespace layout) must not surface later
+        // as the error of an unrelated call.
+        imap_errors();
 
         $hasInbox = false;
         foreach ($folders as $folder) {
@@ -465,6 +499,22 @@ class MailboxImapService
         $state->forceFill(['folders' => $folders, 'folders_synced_at' => now()])->save();
 
         return $folders;
+    }
+
+    /**
+     * @param  array<int, string>  $existing
+     * @return array<int, string>
+     */
+    private function missingDefaultFolders(array $existing): array
+    {
+        $missing = [];
+        foreach (self::DEFAULT_FOLDERS as $name => $pattern) {
+            if (preg_grep($pattern, $existing) === []) {
+                $missing[] = $name;
+            }
+        }
+
+        return $missing;
     }
 
     /**

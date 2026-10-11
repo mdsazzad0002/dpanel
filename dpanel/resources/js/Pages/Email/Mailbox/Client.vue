@@ -129,21 +129,12 @@ const toggleSidebar = () => {
 const toggleMobileSidebar = () => {
     sidebarOpen.value = !sidebarOpen.value;
 };
-const defaultFolderNames = ['INBOX', 'Sent', 'Drafts', 'Spam', 'Trash', 'Outbox', 'All Mail'];
 
 const currentPage = ref(1);
 const perPage = ref(50);
 
 function normalizeFolderName(value) {
     return String(value || '').trim().toLowerCase();
-}
-
-function buildDefaultFolders() {
-    return defaultFolderNames.map((name) => ({
-        name,
-        unread: 0,
-        exists: 0,
-    }));
 }
 
 function normalizeFolderRecord(folder) {
@@ -154,20 +145,14 @@ function normalizeFolderRecord(folder) {
     };
 }
 
+// Exactly the folders the server has. The sidebar used to add Spam, Outbox,
+// All Mail and others that may not exist, and opening one failed with
+// "Mailbox doesn't exist". The server creates Sent/Drafts/Junk/Trash itself.
 function mergeFolders(incoming = []) {
     const normalized = incoming.map(normalizeFolderRecord).filter((folder) => folder.name);
-    const byKey = new Map(normalized.map((folder) => [normalizeFolderName(folder.name), folder]));
+    const hasInbox = normalized.some((folder) => normalizeFolderName(folder.name) === 'inbox');
 
-    const base = buildDefaultFolders().map((folder) => {
-        const found = byKey.get(normalizeFolderName(folder.name));
-        return found ? { ...folder, ...found } : folder;
-    });
-
-    const extras = normalized.filter(
-        (folder) => !defaultFolderNames.some((name) => normalizeFolderName(name) === normalizeFolderName(folder.name)),
-    );
-
-    return [...base, ...extras];
+    return hasInbox ? normalized : [{ name: 'INBOX', unread: 0, exists: 0 }, ...normalized];
 }
 
 const folders = ref(mergeFolders(props.folders));
@@ -257,7 +242,7 @@ const folderLabel = (name) => {
     return name;
 };
 const activeFolderUnread = computed(() => Number(folders.value.find((f) => f.name === activeFolder.value)?.unread) || 0);
-const folderOrder = ['inbox', 'sent', 'outbox', 'drafts', 'spam', 'trash', 'all mail'];
+const folderOrder = ['inbox', 'sent', 'outbox', 'drafts', 'spam', 'junk', 'trash', 'all mail'];
 
 const compactFolders = computed(() => {
     const items = [...folders.value];
@@ -370,6 +355,10 @@ const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = 
 
         if (!data.success) {
             pushToast(data.message || 'Mailbox could not be loaded.');
+            // The folder is gone (deleted in another app): go back to the Inbox.
+            if (data.folder_missing && normalizeFolderName(folder) !== 'inbox') {
+                loadMailbox('INBOX', null, true);
+            }
         }
         else if (data.cached && data.syncing && !followUp) {
             // The cached list is shown instantly; pick up the background sync result once.

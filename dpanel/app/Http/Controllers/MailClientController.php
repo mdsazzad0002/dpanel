@@ -98,6 +98,7 @@ class MailClientController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
+                'folder_missing' => $e->getCode() === MailboxImapService::FOLDER_MISSING,
                 'folders' => [],
                 'messages' => [],
                 'messageData' => null,
