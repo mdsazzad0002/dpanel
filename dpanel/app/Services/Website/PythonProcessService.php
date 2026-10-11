@@ -10,7 +10,7 @@ class PythonProcessService
     public function __construct(protected WebsiteService $websiteService) {}
 
     /** @return array<string, mixed> */
-    public function control(Website $website, string $action): array
+    public function control(Website $website, string $action, ?int $timeout = null): array
     {
         if (! in_array($action, ['start', 'stop', 'restart', 'status'], true)) {
             throw new \InvalidArgumentException("Unknown python process action: {$action}");
@@ -23,7 +23,7 @@ class PythonProcessService
         }
 
         // start/restart may create the venv and pip install requirements.
-        $timeout = in_array($action, ['start', 'restart'], true) ? 280 : 60;
+        $timeout ??= in_array($action, ['start', 'restart'], true) ? 280 : 60;
         $response = $this->request($timeout)->post($this->apiUrl(), [
             'site_id' => (string) $website->id,
             'action' => $action,

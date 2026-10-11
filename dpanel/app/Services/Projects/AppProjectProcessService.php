@@ -11,7 +11,7 @@ class AppProjectProcessService
     public const ACTIONS = ['start', 'stop', 'restart', 'status', 'remove'];
 
     /** @return array<string, mixed> */
-    public function control(AppProject $project, string $action): array
+    public function control(AppProject $project, string $action, ?int $timeout = null): array
     {
         if (! in_array($action, self::ACTIONS, true)) {
             throw new \InvalidArgumentException("Unknown project action: {$action}");
@@ -46,7 +46,7 @@ class AppProjectProcessService
             ];
 
         // A Python start may create the venv and pip install requirements.
-        $timeout = in_array($action, ['start', 'restart'], true) ? ($node ? 90 : 280) : 60;
+        $timeout ??= in_array($action, ['start', 'restart'], true) ? ($node ? 90 : 280) : 60;
         $response = $this->request($timeout)->post($this->apiUrl($node ? 'node' : 'python'), $payload);
 
         $json = $response->json();

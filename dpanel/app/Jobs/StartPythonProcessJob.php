@@ -18,11 +18,16 @@ class StartPythonProcessJob implements ShouldQueue
 {
     use InteractsWithQueue, Queueable;
 
-    public int $timeout = 300;
+    public int $timeout = 1800;
 
     public int $tries = 1;
 
-    public function __construct(public string $websiteId) {}
+    public function __construct(public string $websiteId)
+    {
+        // A first start may install a Python version too; the default
+        // worker kills jobs after 300s, 'heavy' allows 3600s.
+        $this->onQueue('heavy');
+    }
 
     public function handle(PythonProcessService $processes): void
     {
@@ -34,7 +39,7 @@ class StartPythonProcessJob implements ShouldQueue
         try {
             // Restart re-provisions the unit first, so it both starts a site
             // that never ran and applies changed settings to a running one.
-            $processes->control($website, 'restart');
+            $processes->control($website, 'restart', StartAppProjectJob::PROVISION_TIMEOUT);
         } catch (\Throwable $e) {
             $website->forceFill(['python_process_status' => 'error'])->saveQuietly();
             Log::warning('Python process start failed', [

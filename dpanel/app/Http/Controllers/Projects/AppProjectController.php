@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Projects;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\StartAppProjectJob;
 use App\Models\AppProject;
 use App\Models\PortShare;
 use App\Models\Website;
@@ -232,6 +233,15 @@ class AppProjectController extends Controller
 
     private function run(AppProject $project, string $action, string $message): RedirectResponse
     {
+        if ($project->runtime === 'python' && in_array($action, ['start', 'restart'], true)) {
+            // A disabled unit only comes back after a reboot when started.
+            $action = $action === 'restart' && $project->status === 'stopped' ? 'start' : $action;
+            $project->forceFill(['status' => 'starting', 'last_error' => null])->save();
+            StartAppProjectJob::dispatch($project->id, $action);
+
+            return back()->with('success', "{$project->name}: starting in the background. The first start installs Python and packages, which can take a few minutes.");
+        }
+
         try {
             $this->process->control($project, $action);
         } catch (\Throwable $exception) {

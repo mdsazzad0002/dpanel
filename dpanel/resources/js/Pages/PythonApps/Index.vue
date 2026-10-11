@@ -2,8 +2,8 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PythonAppCard from './components/PythonAppCard.vue';
 import PythonAppFormPanel from './components/PythonAppFormPanel.vue';
-import { Head, usePage } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { Head, router, usePage } from '@inertiajs/vue3';
+import { onBeforeUnmount, ref, watch } from 'vue';
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -11,7 +11,7 @@ const panelRoute = (name, params = {}) => (
     panelToken ? route(name, { token: panelToken, ...params }) : route(name, params)
 );
 
-defineProps({
+const props = defineProps({
     projects: { type: Array, default: () => [] },
     owners: { type: Array, default: () => [] },
     versions: { type: Array, default: () => [] },
@@ -21,6 +21,14 @@ const panelOpen = ref(false);
 const editing = ref(null);
 const openCreate = () => { editing.value = null; panelOpen.value = true; };
 const openEdit = (app) => { editing.value = app; panelOpen.value = true; };
+
+// Starts run in a background job: refresh until none is still starting.
+let poll = null;
+watch(() => props.projects.some((app) => app.status === 'starting'), (starting) => {
+    clearInterval(poll);
+    poll = starting ? setInterval(() => router.reload({ only: ['projects'] }), 4000) : null;
+}, { immediate: true });
+onBeforeUnmount(() => clearInterval(poll));
 </script>
 
 <template>

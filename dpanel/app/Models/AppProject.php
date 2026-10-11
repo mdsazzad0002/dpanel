@@ -107,6 +107,7 @@ class AppProject extends Model
             'python_mode' => $this->python_mode,
             'python_timeout' => $this->python_timeout,
             'status' => $this->status,
+            'last_error' => $this->last_error,
         ];
     }
 }

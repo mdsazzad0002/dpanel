@@ -197,19 +197,62 @@ async fn provision(
     .map_err(|error| format!("python process provision worker failed: {error}"))?
 }
 
+/// Gunicorn with several workers (or a Django app) can need well over a few
+/// seconds to bind on a cold start.
+const START_WAIT: Duration = Duration::from_secs(60);
+
 async fn wait_until_listening(site_id: &str, port: u16) -> Result<(), String> {
     let unit_name = unit_name(site_id);
     forget_python_liveness(port);
-    for _ in 0..60 {
+    let restarts_before = unit_restart_count(&unit_name);
+    let started = Instant::now();
+    let mut checks = 0u32;
+    while started.elapsed() < START_WAIT {
         if port_is_listening(port).await {
             mark_live(port);
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
+        checks += 1;
+        // systemd restarting the unit means the app exited: waiting longer
+        // only repeats the crash, so report it now.
+        if checks.is_multiple_of(8) && unit_restart_count(&unit_name) > restarts_before {
+            return Err(start_failure(&unit_name, port, "exited during startup"));
+        }
     }
-    Err(format!(
-        "python process for site {unit_name} did not start listening on port {port}"
+    Err(start_failure(
+        &unit_name,
+        port,
+        &format!("did not start listening within {}s", START_WAIT.as_secs()),
     ))
+}
+
+fn unit_restart_count(unit: &str) -> u64 {
+    std::process::Command::new("systemctl")
+        .args(["show", "-p", "NRestarts", "--value", unit])
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8_lossy(&output.stdout).trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// The error plus the app's last log lines, so the panel shows why (an
+/// import error, a wrong entry module, a hard-coded port) instead of only
+/// that the port stayed closed.
+fn start_failure(unit: &str, port: u16, what: &str) -> String {
+    let logs = std::process::Command::new("journalctl")
+        .args(["-u", unit, "-n", "25", "--no-pager", "-o", "cat"])
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .unwrap_or_default();
+    let mut message = format!(
+        "python process {unit} {what} on port {port}. The app must listen on 127.0.0.1:$PORT."
+    );
+    if !logs.is_empty() {
+        message.push_str("\n\nLast log lines:\n");
+        message.push_str(&logs);
+    }
+    message
 }
 
 async fn port_is_listening(port: u16) -> bool {
@@ -385,6 +428,8 @@ fn ensure_unit_provisioned(
          WorkingDirectory={workdir}\n\
          Environment=PORT={port}\n\
          Environment=PYTHONUNBUFFERED=1\n\
+         Environment=VIRTUAL_ENV={venv}\n\
+         Environment=PATH={venv}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n\
          Environment=WEB_CONCURRENCY={workers}\n\
          Environment=APP_ENV={app_env}\n\
          Environment=FLASK_DEBUG={flask_debug}\n\
@@ -399,6 +444,8 @@ fn ensure_unit_provisioned(
          [Install]\n\
          WantedBy=multi-user.target\n",
         workdir = app_dir.display(),
+        // So a custom start command's `python`/`pip` is the venv's.
+        venv = venv_path.display(),
         // Tuning goes through the environment so it also reaches gunicorn
         // when a custom start command is used; flags on the command line win.
     );
