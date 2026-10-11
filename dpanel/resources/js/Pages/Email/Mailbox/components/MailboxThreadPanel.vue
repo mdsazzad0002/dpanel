@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { folderLabel, isOutgoingFolder } from './mailboxFolders';
 import MailAvatar from './MailAvatar.vue';
+import MessageHeaderDetails from './MessageHeaderDetails.vue';
 
 const props = defineProps({
     activeFolder: {
@@ -328,7 +329,6 @@ const sourceCache = new Map();
 const source = ref(null);
 const sourceLoading = ref(false);
 const sourceError = ref('');
-const showAllHeaders = ref(false);
 const copied = ref(false);
 
 const loadSource = async () => {
@@ -364,7 +364,6 @@ watch(messageKey, () => {
     bodyView.value = 'html';
     source.value = null;
     sourceError.value = '';
-    showAllHeaders.value = false;
 });
 
 const downloadHref = computed(() => {
@@ -813,6 +812,15 @@ onBeforeUnmount(() => {
                                     <p v-if="currentMessage.to" :class="[ui.muted, 'mt-1.5 truncate text-xs']">
                                         <span class="font-medium">To:</span> {{ currentMessage.to }}
                                     </p>
+                                    <MessageHeaderDetails
+                                        v-if="rawEndpoint"
+                                        :analysis="analysis"
+                                        :loading="sourceLoading"
+                                        :error="sourceError"
+                                        :message-key="messageKey"
+                                        :ui="ui"
+                                        @load="loadSource"
+                                    />
                                 </div>
                             </header>
 
@@ -897,21 +905,6 @@ onBeforeUnmount(() => {
                                 </section>
 
                                 <dl class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-4 gap-y-2">
-                                    <template v-for="row in [
-                                        ['Message ID', analysis.summary.message_id],
-                                        ['Created at', analysis.summary.date],
-                                        ['From', analysis.summary.from],
-                                        ['To', analysis.summary.to],
-                                        ['Subject', analysis.summary.subject],
-                                        ['Return-Path', analysis.summary.return_path],
-                                        ['Reply-To', analysis.summary.reply_to],
-                                        ['Sent by', analysis.provider],
-                                        ['Mailer', analysis.summary.mailer],
-                                    ].filter((r) => r[1])" :key="row[0]">
-                                        <dt :class="[ui.muted, 'font-medium']">{{ row[0] }}</dt>
-                                        <dd class="min-w-0 break-words">{{ row[1] }}</dd>
-                                    </template>
-
                                     <dt :class="[ui.muted, 'font-medium']">SPF</dt>
                                     <dd class="min-w-0 break-words">
                                         <span :class="[verdictClass(analysis.auth.spf.result), 'mr-2 rounded px-1.5 py-0.5 text-xs font-semibold']">{{ verdictLabel(analysis.auth.spf.result) }}</span>
@@ -992,19 +985,6 @@ onBeforeUnmount(() => {
                                     </ol>
                                 </div>
 
-                                <div>
-                                    <button type="button" :class="[ui.strong, 'font-semibold']" :aria-expanded="showAllHeaders" @click="showAllHeaders = !showAllHeaders">
-                                        <i :class="['bi mr-1 text-xs', showAllHeaders ? 'bi-chevron-down' : 'bi-chevron-right']"></i>All headers ({{ analysis.headers.length }})
-                                    </button>
-                                    <table v-if="showAllHeaders" class="mt-2 w-full table-fixed text-xs">
-                                        <tbody>
-                                            <tr v-for="(header, i) in analysis.headers" :key="i" :class="[ui.cardDivider, 'border-t align-top']">
-                                                <td :class="[ui.muted, 'w-40 break-words py-1 pr-3 font-mono font-medium']">{{ header.name }}</td>
-                                                <td class="break-words py-1 font-mono">{{ header.value }}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
                             </div>
 
                             <!-- Original (raw source) -->
