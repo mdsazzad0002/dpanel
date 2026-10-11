@@ -18,10 +18,10 @@ class MongoAdminClient
     ];
 
     /**
-     * @param  array<string, mixed>  $op
+     * @param  array<string, mixed>|\stdClass  $op  An object keeps empty {} values as objects in the JSON sent to drust.
      * @return array{success: bool, message: string, data: mixed}
      */
-    public function run(array $op): array
+    public function run(array|\stdClass $op): array
     {
         $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {

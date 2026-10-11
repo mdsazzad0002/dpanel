@@ -23,12 +23,14 @@ class MongoAdminControllerTest extends TestCase
     {
         $this->mock(MongoAdminClient::class, function (MockInterface $mock) {
             $mock->shouldReceive('run')->once()
-                ->with(['action' => 'find', 'db' => 'shop', 'collection' => 'orders'])
+                ->withArgs(fn ($op) => json_encode($op) === '{"action":"find","db":"shop","collection":"orders","filter":{},"sort":{"name":1}}')
                 ->andReturn(['success' => true, 'message' => 'OK', 'data' => ['documents' => [], 'total' => 0]]);
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'find', 'db' => 'shop', 'collection' => 'orders']])
+            ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => [
+                'action' => 'find', 'db' => 'shop', 'collection' => 'orders', 'filter' => new \stdClass, 'sort' => ['name' => 1],
+            ]])
             ->assertOk()
             ->assertJson(['success' => true, 'data' => ['total' => 0]]);
     }
@@ -62,7 +64,7 @@ class MongoAdminControllerTest extends TestCase
     {
         $this->mock(MongoAdminClient::class, function (MockInterface $mock) {
             $mock->shouldReceive('run')->once()
-                ->with(['action' => 'export', 'db' => 'shop', 'collection' => 'orders', 'filter' => ['paid' => true]])
+                ->withArgs(fn ($op) => json_encode($op) === '{"action":"export","db":"shop","collection":"orders","filter":{"paid":true}}')
                 ->andReturn(['success' => true, 'message' => 'OK', 'data' => ['documents' => [['_id' => ['$oid' => 'abc'], 'paid' => true]]]]);
         });
 

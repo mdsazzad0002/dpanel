@@ -32,8 +32,11 @@ class MongoAdminController extends Controller
             'op.action' => ['required', 'string', Rule::in(array_diff(MongoAdminClient::ACTIONS, ['export']))],
         ]);
 
-        // validate() keeps only the validated keys of `op`; drust checks the rest.
-        $result = $this->mongo->run((array) $request->input('op'));
+        // Forward `op` exactly as sent: decoding it into PHP arrays would turn
+        // every empty object ({} filters, {} fields in documents) into [].
+        $body = json_decode($request->getContent());
+        $op = is_object($body) && is_object($body->op ?? null) ? $body->op : (array) $request->input('op');
+        $result = $this->mongo->run($op);
 
         return response()->json($result, $result['success'] ? 200 : 422);
     }
@@ -52,8 +55,9 @@ class MongoAdminController extends Controller
 
         $filter = null;
         if (($data['filter'] ?? '') !== '') {
-            $filter = json_decode($data['filter'], true);
-            if (! is_array($filter)) {
+            // Decoded as objects so an empty {} stays an object for drust.
+            $filter = json_decode($data['filter']);
+            if (! is_object($filter)) {
                 return response()->json(['success' => false, 'message' => 'The filter is not valid JSON.'], 422);
             }
         }
