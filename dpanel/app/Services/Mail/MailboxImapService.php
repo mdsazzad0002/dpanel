@@ -144,7 +144,7 @@ class MailboxImapService
                 return null;
             }
             // Section "" is the whole message; FT_PEEK leaves it unread.
-            if (! @imap_savebody($stream, $target, '', FT_UID | FT_PEEK)) {
+            if (! @imap_savebody($stream, $target, $uid, '', FT_UID | FT_PEEK)) {
                 throw new RuntimeException(imap_last_error() ?: 'Unable to read the message source.');
             }
 
