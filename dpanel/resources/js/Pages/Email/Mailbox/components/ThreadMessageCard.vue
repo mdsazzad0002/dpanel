@@ -31,8 +31,8 @@ const frameHeight = ref(120);
 let observer = null;
 
 const ui = computed(() => (props.isDark
-    ? { card: 'border-slate-800 bg-slate-950', hover: 'hover:bg-slate-900', strong: 'text-slate-100', muted: 'text-slate-500', body: 'text-slate-300', divider: 'border-slate-800', icon: 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }
-    : { card: 'border-slate-200 bg-white', hover: 'hover:bg-slate-50', strong: 'text-slate-900', muted: 'text-slate-500', body: 'text-slate-800', divider: 'border-slate-100', icon: 'text-slate-500 hover:bg-slate-100 hover:text-slate-900' }));
+    ? { hover: 'hover:bg-slate-900/70', strong: 'text-slate-100', muted: 'text-slate-500', body: 'text-slate-300', divider: 'border-slate-800', icon: 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }
+    : { hover: 'hover:bg-slate-50', strong: 'text-slate-900', muted: 'text-slate-500', body: 'text-slate-800', divider: 'border-slate-100', icon: 'text-slate-500 hover:bg-slate-100 hover:text-slate-900' }));
 
 const fromSelf = computed(() => sameAddress(props.item.from, props.selfEmail));
 const senderLabel = computed(() => (fromSelf.value ? 'me' : nameOrEmail(props.item.from)));
@@ -91,9 +91,9 @@ onBeforeUnmount(() => observer?.disconnect());
 </script>
 
 <template>
-    <article :class="[ui.card, 'rounded-xl border shadow-sm transition']">
+    <article>
         <header
-            :class="[open ? '' : ui.hover, 'flex cursor-pointer items-center gap-3 rounded-xl px-4 py-3 md:px-6']"
+            :class="[open ? 'pb-2 pt-4' : ['py-3', ui.hover], 'flex cursor-pointer items-start gap-3 px-4 transition md:px-6']"
             role="button"
             tabindex="0"
             :aria-expanded="open"
@@ -101,38 +101,40 @@ onBeforeUnmount(() => observer?.disconnect());
             @keydown.enter.prevent="toggle"
         >
             <ContactCard :address="item.from" :is-dark="isDark" :avatar-endpoint="avatarEndpoint" class="shrink-0" @compose="emit('compose-to', $event)">
-                <MailAvatar :email="emailOf(item.from)" :initials="initialsOf(item.from)" :color-class="avatarColorOf(item.from)" :endpoint="avatarEndpoint" class="h-9 w-9 text-xs" />
+                <MailAvatar :email="emailOf(item.from)" :initials="initialsOf(item.from)" :color-class="avatarColorOf(item.from)" :endpoint="avatarEndpoint" class="h-10 w-10 text-sm" />
             </ContactCard>
-            <div class="min-w-0 flex-1">
-                <p class="flex items-baseline gap-2">
-                    <span :class="[ui.strong, item.seen ? 'font-medium' : 'font-semibold', 'truncate text-sm']">{{ senderLabel }}</span>
-                    <span v-if="open && !fromSelf" :class="[ui.muted, 'truncate text-xs']">&lt;{{ emailOf(item.from) }}&gt;</span>
-                </p>
-                <p v-if="!open" :class="[ui.muted, 'truncate text-sm']">{{ item.snippet || '(no preview)' }}</p>
+            <div class="min-w-0 flex-1 pt-0.5">
+                <div class="flex items-baseline gap-3">
+                    <p class="flex min-w-0 flex-1 items-baseline gap-1.5">
+                        <span :class="[ui.strong, item.seen ? 'font-medium' : 'font-semibold', 'truncate text-[15px]']">{{ senderLabel }}</span>
+                        <span v-if="open && !fromSelf" :class="[ui.muted, 'truncate text-xs']">&lt;{{ emailOf(item.from) }}&gt;</span>
+                    </p>
+                    <time :class="[ui.muted, 'shrink-0 text-xs']" :title="item.date">{{ shortDate }}</time>
+                    <button v-if="open" type="button" :class="[ui.icon, '-my-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full']" title="Reply" @click.stop="replyTo">
+                        <i class="bi bi-reply"></i>
+                    </button>
+                </div>
+                <p v-if="!open" :class="[ui.muted, 'mt-0.5 truncate text-sm']">{{ item.snippet || '(no preview)' }}</p>
                 <p v-else :class="[ui.muted, 'truncate text-xs']">to {{ item.to }}</p>
             </div>
-            <time :class="[ui.muted, 'shrink-0 text-xs']" :title="item.date">{{ shortDate }}</time>
-            <button v-if="open" type="button" :class="[ui.icon, 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full']" title="Reply" @click.stop="replyTo">
-                <i class="bi bi-reply"></i>
-            </button>
         </header>
 
-        <div v-if="open" :class="[ui.divider, 'border-t']">
-            <p v-if="loading" :class="[ui.muted, 'px-6 py-6 text-sm']"><i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i> Loading…</p>
-            <p v-else-if="error" class="px-6 py-4 text-sm text-rose-600">{{ error }} <button type="button" class="ml-2 underline" @click="load">Retry</button></p>
-            <div v-else-if="srcdoc" class="overflow-hidden rounded-b-xl bg-white">
+        <div v-if="open" class="pb-2">
+            <p v-if="loading" :class="[ui.muted, 'py-4 pl-[68px] text-sm md:pl-[76px]']"><i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i> Loading…</p>
+            <p v-else-if="error" class="py-3 pl-[68px] text-sm text-rose-600 md:pl-[76px]">{{ error }} <button type="button" class="ml-2 underline" @click="load">Retry</button></p>
+            <div v-else-if="srcdoc" class="md:pl-[52px]">
                 <iframe
                     ref="frame"
                     :srcdoc="srcdoc"
                     sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                     referrerpolicy="no-referrer"
                     title="Message body"
-                    class="block w-full border-0"
+                    class="block w-full rounded-lg border-0 bg-white"
                     :style="{ height: `${frameHeight}px` }"
                     @load="onFrameLoad"
                 ></iframe>
             </div>
-            <div v-else-if="message" :class="[ui.body, 'whitespace-pre-wrap break-words px-4 py-5 text-[15px] leading-7 md:px-6']">{{ plainText || 'No body available.' }}</div>
+            <div v-else-if="message" :class="[ui.body, 'whitespace-pre-wrap break-words py-3 pl-[68px] pr-4 text-[15px] leading-7 md:pl-[76px] md:pr-6']">{{ plainText || 'No body available.' }}</div>
         </div>
     </article>
 </template>

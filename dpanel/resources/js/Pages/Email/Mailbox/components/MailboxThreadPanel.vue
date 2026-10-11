@@ -144,6 +144,12 @@ const loadThread = async () => {
 const threadIndex = computed(() => thread.value.findIndex((item) => item.uid === props.currentMessage?.uid
     && item.folder === (props.currentMessage?.folder || props.activeFolder)));
 const threadBefore = computed(() => (threadIndex.value > 0 ? thread.value.slice(0, threadIndex.value) : []));
+// Like Gmail, a long history folds into "N older messages" between the first and the last.
+const showOlder = ref(false);
+const foldedCount = computed(() => (showOlder.value || threadBefore.value.length <= 3 ? 0 : threadBefore.value.length - 2));
+const visibleBefore = computed(() => (foldedCount.value
+    ? [threadBefore.value[0], threadBefore.value[threadBefore.value.length - 1]]
+    : threadBefore.value));
 const threadAfter = computed(() => (threadIndex.value >= 0 ? thread.value.slice(threadIndex.value + 1) : []));
 const popOutReply = (draft) => {
     replyMode.value = '';
@@ -171,6 +177,9 @@ const ui = computed(() => (props.isDark
         canvas: 'bg-slate-900/60',
         card: 'border-slate-800 bg-slate-950 shadow-black/20',
         cardDivider: 'border-slate-800',
+        divide: 'divide-slate-800',
+        badge: 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800',
+        line: 'border-slate-800',
         pill: 'border-slate-700 text-slate-200 hover:bg-slate-800 hover:border-slate-600',
         chip: 'bg-slate-800 text-slate-300',
         skeleton: 'bg-slate-800',
@@ -195,6 +204,9 @@ const ui = computed(() => (props.isDark
         canvas: 'bg-slate-50',
         card: 'border-slate-200 bg-white shadow-slate-200/60',
         cardDivider: 'border-slate-100',
+        divide: 'divide-slate-100',
+        badge: 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50',
+        line: 'border-slate-200',
         pill: 'border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-slate-400',
         chip: 'bg-slate-100 text-slate-600',
         skeleton: 'bg-slate-200',
@@ -429,6 +441,7 @@ watch(messageKey, () => {
     replyMode.value = '';
     replyTarget.value = null;
     thread.value = [];
+    showOlder.value = false;
     loadThread();
     bodyView.value = 'html';
     source.value = null;
@@ -848,30 +861,44 @@ onBeforeUnmount(() => {
                                 <span :class="[ui.chip, 'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium']">
                                     <i class="bi bi-folder2"></i>{{ folderLabel(currentMessage.folder || activeFolder) }}
                                 </span>
+                                <span v-if="thread.length > 1" :class="[ui.chip, 'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium']" title="Messages in this conversation">
+                                    <i class="bi bi-chat-left-text"></i>{{ thread.length }} messages
+                                </span>
                             </div>
                             <h2 :class="[ui.strong, 'text-xl font-semibold leading-snug tracking-tight md:text-[26px]']">
                                 {{ currentMessage.subject || '(no subject)' }}
                             </h2>
                         </div>
 
-                        <!-- Earlier messages of the conversation -->
-                        <div v-if="threadBefore.length" class="mt-5 space-y-2">
-                            <ThreadMessageCard
-                                v-for="item in threadBefore"
-                                :key="`${item.folder}:${item.uid}`"
-                                :item="item"
-                                :message-endpoint="messageEndpoint"
-                                :avatar-endpoint="avatarEndpoint"
-                                :self-email="selfEmail"
-                                :is-dark="isDark"
-                                @compose-to="emit('compose-to', $event)"
-                                @reply="startReply('reply', $event)"
-                            />
-                        </div>
+                        <!-- Conversation: one card, messages divided like Gmail -->
+                        <div :class="[ui.card, ui.divide, 'mt-5 divide-y rounded-2xl border shadow-sm']">
+                            <template v-for="(item, i) in visibleBefore" :key="`${item.folder}:${item.uid}`">
+                                <ThreadMessageCard
+                                    :item="item"
+                                    :message-endpoint="messageEndpoint"
+                                    :avatar-endpoint="avatarEndpoint"
+                                    :self-email="selfEmail"
+                                    :is-dark="isDark"
+                                    :class="i === 0 ? 'rounded-t-2xl' : ''"
+                                    @compose-to="emit('compose-to', $event)"
+                                    @reply="startReply('reply', $event)"
+                                />
+                                <button
+                                    v-if="i === 0 && foldedCount"
+                                    type="button"
+                                    class="relative flex h-10 w-full items-center"
+                                    :title="`Show ${foldedCount} older messages`"
+                                    @click="showOlder = true"
+                                >
+                                    <span :class="[ui.line, 'absolute inset-x-0 top-1/2 border-t']"></span>
+                                    <span :class="[ui.line, 'absolute inset-x-0 top-[calc(50%+4px)] border-t']"></span>
+                                    <span :class="[ui.badge, 'relative ml-4 flex h-9 w-9 items-center justify-center rounded-full border text-sm font-medium shadow-sm transition md:ml-6']">{{ foldedCount }}</span>
+                                </button>
+                            </template>
 
                         <!-- Message card -->
-                        <article :class="[ui.card, 'mt-5 rounded-xl border shadow-sm']">
-                            <header :class="[ui.cardDivider, 'flex items-start gap-3 border-b px-4 py-4 md:px-6']">
+                        <article :class="visibleBefore.length ? '' : 'rounded-t-2xl'">
+                            <header class="flex items-start gap-3 px-4 pb-2 pt-4 md:px-6">
                                 <ContactCard :address="currentMessage.from" :is-dark="isDark" :avatar-endpoint="avatarEndpoint" :verified="Boolean(currentMessage.sender_verified)" class="shrink-0" @compose="emit('compose-to', $event)">
                                     <MailAvatar
                                         :email="senderEmail(currentMessage.from)"
@@ -879,7 +906,7 @@ onBeforeUnmount(() => {
                                         :color-class="avatarColor(currentMessage.from)"
                                         :verified="Boolean(currentMessage.sender_verified)"
                                         :endpoint="avatarEndpoint"
-                                        class="h-11 w-11 cursor-pointer text-sm"
+                                        class="h-10 w-10 cursor-pointer text-sm"
                                     />
                                 </ContactCard>
                                 <div class="min-w-0 flex-1">
@@ -910,14 +937,14 @@ onBeforeUnmount(() => {
                                 </div>
                             </header>
 
-                            <div :class="[ui.cardDivider, 'flex flex-wrap items-center gap-1 border-b px-4 py-2 md:px-6']" role="tablist" aria-label="Message view">
+                            <div class="flex flex-wrap items-center gap-1 pb-1 pl-[60px] pr-4 md:pl-[76px] md:pr-6" role="tablist" aria-label="Message view">
                                 <button
                                     v-for="tab in bodyTabs"
                                     :key="tab.id"
                                     type="button"
                                     role="tab"
                                     :aria-selected="activeTab === tab.id"
-                                    :class="[activeTab === tab.id ? ui.chip : [ui.muted, ui.iconButton], 'inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition']"
+                                    :class="[activeTab === tab.id ? ui.chip : [ui.muted, ui.iconButton], 'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium transition']"
                                     @click="selectTab(tab.id)"
                                 >
                                     <i :class="['bi', tab.icon]"></i> {{ tab.label }}
@@ -925,7 +952,7 @@ onBeforeUnmount(() => {
                             </div>
 
                             <template v-if="showsBody">
-                                <div v-if="showsHtml" class="overflow-hidden rounded-b-xl bg-white">
+                                <div v-if="showsHtml" class="pb-2 md:pl-[52px]">
                                     <iframe
                                         ref="htmlFrame"
                                         :key="`${currentMessage.folder}:${currentMessage.uid}`"
@@ -933,12 +960,12 @@ onBeforeUnmount(() => {
                                         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                                         referrerpolicy="no-referrer"
                                         title="Message body"
-                                        :class="['block w-full border-0 transition-opacity duration-150', htmlFrameReady ? 'opacity-100' : 'opacity-0']"
+                                        :class="['block w-full rounded-lg border-0 bg-white transition-opacity duration-150', htmlFrameReady ? 'opacity-100' : 'opacity-0']"
                                         :style="{ height: `${htmlFrameHeight}px` }"
                                         @load="onHtmlFrameLoad"
                                     ></iframe>
                                 </div>
-                                <div v-else :class="[ui.body, 'whitespace-pre-wrap break-words px-4 py-6 font-sans text-[15px] leading-7 md:px-6']">{{ plainText || 'No body available.' }}</div>
+                                <div v-else :class="[ui.body, 'whitespace-pre-wrap break-words py-4 pl-[68px] pr-4 font-sans text-[15px] leading-7 md:pl-[76px] md:pr-6']">{{ plainText || 'No body available.' }}</div>
                             </template>
 
                             <!-- Source loading / error -->
@@ -1092,8 +1119,7 @@ onBeforeUnmount(() => {
                         </article>
 
                         <!-- Quick actions -->
-                        <!-- Later messages, e.g. replies sent from here -->
-                        <div v-if="threadAfter.length" class="mt-2 space-y-2">
+                            <!-- Later messages, e.g. replies sent from here -->
                             <ThreadMessageCard
                                 v-for="(item, i) in threadAfter"
                                 :key="`${item.folder}:${item.uid}`"
@@ -1103,6 +1129,7 @@ onBeforeUnmount(() => {
                                 :self-email="selfEmail"
                                 :is-dark="isDark"
                                 :initially-open="i === threadAfter.length - 1"
+                                :class="i === threadAfter.length - 1 ? 'rounded-b-2xl' : ''"
                                 @compose-to="emit('compose-to', $event)"
                                 @reply="startReply('reply', $event)"
                             />
