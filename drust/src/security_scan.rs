@@ -18,11 +18,11 @@ use std::{
     time::SystemTime,
 };
 
-const ALLOWED_ROOT_PREFIXES: &[&str] = &["/home/", "/var/www/", "/srv/"];
+pub(crate) const ALLOWED_ROOT_PREFIXES: &[&str] = &["/home/", "/var/www/", "/srv/"];
 const INTEGRITY_DIR: &str = "/var/lib/dpanel/security/integrity";
 const CLAMAV_DB_DIR: &str = "/var/lib/clamav";
 const DEFAULT_MAX_FILES: usize = 50_000;
-const MAX_ANALYZE_BYTES: u64 = 2 * 1024 * 1024;
+pub(crate) const MAX_ANALYZE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_FINDINGS_PER_RULE: usize = 200;
 const MAX_INTEGRITY_CHANGES: usize = 200;
 
@@ -42,7 +42,7 @@ const VOLATILE_DIRS: &[&str] = &[
     "sessions",
 ];
 const UPLOAD_DIRS: &[&str] = &["uploads", "upload", "user_uploads", "user-uploads"];
-const PHP_EXTENSIONS: &[&str] = &[
+pub(crate) const PHP_EXTENSIONS: &[&str] = &[
     "php", "phtml", "php3", "php4", "php5", "php7", "php8", "pht", "phar", "inc",
 ];
 const UNUSUAL_PHP_EXTENSIONS: &[&str] = &[
@@ -638,7 +638,7 @@ const WEBSHELL_SIGNATURES: &[&str] = &[
     "uname-a;id;",
 ];
 
-fn analyze_php(bytes: &[u8], trusted: bool) -> Vec<Finding> {
+pub(crate) fn analyze_php(bytes: &[u8], trusted: bool) -> Vec<Finding> {
     let compact = compact(bytes);
     let text = &compact.text;
     let mut findings = Vec::new();
@@ -851,7 +851,7 @@ fn display(relative: &Path) -> String {
     relative.to_string_lossy().to_string()
 }
 
-fn extension(path: &Path) -> String {
+pub(crate) fn extension(path: &Path) -> String {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
@@ -876,7 +876,7 @@ fn truncate(text: &str, max: usize) -> String {
     out
 }
 
-fn read_limited(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
+pub(crate) fn read_limited(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
     file.take(limit)
@@ -1091,14 +1091,14 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-fn find_binary(candidates: &[&str]) -> Option<String> {
+pub(crate) fn find_binary(candidates: &[&str]) -> Option<String> {
     candidates
         .iter()
         .find(|candidate| Path::new(candidate).is_file())
         .map(|candidate| candidate.to_string())
 }
 
-fn signature_age_hours() -> Option<u64> {
+pub(crate) fn signature_age_hours() -> Option<u64> {
     let newest = ["daily.cld", "daily.cvd"]
         .iter()
         .filter_map(|name| fs::metadata(Path::new(CLAMAV_DB_DIR).join(name)).ok())
@@ -1227,7 +1227,7 @@ fn run_clamav(root: &Path, collector: &mut Collector, tracker: &Tracker, total: 
     report
 }
 
-fn parse_clamscan(stdout: &str) -> Vec<(String, String)> {
+pub(crate) fn parse_clamscan(stdout: &str) -> Vec<(String, String)> {
     stdout
         .lines()
         .filter_map(|line| {

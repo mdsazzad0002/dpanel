@@ -7,6 +7,8 @@ use App\Jobs\AppInstallJob;
 use App\Models\Website;
 use App\Services\Backup\AppInstallJobStatus;
 use App\Services\Filemanager\FilemanagerService;
+use App\Services\Security\UploadRejectedException;
+use App\Services\Security\UploadScanner;
 use App\Services\Ssl\SslLifecycleService;
 use App\Services\Website\AppInstallService;
 use App\Services\Website\AppPackageUploads;
@@ -142,7 +144,7 @@ class AppInstallerController extends WebsiteController
         return response()->json(['success' => true]);
     }
 
-    public function completeUpload(Request $request, string $token, string $id, string $app, string $uploadId): JsonResponse
+    public function completeUpload(Request $request, UploadScanner $scanner, string $token, string $id, string $app, string $uploadId): JsonResponse
     {
         abort_unless(AppInstallService::APPS[$app]['upload'] ?? false, 404);
         $website = $this->findAuthorizedWebsiteOrFail($id);
@@ -151,6 +153,13 @@ class AppInstallerController extends WebsiteController
         try {
             $path = $this->uploads->complete($uploadId, (string) $website['id'], (int) $request->user()->id, (int) $data['total']);
         } catch (\RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+        try {
+            $scanner->assertClean($path, $app.'-package.zip');
+        } catch (UploadRejectedException $e) {
+            $this->uploads->delete($uploadId);
+
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
         if ($this->uploads->whmcsBaseDirectory($path) === null) {

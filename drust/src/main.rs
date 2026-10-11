@@ -20,6 +20,7 @@ mod scripts;
 mod security;
 mod security_scan;
 mod ssl;
+mod upload_scan;
 mod vhost;
 mod vhost_ops;
 

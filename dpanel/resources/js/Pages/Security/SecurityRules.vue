@@ -6,6 +6,7 @@ import axios from 'axios';
 
 const props = defineProps({
     rules: { type: Array, default: () => [] },
+    uploadScan: { type: Object, default: () => ({ enabled: false, daemon: {} }) },
 });
 
 const page = usePage();
@@ -40,6 +41,35 @@ const rows = computed(() => {
     ));
 });
 
+const uploadScan = ref({ ...props.uploadScan });
+const uploadScanSaving = ref(false);
+const uploadScanError = ref(null);
+const daemon = computed(() => uploadScan.value.daemon || {});
+const daemonLabel = computed(() => {
+    if (daemon.value.error) return 'Status unavailable';
+    if (!daemon.value.daemon_installed) return 'ClamAV daemon not installed';
+    if (daemon.value.daemon_active && daemon.value.socket_ready) return 'ClamAV daemon running';
+    return 'ClamAV daemon stopped';
+});
+
+// Scanning on with no daemon behind it means every upload is being refused.
+const uploadsBlocked = computed(() => uploadScan.value.enabled && !(daemon.value.daemon_active && daemon.value.socket_ready));
+
+const toggleUploadScan = async () => {
+    uploadScanSaving.value = true;
+    uploadScanError.value = null;
+    try {
+        const { data } = await axios.post(panelRoute('security.center.upload-scan'), { enabled: !uploadScan.value.enabled });
+        uploadScan.value = data.uploadScan;
+        uploadScanError.value = data.warning || null;
+    } catch (e) {
+        uploadScanError.value = e.response?.data?.message || 'Could not change upload scanning.';
+        if (e.response?.data?.uploadScan) uploadScan.value = e.response.data.uploadScan;
+    } finally {
+        uploadScanSaving.value = false;
+    }
+};
+
 const toggleRule = async (rule) => {
     toggling.value = rule.rule_id;
     message.value = null;
@@ -69,6 +99,49 @@ const toggleRule = async (rule) => {
             <div v-if="message" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
                 {{ message }}
             </div>
+
+            <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div class="min-w-0 max-w-2xl">
+                        <h2 class="flex items-center gap-2 text-sm font-semibold">
+                            <i class="bi bi-shield-check"></i>
+                            Scan uploads for viruses
+                        </h2>
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            Checks every file uploaded through File Manager, Website Import, cPanel import and App Installer with ClamAV before it is saved. PHP files are also checked for webshells and obfuscated code. Infected files are rejected.
+                        </p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Runs the ClamAV daemon, which keeps about 1–1.5 GB of RAM in use while this is on. Turning it on takes up to a minute while signatures load.
+                        </p>
+                        <p class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                            <span :class="daemon.daemon_active && daemon.socket_ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'">
+                                <i class="bi bi-circle-fill mr-1 text-[8px]"></i>{{ daemonLabel }}
+                            </span>
+                            <span v-if="daemon.signature_age_hours != null" class="text-slate-500">Signatures updated {{ daemon.signature_age_hours }}h ago</span>
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        role="switch"
+                        :aria-checked="uploadScan.enabled"
+                        :disabled="uploadScanSaving"
+                        class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50"
+                        :class="uploadScan.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'"
+                        @click="toggleUploadScan"
+                    >
+                        <span class="sr-only">Scan uploads for viruses</span>
+                        <span class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform" :class="uploadScan.enabled ? 'translate-x-5' : 'translate-x-0.5'"></span>
+                    </button>
+                </div>
+                <div v-if="uploadsBlocked && !uploadScanSaving" class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                    <span>ClamAV is not running, so every upload is being refused. Turn scanning off to let uploads through.</span>
+                    <button type="button" class="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700" @click="toggleUploadScan">Turn off now</button>
+                </div>
+                <p v-if="uploadScanSaving" class="mt-3 text-xs text-slate-500">{{ uploadScan.enabled ? 'Stopping ClamAV…' : 'Starting ClamAV and loading signatures…' }}</p>
+                <div v-if="uploadScanError" class="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+                    {{ uploadScanError }}
+                </div>
+            </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap gap-2">

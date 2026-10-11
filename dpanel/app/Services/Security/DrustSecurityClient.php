@@ -41,6 +41,36 @@ class DrustSecurityClient
     }
 
     /**
+     * Whether ClamAV and its daemon are installed and running.
+     *
+     * @return array<string, mixed>
+     */
+    public function uploadScanStatus(): array
+    {
+        return $this->request('get', '/api/v1/security/upload-scan', null, 15);
+    }
+
+    /**
+     * Start or stop the ClamAV daemon. Starting waits while it loads its signatures.
+     *
+     * @return array<string, mixed>
+     */
+    public function setUploadScan(bool $enabled): array
+    {
+        return $this->request('post', '/api/v1/security/upload-scan', ['enabled' => $enabled], 600);
+    }
+
+    /**
+     * Scan one uploaded file with ClamAV, plus the PHP code checks when $name is a PHP file.
+     *
+     * @return array{clean: bool, threats: array<int, string>, findings: array<int, array<string, mixed>>, signature_age_hours: int|null}
+     */
+    public function scanUploadedFile(string $path, string $name): array
+    {
+        return $this->request('post', '/api/v1/security/upload-scan/file', ['path' => $path, 'name' => $name], 960);
+    }
+
+    /**
      * Jails with their banned IPs, and the IPs dPanel keeps on fail2ban's ignore list.
      *
      * @return array<string, mixed>

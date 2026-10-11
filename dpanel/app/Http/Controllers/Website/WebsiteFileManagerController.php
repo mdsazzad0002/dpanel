@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Website;
 
 use App\Services\Filemanager\FilemanagerChunkUploads;
+use App\Services\Security\UploadRejectedException;
+use App\Services\Security\UploadScanner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -65,7 +67,7 @@ class WebsiteFileManagerController extends WebsiteController
     /**
      * Verify every chunk arrived, then hand the file to dRust as the site owner.
      */
-    public function completeUpload(Request $request, FilemanagerChunkUploads $uploads, string $token, string $id, string $uploadId): JsonResponse
+    public function completeUpload(Request $request, FilemanagerChunkUploads $uploads, UploadScanner $scanner, string $token, string $id, string $uploadId): JsonResponse
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
 
@@ -82,7 +84,10 @@ class WebsiteFileManagerController extends WebsiteController
             $basePath = $this->resolveFileManagerBasePath($website, (string) ($target['root'] ?? ''));
             $targetPath = $this->resolvePathInsideBase($basePath, trim(($target['path'] ?? '').'/'.($target['filename'] ?? ''), '/'));
             $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+            $scanner->assertClean($staged['path'], (string) ($target['filename'] ?? basename($targetPath)));
             $this->filemanagerService->uploadFile($siteOwner, $targetPath, $staged['path']);
+        } catch (UploadRejectedException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => 'Failed to upload file. '.$e->getMessage()], 500);
         } finally {

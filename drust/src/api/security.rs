@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::{
     api::{ApiResponse, ApiState, check_token},
-    security, security_scan,
+    security, security_scan, upload_scan,
 };
 
 pub(crate) fn routes() -> Router<Arc<ApiState>> {
@@ -18,6 +18,11 @@ pub(crate) fn routes() -> Router<Arc<ApiState>> {
         .route("/api/v1/security", get(status).post(control))
         .route("/api/v1/security/scan", post(scan))
         .route("/api/v1/security/scan/progress/{key}", get(scan_progress))
+        .route(
+            "/api/v1/security/upload-scan",
+            get(upload_scan_status).post(upload_scan_toggle),
+        )
+        .route("/api/v1/security/upload-scan/file", post(upload_scan_file))
 }
 
 #[derive(Deserialize)]
@@ -115,5 +120,71 @@ async fn scan(
         Err(error) => {
             ApiResponse::error(&format!("Failed: scan task crashed: {error}")).into_response()
         }
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UploadScanToggle {
+    pub enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UploadScanFile {
+    pub path: String,
+    pub name: String,
+}
+
+async fn upload_scan_status(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+    let data = serde_json::to_value(upload_scan::status()).unwrap_or_default();
+    ApiResponse::ok_data("Upload scan status loaded.", data).into_response()
+}
+
+/// Starts or stops the ClamAV daemon that upload scanning relies on.
+async fn upload_scan_toggle(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<UploadScanToggle>,
+) -> impl IntoResponse {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+    let result =
+        tokio::task::spawn_blocking(move || upload_scan::set_enabled(request.enabled)).await;
+    match result {
+        Ok(Ok(status)) => ApiResponse::ok_data(
+            "Upload scan updated.",
+            serde_json::to_value(status).unwrap_or_default(),
+        )
+        .into_response(),
+        Ok(Err(error)) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+        Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+    }
+}
+
+async fn upload_scan_file(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<UploadScanFile>,
+) -> impl IntoResponse {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+    let result =
+        tokio::task::spawn_blocking(move || upload_scan::scan_file(&request.path, &request.name))
+            .await;
+    match result {
+        Ok(Ok(report)) => ApiResponse::ok_data(
+            "File scanned.",
+            serde_json::to_value(report).unwrap_or_default(),
+        )
+        .into_response(),
+        Ok(Err(error)) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+        Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
     }
 }

@@ -11,6 +11,8 @@ use App\Models\MigrationSshConnection;
 use App\Services\Migration\CyberPanelSshInventoryService;
 use App\Services\Migration\GenericWebsiteMigrationProvider;
 use App\Services\Php\PhpService;
+use App\Services\Security\UploadRejectedException;
+use App\Services\Security\UploadScanner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -367,7 +369,7 @@ class MigrationController extends Controller
         return response()->json(['tracking_id' => $tracking, 'kind' => $kind, 'index' => (int) $data['index'], 'total' => (int) $data['total'], 'duplicate' => $duplicate]);
     }
 
-    public function completeWebsiteImportUpload(Request $request, string $token, string $id, string $tracking, string $kind): JsonResponse
+    public function completeWebsiteImportUpload(Request $request, UploadScanner $scanner, string $token, string $id, string $tracking, string $kind): JsonResponse
     {
         $import = $this->trackedWebsiteImport($request, $id, $tracking);
         $data = $request->validate(['total' => ['required', 'integer', 'between:1,10000']]);
@@ -403,6 +405,14 @@ class MigrationController extends Controller
         }
         $expected = (int) data_get($import->inventory, 'uploads.'.$kind.'.size', 0);
         abort_if($expected > 0 && filesize($target) !== $expected, 422, 'Assembled upload size does not match the original file.');
+        try {
+            $scanner->assertClean($target, (string) data_get($import->inventory, 'uploads.'.$kind.'.name', basename($target)));
+        } catch (UploadRejectedException $e) {
+            @unlink($target);
+            $import->update(['status' => 'failed', 'last_error' => $e->getMessage()]);
+
+            return response()->json(['tracking_id' => $tracking, 'kind' => $kind, 'ready' => false, 'message' => $e->getMessage()], 422);
+        }
 
         return response()->json(['tracking_id' => $tracking, 'kind' => $kind, 'ready' => true, 'size' => filesize($target)]);
     }
@@ -453,7 +463,7 @@ class MigrationController extends Controller
         return $import;
     }
 
-    public function store(Request $request, string $token): JsonResponse
+    public function store(Request $request, UploadScanner $scanner, string $token): JsonResponse
     {
         $request->validate(['provider' => ['required', 'in:cpanel'], 'archive' => ['required', 'file', 'max:5242880']]);
         $file = $request->file('archive');
@@ -467,6 +477,13 @@ class MigrationController extends Controller
         }
         $path = $directory.'/'.$id.'-'.preg_replace('/[^A-Za-z0-9._-]/', '_', basename($name));
         $file->move($directory, basename($path));
+        try {
+            $scanner->assertClean($path, $name);
+        } catch (UploadRejectedException $e) {
+            @unlink($path);
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         $actor = $request->user();
         $import = MigrationImport::create([

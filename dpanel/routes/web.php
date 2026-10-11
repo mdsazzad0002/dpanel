@@ -884,6 +884,9 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin')
                 ->where('rule', 'DP-[A-Z]+-[0-9]+')
                 ->name('security.center.rules.toggle');
+            Route::post('/security/center/upload-scan', [SecurityCenterController::class, 'updateUploadScan'])
+                ->middleware('role:admin')
+                ->name('security.center.upload-scan');
 
             Route::get('/security', [SecurityController::class, 'manager'])
                 ->middleware('role:admin|reseller')

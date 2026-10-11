@@ -12,6 +12,7 @@ use App\Services\Security\ScanProgress;
 use App\Services\Security\SecurityRuleCatalog;
 use App\Services\Security\SecurityScanService;
 use App\Services\Security\SecurityScoreService;
+use App\Services\Security\UploadScanner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,7 @@ class SecurityCenterController extends Controller
         private readonly SecurityScoreService $scores,
         private readonly SecurityRuleCatalog $rules,
         private readonly ScanProgress $progress,
+        private readonly UploadScanner $uploadScanner,
     ) {
     }
 
@@ -306,7 +308,26 @@ class SecurityCenterController extends Controller
             'rules' => SecurityRule::query()
                 ->orderBy('rule_id')
                 ->get(['id', 'rule_id', 'name', 'category', 'severity', 'detection_type', 'description', 'remediation', 'enabled']),
+            'uploadScan' => $this->uploadScanner->status(),
         ]);
+    }
+
+    /**
+     * Switch antivirus scanning of uploads on or off. Switching it on starts
+     * the ClamAV daemon, which can take a minute while signatures load.
+     */
+    public function updateUploadScan(Request $request): JsonResponse
+    {
+        $data = $request->validate(['enabled' => ['required', 'boolean']]);
+        set_time_limit(660);
+
+        try {
+            $warning = $this->uploadScanner->setEnabled((bool) $data['enabled']);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage(), 'uploadScan' => $this->uploadScanner->status()], 422);
+        }
+
+        return response()->json(['success' => true, 'warning' => $warning, 'uploadScan' => $this->uploadScanner->status()]);
     }
 
     public function toggleRule(Request $request, string $token, string $rule): JsonResponse
