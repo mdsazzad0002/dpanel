@@ -51,34 +51,36 @@ const gauges = computed(() => {
             </div>
         </template>
 
-        <div class="-mt-6 space-y-6">
+        <div class="-mt-6 min-w-0 space-y-4 sm:space-y-6">
             <WelcomeHero :stats="dashboardStats" :user-name="user.name ?? ''" :user-email="user.email ?? ''" />
 
-            <section v-if="canViewServerUsage" aria-label="Server resources" class="grid gap-4 sm:grid-cols-3">
+            <section v-if="canViewServerUsage" aria-label="Server resources" class="grid grid-cols-1 gap-4 sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3">
                 <ResourceGauge v-for="gauge in gauges" :key="gauge.label" v-bind="gauge" />
             </section>
 
             <!--
-                Mobile: one column ordered usage → tools → services → links.
-                lg+: tools/services on the left, usage/links in a right rail.
-                The column wrappers are `display: contents` below lg so `order` applies across them.
+                Below xl: one column ordered usage → tools → services → links.
+                xl+: tools/services on the left, usage/links in a right rail.
+                Breakpoints are viewport-based and the sidebar takes 288px from md up,
+                so the two-column split waits for xl. The column wrappers are
+                `display: contents` below xl so `order` applies across them.
             -->
-            <div class="flex flex-col gap-6 lg:grid lg:grid-cols-12 lg:items-start">
-                <div class="contents lg:col-span-8 lg:flex lg:flex-col lg:gap-6">
-                    <section class="order-2 lg:order-none">
-                        <h2 class="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Quick actions</h2>
+            <div class="flex flex-col gap-6 xl:grid xl:grid-cols-12 xl:items-start">
+                <div class="contents xl:col-span-8 xl:flex xl:min-w-0 xl:flex-col xl:gap-6">
+                    <section class="order-2 min-w-0 xl:order-none">
+                        <h2 class="mb-3 font-mono text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">Quick actions</h2>
                         <ToolCategories
                             :roles="page.props.auth?.roles ?? []"
                             :permissions="page.props.auth?.permissions ?? []"
                             :panel-route="panelRoute"
                         />
                     </section>
-                    <ServiceStatusList class="order-3 lg:order-none" :services="dashboardStats?.services ?? null" />
+                    <ServiceStatusList class="order-3 xl:order-none" :services="dashboardStats?.services ?? null" />
                 </div>
 
-                <div class="contents lg:col-span-4 lg:flex lg:flex-col lg:gap-6">
-                    <AccountUsage class="order-1 lg:order-none" :summary="accountSummary" />
-                    <ResourceLinks class="order-4 lg:order-none" />
+                <div class="contents xl:col-span-4 xl:flex xl:min-w-0 xl:flex-col xl:gap-6">
+                    <AccountUsage class="order-1 xl:order-none" :summary="accountSummary" />
+                    <ResourceLinks class="order-4 xl:order-none" />
                 </div>
             </div>
         </div>
