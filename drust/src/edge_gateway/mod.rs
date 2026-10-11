@@ -32,6 +32,7 @@ pub use node_process::{
 };
 pub use php::{
     clear_canonical_root_cache, clear_canonical_root_cache_under, execute_php_front_controller,
+    prewarm_site_pool,
 };
 pub use redirects::{RedirectRule, redirect_for};
 pub use proxy::{

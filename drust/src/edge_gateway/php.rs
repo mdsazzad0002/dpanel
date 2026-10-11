@@ -19,7 +19,7 @@ use tokio::{
     sync::mpsc,
     time::{Instant, timeout_at},
 };
-use tracing::warn;
+use tracing::{info, warn};
 
 /// PHP output up to this size is read whole and returned with an exact
 /// length, so the edge cache can store it. Anything larger (downloads,
@@ -530,6 +530,32 @@ async fn resolve_fpm_socket(
     resolve_shared_fpm_socket(version)
 }
 
+/// Creates a site's own PHP-FPM pool in the background as soon as the panel
+/// announces the site, instead of on its first visit. Done on the first
+/// visit, provisioning (write pool, `php-fpm -t` over every pool, reload,
+/// wait for the socket) made a new domain answer slowly or with errors from
+/// the shared pool, which cannot read the site user's files, until it
+/// finished. Sites that already have their socket cost one `exists()` check.
+pub fn prewarm_site_pool(scope: &str, site_owner: Option<&str>, php_version: Option<&str>, runtime: &str) {
+    if scope.eq_ignore_ascii_case("system") || !runtime.eq_ignore_ascii_case("php") {
+        return;
+    }
+    let Some(owner) = site_owner.and_then(normalize_site_owner) else {
+        return;
+    };
+    let version = php_version.filter(|v| !v.trim().is_empty()).unwrap_or("8.3").to_string();
+    let socket = PathBuf::from(format!("/run/php/dpanel-{owner}-php{version}.sock"));
+    if socket.exists() {
+        return;
+    }
+    tokio::task::spawn_blocking(move || {
+        match ensure_user_fpm_pool(&owner, &version, &socket) {
+            Ok(()) => info!(site_owner = %owner, php_version = %version, "PHP-FPM pool ready for new site"),
+            Err(error) => warn!(site_owner = %owner, php_version = %version, %error, "could not prepare PHP-FPM pool; it will be retried on the first visit"),
+        }
+    });
+}
+
 fn resolve_shared_fpm_socket(version: &str) -> Result<PathBuf, String> {
     let candidates = [
         PathBuf::from(format!("/run/php/php{version}-fpm.sock")),
@@ -603,7 +629,9 @@ fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(),
     }
     reload_fpm_service(version)?;
 
-    for _ in 0..40 {
+    // A reload on a busy server can take a few seconds; falling back to the
+    // shared pool early would serve the site as the wrong user.
+    for _ in 0..100 {
         if socket.exists() {
             return Ok(());
         }

@@ -656,6 +656,13 @@ async fn reload_domains(
                 if let Some(root) = &site.document_root {
                     roots.push(root.clone());
                 }
+                // A new or changed site gets its PHP-FPM pool now, not on its first visit.
+                super::prewarm_site_pool(
+                    &site.scope,
+                    site.site_owner.as_deref(),
+                    site.php_version.as_deref(),
+                    &site.runtime,
+                );
                 sites.push(site);
             }
             // Only the targeted domains' certificates change: enabling SSL or
