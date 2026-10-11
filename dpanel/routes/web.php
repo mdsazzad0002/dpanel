@@ -41,6 +41,7 @@ use App\Http\Controllers\PackagePlanController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
+use App\Http\Controllers\MongoAdminController;
 use App\Http\Controllers\MongodbController;
 use App\Http\Controllers\PostgresqlController;
 use App\Http\Controllers\ProfileController;
@@ -1130,6 +1131,15 @@ Route::prefix('cpsess{token}')
             Route::get('/databases/mongodb/mongo-express', [MongodbController::class, 'openMongoExpress'])
                 ->middleware('role:admin')
                 ->name('databases.mongodb.express');
+            Route::get('/databases/mongodb/admin', [MongoAdminController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('databases.mongodb.admin');
+            Route::post('/databases/mongodb/admin/run', [MongoAdminController::class, 'run'])
+                ->middleware('role:admin')
+                ->name('databases.mongodb.admin.run');
+            Route::get('/databases/mongodb/admin/export', [MongoAdminController::class, 'export'])
+                ->middleware('role:admin')
+                ->name('databases.mongodb.admin.export');
 
             Route::get('/admin', [UserManagementController::class, 'index'])
                 ->middleware('role:admin')

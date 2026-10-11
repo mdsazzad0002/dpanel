@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, usePage } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 
 const props = defineProps({
@@ -149,6 +149,13 @@ const copy = async (value) => {
                             >
                                 {{ busyService === service.key ? 'Working…' : service.active ? 'Turn Off' : 'Turn On' }}
                             </button>
+                            <Link
+                                v-if="service.key === 'mongodb' && service.active"
+                                :href="panelRoute('databases.mongodb.admin')"
+                                class="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200"
+                            >
+                                Open Mongo Admin
+                            </Link>
                             <a
                                 v-if="service.key === 'mongo-express' && service.active"
                                 :href="mongoExpressLoginUrl"

@@ -42,6 +42,7 @@ http = "1"
 http-body = "1"
 # Mail DNS checks query public resolvers directly (like dig), never /etc/hosts.
 hickory-resolver = { version = "0.24", default-features = false, features = ["tokio-runtime"] }
+mongodb = "3"
 
 [features]
 default = ["ocr"]
