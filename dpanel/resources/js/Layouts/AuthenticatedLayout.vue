@@ -926,31 +926,31 @@ watch(isSearchOpen, async (open) => {
             </div>
 
             <!-- Navigation -->
-            <nav ref="sidebarNavRef" :class="sidebarCollapsed ? 'px-2' : 'px-3'" class="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto pb-4 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700" @scroll="updateSidebarScrollTop">
+            <nav ref="sidebarNavRef" :class="sidebarCollapsed ? 'px-2' : 'px-3'" class="mt-3 min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-4 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700" @scroll="updateSidebarScrollTop">
                 <template v-for="item in visibleMenu" :key="item.id || item.label">
-                    <div v-if="item.sectionStart" :class="sidebarCollapsed ? 'mx-2 my-3 border-t border-slate-200 dark:border-slate-700' : 'px-3 pb-1 pt-4'">
+                    <div v-if="item.sectionStart" :class="sidebarCollapsed ? 'mx-2 my-2 border-t border-slate-200 dark:border-slate-700' : 'px-3 pb-0.5 pt-3'">
                         <span v-if="!sidebarCollapsed" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ item.sectionStart }}</span>
                     </div>
                     <!-- Grouped Items -->
-                    <div v-if="item.children" class="mb-2">
+                    <div v-if="item.children">
                         <button
                             type="button"
                             :class="[
                                 sidebarCollapsed ? 'justify-center px-2' : 'px-3 justify-between',
-                                'flex w-full items-center rounded-xl py-2.5 text-left transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                'flex w-full items-center rounded-lg py-1.5 text-left transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                             ]"
                             @click="toggleGroup(item.id)"
                             :title="sidebarCollapsed ? item.label : ''"
                         >
-                            <span :class="sidebarCollapsed ? '' : 'flex items-center gap-3'" class="flex items-center gap-3">
+                            <span :class="sidebarCollapsed ? '' : 'flex items-center gap-2.5'" class="flex items-center gap-2.5">
                                 <span
                                     :class="[
-                                        'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-200',
+                                        'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
                                         getColor(item).bg,
                                         getColor(item).text
                                     ]"
                                 >
-                                    <i :class="['text-lg', item.iconClass || 'bi bi-grid']"></i>
+                                    <i :class="['text-[15px]', item.iconClass || 'bi bi-grid']"></i>
                                 </span>
                                 <span v-if="!sidebarCollapsed" class="min-w-0">
                                     <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{ item.label }}</span>
@@ -969,7 +969,7 @@ watch(isSearchOpen, async (open) => {
 
                         <div
                             v-show="isGroupExpanded(item.id) && !sidebarCollapsed"
-                            class="mt-1 space-y-1 pl-5"
+                            class="mt-0.5 space-y-0.5 pl-5"
                         >
                             <Link
                                 v-for="child in item.children"
@@ -981,7 +981,7 @@ watch(isSearchOpen, async (open) => {
                                     isItemActive(child)
                                         ? 'border-l-2 ' + getColor(item).border + ' ' + getColor(item).bgLight + ' ' + getColor(item).text
                                         : 'border-l-2 border-transparent text-slate-600 dark:text-slate-400',
-                                    'flex items-center gap-3 rounded-lg px-3 py-2 transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    'flex items-center gap-3 rounded-lg px-3 py-1.5 transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                                 ]"
                                 :data-sidebar-active="isItemActive(child) ? 'true' : null"
                             >
@@ -1002,20 +1002,20 @@ watch(isSearchOpen, async (open) => {
                                 ? 'border-l-2 ' + getColor(item).border + ' ' + getColor(item).bgLight + ' ' + getColor(item).text
                                 : 'border-l-2 border-transparent text-slate-600 dark:text-slate-400',
                             sidebarCollapsed ? 'justify-center px-2' : 'px-3',
-                            'flex items-center gap-3 rounded-xl py-2.5 transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                            'flex items-center gap-2.5 rounded-lg py-1.5 transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                         ]"
                         :data-sidebar-active="isItemActive(item) ? 'true' : null"
                         :title="sidebarCollapsed ? item.label : ''"
                     >
                         <span
                             :class="[
-                                'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-200',
+                                'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
                                 isItemActive(item)
                                     ? getColor(item).bg + ' ' + getColor(item).text
                                     : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                             ]"
                         >
-                            <i :class="['text-lg', item.iconClass || 'bi bi-grid']"></i>
+                            <i :class="['text-[15px]', item.iconClass || 'bi bi-grid']"></i>
                         </span>
                         <span v-if="!sidebarCollapsed" class="text-sm font-medium">{{ item.label }}</span>
                     </Link>
@@ -1032,10 +1032,10 @@ watch(isSearchOpen, async (open) => {
                     >
                         <span
                             :class="[
-                                'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-all duration-200 dark:bg-slate-800 dark:text-slate-400'
+                                'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition-all duration-200 dark:bg-slate-800 dark:text-slate-400'
                             ]"
                         >
-                            <i :class="['text-lg', item.iconClass || 'bi bi-grid']"></i>
+                            <i :class="['text-[15px]', item.iconClass || 'bi bi-grid']"></i>
                         </span>
                         <span v-if="!sidebarCollapsed" class="text-sm font-medium">{{ item.label }}</span>
                     </button>
