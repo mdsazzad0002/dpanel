@@ -5,6 +5,8 @@ import MailAvatar from './MailAvatar.vue';
 import MessageHeaderDetails from './MessageHeaderDetails.vue';
 import ContactCard from './ContactCard.vue';
 import InlineReplyBox from './InlineReplyBox.vue';
+import ThreadMessageCard from './ThreadMessageCard.vue';
+import { mailDocument } from './mailFrame';
 
 const props = defineProps({
     activeFolder: {
@@ -83,6 +85,14 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    messageEndpoint: {
+        type: String,
+        default: '',
+    },
+    threadEndpoint: {
+        type: String,
+        default: '',
+    },
     sandbox: {
         type: Boolean,
         default: false,
@@ -92,17 +102,49 @@ const props = defineProps({
 const emit = defineEmits(['open-message', 'close-preview', 'start-compose', 'compose-to', 'pop-out-reply', 'reply-sent', 'notify', 'delete-message', 'toggle-read', 'change-page', 'toggle-select', 'select-all', 'bulk-action']);
 
 // Reply, reply all and forward open inline under the message, like Gmail.
+// A reply can also target another message of the conversation.
 const replyMode = ref('');
+const replyTarget = ref(null);
 const replyBox = ref(null);
-const startReply = async (mode) => {
+const startReply = async (mode, target = null) => {
+    replyTarget.value = target;
     replyMode.value = mode;
     await nextTick();
     replyBox.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 };
 const onReplySent = (notice) => {
     replyMode.value = '';
+    replyTarget.value = null;
     emit('reply-sent', notice);
+    // The reply was saved to Sent before the request returned, so it joins the conversation now.
+    loadThread();
 };
+
+// The conversation: other messages linked by Message-ID/References, oldest first.
+const thread = ref([]);
+let threadRequest = 0;
+const loadThread = async () => {
+    const message = props.currentMessage;
+    const request = ++threadRequest;
+    if (!message || !props.threadEndpoint) {
+        thread.value = [];
+        return;
+    }
+    try {
+        const { data } = await window.axios.get(props.threadEndpoint, {
+            params: { folder: message.folder || props.activeFolder, uid: message.uid },
+            headers: { Accept: 'application/json' },
+        });
+        if (request === threadRequest) thread.value = data?.success ? data.messages || [] : [];
+    }
+    catch {
+        if (request === threadRequest) thread.value = [];
+    }
+};
+const threadIndex = computed(() => thread.value.findIndex((item) => item.uid === props.currentMessage?.uid
+    && item.folder === (props.currentMessage?.folder || props.activeFolder)));
+const threadBefore = computed(() => (threadIndex.value > 0 ? thread.value.slice(0, threadIndex.value) : []));
+const threadAfter = computed(() => (threadIndex.value >= 0 ? thread.value.slice(threadIndex.value + 1) : []));
 const popOutReply = (draft) => {
     replyMode.value = '';
     emit('pop-out-reply', draft);
@@ -280,15 +322,7 @@ const htmlFrame = ref(null);
 const htmlFrameHeight = ref(200);
 let htmlFrameObserver = null;
 
-const htmlDocument = computed(() => {
-    const html = props.currentMessage?.html;
-    if (!html) return '';
-    return `<!doctype html><html><head><meta charset="utf-8">`
-        + `<meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'">`
-        + `<base target="_blank">`
-        + `<style>html,body{margin:0;padding:0;background:#fff;color:#1f2937;}body{padding:20px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;word-wrap:break-word;overflow-wrap:break-word;}img{max-width:100%;height:auto;}table{max-width:100%;}pre{white-space:pre-wrap;}a{color:#2563eb;}</style>`
-        + `</head><body>${html}</body></html>`;
-});
+const htmlDocument = computed(() => mailDocument(props.currentMessage?.html));
 
 const htmlFrameReady = ref(false);
 let htmlFrameWatchedDoc = null;
@@ -393,6 +427,9 @@ const selectTab = (id) => {
 
 watch(messageKey, () => {
     replyMode.value = '';
+    replyTarget.value = null;
+    thread.value = [];
+    loadThread();
     bodyView.value = 'html';
     source.value = null;
     sourceError.value = '';
@@ -817,6 +854,21 @@ onBeforeUnmount(() => {
                             </h2>
                         </div>
 
+                        <!-- Earlier messages of the conversation -->
+                        <div v-if="threadBefore.length" class="mt-5 space-y-2">
+                            <ThreadMessageCard
+                                v-for="item in threadBefore"
+                                :key="`${item.folder}:${item.uid}`"
+                                :item="item"
+                                :message-endpoint="messageEndpoint"
+                                :avatar-endpoint="avatarEndpoint"
+                                :self-email="selfEmail"
+                                :is-dark="isDark"
+                                @compose-to="emit('compose-to', $event)"
+                                @reply="startReply('reply', $event)"
+                            />
+                        </div>
+
                         <!-- Message card -->
                         <article :class="[ui.card, 'mt-5 rounded-xl border shadow-sm']">
                             <header :class="[ui.cardDivider, 'flex items-start gap-3 border-b px-4 py-4 md:px-6']">
@@ -1040,6 +1092,22 @@ onBeforeUnmount(() => {
                         </article>
 
                         <!-- Quick actions -->
+                        <!-- Later messages, e.g. replies sent from here -->
+                        <div v-if="threadAfter.length" class="mt-2 space-y-2">
+                            <ThreadMessageCard
+                                v-for="(item, i) in threadAfter"
+                                :key="`${item.folder}:${item.uid}`"
+                                :item="item"
+                                :message-endpoint="messageEndpoint"
+                                :avatar-endpoint="avatarEndpoint"
+                                :self-email="selfEmail"
+                                :is-dark="isDark"
+                                :initially-open="i === threadAfter.length - 1"
+                                @compose-to="emit('compose-to', $event)"
+                                @reply="startReply('reply', $event)"
+                            />
+                        </div>
+
                         <div v-if="!replyMode" class="mt-5 flex flex-wrap gap-2 px-1 pb-24">
                             <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="startReply('reply')">
                                 <i class="bi bi-reply"></i> Reply
@@ -1055,7 +1123,7 @@ onBeforeUnmount(() => {
                         <div v-if="replyMode" ref="replyBox" class="mt-6 pb-24">
                             <InlineReplyBox
                                 v-model:mode="replyMode"
-                                :message="currentMessage"
+                                :message="replyTarget || currentMessage"
                                 :folder="currentMessage.folder || activeFolder"
                                 :self-email="selfEmail"
                                 :avatar-endpoint="avatarEndpoint"
@@ -1063,7 +1131,7 @@ onBeforeUnmount(() => {
                                 :sandbox="sandbox"
                                 :is-dark="isDark"
                                 @sent="onReplySent"
-                                @discard="replyMode = ''"
+                                @discard="replyMode = ''; replyTarget = null"
                                 @pop-out="popOutReply"
                                 @notify="(text, type) => emit('notify', text, type)"
                             />

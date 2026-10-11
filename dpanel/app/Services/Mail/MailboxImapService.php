@@ -361,20 +361,141 @@ class MailboxImapService
         return ['message_id' => $messageId, 'references' => implode(' ', array_slice($refs[0], -10))];
     }
 
+    /**
+     * The other messages of a message's conversation, Gmail style: candidates
+     * share its subject (without Re:/Fwd:) in this folder, the Inbox or Sent,
+     * and belong only when Message-ID / In-Reply-To / References link them.
+     *
+     * @return array<int, array<string, mixed>> oldest first, including the message itself
+     */
+    public function thread(Mailbox $mailbox, string $folder, int $uid): array
+    {
+        $stream = $this->open($mailbox, $folder);
+        try {
+            $origin = (@imap_fetch_overview($stream, (string) $uid, FT_UID) ?: [])[0] ?? null;
+            if ($origin === null) {
+                return [];
+            }
+            $base = trim((string) preg_replace('/^\s*((re|fwd?|aw|sv)\s*(\[\d+\])?\s*:\s*)+/i', '', $this->decodeHeader((string) ($origin->subject ?? ''))));
+
+            $candidates = [];
+            foreach (array_unique(array_filter([$folder, 'INBOX', $this->sentFolder($stream)])) as $name) {
+                if ($base === '' || ! @imap_reopen($stream, $this->mailboxPath($name))) {
+                    continue;
+                }
+                $uids = @imap_search($stream, 'SUBJECT "'.addcslashes(mb_substr($base, 0, 120), '"\\').'"', SE_UID, 'UTF-8') ?: [];
+                // The newest matches are the likely replies; cap the cost on busy subjects.
+                $uids = array_slice(array_reverse($uids), 0, 100);
+                if ($name === $folder && ! in_array($uid, $uids, true)) {
+                    $uids[] = $uid;
+                }
+                foreach (@imap_fetch_overview($stream, implode(',', $uids), FT_UID) ?: [] as $overview) {
+                    $candidates[] = ['folder' => $name, 'overview' => $overview] + $this->threadLinks($overview);
+                }
+            }
+            imap_errors();
+
+            // Grow the conversation from the opened message until nothing else links in.
+            $links = $this->threadLinks($origin);
+            $known = array_flip(array_filter([$links['id'], ...$links['refs']]));
+            $members = [];
+            do {
+                $grew = false;
+                foreach ($candidates as $key => $candidate) {
+                    $isOrigin = $candidate['folder'] === $folder && (int) $candidate['overview']->uid === $uid;
+                    $linked = $isOrigin || ($candidate['id'] !== '' && isset($known[$candidate['id']]))
+                        || array_intersect_key(array_flip($candidate['refs']), $known) !== [];
+                    if (! $linked) {
+                        continue;
+                    }
+                    $members[] = $candidate;
+                    $known += array_flip(array_filter([$candidate['id'], ...$candidate['refs']]));
+                    unset($candidates[$key]);
+                    $grew = true;
+                }
+            } while ($grew);
+
+            // A message to yourself is in both Inbox and Sent; show it once.
+            $seen = [];
+            $rows = [];
+            foreach ($members as $member) {
+                $key = $member['id'] ?: $member['folder'].':'.$member['overview']->uid;
+                $isOrigin = $member['folder'] === $folder && (int) $member['overview']->uid === $uid;
+                if (isset($seen[$key]) && ! $isOrigin) {
+                    continue;
+                }
+                $seen[$key] ??= count($rows);
+                $overview = $member['overview'];
+                $rows[$seen[$key]] = [
+                    'folder' => $member['folder'],
+                    'uid' => (int) $overview->uid,
+                    'subject' => $this->decodeHeader((string) ($overview->subject ?? '')),
+                    'from' => $this->decodeHeader((string) ($overview->from ?? '')),
+                    'to' => $this->decodeHeader((string) ($overview->to ?? '')),
+                    'date' => MailText::toUtf8((string) ($overview->date ?? '')),
+                    'seen' => (bool) ($overview->seen ?? false),
+                    'snippet' => '',
+                ];
+            }
+            $rows = array_slice(array_values($rows), -50);
+
+            // Collapsed messages show a snippet: from the cache, else built once.
+            foreach (collect($rows)->groupBy('folder') as $name => $group) {
+                $cached = $this->cacheQuery($mailbox, (string) $name)->whereIn('uid', $group->pluck('uid'))->pluck('snippet', 'uid');
+                $opened = false;
+                foreach ($rows as $index => $row) {
+                    if ($row['folder'] !== $name) {
+                        continue;
+                    }
+                    $snippet = $cached[$row['uid']] ?? null;
+                    if ($snippet === null) {
+                        $opened = $opened || @imap_reopen($stream, $this->mailboxPath((string) $name));
+                        $snippet = $opened ? $this->snippet($stream, $row['uid']) : '';
+                    }
+                    $rows[$index]['snippet'] = MailText::toUtf8((string) $snippet);
+                }
+            }
+
+            usort($rows, fn (array $a, array $b): int => (strtotime($a['date']) ?: 0) <=> (strtotime($b['date']) ?: 0));
+
+            return $rows;
+        } finally {
+            $this->close($stream);
+        }
+    }
+
+    /**
+     * @return array{id: string, refs: array<int, string>}
+     */
+    private function threadLinks(object $overview): array
+    {
+        preg_match_all('/<[^<>\s]+>/', ((string) ($overview->references ?? '')).' '.((string) ($overview->in_reply_to ?? '')), $refs);
+        $id = preg_match('/<[^<>\s]+>/', (string) ($overview->message_id ?? ''), $match) ? $match[0] : '';
+
+        return ['id' => $id, 'refs' => array_values(array_unique($refs[0]))];
+    }
+
+    /**
+     * @param  resource  $stream
+     */
+    private function sentFolder($stream): ?string
+    {
+        $mailboxes = @imap_getmailboxes($stream, $this->mailboxPrefix(), '*');
+        foreach (is_array($mailboxes) ? $mailboxes : [] as $entry) {
+            $name = $this->stripMailboxPrefix((string) ($entry->name ?? ''));
+            if (in_array(strtolower($name), ['sent', 'sent items', 'sent messages', 'inbox.sent'], true)) {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
     private function appendToSent(Mailbox $mailbox, string $raw): void
     {
         $stream = $this->open($mailbox);
         $prefix = $this->mailboxPrefix();
-
-        $sentFolder = null;
-        $mailboxes = @imap_getmailboxes($stream, $prefix, '*');
-        foreach (is_array($mailboxes) ? $mailboxes : [] as $entry) {
-            $name = $this->stripMailboxPrefix((string) ($entry->name ?? ''));
-            if (in_array(strtolower($name), ['sent', 'sent items', 'sent messages', 'inbox.sent'], true)) {
-                $sentFolder = $name;
-                break;
-            }
-        }
+        $sentFolder = $this->sentFolder($stream);
 
         // APPEND only says TRYCREATE when the folder is missing, so keep the
         // CREATE error: it names the real cause (e.g. Maildir permissions).

@@ -382,6 +382,10 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->name('mailbox.message');
 
+            Route::get('/mail/{id}/thread', [MailClientController::class, 'thread'])
+                ->middleware(['role:admin|reseller', 'throttle:120,1'])
+                ->name('mailbox.thread');
+
             Route::get('/mail-avatar', [MailClientController::class, 'avatar'])
                 ->middleware(['role:admin|reseller', 'throttle:600,1'])
                 ->name('mailbox.avatar');

@@ -85,6 +85,10 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    threadEndpoint: {
+        type: String,
+        default: '',
+    },
     composeDefaults: {
         type: Object,
         default: () => ({
@@ -912,6 +916,8 @@ watch(() => messageFilter.value, () => {
                     :raw-download-endpoint="rawDownloadEndpoint"
                     :avatar-endpoint="avatarEndpoint"
                     :send-endpoint="sendEndpoint"
+                    :message-endpoint="messageEndpoint"
+                    :thread-endpoint="threadEndpoint"
                     :sandbox="mailbox.delivery_mode === 'sandbox'"
                     @open-message="openMessage"
                     @close-preview="closePreview"

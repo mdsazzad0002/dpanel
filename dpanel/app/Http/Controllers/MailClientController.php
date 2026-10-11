@@ -66,6 +66,7 @@ class MailClientController extends Controller
             'deleteEndpoint' => route('mailbox.delete-message', ['token' => $token, 'id' => $id]),
             'markReadEndpoint' => route('mailbox.mark-read', ['token' => $token, 'id' => $id]),
             'bulkEndpoint' => route('mailbox.bulk', ['token' => $token, 'id' => $id]),
+            'threadEndpoint' => route('mailbox.thread', ['token' => $token, 'id' => $id]),
             'contactsEndpoint' => route('mailbox.contacts', ['token' => $token, 'id' => $id]),
             'composeDefaults' => [
                 'to' => '',
@@ -145,6 +146,28 @@ class MailClientController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => null, 'messageData' => $message]);
+    }
+
+    /**
+     * The conversation a message belongs to, oldest first.
+     */
+    public function thread(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): JsonResponse
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        $validated = $request->validate([
+            'folder' => ['required', 'string'],
+            'uid' => ['required', 'integer', 'min:1'],
+        ]);
+
+        try {
+            $messages = $mailboxImapService->thread($mailbox, (string) $validated['folder'], (int) $validated['uid']);
+        } catch (RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage(), 'messages' => []]);
+        }
+
+        return response()->json(['success' => true, 'messages' => $messages]);
     }
 
     /**
