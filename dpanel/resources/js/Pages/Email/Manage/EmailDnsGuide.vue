@@ -11,6 +11,7 @@ const props = defineProps({
     mailHost: { type: String, default: '' }, mailHostResolvesTo: { type: String, default: '' }, serverIp: { type: String, default: '' },
     dkimReady: { type: Boolean, default: false }, dkimConfiguredDomain: { type: String, default: '' },
     records: { type: Array, default: () => [] }, localZone: { type: String, default: '' },
+    bimi: { type: Object, default: () => ({ hasLogo: false, logoUrl: null, https: false }) },
 });
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -26,7 +27,7 @@ const copyValue = async (value, key) => {
 };
 const canManageMailServer = computed(() => (page.props.auth?.roles || []).includes('admin') || (page.props.auth?.permissions || []).includes('manage_mail_server'));
 // The MX value and warnings come from the server; reload them after the hostname changes.
-const reloadGuide = () => router.reload({ only: ['records', 'mailHost', 'mailHostResolvesTo'] });
+const reloadGuide = () => router.reload({ only: ['records', 'mailHost', 'mailHostResolvesTo', 'bimi'] });
 const verifying = ref(false);
 const verification = ref(null);
 const checksByKey = computed(() => Object.fromEntries((verification.value?.checks || []).map((check) => [check.key, check])));
@@ -54,6 +55,19 @@ const applyToZone = () => {
     if (!window.confirm(`Add these records to the ${props.localZone} zone on this server? Existing MX, SPF, DKIM, DMARC and mail host records are replaced.`)) return;
     zoneForm.domain = props.selectedDomain;
     zoneForm.post(panelRoute('emails.guide.apply-zone'), { preserveScroll: true });
+};
+// BIMI: the panel hosts the logo, the guide adds the default._bimi record.
+const bimiForm = useForm({ domain: '', logo: null });
+const uploadBimi = (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !props.selectedDomain) return;
+    bimiForm.domain = props.selectedDomain;
+    bimiForm.logo = file;
+    bimiForm.post(panelRoute('emails.guide.bimi'), { preserveScroll: true, forceFormData: true, onFinish: () => { event.target.value = ''; } });
+};
+const removeBimi = () => {
+    if (!window.confirm(`Remove the BIMI logo for ${props.selectedDomain}?`)) return;
+    router.delete(panelRoute('emails.guide.bimi.destroy'), { data: { domain: props.selectedDomain }, preserveScroll: true });
 };
 const generateDkim = (domain) => {
     if (!domain || dkimForm.processing) return;
@@ -103,6 +117,35 @@ const generateDkim = (domain) => {
                         <td class="px-4 py-3"><DnsCheckCell :check="check" :checking="verifying" /></td>
                     </tr></tbody>
                 </table></div>
+            </section>
+
+            <section v-if="selectedDomain" class="rounded-xl border border-slate-200 bg-white p-5 text-sm dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex flex-wrap items-start gap-4">
+                    <div class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                        <img v-if="bimi.logoUrl" :src="bimi.logoUrl" :alt="`${selectedDomain} logo`" class="h-full w-full object-contain" />
+                        <i v-else class="bi bi-patch-check text-2xl text-slate-400"></i>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <h2 class="font-semibold">Brand logo in inboxes (BIMI)</h2>
+                        <p class="mt-1 text-slate-600 dark:text-slate-300">
+                            Gmail, Yahoo and Apple Mail show this logo as the sender picture next to mail from <strong>{{ selectedDomain }}</strong>.
+                            Upload a square SVG (SVG Tiny PS, max 32 KB); the panel hosts it and adds the <code>default._bimi</code> record above.
+                        </p>
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-500 dark:text-slate-400">
+                            <li>DMARC must enforce: with a logo the DMARC row above switches to <code>p=quarantine</code>. Make sure SPF and DKIM pass first.</li>
+                            <li>Yahoo shows it once DMARC enforces. Gmail and Apple also need a VMC or CMC certificate from DigiCert or Entrust, added as <code>a=</code> in the BIMI record.</li>
+                        </ul>
+                        <p v-if="!bimi.https" class="mt-2 text-xs text-amber-700 dark:text-amber-300">The panel URL is not https, so the logo cannot be published. Enable SSL for the panel domain first.</p>
+                        <p v-if="bimiForm.errors.logo" class="mt-2 text-xs text-red-600">{{ bimiForm.errors.logo }}</p>
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-white hover:bg-blue-700" :class="bimiForm.processing ? 'pointer-events-none opacity-60' : ''">
+                                <i class="bi bi-upload"></i> {{ bimi.hasLogo ? 'Replace logo' : 'Upload SVG logo' }}
+                                <input type="file" accept=".svg,image/svg+xml" class="sr-only" @change="uploadBimi" />
+                            </label>
+                            <button v-if="bimi.hasLogo" type="button" class="rounded-md border border-red-300 px-3 py-2 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400" @click="removeBimi">Remove</button>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <MailHostnameCard v-if="canManageMailServer" :panel-route="panelRoute" @changed="reloadGuide" />

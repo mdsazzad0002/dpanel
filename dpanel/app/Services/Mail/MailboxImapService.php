@@ -7,6 +7,7 @@ use App\Models\MailboxMessageMetadata;
 use App\Models\MailboxSyncState;
 use App\Support\MailHtml;
 use App\Support\MailText;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -26,7 +27,12 @@ class MailboxImapService
         'Trash' => '/trash|deleted/i',
     ];
 
-    public function __construct(private readonly MailImageProxy $imageProxy) {}
+    private readonly MailMessageAnalyzer $analyzer;
+
+    public function __construct(private readonly MailImageProxy $imageProxy, ?MailMessageAnalyzer $analyzer = null)
+    {
+        $this->analyzer = $analyzer ?? new MailMessageAnalyzer;
+    }
 
     /**
      * Return the last database snapshot without opening an IMAP connection.
@@ -64,7 +70,8 @@ class MailboxImapService
     public function cachedMessage(Mailbox $mailbox, string $folder, int $uid): ?array
     {
         $metadata = $this->cacheQuery($mailbox, $folder)->where('uid', $uid)->first();
-        if ($metadata === null || $metadata->body_text === null || $metadata->body_html === null || ! $metadata->seen) {
+        // Bodies cached before sender verification existed go through IMAP once.
+        if ($metadata === null || $metadata->body_text === null || $metadata->body_html === null || ! $metadata->seen || $metadata->sender_verified === null) {
             return null;
         }
 
@@ -376,6 +383,20 @@ class MailboxImapService
         foreach (array_chunk($uids, 1000) as $chunk) {
             $this->cacheQuery($mailbox, $folder)->whereIn('uid', $chunk)->update(['seen' => $seen, 'synced_at' => now()]);
         }
+    }
+
+    /**
+     * Names this server stamps into Authentication-Results (OpenDKIM uses
+     * the machine's hostname by default).
+     *
+     * @return array<int, string>
+     */
+    private function authServIds(): array
+    {
+        return Cache::remember('mail:authserv-ids', 3600, fn (): array => array_values(array_unique(array_filter(array_map(
+            fn ($name): string => strtolower(trim((string) $name)),
+            [gethostname(), @shell_exec('postconf -h myhostname 2>/dev/null'), config('serverpanel.mail.hostname')],
+        )))));
     }
 
     /**
@@ -719,6 +740,12 @@ class MailboxImapService
             $metadata->forceFill(['seen' => true])->save();
         }
 
+        // Decided once per message from the header block and kept with the cache.
+        if ($metadata !== null && $metadata->sender_verified === null) {
+            $headers = (string) @imap_fetchheader($stream, $uid, FT_UID);
+            $metadata->forceFill(['sender_verified' => $this->analyzer->verifiedDomain($headers, $this->authServIds()) !== null])->save();
+        }
+
         return $this->messagePayload($folder, $uid, $metadata, $text, $html);
     }
 
@@ -733,6 +760,8 @@ class MailboxImapService
             'to' => MailText::toUtf8((string) $metadata?->recipient),
             'date' => MailText::toUtf8((string) $metadata?->message_date),
             'seen' => (bool) $metadata?->seen,
+            // DMARC or aligned DKIM passed here, so a BIMI logo may be shown.
+            'sender_verified' => (bool) $metadata?->sender_verified,
             'raw_header' => '',
             'raw_body' => '',
             'text' => MailText::toUtf8($text),

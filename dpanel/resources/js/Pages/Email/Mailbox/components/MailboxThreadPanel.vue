@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { folderLabel, isOutgoingFolder } from './mailboxFolders';
+import MailAvatar from './MailAvatar.vue';
 
 const props = defineProps({
     activeFolder: {
@@ -68,6 +69,10 @@ const props = defineProps({
         default: '',
     },
     rawDownloadEndpoint: {
+        type: String,
+        default: '',
+    },
+    avatarEndpoint: {
         type: String,
         default: '',
     },
@@ -589,15 +594,16 @@ onBeforeUnmount(() => {
 
                     <!-- Avatar turns into a checkbox on hover or while selecting -->
                     <span class="relative flex h-8 w-8 shrink-0 items-center justify-center" @click.stop="emit('toggle-select', item.uid)">
-                        <span
+                        <MailAvatar
+                            :email="senderEmail(counterpartAddress(item))"
+                            :initials="senderInitials(counterpartAddress(item))"
+                            :color-class="avatarColor(counterpartAddress(item))"
+                            :endpoint="avatarEndpoint"
                             :class="[
-                                avatarColor(counterpartAddress(item)),
-                                'flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold text-white transition-opacity',
+                                'h-8 w-8 text-[11px] transition-opacity',
                                 selectionMode || selectedSet.has(item.uid) ? 'opacity-0' : 'group-hover:opacity-0',
                             ]"
-                        >
-                            {{ senderInitials(counterpartAddress(item)) }}
-                        </span>
+                        />
                         <input
                             type="checkbox"
                             :class="[
@@ -783,13 +789,21 @@ onBeforeUnmount(() => {
                         <!-- Message card -->
                         <article :class="[ui.card, 'mt-5 overflow-hidden rounded-xl border shadow-sm']">
                             <header :class="[ui.cardDivider, 'flex items-start gap-3 border-b px-4 py-4 md:px-6']">
-                                <span :class="[avatarColor(currentMessage.from), 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white']">
-                                    {{ senderInitials(currentMessage.from) }}
-                                </span>
+                                <MailAvatar
+                                    :email="senderEmail(currentMessage.from)"
+                                    :initials="senderInitials(currentMessage.from)"
+                                    :color-class="avatarColor(currentMessage.from)"
+                                    :verified="Boolean(currentMessage.sender_verified)"
+                                    :endpoint="avatarEndpoint"
+                                    class="h-11 w-11 text-sm"
+                                />
                                 <div class="min-w-0 flex-1">
                                     <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
                                         <div class="min-w-0">
-                                            <p :class="[ui.strong, 'truncate text-[15px] font-semibold']">{{ senderName(currentMessage.from) }}</p>
+                                            <p :class="[ui.strong, 'truncate text-[15px] font-semibold']">
+                                                {{ senderName(currentMessage.from) }}
+                                                <i v-if="currentMessage.sender_verified" class="bi bi-patch-check-fill ml-0.5 align-[-1px] text-sm text-blue-600" title="Sender verified: DMARC or DKIM passed for this domain"></i>
+                                            </p>
                                             <p v-if="senderEmail(currentMessage.from) && senderEmail(currentMessage.from) !== senderName(currentMessage.from)" :class="[ui.muted, 'truncate text-xs']">
                                                 {{ senderEmail(currentMessage.from) }}
                                             </p>

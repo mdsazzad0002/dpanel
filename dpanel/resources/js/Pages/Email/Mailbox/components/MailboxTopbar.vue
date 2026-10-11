@@ -69,7 +69,15 @@ const emit = defineEmits([
     'toggle-theme',
     'open-mailbox',
     'toggle-mobile-sidebar',
+    'upload-photo',
+    'remove-photo',
 ]);
+
+const onPhotoPicked = (event) => {
+    const file = event.target.files?.[0];
+    if (file) emit('upload-photo', file);
+    event.target.value = '';
+};
 
 const topbarRef = ref(null);
 const searchInput = ref(null);
@@ -364,6 +372,13 @@ onBeforeUnmount(() => {
                                 <div class="min-w-0 flex-1">
                                     <p :class="[ui.strong, 'truncate text-sm font-semibold']">{{ displayName }}</p>
                                     <p :class="[ui.muted, 'truncate text-xs']">{{ mailbox.email }}</p>
+                                    <div class="mt-1 flex items-center gap-3 text-xs">
+                                        <label class="cursor-pointer font-medium text-blue-600 hover:underline dark:text-blue-400">
+                                            {{ mailbox.avatar_url ? 'Change photo' : 'Add photo' }}
+                                            <input type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="onPhotoPicked">
+                                        </label>
+                                        <button v-if="mailbox.avatar_url" type="button" :class="[ui.muted, 'hover:underline']" @click="emit('remove-photo')">Remove</button>
+                                    </div>
                                 </div>
                             </div>
 

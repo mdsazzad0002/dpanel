@@ -88,6 +88,45 @@ class MailMessageAnalyzer
     }
 
     /**
+     * The From domain when this server's own verdict says the sender is
+     * genuine: DMARC pass, or a passing DKIM signature aligned with From.
+     * Only Authentication-Results stamped with one of $trustedIds count,
+     * since any sender can put that header into their own message. Used
+     * to decide whether a sender's BIMI logo may be shown, as Gmail does.
+     *
+     * @param  array<int, string>  $trustedIds  authserv-ids of this server
+     */
+    public function verifiedDomain(string $rawHeaders, array $trustedIds): ?string
+    {
+        $headers = $this->parseHeaders($rawHeaders);
+        $fromDomain = $this->domainOf($this->address((string) $this->first($headers, 'from')));
+        $trusted = array_values(array_filter(array_map(fn ($id): string => strtolower(trim((string) $id)), $trustedIds)));
+        if ($fromDomain === '' || $trusted === []) {
+            return null;
+        }
+
+        foreach ($this->all($headers, 'authentication-results') as $value) {
+            $value = preg_replace('/\([^()]*\)/', '', $value) ?? $value;
+            // "authserv-id [version]; results"
+            $id = strtolower((string) preg_split('/[\s;]+/', trim($value))[0]);
+            if (! in_array($id, $trusted, true)) {
+                continue;
+            }
+            if (preg_match('/\bdmarc=pass\b/i', $value)) {
+                return $fromDomain;
+            }
+            preg_match_all('/\bdkim=pass\b[^;]*?header\.d=([^\s;]+)/i', $value, $signatures);
+            foreach ($signatures[1] as $signingDomain) {
+                if ($this->sameOrg($fromDomain, strtolower($signingDomain))) {
+                    return $fromDomain;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Unfold continuation lines and decode encoded words.
      *
      * @return array<int, array{name: string, key: string, value: string}>

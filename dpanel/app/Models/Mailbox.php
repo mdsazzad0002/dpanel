@@ -26,6 +26,7 @@ class Mailbox extends Model
         'forwarding_to',
         'status',
         'delivery_mode',
+        'avatar_path',
         'site_owner',
         'mail_home',
         'mail_uid',

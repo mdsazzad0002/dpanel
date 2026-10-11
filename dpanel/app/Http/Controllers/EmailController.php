@@ -23,6 +23,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -174,6 +175,12 @@ class EmailController extends Controller
             'dkimConfiguredDomain' => $dkimDomain,
             'records' => $records,
             'localZone' => $localZone ? (string) DB::table('domains')->where('id', (int) $localZone->powerdns_domain_id)->value('name') : '',
+            'bimi' => [
+                'hasLogo' => (string) ($mailDomain?->bimi_logo_path ?? '') !== '',
+                'logoUrl' => $domain !== '' ? $mailDns->bimiLogoUrl($domain) : null,
+                // BIMI logo URLs must be https; the panel serves them from APP_URL.
+                'https' => str_starts_with((string) config('app.url', ''), 'https://'),
+            ],
         ]);
     }
 
@@ -442,6 +449,9 @@ class EmailController extends Controller
         $deleted = Mailbox::query()->where('id', $id)->delete();
         if ($deleted === 0) {
             return redirect()->route('emails.list')->with('error', 'Mailbox not found.');
+        }
+        if ($mailbox->avatar_path) {
+            Storage::disk('local')->delete($mailbox->avatar_path);
         }
 
         if (! $storageDelete['ok']) {

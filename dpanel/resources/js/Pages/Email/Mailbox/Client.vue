@@ -67,6 +67,14 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    avatarEndpoint: {
+        type: String,
+        default: '',
+    },
+    photoEndpoint: {
+        type: String,
+        default: '',
+    },
     bulkEndpoint: {
         type: String,
         default: '',
@@ -79,6 +87,41 @@ const props = defineProps({
         }),
     },
 });
+
+// The mailbox's own profile photo, served by the avatar endpoint like any sender's.
+const photoVersion = ref(Number(props.mailbox.avatar_version || 0));
+const mailboxView = computed(() => ({
+    ...props.mailbox,
+    avatar_url: photoVersion.value && props.avatarEndpoint
+        ? `${props.avatarEndpoint}${props.avatarEndpoint.includes('?') ? '&' : '?'}${new URLSearchParams({ email: props.mailbox.email, v: String(photoVersion.value) })}`
+        : '',
+}));
+
+const uploadPhoto = async (file) => {
+    if (!props.photoEndpoint) return;
+    const data = new FormData();
+    data.append('photo', file);
+    try {
+        const response = await window.axios.post(props.photoEndpoint, data, { headers: { Accept: 'application/json' } });
+        photoVersion.value = Date.now();
+        pushToast(response?.data?.message || 'Profile photo updated.', 'success');
+    }
+    catch (error) {
+        pushToast(error?.response?.data?.errors?.photo?.[0] || error?.response?.data?.message || 'Photo could not be uploaded.');
+    }
+};
+
+const removePhoto = async () => {
+    if (!props.photoEndpoint) return;
+    try {
+        await window.axios.delete(props.photoEndpoint, { headers: { Accept: 'application/json' } });
+        photoVersion.value = 0;
+        pushToast('Profile photo removed.', 'success');
+    }
+    catch (error) {
+        pushToast(error?.response?.data?.message || 'Photo could not be removed.');
+    }
+};
 
 const composeOpen = ref(false);
 const loading = ref(false);
@@ -810,7 +853,7 @@ watch(() => messageFilter.value, () => {
             ]"
         >
             <MailboxTopbar
-                :mailbox="mailbox"
+                :mailbox="mailboxView"
                 :is-dark="isDark"
                 :search-query="searchQuery"
                 :active-filter-label="activeFilterLabel"
@@ -830,6 +873,8 @@ watch(() => messageFilter.value, () => {
                 @toggle-theme="toggleTheme"
                 @open-mailbox="openMailbox"
                 @toggle-mobile-sidebar="toggleMobileSidebar"
+                @upload-photo="uploadPhoto"
+                @remove-photo="removePhoto"
             />
 
             <div
@@ -869,6 +914,7 @@ watch(() => messageFilter.value, () => {
                     :self-email="mailbox.email"
                     :raw-endpoint="rawEndpoint"
                     :raw-download-endpoint="rawDownloadEndpoint"
+                    :avatar-endpoint="avatarEndpoint"
                     @open-message="openMessage"
                     @close-preview="closePreview"
                     @start-compose="startCompose"

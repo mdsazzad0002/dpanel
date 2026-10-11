@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\SyncMailboxMetadataJob;
 use App\Models\Mailbox;
 use App\Models\MailboxMessageMetadata;
+use App\Services\Mail\MailAvatarResolver;
 use App\Services\Mail\MailboxImapService;
 use App\Services\Mail\MailImageProxy;
 use App\Services\Mail\MailMessageAnalyzer;
@@ -12,6 +13,7 @@ use App\Services\Mail\MailSpamAnalyzer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -43,6 +45,8 @@ class MailClientController extends Controller
                 'quota_mb' => $mailbox->quota_mb,
                 'status' => $mailbox->status,
                 'delivery_mode' => $mailbox->delivery_mode ?: Mailbox::MODE_LIVE,
+                // Changes with each upload, so the browser refetches the photo.
+                'avatar_version' => (string) $mailbox->avatar_path !== '' ? (int) $mailbox->updated_at?->timestamp : 0,
                 // Approximate: sizes of messages in folders that have been synced.
                 'used_bytes' => (int) MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)->sum('size'),
             ],
@@ -55,6 +59,8 @@ class MailClientController extends Controller
             'loadEndpoint' => route('mailbox.data', ['token' => $token, 'id' => $id]),
             'messageEndpoint' => route('mailbox.message', ['token' => $token, 'id' => $id]),
             'rawEndpoint' => route('mailbox.raw', ['token' => $token, 'id' => $id]),
+            'avatarEndpoint' => route('mailbox.avatar', ['token' => $token]),
+            'photoEndpoint' => route('mailbox.photo', ['token' => $token, 'id' => $id]),
             'rawDownloadEndpoint' => route('mailbox.raw-download', ['token' => $token, 'id' => $id]),
             'sendEndpoint' => route('mailbox.send', ['token' => $token, 'id' => $id]),
             'deleteEndpoint' => route('mailbox.delete-message', ['token' => $token, 'id' => $id]),
@@ -213,6 +219,61 @@ class MailClientController extends Controller
             'Content-Type' => 'message/rfc822',
             'Content-Length' => (string) $size,
         ]);
+    }
+
+    /**
+     * The sender's picture (own mailbox photo, BIMI logo or Gravatar), or 404
+     * so the page keeps the initials. ?bimi=1 is only sent for messages whose
+     * sender passed DMARC or aligned DKIM here.
+     */
+    public function avatar(Request $request, string $token, MailAvatarResolver $resolver): \Symfony\Component\HttpFoundation\Response
+    {
+        $image = $resolver->resolve((string) $request->query('email', ''), $request->boolean('bimi'));
+        abort_if($image === null, 404);
+
+        return response($image['body'], 200, [
+            'Content-Type' => $image['type'],
+            'Cache-Control' => 'private, max-age=86400',
+            'X-Content-Type-Options' => 'nosniff',
+            // BIMI logos are SVG: never let one run anything.
+            'Content-Security-Policy' => "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        ]);
+    }
+
+    /**
+     * Upload the mailbox's profile photo, shown as its avatar to other
+     * mailboxes on this server (like a Gmail account picture).
+     */
+    public function uploadPhoto(Request $request, string $token, string $id): JsonResponse
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        $validated = $request->validate([
+            'photo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:1024', 'dimensions:max_width=4096,max_height=4096'],
+        ]);
+
+        $disk = Storage::disk('local');
+        if ($mailbox->avatar_path) {
+            $disk->delete($mailbox->avatar_path);
+        }
+        $path = $validated['photo']->storeAs('mail-avatars', $mailbox->id.'.'.$validated['photo']->extension(), 'local');
+        $mailbox->forceFill(['avatar_path' => $path])->save();
+
+        return response()->json(['success' => true, 'message' => 'Profile photo updated.']);
+    }
+
+    public function deletePhoto(string $token, string $id): JsonResponse
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        if ($mailbox->avatar_path) {
+            Storage::disk('local')->delete($mailbox->avatar_path);
+        }
+        $mailbox->forceFill(['avatar_path' => null])->save();
+
+        return response()->json(['success' => true, 'message' => 'Profile photo removed.']);
     }
 
     /**
