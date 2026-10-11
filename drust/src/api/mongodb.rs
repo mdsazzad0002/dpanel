@@ -7,10 +7,18 @@ use axum::{
     routing::post,
 };
 
+use serde::Deserialize;
+
 use crate::{
-    api::{ApiResponse, ApiState, check_token, postgresql::Request},
+    api::{ApiResponse, ApiState, check_token},
     mongodb,
 };
+
+#[derive(Deserialize)]
+pub(crate) struct Request {
+    pub service: String,
+    pub enabled: bool,
+}
 
 pub(crate) fn routes() -> Router<Arc<ApiState>> {
     Router::new().route("/api/v1/mongodb/service", post(set_service))

@@ -3,10 +3,9 @@
 namespace App\Services;
 
 /**
- * Same on/off handling as PostgreSQL, for the mongod unit (config/mongodb.php,
- * drust /api/v1/mongodb/service).
+ * MongoDB's mongod unit (config/mongodb.php, drust /api/v1/mongodb/service).
  */
-class MongodbServiceManager extends PostgresqlServiceManager
+class MongodbServiceManager extends SystemdStackServiceManager
 {
     protected string $stack = 'mongodb';
 }

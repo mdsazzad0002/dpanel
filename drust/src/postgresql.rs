@@ -1,5 +1,3 @@
-use std::{path::Path, process::Command};
-
 /// Maps the panel's service key to its systemd unit. The caller only ever picks
 /// a key, never a unit name, so this endpoint cannot touch any other service.
 fn unit_for(service: &str) -> Option<&'static str> {
@@ -10,44 +8,13 @@ fn unit_for(service: &str) -> Option<&'static str> {
     }
 }
 
-fn systemctl() -> Option<&'static str> {
-    ["/usr/bin/systemctl", "/bin/systemctl"]
-        .into_iter()
-        .find(|candidate| Path::new(candidate).is_file())
-}
-
 /// Turns a PostgreSQL-stack service on (start + enable at boot) or off
 /// (stop + disable at boot). Runs here because drust is not sandboxed: the
 /// panel's php-fpm has ProtectSystem=full, so /etc is read-only for anything
 /// it spawns, including sudo, and `systemctl enable` must write there.
 pub fn set_service(service: &str, enabled: bool) -> Result<String, String> {
     let unit = unit_for(service).ok_or_else(|| "Unknown service.".to_string())?;
-    switch_unit(unit, enabled)
-}
-
-/// `systemctl enable|disable --now <unit>`. Also used by the MongoDB module;
-/// callers must pass a unit from their own fixed allow-list.
-pub(crate) fn switch_unit(unit: &str, enabled: bool) -> Result<String, String> {
-    let systemctl = systemctl().ok_or_else(|| "systemctl is not available.".to_string())?;
-    let action = if enabled { "enable" } else { "disable" };
-
-    let output = Command::new(systemctl)
-        .args([action, "--now", unit])
-        .output()
-        .map_err(|e| format!("cannot run systemctl: {e}"))?;
-    if !output.status.success() {
-        let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if error.is_empty() {
-            format!("systemctl {action} --now {unit} exited unsuccessfully")
-        } else {
-            error
-        });
-    }
-
-    Ok(format!(
-        "{unit} {}.",
-        if enabled { "started and enabled" } else { "stopped and disabled" }
-    ))
+    crate::service_toggle::switch_unit(unit, enabled)
 }
 
 #[cfg(test)]

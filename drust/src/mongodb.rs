@@ -11,7 +11,7 @@ fn unit_for(service: &str) -> Option<&'static str> {
 /// Runs in drust for the same reason as PostgreSQL: php-fpm can't write /etc.
 pub fn set_service(service: &str, enabled: bool) -> Result<String, String> {
     let unit = unit_for(service).ok_or_else(|| "Unknown service.".to_string())?;
-    crate::postgresql::switch_unit(unit, enabled)
+    crate::service_toggle::switch_unit(unit, enabled)
 }
 
 #[cfg(test)]

@@ -15,6 +15,7 @@ mod php;
 mod pgadmin_sso;
 mod php_config;
 mod mongodb;
+mod service_toggle;
 mod postgresql;
 mod script;
 mod scripts;

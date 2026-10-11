@@ -116,10 +116,12 @@ const copy = async (value) => {
                                     ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
                                     : service.active
                                         ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                                        : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'"
+                                        : service.state === 'failed'
+                                            ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+                                            : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'"
                                 class="rounded-full px-2 py-1 text-xs"
                             >
-                                {{ !service.installed ? 'Not installed' : service.active ? 'On' : 'Off' }}
+                                {{ !service.installed ? 'Not installed' : service.active ? 'On' : service.state === 'failed' ? 'Failed' : 'Off' }}
                             </span>
                         </div>
 

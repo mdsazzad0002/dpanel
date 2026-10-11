@@ -103,6 +103,12 @@ mongodb_wait_ready() {
   return 1
 }
 
+# The reason from mongod's last log line (its logs are JSON).
+mongodb_last_error() {
+  journalctl -u "$MONGODB_SERVICE" -n 20 -o cat --no-pager 2>/dev/null \
+    | grep -o '"msg":"[^"]*"' | tail -n 1 | sed 's/^"msg":"//; s/"$//'
+}
+
 mongodb_auth_enabled() {
   grep -Eq '^[[:space:]]*authorization:[[:space:]]*enabled' "$MONGODB_CONFIG" 2>/dev/null
 }
@@ -131,8 +137,15 @@ mongodb_setup() {
       password="$(panel_generate_token | cut -c1-24)"
       # Before auth is on, the localhost exception lets us create the first
       # user. The password travels in the environment, not on the command line.
-      systemctl start "$MONGODB_SERVICE"
-      mongodb_wait_ready || panel_die "mongod did not start; check 'journalctl -u ${MONGODB_SERVICE}'."
+      systemctl start "$MONGODB_SERVICE" || true
+      if ! mongodb_wait_ready; then
+        # e.g. MongoDB 8 refuses to start on Linux 6.19 - 7.0.13 (SERVER-121912).
+        # Leave it installed and off; re-running install finishes the setup.
+        mongodb_off
+        panel_warn_log "mongod would not start, so no admin user was created: $(mongodb_last_error)"
+        panel_warn_log "Fix that, then run: sudo dpanel mongodb install"
+        return 0
+      fi
       MONGODB_SETUP_USER="$username" MONGODB_SETUP_PASSWORD="$password" mongosh --quiet --norc admin --eval '
         db.createUser({
           user: process.env.MONGODB_SETUP_USER,
@@ -207,6 +220,10 @@ case "$action" in
   start|enable|on)
     mongodb_installed || panel_die "MongoDB is not installed. Run: dpanel mongodb install"
     systemctl enable --now "$MONGODB_SERVICE"
+    if ! mongodb_wait_ready; then
+      mongodb_off
+      panel_die "mongod stopped right after starting: $(mongodb_last_error)"
+    fi
     mongodb_status
     ;;
   stop|disable|off) mongodb_off; mongodb_status ;;
