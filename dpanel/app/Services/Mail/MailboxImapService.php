@@ -8,6 +8,7 @@ use App\Models\MailboxSyncState;
 use App\Support\MailHtml;
 use App\Support\MailText;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class MailboxImapService
@@ -408,7 +409,7 @@ class MailboxImapService
 
         if ($stream === false) {
             $error = imap_last_error() ?: 'IMAP login failed.';
-            imap_errors();
+            Log::warning('IMAP open failed.', ['mailbox' => $mailbox->email, 'folder' => $folder, 'errors' => imap_errors() ?: []]);
             // Login worked but SELECT did not: the folder was deleted or renamed elsewhere.
             if (strcasecmp($folder, 'INBOX') !== 0 && preg_match("/doesn't exist|does not exist|no such mailbox|nonexistent/i", $error)) {
                 MailboxSyncState::query()->where('mailbox_id', $mailbox->id)->update(['folders_synced_at' => null]);
@@ -528,14 +529,30 @@ class MailboxImapService
     private function messages($stream, Mailbox $mailbox, string $folder, int $limit): array
     {
         $status = @imap_status($stream, $this->mailboxPath($folder), SA_ALL);
-        if (! is_object($status)) {
-            throw new RuntimeException(imap_last_error() ?: 'Unable to read folder status.');
+        if (is_object($status)) {
+            $uidValidity = (int) ($status->uidvalidity ?? 0);
+            $count = (int) ($status->messages ?? 0);
+            $uidNext = (int) ($status->uidnext ?? 0);
+            $unseen = (int) ($status->unseen ?? 0);
+        } else {
+            // STATUS failed (seen on a mailbox's very first sync, which then
+            // showed an error only on the first open). The stream already has
+            // this folder selected, so read the counts from it instead; an
+            // unknown UIDNEXT just forces a full comparison.
+            Log::warning('IMAP STATUS failed; using the selected folder instead.', [
+                'mailbox' => $mailbox->email,
+                'folder' => $folder,
+                'errors' => imap_errors() ?: [],
+            ]);
+            $check = @imap_check($stream);
+            if (! is_object($check)) {
+                throw new RuntimeException(imap_last_error() ?: 'Unable to read folder status.');
+            }
+            $uidValidity = 0;
+            $count = (int) ($check->Nmsgs ?? 0);
+            $uidNext = 0;
+            $unseen = $count === 0 ? 0 : count(@imap_search($stream, 'UNSEEN', SE_UID) ?: []);
         }
-
-        $uidValidity = (int) ($status->uidvalidity ?? 0);
-        $count = (int) ($status->messages ?? 0);
-        $uidNext = (int) ($status->uidnext ?? 0);
-        $unseen = (int) ($status->unseen ?? 0);
 
         $state = MailboxSyncState::query()->firstOrCreate(['mailbox_id' => $mailbox->id, 'folder' => $folder]);
         if ($uidValidity > 0 && $state->uid_validity && (int) $state->uid_validity !== $uidValidity) {
