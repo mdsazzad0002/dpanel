@@ -45,7 +45,7 @@ carry out privileged host operations and serve public website traffic.
 | **Websites** | Per-site Linux accounts, per-site PHP-FPM pools, multiple PHP versions, one-click WordPress and Laravel installs, Git deployments, Node.js and Python apps |
 | **Edge gateway** | Rust HTTP/TLS server with SNI certificates, static file serving, PHP-FPM dispatch, compression, and live config reloads |
 | **SSL** | Automatic Let's Encrypt issuance, validation, and renewal |
-| **Databases** | MySQL/MariaDB and PostgreSQL with per-database users, phpMyAdmin and pgAdmin, remote-access rules |
+| **Databases** | MySQL/MariaDB and PostgreSQL with per-database users, phpMyAdmin and pgAdmin, remote-access rules; PostgreSQL and MongoDB are installed but off until you turn them on |
 | **Email** | Postfix, Dovecot, and Roundcube with mailbox provisioning and delivery diagnostics |
 | **DNS** | Authoritative DNS through PowerDNS with automatic zone reconciliation |
 | **Files** | Account-scoped file manager with upload, zip/unzip, permissions repair, and trash |

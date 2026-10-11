@@ -14,6 +14,7 @@ mod laravel_queue;
 mod php;
 mod pgadmin_sso;
 mod php_config;
+mod mongodb;
 mod postgresql;
 mod script;
 mod scripts;

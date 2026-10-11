@@ -72,7 +72,7 @@ dscript_chain_help() {
 Usage: dpanel chain <install|update|verify|repair> [module,...]
 
 install   Install modules in order. Default:
-          php,mariadb,redis,postgresql,clamav,ssl,supervisor,queue,firewall,fail2ban.
+          php,mariadb,redis,postgresql,mongodb,clamav,ssl,supervisor,queue,firewall,fail2ban.
 update    Refresh the remote manifest and update changed modules.
 verify    Run read-only repository, dependency and runtime checks.
 repair    Apply safe local repairs, then verify again.
@@ -149,6 +149,19 @@ PostgreSQL + pgAdmin module (installed by default, services left OFF):
   dpanel postgresql status [postgresql|pgadmin|all]
   sudo dpanel postgresql update | remove
 pgAdmin is served on the panel domain at /pgadmin4/.
+EOF
+      ;;
+    mongodb)
+      cat <<'EOF'
+MongoDB module (installed by default, service left OFF):
+  sudo dpanel mongodb install
+  sudo dpanel mongodb start      Turn on and enable at boot
+  sudo dpanel mongodb stop       Turn off and disable at boot
+  sudo dpanel mongodb restart
+  dpanel mongodb status
+  sudo dpanel mongodb update | remove
+MongoDB listens on 127.0.0.1:27017 with access control on; the admin login is
+saved to the panel's .env (MONGODB_ADMIN_USERNAME / MONGODB_ADMIN_PASSWORD).
 EOF
       ;;
     clamav)
@@ -431,7 +444,7 @@ dscript_run_chain() {
         export PANEL_MODULES
       fi
       if [[ "$DSCRIPT_DRY_RUN" == "true" ]]; then
-        printf '[DRY-RUN] chain install: %s\n' "${PANEL_MODULES:-php,mariadb,redis,postgresql,clamav,ssl,supervisor,queue,firewall,fail2ban}"
+        printf '[DRY-RUN] chain install: %s\n' "${PANEL_MODULES:-php,mariadb,redis,postgresql,mongodb,clamav,ssl,supervisor,queue,firewall,fail2ban}"
       else
         PANEL_BOOTSTRAP_MODE=install panel_bootstrap
       fi

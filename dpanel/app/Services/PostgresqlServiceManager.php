@@ -7,6 +7,9 @@ use Illuminate\Support\Facades\Process;
 
 class PostgresqlServiceManager
 {
+    /** Config file holding the services, and the drust endpoint segment. */
+    protected string $stack = 'postgresql';
+
     /**
      * @return array<string, array{key: string, label: string, unit: string, installed: bool, active: bool, enabled: bool, state: string}>
      */
@@ -14,7 +17,7 @@ class PostgresqlServiceManager
     {
         $statuses = [];
 
-        foreach ((array) config('postgresql.services') as $key => $service) {
+        foreach ((array) config($this->stack.'.services') as $key => $service) {
             $statuses[$key] = $this->status((string) $key, (string) $service['label'], (string) $service['unit']);
         }
 
@@ -23,7 +26,7 @@ class PostgresqlServiceManager
 
     public function isKnownService(string $service): bool
     {
-        return array_key_exists($service, (array) config('postgresql.services'));
+        return array_key_exists($service, (array) config($this->stack.'.services'));
     }
 
     /**
@@ -53,7 +56,7 @@ class PostgresqlServiceManager
         }
 
         try {
-            $response = $request->post(rtrim($baseUrl, '/').'/api/v1/postgresql/service', [
+            $response = $request->post(rtrim($baseUrl, '/').'/api/v1/'.$this->stack.'/service', [
                 'service' => $service,
                 'enabled' => $running,
             ]);

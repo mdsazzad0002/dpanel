@@ -1595,6 +1595,7 @@ panel_module_present() {
     mariadb) command -v mariadb >/dev/null 2>&1 || command -v mysql >/dev/null 2>&1 ;;
     redis) command -v redis-server >/dev/null 2>&1 ;;
     postgresql) command -v psql >/dev/null 2>&1 ;;
+    mongodb) command -v mongod >/dev/null 2>&1 ;;
     supervisor) command -v supervisord >/dev/null 2>&1 ;;
     docker) command -v docker >/dev/null 2>&1 ;;
     *) return 0 ;;
@@ -2486,7 +2487,7 @@ panel_install_cli_launcher() {
 }
 
 panel_bootstrap() {
-  local requested_modules="${PANEL_MODULES:-php,mariadb,redis,postgresql,clamav,ssl,supervisor,queue,firewall,fail2ban}"
+  local requested_modules="${PANEL_MODULES:-php,mariadb,redis,postgresql,mongodb,clamav,ssl,supervisor,queue,firewall,fail2ban}"
   local skip_firewall="${SKIP_FIREWALL:-false}"
   local skip_ssl="${SKIP_SSL:-false}"
   local skip_test="${SKIP_TEST:-false}"

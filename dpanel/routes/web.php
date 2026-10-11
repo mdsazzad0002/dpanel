@@ -41,6 +41,7 @@ use App\Http\Controllers\PackagePlanController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
+use App\Http\Controllers\MongodbController;
 use App\Http\Controllers\PostgresqlController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RedisCacheController;
@@ -1115,6 +1116,17 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin')
                 ->where('service', 'postgresql|pgadmin')
                 ->name('databases.postgresql.toggle');
+
+            Route::get('/databases/mongodb', [MongodbController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('databases.mongodb');
+            Route::post('/databases/mongodb/refresh', [MongodbController::class, 'refresh'])
+                ->middleware('role:admin')
+                ->name('databases.mongodb.refresh');
+            Route::post('/databases/mongodb/{service}/toggle', [MongodbController::class, 'toggle'])
+                ->middleware('role:admin')
+                ->where('service', 'mongodb')
+                ->name('databases.mongodb.toggle');
 
             Route::get('/admin', [UserManagementController::class, 'index'])
                 ->middleware('role:admin')

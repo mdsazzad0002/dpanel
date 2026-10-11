@@ -22,6 +22,12 @@ fn systemctl() -> Option<&'static str> {
 /// it spawns, including sudo, and `systemctl enable` must write there.
 pub fn set_service(service: &str, enabled: bool) -> Result<String, String> {
     let unit = unit_for(service).ok_or_else(|| "Unknown service.".to_string())?;
+    switch_unit(unit, enabled)
+}
+
+/// `systemctl enable|disable --now <unit>`. Also used by the MongoDB module;
+/// callers must pass a unit from their own fixed allow-list.
+pub(crate) fn switch_unit(unit: &str, enabled: bool) -> Result<String, String> {
     let systemctl = systemctl().ok_or_else(|| "systemctl is not available.".to_string())?;
     let action = if enabled { "enable" } else { "disable" };
 
