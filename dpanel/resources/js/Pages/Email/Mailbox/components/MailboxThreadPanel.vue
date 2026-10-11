@@ -433,7 +433,7 @@ const showsBody = computed(() => bodyView.value === 'html' || bodyView.value ===
 const plainText = computed(() => props.currentMessage?.text || props.currentMessage?.raw_body || '');
 
 const bodyTabs = computed(() => [
-    ...(htmlDocument.value ? [{ id: 'html', label: 'HTML', icon: 'bi-filetype-html' }] : []),
+    ...(htmlDocument.value ? [{ id: 'html', label: 'Message', icon: 'bi-envelope-paper' }] : []),
     { id: 'text', label: 'Plain text', icon: 'bi-text-left' },
     ...(props.rawEndpoint ? [
         { id: 'analysis', label: 'Analysis', icon: 'bi-shield-check' },
@@ -986,12 +986,19 @@ onBeforeUnmount(() => {
                                 </div>
                             </header>
 
-                            <!-- Other views live in the ⋮ menu, as in Gmail; show the way back from them. -->
-                            <div v-if="activeTab !== 'html' && activeTab !== (htmlDocument ? '' : 'text')" class="flex items-center gap-2 pb-1 pl-[68px] pr-4 md:pl-[76px] md:pr-6">
-                                <span :class="[ui.chip, 'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium']">
-                                    <i :class="['bi', bodyTabs.find((tab) => tab.id === activeTab)?.icon]"></i>{{ bodyTabs.find((tab) => tab.id === activeTab)?.label }}
-                                </span>
-                                <button type="button" :class="[ui.muted, 'text-xs font-medium hover:underline']" @click="selectTab(htmlDocument ? 'html' : 'text')">Back to message</button>
+                            <!-- Message views: the formatted mail, plain text, security analysis and source. -->
+                            <div class="flex flex-wrap items-center gap-1 pb-2 pl-[60px] pr-4 md:pl-[68px] md:pr-6" role="tablist" aria-label="Message view">
+                                <button
+                                    v-for="tab in bodyTabs"
+                                    :key="tab.id"
+                                    type="button"
+                                    role="tab"
+                                    :aria-selected="activeTab === tab.id"
+                                    :class="[activeTab === tab.id ? ui.chip : [ui.muted, ui.iconButton], 'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition']"
+                                    @click="selectTab(tab.id)"
+                                >
+                                    <i :class="['bi', tab.icon]"></i> {{ tab.label }}
+                                </button>
                             </div>
 
                             <template v-if="showsBody">
