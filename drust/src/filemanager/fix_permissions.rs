@@ -157,6 +157,18 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
     // to traverse into it. Re-assert that after the recursive chmod above.
     run_status("chmod", &["711", path.as_ref()])?;
 
+    // Maildirs belong to the site user alone, as mailbox-storage creates them.
+    // Dovecot copies a Maildir's group onto every new file and runs as the
+    // site user, who is not in www-data, so the recursive chown above made
+    // every folder CREATE fail (no Sent folder, so webmail could not save
+    // sent mail). The web server has no business reading mail either.
+    let mail_path = root_path.join("mail");
+    if mail_path.is_dir() {
+        let mail_path = mail_path.to_string_lossy();
+        run_status("chown", &["-R", &format!("{username}:{username}"), mail_path.as_ref()])?;
+        run_status("chmod", &["-R", "u+rwX,go-rwx", mail_path.as_ref()])?;
+    }
+
     // The home directory is root:root 711 (traverse-only), so the sandboxed
     // site-owner process has no write access to it and can't mkdir .ssh
     // itself ("bwrap: Can't mkdir <home>/.ssh: Permission denied"). Pre-create

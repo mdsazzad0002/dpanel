@@ -333,10 +333,16 @@ class MailboxImapService
             }
         }
 
+        // APPEND only says TRYCREATE when the folder is missing, so keep the
+        // CREATE error: it names the real cause (e.g. Maildir permissions).
+        $createError = null;
         if ($sentFolder === null) {
             $sentFolder = 'Sent';
-            @imap_createmailbox($stream, imap_utf7_encode($prefix.$sentFolder));
-            @imap_subscribe($stream, imap_utf7_encode($prefix.$sentFolder));
+            if (@imap_createmailbox($stream, imap_utf7_encode($prefix.$sentFolder))) {
+                @imap_subscribe($stream, imap_utf7_encode($prefix.$sentFolder));
+            } else {
+                $createError = imap_last_error() ?: null;
+            }
         }
 
         $appended = @imap_append($stream, $prefix.$sentFolder, $raw, '\\Seen');
@@ -344,6 +350,10 @@ class MailboxImapService
         $this->close($stream);
 
         if (! $appended) {
+            if ($createError !== null) {
+                Log::warning('Unable to create Sent folder.', ['mailbox' => $mailbox->email, 'error' => $createError]);
+                $error = "the Sent folder could not be created ({$createError})";
+            }
             throw new RuntimeException('Message was sent but could not be saved to Sent: '.($error ?: 'unknown IMAP error'));
         }
 
