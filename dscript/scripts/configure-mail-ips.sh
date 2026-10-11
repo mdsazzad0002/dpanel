@@ -18,6 +18,7 @@ command -v postconf >/dev/null 2>&1 || fail 'Postfix is not installed.'
 sql_file="/etc/postfix/dpanel-sender-transport.cf"
 connection_source="/etc/postfix/dpanel-virtual-domains.cf"
 map="proxy:mysql:${sql_file}"
+sandbox_map="proxy:mysql:/etc/postfix/dpanel-virtual-sandbox.cf"
 
 declare -A wanted=()
 for pair in "$@"; do
@@ -75,14 +76,26 @@ query = SELECT CONCAT('dpanel-ip-', REPLACE(i.ip, '.', '-'), ':') FROM mail_doma
   fi
   chown root:postfix "$sql_file" 2>/dev/null || chown root:root "$sql_file"
   chmod 0640 "$sql_file"
-  if [[ "$(postconf -h sender_dependent_default_transport_maps)" != "$map" ]]; then
-    mark_changed
-    postconf -e "sender_dependent_default_transport_maps=${map}"
-  fi
-elif [[ "$(postconf -h sender_dependent_default_transport_maps)" == "$map" ]]; then
+elif [[ -f "$sql_file" ]]; then
   mark_changed
-  postconf -X sender_dependent_default_transport_maps
   rm -f "$sql_file"
+fi
+
+# The sandbox map (panel_postfix_sender_transport_maps in core.sh) stays first:
+# a sandbox mailbox's mail must be discarded whichever IP its domain uses.
+maps=()
+current="$(postconf -h sender_dependent_default_transport_maps 2>/dev/null || true)"
+[[ "$current" == *"$sandbox_map"* ]] && maps+=("$sandbox_map")
+[[ ${#wanted[@]} -gt 0 ]] && maps+=("$map")
+value="$(IFS=,; printf '%s' "${maps[*]}")"
+value="${value//,/, }"
+if [[ "$current" != "$value" ]]; then
+  mark_changed
+  if [[ -n "$value" ]]; then
+    postconf -e "sender_dependent_default_transport_maps=${value}"
+  else
+    postconf -X sender_dependent_default_transport_maps
+  fi
 fi
 
 if [[ "$changed" -eq 1 ]]; then

@@ -19,9 +19,11 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -173,6 +175,12 @@ class EmailController extends Controller
             'dkimConfiguredDomain' => $dkimDomain,
             'records' => $records,
             'localZone' => $localZone ? (string) DB::table('domains')->where('id', (int) $localZone->powerdns_domain_id)->value('name') : '',
+            'bimi' => [
+                'hasLogo' => (string) ($mailDomain?->bimi_logo_path ?? '') !== '',
+                'logoUrl' => $domain !== '' ? $mailDns->bimiLogoUrl($domain) : null,
+                // BIMI logo URLs must be https; the panel serves them from APP_URL.
+                'https' => str_starts_with((string) config('app.url', ''), 'https://'),
+            ],
         ]);
     }
 
@@ -331,6 +339,7 @@ class EmailController extends Controller
                 'quota_mb' => (int) $validated['quota_mb'],
                 'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
                 'status' => 'active',
+                'delivery_mode' => $validated['delivery_mode'] ?? Mailbox::MODE_LIVE,
                 ...$storage,
                 'plan_id' => $owner?->package_id,
             ]));
@@ -413,6 +422,7 @@ class EmailController extends Controller
             'client_password' => $password,
             'quota_mb' => (int) $validated['quota_mb'],
             'forwarding_to' => trim((string) ($validated['forwarding_to'] ?? '')),
+            'delivery_mode' => $validated['delivery_mode'] ?? ($mailboxRecord->delivery_mode ?: Mailbox::MODE_LIVE),
             'plan_id' => $owner?->package_id,
             ...$storage,
         ]);
@@ -439,6 +449,9 @@ class EmailController extends Controller
         $deleted = Mailbox::query()->where('id', $id)->delete();
         if ($deleted === 0) {
             return redirect()->route('emails.list')->with('error', 'Mailbox not found.');
+        }
+        if ($mailbox->avatar_path) {
+            Storage::disk('local')->delete($mailbox->avatar_path);
         }
 
         if (! $storageDelete['ok']) {
@@ -480,6 +493,31 @@ class EmailController extends Controller
             'title' => "{$mailbox->email} is off",
             'message' => 'Mail for it is refused and it cannot log in until it is turned on again.',
             'mailbox' => $mailbox->only(['id', 'status', 'health_error', 'health_checked_at']),
+        ]);
+    }
+
+    /**
+     * Switch between live and sandbox (test). Postfix reads the column on
+     * every message, so the change applies to the next mail sent; nothing
+     * is reloaded.
+     */
+    public function setDeliveryMode(Request $request, string $token, string $id): JsonResponse
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        $validated = $request->validate([
+            'delivery_mode' => ['required', Rule::in(Mailbox::DELIVERY_MODES)],
+        ]);
+
+        $mailbox->forceFill(['delivery_mode' => $validated['delivery_mode']])->save();
+
+        return response()->json([
+            'ok' => true,
+            'message' => $mailbox->isSandbox()
+                ? "{$mailbox->email} is in sandbox mode: mail stays on this server and nothing is delivered outside."
+                : "{$mailbox->email} is live: mail is delivered everywhere.",
+            'mailbox' => $mailbox->only(['id', 'delivery_mode']),
         ]);
     }
 
@@ -1008,6 +1046,7 @@ class EmailController extends Controller
             'password' => ['required', 'string', 'min:6', 'max:255'],
             'quota_mb' => ['required', 'integer', 'min:1', 'max:102400'],
             'forwarding_to' => ['nullable', 'email', 'max:255'],
+            'delivery_mode' => ['nullable', Rule::in(Mailbox::DELIVERY_MODES)],
         ]);
     }
 

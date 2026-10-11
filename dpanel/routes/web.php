@@ -30,6 +30,7 @@ use App\Http\Controllers\DnsFindReplaceController;
 use App\Http\Controllers\DnsZoneConnectionController;
 use App\Http\Controllers\DnsZoneFileController;
 use App\Http\Controllers\EmailController;
+use App\Http\Controllers\MailBimiController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\MailHealthController;
 use App\Http\Controllers\MigrationController;
@@ -105,6 +106,13 @@ Route::middleware(['panel.session'])->group(function (): void {
 
 Route::post('/sso/webmail/consume', [SsoController::class, 'consumeWebmail'])
     ->name('sso.webmail.consume');
+
+// Public on purpose: Gmail, Yahoo and Apple Mail fetch a domain's BIMI logo
+// from the URL in its default._bimi DNS record, without any login.
+Route::get('/bimi/{domain}.svg', [MailBimiController::class, 'show'])
+    ->where('domain', '[A-Za-z0-9.-]+')
+    ->middleware('throttle:120,1')
+    ->name('bimi.logo');
 
 Route::post('/telegram/webhook', [TelegramWebhookController::class, 'store'])
     ->name('telegram.webhook');
@@ -350,6 +358,9 @@ Route::prefix('cpsess{token}')
             Route::post('/emails/{id}/enable', [EmailController::class, 'enable'])
                 ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:10,1'])
                 ->name('emails.enable');
+            Route::patch('/emails/{id}/delivery-mode', [EmailController::class, 'setDeliveryMode'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.delivery-mode');
             Route::post('/emails/{id}/disable', [EmailController::class, 'disable'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.disable');
@@ -369,6 +380,26 @@ Route::prefix('cpsess{token}')
             Route::get('/mail/{id}/message', [MailClientController::class, 'message'])
                 ->middleware('role:admin|reseller')
                 ->name('mailbox.message');
+
+            Route::get('/mail-avatar', [MailClientController::class, 'avatar'])
+                ->middleware(['role:admin|reseller', 'throttle:600,1'])
+                ->name('mailbox.avatar');
+
+            Route::post('/mail/{id}/photo', [MailClientController::class, 'uploadPhoto'])
+                ->middleware(['role:admin|reseller', 'throttle:20,1'])
+                ->name('mailbox.photo');
+
+            Route::delete('/mail/{id}/photo', [MailClientController::class, 'deletePhoto'])
+                ->middleware('role:admin|reseller')
+                ->name('mailbox.photo.destroy');
+
+            Route::get('/mail/{id}/raw', [MailClientController::class, 'raw'])
+                ->middleware(['role:admin|reseller', 'throttle:60,1'])
+                ->name('mailbox.raw');
+
+            Route::get('/mail/{id}/raw/download', [MailClientController::class, 'rawDownload'])
+                ->middleware(['role:admin|reseller', 'throttle:60,1'])
+                ->name('mailbox.raw-download');
 
             Route::post('/mail/{id}/send', [MailClientController::class, 'send'])
                 ->middleware('role:admin|reseller')
@@ -406,6 +437,12 @@ Route::prefix('cpsess{token}')
             Route::get('/emails/guide', [EmailController::class, 'dnsGuide'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.guide');
+            Route::post('/emails/guide/bimi', [MailBimiController::class, 'store'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:10,1'])
+                ->name('emails.guide.bimi');
+            Route::delete('/emails/guide/bimi', [MailBimiController::class, 'destroy'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.guide.bimi.destroy');
             Route::post('/emails/guide/dkim', [EmailController::class, 'generateDkim'])
                 ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:3,1'])
                 ->name('emails.guide.dkim');

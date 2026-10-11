@@ -140,13 +140,36 @@ class MailDnsRecords
             $records[] = ['type' => 'A', 'name' => '@', 'value' => $this->serverIp(), 'priority' => null, 'purpose' => 'Website address: the MX and SPF records below stop the *.'.substr($domain, strpos($domain, '.') + 1).' wildcard from answering for '.$domain];
         }
 
+        // BIMI only works with an enforced DMARC policy, so a domain with a
+        // logo gets quarantine instead of the monitoring-only p=none.
+        $bimiUrl = $this->bimiLogoUrl($domain);
+        $dmarc = $bimiUrl !== null
+            ? ['value' => 'v=DMARC1; p=quarantine; pct=100; rua=mailto:postmaster@'.$domain.'; adkim=r; aspf=r', 'purpose' => 'Quarantine mail that fails SPF/DKIM alignment (required for BIMI)']
+            : ['value' => 'v=DMARC1; p=none; rua=mailto:postmaster@'.$domain.'; adkim=r; aspf=r', 'purpose' => 'Monitor SPF/DKIM alignment'];
+
         return [
             ...$records,
             ['type' => 'MX', 'name' => '@', 'value' => $host, 'priority' => 10, 'purpose' => 'Receive email for '.$domain],
             ['type' => 'TXT', 'name' => '@', 'value' => $this->spf(), 'priority' => null, 'purpose' => 'Authorize this server to send email (SPF)'],
             ['type' => 'TXT', 'name' => $selector.'._domainkey', 'value' => $dkimPublicKey !== '' ? 'v=DKIM1; k=rsa; p='.$dkimPublicKey : '', 'priority' => null, 'purpose' => 'DKIM signature verification'],
-            ['type' => 'TXT', 'name' => '_dmarc', 'value' => 'v=DMARC1; p=none; rua=mailto:postmaster@'.$domain.'; adkim=r; aspf=r', 'priority' => null, 'purpose' => 'Monitor SPF/DKIM alignment'],
+            ['type' => 'TXT', 'name' => '_dmarc', 'value' => $dmarc['value'], 'priority' => null, 'purpose' => $dmarc['purpose']],
+            ...($bimiUrl !== null ? [['type' => 'TXT', 'name' => 'default._bimi', 'value' => 'v=BIMI1; l='.$bimiUrl.'; a=', 'priority' => null, 'purpose' => 'Brand logo next to your mail in Gmail, Yahoo and Apple Mail (BIMI)']] : []),
         ];
+    }
+
+    /**
+     * Where the panel serves the domain's BIMI logo, or null when it has
+     * none. BIMI requires an https URL.
+     */
+    public function bimiLogoUrl(string $domain): ?string
+    {
+        $path = MailDomain::query()->where('domain', strtolower(trim($domain)))->value('bimi_logo_path');
+        $base = rtrim((string) config('app.url', ''), '/');
+        if (! is_string($path) || $path === '' || ! str_starts_with($base, 'https://')) {
+            return null;
+        }
+
+        return $base.'/bimi/'.strtolower(trim($domain)).'.svg';
     }
 
     /**

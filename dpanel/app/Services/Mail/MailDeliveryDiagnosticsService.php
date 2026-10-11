@@ -384,7 +384,9 @@ class MailDeliveryDiagnosticsService
     private function spamEngine(array $lines): array
     {
         $joined = strtolower(implode("\n", array_slice($lines, -1000)));
-        if (str_contains($joined, 'rspamd')) {
+        // Postfix seldom names the milter in its log, so a quiet log does not
+        // mean Rspamd is off: its milter port answering is proof enough.
+        if (str_contains($joined, 'rspamd') || $this->rspamdListening()) {
             return ['name' => 'Rspamd', 'detected' => true];
         }
         if (str_contains($joined, 'spamassassin') || str_contains($joined, 'spamd')) {
@@ -392,6 +394,17 @@ class MailDeliveryDiagnosticsService
         }
 
         return ['name' => null, 'detected' => false];
+    }
+
+    private function rspamdListening(): bool
+    {
+        $socket = @fsockopen('127.0.0.1', 11332, $errno, $error, 0.3);
+        if ($socket === false) {
+            return false;
+        }
+        fclose($socket);
+
+        return true;
     }
 
     /** @param array<string, int> $stats

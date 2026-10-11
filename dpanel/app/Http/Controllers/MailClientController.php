@@ -5,11 +5,15 @@ namespace App\Http\Controllers;
 use App\Jobs\SyncMailboxMetadataJob;
 use App\Models\Mailbox;
 use App\Models\MailboxMessageMetadata;
+use App\Services\Mail\MailAvatarResolver;
 use App\Services\Mail\MailboxImapService;
 use App\Services\Mail\MailImageProxy;
+use App\Services\Mail\MailMessageAnalyzer;
+use App\Services\Mail\MailSpamAnalyzer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -40,6 +44,9 @@ class MailClientController extends Controller
                 'domain' => $mailbox->domain,
                 'quota_mb' => $mailbox->quota_mb,
                 'status' => $mailbox->status,
+                'delivery_mode' => $mailbox->delivery_mode ?: Mailbox::MODE_LIVE,
+                // Changes with each upload, so the browser refetches the photo.
+                'avatar_version' => (string) $mailbox->avatar_path !== '' ? (int) $mailbox->updated_at?->timestamp : 0,
                 // Approximate: sizes of messages in folders that have been synced.
                 'used_bytes' => (int) MailboxMessageMetadata::query()->where('mailbox_id', $mailbox->id)->sum('size'),
             ],
@@ -51,6 +58,10 @@ class MailClientController extends Controller
             'loadingError' => null,
             'loadEndpoint' => route('mailbox.data', ['token' => $token, 'id' => $id]),
             'messageEndpoint' => route('mailbox.message', ['token' => $token, 'id' => $id]),
+            'rawEndpoint' => route('mailbox.raw', ['token' => $token, 'id' => $id]),
+            'avatarEndpoint' => route('mailbox.avatar', ['token' => $token]),
+            'photoEndpoint' => route('mailbox.photo', ['token' => $token, 'id' => $id]),
+            'rawDownloadEndpoint' => route('mailbox.raw-download', ['token' => $token, 'id' => $id]),
             'sendEndpoint' => route('mailbox.send', ['token' => $token, 'id' => $id]),
             'deleteEndpoint' => route('mailbox.delete-message', ['token' => $token, 'id' => $id]),
             'markReadEndpoint' => route('mailbox.mark-read', ['token' => $token, 'id' => $id]),
@@ -94,6 +105,7 @@ class MailClientController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
+                'folder_missing' => $e->getCode() === MailboxImapService::FOLDER_MISSING,
                 'folders' => [],
                 'messages' => [],
                 'messageData' => null,
@@ -135,6 +147,136 @@ class MailClientController extends Controller
     }
 
     /**
+     * "Show original": the message source plus header and spam analysis. Loaded
+     * only when the Original tab is opened, so reading mail costs nothing extra.
+     */
+    public function raw(Request $request, string $token, string $id, MailboxImapService $mailboxImapService, MailMessageAnalyzer $analyzer, MailSpamAnalyzer $spamAnalyzer): JsonResponse
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        $validated = $request->validate([
+            'folder' => ['required', 'string'],
+            'uid' => ['required', 'integer', 'min:1'],
+        ]);
+
+        try {
+            $raw = $mailboxImapService->rawMessage($mailbox, (string) $validated['folder'], (int) $validated['uid']);
+        } catch (RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+
+        if ($raw === null) {
+            return response()->json(['success' => false, 'message' => 'Message not found.']);
+        }
+
+        $analysis = $analyzer->analyze($raw['headers']);
+        $analysis['spam_check'] = $spamAnalyzer->analyze($raw['raw'], $analysis);
+
+        return response()->json([
+            'success' => true,
+            'message' => null,
+            // Raw bytes may be in any charset; JSON needs UTF-8.
+            'raw' => mb_convert_encoding($raw['raw'], 'UTF-8', 'UTF-8'),
+            'size' => $raw['size'],
+            'truncated' => $raw['truncated'],
+            'analysis' => $analysis,
+        ]);
+    }
+
+    /**
+     * The original message as an .eml file, streamed without loading it into memory.
+     */
+    public function rawDownload(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): \Symfony\Component\HttpFoundation\Response
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        $validated = $request->validate([
+            'folder' => ['required', 'string'],
+            'uid' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $file = fopen('php://temp/maxmemory:1048576', 'w+b');
+        try {
+            $headers = $mailboxImapService->saveRawMessage($mailbox, (string) $validated['folder'], (int) $validated['uid'], $file);
+        } catch (RuntimeException $e) {
+            fclose($file);
+            abort(502, $e->getMessage());
+        }
+        if ($headers === null) {
+            fclose($file);
+            abort(404);
+        }
+
+        $size = (int) ftell($file);
+        rewind($file);
+
+        return response()->streamDownload(function () use ($file): void {
+            fpassthru($file);
+            fclose($file);
+        }, 'message-'.(int) $validated['uid'].'.eml', [
+            'Content-Type' => 'message/rfc822',
+            'Content-Length' => (string) $size,
+        ]);
+    }
+
+    /**
+     * The sender's picture (own mailbox photo, BIMI logo or Gravatar), or 404
+     * so the page keeps the initials. ?bimi=1 is only sent for messages whose
+     * sender passed DMARC or aligned DKIM here.
+     */
+    public function avatar(Request $request, string $token, MailAvatarResolver $resolver): \Symfony\Component\HttpFoundation\Response
+    {
+        $image = $resolver->resolve((string) $request->query('email', ''), $request->boolean('bimi'));
+        abort_if($image === null, 404);
+
+        return response($image['body'], 200, [
+            'Content-Type' => $image['type'],
+            'Cache-Control' => 'private, max-age=86400',
+            'X-Content-Type-Options' => 'nosniff',
+            // BIMI logos are SVG: never let one run anything.
+            'Content-Security-Policy' => "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        ]);
+    }
+
+    /**
+     * Upload the mailbox's profile photo, shown as its avatar to other
+     * mailboxes on this server (like a Gmail account picture).
+     */
+    public function uploadPhoto(Request $request, string $token, string $id): JsonResponse
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        $validated = $request->validate([
+            'photo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:1024', 'dimensions:max_width=4096,max_height=4096'],
+        ]);
+
+        $disk = Storage::disk('local');
+        if ($mailbox->avatar_path) {
+            $disk->delete($mailbox->avatar_path);
+        }
+        $path = $validated['photo']->storeAs('mail-avatars', $mailbox->id.'.'.$validated['photo']->extension(), 'local');
+        $mailbox->forceFill(['avatar_path' => $path])->save();
+
+        return response()->json(['success' => true, 'message' => 'Profile photo updated.']);
+    }
+
+    public function deletePhoto(string $token, string $id): JsonResponse
+    {
+        $mailbox = Mailbox::query()->find($id);
+        abort_if($mailbox === null, 404);
+
+        if ($mailbox->avatar_path) {
+            Storage::disk('local')->delete($mailbox->avatar_path);
+        }
+        $mailbox->forceFill(['avatar_path' => null])->save();
+
+        return response()->json(['success' => true, 'message' => 'Profile photo removed.']);
+    }
+
+    /**
      * Remote image from an HTML message, served through the panel.
      */
     public function image(Request $request, string $token, MailImageProxy $imageProxy): \Symfony\Component\HttpFoundation\Response
@@ -168,7 +310,7 @@ class MailClientController extends Controller
         ]);
 
         try {
-            $mailboxImapService->sendMessage(
+            $result = $mailboxImapService->sendMessage(
                 $mailbox,
                 $this->addresses((string) $validated['to']),
                 (string) $validated['subject'],
@@ -186,13 +328,17 @@ class MailClientController extends Controller
                 ->with('error', $e->getMessage());
         }
 
+        $notice = $result['held'] === []
+            ? 'Message sent successfully.'
+            : 'Sandbox mode: not sent to '.implode(', ', $result['held']).'. A copy is in Sent.';
+
         if ($request->expectsJson()) {
-            return response()->json(['success' => true, 'message' => 'Message sent successfully.']);
+            return response()->json(['success' => true, 'message' => $notice, 'held' => $result['held']]);
         }
 
         return redirect()
             ->route('mailbox.open', ['token' => $token, 'id' => $id, 'folder' => (string) ($validated['folder'] ?? 'INBOX')])
-            ->with('success', 'Message sent successfully.');
+            ->with('success', $notice);
     }
 
     public function delete(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): RedirectResponse|JsonResponse

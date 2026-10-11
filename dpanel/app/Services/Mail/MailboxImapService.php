@@ -7,13 +7,32 @@ use App\Models\MailboxMessageMetadata;
 use App\Models\MailboxSyncState;
 use App\Support\MailHtml;
 use App\Support\MailText;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class MailboxImapService
 {
     private const MAX_CACHED_BODY_BYTES = 1048576;
 
-    public function __construct(private readonly MailImageProxy $imageProxy) {}
+    /** Thrown (as the exception code) when the requested folder does not exist. */
+    public const FOLDER_MISSING = 404;
+
+    /** Standard folders and the names that already count as them. */
+    private const DEFAULT_FOLDERS = [
+        'Sent' => '/sent/i',
+        'Drafts' => '/draft/i',
+        'Junk' => '/junk|spam/i',
+        'Trash' => '/trash|deleted/i',
+    ];
+
+    private readonly MailMessageAnalyzer $analyzer;
+
+    public function __construct(private readonly MailImageProxy $imageProxy, ?MailMessageAnalyzer $analyzer = null)
+    {
+        $this->analyzer = $analyzer ?? new MailMessageAnalyzer;
+    }
 
     /**
      * Return the last database snapshot without opening an IMAP connection.
@@ -51,7 +70,8 @@ class MailboxImapService
     public function cachedMessage(Mailbox $mailbox, string $folder, int $uid): ?array
     {
         $metadata = $this->cacheQuery($mailbox, $folder)->where('uid', $uid)->first();
-        if ($metadata === null || $metadata->body_text === null || $metadata->body_html === null || ! $metadata->seen) {
+        // Bodies cached before sender verification existed go through IMAP once.
+        if ($metadata === null || $metadata->body_text === null || $metadata->body_html === null || ! $metadata->seen || $metadata->sender_verified === null) {
             return null;
         }
 
@@ -73,6 +93,62 @@ class MailboxImapService
         $stream = $this->open($mailbox, $folder);
         try {
             return $this->message($stream, $mailbox, $folder, $uid);
+        } finally {
+            $this->close($stream);
+        }
+    }
+
+    /**
+     * The message exactly as stored, like Gmail's "Show original". Fetched on
+     * demand and never cached. The server writes it to a disk-backed stream,
+     * so a large attachment never sits in memory; only the first $maxBytes
+     * are returned for display.
+     *
+     * @return array{headers: string, raw: string, size: int, truncated: bool}|null
+     */
+    public function rawMessage(Mailbox $mailbox, string $folder, int $uid, int $maxBytes = 1048576): ?array
+    {
+        $file = fopen('php://temp/maxmemory:1048576', 'w+b');
+        try {
+            $headers = $this->saveRawMessage($mailbox, $folder, $uid, $file);
+            if ($headers === null) {
+                return null;
+            }
+
+            $size = (int) ftell($file);
+            rewind($file);
+
+            return [
+                'headers' => $headers,
+                'raw' => (string) stream_get_contents($file, $maxBytes),
+                'size' => $size,
+                'truncated' => $size > $maxBytes,
+            ];
+        } finally {
+            fclose($file);
+        }
+    }
+
+    /**
+     * Write the full RFC 822 message (the .eml) to $target.
+     *
+     * @param  resource  $target
+     * @return string|null the header block, or null when the message does not exist
+     */
+    public function saveRawMessage(Mailbox $mailbox, string $folder, int $uid, $target): ?string
+    {
+        $stream = $this->open($mailbox, $folder);
+        try {
+            $headers = @imap_fetchheader($stream, $uid, FT_UID);
+            if (! is_string($headers) || trim($headers) === '') {
+                return null;
+            }
+            // Section "" is the whole message; FT_PEEK leaves it unread.
+            if (! @imap_savebody($stream, $target, '', FT_UID | FT_PEEK)) {
+                throw new RuntimeException(imap_last_error() ?: 'Unable to read the message source.');
+            }
+
+            return $headers;
         } finally {
             $this->close($stream);
         }
@@ -131,8 +207,9 @@ class MailboxImapService
      * @param  array<int, string>  $to
      * @param  array<int, string>  $cc
      * @param  array<int, string>  $bcc
+     * @return array{held: array<int, string>} held: external recipients a sandbox mailbox did not send to
      */
-    public function sendMessage(Mailbox $mailbox, array $to, string $subject, string $body, array $cc = [], array $bcc = []): void
+    public function sendMessage(Mailbox $mailbox, array $to, string $subject, string $body, array $cc = [], array $bcc = []): array
     {
         $subject = trim($subject);
         $body = trim($body);
@@ -157,27 +234,88 @@ class MailboxImapService
             'Content-Type: text/plain; charset=UTF-8',
             'Content-Transfer-Encoding: 8bit',
         ];
-        if ($cc !== []) {
-            $headers[] = 'Cc: '.implode(', ', $cc);
-        }
 
         $encodedSubject = function_exists('mb_encode_mimeheader')
             ? mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n")
             : $subject;
 
         $body = str_replace(["\r\n", "\r"], "\n", $body);
-        // sendmail runs with -t, so Bcc recipients are delivered and the header is stripped.
-        $sendHeaders = $bcc !== [] ? array_merge($headers, ['Bcc: '.implode(', ', $bcc)]) : $headers;
-        $ok = @mail(implode(', ', $to), $encodedSubject, $body, implode("\r\n", $sendHeaders), '-f'.$from);
-        if (! $ok) {
-            throw new RuntimeException('Message could not be sent.');
+
+        // Sandbox (test) mailboxes only reach mailboxes hosted here. Postfix
+        // enforces the same rule for SMTP clients; filtering here as well
+        // lets the panel say which recipients were held back.
+        $send = ['to' => $to, 'cc' => $cc, 'bcc' => $bcc];
+        $held = [];
+        if ($mailbox->isSandbox()) {
+            $local = $this->hostedRecipients(array_merge($to, $cc, $bcc));
+            $send = array_map(fn (array $list): array => array_values(array_intersect($list, $local)), $send);
+            $held = array_values(array_diff(array_merge($to, $cc, $bcc), $local));
+        }
+
+        if (array_merge($send['to'], $send['cc'], $send['bcc']) !== []) {
+            // sendmail runs with -t, so Bcc recipients are delivered and the header is stripped.
+            $ok = @mail(
+                $send['to'] !== [] ? implode(', ', $send['to']) : 'undisclosed-recipients:;',
+                $encodedSubject,
+                $body,
+                implode("\r\n", array_merge($headers, $this->recipientHeaders($send['cc'], $send['bcc']))),
+                '-f'.$from
+            );
+            if (! $ok) {
+                throw new RuntimeException('Message could not be sent.');
+            }
         }
 
         // mail() only hands the message to the local MTA; keep a copy in the
         // mailbox's Sent folder the same way a regular mail client does.
-        $raw = implode("\r\n", array_merge(['To: '.implode(', ', $to), 'Subject: '.$encodedSubject], $sendHeaders))
+        $copyHeaders = array_merge($headers, $this->recipientHeaders($cc, $bcc));
+        if ($held !== []) {
+            $copyHeaders[] = 'X-Dpanel-Sandbox: not sent to '.implode(', ', $held);
+        }
+        $raw = implode("\r\n", array_merge(['To: '.implode(', ', $to), 'Subject: '.$encodedSubject], $copyHeaders))
             ."\r\n\r\n".str_replace("\n", "\r\n", $body)."\r\n";
         $this->appendToSent($mailbox, $raw);
+
+        return ['held' => $held];
+    }
+
+    /**
+     * @param  array<int, string>  $cc
+     * @param  array<int, string>  $bcc
+     * @return array<int, string>
+     */
+    private function recipientHeaders(array $cc, array $bcc): array
+    {
+        return array_merge(
+            $cc !== [] ? ['Cc: '.implode(', ', $cc)] : [],
+            $bcc !== [] ? ['Bcc: '.implode(', ', $bcc)] : [],
+        );
+    }
+
+    /**
+     * Addresses whose domain this server receives mail for.
+     *
+     * @param  array<int, string>  $addresses
+     * @return array<int, string>
+     */
+    public function hostedRecipients(array $addresses): array
+    {
+        $domains = array_values(array_unique(array_map(
+            fn (string $address): string => strtolower(substr((string) strrchr($address, '@'), 1)),
+            $addresses,
+        )));
+        $hosted = Mailbox::query()
+            ->whereIn(DB::raw('LOWER(domain)'), $domains)
+            ->where('status', 'active')
+            ->distinct()
+            ->pluck('domain')
+            ->map(fn ($domain): string => strtolower((string) $domain))
+            ->all();
+
+        return array_values(array_filter(
+            $addresses,
+            fn (string $address): bool => in_array(strtolower(substr((string) strrchr($address, '@'), 1)), $hosted, true),
+        ));
     }
 
     private function appendToSent(Mailbox $mailbox, string $raw): void
@@ -248,6 +386,20 @@ class MailboxImapService
     }
 
     /**
+     * Names this server stamps into Authentication-Results (OpenDKIM uses
+     * the machine's hostname by default).
+     *
+     * @return array<int, string>
+     */
+    private function authServIds(): array
+    {
+        return Cache::remember('mail:authserv-ids', 3600, fn (): array => array_values(array_unique(array_filter(array_map(
+            fn ($name): string => strtolower(trim((string) $name)),
+            [gethostname(), @shell_exec('postconf -h myhostname 2>/dev/null'), config('serverpanel.mail.hostname')],
+        )))));
+    }
+
+    /**
      * @param  array<int, mixed>  $uids
      * @return array<int, int>
      */
@@ -270,12 +422,21 @@ class MailboxImapService
         if ($clientPassword === '') {
             throw new RuntimeException('Mailbox password must be reset before the webmail client can connect.');
         }
+        // Drop errors left by earlier calls so the one reported below is ours.
+        imap_errors();
         $stream = @imap_open($mailboxPath, (string) $mailbox->email, $clientPassword, 0, 1, [
             'DISABLE_AUTHENTICATOR' => 'GSSAPI',
         ]);
 
         if ($stream === false) {
-            throw new RuntimeException(imap_last_error() ?: 'IMAP login failed.');
+            $error = imap_last_error() ?: 'IMAP login failed.';
+            Log::warning('IMAP open failed.', ['mailbox' => $mailbox->email, 'folder' => $folder, 'errors' => imap_errors() ?: []]);
+            // Login worked but SELECT did not: the folder was deleted or renamed elsewhere.
+            if (strcasecmp($folder, 'INBOX') !== 0 && preg_match("/doesn't exist|does not exist|no such mailbox|nonexistent/i", $error)) {
+                MailboxSyncState::query()->where('mailbox_id', $mailbox->id)->update(['folders_synced_at' => null]);
+                throw new RuntimeException("Folder \"{$folder}\" was not found on the mail server.", self::FOLDER_MISSING);
+            }
+            throw new RuntimeException($error);
         }
 
         return $stream;
@@ -302,7 +463,8 @@ class MailboxImapService
         foreach ($mailboxes as $mailbox) {
             $fullName = (string) ($mailbox->name ?? '');
             $folder = $this->stripMailboxPrefix($fullName);
-            if ($folder === '') {
+            // \Noselect entries are namespace parents that cannot be opened.
+            if ($folder === '' || ((int) ($mailbox->attributes ?? 0) & LATT_NOSELECT)) {
                 continue;
             }
 
@@ -313,6 +475,19 @@ class MailboxImapService
                 'exists' => is_object($status) ? (int) ($status->messages ?? 0) : 0,
             ];
         }
+
+        // Like Roundcube: Sent, Drafts, Junk and Trash always exist, so the
+        // sidebar never offers a folder that IMAP cannot open. Runs only
+        // while one is missing, at most once per folder-list refresh.
+        foreach ($this->missingDefaultFolders(array_column($folders, 'name')) as $name) {
+            if (@imap_createmailbox($stream, imap_utf7_encode($prefix.$name))) {
+                @imap_subscribe($stream, imap_utf7_encode($prefix.$name));
+                $folders[] = ['name' => $name, 'unread' => 0, 'exists' => 0];
+            }
+        }
+        // A failed create (another namespace layout) must not surface later
+        // as the error of an unrelated call.
+        imap_errors();
 
         $hasInbox = false;
         foreach ($folders as $folder) {
@@ -349,6 +524,22 @@ class MailboxImapService
     }
 
     /**
+     * @param  array<int, string>  $existing
+     * @return array<int, string>
+     */
+    private function missingDefaultFolders(array $existing): array
+    {
+        $missing = [];
+        foreach (self::DEFAULT_FOLDERS as $name => $pattern) {
+            if (preg_grep($pattern, $existing) === []) {
+                $missing[] = $name;
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
      * Incremental sync in the style of Roundcube's message index: a single
      * STATUS call is compared with the stored folder signature, and IMAP is
      * only asked for what changed (new UIDs, removed UIDs, unseen flags).
@@ -359,14 +550,30 @@ class MailboxImapService
     private function messages($stream, Mailbox $mailbox, string $folder, int $limit): array
     {
         $status = @imap_status($stream, $this->mailboxPath($folder), SA_ALL);
-        if (! is_object($status)) {
-            throw new RuntimeException(imap_last_error() ?: 'Unable to read folder status.');
+        if (is_object($status)) {
+            $uidValidity = (int) ($status->uidvalidity ?? 0);
+            $count = (int) ($status->messages ?? 0);
+            $uidNext = (int) ($status->uidnext ?? 0);
+            $unseen = (int) ($status->unseen ?? 0);
+        } else {
+            // STATUS failed (seen on a mailbox's very first sync, which then
+            // showed an error only on the first open). The stream already has
+            // this folder selected, so read the counts from it instead; an
+            // unknown UIDNEXT just forces a full comparison.
+            Log::warning('IMAP STATUS failed; using the selected folder instead.', [
+                'mailbox' => $mailbox->email,
+                'folder' => $folder,
+                'errors' => imap_errors() ?: [],
+            ]);
+            $check = @imap_check($stream);
+            if (! is_object($check)) {
+                throw new RuntimeException(imap_last_error() ?: 'Unable to read folder status.');
+            }
+            $uidValidity = 0;
+            $count = (int) ($check->Nmsgs ?? 0);
+            $uidNext = 0;
+            $unseen = $count === 0 ? 0 : count(@imap_search($stream, 'UNSEEN', SE_UID) ?: []);
         }
-
-        $uidValidity = (int) ($status->uidvalidity ?? 0);
-        $count = (int) ($status->messages ?? 0);
-        $uidNext = (int) ($status->uidnext ?? 0);
-        $unseen = (int) ($status->unseen ?? 0);
 
         $state = MailboxSyncState::query()->firstOrCreate(['mailbox_id' => $mailbox->id, 'folder' => $folder]);
         if ($uidValidity > 0 && $state->uid_validity && (int) $state->uid_validity !== $uidValidity) {
@@ -533,6 +740,12 @@ class MailboxImapService
             $metadata->forceFill(['seen' => true])->save();
         }
 
+        // Decided once per message from the header block and kept with the cache.
+        if ($metadata !== null && $metadata->sender_verified === null) {
+            $headers = (string) @imap_fetchheader($stream, $uid, FT_UID);
+            $metadata->forceFill(['sender_verified' => $this->analyzer->verifiedDomain($headers, $this->authServIds()) !== null])->save();
+        }
+
         return $this->messagePayload($folder, $uid, $metadata, $text, $html);
     }
 
@@ -547,6 +760,8 @@ class MailboxImapService
             'to' => MailText::toUtf8((string) $metadata?->recipient),
             'date' => MailText::toUtf8((string) $metadata?->message_date),
             'seen' => (bool) $metadata?->seen,
+            // DMARC or aligned DKIM passed here, so a BIMI logo may be shown.
+            'sender_verified' => (bool) $metadata?->sender_verified,
             'raw_header' => '',
             'raw_body' => '',
             'text' => MailText::toUtf8($text),

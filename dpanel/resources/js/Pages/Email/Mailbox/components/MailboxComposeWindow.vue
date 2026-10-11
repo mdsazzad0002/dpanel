@@ -18,6 +18,10 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    sandbox: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const to = defineModel('to', { type: String, default: '' });
@@ -208,6 +212,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
                 <div v-if="fromEmail" :class="[ui.field, 'flex items-center gap-3 border-b px-4 py-2 text-sm']">
                     <span :class="[ui.label, 'w-14 shrink-0']">From</span>
                     <span :class="[ui.input, 'truncate']">{{ fromEmail }}</span>
+                    <span
+                        v-if="sandbox"
+                        class="ml-auto shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800"
+                        title="Sandbox mode: only recipients on this server receive this message"
+                    >Sandbox</span>
                 </div>
 
                 <!-- To -->

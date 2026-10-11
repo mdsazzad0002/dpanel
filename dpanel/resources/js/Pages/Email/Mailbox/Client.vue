@@ -59,6 +59,22 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    rawEndpoint: {
+        type: String,
+        default: '',
+    },
+    rawDownloadEndpoint: {
+        type: String,
+        default: '',
+    },
+    avatarEndpoint: {
+        type: String,
+        default: '',
+    },
+    photoEndpoint: {
+        type: String,
+        default: '',
+    },
     bulkEndpoint: {
         type: String,
         default: '',
@@ -71,6 +87,41 @@ const props = defineProps({
         }),
     },
 });
+
+// The mailbox's own profile photo, served by the avatar endpoint like any sender's.
+const photoVersion = ref(Number(props.mailbox.avatar_version || 0));
+const mailboxView = computed(() => ({
+    ...props.mailbox,
+    avatar_url: photoVersion.value && props.avatarEndpoint
+        ? `${props.avatarEndpoint}${props.avatarEndpoint.includes('?') ? '&' : '?'}${new URLSearchParams({ email: props.mailbox.email, v: String(photoVersion.value) })}`
+        : '',
+}));
+
+const uploadPhoto = async (file) => {
+    if (!props.photoEndpoint) return;
+    const data = new FormData();
+    data.append('photo', file);
+    try {
+        const response = await window.axios.post(props.photoEndpoint, data, { headers: { Accept: 'application/json' } });
+        photoVersion.value = Date.now();
+        pushToast(response?.data?.message || 'Profile photo updated.', 'success');
+    }
+    catch (error) {
+        pushToast(error?.response?.data?.errors?.photo?.[0] || error?.response?.data?.message || 'Photo could not be uploaded.');
+    }
+};
+
+const removePhoto = async () => {
+    if (!props.photoEndpoint) return;
+    try {
+        await window.axios.delete(props.photoEndpoint, { headers: { Accept: 'application/json' } });
+        photoVersion.value = 0;
+        pushToast('Profile photo removed.', 'success');
+    }
+    catch (error) {
+        pushToast(error?.response?.data?.message || 'Photo could not be removed.');
+    }
+};
 
 const composeOpen = ref(false);
 const loading = ref(false);
@@ -121,21 +172,12 @@ const toggleSidebar = () => {
 const toggleMobileSidebar = () => {
     sidebarOpen.value = !sidebarOpen.value;
 };
-const defaultFolderNames = ['INBOX', 'Sent', 'Drafts', 'Spam', 'Trash', 'Outbox', 'All Mail'];
 
 const currentPage = ref(1);
 const perPage = ref(50);
 
 function normalizeFolderName(value) {
     return String(value || '').trim().toLowerCase();
-}
-
-function buildDefaultFolders() {
-    return defaultFolderNames.map((name) => ({
-        name,
-        unread: 0,
-        exists: 0,
-    }));
 }
 
 function normalizeFolderRecord(folder) {
@@ -146,20 +188,14 @@ function normalizeFolderRecord(folder) {
     };
 }
 
+// Exactly the folders the server has. The sidebar used to add Spam, Outbox,
+// All Mail and others that may not exist, and opening one failed with
+// "Mailbox doesn't exist". The server creates Sent/Drafts/Junk/Trash itself.
 function mergeFolders(incoming = []) {
     const normalized = incoming.map(normalizeFolderRecord).filter((folder) => folder.name);
-    const byKey = new Map(normalized.map((folder) => [normalizeFolderName(folder.name), folder]));
+    const hasInbox = normalized.some((folder) => normalizeFolderName(folder.name) === 'inbox');
 
-    const base = buildDefaultFolders().map((folder) => {
-        const found = byKey.get(normalizeFolderName(folder.name));
-        return found ? { ...folder, ...found } : folder;
-    });
-
-    const extras = normalized.filter(
-        (folder) => !defaultFolderNames.some((name) => normalizeFolderName(name) === normalizeFolderName(folder.name)),
-    );
-
-    return [...base, ...extras];
+    return hasInbox ? normalized : [{ name: 'INBOX', unread: 0, exists: 0 }, ...normalized];
 }
 
 const folders = ref(mergeFolders(props.folders));
@@ -249,7 +285,7 @@ const folderLabel = (name) => {
     return name;
 };
 const activeFolderUnread = computed(() => Number(folders.value.find((f) => f.name === activeFolder.value)?.unread) || 0);
-const folderOrder = ['inbox', 'sent', 'outbox', 'drafts', 'spam', 'trash', 'all mail'];
+const folderOrder = ['inbox', 'sent', 'outbox', 'drafts', 'spam', 'junk', 'trash', 'all mail'];
 
 const compactFolders = computed(() => {
     const items = [...folders.value];
@@ -362,6 +398,10 @@ const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = 
 
         if (!data.success) {
             pushToast(data.message || 'Mailbox could not be loaded.');
+            // The folder is gone (deleted in another app): go back to the Inbox.
+            if (data.folder_missing && normalizeFolderName(folder) !== 'inbox') {
+                loadMailbox('INBOX', null, true);
+            }
         }
         else if (data.cached && data.syncing && !followUp) {
             // The cached list is shown instantly; pick up the background sync result once.
@@ -813,7 +853,7 @@ watch(() => messageFilter.value, () => {
             ]"
         >
             <MailboxTopbar
-                :mailbox="mailbox"
+                :mailbox="mailboxView"
                 :is-dark="isDark"
                 :search-query="searchQuery"
                 :active-filter-label="activeFilterLabel"
@@ -833,7 +873,21 @@ watch(() => messageFilter.value, () => {
                 @toggle-theme="toggleTheme"
                 @open-mailbox="openMailbox"
                 @toggle-mobile-sidebar="toggleMobileSidebar"
+                @upload-photo="uploadPhoto"
+                @remove-photo="removePhoto"
             />
+
+            <div
+                v-if="mailbox.delivery_mode === 'sandbox'"
+                role="status"
+                :class="isDark
+                    ? 'shrink-0 border-b border-amber-900/40 bg-amber-950/30 px-4 py-2 text-sm text-amber-200'
+                    : 'shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800'"
+            >
+                <i class="bi bi-cone-striped mr-1"></i>
+                <span class="font-medium">Sandbox mode.</span>
+                Mail you send reaches mailboxes on this server only; nothing goes to outside addresses.
+            </div>
 
             <div v-if="statusMessage" :class="isDark
                 ? 'shrink-0 border-b border-emerald-900/40 bg-emerald-950/30 px-4 py-2 text-sm text-emerald-200'
@@ -858,6 +912,9 @@ watch(() => messageFilter.value, () => {
                     :selected-uids="selectedUids"
                     :bulk-working="bulkWorking"
                     :self-email="mailbox.email"
+                    :raw-endpoint="rawEndpoint"
+                    :raw-download-endpoint="rawDownloadEndpoint"
+                    :avatar-endpoint="avatarEndpoint"
                     @open-message="openMessage"
                     @close-preview="closePreview"
                     @start-compose="startCompose"
@@ -885,6 +942,7 @@ watch(() => messageFilter.value, () => {
             :is-dark="isDark"
             :sending="sending"
             :from-email="mailbox.email"
+            :sandbox="mailbox.delivery_mode === 'sandbox'"
             @send="submitSend"
             @discard="discardCompose"
         />

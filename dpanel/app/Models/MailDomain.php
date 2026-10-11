@@ -28,6 +28,7 @@ class MailDomain extends Model
         'dkim_public_key',
         'status',
         'assigned_user_id',
+        'bimi_logo_path',
     ];
 
     protected $hidden = [

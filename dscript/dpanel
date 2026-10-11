@@ -106,6 +106,7 @@ install_mail_services() {
   systemctl enable --now dovecot
   panel_configure_postfix_sql || return 1
   "${SCRIPT_DIR}/scripts/generate-dkim.sh" --configure-only
+  panel_ensure_spam_filter
 }
 
 install_node_runtime() {
