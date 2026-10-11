@@ -99,37 +99,49 @@ class EmailController extends Controller
         ]);
 
         $mailHost = $this->clientMailHost((string) $mailbox->domain);
-        $body = implode("\n", [
-            'Your dPanel email client configuration',
-            '',
-            'Mailbox: '.$mailbox->email,
-            '',
-            'Incoming mail (IMAP)',
-            'Server: '.$mailHost,
-            'Port: 993',
-            'Encryption: SSL/TLS',
-            'Authentication: Normal password',
-            'Username: '.$mailbox->email,
-            '',
-            'Outgoing mail (SMTP)',
-            'Server: '.$mailHost,
-            'Port: 465',
-            'Encryption: SSL/TLS',
-            'Alternative: Port 587 with STARTTLS',
-            'SMTP authentication: Required',
-            'Username: '.$mailbox->email,
-            '',
-            'Use the mailbox password created in dPanel. For security, the password is not included in this email.',
-            '',
-            'This message also confirms that outbound email delivery from this mailbox is working.',
-        ]);
+        $sections = [
+            ['title' => 'Incoming mail (IMAP)', 'rows' => [
+                'Server' => $mailHost,
+                'Port' => '993',
+                'Encryption' => 'SSL/TLS',
+                'Authentication' => 'Normal password',
+                'Username' => $mailbox->email,
+            ]],
+            ['title' => 'Outgoing mail (SMTP)', 'rows' => [
+                'Server' => $mailHost,
+                'Port' => '465',
+                'Encryption' => 'SSL/TLS',
+                'Alternative' => 'Port 587 with STARTTLS',
+                'SMTP authentication' => 'Required',
+                'Username' => $mailbox->email,
+            ]],
+        ];
+        $passwordNote = 'Use the mailbox password created in dPanel. For security, the password is not included in this email.';
+        $deliveryNote = 'This message also confirms that outbound email delivery from this mailbox is working.';
+
+        $lines = ['Your dPanel email client configuration', '', 'Mailbox: '.$mailbox->email];
+        foreach ($sections as $section) {
+            $lines[] = '';
+            $lines[] = $section['title'];
+            foreach ($section['rows'] as $label => $value) {
+                $lines[] = $label.': '.$value;
+            }
+        }
+        $body = implode("\n", [...$lines, '', $passwordNote, '', $deliveryNote]);
+        $html = view('emails.connection-guide', [
+            'email' => (string) $mailbox->email,
+            'sections' => $sections,
+            'passwordNote' => $passwordNote,
+            'deliveryNote' => $deliveryNote,
+        ])->render();
 
         try {
             $mailboxImapService->sendMessage(
                 $mailbox,
                 [(string) $validated['recipient']],
                 'Email configuration for '.$mailbox->email,
-                $body
+                $body,
+                html: $html
             );
         } catch (RuntimeException $exception) {
             return redirect()
