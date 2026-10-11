@@ -116,7 +116,9 @@ onBeforeUnmount(() => observer?.disconnect());
             <div class="min-w-0 flex-1 pt-0.5">
                 <div class="flex items-baseline gap-3">
                     <p class="flex min-w-0 flex-1 items-baseline gap-1.5">
-                        <span :class="[ui.strong, item.seen ? 'font-medium' : 'font-semibold', 'truncate text-[15px]']">{{ senderLabel }}</span>
+                        <ContactCard :address="item.from" :is-dark="isDark" :avatar-endpoint="avatarEndpoint" @compose="emit('compose-to', $event)">
+                            <span :class="[ui.strong, item.seen ? 'font-medium' : 'font-semibold', 'truncate text-[15px] hover:underline']">{{ senderLabel }}</span>
+                        </ContactCard>
                         <span v-if="open && !fromSelf" :class="[ui.muted, 'truncate text-xs']">&lt;{{ emailOf(item.from) }}&gt;</span>
                     </p>
                     <time :class="[ui.muted, 'shrink-0 text-xs']" :title="item.date">{{ shortDate }}</time>

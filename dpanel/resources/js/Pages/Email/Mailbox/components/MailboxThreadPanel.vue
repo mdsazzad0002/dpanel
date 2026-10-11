@@ -108,6 +108,18 @@ const replyMode = ref('');
 const replyTarget = ref(null);
 const replyBox = ref(null);
 const startReply = async (mode, target = null) => {
+    // Like Gmail, the general Reply buttons answer the newest message of the conversation.
+    const latest = threadAfter.value[threadAfter.value.length - 1];
+    if (!target && latest && props.messageEndpoint) {
+        try {
+            const { data } = await window.axios.get(props.messageEndpoint, {
+                params: { folder: latest.folder, uid: latest.uid },
+                headers: { Accept: 'application/json' },
+            });
+            if (data?.success) target = { ...data.messageData, folder: latest.folder };
+        }
+        catch { /* fall back to the open message */ }
+    }
     replyTarget.value = target;
     replyMode.value = mode;
     await nextTick();
@@ -731,9 +743,11 @@ onBeforeUnmount(() => {
                     <!-- Wide: single line. Narrow: two lines. -->
                     <div class="min-w-0 flex-1 lg:flex lg:items-center lg:gap-4">
                         <div class="flex items-center justify-between gap-2 lg:w-52 lg:shrink-0">
-                            <p :class="['truncate text-sm', item.seen ? ['font-normal', ui.text] : ['font-semibold', ui.strong]]" :title="showsRecipient(item) ? item.to : item.from">
-                                {{ counterpartLabel(item) }}
-                            </p>
+                            <ContactCard :address="counterpartAddress(item)" :is-dark="isDark" :avatar-endpoint="avatarEndpoint" @compose="emit('compose-to', $event)">
+                                <p :class="['truncate text-sm', item.seen ? ['font-normal', ui.text] : ['font-semibold', ui.strong]]">
+                                    {{ counterpartLabel(item) }}
+                                </p>
+                            </ContactCard>
                             <span :class="[item.seen ? ui.muted : 'font-semibold text-blue-600', 'shrink-0 text-xs tabular-nums lg:hidden']">
                                 {{ formatListDate(item.date) }}
                             </span>
@@ -966,6 +980,8 @@ onBeforeUnmount(() => {
                                         class="mt-0.5"
                                         @load="loadSource"
                                         @show-original="selectTab('raw')"
+                                        :avatar-endpoint="avatarEndpoint"
+                                        @compose-to="emit('compose-to', $event)"
                                     />
                                 </div>
                             </header>

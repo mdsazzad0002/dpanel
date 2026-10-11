@@ -138,8 +138,14 @@ class MailAvatarResolver
      */
     private function remember(string $key, callable $lookup): ?array
     {
-        $value = Cache::remember('mail-avatar:'.$key, self::TTL, fn () => $lookup() ?? false);
+        // Base64, because the database cache store rejects raw image bytes.
+        $value = Cache::remember('mail-avatar:'.$key, self::TTL, function () use ($lookup) {
+            $image = $lookup();
 
-        return is_array($value) ? $value : null;
+            return $image === null ? false : ['base64' => base64_encode($image['body']), 'type' => $image['type']];
+        });
+        $body = is_array($value) && isset($value['base64']) ? base64_decode((string) $value['base64'], true) : false;
+
+        return $body === false ? null : ['body' => $body, 'type' => (string) $value['type']];
     }
 }

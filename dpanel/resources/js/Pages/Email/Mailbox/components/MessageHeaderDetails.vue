@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { displayName, emailOf, sameAddress, splitAddresses } from './mailAddresses';
+import ContactCard from './ContactCard.vue';
 
 // Gmail's "to me ▾": who the message went to, and a popover with the header
 // details (from, to, date, mailed-by, signed-by, encryption). The details
@@ -13,9 +14,10 @@ const props = defineProps({
     error: { type: String, default: '' },
     messageKey: { type: String, default: '' },
     isDark: { type: Boolean, default: false },
+    avatarEndpoint: { type: String, default: '' },
 });
 
-const emit = defineEmits(['load', 'show-original']);
+const emit = defineEmits(['load', 'show-original', 'compose-to']);
 
 const root = ref(null);
 const open = ref(false);
@@ -101,7 +103,9 @@ onBeforeUnmount(() => {
                 <dl class="grid grid-cols-[6.5rem_1fr] gap-x-4 gap-y-2">
                     <dt :class="[ui.label, 'text-right']">from:</dt>
                     <dd class="min-w-0 break-words">
-                        <span :class="[ui.strong, 'font-semibold']">{{ displayName(message.from) || emailOf(message.from) }}</span>
+                        <ContactCard :address="message.from" :is-dark="isDark" :avatar-endpoint="avatarEndpoint" @compose="emit('compose-to', $event)">
+                            <span :class="[ui.strong, 'cursor-pointer font-semibold hover:underline']">{{ displayName(message.from) || emailOf(message.from) }}</span>
+                        </ContactCard>
                         <span v-if="displayName(message.from)" :class="[ui.label, 'block']">&lt;{{ emailOf(message.from) }}&gt;</span>
                     </dd>
 
@@ -111,7 +115,16 @@ onBeforeUnmount(() => {
                     </template>
 
                     <dt :class="[ui.label, 'text-right']">to:</dt>
-                    <dd :class="[ui.value, 'min-w-0 break-words']">{{ message.to || '(no recipient)' }}</dd>
+                    <dd :class="[ui.value, 'min-w-0 break-words']">
+                        <template v-if="recipients.length">
+                            <span v-for="(address, i) in recipients" :key="address" class="inline">
+                                <ContactCard :address="address" :is-dark="isDark" :avatar-endpoint="avatarEndpoint" @compose="emit('compose-to', $event)">
+                                    <span class="cursor-pointer hover:underline">{{ address }}</span>
+                                </ContactCard><template v-if="i < recipients.length - 1">, </template>
+                            </span>
+                        </template>
+                        <template v-else>(no recipient)</template>
+                    </dd>
 
                     <template v-if="cc">
                         <dt :class="[ui.label, 'text-right']">cc:</dt>

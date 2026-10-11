@@ -66,8 +66,13 @@ class MailImageProxy
     {
         $cacheKey = 'mail-image:'.sha1($url);
         $cached = Cache::get($cacheKey);
-        if (is_array($cached)) {
-            return $cached;
+        // Stored base64: the database cache store keeps values in a text
+        // column, which rejects raw image bytes and failed every request.
+        if (is_array($cached) && isset($cached['base64'], $cached['type'])) {
+            $body = base64_decode((string) $cached['base64'], true);
+            if ($body !== false) {
+                return ['body' => $body, 'type' => (string) $cached['type']];
+            }
         }
 
         for ($hop = 0; $hop <= self::MAX_REDIRECTS; $hop++) {
@@ -88,7 +93,7 @@ class MailImageProxy
 
             $image = ['body' => $response['body'], 'type' => $response['type']];
             if (strlen($image['body']) <= self::MAX_CACHED_BYTES) {
-                Cache::put($cacheKey, $image, self::CACHE_TTL);
+                Cache::put($cacheKey, ['base64' => base64_encode($image['body']), 'type' => $image['type']], self::CACHE_TTL);
             }
 
             return $image;

@@ -19,6 +19,7 @@ const contacts = useMailContacts();
 const open = ref(false);
 const saving = ref(false);
 const copied = ref(false);
+const failed = ref('');
 let timer = null;
 
 const email = computed(() => emailOf(props.address).toLowerCase());
@@ -45,9 +46,13 @@ const hide = () => {
 const toggleSaved = async () => {
     if (!contacts || saving.value) return;
     saving.value = true;
+    failed.value = '';
     try {
         if (saved.value) await contacts.remove(contact.value);
         else await contacts.save(email.value, name.value);
+    }
+    catch (error) {
+        failed.value = error?.response?.data?.message || error?.message || 'Could not update contacts.';
     }
     finally {
         saving.value = false;
@@ -98,19 +103,25 @@ onBeforeUnmount(() => clearTimeout(timer));
                         <p :class="[ui.muted, 'truncate text-sm']">{{ email }}</p>
                         <p v-if="saved" class="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400"><i class="bi bi-person-check-fill mr-1"></i>In your contacts</p>
                     </div>
-                    <button
-                        type="button"
-                        :class="[ui.icon, 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition']"
-                        :title="saved ? 'Remove from contacts' : 'Add to contacts'"
-                        :disabled="saving"
-                        @click="toggleSaved"
-                    >
-                        <i :class="['bi text-lg', saving ? 'bi-arrow-repeat animate-spin' : saved ? 'bi-person-dash' : 'bi-person-plus']"></i>
-                    </button>
+
                 </div>
+                <p v-if="failed" class="mt-3 text-xs text-rose-600">{{ failed }}</p>
                 <div class="mt-4 flex items-center gap-2">
                     <button type="button" :class="[ui.primary, 'inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-full text-sm font-medium transition']" @click="compose">
                         <i class="bi bi-envelope"></i> Send mail
+                    </button>
+                    <button
+                        type="button"
+                        :class="[saved ? 'border-emerald-300 text-emerald-700 hover:border-rose-300 hover:text-rose-600 dark:border-emerald-800 dark:text-emerald-300' : ui.ghost, 'group/save inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-full border text-sm font-medium transition disabled:opacity-60']"
+                        :title="saved ? 'Remove from contacts' : 'Save to contacts'"
+                        :disabled="saving"
+                        @click="toggleSaved"
+                    >
+                        <i :class="['bi', saving ? 'bi-arrow-repeat animate-spin' : saved ? 'bi-person-check-fill group-hover/save:hidden' : 'bi-person-plus']"></i>
+                        <i v-if="saved && !saving" class="bi bi-person-dash hidden group-hover/save:inline"></i>
+                        <span v-if="saved" class="group-hover/save:hidden">Saved</span>
+                        <span v-if="saved" class="hidden group-hover/save:inline">Remove</span>
+                        <span v-else>Save contact</span>
                     </button>
                     <button type="button" :class="[ui.ghost, 'flex h-10 w-10 items-center justify-center rounded-full border transition']" :title="copied ? 'Copied' : 'Copy email address'" @click="copy">
                         <i :class="['bi', copied ? 'bi-check2' : 'bi-copy']"></i>
