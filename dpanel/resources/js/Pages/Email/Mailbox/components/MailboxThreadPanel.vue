@@ -380,6 +380,30 @@ const copySource = async () => {
 };
 
 const analysis = computed(() => source.value?.analysis || null);
+const spamCheck = computed(() => analysis.value?.spam_check || null);
+const spamStyle = computed(() => ({
+    spam: {
+        title: 'Likely spam or phishing',
+        hint: 'Do not open links or attachments, and never reply with passwords or payment details.',
+        icon: 'bi-shield-exclamation',
+        box: 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-100',
+        bar: 'bg-rose-500',
+    },
+    suspicious: {
+        title: 'Suspicious',
+        hint: 'Some spam signs. Check the sender before trusting links or attachments.',
+        icon: 'bi-shield-fill-exclamation',
+        box: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100',
+        bar: 'bg-amber-500',
+    },
+    clean: {
+        title: 'Looks clean',
+        hint: 'No strong spam or phishing signs in this message.',
+        icon: 'bi-shield-check',
+        box: 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-100',
+        bar: 'bg-emerald-500',
+    },
+}[spamCheck.value?.verdict] || {}));
 
 // Gmail-style verdict colours: pass green, fail red, anything else neutral.
 const verdictClass = (result) => {
@@ -823,6 +847,40 @@ onBeforeUnmount(() => {
                                 <div v-if="analysis.sandbox" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
                                     <i class="bi bi-cone-striped mr-1"></i> Sent in sandbox mode: {{ analysis.sandbox }}
                                 </div>
+
+                                <section v-if="spamCheck" :class="[spamStyle.box, 'rounded-xl border p-4']" aria-label="Spam check">
+                                    <div class="flex flex-wrap items-center gap-3">
+                                        <i :class="['bi text-2xl', spamStyle.icon]"></i>
+                                        <div class="min-w-0 flex-1">
+                                            <p class="font-semibold">{{ spamStyle.title }}</p>
+                                            <p class="text-xs opacity-80">{{ spamStyle.hint }}</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-2xl font-semibold tabular-nums">{{ spamCheck.score.toFixed(1) }}</p>
+                                            <p class="text-[11px] opacity-80">spam score · 5.0 = spam</p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10" role="meter" :aria-valuenow="spamCheck.score" aria-valuemin="0" aria-valuemax="10" aria-label="Spam score">
+                                        <div :class="[spamStyle.bar, 'h-full rounded-full']" :style="{ width: `${Math.min(100, spamCheck.score * 10)}%` }"></div>
+                                    </div>
+
+                                    <ul v-if="spamCheck.rules.length" class="mt-3 space-y-1.5">
+                                        <li v-for="rule in spamCheck.rules" :key="rule.name" class="flex gap-3 text-xs">
+                                            <span class="w-10 shrink-0 text-right font-semibold tabular-nums">+{{ rule.points.toFixed(1) }}</span>
+                                            <span class="min-w-0 break-words"><span class="font-mono text-[11px] opacity-70">{{ rule.name }}</span> {{ rule.description }}</span>
+                                        </li>
+                                    </ul>
+                                    <p v-else class="mt-3 text-xs">No spam signs found.</p>
+
+                                    <p v-if="spamCheck.links.count" class="mt-3 break-words text-xs opacity-80">
+                                        <i class="bi bi-link-45deg"></i>
+                                        {{ spamCheck.links.count }} {{ spamCheck.links.count === 1 ? 'link' : 'links' }} to {{ spamCheck.links.domains.join(', ') || 'unknown hosts' }}
+                                    </p>
+                                    <p v-if="spamCheck.attachments.length" class="mt-1 break-words text-xs">
+                                        <i class="bi bi-paperclip"></i>
+                                        <span v-for="(file, i) in spamCheck.attachments" :key="i" :class="file.risk === 'high' ? 'font-semibold text-rose-700 dark:text-rose-300' : ''">{{ file.name }}<template v-if="i < spamCheck.attachments.length - 1">, </template></span>
+                                    </p>
+                                </section>
 
                                 <dl class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-4 gap-y-2">
                                     <template v-for="row in [

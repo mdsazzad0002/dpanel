@@ -8,6 +8,7 @@ use App\Models\MailboxMessageMetadata;
 use App\Services\Mail\MailboxImapService;
 use App\Services\Mail\MailImageProxy;
 use App\Services\Mail\MailMessageAnalyzer;
+use App\Services\Mail\MailSpamAnalyzer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -140,10 +141,10 @@ class MailClientController extends Controller
     }
 
     /**
-     * "Show original": the message source plus a header analysis. Loaded
+     * "Show original": the message source plus header and spam analysis. Loaded
      * only when the Original tab is opened, so reading mail costs nothing extra.
      */
-    public function raw(Request $request, string $token, string $id, MailboxImapService $mailboxImapService, MailMessageAnalyzer $analyzer): JsonResponse
+    public function raw(Request $request, string $token, string $id, MailboxImapService $mailboxImapService, MailMessageAnalyzer $analyzer, MailSpamAnalyzer $spamAnalyzer): JsonResponse
     {
         $mailbox = Mailbox::query()->find($id);
         abort_if($mailbox === null, 404);
@@ -163,6 +164,9 @@ class MailClientController extends Controller
             return response()->json(['success' => false, 'message' => 'Message not found.']);
         }
 
+        $analysis = $analyzer->analyze($raw['headers']);
+        $analysis['spam_check'] = $spamAnalyzer->analyze($raw['raw'], $analysis);
+
         return response()->json([
             'success' => true,
             'message' => null,
@@ -170,7 +174,7 @@ class MailClientController extends Controller
             'raw' => mb_convert_encoding($raw['raw'], 'UTF-8', 'UTF-8'),
             'size' => $raw['size'],
             'truncated' => $raw['truncated'],
-            'analysis' => $analyzer->analyze($raw['headers']),
+            'analysis' => $analysis,
         ]);
     }
 
