@@ -1,12 +1,13 @@
 <script setup>
 import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Head, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 
 const props = defineProps({
     services: { type: Array, default: () => [] },
     connection: { type: Object, default: () => ({}) },
+    mongoExpress: { type: Object, default: () => ({}) },
 });
 
 const page = usePage();
@@ -24,6 +25,11 @@ const busyService = ref(null);
 const refreshing = ref(false);
 const message = ref(null);
 const revealed = ref(false);
+
+const mongodService = computed(() => state.value.services.find((service) => service.key === 'mongodb'));
+// Signs in through dPanel (one-time link); the gateway holds the login.
+const mongoExpressLoginUrl = computed(() => panelRoute('databases.mongodb.express'));
+const flashError = computed(() => page.props.flash?.error || '');
 
 const connectionString = computed(() => {
     const c = state.value.connection;
@@ -45,6 +51,8 @@ const applyState = (data) => {
 const toggle = async (service) => {
     const turningOn = !service.active;
     if (!turningOn && !confirm(`Turn off ${service.label}? It will also stay off after a reboot.`)) return;
+    if (turningOn && service.key === 'mongo-express' && !mongodService.value?.active
+        && !confirm('MongoDB is off. mongo-express needs it to show anything. Turn on MongoDB first?\n\nOK continues anyway.')) return;
 
     busyService.value = service.key;
     message.value = null;
@@ -87,18 +95,21 @@ const copy = async (value) => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">MongoDB</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">MongoDB is installed but off by default. Turn it on here when you need it.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">MongoDB and mongo-express are installed but off by default. Turn them on here when you need them.</p>
             </div>
         </template>
 
         <div class="space-y-6">
+            <div v-if="flashError && !message" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+                {{ flashError }}
+            </div>
             <div v-if="message" :class="message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'" class="rounded-md border px-4 py-3 text-sm">
                 {{ message.text }}
             </div>
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-center justify-between gap-3">
-                    <h2 class="text-base font-semibold">Service</h2>
+                    <h2 class="text-base font-semibold">Services</h2>
                     <button type="button" :disabled="refreshing" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" @click="refresh">
                         {{ refreshing ? 'Refreshing…' : 'Refresh Status' }}
                     </button>
@@ -138,13 +149,15 @@ const copy = async (value) => {
                             >
                                 {{ busyService === service.key ? 'Working…' : service.active ? 'Turn Off' : 'Turn On' }}
                             </button>
-                            <Link
-                                v-if="service.active"
-                                :href="panelRoute('databases.mongodb.admin')"
+                            <a
+                                v-if="service.key === 'mongo-express' && service.active"
+                                :href="mongoExpressLoginUrl"
+                                target="_blank"
+                                rel="noopener"
                                 class="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200"
                             >
-                                Open Mongo Admin
-                            </Link>
+                                Open mongo-express
+                            </a>
                             <p v-if="!service.installed" class="text-xs text-slate-500 dark:text-slate-400">
                                 Install on the server with <code>sudo dpanel mongodb install</code>.
                             </p>
@@ -170,6 +183,9 @@ const copy = async (value) => {
                     </div>
                 </dl>
                 <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">MongoDB only listens on this server (localhost), with access control on. The admin user has the root role.</p>
+                <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    mongo-express runs at <code>{{ mongoExpress.path || '/mongo-express/' }}</code> on the panel domain and signs you in through dPanel; it has no password to type.
+                </p>
             </section>
         </div>
     </AuthenticatedLayout>

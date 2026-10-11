@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\MongodbServiceManager;
+use App\Services\MongoExpressSsoService;
 use Illuminate\Support\Facades\Http;
 use Mockery\MockInterface;
 use Tests\TestCase;
@@ -49,6 +50,7 @@ class MongodbControllerTest extends TestCase
         $manager = new MongodbServiceManager;
 
         $this->assertTrue($manager->isKnownService('mongodb'));
+        $this->assertTrue($manager->isKnownService('mongo-express'));
         $this->assertFalse($manager->isKnownService('postgresql'));
         $this->assertFalse($manager->setRunning('pgadmin', true)['success']);
     }
@@ -68,6 +70,46 @@ class MongodbControllerTest extends TestCase
         Http::assertSent(fn ($request) => $request->url() === 'http://drust.test/api/v1/mongodb/service'
             && $request['service'] === 'mongodb'
             && $request['enabled'] === false);
+    }
+
+    public function test_toggle_accepts_mongo_express(): void
+    {
+        $this->mock(MongodbServiceManager::class, function (MockInterface $mock) {
+            $mock->shouldReceive('isKnownService')->with('mongo-express')->andReturnTrue();
+            $mock->shouldReceive('setRunning')->once()->with('mongo-express', true)->andReturn(['success' => true]);
+            $mock->shouldReceive('statuses')->andReturn([]);
+        });
+
+        $this->request()
+            ->postJson("/cpsess{$this->token}/databases/mongodb/mongo-express/toggle", ['running' => true])
+            ->assertOk();
+    }
+
+    public function test_open_mongo_express_redirects_to_the_one_time_link(): void
+    {
+        config([
+            'serverpanel.execution_api_base_url' => 'http://drust.test',
+            'serverpanel.execution_api_token' => 'secret',
+        ]);
+        $ticket = str_repeat('a', 64);
+        Http::fake([
+            'drust.test/api/v1/mongodb/express-login' => Http::response(['success' => true, 'message' => 'ok', 'data' => ['url' => "/mongo-express/dpanel-sso?ticket={$ticket}"]]),
+        ]);
+
+        $this->request()
+            ->get("/cpsess{$this->token}/databases/mongodb/mongo-express")
+            ->assertRedirect("/mongo-express/dpanel-sso?ticket={$ticket}");
+
+        Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer secret'));
+    }
+
+    public function test_sso_service_refuses_a_link_outside_mongo_express(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        Http::fake(['drust.test/*' => Http::response(['success' => true, 'data' => ['url' => 'https://evil.example/']])]);
+
+        $this->expectException(\RuntimeException::class);
+        (new MongoExpressSsoService)->url();
     }
 
     private function request(): static

@@ -17,7 +17,7 @@
 
 use std::{
     fs,
-    io::{Read, Write},
+    io::Write,
     os::unix::fs::{PermissionsExt, chown},
     path::{Path, PathBuf},
     process::Command,
@@ -119,7 +119,7 @@ pub fn issue(target: &Target, port: u16) -> Result<String, String> {
 /// Returns the pgAdmin identity for a valid, unexpired ticket and makes sure
 /// it can never be used again.
 pub fn consume(ticket: &str) -> Option<String> {
-    consume_in(Path::new(TICKET_DIR), ticket, SystemTime::now())
+    crate::sso_ticket::consume(Path::new(TICKET_DIR), ticket, SystemTime::now(), TICKET_TTL)
 }
 
 pub fn shared_secret() -> Option<String> {
@@ -129,65 +129,8 @@ pub fn shared_secret() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn consume_in(dir: &Path, ticket: &str, now: SystemTime) -> Option<String> {
-    if ticket.len() != 64 || !ticket.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    let path = dir.join(ticket);
-    // Renaming is atomic: of two concurrent requests with the same ticket only
-    // one wins, and the file is gone before its contents are trusted.
-    let claimed = dir.join(format!("{ticket}.claimed"));
-    fs::rename(&path, &claimed).ok()?;
-    let issued = fs::metadata(&claimed).and_then(|m| m.modified()).ok();
-    let identity = fs::read_to_string(&claimed).ok();
-    let _ = fs::remove_file(&claimed);
-
-    // A timestamp slightly ahead of `now` just means the ticket is brand new.
-    let age = now.duration_since(issued?).unwrap_or_default();
-    if age > TICKET_TTL {
-        return None;
-    }
-    identity
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-
 fn write_ticket(identity: &str) -> Result<String, String> {
-    write_ticket_in(Path::new(TICKET_DIR), identity, SystemTime::now())
-}
-
-fn write_ticket_in(dir: &Path, identity: &str, now: SystemTime) -> Result<String, String> {
-    fs::create_dir_all(dir).map_err(|e| format!("cannot create ticket dir: {e}"))?;
-    fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
-        .map_err(|e| format!("cannot secure ticket dir: {e}"))?;
-    purge_stale_tickets(dir, now);
-
-    let ticket = random_hex(32)?;
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode_0600()
-        .open(dir.join(&ticket))
-        .map_err(|e| format!("cannot write ticket: {e}"))?;
-    file.write_all(identity.as_bytes())
-        .map_err(|e| format!("cannot write ticket: {e}"))?;
-    Ok(ticket)
-}
-
-fn purge_stale_tickets(dir: &Path, now: SystemTime) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let stale = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .map(|modified| now.duration_since(modified).unwrap_or_default() > TICKET_TTL * 5)
-            .unwrap_or(true);
-        if stale {
-            let _ = fs::remove_file(entry.path());
-        }
-    }
+    crate::sso_ticket::write(Path::new(TICKET_DIR), identity, SystemTime::now(), TICKET_TTL)
 }
 
 trait OpenOptionsMode {
@@ -199,14 +142,6 @@ impl OpenOptionsMode for fs::OpenOptions {
         use std::os::unix::fs::OpenOptionsExt;
         self.mode(0o600)
     }
-}
-
-fn random_hex(bytes: usize) -> Result<String, String> {
-    let mut buffer = vec![0u8; bytes];
-    fs::File::open("/dev/urandom")
-        .and_then(|mut file| file.read_exact(&mut buffer))
-        .map_err(|e| format!("cannot read random bytes: {e}"))?;
-    Ok(buffer.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// pgpass fields escape `\` and `:` with a backslash.
@@ -355,37 +290,6 @@ fn last_line(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("pgadmin-sso-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        dir
-    }
-
-    #[test]
-    fn a_ticket_works_exactly_once() {
-        let dir = temp_dir("once");
-        let now = SystemTime::now();
-        let ticket = write_ticket_in(&dir, "dpanel-db-shop", now).unwrap();
-        assert_eq!(ticket.len(), 64);
-        assert_eq!(consume_in(&dir, &ticket, now).as_deref(), Some("dpanel-db-shop"));
-        assert_eq!(consume_in(&dir, &ticket, now), None);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn expired_and_malformed_tickets_are_rejected() {
-        let dir = temp_dir("expired");
-        let now = SystemTime::now();
-        let ticket = write_ticket_in(&dir, "dpanel-admin", now).unwrap();
-        assert_eq!(consume_in(&dir, &ticket, now + Duration::from_secs(61)), None);
-        // An expired ticket is still burned.
-        assert!(!dir.join(&ticket).exists());
-
-        assert_eq!(consume_in(&dir, "../../etc/passwd", now), None);
-        assert_eq!(consume_in(&dir, &"g".repeat(64), now), None);
-        let _ = fs::remove_dir_all(&dir);
-    }
 
     #[test]
     fn each_database_gets_its_own_identity() {
