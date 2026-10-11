@@ -7,6 +7,7 @@ use App\Models\MailboxMessageMetadata;
 use App\Models\MailboxSyncState;
 use App\Support\MailHtml;
 use App\Support\MailText;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class MailboxImapService
@@ -79,6 +80,62 @@ class MailboxImapService
     }
 
     /**
+     * The message exactly as stored, like Gmail's "Show original". Fetched on
+     * demand and never cached. The server writes it to a disk-backed stream,
+     * so a large attachment never sits in memory; only the first $maxBytes
+     * are returned for display.
+     *
+     * @return array{headers: string, raw: string, size: int, truncated: bool}|null
+     */
+    public function rawMessage(Mailbox $mailbox, string $folder, int $uid, int $maxBytes = 1048576): ?array
+    {
+        $file = fopen('php://temp/maxmemory:1048576', 'w+b');
+        try {
+            $headers = $this->saveRawMessage($mailbox, $folder, $uid, $file);
+            if ($headers === null) {
+                return null;
+            }
+
+            $size = (int) ftell($file);
+            rewind($file);
+
+            return [
+                'headers' => $headers,
+                'raw' => (string) stream_get_contents($file, $maxBytes),
+                'size' => $size,
+                'truncated' => $size > $maxBytes,
+            ];
+        } finally {
+            fclose($file);
+        }
+    }
+
+    /**
+     * Write the full RFC 822 message (the .eml) to $target.
+     *
+     * @param  resource  $target
+     * @return string|null the header block, or null when the message does not exist
+     */
+    public function saveRawMessage(Mailbox $mailbox, string $folder, int $uid, $target): ?string
+    {
+        $stream = $this->open($mailbox, $folder);
+        try {
+            $headers = @imap_fetchheader($stream, $uid, FT_UID);
+            if (! is_string($headers) || trim($headers) === '') {
+                return null;
+            }
+            // Section "" is the whole message; FT_PEEK leaves it unread.
+            if (! @imap_savebody($stream, $target, '', FT_UID | FT_PEEK)) {
+                throw new RuntimeException(imap_last_error() ?: 'Unable to read the message source.');
+            }
+
+            return $headers;
+        } finally {
+            $this->close($stream);
+        }
+    }
+
+    /**
      * @return array{folders: array<int, array{name: string, unread: int, exists: int}>, messages: array<int, array<string, mixed>>, message: array<string, mixed>|null}
      */
     public function loadMailbox(Mailbox $mailbox, string $folder = 'INBOX', ?int $uid = null, int $limit = 40): array
@@ -131,8 +188,9 @@ class MailboxImapService
      * @param  array<int, string>  $to
      * @param  array<int, string>  $cc
      * @param  array<int, string>  $bcc
+     * @return array{held: array<int, string>} held: external recipients a sandbox mailbox did not send to
      */
-    public function sendMessage(Mailbox $mailbox, array $to, string $subject, string $body, array $cc = [], array $bcc = []): void
+    public function sendMessage(Mailbox $mailbox, array $to, string $subject, string $body, array $cc = [], array $bcc = []): array
     {
         $subject = trim($subject);
         $body = trim($body);
@@ -157,27 +215,88 @@ class MailboxImapService
             'Content-Type: text/plain; charset=UTF-8',
             'Content-Transfer-Encoding: 8bit',
         ];
-        if ($cc !== []) {
-            $headers[] = 'Cc: '.implode(', ', $cc);
-        }
 
         $encodedSubject = function_exists('mb_encode_mimeheader')
             ? mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n")
             : $subject;
 
         $body = str_replace(["\r\n", "\r"], "\n", $body);
-        // sendmail runs with -t, so Bcc recipients are delivered and the header is stripped.
-        $sendHeaders = $bcc !== [] ? array_merge($headers, ['Bcc: '.implode(', ', $bcc)]) : $headers;
-        $ok = @mail(implode(', ', $to), $encodedSubject, $body, implode("\r\n", $sendHeaders), '-f'.$from);
-        if (! $ok) {
-            throw new RuntimeException('Message could not be sent.');
+
+        // Sandbox (test) mailboxes only reach mailboxes hosted here. Postfix
+        // enforces the same rule for SMTP clients; filtering here as well
+        // lets the panel say which recipients were held back.
+        $send = ['to' => $to, 'cc' => $cc, 'bcc' => $bcc];
+        $held = [];
+        if ($mailbox->isSandbox()) {
+            $local = $this->hostedRecipients(array_merge($to, $cc, $bcc));
+            $send = array_map(fn (array $list): array => array_values(array_intersect($list, $local)), $send);
+            $held = array_values(array_diff(array_merge($to, $cc, $bcc), $local));
+        }
+
+        if (array_merge($send['to'], $send['cc'], $send['bcc']) !== []) {
+            // sendmail runs with -t, so Bcc recipients are delivered and the header is stripped.
+            $ok = @mail(
+                $send['to'] !== [] ? implode(', ', $send['to']) : 'undisclosed-recipients:;',
+                $encodedSubject,
+                $body,
+                implode("\r\n", array_merge($headers, $this->recipientHeaders($send['cc'], $send['bcc']))),
+                '-f'.$from
+            );
+            if (! $ok) {
+                throw new RuntimeException('Message could not be sent.');
+            }
         }
 
         // mail() only hands the message to the local MTA; keep a copy in the
         // mailbox's Sent folder the same way a regular mail client does.
-        $raw = implode("\r\n", array_merge(['To: '.implode(', ', $to), 'Subject: '.$encodedSubject], $sendHeaders))
+        $copyHeaders = array_merge($headers, $this->recipientHeaders($cc, $bcc));
+        if ($held !== []) {
+            $copyHeaders[] = 'X-Dpanel-Sandbox: not sent to '.implode(', ', $held);
+        }
+        $raw = implode("\r\n", array_merge(['To: '.implode(', ', $to), 'Subject: '.$encodedSubject], $copyHeaders))
             ."\r\n\r\n".str_replace("\n", "\r\n", $body)."\r\n";
         $this->appendToSent($mailbox, $raw);
+
+        return ['held' => $held];
+    }
+
+    /**
+     * @param  array<int, string>  $cc
+     * @param  array<int, string>  $bcc
+     * @return array<int, string>
+     */
+    private function recipientHeaders(array $cc, array $bcc): array
+    {
+        return array_merge(
+            $cc !== [] ? ['Cc: '.implode(', ', $cc)] : [],
+            $bcc !== [] ? ['Bcc: '.implode(', ', $bcc)] : [],
+        );
+    }
+
+    /**
+     * Addresses whose domain this server receives mail for.
+     *
+     * @param  array<int, string>  $addresses
+     * @return array<int, string>
+     */
+    public function hostedRecipients(array $addresses): array
+    {
+        $domains = array_values(array_unique(array_map(
+            fn (string $address): string => strtolower(substr((string) strrchr($address, '@'), 1)),
+            $addresses,
+        )));
+        $hosted = Mailbox::query()
+            ->whereIn(DB::raw('LOWER(domain)'), $domains)
+            ->where('status', 'active')
+            ->distinct()
+            ->pluck('domain')
+            ->map(fn ($domain): string => strtolower((string) $domain))
+            ->all();
+
+        return array_values(array_filter(
+            $addresses,
+            fn (string $address): bool => in_array(strtolower(substr((string) strrchr($address, '@'), 1)), $hosted, true),
+        ));
     }
 
     private function appendToSent(Mailbox $mailbox, string $raw): void

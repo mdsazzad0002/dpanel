@@ -2073,6 +2073,25 @@ user_query = SELECT mail_home AS home, CONCAT('maildir:', mail_home) AS mail, ma
   fi
 }
 
+# Sender-dependent transports, first match wins: the sandbox map (discards a
+# sandbox mailbox's mail to other servers), then the per-IP map written by
+# configure-mail-ips.sh. That script builds the same list, so both agree.
+# Returns 0 when main.cf changed.
+panel_postfix_sender_transport_maps() {
+  local sandbox_ready="$1" maps=() value
+  [[ "$sandbox_ready" == true ]] && maps+=("proxy:mysql:/etc/postfix/dpanel-virtual-sandbox.cf")
+  [[ -f /etc/postfix/dpanel-sender-transport.cf ]] && maps+=("proxy:mysql:/etc/postfix/dpanel-sender-transport.cf")
+  value="$(IFS=,; printf '%s' "${maps[*]}")"
+  value="${value//,/, }"
+  [[ "$(postconf -h sender_dependent_default_transport_maps 2>/dev/null)" == "$value" ]] && return 1
+  if [[ -n "$value" ]]; then
+    postconf -e "sender_dependent_default_transport_maps=${value}"
+  else
+    postconf -X sender_dependent_default_transport_maps
+  fi
+  return 0
+}
+
 # Postfix must know which domains and addresses the panel hosts, or it answers
 # "Relay access denied" to other servers and "loops back to myself" for local
 # mail. It reads them from the panel database and hands mail to Dovecot over
@@ -2102,12 +2121,17 @@ user = ${db_user}
 password = ${db_password}
 dbname = ${db_name}"
 
-  # A mailbox with forwarding keeps its own copy and also sends one on.
-  for map in domains mailboxes aliases; do
+  # A mailbox with forwarding keeps its own copy and also sends one on; a
+  # sandbox (test) mailbox only forwards to domains hosted here.
+  # sandbox: mail from a sandbox mailbox to any other server is discarded
+  # (sender_dependent_default_transport_maps only applies to non-local
+  # recipients), so it still reaches mailboxes on this server.
+  for map in domains mailboxes aliases sandbox; do
     case "$map" in
       domains) query="SELECT 1 FROM mailboxes WHERE domain = '%s' AND status = 'active' LIMIT 1" ;;
       mailboxes) query="SELECT 1 FROM mailboxes WHERE email = '%s' AND status = 'active' LIMIT 1" ;;
-      aliases) query="SELECT CONCAT(email, ',', forwarding_to) FROM mailboxes WHERE email = '%s' AND status = 'active' AND forwarding_to <> '' LIMIT 1" ;;
+      aliases) query="SELECT CONCAT(email, ',', forwarding_to) FROM mailboxes WHERE email = '%s' AND status = 'active' AND forwarding_to <> '' AND (delivery_mode <> 'sandbox' OR SUBSTRING_INDEX(forwarding_to, '@', -1) IN (SELECT domain FROM mailboxes WHERE status = 'active')) LIMIT 1" ;;
+      sandbox) query="SELECT 'discard:dpanel-sandbox' FROM mailboxes WHERE email = '%s' AND delivery_mode = 'sandbox' LIMIT 1" ;;
     esac
     file="/etc/postfix/dpanel-virtual-${map}.cf"
     content="${connection}
@@ -2119,6 +2143,22 @@ query = ${query}"
     chown root:postfix "$file" 2>/dev/null || chown root:root "$file"
     chmod 0640 "$file"
   done
+
+  # Both queries need the delivery_mode column. Until the migration has run
+  # they would fail, and Postfix would defer every message, so fall back to
+  # the previous queries instead.
+  local sandbox_ready=true
+  if postmap -q 'probe@dpanel.invalid' "mysql:/etc/postfix/dpanel-virtual-sandbox.cf" 2>&1 >/dev/null | grep -qiE 'warning|fatal|error'; then
+    sandbox_ready=false
+    panel_warn_log "mailboxes.delivery_mode is missing; run 'php artisan migrate --force' to enable sandbox mailboxes."
+    content="${connection}
+query = SELECT CONCAT(email, ',', forwarding_to) FROM mailboxes WHERE email = '%s' AND status = 'active' AND forwarding_to <> '' LIMIT 1"
+    if [[ "$(cat /etc/postfix/dpanel-virtual-aliases.cf)" != "$content" ]]; then
+      printf '%s\n' "$content" > /etc/postfix/dpanel-virtual-aliases.cf
+      changed=true
+    fi
+  fi
+  panel_postfix_sender_transport_maps "$sandbox_ready" && changed=true
 
   local setting key value
   for setting in \

@@ -7,6 +7,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Mailbox extends Model
 {
+    /** Delivers to any address. */
+    public const MODE_LIVE = 'live';
+
+    /** Test mode: mail reaches mailboxes on this server only, never the outside. */
+    public const MODE_SANDBOX = 'sandbox';
+
+    public const DELIVERY_MODES = [self::MODE_LIVE, self::MODE_SANDBOX];
+
     protected $fillable = [
         'id',
         'domain',
@@ -17,6 +25,7 @@ class Mailbox extends Model
         'quota_mb',
         'forwarding_to',
         'status',
+        'delivery_mode',
         'site_owner',
         'mail_home',
         'mail_uid',
@@ -34,6 +43,11 @@ class Mailbox extends Model
     }
 
     protected $keyType = 'string';
+
+    public function isSandbox(): bool
+    {
+        return $this->delivery_mode === self::MODE_SANDBOX;
+    }
 
     public function plan(): BelongsTo
     {

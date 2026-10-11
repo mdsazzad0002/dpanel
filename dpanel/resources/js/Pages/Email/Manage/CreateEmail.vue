@@ -24,6 +24,7 @@ const form = useForm({
     password: '',
     quota_mb: 1024,
     forwarding_to: '',
+    delivery_mode: 'live',
     mail_ip_id: '',
 });
 const websiteDomainOptions = computed(() => props.websiteDomains.map((domain) => ({ value: domain, label: domain })));
@@ -156,6 +157,20 @@ watch(
                     <label class="mb-1 block text-sm">Forward To (Optional)</label>
                     <input v-model="form.forwarding_to" type="email" placeholder="admin@example.com" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.forwarding_to" class="mt-1 text-xs text-red-600">{{ form.errors.forwarding_to }}</p>
+                </div>
+                <div class="md:col-span-2">
+                    <span class="mb-1 block text-sm">Delivery Mode</span>
+                    <div class="grid gap-2 sm:grid-cols-2">
+                        <label class="flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm" :class="form.delivery_mode === 'live' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30' : 'border-slate-300 dark:border-slate-700'">
+                            <input v-model="form.delivery_mode" type="radio" value="live" class="mt-0.5" />
+                            <span><span class="font-medium">Live</span><span class="block text-xs text-slate-500 dark:text-slate-400">Real mail: delivered to any address, inside or outside this server.</span></span>
+                        </label>
+                        <label class="flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm" :class="form.delivery_mode === 'sandbox' ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/30' : 'border-slate-300 dark:border-slate-700'">
+                            <input v-model="form.delivery_mode" type="radio" value="sandbox" class="mt-0.5" />
+                            <span><span class="font-medium">Sandbox (test)</span><span class="block text-xs text-slate-500 dark:text-slate-400">Mail reaches mailboxes on this server only. Nothing is sent outside.</span></span>
+                        </label>
+                    </div>
+                    <p v-if="form.errors.delivery_mode" class="mt-1 text-xs text-red-600">{{ form.errors.delivery_mode }}</p>
                 </div>
                 <div class="md:col-span-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">

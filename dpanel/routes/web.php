@@ -350,6 +350,9 @@ Route::prefix('cpsess{token}')
             Route::post('/emails/{id}/enable', [EmailController::class, 'enable'])
                 ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:10,1'])
                 ->name('emails.enable');
+            Route::patch('/emails/{id}/delivery-mode', [EmailController::class, 'setDeliveryMode'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.delivery-mode');
             Route::post('/emails/{id}/disable', [EmailController::class, 'disable'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.disable');
@@ -369,6 +372,14 @@ Route::prefix('cpsess{token}')
             Route::get('/mail/{id}/message', [MailClientController::class, 'message'])
                 ->middleware('role:admin|reseller')
                 ->name('mailbox.message');
+
+            Route::get('/mail/{id}/raw', [MailClientController::class, 'raw'])
+                ->middleware(['role:admin|reseller', 'throttle:60,1'])
+                ->name('mailbox.raw');
+
+            Route::get('/mail/{id}/raw/download', [MailClientController::class, 'rawDownload'])
+                ->middleware(['role:admin|reseller', 'throttle:60,1'])
+                ->name('mailbox.raw-download');
 
             Route::post('/mail/{id}/send', [MailClientController::class, 'send'])
                 ->middleware('role:admin|reseller')

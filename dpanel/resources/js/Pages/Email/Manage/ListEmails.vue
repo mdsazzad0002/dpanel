@@ -50,6 +50,24 @@ const toggleMailbox = async (item) => {
     }
 };
 
+// Sandbox (test) keeps mail on this server; live delivers everywhere.
+const modeSavingId = ref('');
+const isSandbox = (item) => item.delivery_mode === 'sandbox';
+
+const setDeliveryMode = async (item, mode) => {
+    if (mode === (item.delivery_mode || 'live')) return;
+    if (mode === 'live' && !confirm(`Make ${item.email} live? Its mail will be delivered to real recipients outside this server.`)) return;
+    modeSavingId.value = item.id;
+    try {
+        const { data } = await window.axios.patch(panelRoute('emails.delivery-mode', { id: item.id }), { delivery_mode: mode }, { headers: { Accept: 'application/json' } });
+        Object.assign(item, data?.mailbox ?? {});
+    } catch (error) {
+        result.value = { ok: false, title: 'Could not change the mode', message: error?.response?.data?.message || error?.message || 'Request failed.', checks: [] };
+    } finally {
+        modeSavingId.value = '';
+    }
+};
+
 const deleteMailbox = (id) => {
     if (!confirm('Delete this mailbox?')) return;
     deleteForm.delete(panelRoute('emails.destroy', { id }));
@@ -113,6 +131,7 @@ const deleteMailbox = (id) => {
                             <th class="px-4 py-3">Plan</th>
                             <th class="px-4 py-3">Quota</th>
                             <th class="px-4 py-3">Status</th>
+                            <th class="px-4 py-3">Mode</th>
                             <th class="px-4 py-3">Created</th>
                             <th class="px-4 py-3">Actions</th>
                         </tr>
@@ -152,6 +171,35 @@ const deleteMailbox = (id) => {
                                     {{ item.health_error }}
                                 </p>
                             </td>
+                            <td class="px-4 py-3">
+                                <div class="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs dark:border-slate-700" role="radiogroup" :aria-label="`Delivery mode for ${item.email}`">
+                                    <button
+                                        type="button"
+                                        role="radio"
+                                        :aria-checked="!isSandbox(item)"
+                                        :disabled="modeSavingId === item.id"
+                                        title="Live: mail is delivered to real recipients everywhere"
+                                        class="px-2 py-1 transition disabled:opacity-60"
+                                        :class="!isSandbox(item) ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'"
+                                        @click="setDeliveryMode(item, 'live')"
+                                    >
+                                        Live
+                                    </button>
+                                    <button
+                                        type="button"
+                                        role="radio"
+                                        :aria-checked="isSandbox(item)"
+                                        :disabled="modeSavingId === item.id"
+                                        title="Sandbox (test): mail reaches mailboxes on this server only, never the outside"
+                                        class="border-l border-slate-300 px-2 py-1 transition disabled:opacity-60 dark:border-slate-700"
+                                        :class="isSandbox(item) ? 'bg-amber-500 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'"
+                                        @click="setDeliveryMode(item, 'sandbox')"
+                                    >
+                                        Sandbox
+                                    </button>
+                                </div>
+                                <p v-if="isSandbox(item)" class="mt-1 text-xs text-amber-600 dark:text-amber-400">Test only: nothing leaves this server.</p>
+                            </td>
                             <td class="px-4 py-3">{{ formatDate(item.created_at) }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
@@ -186,7 +234,7 @@ const deleteMailbox = (id) => {
                             </td>
                         </tr>
                         <tr v-if="mailboxes.length === 0">
-                            <td colspan="7" class="px-4 py-6 text-center text-slate-500">No mailbox found.</td>
+                            <td colspan="8" class="px-4 py-6 text-center text-slate-500">No mailbox found.</td>
                         </tr>
                     </tbody>
                 </table>

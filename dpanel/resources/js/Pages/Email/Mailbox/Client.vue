@@ -59,6 +59,14 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    rawEndpoint: {
+        type: String,
+        default: '',
+    },
+    rawDownloadEndpoint: {
+        type: String,
+        default: '',
+    },
     bulkEndpoint: {
         type: String,
         default: '',
@@ -835,6 +843,18 @@ watch(() => messageFilter.value, () => {
                 @toggle-mobile-sidebar="toggleMobileSidebar"
             />
 
+            <div
+                v-if="mailbox.delivery_mode === 'sandbox'"
+                role="status"
+                :class="isDark
+                    ? 'shrink-0 border-b border-amber-900/40 bg-amber-950/30 px-4 py-2 text-sm text-amber-200'
+                    : 'shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800'"
+            >
+                <i class="bi bi-cone-striped mr-1"></i>
+                <span class="font-medium">Sandbox mode.</span>
+                Mail you send reaches mailboxes on this server only; nothing goes to outside addresses.
+            </div>
+
             <div v-if="statusMessage" :class="isDark
                 ? 'shrink-0 border-b border-emerald-900/40 bg-emerald-950/30 px-4 py-2 text-sm text-emerald-200'
                 : 'shrink-0 border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800'">
@@ -858,6 +878,8 @@ watch(() => messageFilter.value, () => {
                     :selected-uids="selectedUids"
                     :bulk-working="bulkWorking"
                     :self-email="mailbox.email"
+                    :raw-endpoint="rawEndpoint"
+                    :raw-download-endpoint="rawDownloadEndpoint"
                     @open-message="openMessage"
                     @close-preview="closePreview"
                     @start-compose="startCompose"
@@ -885,6 +907,7 @@ watch(() => messageFilter.value, () => {
             :is-dark="isDark"
             :sending="sending"
             :from-email="mailbox.email"
+            :sandbox="mailbox.delivery_mode === 'sandbox'"
             @send="submitSend"
             @discard="discardCompose"
         />

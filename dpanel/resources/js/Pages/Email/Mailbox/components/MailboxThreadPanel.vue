@@ -63,6 +63,14 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    rawEndpoint: {
+        type: String,
+        default: '',
+    },
+    rawDownloadEndpoint: {
+        type: String,
+        default: '',
+    },
 });
 
 const emit = defineEmits(['open-message', 'close-preview', 'start-compose', 'delete-message', 'reply', 'reply-all', 'forward', 'toggle-read', 'change-page', 'toggle-select', 'select-all', 'bulk-action']);
@@ -293,10 +301,117 @@ const onHtmlFrameLoad = () => {
     resizeHtmlFrame();
 };
 
-// Messages with both parts can be switched between HTML and plain text.
+// HTML / plain text views, plus the message source ("Show original") and its
+// header analysis. The source is fetched only when one of those tabs opens.
 const bodyView = ref('html');
 const showsHtml = computed(() => bodyView.value === 'html' && htmlDocument.value !== '');
+const showsBody = computed(() => bodyView.value === 'html' || bodyView.value === 'text');
 const plainText = computed(() => props.currentMessage?.text || props.currentMessage?.raw_body || '');
+
+const bodyTabs = computed(() => [
+    ...(htmlDocument.value ? [{ id: 'html', label: 'HTML', icon: 'bi-filetype-html' }] : []),
+    { id: 'text', label: 'Plain text', icon: 'bi-text-left' },
+    ...(props.rawEndpoint ? [
+        { id: 'analysis', label: 'Analysis', icon: 'bi-shield-check' },
+        { id: 'raw', label: 'Original', icon: 'bi-code-slash' },
+    ] : []),
+]);
+const activeTab = computed(() => (bodyView.value === 'html' && !htmlDocument.value ? 'text' : bodyView.value));
+
+const messageKey = computed(() => (props.currentMessage ? `${props.currentMessage.folder || props.activeFolder}:${props.currentMessage.uid}` : ''));
+const sourceCache = new Map();
+const source = ref(null);
+const sourceLoading = ref(false);
+const sourceError = ref('');
+const showAllHeaders = ref(false);
+const copied = ref(false);
+
+const loadSource = async () => {
+    const key = messageKey.value;
+    if (!key || !props.rawEndpoint) return;
+    if (sourceCache.has(key)) {
+        source.value = sourceCache.get(key);
+        return;
+    }
+    sourceLoading.value = true;
+    sourceError.value = '';
+    try {
+        const { data } = await window.axios.get(props.rawEndpoint, {
+            params: { folder: props.currentMessage.folder || props.activeFolder, uid: props.currentMessage.uid },
+            headers: { Accept: 'application/json' },
+        });
+        if (!data?.success) throw new Error(data?.message || 'Message source could not be loaded.');
+        sourceCache.set(key, data);
+        if (messageKey.value === key) source.value = data;
+    } catch (error) {
+        if (messageKey.value === key) sourceError.value = error?.response?.data?.message || error?.message || 'Message source could not be loaded.';
+    } finally {
+        sourceLoading.value = false;
+    }
+};
+
+const selectTab = (id) => {
+    bodyView.value = id;
+    if (id === 'analysis' || id === 'raw') loadSource();
+};
+
+watch(messageKey, () => {
+    bodyView.value = 'html';
+    source.value = null;
+    sourceError.value = '';
+    showAllHeaders.value = false;
+});
+
+const downloadHref = computed(() => {
+    if (!props.rawDownloadEndpoint || !props.currentMessage) return '';
+    const params = new URLSearchParams({ folder: props.currentMessage.folder || props.activeFolder, uid: String(props.currentMessage.uid) });
+
+    return `${props.rawDownloadEndpoint}${props.rawDownloadEndpoint.includes('?') ? '&' : '?'}${params}`;
+});
+
+const copySource = async () => {
+    try {
+        await navigator.clipboard.writeText(source.value?.raw || '');
+        copied.value = true;
+        setTimeout(() => { copied.value = false; }, 1500);
+    } catch {
+        copied.value = false;
+    }
+};
+
+const analysis = computed(() => source.value?.analysis || null);
+
+// Gmail-style verdict colours: pass green, fail red, anything else neutral.
+const verdictClass = (result) => {
+    const value = String(result || '').toLowerCase();
+    if (value === 'pass') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300';
+    if (['fail', 'softfail', 'permerror', 'temperror'].includes(value)) return 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300';
+
+    return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+};
+const verdictLabel = (result) => {
+    const value = String(result || '').toLowerCase();
+    if (value === 'none' || value === '') return 'Not checked';
+    if (value === 'unverified') return 'Signed, not verified';
+
+    return value.toUpperCase();
+};
+
+const formatBytes = (bytes) => {
+    const value = Number(bytes || 0);
+    if (value < 1024) return `${value} B`;
+    if (value < 1048576) return `${(value / 1024).toFixed(1)} KB`;
+
+    return `${(value / 1048576).toFixed(1)} MB`;
+};
+
+const formatDelay = (seconds) => {
+    if (seconds === null || seconds === undefined) return '';
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+};
 
 const resetHtmlFrame = () => {
     htmlFrameObserver?.disconnect();
@@ -663,34 +778,179 @@ onBeforeUnmount(() => {
                                 </div>
                             </header>
 
-                            <div v-if="htmlDocument" :class="[ui.cardDivider, 'flex items-center gap-1 border-b px-4 py-2 md:px-6']" role="tablist" aria-label="Message format">
+                            <div :class="[ui.cardDivider, 'flex flex-wrap items-center gap-1 border-b px-4 py-2 md:px-6']" role="tablist" aria-label="Message view">
                                 <button
-                                    v-for="tab in [{ id: 'html', label: 'HTML', icon: 'bi-filetype-html' }, { id: 'text', label: 'Plain text', icon: 'bi-text-left' }]"
+                                    v-for="tab in bodyTabs"
                                     :key="tab.id"
                                     type="button"
                                     role="tab"
-                                    :aria-selected="bodyView === tab.id"
-                                    :class="[bodyView === tab.id ? ui.chip : [ui.muted, ui.iconButton], 'inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition']"
-                                    @click="bodyView = tab.id"
+                                    :aria-selected="activeTab === tab.id"
+                                    :class="[activeTab === tab.id ? ui.chip : [ui.muted, ui.iconButton], 'inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition']"
+                                    @click="selectTab(tab.id)"
                                 >
                                     <i :class="['bi', tab.icon]"></i> {{ tab.label }}
                                 </button>
                             </div>
 
-                            <div v-if="showsHtml" class="bg-white">
-                                <iframe
-                                    ref="htmlFrame"
-                                    :key="`${currentMessage.folder}:${currentMessage.uid}`"
-                                    :srcdoc="htmlDocument"
-                                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                                    referrerpolicy="no-referrer"
-                                    title="Message body"
-                                    :class="['block w-full border-0 transition-opacity duration-150', htmlFrameReady ? 'opacity-100' : 'opacity-0']"
-                                    :style="{ height: `${htmlFrameHeight}px` }"
-                                    @load="onHtmlFrameLoad"
-                                ></iframe>
+                            <template v-if="showsBody">
+                                <div v-if="showsHtml" class="bg-white">
+                                    <iframe
+                                        ref="htmlFrame"
+                                        :key="`${currentMessage.folder}:${currentMessage.uid}`"
+                                        :srcdoc="htmlDocument"
+                                        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                                        referrerpolicy="no-referrer"
+                                        title="Message body"
+                                        :class="['block w-full border-0 transition-opacity duration-150', htmlFrameReady ? 'opacity-100' : 'opacity-0']"
+                                        :style="{ height: `${htmlFrameHeight}px` }"
+                                        @load="onHtmlFrameLoad"
+                                    ></iframe>
+                                </div>
+                                <div v-else :class="[ui.body, 'whitespace-pre-wrap break-words px-4 py-6 font-sans text-[15px] leading-7 md:px-6']">{{ plainText || 'No body available.' }}</div>
+                            </template>
+
+                            <!-- Source loading / error -->
+                            <div v-else-if="sourceLoading && !source" :class="[ui.muted, 'px-4 py-10 text-center text-sm md:px-6']">
+                                <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i> Loading message source…
                             </div>
-                            <div v-else :class="[ui.body, 'whitespace-pre-wrap break-words px-4 py-6 font-sans text-[15px] leading-7 md:px-6']">{{ plainText || 'No body available.' }}</div>
+                            <div v-else-if="sourceError" class="px-4 py-6 text-sm text-rose-600 md:px-6">
+                                {{ sourceError }}
+                                <button type="button" class="ml-2 underline" @click="loadSource">Retry</button>
+                            </div>
+
+                            <!-- Analysis -->
+                            <div v-else-if="activeTab === 'analysis' && analysis" :class="[ui.body, 'space-y-6 px-4 py-5 text-sm md:px-6']">
+                                <div v-if="analysis.sandbox" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                                    <i class="bi bi-cone-striped mr-1"></i> Sent in sandbox mode: {{ analysis.sandbox }}
+                                </div>
+
+                                <dl class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-4 gap-y-2">
+                                    <template v-for="row in [
+                                        ['Message ID', analysis.summary.message_id],
+                                        ['Created at', analysis.summary.date],
+                                        ['From', analysis.summary.from],
+                                        ['To', analysis.summary.to],
+                                        ['Subject', analysis.summary.subject],
+                                        ['Return-Path', analysis.summary.return_path],
+                                        ['Reply-To', analysis.summary.reply_to],
+                                        ['Sent by', analysis.provider],
+                                        ['Mailer', analysis.summary.mailer],
+                                    ].filter((r) => r[1])" :key="row[0]">
+                                        <dt :class="[ui.muted, 'font-medium']">{{ row[0] }}</dt>
+                                        <dd class="min-w-0 break-words">{{ row[1] }}</dd>
+                                    </template>
+
+                                    <dt :class="[ui.muted, 'font-medium']">SPF</dt>
+                                    <dd class="min-w-0 break-words">
+                                        <span :class="[verdictClass(analysis.auth.spf.result), 'mr-2 rounded px-1.5 py-0.5 text-xs font-semibold']">{{ verdictLabel(analysis.auth.spf.result) }}</span>
+                                        <span :class="ui.muted">{{ analysis.auth.spf.detail }}</span>
+                                    </dd>
+
+                                    <dt :class="[ui.muted, 'font-medium']">DKIM</dt>
+                                    <dd class="min-w-0 space-y-1 break-words">
+                                        <p v-if="!analysis.auth.dkim.length">
+                                            <span :class="[verdictClass('fail'), 'rounded px-1.5 py-0.5 text-xs font-semibold']">NOT SIGNED</span>
+                                        </p>
+                                        <p v-for="(sig, i) in analysis.auth.dkim" :key="i">
+                                            <span :class="[verdictClass(sig.result), 'mr-2 rounded px-1.5 py-0.5 text-xs font-semibold']">{{ verdictLabel(sig.result) }}</span>
+                                            <span>with domain {{ sig.domain || 'unknown' }}</span>
+                                            <span v-if="sig.selector" :class="ui.muted"> (selector {{ sig.selector }})</span>
+                                        </p>
+                                    </dd>
+
+                                    <dt :class="[ui.muted, 'font-medium']">DMARC</dt>
+                                    <dd class="min-w-0 break-words">
+                                        <span :class="[verdictClass(analysis.auth.dmarc.result), 'mr-2 rounded px-1.5 py-0.5 text-xs font-semibold']">{{ verdictLabel(analysis.auth.dmarc.result) }}</span>
+                                        <span :class="ui.muted">{{ analysis.auth.dmarc.detail }}</span>
+                                    </dd>
+
+                                    <dt :class="[ui.muted, 'font-medium']">Alignment</dt>
+                                    <dd class="min-w-0 break-words">
+                                        SPF <i :class="['bi', analysis.alignment.spf ? 'bi-check-circle-fill text-emerald-600' : 'bi-x-circle text-slate-400']"></i>
+                                        <span class="ml-3">DKIM</span> <i :class="['bi', analysis.alignment.dkim ? 'bi-check-circle-fill text-emerald-600' : 'bi-x-circle text-slate-400']"></i>
+                                        <span :class="[ui.muted, 'ml-2 text-xs']">with the From domain</span>
+                                    </dd>
+
+                                    <template v-if="analysis.spam.flag || analysis.spam.score">
+                                        <dt :class="[ui.muted, 'font-medium']">Spam check</dt>
+                                        <dd class="min-w-0 break-words">
+                                            <span :class="[verdictClass(analysis.spam.flag === 'yes' ? 'fail' : 'pass'), 'mr-2 rounded px-1.5 py-0.5 text-xs font-semibold']">{{ analysis.spam.flag === 'yes' ? 'SPAM' : 'CLEAN' }}</span>
+                                            <span v-if="analysis.spam.score" :class="ui.muted">score {{ analysis.spam.score }}</span>
+                                        </dd>
+                                    </template>
+
+                                    <template v-if="analysis.bulk.list_unsubscribe">
+                                        <dt :class="[ui.muted, 'font-medium']">Unsubscribe</dt>
+                                        <dd class="min-w-0 break-words">
+                                            {{ analysis.bulk.one_click ? 'One-click (RFC 8058)' : 'Link only' }}
+                                        </dd>
+                                    </template>
+                                </dl>
+
+                                <div>
+                                    <h3 :class="[ui.strong, 'mb-2 font-semibold']">Findings</h3>
+                                    <ul v-if="analysis.warnings.length" class="space-y-1.5">
+                                        <li v-for="(warning, i) in analysis.warnings" :key="i" class="flex gap-2 text-amber-700 dark:text-amber-300">
+                                            <i class="bi bi-exclamation-triangle mt-0.5 shrink-0"></i><span>{{ warning }}</span>
+                                        </li>
+                                    </ul>
+                                    <p v-else class="text-emerald-700 dark:text-emerald-400"><i class="bi bi-check-circle mr-1"></i> No problems found in the headers.</p>
+                                </div>
+
+                                <div v-if="analysis.hops.length">
+                                    <h3 :class="[ui.strong, 'mb-2 font-semibold']">
+                                        Delivery path
+                                        <span :class="[ui.muted, 'ml-1 text-xs font-normal']">
+                                            {{ analysis.hops.length }} {{ analysis.hops.length === 1 ? 'hop' : 'hops' }}<template v-if="analysis.total_delay !== null">, {{ formatDelay(analysis.total_delay) }} total</template>
+                                        </span>
+                                    </h3>
+                                    <ol class="space-y-2">
+                                        <li v-for="(hop, i) in analysis.hops" :key="i" :class="[ui.cardDivider, 'flex gap-3 rounded-lg border px-3 py-2']">
+                                            <span :class="[ui.chip, 'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold']">{{ i + 1 }}</span>
+                                            <div class="min-w-0 flex-1">
+                                                <p class="break-words text-xs"><span :class="ui.muted">from</span> {{ hop.from || '—' }}</p>
+                                                <p class="break-words text-xs"><span :class="ui.muted">by</span> {{ hop.by || '—' }}</p>
+                                                <p :class="[ui.muted, 'mt-0.5 text-[11px]']">
+                                                    <i :class="['bi mr-0.5', hop.tls ? 'bi-lock-fill text-emerald-600' : 'bi-unlock text-amber-600']" :title="hop.tls ? 'Encrypted (TLS)' : 'Not encrypted'"></i>
+                                                    {{ hop.with || 'unknown protocol' }} · {{ hop.date }}
+                                                </p>
+                                            </div>
+                                            <span v-if="hop.delay !== null" :class="['shrink-0 text-xs tabular-nums', hop.delay > 300 ? 'font-semibold text-amber-600' : ui.muted]">+{{ formatDelay(hop.delay) }}</span>
+                                        </li>
+                                    </ol>
+                                </div>
+
+                                <div>
+                                    <button type="button" :class="[ui.strong, 'font-semibold']" :aria-expanded="showAllHeaders" @click="showAllHeaders = !showAllHeaders">
+                                        <i :class="['bi mr-1 text-xs', showAllHeaders ? 'bi-chevron-down' : 'bi-chevron-right']"></i>All headers ({{ analysis.headers.length }})
+                                    </button>
+                                    <table v-if="showAllHeaders" class="mt-2 w-full table-fixed text-xs">
+                                        <tbody>
+                                            <tr v-for="(header, i) in analysis.headers" :key="i" :class="[ui.cardDivider, 'border-t align-top']">
+                                                <td :class="[ui.muted, 'w-40 break-words py-1 pr-3 font-mono font-medium']">{{ header.name }}</td>
+                                                <td class="break-words py-1 font-mono">{{ header.value }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Original (raw source) -->
+                            <div v-else-if="activeTab === 'raw' && source" class="px-4 py-4 md:px-6">
+                                <div class="mb-3 flex flex-wrap items-center gap-2">
+                                    <span :class="[ui.muted, 'text-xs']">{{ formatBytes(source.size) }}</span>
+                                    <span v-if="source.truncated" class="text-xs text-amber-600">Showing the first {{ formatBytes(source.raw.length) }}; download for the full message.</span>
+                                    <div class="ml-auto flex gap-2">
+                                        <button type="button" :class="[ui.pill, 'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition']" @click="copySource">
+                                            <i :class="['bi', copied ? 'bi-check2' : 'bi-clipboard']"></i> {{ copied ? 'Copied' : 'Copy' }}
+                                        </button>
+                                        <a v-if="downloadHref" :href="downloadHref" :class="[ui.pill, 'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition']">
+                                            <i class="bi bi-download"></i> Download .eml
+                                        </a>
+                                    </div>
+                                </div>
+                                <pre :class="[ui.canvas, ui.body, 'max-h-[70vh] overflow-auto whitespace-pre-wrap break-all rounded-lg p-3 font-mono text-xs leading-5']">{{ source.raw }}</pre>
+                            </div>
                         </article>
 
                         <!-- Quick actions -->
