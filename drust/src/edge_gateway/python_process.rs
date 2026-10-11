@@ -338,10 +338,11 @@ fn ensure_unit_provisioned(
         ));
     }
 
+    let python_version = python_version.map(str::trim).filter(|value| !value.is_empty());
     let python_binary = resolve_python_binary(python_version)?;
     let venv_path = project_root.join(".venv");
     let app_dir = resolve_app_dir(project_root, entry_module);
-    ensure_virtualenv(&python_binary, &venv_path)?;
+    ensure_virtualenv(&python_binary, &venv_path, python_version)?;
     let asgi = requirements_use_asgi(&app_dir);
     install_dependencies(&venv_path, &app_dir, asgi)?;
     let worker_class = if asgi {
@@ -472,16 +473,32 @@ fn resolve_app_dir(project_root: &Path, entry_module: Option<&str>) -> PathBuf {
     }
 }
 
-/// Creates the site's virtualenv under `{project_root}/.venv` if it doesn't
-/// already exist. Idempotent: re-provisioning a redeployed site is a no-op
-/// here unless the venv was removed.
-fn ensure_virtualenv(python_binary: &Path, venv_path: &Path) -> Result<(), String> {
-    if venv_path.join("bin").join("python").is_file() {
-        return Ok(());
-    }
+/// Creates the site's virtualenv under `{project_root}/.venv`, or rebuilds it
+/// when it is broken (its base interpreter was removed) or was made with a
+/// different Python than the site now asks for. A working venv of the right
+/// version is left alone, so re-provisioning a redeployed site is a no-op.
+fn ensure_virtualenv(
+    python_binary: &Path,
+    venv_path: &Path,
+    python_version: Option<&str>,
+) -> Result<(), String> {
+    let venv_python = venv_path.join("bin").join("python");
+    let rebuild = match python_full_version(&venv_python) {
+        Some(current) => match python_version {
+            Some(wanted) if !version_matches(&current, wanted) => true,
+            _ => return Ok(()),
+        },
+        None => venv_path.exists(),
+    };
 
-    let output = std::process::Command::new(python_binary)
-        .args(["-m", "venv"])
+    let mut command = std::process::Command::new(python_binary);
+    command.args(["-m", "venv"]);
+    // --clear empties the old venv first, which also drops the installed
+    // requirements marker so the new interpreter gets its packages again.
+    if rebuild {
+        command.arg("--clear");
+    }
+    let output = command
         .arg(venv_path)
         .output()
         .map_err(|error| format!("cannot create virtualenv at {}: {error}", venv_path.display()))?;
@@ -492,6 +509,24 @@ fn ensure_virtualenv(python_binary: &Path, venv_path: &Path) -> Result<(), Strin
         ));
     }
     Ok(())
+}
+
+/// The interpreter's `major.minor.micro`, or None when it does not run
+/// (missing, or a venv whose base Python was removed).
+fn python_full_version(python: &Path) -> Option<String> {
+    let output = std::process::Command::new(python)
+        .args(["-c", "import sys; print('%d.%d.%d' % sys.version_info[:3])"])
+        .output()
+        .ok()?;
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !version.is_empty()).then_some(version)
+}
+
+/// "3.10" matches "3.10.12" but not "3.1.0" or "3.11.2".
+fn version_matches(full: &str, wanted: &str) -> bool {
+    let full: Vec<&str> = full.split('.').collect();
+    let wanted: Vec<&str> = wanted.trim().split('.').collect();
+    wanted.len() <= full.len() && wanted.iter().zip(&full).all(|(a, b)| a == b)
 }
 
 /// Installs `requirements.txt` (if present) plus gunicorn into the site's
@@ -568,27 +603,135 @@ fn install_dependencies(venv_path: &Path, project_root: &Path, asgi: bool) -> Re
     Ok(())
 }
 
+/// Where drust installs Python versions the system does not ship.
+const MANAGED_PYTHON_DIR: &str = "/usr/local/dpanel-python";
+/// A private venv holding `uv`, created on first use when no `uv` exists.
+const UV_TOOL_VENV: &str = "/usr/local/dpanel-python/uv-tool";
+
+/// Finds the interpreter for the site's Python version, installing that
+/// version when the server does not have it. A site that names a version
+/// never silently falls back to a different one; only a site with no
+/// version gets the system `python3`.
 fn resolve_python_binary(version: Option<&str>) -> Result<PathBuf, String> {
-    if let Some(version) = version {
-        let pyenv_style = PathBuf::from(format!(
-            "/usr/local/pyenv/versions/{version}/bin/python3"
+    let Some(version) = version else {
+        return system_python()
+            .ok_or_else(|| "no python binary found on this server; install Python first".to_string());
+    };
+    if !is_valid_python_version(version) {
+        return Err(format!("invalid python version: {version}"));
+    }
+
+    let installed = [
+        PathBuf::from(format!("/usr/local/pyenv/versions/{version}/bin/python3")),
+        PathBuf::from(format!("/usr/bin/python{version}")),
+        PathBuf::from(format!("/usr/local/bin/python{version}")),
+    ];
+    if let Some(found) = installed.into_iter().find(|path| {
+        python_full_version(path).is_some_and(|full| version_matches(&full, version))
+    }) {
+        return Ok(found);
+    }
+
+    let uv = ensure_uv()?;
+    if let Some(found) = uv_find_python(&uv, version) {
+        return Ok(found);
+    }
+    let output = uv_command(&uv)
+        .args(["python", "install", version])
+        .output()
+        .map_err(|error| format!("cannot run uv python install {version}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "installing Python {version} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
         ));
-        if pyenv_style.is_file() {
-            return Ok(pyenv_style);
-        }
-        let minor = version.trim();
-        let system_versioned = PathBuf::from(format!("/usr/bin/python{minor}"));
-        if system_versioned.is_file() {
-            return Ok(system_versioned);
-        }
     }
-    for candidate in ["/usr/bin/python3", "/usr/local/bin/python3"] {
-        let path = PathBuf::from(candidate);
-        if path.is_file() {
-            return Ok(path);
-        }
+    uv_find_python(&uv, version)
+        .ok_or_else(|| format!("Python {version} was installed but cannot be found"))
+}
+
+fn system_python() -> Option<PathBuf> {
+    ["/usr/bin/python3", "/usr/local/bin/python3"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+}
+
+/// Accepts "3", "3.12" or "3.12.4": it ends up as a command argument.
+fn is_valid_python_version(version: &str) -> bool {
+    let parts: Vec<&str> = version.split('.').collect();
+    parts.len() <= 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.len() <= 3 && part.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// Returns a `uv` binary, installing it from PyPI into a private venv with
+/// the system Python the first time a site needs a missing version.
+fn ensure_uv() -> Result<PathBuf, String> {
+    let tool_uv = PathBuf::from(UV_TOOL_VENV).join("bin").join("uv");
+    if let Some(found) = ["/usr/local/bin/uv", "/usr/bin/uv", "/root/.local/bin/uv"]
+        .into_iter()
+        .map(PathBuf::from)
+        .chain(std::iter::once(tool_uv.clone()))
+        .find(|path| path.is_file())
+    {
+        return Ok(found);
     }
-    Err("no python binary found on this server; install Python or configure DRUST_PYTHON_BIN".to_string())
+
+    let python = system_python()
+        .ok_or_else(|| "no system python3 to bootstrap the Python installer (uv)".to_string())?;
+    let venv = Path::new(UV_TOOL_VENV);
+    let output = std::process::Command::new(&python)
+        .args(["-m", "venv", "--clear"])
+        .arg(venv)
+        .output()
+        .map_err(|error| format!("cannot create the uv tool venv: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot create the uv tool venv: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let output = std::process::Command::new(venv.join("bin").join("pip"))
+        .args(["install", "--quiet", "uv"])
+        .output()
+        .map_err(|error| format!("cannot install uv: {error}"))?;
+    if !output.status.success() || !tool_uv.is_file() {
+        return Err(format!(
+            "pip install uv failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(tool_uv)
+}
+
+/// uv restricted to drust's own install dir, so a version found or
+/// installed here is one every site owner can read.
+fn uv_command(uv: &Path) -> std::process::Command {
+    let mut command = std::process::Command::new(uv);
+    command
+        .env("UV_PYTHON_INSTALL_DIR", MANAGED_PYTHON_DIR)
+        .env("UV_PYTHON_BIN_DIR", Path::new(MANAGED_PYTHON_DIR).join("bin"))
+        .env("UV_PYTHON_PREFERENCE", "only-managed")
+        .env("UV_PYTHON_DOWNLOADS", "automatic")
+        .env("UV_NO_CONFIG", "1")
+        .env_remove("VIRTUAL_ENV");
+    command
+}
+
+fn uv_find_python(uv: &Path, version: &str) -> Option<PathBuf> {
+    let output = uv_command(uv)
+        .args(["python", "find", "--no-project", version])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    python_full_version(&path)
+        .is_some_and(|full| version_matches(&full, version))
+        .then_some(path)
 }
 
 fn shell_quote(value: &str) -> String {
@@ -710,6 +853,26 @@ mod tests {
         let b = site_provision_lock("lock-test-b").unwrap();
         assert!(b.try_lock().is_ok());
         assert!(Arc::ptr_eq(&a, &site_provision_lock("lock-test-a").unwrap()));
+    }
+
+    #[test]
+    fn matches_python_versions_by_prefix() {
+        assert!(version_matches("3.10.12", "3.10"));
+        assert!(version_matches("3.10.12", "3.10.12"));
+        assert!(version_matches("3.10.12", "3"));
+        assert!(!version_matches("3.11.2", "3.10"));
+        assert!(!version_matches("3.1.0", "3.10"));
+        assert!(!version_matches("3.10", "3.10.1"));
+    }
+
+    #[test]
+    fn accepts_only_numeric_python_versions() {
+        assert!(is_valid_python_version("3.12"));
+        assert!(is_valid_python_version("3.12.4"));
+        assert!(!is_valid_python_version("--help"));
+        assert!(!is_valid_python_version("3.12;rm"));
+        assert!(!is_valid_python_version("3..1"));
+        assert!(!is_valid_python_version("3.1.2.4"));
     }
 
     #[test]

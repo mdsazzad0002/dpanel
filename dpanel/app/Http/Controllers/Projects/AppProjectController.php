@@ -31,7 +31,7 @@ class AppProjectController extends Controller
 
     public function pythonIndex(Request $request): Response
     {
-        return $this->index($request, 'python', 'PythonApps/Index', ['3.8', '3.10', '3.12']);
+        return $this->index($request, 'python', 'PythonApps/Index', ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14']);
     }
 
     /** @param array<int, string> $versions */

@@ -30,7 +30,7 @@ const pushToast = inject('pushToast');
 const { panelRoute, requestJson } = usePanelApi();
 
 const nodeVersionOptions = ['18', '20', '22'];
-const pythonVersionOptions = ['3.8', '3.10', '3.12'];
+const pythonVersionOptions = ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14'];
 
 const startDirectoryInput = ref('');
 const phpVersionInput = ref('');
