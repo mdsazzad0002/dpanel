@@ -535,6 +535,12 @@ class EmailController extends Controller
                 ->with('error', "Auto login blocked for {$email}: ".$mailboxCheck['message']);
         }
 
+        // A missing Maildir must not block login: recreate it best-effort,
+        // Dovecot also creates it on first IMAP login.
+        if (! $this->checkMailboxStorageSync((string) $mailbox->email)['ok']) {
+            $this->provisionMailboxStorage($mailbox);
+        }
+
         $targetUrl = $this->buildRoundcubeLoginUrl(
             (string) ($setupCheck['webmail_url'] ?? $this->resolveWebmailUrl())
         );
@@ -846,11 +852,6 @@ class EmailController extends Controller
             $firstSetupMessage = (string) (($setupCheck['messages'][0] ?? '') ?: 'Mail setup check failed.');
 
             return ['ready' => false, 'message' => $firstSetupMessage];
-        }
-
-        $storageCheck = $this->checkMailboxStorageSync($email);
-        if (! $storageCheck['ok']) {
-            return ['ready' => false, 'message' => $storageCheck['message']];
         }
 
         return ['ready' => true, 'message' => 'Mailbox client is ready. User record is created on demand.'];
