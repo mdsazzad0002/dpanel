@@ -96,6 +96,20 @@ The short form is equivalent:
 sudo dpanel redis update
 ```
 
+### Redis memory policy
+
+`redis install` and `redis update` write `/etc/redis/dpanel-memory.conf` and
+include it from `redis.conf`:
+
+- `maxmemory` is 25% of RAM, between 128 MB and 4 GB, so Redis cannot use up
+  the server's memory. Override it with
+  `sudo env DPANEL_REDIS_MAXMEMORY_MB=1024 dpanel redis update`.
+- `maxmemory-policy volatile-lfu`: when full, Redis removes the least-used keys
+  that have a TTL (panel and website cache). Queue jobs have no TTL, so they
+  are never removed.
+- WordPress sites set up from the Redis Cache page get `WP_REDIS_MAXTTL`
+  (7 days), so their cache keys can be removed too.
+
 Legacy forms remain supported:
 
 ```bash

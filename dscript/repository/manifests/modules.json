@@ -1,6 +1,6 @@
 {
   "php": "1.2.0",
-  "redis": "1.0.0",
+  "redis": "1.1.0",
   "mariadb": "1.1.0",
   "postgresql": "1.0.0",
   "clamav": "1.0.0",

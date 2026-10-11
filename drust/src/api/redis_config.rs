@@ -154,7 +154,7 @@ fn update_wordpress(
 ) -> Result<String, String> {
     let marker = "/* That's all, stop editing";
     let block = format!(
-        "// dPanel Redis configuration\ndefine('WP_REDIS_HOST', '{host}');\ndefine('WP_REDIS_PORT', {port});\ndefine('WP_REDIS_DATABASE', {db});\ndefine('WP_REDIS_PREFIX', '{prefix}');\n"
+        "// dPanel Redis configuration\ndefine('WP_REDIS_HOST', '{host}');\ndefine('WP_REDIS_PORT', {port});\ndefine('WP_REDIS_DATABASE', {db});\ndefine('WP_REDIS_PREFIX', '{prefix}');\ndefine('WP_REDIS_MAXTTL', 604800);\n"
     );
     let cleaned = text
         .lines()
@@ -165,6 +165,7 @@ fn update_wordpress(
                     "WP_REDIS_PORT",
                     "WP_REDIS_DATABASE",
                     "WP_REDIS_PREFIX",
+                    "WP_REDIS_MAXTTL",
                 ]
                 .iter()
                 .any(|key| line.contains(key))
