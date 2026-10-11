@@ -162,6 +162,9 @@ MongoDB module (installed by default, service left OFF):
   sudo dpanel mongodb update | remove
 MongoDB listens on 127.0.0.1:27017 with access control on; the admin login is
 saved to the panel's .env (MONGODB_ADMIN_USERNAME / MONGODB_ADMIN_PASSWORD).
+The version follows the kernel: 7.0 on Linux 6.19 - 7.0.13 (MongoDB 8 can't
+start there), 8.0 everywhere else. Re-running install switches a MongoDB that
+holds no data yet; force one with MONGODB_SERIES=7.0|8.0.
 EOF
       ;;
     clamav)

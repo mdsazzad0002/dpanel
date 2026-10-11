@@ -11,10 +11,46 @@ action="${1:-install}"
 # MongoDB is installed by default but left stopped and disabled, so it costs
 # no RAM until an admin turns it on from the panel (Database Management >
 # MongoDB) or with `dpanel mongodb start`.
-MONGODB_SERIES="${MONGODB_SERIES:-8.0}"
 MONGODB_SERVICE="mongod"
 MONGODB_CONFIG="/etc/mongod.conf"
+MONGODB_DATA_DIRS=(/var/lib/mongodb /var/lib/mongo)
+
+# MongoDB 8.x refuses to start on Linux 6.19 up to 7.0.13 (its TCMalloc breaks
+# the kernel's rseq ABI, SERVER-121912). 7.0 predates that TCMalloc, so those
+# kernels get 7.0 and every other kernel gets 8.0.
+mongodb_kernel_breaks_8() {
+  local release="${1:-$(uname -r)}" major minor patch
+  IFS=. read -r major minor patch <<< "$(printf '%s' "$release" | grep -oE '^[0-9]+\.[0-9]+(\.[0-9]+)?')"
+  major="${major:-0}" minor="${minor:-0}" patch="${patch:-0}"
+  (( major == 6 && minor >= 19 )) || (( major == 7 && minor == 0 && patch < 14 ))
+}
+
+mongodb_pick_series() {
+  if [[ -n "${MONGODB_SERIES:-}" ]]; then
+    printf '%s' "$MONGODB_SERIES"
+  elif mongodb_kernel_breaks_8; then
+    printf '7.0'
+  else
+    printf '8.0'
+  fi
+}
+
+MONGODB_SERIES="$(mongodb_pick_series)"
 MONGODB_KEYRING="/usr/share/keyrings/mongodb-server-${MONGODB_SERIES}.gpg"
+
+# "8.0" from `mongod --version` ("db version v8.0.32"), empty if not installed.
+mongodb_installed_series() {
+  command -v mongod >/dev/null 2>&1 || return 0
+  mongod --version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+' | head -n 1 | tr -d v
+}
+
+mongodb_has_data() {
+  local dir
+  for dir in "${MONGODB_DATA_DIRS[@]}"; do
+    [[ -n "$(ls -A "$dir" 2>/dev/null)" ]] && return 0
+  done
+  return 1
+}
 
 mongodb_installed() {
   pkg_package_installed mongodb-org-server || command -v mongod >/dev/null 2>&1
@@ -46,34 +82,63 @@ mongodb_cpu_supported() {
   esac
 }
 
+# MongoDB doesn't publish every series for every release (7.0 has no Ubuntu
+# 24.04 build), so fall back to the next older release it does publish.
+mongodb_older_codenames() {
+  local id="$1" current="$2" known="" seen=false name
+  case "$id" in
+    ubuntu) known="noble jammy focal" ;;
+    debian) known="bookworm bullseye" ;;
+  esac
+  [[ " $known " == *" $current "* ]] || seen=true
+  for name in $known; do
+    [[ "$seen" == true ]] && printf '%s\n' "$name"
+    [[ "$name" == "$current" ]] && seen=true
+  done
+  return 0
+}
+
 # Adds MongoDB's own repository; distros don't ship mongodb-org. Returns 1 when
-# MongoDB publishes nothing for this release, so the caller can skip cleanly.
+# MongoDB publishes nothing usable for this release, so the caller can skip.
 mongodb_add_repo() {
-  local id codename
+  local id codename current
   # shellcheck disable=SC1091
   id="$(. /etc/os-release && printf '%s' "${ID:-}")"
 
   case "$(pkg_distro_family)" in
     debian)
-      local component=main base
-      codename="$(pkg_os_codename)"
+      local component=main base candidate
       [[ "$id" == "ubuntu" ]] && component=multiverse
       base="https://repo.mongodb.org/apt/${id}"
-      if ! pkg_url_exists "${base}/dists/${codename}/mongodb-org/${MONGODB_SERIES}/Release"; then
-        panel_warn_log "MongoDB ${MONGODB_SERIES} has no packages for ${id} ${codename}."
+      current="$(pkg_os_codename)"
+      codename=""
+      for candidate in "$current" $(mongodb_older_codenames "$id" "$current"); do
+        if pkg_url_exists "${base}/dists/${candidate}/mongodb-org/${MONGODB_SERIES}/Release"; then
+          codename="$candidate"
+          break
+        fi
+      done
+      if [[ -z "$codename" ]]; then
+        panel_warn_log "MongoDB ${MONGODB_SERIES} has no packages for ${id} ${current}."
         return 1
+      fi
+      if [[ "$codename" != "$current" ]]; then
+        panel_info_log "Using MongoDB ${MONGODB_SERIES} packages built for ${id} ${codename}."
       fi
       pkg_install gnupg curl
       if [[ ! -s "$MONGODB_KEYRING" ]]; then
         curl -fsSL --max-time 30 "https://pgp.mongodb.com/server-${MONGODB_SERIES}.asc" \
           | gpg --dearmor -o "$MONGODB_KEYRING" || return 1
       fi
+      # One series at a time: drop the list for any other series.
+      find /etc/apt/sources.list.d -maxdepth 1 -name 'mongodb-org-*.list' -delete
       printf 'deb [signed-by=%s] %s %s/mongodb-org/%s %s\n' \
         "$MONGODB_KEYRING" "$base" "$codename" "$MONGODB_SERIES" "$component" \
         > "/etc/apt/sources.list.d/mongodb-org-${MONGODB_SERIES}.list"
       DPANEL_APT_UPDATED=false pkg_update_index
       ;;
     rpm)
+      find /etc/yum.repos.d -maxdepth 1 -name 'mongodb-org-*.repo' -delete
       cat > "/etc/yum.repos.d/mongodb-org-${MONGODB_SERIES}.repo" <<REPO
 [mongodb-org-${MONGODB_SERIES}]
 name=MongoDB Repository
@@ -92,6 +157,11 @@ REPO
 
 mongodb_install_packages() {
   pkg_install mongodb-org
+}
+
+mongodb_remove_packages() {
+  pkg_remove_if_installed mongodb-org mongodb-org-server mongodb-org-mongos mongodb-org-tools mongodb-org-database \
+    mongodb-org-database-tools-extra mongodb-org-shell mongodb-mongosh mongodb-database-tools
 }
 
 mongodb_wait_ready() {
@@ -174,7 +244,21 @@ mongodb_install() {
     panel_warn_log "Skipping MongoDB: this CPU lacks AVX, which MongoDB ${MONGODB_SERIES} needs."
     return 0
   fi
+  local installed_series
+  installed_series="$(mongodb_installed_series)"
+  if [[ -n "$installed_series" && "$installed_series" != "$MONGODB_SERIES" ]]; then
+    # A different major version may not open existing data files, so only
+    # switch a MongoDB that never stored anything.
+    if mongodb_has_data; then
+      panel_warn_log "MongoDB ${installed_series} is installed with data, but kernel $(uname -r) needs ${MONGODB_SERIES}. Not switching automatically."
+    else
+      panel_info_log "Kernel $(uname -r) needs MongoDB ${MONGODB_SERIES}; replacing ${installed_series}."
+      mongodb_off
+      mongodb_remove_packages
+    fi
+  fi
   if ! mongodb_installed; then
+    panel_info_log "Installing MongoDB ${MONGODB_SERIES} for kernel $(uname -r)."
     if ! mongodb_add_repo; then
       panel_warn_log "Skipping MongoDB on this server."
       return 0
@@ -202,7 +286,7 @@ mongodb_update() {
 
 mongodb_remove() {
   mongodb_off
-  pkg_remove mongodb-org mongodb-org-server mongodb-org-mongos mongodb-org-tools mongodb-mongosh
+  mongodb_remove_packages
   panel_info_log "mongodb removed. Data in /var/lib/mongodb (or /var/lib/mongo) was kept."
 }
 
