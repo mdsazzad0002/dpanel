@@ -23,6 +23,10 @@ class WebsiteDnsProvisionService
             return ['managed' => false, 'created' => false, 'reactivated' => false, 'skipped' => 'empty-domain', 'nameservers' => []];
         }
 
+        if (filter_var($domain, FILTER_VALIDATE_IP) !== false) {
+            return ['managed' => false, 'created' => false, 'reactivated' => false, 'skipped' => 'ip-address', 'nameservers' => []];
+        }
+
         if (! $requestedManageDns) {
             return ['managed' => false, 'created' => false, 'reactivated' => false, 'skipped' => 'not-requested', 'nameservers' => []];
         }

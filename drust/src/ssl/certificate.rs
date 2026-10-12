@@ -1,4 +1,4 @@
-use std::net::ToSocketAddrs;
+use std::net::{Ipv4Addr, ToSocketAddrs};
 use std::path::Path;
 use std::process::Command;
 
@@ -17,6 +17,16 @@ const RESERVED_SSL_SUFFIXES: [&str; 5] = [".localhost", ".local", ".test", ".exa
 /// under `/home/<owner>/...`, but the panel's own reserved website (id 1)
 /// is deployed here instead, so it needs an explicit, fixed exception.
 const PANEL_APP_ROOT: &str = "/var/www/dpanel";
+
+/// Where self-signed IP certificates live. The gateway falls back to
+/// `/etc/drust/tls/<domain>.{crt,key}` when there is no certbot lineage.
+const SELF_SIGNED_DIR: &str = "/etc/drust/tls";
+
+/// Public CAs will not issue for a private IP, and certbot cannot issue
+/// for any IP, so IP-address sites get a self-signed certificate.
+fn is_ip_address(domain: &str) -> bool {
+    domain.parse::<Ipv4Addr>().is_ok()
+}
 
 fn valid_domain(domain: &str) -> bool {
     !domain.is_empty()
@@ -88,6 +98,100 @@ fn certificate_valid(path: &str, domain: &str, renew_before_days: u64) -> bool {
     )
 }
 
+fn ip_certificate_valid(path: &str, ip: &str, renew_before_days: u64) -> bool {
+    let seconds = renew_before_days.saturating_mul(86_400).to_string();
+    command_success(
+        "openssl",
+        &["x509", "-in", path, "-noout", "-checkend", &seconds],
+    ) && ip_matches_certificate(path, ip)
+}
+
+/// `openssl x509 -checkip` exits 0 on a mismatch too, so read its verdict.
+fn ip_matches_certificate(path: &str, ip: &str) -> bool {
+    Command::new("openssl")
+        .args(["x509", "-in", path, "-noout", "-checkip", ip])
+        .output()
+        .map(|output| {
+            output.status.success()
+                && String::from_utf8_lossy(&output.stdout).contains(" does match certificate")
+        })
+        .unwrap_or(false)
+}
+
+fn ensure_self_signed(ip: &str, renew_before_days: u64) -> Result<Value, String> {
+    let certificate_path = format!("{SELF_SIGNED_DIR}/{ip}.crt");
+    let private_key_path = format!("{SELF_SIGNED_DIR}/{ip}.key");
+    let existed = Path::new(&certificate_path).is_file() && Path::new(&private_key_path).is_file();
+    let needs_issue = !existed || !ip_certificate_valid(&certificate_path, ip, renew_before_days);
+
+    if needs_issue {
+        std::fs::create_dir_all(SELF_SIGNED_DIR)
+            .map_err(|error| format!("failed to create {SELF_SIGNED_DIR}: {error}"))?;
+        let subject = format!("/CN={ip}");
+        let san = format!("subjectAltName=IP:{ip}");
+        let output = Command::new("openssl")
+            .args([
+                "req",
+                "-x509",
+                "-newkey",
+                "ec",
+                "-pkeyopt",
+                "ec_paramgen_curve:prime256v1",
+                "-nodes",
+                "-days",
+                "825",
+                "-subj",
+                &subject,
+                "-addext",
+                &san,
+                "-keyout",
+                &private_key_path,
+                "-out",
+                &certificate_path,
+            ])
+            .output()
+            .map_err(|error| format!("failed to start openssl: {error}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "self-signed certificate generation failed: {}",
+                stderr.trim().chars().take(4000).collect::<String>()
+            ));
+        }
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&private_key_path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|error| format!("failed to restrict private key permissions: {error}"))?;
+    }
+
+    if !ip_certificate_valid(&certificate_path, ip, 0) {
+        return Err("Self-signed certificate is missing or does not match the IP address.".into());
+    }
+
+    let gateway_reloaded = if needs_issue {
+        if !trigger_gateway_reload() {
+            return Err(
+                "Certificate is valid, but notifying the edge gateway to reload it failed.".into(),
+            );
+        }
+        true
+    } else {
+        false
+    };
+
+    Ok(json!({
+        "status": "valid",
+        "self_signed": true,
+        "issued": needs_issue && !existed,
+        "renewed": needs_issue && existed,
+        "include_www": false,
+        "certificate_path": certificate_path,
+        "private_key_path": private_key_path,
+        "expires_at": certificate_expiry(&certificate_path),
+        "gateway_reloaded": gateway_reloaded,
+        "gateway_reload_scheduled": false,
+    }))
+}
+
 fn certificate_expiry(path: &str) -> Option<String> {
     let output = Command::new("openssl")
         .args(["x509", "-in", path, "-noout", "-enddate"])
@@ -126,6 +230,9 @@ pub(super) fn ensure(
     }
     if !root_path_buf.is_dir() {
         return Err(format!("Website root path does not exist: {root_path}"));
+    }
+    if is_ip_address(&domain) {
+        return ensure_self_signed(&domain, renew_before_days);
     }
 
     let live_dir = format!("/etc/letsencrypt/live/{domain}");

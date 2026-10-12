@@ -32,6 +32,9 @@ use Inertia\Response;
 
 class MainWebsiteController extends Controller
 {
+    /** A hostname, or a bare IPv4 address so a site can be served at http(s)://<ip>. */
+    private const DOMAIN_OR_IP_REGEX = '/^(?:(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))$/';
+
     public function __construct(
         protected FilemanagerService $filemanagerService,
         protected WebsiteService $websiteService,
@@ -64,7 +67,7 @@ class MainWebsiteController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $domainRegex = '/^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/';
+        $domainRegex = self::DOMAIN_OR_IP_REGEX;
         $domainType = (string) $request->input('domain_type', 'main');
 
         $validator = Validator::make($request->all(), [
@@ -602,7 +605,7 @@ class MainWebsiteController extends Controller
                 'required',
                 'string',
                 'max:253',
-                'regex:/^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/',
+                'regex:'.self::DOMAIN_OR_IP_REGEX,
             ],
         ]);
         $newDomain = strtolower(trim((string) $validated['domain']));

@@ -3,6 +3,7 @@
 use std::{
     fs::File,
     io::BufReader,
+    net::IpAddr,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
@@ -89,11 +90,22 @@ pub fn load_tls_identity(identity: &TlsIdentity) -> Result<CertifiedKey, String>
     Ok(CertifiedKey::new(certs, signing_key))
 }
 
+/// Certificates for one reload: SNI-matched hostnames, plus the certificate
+/// of the first IP-address site. Clients never send SNI for an IP literal
+/// (RFC 6066), so a site reached as `https://<ip>` can only be served from
+/// that fallback.
+#[derive(Debug)]
+struct CertSet {
+    sni: ResolvesServerCertUsingSni,
+    ip_fallback: Option<Arc<CertifiedKey>>,
+}
+
 /// Loads every identity it can. One unreadable/mismatched certificate is
 /// logged and skipped instead of failing the whole set — otherwise a single
 /// broken site would stop every newly issued certificate from going live.
-fn build_sni_resolver(store: &TlsStore) -> Result<ResolvesServerCertUsingSni, String> {
+fn build_cert_set(store: &TlsStore) -> Result<CertSet, String> {
     let mut resolver = ResolvesServerCertUsingSni::new();
+    let mut ip_fallback = None;
     for identity in store.identities.iter() {
         let certified = match load_tls_identity(identity) {
             Ok(certified) => certified,
@@ -103,6 +115,12 @@ fn build_sni_resolver(store: &TlsStore) -> Result<ResolvesServerCertUsingSni, St
             }
         };
         for hostname in identity.hostnames.iter() {
+            if hostname.parse::<IpAddr>().is_ok() {
+                if ip_fallback.is_none() {
+                    ip_fallback = Some(Arc::new(certified.clone()));
+                }
+                continue;
+            }
             // rustls rejects names the certificate does not cover (e.g. an
             // optional www alias); skip just that name.
             if let Err(error) = resolver.add(hostname, certified.clone()) {
@@ -110,7 +128,10 @@ fn build_sni_resolver(store: &TlsStore) -> Result<ResolvesServerCertUsingSni, St
             }
         }
     }
-    Ok(resolver)
+    Ok(CertSet {
+        sni: resolver,
+        ip_fallback,
+    })
 }
 
 /// SNI cert resolver whose underlying certificate set can be swapped in
@@ -120,18 +141,18 @@ fn build_sni_resolver(store: &TlsStore) -> Result<ResolvesServerCertUsingSni, St
 /// undisturbed.
 #[derive(Debug)]
 pub struct DynamicCertResolver {
-    inner: RwLock<Arc<ResolvesServerCertUsingSni>>,
+    inner: RwLock<Arc<CertSet>>,
 }
 
 impl DynamicCertResolver {
     pub fn new(store: &TlsStore) -> Result<Self, String> {
         Ok(Self {
-            inner: RwLock::new(Arc::new(build_sni_resolver(store)?)),
+            inner: RwLock::new(Arc::new(build_cert_set(store)?)),
         })
     }
 
     pub fn update(&self, store: &TlsStore) -> Result<(), String> {
-        let resolver = build_sni_resolver(store)?;
+        let resolver = build_cert_set(store)?;
         let mut guard = self
             .inner
             .write()
@@ -143,8 +164,11 @@ impl DynamicCertResolver {
 
 impl ResolvesServerCert for DynamicCertResolver {
     fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
-        let resolver = self.inner.read().ok()?.clone();
-        resolver.resolve(client_hello)
+        let set = self.inner.read().ok()?.clone();
+        if client_hello.server_name().is_none() {
+            return set.ip_fallback.clone();
+        }
+        set.sni.resolve(client_hello)
     }
 }
 

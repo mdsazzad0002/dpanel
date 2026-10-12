@@ -182,6 +182,9 @@ const isReservedSslDomain = computed(() => {
     return domain === 'localhost' || RESERVED_SSL_SUFFIXES.some((suffix) => domain.endsWith(suffix));
 });
 
+// An IP site gets a self-signed certificate: no public CA issues for private IPs.
+const isIpDomain = computed(() => /^(\d{1,3}\.){3}\d{1,3}$/.test(finalDomain.value));
+
 watch(isReservedSslDomain, (reserved) => {
     if (reserved) {
         form.enable_ssl = false;
@@ -632,6 +635,9 @@ onBeforeUnmount(() => {
                     </div>
                     <p v-if="isReservedSslDomain" class="mt-1 text-xs text-slate-500">
                         SSL isn't available for local domains like .localhost/.local/.test/.example/.invalid — they aren't publicly resolvable.
+                    </p>
+                    <p v-else-if="isIpDomain && form.enable_ssl" class="mt-1 text-xs text-slate-500">
+                        IP addresses get a self-signed certificate, so browsers will show a warning on https://{{ finalDomain }}.
                     </p>
                 </div>
                 <div v-if="!props.aliasMode" class="flex items-start gap-2 pt-2 md:col-span-2">
