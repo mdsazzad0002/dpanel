@@ -121,9 +121,13 @@ pub async fn dispatch(
         .await;
         // Keep phpMyAdmin responses uncompressed. Its sign-on/logout flow
         // includes empty redirects that must not be transformed by the
-        // global compression layer.
-        response.headers_mut().remove(header::CONTENT_ENCODING);
-        response.extensions_mut().insert(super::compression::SkipCompression);
+        // global compression layer. Static assets are left alone: they may
+        // already carry a precompressed body, and dropping its
+        // Content-Encoding would hand the browser raw gzip/brotli bytes.
+        if response.extensions().get::<super::edge_cache::StaticFileResponse>().is_none() {
+            response.headers_mut().remove(header::CONTENT_ENCODING);
+            response.extensions_mut().insert(super::compression::SkipCompression);
+        }
         return response;
     }
     if site.scope == "system" && is_system_pgadmin_path(&path) {
