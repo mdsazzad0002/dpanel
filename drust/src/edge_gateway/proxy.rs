@@ -37,6 +37,9 @@ impl Default for ProxyConfig {
 const STREAM_THRESHOLD_BYTES: u64 = 2 * 1024 * 1024;
 /// Requests without a declared length must not be buffered without a bound.
 const MAX_BUFFERED_REQUEST_BYTES: usize = STREAM_THRESHOLD_BYTES as usize;
+const BUFFERED_UPLOAD_TIMEOUT: Duration = Duration::from_secs(60);
+/// Maximum time allowed to receive a complete client upload.
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Longest a proxied response may go without sending a byte. Per-site
 /// timeouts (capped well below this) bound the wait for the response head.
@@ -73,7 +76,6 @@ pub async fn proxy_request_with_timeout(
     request: Request<Body>,
     timeout: Duration,
 ) -> Result<Response<Body>, String> {
-    let deadline = tokio::time::Instant::now() + timeout;
     let (parts, body) = request.into_parts();
     let uri = parts.uri.clone();
     let method = parts.method.clone();
@@ -89,17 +91,38 @@ pub async fn proxy_request_with_timeout(
     // Large uploads stream to the app. The length header is kept, so the
     // upstream sees a normal length-delimited body (WSGI apps read
     // CONTENT_LENGTH and would see an empty chunked body).
+    let mut upload_complete = None;
     builder = match request_length {
-        Some(length) if length > STREAM_THRESHOLD_BYTES => builder
-            .header(header::CONTENT_LENGTH, length)
-            .body(reqwest::Body::wrap_stream(body.into_data_stream())),
+        Some(length) if length > STREAM_THRESHOLD_BYTES => {
+            let (complete_tx, complete_rx) = tokio::sync::oneshot::channel();
+            let stream = body.into_data_stream();
+            let stream = futures_util::stream::unfold(
+                (stream, Some(complete_tx)),
+                |(mut stream, mut complete)| async move {
+                    match stream.next().await {
+                        Some(Ok(bytes)) => Some((Ok::<_, std::io::Error>(bytes), (stream, complete))),
+                        Some(Err(error)) => Some((Err(std::io::Error::other(error)), (stream, complete))),
+                        None => {
+                            if let Some(complete) = complete.take() {
+                                let _ = complete.send(());
+                            }
+                            None
+                        }
+                    }
+                },
+            );
+            upload_complete = Some(complete_rx);
+            builder
+                .header(header::CONTENT_LENGTH, length)
+                .body(reqwest::Body::wrap_stream(stream))
+        }
         _ => {
             let bytes = tokio::time::timeout_at(
-                deadline,
+                tokio::time::Instant::now() + BUFFERED_UPLOAD_TIMEOUT,
                 axum::body::to_bytes(body, MAX_BUFFERED_REQUEST_BYTES),
             )
             .await
-            .map_err(|_| format!("request body was not received within {}s", timeout.as_secs()))?
+            .map_err(|_| format!("request body was not received within {}s", BUFFERED_UPLOAD_TIMEOUT.as_secs()))?
             .map_err(|error| format!("read request body failed: {error}"))?;
             builder.body(bytes)
         }
@@ -122,10 +145,35 @@ pub async fn proxy_request_with_timeout(
         builder = builder.header("x-forwarded-host", host);
     }
 
-    let response = tokio::time::timeout_at(deadline, builder.send())
-        .await
-        .map_err(|_| format!("upstream did not respond within {}s", timeout.as_secs()))?
-        .map_err(|error| format!("upstream request failed: {error}"))?;
+    let mut deadline = tokio::time::Instant::now() + timeout;
+    let send = builder.send();
+    tokio::pin!(send);
+    let response = if let Some(mut upload_complete) = upload_complete {
+        tokio::select! {
+            result = &mut send => result.map_err(|error| format!("upstream request failed: {error}"))?,
+            completed = tokio::time::timeout(UPLOAD_TIMEOUT, &mut upload_complete) => {
+                match completed {
+                    Err(_) => return Err(format!("request upload exceeded {}s", UPLOAD_TIMEOUT.as_secs())),
+                    Ok(Ok(())) => {
+                        deadline = tokio::time::Instant::now() + timeout;
+                        tokio::time::timeout_at(deadline, &mut send)
+                            .await
+                            .map_err(|_| format!("upstream did not respond within {}s", timeout.as_secs()))?
+                            .map_err(|error| format!("upstream request failed: {error}"))?
+                    }
+                    Ok(Err(_)) => tokio::time::timeout_at(deadline, &mut send)
+                        .await
+                        .map_err(|_| format!("upstream did not respond within {}s", timeout.as_secs()))?
+                        .map_err(|error| format!("upstream request failed: {error}"))?,
+                }
+            }
+        }
+    } else {
+        tokio::time::timeout_at(deadline, &mut send)
+            .await
+            .map_err(|_| format!("upstream did not respond within {}s", timeout.as_secs()))?
+            .map_err(|error| format!("upstream request failed: {error}"))?
+    };
 
     let status = response.status();
     let response_headers = response.headers().clone();

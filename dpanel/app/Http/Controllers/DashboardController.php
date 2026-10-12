@@ -29,6 +29,87 @@ class DashboardController extends Controller
         ]);
     }
 
+    public function usage(Request $request): Response
+    {
+        /** @var User $actor */
+        $actor = $request->user();
+        $userIds = $actor->hasRole('reseller')
+            ? User::query()->whereKey($actor->id)->orWhere('reseller_id', $actor->id)->pluck('id')->all()
+            : [$actor->id];
+
+        $websiteQuery = Website::query()->whereIn('assigned_user_id', $userIds)
+            ->whereNotIn('type', ['alis', 'alias']);
+        if ($actor->hasRole('reseller')) {
+            $websiteQuery->orWhere(function ($query) use ($actor): void {
+                $query->where('assigned_reseller_id', $actor->id)
+                    ->whereNull('assigned_user_id')
+                    ->whereNotIn('type', ['alis', 'alias']);
+            });
+        }
+
+        $domains = $websiteQuery->pluck('domain')
+            ->map(fn ($domain) => strtolower(trim((string) $domain)))
+            ->filter()->unique()->values();
+
+        $request->validate(['month' => ['sometimes', 'date_format:Y-m']]);
+        $month = (string) $request->query('month', now('UTC')->format('Y-m'));
+        $path = rtrim((string) config('serverpanel.bandwidth_directory'), '/')
+            .'/'.$month.'.json';
+        $payload = is_file($path) ? @file_get_contents($path) : false;
+        $usage = is_string($payload) ? json_decode($payload, true) : null;
+        $available = is_array($usage);
+        $usage = $available ? $usage : [];
+
+        $rows = $domains->map(function (string $domain) use ($usage): array {
+            $record = $usage[$domain] ?? [];
+            $upload = max(0, (int) ($record['upload_bytes'] ?? 0));
+            $download = max(0, (int) ($record['download_bytes'] ?? 0));
+
+            return [
+                'domain' => $domain,
+                'requests' => max(0, (int) ($record['requests'] ?? 0)),
+                'upload_bytes' => $upload,
+                'download_bytes' => $download,
+                'total_bytes' => $upload + $download,
+            ];
+        })->sortByDesc('total_bytes')->values();
+
+        $dailyUsage = [];
+        foreach ($domains as $domain) {
+            foreach (($usage[$domain]['days'] ?? []) as $date => $record) {
+                if (! is_array($record)
+                    || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $date)
+                    || ! str_starts_with((string) $date, $month.'-')) {
+                    continue;
+                }
+                $dailyUsage[$date] ??= ['date' => (string) $date, 'requests' => 0, 'upload_bytes' => 0, 'download_bytes' => 0];
+                $dailyUsage[$date]['requests'] += max(0, (int) ($record['requests'] ?? 0));
+                $dailyUsage[$date]['upload_bytes'] += max(0, (int) ($record['upload_bytes'] ?? 0));
+                $dailyUsage[$date]['download_bytes'] += max(0, (int) ($record['download_bytes'] ?? 0));
+            }
+        }
+        $dailyRows = collect($dailyUsage)->map(function (array $row): array {
+            $row['total_bytes'] = $row['upload_bytes'] + $row['download_bytes'];
+
+            return $row;
+        })->sortByDesc('date')->values();
+
+        return Inertia::render('Dashboard/Usage', [
+            'scope' => $actor->hasRole('reseller') ? 'Reseller aggregate website traffic' : 'Your website traffic',
+            'month' => $month,
+            'months' => collect(range(0, 11))->map(fn (int $offset) => now('UTC')->subMonths($offset)->format('Y-m')),
+            'available' => $available,
+            'rows' => $rows,
+            'dailyRows' => $dailyRows,
+            'totals' => [
+                'requests' => (int) $rows->sum('requests'),
+                'upload_bytes' => (int) $rows->sum('upload_bytes'),
+                'download_bytes' => (int) $rows->sum('download_bytes'),
+                'total_bytes' => (int) $rows->sum('total_bytes'),
+            ],
+        ]);
+    }
+
     /** @return array<string, mixed> */
     private function buildAccountSummary(?User $actor): array
     {
@@ -52,14 +133,17 @@ class DashboardController extends Controller
         }
 
         $websites = $websiteQuery->get(['domain', 'root_path']);
-        $domains = $websites->pluck('domain')
-            ->merge(MailDomain::query()->whereIn('assigned_user_id', $userIds)->pluck('domain'))
+        $websiteDomains = $websites->pluck('domain')
             ->map(fn ($domain) => strtolower(trim((string) $domain)))
             ->filter()->unique()->values()->all();
+        $mailDomains = MailDomain::query()->whereIn('assigned_user_id', $userIds)->pluck('domain')
+            ->map(fn ($domain) => strtolower(trim((string) $domain)))
+            ->filter()->unique()->values()->all();
+        $domains = collect($websiteDomains)->merge($mailDomains)->unique()->values()->all();
         $mailboxes = Mailbox::query()->whereIn('domain', $domains);
         $session = PanelSession::query()->where('user_id', $actor->id)->latest('created_at')->first();
         $package = $actor->package;
-        $bandwidth = $this->bandwidthUsage($domains);
+        $bandwidth = $this->bandwidthUsage($websiteDomains);
 
         return [
             'scope' => $actor->hasRole('reseller') ? 'Reseller aggregate usage' : 'Your account usage',

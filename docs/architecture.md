@@ -119,8 +119,24 @@ finish within 10 s and HTTP/1 request headers within 30 s, so idle or slowloris
 clients are dropped. TLS sessions resume through session tickets and a
 10240-entry session cache. `edge-gateway.service` raises `LimitNOFILE`, since
 the systemd default of 1024 file descriptors caps the gateway near 1000
-connections. Node, Python and Docker responses without a `Content-Length` are
-read up to 2 MiB and streamed beyond that.
+connections. Accepted TCP sockets enable `TCP_NODELAY` to reduce latency for
+small request/response exchanges. Node, Python and Docker responses without a
+`Content-Length` are read up to 2 MiB and streamed beyond that. Proxied uploads have a separate
+300-second maximum upload window; once the upload completes, the site's
+upstream response timeout starts. Small or lengthless request bodies are
+limited to 2 MiB and 60 seconds while buffering.
+
+`GET /__admin/metrics` reports process-lifetime request and 5xx counts, average
+and maximum request latency, active requests/connections, the configured
+connection limit, and the number of times a listener encountered that limit.
+It requires `Authorization: Bearer <DRUST_API_TOKEN>`. Counters reset when the
+gateway restarts.
+
+Account bandwidth is stored as monthly JSON snapshots under
+`DRUST_BANDWIDTH_DIR` (default `/var/lib/drust/bandwidth`). Upload bytes are
+counted as the gateway consumes request body data, and download bytes as it
+streams response body data. Daily per-domain totals are included for the usage
+history page; older monthly files without daily totals remain readable.
 
 ## PHP execution
 

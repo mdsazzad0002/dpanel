@@ -1,16 +1,23 @@
 #![allow(dead_code)]
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use axum::{
     Json, Router,
     body::Body,
     extract::{Query, State},
     http::{HeaderMap, HeaderValue, Request, StatusCode},
-    middleware::{map_request, map_response},
+    middleware::{Next, from_fn, map_request, map_response},
     response::{IntoResponse, Response},
     routing::{any, get, post},
 };
+use bytes::Bytes;
 use futures_util::StreamExt;
 use hyper::body::Body as HttpBody;
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -18,6 +25,7 @@ use hyper_util::service::TowerToHyperService;
 use rustls::ServerConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc;
@@ -288,15 +296,62 @@ pub fn build_demo_router(state: DemoServerState) -> Router {
         .route("/__admin/reload", post(handle_reload))
         .route("/__admin/cache/purge", post(handle_cache_purge))
         .route("/__admin/cache/stats", get(handle_cache_stats))
+        .route("/__admin/metrics", get(handle_gateway_metrics))
         .route("/__admin/health", any(handle_health))
         .route("/__admin/upstreams/health", any(handle_upstreams_health))
         .layer(super::compression::layer())
+        .layer(from_fn(track_request))
         .with_state(Arc::new(state))
 }
 
+#[derive(Default)]
+struct RequestMetrics {
+    requests: AtomicU64,
+    errors_5xx: AtomicU64,
+    active: AtomicU64,
+    total_latency_us: AtomicU64,
+    max_latency_us: AtomicU64,
+}
+
+fn request_metrics() -> &'static RequestMetrics {
+    static METRICS: std::sync::OnceLock<RequestMetrics> = std::sync::OnceLock::new();
+    METRICS.get_or_init(RequestMetrics::default)
+}
+
+static CONNECTION_SATURATION_EVENTS: AtomicU64 = AtomicU64::new(0);
+
+async fn track_request(request: Request<Body>, next: Next) -> Response {
+    let metrics = request_metrics();
+    metrics.active.fetch_add(1, Ordering::Relaxed);
+    let started = tokio::time::Instant::now();
+    let response = next.run(request).await;
+    let latency_us = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
+    metrics.active.fetch_sub(1, Ordering::Relaxed);
+    metrics.requests.fetch_add(1, Ordering::Relaxed);
+    if response.status().is_server_error() {
+        metrics.errors_5xx.fetch_add(1, Ordering::Relaxed);
+    }
+    metrics.total_latency_us.fetch_add(latency_us, Ordering::Relaxed);
+    metrics.max_latency_us.fetch_max(latency_us, Ordering::Relaxed);
+    if let Some(counter) = response.extensions().get::<BandwidthResponseCounter>().cloned() {
+        let (mut parts, body) = response.into_parts();
+        parts.extensions.remove::<BandwidthResponseCounter>();
+        Response::from_parts(parts, Body::new(BandwidthBody {
+            inner: body,
+            counter: counter.0,
+            upload: false,
+        }))
+    } else {
+        response
+    }
+}
+
+#[derive(Clone)]
+struct BandwidthResponseCounter(super::bandwidth::DomainBandwidthCounter);
+
 pub async fn handle_request(
     State(state): State<Arc<DemoServerState>>,
-    request: Request<Body>,
+    mut request: Request<Body>,
 ) -> Response {
     let host = request
         .headers()
@@ -304,22 +359,28 @@ pub async fn handle_request(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("-")
         .to_string();
-    let upload_bytes = request
-        .headers()
-        .get(axum::http::header::CONTENT_LENGTH)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(0);
     let path = request.uri().path().to_string();
     tracing::debug!(host = %host, path = %path, "incoming request");
     let snapshot = get_cached_snapshot(&state).await;
     let site = super::resolve_site(snapshot.as_ref(), &host);
     let canonical_domain = site.and_then(|site| site.hostnames.first().cloned());
+    let bandwidth_counter = canonical_domain
+        .as_deref()
+        .and_then(|domain| state.bandwidth.begin_request(domain));
+    if let Some(counter) = &bandwidth_counter {
+        let (parts, body) = request.into_parts();
+        request = Request::from_parts(parts, Body::new(BandwidthBody {
+            inner: body,
+            counter: counter.clone(),
+            upload: true,
+        }));
+    }
     if let Some(response) = site.and_then(|site| super::redirect_for(site, &request)) {
-        if let Some(domain) = &canonical_domain {
-            state.bandwidth.record(domain, upload_bytes, 0);
-        }
-        return response;
+        return if let Some(counter) = &bandwidth_counter {
+            account_response(counter, response)
+        } else {
+            response
+        };
     }
     let decision = site.map_or(edge_cache::Decision::Off, |site| {
         edge_cache::decide(site, &request, edge_cache::unix_now())
@@ -334,6 +395,7 @@ pub async fn handle_request(
         // request across the wait below would make this future non-Send.
         let request_headers = request.headers();
         let shared = &state;
+        let bandwidth_counter = bandwidth_counter.clone();
         let serve = |entry: Arc<edge_cache::CachedResponse>, label, outcome| async move {
             let mut response = entry.respond(request_headers, head, label);
             if !head {
@@ -341,8 +403,11 @@ pub async fn handle_request(
             }
             let bytes = response.body().size_hint().exact().unwrap_or(0);
             shared.edge_cache.record(domain, outcome, bytes);
-            shared.bandwidth.record(domain, upload_bytes, bytes);
-            response
+            if let Some(counter) = &bandwidth_counter {
+                account_response(counter, response)
+            } else {
+                response
+            }
         };
         match state.edge_cache.lookup(key) {
             edge_cache::Lookup::Fresh(entry) => return serve(entry, "HIT", edge_cache::Outcome::Hit).await,
@@ -381,21 +446,58 @@ pub async fn handle_request(
         }
         _ => response,
     };
-    if let Some(domain) = canonical_domain {
-        // Streamed bodies (large PHP output) have no exact size up front.
-        let download_bytes = response.body().size_hint().exact().unwrap_or_else(|| {
-            response
-                .headers()
-                .get(axum::http::header::CONTENT_LENGTH)
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(0)
-        });
-        state
-            .bandwidth
-            .record(&domain, upload_bytes, download_bytes);
+    if let Some(counter) = &bandwidth_counter {
+        account_response(counter, response)
+    } else {
+        response
     }
+}
+
+fn account_response(counter: &super::bandwidth::DomainBandwidthCounter, response: Response) -> Response {
+    let mut response = response;
+    response.extensions_mut().insert(BandwidthResponseCounter(counter.clone()));
     response
+}
+
+struct BandwidthBody {
+    inner: Body,
+    counter: super::bandwidth::DomainBandwidthCounter,
+    upload: bool,
+}
+
+impl http_body::Body for BandwidthBody {
+    type Data = Bytes;
+    type Error = axum::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.inner).poll_frame(cx) {
+            Poll::Ready(Some(Ok(frame))) => {
+                if let Some(bytes) = frame.data_ref() {
+                    if this.upload {
+                        this.counter.record_upload(bytes.len() as u64);
+                    } else {
+                        this.counter.record_download(bytes.len() as u64);
+                    }
+                }
+                Poll::Ready(Some(Ok(frame)))
+            }
+            Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(error))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.inner.size_hint()
+    }
 }
 
 /// Stores a cacheable origin response and labels what the cache did.
@@ -845,6 +947,33 @@ pub async fn handle_health(State(state): State<Arc<DemoServerState>>) -> Json<He
     })
 }
 
+pub async fn handle_gateway_metrics(headers: HeaderMap) -> Response {
+    if !admin_token_ok(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"message": "unauthorized"}))).into_response();
+    }
+    let metrics = request_metrics();
+    let limit = connection_limit();
+    Json(GatewayMetricsResponse {
+        requests: metrics.requests.load(Ordering::Relaxed),
+        errors_5xx: metrics.errors_5xx.load(Ordering::Relaxed),
+        active_requests: metrics.active.load(Ordering::Relaxed),
+        average_latency_ms: average_latency_ms(metrics),
+        max_latency_ms: metrics.max_latency_us.load(Ordering::Relaxed) / 1000,
+        active_connections: limit.saturating_sub(connection_permits().available_permits()),
+        connection_limit: limit,
+        connection_saturation_events: CONNECTION_SATURATION_EVENTS.load(Ordering::Relaxed),
+    }).into_response()
+}
+
+fn average_latency_ms(metrics: &RequestMetrics) -> u64 {
+    let requests = metrics.requests.load(Ordering::Relaxed);
+    if requests == 0 {
+        0
+    } else {
+        metrics.total_latency_us.load(Ordering::Relaxed) / requests / 1000
+    }
+}
+
 pub async fn handle_upstreams_health(
     State(state): State<Arc<DemoServerState>>,
 ) -> Json<UpstreamsHealthResponse> {
@@ -1014,16 +1143,19 @@ const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Open connections over both listeners (`DRUST_MAX_CONNECTIONS`, 30000).
 /// At the limit new ones wait in the kernel backlog instead of failing.
+fn connection_limit() -> usize {
+    std::env::var("DRUST_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(30_000)
+}
+
 fn connection_permits() -> Arc<tokio::sync::Semaphore> {
     static PERMITS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
     PERMITS
         .get_or_init(|| {
-            let limit = std::env::var("DRUST_MAX_CONNECTIONS")
-                .ok()
-                .and_then(|value| value.trim().parse::<usize>().ok())
-                .filter(|value| *value > 0)
-                .unwrap_or(30_000);
-            Arc::new(tokio::sync::Semaphore::new(limit))
+            Arc::new(tokio::sync::Semaphore::new(connection_limit()))
         })
         .clone()
 }
@@ -1036,6 +1168,10 @@ async fn serve_listener(
 ) -> Result<(), String> {
     let permits = connection_permits();
     loop {
+        if permits.available_permits() == 0 {
+            CONNECTION_SATURATION_EVENTS.fetch_add(1, Ordering::Relaxed);
+            warn!(limit = connection_limit(), "gateway connection limit reached; waiting for a connection to close");
+        }
         let permit = permits
             .clone()
             .acquire_owned()
@@ -1051,6 +1187,9 @@ async fn serve_listener(
                 continue;
             }
         };
+        if let Err(error) = stream.set_nodelay(true) {
+            tracing::debug!(peer = %peer, %error, "could not enable TCP_NODELAY");
+        }
         let tls = tls.clone();
         let router = router.clone();
         tokio::spawn(async move {
@@ -1122,6 +1261,18 @@ pub struct HealthResponse {
     pub status: String,
     pub version: u64,
     pub sites: u64,
+}
+
+#[derive(Serialize)]
+pub struct GatewayMetricsResponse {
+    pub requests: u64,
+    pub errors_5xx: u64,
+    pub active_requests: u64,
+    pub average_latency_ms: u64,
+    pub max_latency_ms: u64,
+    pub active_connections: usize,
+    pub connection_limit: usize,
+    pub connection_saturation_events: u64,
 }
 
 #[derive(Serialize)]

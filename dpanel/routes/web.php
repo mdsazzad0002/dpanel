@@ -244,6 +244,8 @@ Route::prefix('cpsess{token}')
     ->group(function (): void {
         Route::get('/dashboard', [DashboardController::class, 'index'])
             ->name('dashboard');
+        Route::get('/dashboard/usage', [DashboardController::class, 'usage'])
+            ->name('dashboard.usage');
 
         Route::get('/billing', [BillingSystemController::class, 'index'])
             ->middleware('role:admin|superadmin')

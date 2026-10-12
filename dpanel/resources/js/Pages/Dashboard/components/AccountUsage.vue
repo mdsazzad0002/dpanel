@@ -1,9 +1,15 @@
 <script setup>
 import { computed } from 'vue';
+import { Link, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     summary: { type: Object, default: null },
 });
+
+const page = usePage();
+const panelRoute = (name) => page.props.panel?.token
+    ? route(name, { token: page.props.panel.token })
+    : route(name);
 
 const formatMb = (mb) => {
     const value = Number(mb || 0);
@@ -53,8 +59,13 @@ const quotas = computed(() => {
     <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900">
         <header class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5 dark:border-white/10">
             <h2 class="font-mono text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">Statistics</h2>
-            <span v-if="summary" class="truncate text-[11px] text-slate-500 dark:text-slate-400">{{ summary.scope }}</span>
-            <span v-else class="h-3 w-24 animate-pulse rounded bg-slate-100 dark:bg-white/[0.06]"></span>
+            <div class="flex min-w-0 items-center gap-2">
+                <span v-if="summary" class="truncate text-[11px] text-slate-500 dark:text-slate-400">{{ summary.scope }}</span>
+                <span v-else class="h-3 w-24 animate-pulse rounded bg-slate-100 dark:bg-white/[0.06]"></span>
+                <Link v-if="summary" :href="panelRoute('dashboard.usage')" class="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-400/10">
+                    Usage log <i class="bi bi-arrow-up-right ml-1"></i>
+                </Link>
+            </div>
         </header>
 
         <!-- Two columns while full width (sm, and lg before the xl right rail); one in the rail. -->
