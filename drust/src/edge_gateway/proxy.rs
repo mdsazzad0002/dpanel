@@ -35,6 +35,8 @@ impl Default for ProxyConfig {
 /// them cacheable and counted exactly; larger ones stream through instead of
 /// sitting in gateway memory.
 const STREAM_THRESHOLD_BYTES: u64 = 2 * 1024 * 1024;
+/// Requests without a declared length must not be buffered without a bound.
+const MAX_BUFFERED_REQUEST_BYTES: usize = STREAM_THRESHOLD_BYTES as usize;
 
 /// Longest a proxied response may go without sending a byte. Per-site
 /// timeouts (capped well below this) bound the wait for the response head.
@@ -71,6 +73,7 @@ pub async fn proxy_request_with_timeout(
     request: Request<Body>,
     timeout: Duration,
 ) -> Result<Response<Body>, String> {
+    let deadline = tokio::time::Instant::now() + timeout;
     let (parts, body) = request.into_parts();
     let uri = parts.uri.clone();
     let method = parts.method.clone();
@@ -90,11 +93,16 @@ pub async fn proxy_request_with_timeout(
         Some(length) if length > STREAM_THRESHOLD_BYTES => builder
             .header(header::CONTENT_LENGTH, length)
             .body(reqwest::Body::wrap_stream(body.into_data_stream())),
-        _ => builder.body(
-            axum::body::to_bytes(body, usize::MAX)
-                .await
-                .map_err(|error| format!("read request body failed: {error}"))?,
-        ),
+        _ => {
+            let bytes = tokio::time::timeout_at(
+                deadline,
+                axum::body::to_bytes(body, MAX_BUFFERED_REQUEST_BYTES),
+            )
+            .await
+            .map_err(|_| format!("request body was not received within {}s", timeout.as_secs()))?
+            .map_err(|error| format!("read request body failed: {error}"))?;
+            builder.body(bytes)
+        }
     };
 
     for (name, value) in headers.iter() {
@@ -114,7 +122,6 @@ pub async fn proxy_request_with_timeout(
         builder = builder.header("x-forwarded-host", host);
     }
 
-    let deadline = tokio::time::Instant::now() + timeout;
     let response = tokio::time::timeout_at(deadline, builder.send())
         .await
         .map_err(|_| format!("upstream did not respond within {}s", timeout.as_secs()))?

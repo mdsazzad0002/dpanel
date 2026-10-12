@@ -393,6 +393,9 @@ struct Shard {
 }
 
 const SHARDS: usize = 16;
+/// Cache statistics are process-local telemetry; do not let arbitrary Host
+/// values create an unbounded number of counter sets.
+const MAX_TRACKED_DOMAINS: usize = 4096;
 
 pub struct EdgeCache {
     shards: Box<[Shard]>,
@@ -592,7 +595,12 @@ impl EdgeCache {
             Some(counters) => counters,
             // Only a domain's first request takes the write lock.
             None => match self.stats.write() {
-                Ok(mut stats) => stats.entry(domain.to_string()).or_default().clone(),
+                Ok(mut stats) => {
+                    if stats.len() >= MAX_TRACKED_DOMAINS {
+                        return;
+                    }
+                    stats.entry(domain.to_string()).or_default().clone()
+                }
                 Err(_) => return,
             },
         };

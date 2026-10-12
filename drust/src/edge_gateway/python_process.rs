@@ -4,7 +4,7 @@ use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
     process::Stdio,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, Weak},
     time::{Duration, Instant},
 };
 
@@ -34,6 +34,14 @@ const DEVELOPMENT_GUNICORN_ARGS: &str = "--reload --log-level debug";
 fn liveness_cache() -> &'static Mutex<HashMap<u16, Instant>> {
     static CACHE: OnceLock<Mutex<HashMap<u16, Instant>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Removes the per-site provisioning lock after the site is deleted. An
+/// in-flight provision keeps its own Arc alive, so this remains safe while
+/// allowing the table itself to stay bounded by live sites.
+fn provision_locks() -> &'static Mutex<HashMap<String, Weak<Mutex<()>>>> {
+    static PROVISION_LOCKS: OnceLock<Mutex<HashMap<String, Weak<Mutex<()>>>>> = OnceLock::new();
+    PROVISION_LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Shared with Node sites: app ports are unique per site.
@@ -336,12 +344,16 @@ fn unit_file_exists(unit: &str) -> bool {
 /// is per site: one site's slow install must not stall every other Python
 /// site's cold start behind it.
 fn site_provision_lock(site_id: &str) -> Result<Arc<Mutex<()>>, String> {
-    static PROVISION_LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
-    let mut locks = PROVISION_LOCKS
-        .get_or_init(|| Mutex::new(HashMap::new()))
+    let mut locks = provision_locks()
         .lock()
         .map_err(|_| "python process provision lock table is poisoned".to_string())?;
-    Ok(locks.entry(site_id.to_string()).or_default().clone())
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(site_id).and_then(Weak::upgrade) {
+        return Ok(lock);
+    }
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(site_id.to_string(), Arc::downgrade(&lock));
+    Ok(lock)
 }
 
 #[allow(clippy::too_many_arguments)]
