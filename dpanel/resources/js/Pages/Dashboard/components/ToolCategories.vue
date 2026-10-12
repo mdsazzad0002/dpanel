@@ -45,6 +45,14 @@ const categoryColors = {
     indigo: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300',
 };
 
+const categoryIconColors = {
+    emerald: 'text-emerald-500 dark:text-emerald-400',
+    sky: 'text-sky-500 dark:text-sky-400',
+    cyan: 'text-cyan-500 dark:text-cyan-400',
+    teal: 'text-teal-500 dark:text-teal-400',
+    indigo: 'text-indigo-500 dark:text-indigo-400',
+};
+
 const toolCategories = computed(() => rawToolCategories.map((category) => ({
     ...category,
     tools: category.tools.filter((tool) => route().has(tool.route)
@@ -55,34 +63,29 @@ const toolCategories = computed(() => rawToolCategories.map((category) => ({
 </script>
 
 <template>
-    <!--
-        The sidebar takes 288px from md up, so md has less room than sm:
-        column counts drop back at md and come back at lg.
-    -->
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
-        <section
-            v-for="category in toolCategories"
-            :key="category.name"
-            :class="['flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900', category.tools.length > 2 && 'sm:col-span-2 md:col-span-1 lg:col-span-2']"
-        >
-            <header class="flex items-center gap-2.5 px-4 pb-1 pt-4">
-                <span :class="['flex h-7 w-7 items-center justify-center rounded-lg text-sm', categoryColors[category.color]]"><i :class="['bi', category.icon]"></i></span>
-                <h3 class="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">{{ category.name }}</h3>
-            </header>
-            <div :class="['grid flex-1 grid-cols-2 gap-2 p-3', category.tools.length > 2 && 'sm:grid-cols-4 md:grid-cols-2 lg:grid-cols-4']">
-                <Link
-                    v-for="tool in category.tools"
-                    :key="tool.route"
-                    :href="panelRoute(tool.route)"
-                    class="group flex min-w-0 flex-col items-start gap-2.5 rounded-xl border border-slate-100 p-3 transition hover:-translate-y-0.5 hover:border-emerald-400/40 hover:bg-emerald-400/[0.04] hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 dark:border-white/[0.06] dark:hover:border-emerald-400/30 dark:hover:bg-emerald-400/[0.06]"
-                >
-                    <span :class="['flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-transform group-hover:scale-105', categoryColors[category.color]]"><i :class="['bi text-lg', tool.icon]"></i></span>
-                    <span class="w-full min-w-0">
-                        <span class="block truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{{ tool.label }}</span>
-                        <span class="block truncate text-xs text-slate-500 dark:text-slate-400">{{ tool.hint }}</span>
-                    </span>
-                </Link>
+    <!-- cPanel-style icon grid: fixed-width tiles, categories flow side by side and wrap. -->
+    <section class="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900 sm:p-5">
+        <div class="flex flex-wrap gap-x-10 gap-y-6">
+            <div v-for="category in toolCategories" :key="category.name" class="min-w-0">
+                <h3 class="mb-2.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                    <i :class="['bi', category.icon, categoryIconColors[category.color]]"></i>
+                    {{ category.name }}
+                </h3>
+                <div class="flex flex-wrap gap-1.5">
+                    <Link
+                        v-for="tool in category.tools"
+                        :key="tool.route"
+                        :href="panelRoute(tool.route)"
+                        :title="tool.hint"
+                        class="group flex w-[4.75rem] flex-col items-center gap-1.5 rounded-xl px-1 py-2.5 text-center transition hover:bg-emerald-400/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 sm:w-[5.25rem]"
+                    >
+                        <span :class="['flex h-11 w-11 items-center justify-center rounded-xl transition group-hover:-translate-y-0.5 group-hover:shadow-md group-hover:shadow-emerald-500/10', categoryColors[category.color]]">
+                            <i :class="['bi text-lg', tool.icon]"></i>
+                        </span>
+                        <span class="line-clamp-2 text-[11px] font-medium leading-tight text-slate-700 group-hover:text-slate-950 dark:text-slate-300 dark:group-hover:text-white">{{ tool.label }}</span>
+                    </Link>
+                </div>
             </div>
-        </section>
-    </div>
+        </div>
+    </section>
 </template>

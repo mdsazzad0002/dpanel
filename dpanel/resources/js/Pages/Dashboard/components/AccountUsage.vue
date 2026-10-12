@@ -71,9 +71,9 @@ const quotas = computed(() => {
             </template>
         </header>
 
-        <!-- Full-width below xl gets a second column; in the xl right rail it's a single list. -->
-        <ul class="grid gap-px bg-slate-100 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-1 dark:bg-white/[0.06]">
-            <li v-for="quota in quotas" :key="quota.label" class="min-w-0 bg-white sm:last:col-span-2 md:last:col-span-1 lg:last:col-span-2 xl:last:col-span-1 px-4 py-3.5 sm:px-5 dark:bg-slate-900">
+        <!-- Two columns only while the card is full width (sm, before the md sidebar); half width from lg up. -->
+        <ul class="grid gap-px bg-slate-100 sm:grid-cols-2 md:grid-cols-1 dark:bg-white/[0.06]">
+            <li v-for="quota in quotas" :key="quota.label" class="min-w-0 bg-white sm:last:col-span-2 md:last:col-span-1 px-4 py-3.5 sm:px-5 dark:bg-slate-900">
                 <div class="flex items-center justify-between gap-3">
                     <span class="flex min-w-0 items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
                         <i :class="['bi shrink-0 text-emerald-500 dark:text-emerald-400', quota.icon]"></i>
