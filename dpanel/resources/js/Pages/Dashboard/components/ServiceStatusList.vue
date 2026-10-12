@@ -39,7 +39,7 @@ const healthy = computed(() => list.value.filter((s) => s.tone.ping).length);
             </span>
         </header>
 
-        <ul v-if="services" class="grid gap-px bg-slate-100 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2 dark:bg-white/[0.06]">
+        <ul v-if="services" class="grid gap-px bg-slate-100 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-1 dark:bg-white/[0.06]">
             <li v-for="service in list" :key="service.name" class="flex min-w-0 items-center gap-3 bg-white px-4 py-3 sm:px-5 dark:bg-slate-900">
                 <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
                     <i :class="['bi', service.icon]"></i>
@@ -53,7 +53,7 @@ const healthy = computed(() => list.value.filter((s) => s.tone.ping).length);
                     {{ service.status }}
                 </span>
             </li>
-            <li v-if="!list.length" class="bg-white px-5 py-6 dark:bg-slate-900 sm:col-span-2 md:col-span-1 xl:col-span-2 text-center text-sm text-slate-500 dark:text-slate-400">No service data available.</li>
+            <li v-if="!list.length" class="bg-white px-5 py-6 dark:bg-slate-900 sm:col-span-2 md:col-span-1 lg:col-span-2 xl:col-span-1 text-center text-sm text-slate-500 dark:text-slate-400">No service data available.</li>
         </ul>
         <ul v-else class="divide-y divide-slate-100 dark:divide-white/[0.06]">
             <li v-for="n in 4" :key="n" class="flex items-center gap-3 px-5 py-3">

@@ -1,8 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 
-const props = defineProps({
-    stats: { type: Object, default: null },
+defineProps({
     userName: { type: String, default: '' },
 });
 
@@ -19,17 +18,10 @@ const greeting = computed(() => {
     if (hour < 18) return 'Good afternoon';
     return 'Good evening';
 });
-
-const facts = computed(() => [
-    { label: 'Host', value: props.stats?.hostname, icon: 'bi-hdd-rack' },
-    { label: 'IP', value: props.stats?.server_ip, icon: 'bi-globe', mono: true },
-    { label: 'OS', value: props.stats?.os, icon: 'bi-pc-display' },
-    { label: 'Uptime', value: props.stats?.uptime, icon: 'bi-clock-history' },
-]);
 </script>
 
 <template>
-    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
             <div class="flex items-center gap-2">
                 <h1 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-2xl">Dashboard</h1>
@@ -40,19 +32,7 @@ const facts = computed(() => [
             <p class="truncate text-sm text-slate-500 dark:text-slate-400">{{ greeting }}{{ userName ? `, ${userName}` : '' }}</p>
         </div>
 
-        <div class="flex min-w-0 flex-wrap items-center gap-2">
-            <span
-                v-for="fact in facts"
-                :key="fact.label"
-                class="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-slate-900"
-                :title="fact.value"
-            >
-                <i :class="['bi shrink-0 text-emerald-500 dark:text-emerald-400', fact.icon]"></i>
-                <span class="shrink-0 font-mono uppercase tracking-wider text-slate-400">{{ fact.label }}</span>
-                <span v-if="stats" :class="['truncate font-medium text-slate-800 dark:text-slate-100', fact.mono && 'font-mono']">{{ fact.value || '—' }}</span>
-                <span v-else class="h-3 w-14 animate-pulse rounded bg-slate-100 dark:bg-white/[0.06]"></span>
-            </span>
-            <span class="hidden h-6 w-px bg-slate-200 dark:bg-white/10 sm:block"></span>
+        <div class="flex shrink-0 items-center gap-1.5">
             <a
                 v-for="link in links"
                 :key="link.label"
