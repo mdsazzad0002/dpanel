@@ -20,6 +20,8 @@ struct Request {
     project_root: String,
     working_directory: Option<String>,
     command: String,
+    #[serde(default)]
+    php_version: Option<String>,
 }
 
 async fn handle(
@@ -131,6 +133,8 @@ fn execute(request: &Request) -> Result<(String, i32, String), String> {
         "{}; __dpanel_status=$?; printf '\\n__DPANEL_CWD__%s\\n' \"$PWD\"; exit $__dpanel_status",
         request.command
     );
+    let (php_pin, path) = crate::php::cli::sandbox_pin(request.php_version.as_deref());
+    command.args(&php_pin);
     command.args([
         "--bind",
         &root_value,
@@ -146,7 +150,7 @@ fn execute(request: &Request) -> Result<(String, i32, String), String> {
         &working_directory_value,
         "--setenv",
         "PATH",
-        "/usr/local/bin:/usr/bin:/bin",
+        &path,
         "--setenv",
         "TERM",
         "xterm-256color",

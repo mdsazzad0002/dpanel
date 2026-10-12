@@ -38,6 +38,7 @@ class WebsiteTerminalController extends Controller
             'project_root' => $this->terminalPath($website),
             'working_directory' => (string) ($validated['working_directory'] ?? $this->terminalPath($website)),
             'command' => trim($validated['command']),
+            'php_version' => $this->phpVersion($website),
         ]);
         $json = $response->json();
         if (! $response->successful() || ! ($json['success'] ?? false)) return response()->json(['message' => (string) ($json['message'] ?? 'Terminal command failed.')], 422);
@@ -61,6 +62,7 @@ class WebsiteTerminalController extends Controller
             'project_root' => $this->terminalPath($website),
             'expires_at' => now()->addSeconds(60)->timestamp,
             'host' => $request->getHost(),
+            'php_version' => $this->phpVersion($website),
         ]);
         if (! $response->successful()) {
             return response()->json(['message' => 'Unable to open terminal session.'], 503);
@@ -71,6 +73,13 @@ class WebsiteTerminalController extends Controller
     private function website(Request $request, string $id): Website
     {
         return Website::query()->visibleTo($request->user())->findOrFail($id);
+    }
+
+    private function phpVersion(Website $website): ?string
+    {
+        $version = trim((string) $website->php_version);
+
+        return preg_match('/^\d\.\d$/', $version) === 1 ? $version : null;
     }
 
     private function terminalPath(Website $website): string

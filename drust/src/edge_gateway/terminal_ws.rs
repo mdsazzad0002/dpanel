@@ -33,6 +33,8 @@ pub struct TerminalTicket {
     pub project_root: String,
     pub expires_at: u64,
     pub host: String,
+    #[serde(default)]
+    pub php_version: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -309,6 +311,7 @@ fn spawn_pty(
     let protected_ssh_target = format!("{}/.ssh", ticket.project_root);
     let protected_dpanel_target = format!("{}/.dpanel", ticket.project_root);
     let prompt = format!("[{}@dpanel \\W]\\$ ", ticket.site_owner);
+    let (php_pin, path) = crate::php::cli::sandbox_pin(ticket.php_version.as_deref());
     let pty = native_pty_system()
         .openpty(PtySize {
             rows: 30,
@@ -403,13 +406,15 @@ fn spawn_pty(
         &protected_dpanel_target,
         "--chdir",
         &ticket.project_root,
+    ];
+    let sandbox_env = [
         "--clearenv",
         "--setenv",
         "HOME",
         &ticket.project_root,
         "--setenv",
         "PATH",
-        "/usr/local/bin:/usr/bin:/bin",
+        &path,
         "--setenv",
         "TERM",
         "xterm-256color",
@@ -417,10 +422,16 @@ fn spawn_pty(
         "PS1",
         &prompt,
     ];
+    let sandbox: Vec<&str> = sandbox
+        .iter()
+        .copied()
+        .chain(php_pin.iter().map(String::as_str))
+        .chain(sandbox_env)
+        .collect();
     // A sandbox that cannot start (missing bwrap, AppArmor blocking user
     // namespaces, a missing bind source) exits before the PTY output reaches
     // the browser, so run it once with `true` and surface its stderr instead.
-    let preflight = match Command::new("runuser").args(sandbox).arg("true").output() {
+    let preflight = match Command::new("runuser").args(&sandbox).arg("true").output() {
         Ok(output) => output,
         Err(error) => {
             let _ = fs::remove_dir_all(&identity_dir);
@@ -433,7 +444,7 @@ fn spawn_pty(
         return Err(if stderr.is_empty() { format!("sandbox exited with {}", preflight.status) } else { stderr });
     }
     let mut cmd = CommandBuilder::new("runuser");
-    cmd.args(sandbox);
+    cmd.args(&sandbox);
     cmd.args(["script", "-qfec", "bash --noprofile --norc -i", "/dev/null"]);
     let child = match pty.slave.spawn_command(cmd) {
         Ok(child) => child,
