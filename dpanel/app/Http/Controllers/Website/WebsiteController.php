@@ -852,7 +852,7 @@ class WebsiteController extends Controller
         }
         $projectPath = rtrim($rootPath, '/');
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($rootPath));
-        $primary = $this->runProjectArtisanCommand($projectPath, 'optimize:clear', $siteOwner);
+        $primary = $this->runProjectArtisanCommand($projectPath, 'optimize:clear', $siteOwner, (string) ($website['php_version'] ?? ''));
 
         if ($primary['success']) {
             return $respond(true, 'Project cache cleared successfully (optimize:clear).');
@@ -860,7 +860,7 @@ class WebsiteController extends Controller
 
         $fallbackCommands = ['cache:clear', 'config:clear', 'route:clear', 'view:clear'];
         $fallbackResults = collect($fallbackCommands)
-            ->map(fn (string $command): array => $this->runProjectArtisanCommand($projectPath, $command, $siteOwner))
+            ->map(fn (string $command): array => $this->runProjectArtisanCommand($projectPath, $command, $siteOwner, (string) ($website['php_version'] ?? '')))
             ->all();
         $successCount = collect($fallbackResults)->filter(fn (array $result): bool => (bool) ($result['success'] ?? false))->count();
 
@@ -900,6 +900,7 @@ class WebsiteController extends Controller
             // otherwise the app keeps failing with errors like "Please provide
             // a valid cache path." even after permissions are "fixed".
             $envCreated = false;
+            $keyGenerated = false;
             $vite = null;
             try {
                 $inspection = $this->inspectWebsiteApplication($website);
@@ -909,6 +910,7 @@ class WebsiteController extends Controller
                         $this->filemanagerService->ensureLaravelStorageSkeleton($siteOwner, $root);
                         // A fresh clone/zip ships only .env.example; Laravel won't boot without .env.
                         $envCreated = $this->filemanagerService->ensureLaravelEnvFile($siteOwner, $root);
+                        $keyGenerated = $this->filemanagerService->ensureLaravelAppKey($siteOwner, $root);
                         // Runs before the permission fix so public/build ends up with correct ownership.
                         $vite = app(ProjectDependencyService::class)->ensureViteAssets($siteOwner, $root, (string) ($website['php_version'] ?? ''));
                     }
@@ -925,6 +927,9 @@ class WebsiteController extends Controller
             $message = "Permissions fixed recursively from {$accountHome} for {$siteOwner}.";
             if ($envCreated) {
                 $message .= ' .env was missing, so it was created from .env.example.';
+            }
+            if ($keyGenerated) {
+                $message .= ' APP_KEY was empty, so a new one was generated.';
             }
             if ($vite['hot_removed'] ?? false) {
                 $message .= ' Removed stale public/hot.';
@@ -991,7 +996,7 @@ class WebsiteController extends Controller
         }
 
         if ($framework === 'laravel') {
-            $this->runProjectArtisanCommand($root, 'config:clear', (string) ($website['site_owner'] ?? ''));
+            $this->runProjectArtisanCommand($root, 'config:clear', (string) ($website['site_owner'] ?? ''), (string) ($website['php_version'] ?? ''));
         }
         $frameworkLabel = match ($framework) {
             'codeigniter3' => 'CodeIgniter 3',
@@ -1171,7 +1176,7 @@ class WebsiteController extends Controller
         $action = (string) $validated['action'];
 
         if (in_array($action, ['refresh', 'unlink'], true)) {
-            $unlink = $this->runProjectArtisanCommand($projectPath, 'storage:unlink', $siteOwner);
+            $unlink = $this->runProjectArtisanCommand($projectPath, 'storage:unlink', $siteOwner, (string) ($website['php_version'] ?? ''));
             if (! $unlink['success'] && is_link($publicStoragePath)) {
                 return $respond(false, 'Storage unlink failed: '.trim($unlink['output']), true, 422);
             }
@@ -1183,7 +1188,7 @@ class WebsiteController extends Controller
             return $respond(! $linked, $linked ? 'Storage link could not be removed.' : 'Storage link removed successfully.', $linked, $linked ? 422 : 200);
         }
 
-        $link = $this->runProjectArtisanCommand($projectPath, 'storage:link', $siteOwner);
+        $link = $this->runProjectArtisanCommand($projectPath, 'storage:link', $siteOwner, (string) ($website['php_version'] ?? ''));
         $linked = is_link($publicStoragePath);
         if (! $link['success'] || ! $linked) {
             $details = trim((string) ($link['output'] ?? ''));
@@ -1224,7 +1229,7 @@ class WebsiteController extends Controller
 
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath((string) ($website['root_path'] ?? '')));
 
-        $result = $this->runProjectArtisanCommand($projectPath, 'migrate --force', $siteOwner);
+        $result = $this->runProjectArtisanCommand($projectPath, 'migrate --force', $siteOwner, (string) ($website['php_version'] ?? ''));
         $output = trim((string) ($result['output'] ?? ''));
         if (! $result['success']) {
             return $respond(false, $output !== '' ? 'Migration failed: '.$output : 'Migration failed.', $output);
@@ -2136,7 +2141,7 @@ class WebsiteController extends Controller
     /**
      * @return array{success: bool, output: string, exit_code: int}
      */
-    protected function runProjectArtisanCommand(string $projectPath, string $artisanCommand, string $siteOwner = ''): array
+    protected function runProjectArtisanCommand(string $projectPath, string $artisanCommand, string $siteOwner = '', string $phpVersion = ''): array
     {
         $projectPath = rtrim($this->normalizeAbsolutePath($projectPath), '/');
         if ($projectPath === '' || trim($siteOwner) === '') {
@@ -2147,7 +2152,7 @@ class WebsiteController extends Controller
             ];
         }
 
-        return $this->filemanagerService->runArtisanCommand($siteOwner, $projectPath, $artisanCommand);
+        return $this->filemanagerService->runArtisanCommand($siteOwner, $projectPath, $artisanCommand, $phpVersion);
     }
 
     protected function resolvePhpCliBinary(): string

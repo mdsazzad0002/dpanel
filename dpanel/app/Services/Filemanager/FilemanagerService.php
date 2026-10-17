@@ -197,12 +197,13 @@ class FilemanagerService
     }
 
     /** @return array{success:bool,output:string,exit_code:int} */
-    public function runArtisanCommand(string $username, string $projectPath, string $command): array
+    public function runArtisanCommand(string $username, string $projectPath, string $command, ?string $phpVersion = null): array
     {
         $result = $this->filemanagerApiRequest('artisan', [
             'username' => $this->normalizeUsername($username),
             'project_path' => $this->normalizeAbsolutePath($projectPath),
             'command' => trim($command),
+            'php_version' => $phpVersion,
         ], 300);
 
         return [
@@ -313,6 +314,30 @@ class FilemanagerService
         }
 
         $this->copyPath($username, $rootPath.'/.env.example', $rootPath.'/.env');
+
+        return true;
+    }
+
+    /**
+     * Fill an empty APP_KEY in a Laravel .env — the copy of .env.example has
+     * none, and Laravel answers every request with a 500 without it.
+     */
+    public function ensureLaravelAppKey(string $username, string $rootPath): bool
+    {
+        $envPath = $this->normalizeAbsolutePath($rootPath).'/.env';
+        if (! $this->fileExists($envPath)) {
+            return false;
+        }
+        $content = $this->readTextFile($username, $envPath)['content'];
+        if (preg_match('/^[ \t]*APP_KEY[ \t]*=[ \t]*["\']?[^"\'\s#]+/m', $content)) {
+            return false;
+        }
+
+        $line = 'APP_KEY=base64:'.base64_encode(random_bytes(32));
+        $content = preg_match('/^[ \t]*APP_KEY[ \t]*=.*$/m', $content)
+            ? (string) preg_replace('/^[ \t]*APP_KEY[ \t]*=.*$/m', $line, $content, 1)
+            : rtrim($content, "\n")."\n".$line."\n";
+        $this->writeTextFile($username, $envPath, $content, true);
 
         return true;
     }

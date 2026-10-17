@@ -51,6 +51,11 @@ pub(crate) fn host_pin(version: Option<&str>) -> (Option<tempfile::TempDir>, Str
     }
 }
 
+/// The installed PHP CLI binary for `version`, if any.
+pub(crate) fn binary_for(version: Option<&str>) -> Option<String> {
+    version.and_then(binary)
+}
+
 fn binary(version: &str) -> Option<String> {
     let version = version.trim();
     let bytes = version.as_bytes();

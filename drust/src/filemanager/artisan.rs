@@ -16,6 +16,8 @@ pub(crate) struct Request {
     username: String,
     project_path: String,
     command: String,
+    #[serde(default)]
+    php_version: Option<String>,
 }
 
 fn execute(request: &Request) -> Result<serde_json::Value, String> {
@@ -47,22 +49,22 @@ fn execute(request: &Request) -> Result<serde_json::Value, String> {
         return Err("Laravel artisan file was not found in the project root.".into());
     }
 
-    let php = [
-        "/usr/bin/php",
-        "/usr/local/bin/php",
-        "/usr/bin/php8.3",
-        "/usr/bin/php8.2",
-    ]
-    .into_iter()
-    .find(|path| std::path::Path::new(path).is_file())
-    .ok_or("PHP CLI is unavailable.")?;
+    // Use the website's PHP; the system default may be too old for its lock file.
+    let php = crate::php::cli::binary_for(request.php_version.as_deref())
+        .or_else(|| {
+            ["/usr/bin/php", "/usr/local/bin/php", "/usr/bin/php8.3", "/usr/bin/php8.2"]
+                .into_iter()
+                .find(|path| std::path::Path::new(path).is_file())
+                .map(String::from)
+        })
+        .ok_or("PHP CLI is unavailable.")?;
     let output = Command::new("/usr/sbin/runuser")
         .args(["-u", &request.username, "--", "/usr/bin/env", "-i"])
         .arg(format!("HOME={}", user_home.display()))
         .arg(format!("USER={}", request.username))
         .arg(format!("LOGNAME={}", request.username))
         .arg("PATH=/usr/local/bin:/usr/bin:/bin")
-        .arg(php)
+        .arg(&php)
         .arg("artisan")
         .arg(base_command)
         .args(flags)
