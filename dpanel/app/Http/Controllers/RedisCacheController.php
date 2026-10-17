@@ -9,6 +9,7 @@ use App\Models\Domain;
 use App\Models\SslCertificate;
 use App\Services\Redis\WebsiteRedisExplorer;
 use App\Services\Ssl\SslLifecycleService;
+use App\Services\Website\WwwAliasService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redis;
@@ -33,7 +34,10 @@ class RedisCacheController extends Controller
             ->orderBy('w.domain')
             ->select(['w.id','w.domain','w.status','w.enable_ssl','w.created_at',DB::raw("COALESCE(sc.status, md.ssl_status, 'disabled') as ssl_status"),DB::raw('COALESCE(sc.expires_at, md.ssl_expires_at) as ssl_expires_at')])
             ->get();
-        return Inertia::render('Websites/AliasApi', ['website'=>$website,'aliases'=>$aliases,'aliasApi'=>['enabled'=>(bool)$row?->enabled,'token_hint'=>$row?->token_hint,'challenge_token'=>$row?->challenge_token,'endpoint'=>url('/api/v1/alias'),'has_token'=>$row!==null]]);
+        $www=app(WwwAliasService::class)->describe($website);
+        return Inertia::render('Websites/AliasApi', ['website'=>$website,'aliases'=>$aliases,
+            'wwwAlias'=>$www,
+            'wwwCertificate'=>Inertia::defer(fn()=>$www&&$www['enabled']&&$www['ssl_enabled']?app(WwwAliasService::class)->certificate($www['domain']):null),'aliasApi'=>['enabled'=>(bool)$row?->enabled,'token_hint'=>$row?->token_hint,'challenge_token'=>$row?->challenge_token,'endpoint'=>url('/api/v1/alias'),'has_token'=>$row!==null]]);
     }
 
     public function aliasApiSettings(Request $request, string $token, string $id): JsonResponse

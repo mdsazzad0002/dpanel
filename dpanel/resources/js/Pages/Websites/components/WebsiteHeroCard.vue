@@ -138,36 +138,6 @@ const issueWebsiteSsl = async () => {
     }
 };
 
-// Only main domains (not www.*, IPs, aliases or subdomains) can carry www.
-const canToggleWww = computed(() => {
-    const domain = String(props.website?.domain || '').toLowerCase();
-    return props.website?.type === 'primary' && !domain.startsWith('www.') && !/^(\d{1,3}\.){3}\d{1,3}$/.test(domain);
-});
-const includeWww = ref(props.website?.include_www !== false);
-const wwwSaving = ref(false);
-const toggleWww = async (event) => {
-    if (wwwSaving.value) return;
-    const next = !includeWww.value;
-    wwwSaving.value = true;
-    try {
-        const data = await requestJson(panelRoute('websites.www.update', { id: props.website.id }), {
-            method: 'PATCH',
-            body: { include_www: next },
-        });
-        includeWww.value = data.include_www ?? next;
-        pushToast?.(data.message, data.type === 'warning' ? 'error' : 'success');
-        if (sslEnabled.value) {
-            setTimeout(() => router.reload({ only: ['website', 'sslStatus'], preserveScroll: true }), 1500);
-        }
-    } catch (error) {
-        pushToast?.(error?.message || 'www alias update failed.', 'error');
-    } finally {
-        wwwSaving.value = false;
-        // Match the box to the saved state, including after a failed save.
-        event.target.checked = includeWww.value;
-    }
-};
-
 const disableWebsiteSsl = async () => {
     if (sslActionLoading.value) return;
     if (!window.confirm('Disable SSL for this website? Visitors will be served over HTTP until SSL is re-enabled.')) return;
@@ -248,10 +218,6 @@ const disableWebsiteSsl = async () => {
             <button type="button" :disabled="sslActionLoading" class="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="refreshSslStatus">{{ sslActionLoading ? 'Checking...' : 'Check SSL' }}</button>
             <button type="button" :disabled="sslActionLoading" class="rounded-md border border-emerald-200 px-2.5 py-1.5 text-xs font-semibold text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-500/10" @click="issueWebsiteSsl">{{ sslActionLoading ? 'Processing...' : 'Issue / Renew SSL' }}</button>
             <button v-if="sslEnabled" type="button" :disabled="sslActionLoading" class="rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:border-red-300 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-500/10" @click="disableWebsiteSsl">{{ sslActionLoading ? 'Processing...' : 'Disable SSL' }}</button>
-            <label v-if="canToggleWww" class="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300" :title="`Serve www.${website.domain} as an alias of this website`">
-                <input type="checkbox" :checked="includeWww" :disabled="wwwSaving" class="rounded border-slate-300" @change="toggleWww" />
-                www.{{ website.domain }}
-            </label>
         </div>
     </div>
 
