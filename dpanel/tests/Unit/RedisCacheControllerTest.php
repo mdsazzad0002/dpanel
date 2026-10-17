@@ -17,7 +17,7 @@ class RedisCacheControllerTest extends TestCase
         config(['app.website_redis_connection' => 'website_cache']);
         $connection = Mockery::mock(Connection::class);
         $connection->shouldReceive('ping')->once()->andReturn(true);
-        $connection->shouldReceive('scan')->once()->with(0, [
+        $connection->shouldReceive('scan')->once()->with(null, [
             'match' => 'sp_example_*',
             'count' => 500,
         ])->andReturn(['19', ['sp_example_one', 'sp_example_two']]);

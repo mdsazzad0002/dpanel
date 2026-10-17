@@ -7,6 +7,7 @@ use App\Models\RedisConfigRevision;
 use App\Models\AliasApiCredential;
 use App\Models\Domain;
 use App\Models\SslCertificate;
+use App\Services\Redis\WebsiteRedisExplorer;
 use App\Services\Ssl\SslLifecycleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -226,7 +227,8 @@ class RedisCacheController extends Controller
         try {
             $redis = Redis::connection($this->connectionName());
             $redis->ping();
-            $cursor = 0;
+            // phpredis treats a cursor of 0 as "iteration finished"; null starts a fresh scan.
+            $cursor = null;
             $count = 0;
             $keys = [];
 
@@ -352,14 +354,7 @@ class RedisCacheController extends Controller
 
     private function buildWebsiteRedisPrefix(Website|array $website): string
     {
-        $id = $website instanceof Website ? (string) ($website->id ?? 'site') : (string) ($website['id'] ?? 'site');
-        $domainValue = $website instanceof Website ? (string) ($website->domain ?? 'site') : (string) ($website['domain'] ?? 'site');
-        $domain = strtolower($domainValue);
-        $domain = preg_replace('/[^a-z0-9]+/', '_', $domain) ?? 'site';
-        $domain = trim($domain, '_');
-        $domain = $domain !== '' ? $domain : 'site';
-
-        return "sp_{$domain}_{$id}_";
+        return app(WebsiteRedisExplorer::class)->prefixFor($website);
     }
 
     private function findWebsiteById(string $id, Request $request): ?Website

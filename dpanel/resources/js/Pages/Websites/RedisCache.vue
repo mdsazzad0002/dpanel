@@ -120,6 +120,9 @@ const rollbackRevision = (revision) => {
                 <button type="button" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="guideOpen = true">
                     Setup Guide
                 </button>
+                <Link :href="panelRoute('websites.redis-explorer.index', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+                    Open Redis Explorer
+                </Link>
                 <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                     Back to Website Management
                 </Link>

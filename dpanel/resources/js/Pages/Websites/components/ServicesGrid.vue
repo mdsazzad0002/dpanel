@@ -19,6 +19,7 @@ const serviceLinks = computed(() => [
     { label: 'Import & Clone', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and database — upload directly, clone from another site on this server, or pull a share link' },
     { label: 'Edge Cache', icon: 'bi-speedometer2', color: 'emerald', href: panelRoute('websites.edge-cache.index', { id: props.website.id }), description: 'Page caching, purge and development mode' },
     { label: 'Redis Cache', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
+    { label: 'Redis Explorer', icon: 'bi-hdd-stack', color: 'red', href: panelRoute('websites.redis-explorer.index', { id: props.website.id }), description: 'Browse, inspect and delete this website\'s Redis keys' },
     { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
     { label: 'FTP Accounts', icon: 'bi-hdd-network', color: 'cyan', href: panelRoute('websites.ftp.index', { id: props.website.id }), description: 'Create client FTP access' },
     { label: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Scheduled tasks' },

@@ -6,6 +6,7 @@ use App\Http\Controllers\CronJobController;
 use App\Http\Controllers\FilemanagerTrashController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\RedisCacheController;
+use App\Http\Controllers\RedisExplorerController;
 use App\Http\Controllers\Projects\AppProjectController;
 use App\Http\Controllers\Projects\PortShareController;
 use App\Http\Controllers\Rules\RedirectRuleController;
@@ -296,6 +297,15 @@ Route::post('/websites/{id}/redis-cache/configure', [RedisCacheController::class
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.redis-cache.configure');
 Route::post('/websites/{id}/redis-cache/revisions/{revision}/rollback', [RedisCacheController::class, 'rollback'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.redis-cache.rollback');
+Route::middleware('role_or_permission:admin|reseller|manage_websites')->group(function () {
+    Route::get('/websites/{id}/redis-explorer', [RedisExplorerController::class, 'index'])->name('websites.redis-explorer.index');
+    Route::get('/websites/{id}/redis-explorer/keys', [RedisExplorerController::class, 'keys'])->name('websites.redis-explorer.keys');
+    Route::get('/websites/{id}/redis-explorer/stats', [RedisExplorerController::class, 'stats'])->name('websites.redis-explorer.stats');
+    Route::get('/websites/{id}/redis-explorer/key', [RedisExplorerController::class, 'show'])->name('websites.redis-explorer.show');
+    Route::post('/websites/{id}/redis-explorer/key/delete', [RedisExplorerController::class, 'destroy'])->name('websites.redis-explorer.destroy');
+    Route::post('/websites/{id}/redis-explorer/key/ttl', [RedisExplorerController::class, 'ttl'])->name('websites.redis-explorer.ttl');
+    Route::post('/websites/{id}/redis-explorer/key/value', [RedisExplorerController::class, 'update'])->name('websites.redis-explorer.update');
+});
 Route::get('/websites/{id}/alias-api', [RedisCacheController::class, 'aliasApiPage'])->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.alias-api.index');
 Route::get('/websites/{id}/alias-api/settings', [RedisCacheController::class, 'aliasApiSettings'])->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.alias-api.settings');
 Route::post('/websites/{id}/alias-api/rotate', [RedisCacheController::class, 'aliasApiRotate'])->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.alias-api.rotate');
