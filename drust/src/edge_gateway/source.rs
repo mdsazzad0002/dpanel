@@ -144,16 +144,6 @@ fn load_sites(
         }
     };
 
-    // Optional as well: before the include_www migration, every site keeps
-    // its www alias.
-    let no_www = match run_mysql(env, &format!("{NO_WWW_SQL}{}", site_filter("AND"))) {
-        Ok(rows) => rows.lines().map(|id| id.trim().to_string()).collect::<std::collections::HashSet<_>>(),
-        Err(error) => {
-            tracing::warn!(%error, "www settings unavailable; www stays on for every site");
-            Default::default()
-        }
-    };
-
     let mut sites = Vec::new();
     let mut tls = Vec::new();
     for line in stdout.lines() {
@@ -165,7 +155,6 @@ fn load_sites(
         if domain.is_empty() {
             continue;
         }
-        let serves_www = !no_www.contains(cols[0].trim());
         let scope = normalize_scope(cols[2]);
         let site_owner = normalize_site_owner(cols[3]);
         let root_path = cols[4].trim();
@@ -238,11 +227,8 @@ fn load_sites(
             id: cols[0].trim().to_string(),
             scope,
             site_owner,
-            hostnames: if serves_www {
-                std::sync::Arc::from([domain.clone(), format!("www.{domain}")])
-            } else {
-                std::sync::Arc::from([domain.clone()])
-            },
+            // www.<domain> is its own alias row, never implied by the main site.
+            hostnames: std::sync::Arc::from([domain.clone()]),
             document_root,
             php_version,
             runtime,
@@ -264,13 +250,7 @@ fn load_sites(
         });
         if enable_ssl {
             tls.push(super::TlsConfig {
-                // The www alias is registered best-effort: the resolver skips
-                // any hostname the certificate does not actually cover.
-                hostnames: if !serves_www || domain.starts_with("www.") {
-                    std::sync::Arc::from([domain.clone()])
-                } else {
-                    std::sync::Arc::from([domain.clone(), format!("www.{domain}")])
-                },
+                hostnames: std::sync::Arc::from([domain.clone()]),
                 cert_path: default_cert_path(&domain),
                 key_path: default_key_path(&domain),
             });
@@ -379,8 +359,6 @@ fn parse_docker_ports(rows: &str) -> HashMap<String, u16> {
         .collect()
 }
 
-const NO_WWW_SQL: &str = "SELECT w.id FROM websites w WHERE w.include_www=0";
-
 const PYTHON_RUN_SQL: &str = "SELECT w.id,COALESCE(w.python_workers,0),COALESCE(w.python_mode,''),COALESCE(w.python_timeout,0) FROM websites w WHERE w.runtime='python'";
 
 fn parse_python_run(rows: &str) -> HashMap<String, super::PythonRunOptions> {
@@ -485,20 +463,32 @@ fn default_document_root(domain: &str) -> PathBuf {
     PathBuf::from(format!("/var/www/{domain}/public"))
 }
 
-fn default_cert_path(domain: &str) -> PathBuf {
-    let certbot_path = PathBuf::from(format!("/etc/letsencrypt/live/{domain}/fullchain.pem"));
-    if certbot_path.is_file() {
-        return certbot_path;
+/// Certbot lineage serving `domain`. A www alias that has no certificate of
+/// its own yet falls back to its main domain's lineage, which used to cover
+/// www; the SNI resolver skips it if that certificate does not.
+fn certbot_lineage(domain: &str) -> Option<String> {
+    let has = |name: &str| Path::new(&format!("/etc/letsencrypt/live/{name}/fullchain.pem")).is_file();
+    if has(domain) {
+        return Some(domain.to_string());
     }
-    PathBuf::from(format!("/etc/drust/tls/{domain}.crt"))
+    domain
+        .strip_prefix("www.")
+        .filter(|main| has(main) && !Path::new(&format!("/etc/drust/tls/{domain}.crt")).is_file())
+        .map(str::to_string)
+}
+
+fn default_cert_path(domain: &str) -> PathBuf {
+    match certbot_lineage(domain) {
+        Some(lineage) => PathBuf::from(format!("/etc/letsencrypt/live/{lineage}/fullchain.pem")),
+        None => PathBuf::from(format!("/etc/drust/tls/{domain}.crt")),
+    }
 }
 
 fn default_key_path(domain: &str) -> PathBuf {
-    let certbot_path = PathBuf::from(format!("/etc/letsencrypt/live/{domain}/privkey.pem"));
-    if certbot_path.is_file() {
-        return certbot_path;
+    match certbot_lineage(domain) {
+        Some(lineage) => PathBuf::from(format!("/etc/letsencrypt/live/{lineage}/privkey.pem")),
+        None => PathBuf::from(format!("/etc/drust/tls/{domain}.key")),
     }
-    PathBuf::from(format!("/etc/drust/tls/{domain}.key"))
 }
 
 fn resolve_document_root(

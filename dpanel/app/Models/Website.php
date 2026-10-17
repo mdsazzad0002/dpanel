@@ -123,17 +123,26 @@ class Website extends Model
     protected $hidden = ['docker_env'];
 
     /**
-     * Whether www.<domain> belongs to this site: only main domains get it,
-     * and never a domain that already starts with www. or is an IP.
+     * Whether www.<domain> can be added as an alias of this site: only main
+     * domains get it, and never a domain that already starts with www. or is an IP.
      */
-    public function servesWww(): bool
+    public function canHaveWwwAlias(): bool
     {
         $domain = strtolower((string) $this->domain);
 
         return (string) $this->type === 'primary'
-            && ($this->include_www ?? true)
             && ! str_starts_with($domain, 'www.')
             && filter_var($domain, FILTER_VALIDATE_IP) === false;
+    }
+
+    /** Whether this site has its www.<domain> alias, a regular alias row. */
+    public function servesWww(): bool
+    {
+        return $this->canHaveWwwAlias()
+            && self::query()
+                ->where('parent_id', $this->id)
+                ->whereRaw('LOWER(domain) = ?', ['www.'.strtolower((string) $this->domain)])
+                ->exists();
     }
 
     public function isNodeRuntime(): bool

@@ -1291,7 +1291,6 @@ class WebsiteController extends Controller
                 $this->initializeWebsiteStarterFiles($rootPath, $domain, $phpVersion);
             },
             'runIssueSslScript' => fn (string $domain, string $rootPath, bool $includeWwwAlias): array => $this->runIssueSslScript($domain, $rootPath, $includeWwwAlias),
-            'shouldAddWwwAlias' => fn (string $domain): bool => $this->shouldAddWwwAlias($domain),
             'readRequests' => fn (): array => $this->readRequests(),
             'writeRequests' => function (array $requests): void {
                 $this->writeRequests($requests);
@@ -3005,21 +3004,6 @@ class WebsiteController extends Controller
         ];
     }
 
-    protected function shouldAddWwwAlias(string $domain): bool
-    {
-        $labels = array_values(array_filter(explode('.', $this->normalizeDomain($domain))));
-        if (count($labels) < 2) {
-            return false;
-        }
-
-        [, $subLabels] = $this->splitDomainParts($labels);
-        if (count($subLabels) === 0) {
-            return true;
-        }
-
-        return count($subLabels) === 1 && $subLabels[0] === 'www';
-    }
-
     /**
      * @param  array<string, mixed>  $website
      * @return array<string, int|float|string|null>
@@ -3226,7 +3210,8 @@ class WebsiteController extends Controller
             return 'SSL auto-renew skipped because the website root path is missing.';
         }
 
-        $result = $this->runIssueSslScript($domain, $rootPath, $this->shouldAddWwwAlias($domain));
+        // www.<domain> is its own alias with its own certificate.
+        $result = $this->runIssueSslScript($domain, $rootPath, false);
         if (! $result['ran']) {
             return 'SSL auto-renew script is not available on this server.';
         }
@@ -3464,8 +3449,6 @@ class WebsiteController extends Controller
             'wordpress_db_prefix' => $this->normalizeWordPressDatabasePrefix((string) ($website->wordpress_db_prefix ?? ''), $domain),
             'enable_ssl' => (bool) ($website->enable_ssl ?? false),
             'ssl_status' => $this->resolveWebsiteSslStatus($domain),
-            'include_www' => (bool) ($website->include_www ?? true),
-            'serves_www' => $website->servesWww(),
             'filemanager_show_hidden' => (bool) ($website->filemanager_show_hidden ?? false),
             'assigned_user_id' => $website->assigned_user_id,
             'assigned_reseller_id' => $website->assigned_reseller_id,

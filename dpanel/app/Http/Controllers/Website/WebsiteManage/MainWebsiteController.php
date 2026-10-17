@@ -346,7 +346,8 @@ class MainWebsiteController extends Controller
             'python_process_status' => $runtime === 'python' ? 'pending' : null,
             'enable_ssl' => $enableSsl,
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),
-            'include_www' => $validated['domain_type'] === 'main' && (bool) ($validated['include_www'] ?? true),
+            // www.<domain> is never implied; a ticked www becomes an alias below.
+            'include_www' => false,
             'filemanager_show_hidden' => false,
             'assigned_user_id' => $parentWebsite?->assigned_user_id ?? $subdomainParent?->assigned_user_id ?? $assignedUser?->id,
             'assigned_reseller_id' => $parentWebsite?->assigned_reseller_id
@@ -361,6 +362,9 @@ class MainWebsiteController extends Controller
             'ssl_mode' => $enableSsl ? 'letsencrypt' : 'none',
         ]);
         $activation = ['managed_by' => 'edge-network'];
+        $wwwNote = $validated['domain_type'] === 'main' && (bool) ($validated['include_www'] ?? true) && $website->canHaveWwwAlias()
+            ? $this->createWwwAlias($request, $website)
+            : '';
         $sslResult = ['status' => 'disabled'];
         if ($website->enable_ssl) {
             try {
@@ -373,7 +377,7 @@ class MainWebsiteController extends Controller
 
                 return response()->json([
                     'type' => 'success',
-                    'message' => 'Website created and available over HTTP. SSL status: invalid. '.$e->getMessage(),
+                    'message' => 'Website created and available over HTTP. SSL status: invalid. '.$e->getMessage().$wwwNote,
                     'website' => $website->fresh(),
                     'gateway_activation' => $activation,
                     'ssl' => ['status' => 'failed', 'error' => $e->getMessage()],
@@ -411,7 +415,7 @@ class MainWebsiteController extends Controller
 
         return response()->json([
             'type' => 'success',
-            'message' => $message,
+            'message' => $message.$wwwNote,
             'demo_files' => $demoFiles,
             'gateway_activation' => $activation,
             'ssl' => $sslResult,
@@ -603,45 +607,31 @@ class MainWebsiteController extends Controller
     }
 
     /**
-     * Turn the www.<domain> alias of a main domain on or off. The edge
-     * reloads on save; SSL and DNS are re-synced so they match.
+     * Add www.<domain> as a regular alias of a new main site, through the same
+     * alias path as any other alias, so it gets its own certificate. Returns a
+     * note for the response when it could not be fully set up.
      */
-    public function updateWww(Request $request, string $token, string $id): JsonResponse
+    private function createWwwAlias(Request $request, Website $website): string
     {
-        $website = Website::query()->visibleTo($request->user())->firstWhere('id', $id);
-        abort_if($website === null, 404);
-        if ((string) $website->type !== 'primary') {
-            return response()->json(['type' => 'error', 'message' => 'Only main domains have a www alias.'], 422);
-        }
-
-        $validated = $request->validate(['include_www' => ['required', 'boolean']]);
-        $website->forceFill(['include_www' => (bool) $validated['include_www']])->save();
-
-        $notes = [];
-        if ($website->enable_ssl) {
-            try {
-                $this->sslLifecycleService->ensureForWebsite($website->fresh());
-            } catch (\Throwable $e) {
-                $notes[] = 'SSL update failed: '.$e->getMessage();
-            }
-        }
-        if ($website->manage_dns) {
-            try {
-                $this->websiteDnsProvisionService->syncWebsite($website->fresh(), true);
-            } catch (\Throwable $e) {
-                $notes[] = 'DNS update failed: '.$e->getMessage();
-            }
-        }
-
-        $message = $website->include_www
-            ? "www.{$website->domain} is now served by this website."
-            : "www.{$website->domain} is no longer served by this website.";
-
-        return response()->json([
-            'type' => $notes === [] ? 'success' : 'warning',
-            'message' => trim($message.' '.implode(' ', $notes)),
-            'include_www' => (bool) $website->include_www,
+        $aliasRequest = Request::create($request->getPathInfo(), 'POST', [
+            'domain_type' => 'alis',
+            'domain' => 'www.'.strtolower((string) $website->domain),
+            'parent_id' => (string) $website->id,
+            'parent_domain' => (string) $website->domain,
+            'enable_ssl' => (bool) $website->enable_ssl,
         ]);
+        $aliasRequest->headers->set('Accept', 'application/json');
+        $aliasRequest->setUserResolver($request->getUserResolver());
+
+        try {
+            $response = $this->store($aliasRequest);
+        } catch (\Throwable $e) {
+            return ' The www alias could not be created: '.$e->getMessage();
+        }
+
+        return $response->getStatusCode() < 300
+            ? ''
+            : ' www alias: '.(string) ($response->getData(true)['message'] ?? 'creation failed.');
     }
 
     public function updateAlias(Request $request, string $token, string $id): JsonResponse

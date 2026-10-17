@@ -2,8 +2,7 @@
 import { computed, ref } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import WwwAliasItem from '@/Pages/Websites/components/alias/WwwAliasItem.vue';
-const props = defineProps({ website: { type: Object, required: true }, aliases: { type: Array, default: () => [] }, aliasApi: { type: Object, required: true }, wwwAlias: { type: Object, default: null }, wwwCertificate: { type: Object, default: undefined } });
+const props = defineProps({ website: { type: Object, required: true }, aliases: { type: Array, default: () => [] }, aliasApi: { type: Object, required: true } });
 const page = usePage(); const token = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => token.value ? route(name, { token: token.value, ...params }) : route(name, params);
 const state = ref({ ...props.aliasApi }); const plainToken = ref(''); const loading = ref(false);
@@ -230,8 +229,7 @@ if (verification.verified) {
                     <h2 class="font-semibold">Alias Websites</h2>
                     <p class="mt-1 text-sm text-slate-500">Aliases connected to {{ website.domain }}</p>
                 </div>
-                <div v-if="aliasRows.length || wwwAlias" class="space-y-3 p-4">
-                    <WwwAliasItem v-if="wwwAlias" :website="website" :www="wwwAlias" :certificate="wwwCertificate" @result="showResult" />
+                <div v-if="aliasRows.length" class="space-y-3 p-4">
                     <div v-for="alias in aliasRows" :key="alias.id"
                         class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/40">
                         <div class="min-w-0 flex-1">

@@ -173,7 +173,7 @@ class WebsiteLifecycleService
                 $sslResult = $callbacks['runIssueSslScript'](
                     $validated['domain'],
                     $validated['root_path'],
-                    $callbacks['shouldAddWwwAlias']($validated['domain']),
+                    false,
                 );
 
                 if (! $sslResult['ran']) {
