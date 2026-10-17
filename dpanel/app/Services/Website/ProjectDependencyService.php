@@ -16,7 +16,7 @@ class ProjectDependencyService
      *
      * @return array{success: bool, output: string}
      */
-    public function run(string $siteOwner, string $projectRoot, string $action): array
+    public function run(string $siteOwner, string $projectRoot, string $action, ?string $phpVersion = null): array
     {
         $client = Http::acceptJson()->asJson()->timeout(900);
         $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
@@ -29,6 +29,8 @@ class ProjectDependencyService
                 'site_owner' => $siteOwner,
                 'project_root' => rtrim($projectRoot, '/'),
                 'action' => $action,
+                // composer and `php artisan` (e.g. Wayfinder during a build) must use the site's PHP.
+                'php_version' => $phpVersion,
             ]);
         } catch (\Throwable $e) {
             return ['success' => false, 'output' => $e->getMessage()];
@@ -48,7 +50,7 @@ class ProjectDependencyService
      *
      * @return array{vite: bool, hot_removed: bool, built: bool, error: ?string}
      */
-    public function ensureViteAssets(string $siteOwner, string $projectRoot): array
+    public function ensureViteAssets(string $siteOwner, string $projectRoot, ?string $phpVersion = null): array
     {
         $root = rtrim($projectRoot, '/');
         $result = ['vite' => false, 'hot_removed' => false, 'built' => false, 'error' => null];
@@ -75,7 +77,7 @@ class ProjectDependencyService
 
         if (! $this->filemanager->fileExists($root.'/public/build/manifest.json')) {
             $action = $this->filemanager->directoryExists($root.'/node_modules') ? 'npm_build' : 'npm_install';
-            $build = $this->run($siteOwner, $root, $action);
+            $build = $this->run($siteOwner, $root, $action, $phpVersion);
             $result['built'] = $build['success'];
             if (! $build['success']) {
                 $result['error'] = $build['output'] !== '' ? $build['output'] : 'Vite build failed.';

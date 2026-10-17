@@ -910,7 +910,7 @@ class WebsiteController extends Controller
                         // A fresh clone/zip ships only .env.example; Laravel won't boot without .env.
                         $envCreated = $this->filemanagerService->ensureLaravelEnvFile($siteOwner, $root);
                         // Runs before the permission fix so public/build ends up with correct ownership.
-                        $vite = app(ProjectDependencyService::class)->ensureViteAssets($siteOwner, $root);
+                        $vite = app(ProjectDependencyService::class)->ensureViteAssets($siteOwner, $root, (string) ($website['php_version'] ?? ''));
                     }
                 }
             } catch (\Throwable) {
@@ -1072,7 +1072,7 @@ class WebsiteController extends Controller
             return response()->json(['success' => false, 'message' => $manifest.' was not found in the detected project root.'], 422);
         }
 
-        $result = app(ProjectDependencyService::class)->run((string) ($website['site_owner'] ?? ''), $root, $validated['action']);
+        $result = app(ProjectDependencyService::class)->run((string) ($website['site_owner'] ?? ''), $root, $validated['action'], (string) ($website['php_version'] ?? ''));
         if (! $result['success']) {
             return response()->json(['success' => false, 'message' => $result['output'] !== '' ? $result['output'] : 'Dependency installation failed.'], 422);
         }

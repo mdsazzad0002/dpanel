@@ -20,6 +20,8 @@ struct Request {
     site_owner: String,
     project_root: String,
     action: String,
+    #[serde(default)]
+    php_version: Option<String>,
 }
 
 async fn handle(
@@ -43,6 +45,10 @@ async fn handle(
 fn execute(request: &Request) -> Result<String, String> {
     validate(request)?;
     let root = Path::new(&request.project_root);
+    // composer (`#!/usr/bin/env php`) and build plugins that call
+    // `php artisan` must run the website's PHP, not the system default.
+    let (_php_dir, path) = crate::php::cli::host_pin(request.php_version.as_deref());
+    let context = &RunContext { request, path: &path };
     if request.action == "npm_install" {
         let install_args = if root.join("package-lock.json").is_file() {
             vec!["ci"]
@@ -50,8 +56,8 @@ fn execute(request: &Request) -> Result<String, String> {
             vec!["install"]
         };
         let npm = find_tool("npm", NPM_CANDIDATES)?;
-        let install_output = run_as_site_owner(request, root, npm, &install_args)?;
-        let build_output = run_as_site_owner(request, root, npm, &["run", "build"])?;
+        let install_output = run_as_site_owner(context, root, npm, &install_args)?;
+        let build_output = run_as_site_owner(context, root, npm, &["run", "build"])?;
         return Ok(format!("{install_output}\n\n{build_output}"));
     }
     let (program, args): (&str, Vec<&str>) = match request.action.as_str() {
@@ -67,23 +73,30 @@ fn execute(request: &Request) -> Result<String, String> {
         "npm_build" => (find_tool("npm", NPM_CANDIDATES)?, vec!["run", "build"]),
         _ => return Err("Unsupported dependency action.".into()),
     };
-    run_as_site_owner(request, root, program, &args)
+    run_as_site_owner(context, root, program, &args)
+}
+
+struct RunContext<'a> {
+    request: &'a Request,
+    path: &'a str,
 }
 
 fn run_as_site_owner(
-    request: &Request,
+    context: &RunContext,
     root: &Path,
     program: &str,
     args: &[&str],
 ) -> Result<String, String> {
+    let request = context.request;
     let output = Command::new("/usr/sbin/runuser")
         .args(["-u", &request.site_owner, "--", program])
         .args(args)
         .current_dir(root)
         .env("HOME", format!("/home/{}", request.site_owner))
         // npm's `#!/usr/bin/env node` must find the Node.js 20 dscript links
-        // into /usr/local/bin, not the distro one or none at all.
-        .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+        // into /usr/local/bin, not the distro one or none at all; the pinned
+        // PHP directory comes before it.
+        .env("PATH", context.path)
         .env("COMPOSER_NO_INTERACTION", "1")
         .output()
         .map_err(|error| format!("Unable to start {program}: {error}"))?;

@@ -24,6 +24,33 @@ pub(crate) fn sandbox_pin(version: Option<&str>) -> (Vec<String>, String) {
     }
 }
 
+/// Outside a sandbox: a temporary directory whose `php` points at the
+/// website's PHP CLI, plus the PATH that puts it first. Keep the directory
+/// alive until the command exits. Unknown versions fall back to the default.
+pub(crate) fn host_pin(version: Option<&str>) -> (Option<tempfile::TempDir>, String) {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    let Some(binary) = version.and_then(binary) else {
+        return (None, BASE_PATH.into());
+    };
+    let pinned = tempfile::Builder::new()
+        .prefix("dpanel-php-")
+        .tempdir()
+        .ok()
+        .filter(|dir| {
+            // The command runs as the site owner, who must be able to enter it.
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).is_ok()
+                && symlink(&binary, dir.path().join("php")).is_ok()
+        });
+    match pinned {
+        Some(dir) => {
+            let path = format!("{}:{BASE_PATH}", dir.path().display());
+            (Some(dir), path)
+        }
+        None => (None, BASE_PATH.into()),
+    }
+}
+
 fn binary(version: &str) -> Option<String> {
     let version = version.trim();
     let bytes = version.as_bytes();
