@@ -11,6 +11,7 @@ use App\Http\Controllers\Projects\AppProjectController;
 use App\Http\Controllers\Projects\PortShareController;
 use App\Http\Controllers\Rules\RedirectRuleController;
 use App\Http\Controllers\Seo\IconGeneratorController;
+use App\Http\Controllers\Seo\ImageWatermarkController;
 use App\Http\Controllers\Seo\SitemapVerifyController;
 use App\Http\Controllers\Seo\UrlInspectionController;
 use App\Http\Controllers\Website\WebsiteController;
@@ -487,3 +488,11 @@ Route::post('/seo/icon-generator/target', [IconGeneratorController::class, 'targ
 Route::post('/seo/icon-generator/install', [IconGeneratorController::class, 'install'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('seo.icon-generator.install');
+
+// SEO Tools → Image Watermark ========================================================
+Route::get('/seo/image-watermark', [ImageWatermarkController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('seo.image-watermark.index');
+Route::post('/seo/image-watermark/check', [ImageWatermarkController::class, 'check'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])
+    ->name('seo.image-watermark.check');

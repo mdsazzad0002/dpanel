@@ -123,6 +123,7 @@ export const buildPanelMenu = (userRoles = []) => [
             { label: 'Sitemap Verify', hint: 'robots.txt, sitemaps and listed pages', icon: 'SV', iconClass: 'bi bi-diagram-2', routeName: 'seo.sitemap-verify.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
             { label: 'URL Inspection', hint: 'Indexing, search previews, favicon, share cards and PWA', icon: 'UI', iconClass: 'bi bi-binoculars', routeName: 'seo.url-inspection.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
             { label: 'Icon Generator', hint: 'Favicons, PWA icons, manifest and share image', icon: 'IG', iconClass: 'bi bi-images', routeName: 'seo.icon-generator.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+            { label: 'Image Watermark', hint: 'Check images for watermarks and AI labels, remove visible marks', icon: 'WM', iconClass: 'bi bi-eraser', routeName: 'seo.image-watermark.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
         ],
     },
     {
