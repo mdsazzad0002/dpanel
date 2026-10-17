@@ -44,6 +44,7 @@ export const buildPanelMenu = (userRoles = []) => [
             { label: 'GitHub Accounts', hint: 'Connect GitHub for deployments', icon: 'GH', iconClass: 'bi bi-github', routeName: 'github.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
         ],
     },
+    { section: 'Hosting', label: 'Bandwidth', hint: 'Traffic and requests per website', icon: 'BW', iconClass: 'bi bi-bar-chart-line', routeName: 'bandwidth.index', activeRouteNames: ['bandwidth.index', 'dashboard.usage'], color: 'amber' },
     { section: 'Hosting', label: 'Node.js Apps', hint: 'Run Node.js apps from your home directory', icon: 'NJ', iconClass: 'bi bi-hexagon', routeName: 'apps.node.index', color: 'emerald', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
     { section: 'Hosting', label: 'Python Apps', hint: 'Run Python apps from your home directory', icon: 'PY', iconClass: 'bi bi-filetype-py', routeName: 'apps.python.index', color: 'cyan', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
     { section: 'Hosting', label: 'PHP Management', hint: 'Versions, extensions and config', icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], permissions: ['manage_php'], color: 'indigo' },

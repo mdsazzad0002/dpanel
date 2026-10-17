@@ -62,8 +62,8 @@ const quotas = computed(() => {
             <div class="flex min-w-0 items-center gap-2">
                 <span v-if="summary" class="truncate text-[11px] text-slate-500 dark:text-slate-400">{{ summary.scope }}</span>
                 <span v-else class="h-3 w-24 animate-pulse rounded bg-slate-100 dark:bg-white/[0.06]"></span>
-                <Link v-if="summary" :href="panelRoute('dashboard.usage')" class="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-400/10">
-                    Usage log <i class="bi bi-arrow-up-right ml-1"></i>
+                <Link v-if="summary" :href="panelRoute('bandwidth.index')" class="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-400/10">
+                    Bandwidth <i class="bi bi-arrow-up-right ml-1"></i>
                 </Link>
             </div>
         </header>

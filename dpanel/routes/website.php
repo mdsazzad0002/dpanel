@@ -146,9 +146,6 @@ Route::post('/websites/{id}/ssl/issue', [WebsiteOperationsController::class, 'is
 Route::patch('/websites/{id}/ssl/status', [WebsiteOperationsController::class, 'updateSslStatus'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ssl.status.update');
-Route::get('/websites/{id}/usage', [WebsiteOperationsController::class, 'Usage'])
-    ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->name('websites.usage');
 Route::post('/websites/{id}/project-cache/clear', [WebsiteOperationsController::class, 'clearProjectCache'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.project-cache.clear');

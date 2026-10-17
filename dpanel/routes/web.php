@@ -23,6 +23,7 @@ use App\Http\Controllers\Webhooks\GitDeployWebhookController;
 use App\Http\Controllers\ChatEngineFacebookPostController;
 use App\Http\Controllers\ChatEngineScheduledMessageController;
 use App\Http\Controllers\CloneShareController;
+use App\Http\Controllers\BandwidthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\DnsController;
@@ -244,8 +245,10 @@ Route::prefix('cpsess{token}')
     ->group(function (): void {
         Route::get('/dashboard', [DashboardController::class, 'index'])
             ->name('dashboard');
-        Route::get('/dashboard/usage', [DashboardController::class, 'usage'])
+        Route::get('/dashboard/usage', fn (Request $request, string $token) => redirect()->route('bandwidth.index', ['token' => $token, ...$request->only('month')]))
             ->name('dashboard.usage');
+        Route::get('/bandwidth', [BandwidthController::class, 'index'])
+            ->name('bandwidth.index');
 
         Route::get('/billing', [BillingSystemController::class, 'index'])
             ->middleware('role:admin|superadmin')
