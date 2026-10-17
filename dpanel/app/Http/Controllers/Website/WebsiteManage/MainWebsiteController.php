@@ -309,8 +309,14 @@ class MainWebsiteController extends Controller
             ], 422);
         }
 
-        $isIpAlias = $validated['domain_type'] === 'alis'
-            && filter_var((string) $validated['domain'], FILTER_VALIDATE_IP) !== false;
+        // An alias follows the "Issue SSL" choice made on the Alias page, so an
+        // alias (e.g. an IP) can have SSL even when its main website has none.
+        $enableSsl = $parentWebsite !== null && ! $request->has('enable_ssl')
+            ? (bool) $parentWebsite->enable_ssl
+            : (bool) ($validated['enable_ssl'] ?? false);
+        if (SslLifecycleService::isReservedSslDomain((string) $validated['domain'])) {
+            $enableSsl = false;
+        }
 
         // Store in database
         $website = Website::query()->create([
@@ -338,9 +344,7 @@ class MainWebsiteController extends Controller
             'python_mode' => $pythonMode,
             'python_timeout' => $pythonTimeout,
             'python_process_status' => $runtime === 'python' ? 'pending' : null,
-            // An IP alias always gets its self-signed certificate: it needs no
-            // CA, and its parent (often the local panel site) may never have SSL.
-            'enable_ssl' => $isIpAlias || ($parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false)),
+            'enable_ssl' => $enableSsl,
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),
             'include_www' => $validated['domain_type'] === 'main' && (bool) ($validated['include_www'] ?? true),
             'filemanager_show_hidden' => false,
@@ -354,7 +358,7 @@ class MainWebsiteController extends Controller
                 'sub' => 'subdomain',
                 default => 'primary',
             },
-            'ssl_mode' => $isIpAlias ? 'custom' : ($parentWebsite?->ssl_mode ?? (! empty($validated['enable_ssl']) ? 'letsencrypt' : 'none')),
+            'ssl_mode' => $enableSsl ? 'letsencrypt' : 'none',
         ]);
         $activation = ['managed_by' => 'edge-network'];
         $sslResult = ['status' => 'disabled'];

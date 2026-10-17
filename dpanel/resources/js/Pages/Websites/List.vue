@@ -679,7 +679,7 @@ const saveOwnership = async () => {
                                 <div class="flex items-center gap-2">
                                     <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-300">A</span>
                                     <Link
-                                        :href="panelRoute('websites.manage', { id: alias.id })"
+                                        :href="panelRoute('websites.alias-api.index', { id: alias.parent_id || item.id })"
                                         class="truncate text-[14px] font-semibold text-slate-900 hover:text-blue-600 dark:text-slate-100 dark:hover:text-blue-400"
                                     >
                                         {{ alias.domain }}

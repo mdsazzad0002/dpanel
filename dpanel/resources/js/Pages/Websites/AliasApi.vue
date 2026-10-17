@@ -100,19 +100,28 @@ const sslDaysRemaining = (alias) => {
     if (!Number.isFinite(expires)) return null;
     return Math.ceil((expires - Date.now()) / 86400000);
 };
+const IPV4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/;
+// Private IPs get a self-signed certificate; public IPs a short-lived Let's Encrypt one.
+const isPrivateIp = (domain) => {
+    const match = String(domain || '').match(IPV4);
+    if (!match) return false;
+    const [a, b] = [Number(match[1]), Number(match[2])];
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
+};
 const sslValidityLabel = (alias) => {
     if (!alias?.enable_ssl) return 'SSL disabled';
     const days = sslDaysRemaining(alias);
     if (days === null) return 'Validity unknown';
     if (days < 0) return `Expired ${Math.abs(days)}d ago`;
     if (days === 0) return 'Expires today';
-    return `Valid ${days}d`;
+    return `Valid ${days}d${isPrivateIp(alias.domain) ? ' · self-signed' : ''}`;
 };
 const sslValidityClass = (alias) => {
     const days = sslDaysRemaining(alias);
     if (!alias?.enable_ssl || days === null) return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
     if (days < 0) return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
-    if (days <= 30) return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
+    // IP certificates are short-lived (~6 days) and renew automatically.
+    if (days <= (IPV4.test(String(alias.domain || '')) ? 1 : 30)) return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400';
     return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
 };
 const formatExpiry = (value) => {

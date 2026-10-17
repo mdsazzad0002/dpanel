@@ -262,11 +262,13 @@ class WebsiteController extends Controller
     /**
      * Show website management overview.
      */
-    public function manage(string $token, string $id): Response
+    public function manage(string $token, string $id): Response|RedirectResponse
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
-        if (in_array(strtolower((string) ($website['type'] ?? '')), ['alis', 'alias'], true)) {
-            return $this->aliasManage($website);
+        if (! empty($website['parent_id']) && in_array(strtolower((string) ($website['type'] ?? '')), ['alis', 'alias'], true)) {
+            // An alias has no tools of its own; it is managed as an item on
+            // its main website's Alias page.
+            return redirect()->route('websites.alias-api.index', ['token' => $token, 'id' => (string) $website['parent_id']]);
         }
         $runtimeStatus = strtolower(trim((string) ($website['status'] ?? 'pending'))) === 'live'
             ? 'live'
@@ -356,25 +358,6 @@ class WebsiteController extends Controller
                     'engine' => $database->isPostgresql() ? DatabaseRequest::ENGINE_POSTGRESQL : DatabaseRequest::ENGINE_MARIADB,
                 ])->values()->all(),
             ],
-        ]);
-    }
-
-    /**
-     * An alias serves its parent's files, so its page only covers what is
-     * the alias's own: its domain name and its SSL certificate.
-     *
-     * @param  array<string, mixed>  $website
-     */
-    protected function aliasManage(array $website): Response
-    {
-        $parent = ! empty($website['parent_id'])
-            ? Website::query()->visibleTo(request()->user())->find((string) $website['parent_id'], ['id', 'domain'])
-            : null;
-
-        return Inertia::render('Websites/AliasManage', [
-            'website' => $website,
-            'parent' => $parent ? ['id' => (string) $parent->id, 'domain' => (string) $parent->domain] : null,
-            'sslStatus' => Inertia::defer(fn () => $this->inspectWebsiteSslStatus($website), 'ssl'),
         ]);
     }
 
