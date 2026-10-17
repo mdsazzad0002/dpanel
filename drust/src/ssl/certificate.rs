@@ -22,10 +22,40 @@ const PANEL_APP_ROOT: &str = "/var/www/dpanel";
 /// `/etc/drust/tls/<domain>.{crt,key}` when there is no certbot lineage.
 const SELF_SIGNED_DIR: &str = "/etc/drust/tls";
 
-/// Public CAs will not issue for a private IP, and certbot cannot issue
-/// for any IP, so IP-address sites get a self-signed certificate.
+/// Let's Encrypt only issues IP certificates under the short-lived profile
+/// (~6 days), so they are renewed once fewer than this many days remain.
+const IP_CERT_RENEW_BEFORE_DAYS: u64 = 3;
+
+/// A public IP gets a Let's Encrypt certificate (certbot 5.1+); a private
+/// IP, or a server whose certbot cannot issue for IPs, gets a self-signed one.
 fn is_ip_address(domain: &str) -> bool {
     domain.parse::<Ipv4Addr>().is_ok()
+}
+
+/// Whether a public CA can reach and validate this address.
+fn is_public_ipv4(ip: &str) -> bool {
+    let Ok(address) = ip.parse::<Ipv4Addr>() else {
+        return false;
+    };
+    let [a, b, ..] = address.octets();
+    !(address.is_private()
+        || address.is_loopback()
+        || address.is_link_local()
+        || address.is_unspecified()
+        || address.is_broadcast()
+        || address.is_documentation()
+        || address.is_multicast()
+        // Carrier-grade NAT (100.64.0.0/10) and 240.0.0.0/4.
+        || (a == 100 && (64..128).contains(&b))
+        || a >= 240)
+}
+
+fn certbot_supports_ip() -> bool {
+    Command::new("certbot")
+        .args(["--help", "all"])
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).contains("--ip-address"))
+        .unwrap_or(false)
 }
 
 fn valid_domain(domain: &str) -> bool {
@@ -118,7 +148,110 @@ fn ip_matches_certificate(path: &str, ip: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn ensure_self_signed(ip: &str, renew_before_days: u64) -> Result<Value, String> {
+fn ensure_ip(ip: &str, root_path: &str, renew_before_days: u64) -> Result<Value, String> {
+    let lineage_exists = Path::new(&format!("/etc/letsencrypt/live/{ip}/fullchain.pem")).is_file();
+    if !is_public_ipv4(ip) {
+        return ensure_self_signed(ip, renew_before_days, None);
+    }
+    if !certbot_supports_ip() {
+        return ensure_self_signed(
+            ip,
+            renew_before_days,
+            Some("Installed certbot cannot issue IP certificates (needs 5.1+); using a self-signed certificate."),
+        );
+    }
+    match ensure_letsencrypt_ip(ip, root_path) {
+        Ok(data) => Ok(data),
+        // The gateway prefers an existing Let's Encrypt lineage, so a
+        // self-signed fallback would never be served; report the failure.
+        Err(error) if lineage_exists => Err(error),
+        Err(error) => ensure_self_signed(
+            ip,
+            renew_before_days,
+            Some(&format!("Let's Encrypt IP certificate failed, using a self-signed certificate. {error}")),
+        ),
+    }
+}
+
+/// Short-lived (~6 day) Let's Encrypt certificate for a public IP, validated
+/// over HTTP-01 like a domain (DNS-01 is not available for IPs).
+fn ensure_letsencrypt_ip(ip: &str, root_path: &str) -> Result<Value, String> {
+    let live_dir = format!("/etc/letsencrypt/live/{ip}");
+    let certificate_path = format!("{live_dir}/fullchain.pem");
+    let private_key_path = format!("{live_dir}/privkey.pem");
+    let existed = Path::new(&certificate_path).is_file();
+    let needs_issue =
+        !existed || !ip_certificate_valid(&certificate_path, ip, IP_CERT_RENEW_BEFORE_DAYS);
+
+    if needs_issue {
+        let auth_hook = http_auth_hook(root_path);
+        let cleanup_hook = http_cleanup_hook(root_path);
+        let output = Command::new("certbot")
+            .args([
+                "certonly",
+                "--non-interactive",
+                "--agree-tos",
+                "--register-unsafely-without-email",
+                "--manual",
+                "--preferred-challenges",
+                "http",
+                "--manual-auth-hook",
+                &auth_hook,
+                "--manual-cleanup-hook",
+                &cleanup_hook,
+                "--preferred-profile",
+                "shortlived",
+                "--cert-name",
+                ip,
+                "--force-renewal",
+                "--ip-address",
+                ip,
+            ])
+            .output()
+            .map_err(|error| format!("failed to start certbot: {error}"))?;
+        if !output.status.success() {
+            let details = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout).trim(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            return Err(format!(
+                "certbot failed: {}",
+                details.trim().chars().take(4000).collect::<String>()
+            ));
+        }
+    }
+
+    if !ip_certificate_valid(&certificate_path, ip, 0) {
+        return Err("Certificate is missing, expired, or does not match the IP after issuance.".into());
+    }
+
+    let gateway_reloaded = if needs_issue {
+        if !trigger_gateway_reload() {
+            return Err(
+                "Certificate is valid, but notifying the edge gateway to reload it failed.".into(),
+            );
+        }
+        true
+    } else {
+        false
+    };
+
+    Ok(json!({
+        "status": "valid",
+        "self_signed": false,
+        "issued": needs_issue && !existed,
+        "renewed": needs_issue && existed,
+        "include_www": false,
+        "certificate_path": certificate_path,
+        "private_key_path": private_key_path,
+        "expires_at": certificate_expiry(&certificate_path),
+        "gateway_reloaded": gateway_reloaded,
+        "gateway_reload_scheduled": false,
+    }))
+}
+
+fn ensure_self_signed(ip: &str, renew_before_days: u64, note: Option<&str>) -> Result<Value, String> {
     let certificate_path = format!("{SELF_SIGNED_DIR}/{ip}.crt");
     let private_key_path = format!("{SELF_SIGNED_DIR}/{ip}.key");
     let existed = Path::new(&certificate_path).is_file() && Path::new(&private_key_path).is_file();
@@ -181,6 +314,7 @@ fn ensure_self_signed(ip: &str, renew_before_days: u64) -> Result<Value, String>
     Ok(json!({
         "status": "valid",
         "self_signed": true,
+        "note": note,
         "issued": needs_issue && !existed,
         "renewed": needs_issue && existed,
         "include_www": false,
@@ -232,7 +366,7 @@ pub(super) fn ensure(
         return Err(format!("Website root path does not exist: {root_path}"));
     }
     if is_ip_address(&domain) {
-        return ensure_self_signed(&domain, renew_before_days);
+        return ensure_ip(&domain, root_path, renew_before_days);
     }
 
     let live_dir = format!("/etc/letsencrypt/live/{domain}");
@@ -333,4 +467,18 @@ pub(super) fn ensure(
         "gateway_reloaded": gateway_reloaded,
         "gateway_reload_scheduled": false,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_public_ipv4;
+
+    #[test]
+    fn only_publicly_routable_ips_are_public() {
+        assert!(is_public_ipv4("217.216.111.92"));
+        assert!(is_public_ipv4("8.8.8.8"));
+        for ip in ["192.168.0.109", "10.0.0.1", "172.16.5.4", "127.0.0.1", "169.254.1.1", "100.64.0.1", "0.0.0.0", "255.255.255.255", "203.0.113.5"] {
+            assert!(!is_public_ipv4(ip), "{ip} should not be public");
+        }
+    }
 }
