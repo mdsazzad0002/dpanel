@@ -11,6 +11,8 @@ namespace App\Services\Seo;
 class ImageWatermarkInspector
 {
     public const MAX_FILE_BYTES = 20 * 1024 * 1024;
+    private const MAX_METADATA_ITEMS = 60;
+    private const MAX_DECOMPRESSED_TEXT_BYTES = 1024 * 1024;
 
     /** Names of image generators, matched in generator/software fields. */
     private const AI_GENERATORS = '/\b(midjourney|dall[\-·\s]?e|openai|chatgpt|gpt-?4o|gpt-image|sora|stable[\s_-]?diffusion|sdxl|automatic1111|comfyui|invokeai|fooocus|novelai|adobe firefly|firefly|imagen|gemini|google ai|ideogram|leonardo\.?ai|flux(\.1)?|black forest labs|runway|pika|bing image creator|microsoft designer|copilot|grok|playground ?ai|nightcafe|dreamstudio|krea|recraft|canva ai|magic media|meta ai|imagine with meta)\b/i';
@@ -62,7 +64,7 @@ class ImageWatermarkInspector
             in_array('ai', $kinds, true) => ['ai', 'This image is labelled as made or edited with AI.'],
             in_array('provenance', $kinds, true) => ['provenance', 'This image carries Content Credentials (C2PA) that record where it came from.'],
             in_array('rights', $kinds, true) => ['rights', 'This image carries copyright or ownership details.'],
-            default => ['none', 'No watermark, AI label or ownership details were found in the file.'],
+            default => ['none', 'No watermark, AI label or ownership details were found in the file metadata. This scan cannot detect invisible pixel watermarks, and metadata may have been removed.'],
         };
 
         return [
@@ -73,7 +75,7 @@ class ImageWatermarkInspector
             'verdict' => $verdict,
             'summary' => $summary,
             'findings' => $findings,
-            'metadata' => array_slice($metadata, 0, 60),
+            'metadata' => array_slice($metadata, 0, self::MAX_METADATA_ITEMS),
         ];
     }
 
@@ -172,6 +174,9 @@ class ImageWatermarkInspector
         while ($offset + 8 <= $length) {
             $size = unpack('N', substr($bytes, $offset, 4))[1];
             $type = substr($bytes, $offset + 4, 4);
+            if ($size > $length - $offset - 12) {
+                break;
+            }
             if (in_array($type, $types, true)) {
                 $out[$type][] = substr($bytes, $offset + 8, $size);
             }
@@ -191,6 +196,9 @@ class ImageWatermarkInspector
         while ($offset + 8 <= $length) {
             $type = substr($bytes, $offset, 4);
             $size = unpack('V', substr($bytes, $offset + 4, 4))[1];
+            if ($size > $length - $offset - 8) {
+                break;
+            }
             if ($type === $fourcc) {
                 return substr($bytes, $offset + 8, $size);
             }
@@ -229,7 +237,7 @@ class ImageWatermarkInspector
                 [$key, $rest] = array_pad(explode("\0", $chunk, 2), 2, '');
                 $value = match ($type) {
                     'tEXt' => $rest,
-                    'zTXt' => (string) @gzuncompress(substr($rest, 1)),
+                    'zTXt' => $this->decompressText(substr($rest, 1)),
                     'iTXt' => $this->itxtValue($rest),
                 };
                 if ($key === 'XML:com.adobe.xmp') {
@@ -262,7 +270,32 @@ class ImageWatermarkInspector
 
         $text = $parts[2] ?? '';
 
-        return $compressed ? (string) @gzuncompress($text) : $text;
+        return $compressed ? $this->decompressText($text) : $text;
+    }
+
+    /** Decompress untrusted PNG metadata with a strict output limit. */
+    private function decompressText(string $compressed): string
+    {
+        if (! function_exists('inflate_init') || ! function_exists('inflate_add')) {
+            return '';
+        }
+        $context = @inflate_init(ZLIB_ENCODING_DEFLATE);
+        if ($context === false) {
+            return '';
+        }
+
+        $output = '';
+        $parts = str_split($compressed, 8192);
+        foreach ($parts as $index => $part) {
+            $mode = $index === count($parts) - 1 ? ZLIB_FINISH : ZLIB_SYNC_FLUSH;
+            $decoded = @inflate_add($context, $part, $mode);
+            if ($decoded === false || strlen($output) + strlen($decoded) > self::MAX_DECOMPRESSED_TEXT_BYTES) {
+                return '';
+            }
+            $output .= $decoded;
+        }
+
+        return $output;
     }
 
     private function inspectXmp(string $xmp, array &$findings, array &$metadata): void
