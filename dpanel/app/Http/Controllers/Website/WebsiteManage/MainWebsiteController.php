@@ -309,6 +309,9 @@ class MainWebsiteController extends Controller
             ], 422);
         }
 
+        $isIpAlias = $validated['domain_type'] === 'alis'
+            && filter_var((string) $validated['domain'], FILTER_VALIDATE_IP) !== false;
+
         // Store in database
         $website = Website::query()->create([
             'id' => (string) str()->uuid(),
@@ -335,7 +338,9 @@ class MainWebsiteController extends Controller
             'python_mode' => $pythonMode,
             'python_timeout' => $pythonTimeout,
             'python_process_status' => $runtime === 'python' ? 'pending' : null,
-            'enable_ssl' => $parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false),
+            // An IP alias always gets its self-signed certificate: it needs no
+            // CA, and its parent (often the local panel site) may never have SSL.
+            'enable_ssl' => $isIpAlias || ($parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false)),
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),
             'include_www' => $validated['domain_type'] === 'main' && (bool) ($validated['include_www'] ?? true),
             'filemanager_show_hidden' => false,
@@ -349,7 +354,7 @@ class MainWebsiteController extends Controller
                 'sub' => 'subdomain',
                 default => 'primary',
             },
-            'ssl_mode' => $parentWebsite?->ssl_mode ?? (! empty($validated['enable_ssl']) ? 'letsencrypt' : 'none'),
+            'ssl_mode' => $isIpAlias ? 'custom' : ($parentWebsite?->ssl_mode ?? (! empty($validated['enable_ssl']) ? 'letsencrypt' : 'none')),
         ]);
         $activation = ['managed_by' => 'edge-network'];
         $sslResult = ['status' => 'disabled'];
