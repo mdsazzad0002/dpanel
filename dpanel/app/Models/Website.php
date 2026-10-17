@@ -93,6 +93,7 @@ class Website extends Model
         'wordpress_sso_secret',
         'enable_ssl',
         'manage_dns',
+        'include_www',
         'filemanager_show_hidden',
         'assigned_user_id',
         'assigned_reseller_id',
@@ -104,6 +105,7 @@ class Website extends Model
     protected $casts = [
         'enable_ssl' => 'boolean',
         'manage_dns' => 'boolean',
+        'include_www' => 'boolean',
         'filemanager_show_hidden' => 'boolean',
         'assigned_user_id' => 'integer',
         'assigned_reseller_id' => 'integer',
@@ -119,6 +121,20 @@ class Website extends Model
 
     /** Variable values can hold secrets and reach every page that serializes a website. */
     protected $hidden = ['docker_env'];
+
+    /**
+     * Whether www.<domain> belongs to this site: only main domains get it,
+     * and never a domain that already starts with www. or is an IP.
+     */
+    public function servesWww(): bool
+    {
+        $domain = strtolower((string) $this->domain);
+
+        return (string) $this->type === 'primary'
+            && ($this->include_www ?? true)
+            && ! str_starts_with($domain, 'www.')
+            && filter_var($domain, FILTER_VALIDATE_IP) === false;
+    }
 
     public function isNodeRuntime(): bool
     {

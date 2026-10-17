@@ -84,8 +84,7 @@ class SslLifecycleService
                 (string) $website->root_path,
                 (string) $website->start_directory,
             ),
-            'include_www' => (string) $website->type === 'main'
-                && ! str_starts_with($domainName, 'www.'),
+            'include_www' => $website->servesWww(),
             'renew_before_days' => max(0, (int) config('serverpanel.ssl_auto_renew_days', 30)),
         ]);
         $json = $response->json();

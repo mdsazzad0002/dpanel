@@ -62,6 +62,9 @@ Route::patch('/websites/{id}/ownership', [WebsiteController::class, 'updateOwner
     ->middleware('role:admin|reseller')
     ->name('websites.ownership.update');
 
+Route::patch('/websites/{id}/www', [MainWebsiteController::class, 'updateWww'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.www.update');
 Route::patch('/websites/{id}/alias', [MainWebsiteController::class, 'updateAlias'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.alias.update');

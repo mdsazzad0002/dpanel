@@ -142,6 +142,7 @@ class MainWebsiteController extends Controller
             'domain_type' => ['required', 'string', 'in:main,alis,sub'],
             'enable_ssl' => ['boolean'],
             'manage_dns' => ['boolean'],
+            'include_www' => ['boolean'],
             'assigned_user_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
@@ -336,6 +337,7 @@ class MainWebsiteController extends Controller
             'python_process_status' => $runtime === 'python' ? 'pending' : null,
             'enable_ssl' => $parentWebsite?->enable_ssl ?? (bool) ($validated['enable_ssl'] ?? false),
             'manage_dns' => (bool) ($validated['manage_dns'] ?? false),
+            'include_www' => $validated['domain_type'] === 'main' && (bool) ($validated['include_www'] ?? true),
             'filemanager_show_hidden' => false,
             'assigned_user_id' => $parentWebsite?->assigned_user_id ?? $subdomainParent?->assigned_user_id ?? $assignedUser?->id,
             'assigned_reseller_id' => $parentWebsite?->assigned_reseller_id
@@ -589,6 +591,48 @@ class MainWebsiteController extends Controller
                 ]);
             }
         }
+    }
+
+    /**
+     * Turn the www.<domain> alias of a main domain on or off. The edge
+     * reloads on save; SSL and DNS are re-synced so they match.
+     */
+    public function updateWww(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = Website::query()->visibleTo($request->user())->firstWhere('id', $id);
+        abort_if($website === null, 404);
+        if ((string) $website->type !== 'primary') {
+            return response()->json(['type' => 'error', 'message' => 'Only main domains have a www alias.'], 422);
+        }
+
+        $validated = $request->validate(['include_www' => ['required', 'boolean']]);
+        $website->forceFill(['include_www' => (bool) $validated['include_www']])->save();
+
+        $notes = [];
+        if ($website->enable_ssl) {
+            try {
+                $this->sslLifecycleService->ensureForWebsite($website->fresh());
+            } catch (\Throwable $e) {
+                $notes[] = 'SSL update failed: '.$e->getMessage();
+            }
+        }
+        if ($website->manage_dns) {
+            try {
+                $this->websiteDnsProvisionService->syncWebsite($website->fresh(), true);
+            } catch (\Throwable $e) {
+                $notes[] = 'DNS update failed: '.$e->getMessage();
+            }
+        }
+
+        $message = $website->include_www
+            ? "www.{$website->domain} is now served by this website."
+            : "www.{$website->domain} is no longer served by this website.";
+
+        return response()->json([
+            'type' => $notes === [] ? 'success' : 'warning',
+            'message' => trim($message.' '.implode(' ', $notes)),
+            'include_www' => (bool) $website->include_www,
+        ]);
     }
 
     public function updateAlias(Request $request, string $token, string $id): JsonResponse

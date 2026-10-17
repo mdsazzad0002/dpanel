@@ -3732,6 +3732,8 @@ class WebsiteController extends Controller
             'wordpress_db_prefix' => $this->normalizeWordPressDatabasePrefix((string) ($website->wordpress_db_prefix ?? ''), $domain),
             'enable_ssl' => (bool) ($website->enable_ssl ?? false),
             'ssl_status' => $this->resolveWebsiteSslStatus($domain),
+            'include_www' => (bool) ($website->include_www ?? true),
+            'serves_www' => $website->servesWww(),
             'filemanager_show_hidden' => (bool) ($website->filemanager_show_hidden ?? false),
             'assigned_user_id' => $website->assigned_user_id,
             'assigned_reseller_id' => $website->assigned_reseller_id,

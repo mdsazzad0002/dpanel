@@ -201,8 +201,10 @@ class WebsiteDnsProvisionService
 
         $records = [
             ['type' => 'A', 'name' => '@', 'content' => $rootTargetValue],
-            ['type' => 'CNAME', 'name' => 'www', 'content' => '@'],
         ];
+        if ($website->servesWww()) {
+            $records[] = ['type' => 'CNAME', 'name' => 'www', 'content' => '@'];
+        }
 
         foreach ($records as $record) {
             $existing = DB::table('dns_records')

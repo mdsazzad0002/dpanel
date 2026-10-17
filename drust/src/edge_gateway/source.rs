@@ -144,6 +144,16 @@ fn load_sites(
         }
     };
 
+    // Optional as well: before the include_www migration, every site keeps
+    // its www alias.
+    let no_www = match run_mysql(env, &format!("{NO_WWW_SQL}{}", site_filter("AND"))) {
+        Ok(rows) => rows.lines().map(|id| id.trim().to_string()).collect::<std::collections::HashSet<_>>(),
+        Err(error) => {
+            tracing::warn!(%error, "www settings unavailable; www stays on for every site");
+            Default::default()
+        }
+    };
+
     let mut sites = Vec::new();
     let mut tls = Vec::new();
     for line in stdout.lines() {
@@ -155,6 +165,7 @@ fn load_sites(
         if domain.is_empty() {
             continue;
         }
+        let serves_www = !no_www.contains(cols[0].trim());
         let scope = normalize_scope(cols[2]);
         let site_owner = normalize_site_owner(cols[3]);
         let root_path = cols[4].trim();
@@ -227,7 +238,11 @@ fn load_sites(
             id: cols[0].trim().to_string(),
             scope,
             site_owner,
-            hostnames: std::sync::Arc::from([domain.clone(), format!("www.{domain}")]),
+            hostnames: if serves_www {
+                std::sync::Arc::from([domain.clone(), format!("www.{domain}")])
+            } else {
+                std::sync::Arc::from([domain.clone()])
+            },
             document_root,
             php_version,
             runtime,
@@ -251,7 +266,7 @@ fn load_sites(
             tls.push(super::TlsConfig {
                 // The www alias is registered best-effort: the resolver skips
                 // any hostname the certificate does not actually cover.
-                hostnames: if domain.starts_with("www.") {
+                hostnames: if !serves_www || domain.starts_with("www.") {
                     std::sync::Arc::from([domain.clone()])
                 } else {
                     std::sync::Arc::from([domain.clone(), format!("www.{domain}")])
@@ -363,6 +378,8 @@ fn parse_docker_ports(rows: &str) -> HashMap<String, u16> {
         })
         .collect()
 }
+
+const NO_WWW_SQL: &str = "SELECT w.id FROM websites w WHERE w.include_www=0";
 
 const PYTHON_RUN_SQL: &str = "SELECT w.id,COALESCE(w.python_workers,0),COALESCE(w.python_mode,''),COALESCE(w.python_timeout,0) FROM websites w WHERE w.runtime='python'";
 

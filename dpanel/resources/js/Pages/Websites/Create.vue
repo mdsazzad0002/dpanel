@@ -56,6 +56,7 @@ const form = useForm({
     runtime: 'php',
     enable_ssl: true,
     manage_dns: false,
+    include_www: true,
     assigned_user_id: '',
 });
 
@@ -190,6 +191,14 @@ watch(isReservedSslDomain, (reserved) => {
         form.enable_ssl = false;
     }
 });
+// Aliases suggested alongside a main domain. Only www for now; it is served,
+// covered by SSL and given a DNS record when ticked.
+const suggestedAliases = computed(() => {
+    const domain = finalDomain.value;
+    if (form.domain_type !== 'main' || !domain || isIpDomain.value || domain.startsWith('www.')) return [];
+
+    return [{ key: 'include_www', domain: `www.${domain}` }];
+});
 const effectiveStartDirectory = computed(() => {
     if (form.domain_type === 'alis') {
         return form.parent_id ? selectedParentStartDirectory.value : form.start_directory;
@@ -205,6 +214,7 @@ const availablePhpVersions = computed(() => {
 
     return normalized.length > 0 ? normalized : ['8.0', '7.4'];
 });
+const phpVersionOptions = computed(() => availablePhpVersions.value.map((version) => ({ value: version, label: `PHP ${version}` })));
 
 const validateBeforeSubmit = () => {
     const errors = {};
@@ -349,6 +359,7 @@ const submit = async () => {
         form.reset();
         form.enable_ssl = true;
         form.manage_dns = false;
+        form.include_www = true;
     } catch (error) {
         const data = error?.response?.data || {};
         if (props.aliasMode && data?.website?.id) {
@@ -618,11 +629,12 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-if="!props.aliasMode">
                     <label class="mb-1 block text-sm">PHP Version </label>
-                    <select v-model="form.php_version" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option v-for="version in availablePhpVersions" :key="version" :value="version">
-                            {{ version }}
-                        </option>
-                    </select>
+                    <SearchableSelect
+                        v-model="form.php_version"
+                        :options="phpVersionOptions"
+                        placeholder="Select PHP version"
+                        search-placeholder="Search PHP version…"
+                    />
                     <p v-if="form.errors.php_version" class="mt-1 text-xs text-red-600">{{ form.errors.php_version }}</p>
                 </div>
                 <p v-if="!props.aliasMode" class="text-xs text-slate-500 md:col-span-2">
@@ -638,6 +650,18 @@ onBeforeUnmount(() => {
                     </p>
                     <p v-else-if="isIpDomain && form.enable_ssl" class="mt-1 text-xs text-slate-500">
                         IP addresses get a self-signed certificate, so browsers will show a warning on https://{{ finalDomain }}.
+                    </p>
+                </div>
+                <div v-if="!props.aliasMode && suggestedAliases.length" class="md:col-span-2">
+                    <p class="mb-1 text-sm font-medium">Suggested aliases</p>
+                    <div class="flex flex-wrap gap-x-5 gap-y-2">
+                        <label v-for="alias in suggestedAliases" :key="alias.key" class="flex items-center gap-2 text-sm">
+                            <input v-model="form[alias.key]" type="checkbox" class="rounded border-slate-300" />
+                            {{ alias.domain }}
+                        </label>
+                    </div>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Ticked aliases open the same website and are included in its SSL certificate.
                     </p>
                 </div>
                 <div v-if="!props.aliasMode" class="flex items-start gap-2 pt-2 md:col-span-2">
