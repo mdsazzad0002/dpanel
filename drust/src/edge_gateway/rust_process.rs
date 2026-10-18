@@ -21,9 +21,13 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
             if owner.is_empty() || !owner.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_'|'-')) { return Err("invalid site owner".into()); }
             let root = PathBuf::from(root.ok_or("project_root is required")?).canonicalize().map_err(|e| format!("project directory is unavailable: {e}"))?;
             if !root.is_dir() || !root.starts_with(format!("/home/{owner}")) { return Err("Rust project must be inside the owner's home directory".into()); }
-            let command = command.map(str::trim).filter(|s| !s.is_empty()).ok_or("Rust binary path is required (for example: ./target/release/my-api)")?;
-            if command.chars().any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '+'))) { return Err("enter a binary path without arguments; build arguments are not supported".into()); }
-            let binary = if Path::new(command).is_absolute() { PathBuf::from(command) } else { root.join(command) };
+            let command = command.map(str::trim).filter(|s| !s.is_empty()).ok_or("Rust binary command is required (for example: ./target/release/my-api)")?;
+            let mut parts = command.split_whitespace();
+            let binary_input = parts.next().ok_or("Rust binary command is empty")?;
+            let args = parts.collect::<Vec<_>>();
+            if binary_input.chars().any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '+'))) { return Err("binary path contains unsupported characters".into()); }
+            if args.iter().any(|arg| arg.chars().any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '+' | ':' | '=' | ',')))) { return Err("use plain command arguments without shell syntax or quoting".into()); }
+            let binary = if Path::new(binary_input).is_absolute() { PathBuf::from(binary_input) } else { root.join(binary_input) };
             let binary = binary.canonicalize().map_err(|e| format!("Rust binary is unavailable: {e}"))?;
             if !binary.starts_with(&root) || !binary.is_file() { return Err("Rust binary must be a file inside the project directory".into()); }
             #[cfg(unix)] {
@@ -32,7 +36,8 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
             }
             let id = Command::new("id").args(["-u", owner]).status().map_err(|e| e.to_string())?;
             if !id.success() { return Err("site owner does not exist".into()); }
-            let content = format!("[Unit]\nDescription=dPanel Rust app {site}\nAfter=network.target\n[Service]\nType=simple\nUser={owner}\nGroup={owner}\nWorkingDirectory={}\nEnvironment=PORT={port}\nEnvironment=HOST=127.0.0.1\nExecStart={}\nRestart=always\nRestartSec=3\nStandardOutput=journal\nStandardError=journal\n[Install]\nWantedBy=multi-user.target\n", root.display(), binary.display());
+            let exec_start = std::iter::once(binary.display().to_string()).chain(args.into_iter().map(str::to_string)).collect::<Vec<_>>().join(" ");
+            let content = format!("[Unit]\nDescription=dPanel Rust app {site}\nAfter=network.target\n[Service]\nType=simple\nUser={owner}\nGroup={owner}\nWorkingDirectory={}\nEnvironment=PORT={port}\nEnvironment=HOST=127.0.0.1\nExecStart={}\nRestart=always\nRestartSec=3\nStandardOutput=journal\nStandardError=journal\n[Install]\nWantedBy=multi-user.target\n", root.display(), exec_start);
             let path = format!("/etc/systemd/system/{name}.service");
             if fs::read_to_string(&path).ok().as_deref() != Some(content.as_str()) {
                 fs::write(&path, content).map_err(|e| format!("cannot write systemd unit: {e}"))?;

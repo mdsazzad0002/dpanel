@@ -88,9 +88,10 @@ Create Node.js, Python, or Rust processes under **Hosting → Apps**. Each app
 runs as its website Linux user from a folder inside that user's home and gets a
 reserved localhost port. Publish it on a domain under **Rules → Port Share**.
 Rust apps must point to an executable binary that has already been built, such
-as `./target/release/my-api`; the Rust runner starts that binary directly and
-does not run Cargo or build it. The binary should bind to `127.0.0.1` and read
-its port from `PORT`.
+as `./target/release/my-api`; a command can include plain arguments, for
+example `./bin/dengr-search serve`. The Rust runner starts that binary directly
+and does not run Cargo or build it. The binary should bind to `127.0.0.1` and
+listen on its configured app port.
 
 ## Run a command by hand
 

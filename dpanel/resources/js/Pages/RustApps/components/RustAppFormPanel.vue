@@ -93,7 +93,7 @@ const submit = () => {
             <div>
                 <label class="mb-1 block text-sm font-medium">Binary path</label>
                 <input v-model="form.start_command" type="text" placeholder="./target/release/my-api" required class="w-full rounded-lg border-slate-300 font-mono text-sm dark:border-slate-600 dark:bg-slate-900" />
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">The runner executes this existing binary directly; it does not call Cargo or build the project. The app must listen on 127.0.0.1 and <code>$PORT</code>.</p>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Runs this existing binary directly with optional plain arguments, without a shell. It does not call Cargo or build. The app must listen on 127.0.0.1 and the configured port.</p>
                 <InputError :message="form.errors.start_command" class="mt-1" />
             </div>
 
