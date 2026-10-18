@@ -35,6 +35,11 @@ class AppProjectController extends Controller
         return $this->index($request, 'python', 'PythonApps/Index', ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14']);
     }
 
+    public function rustIndex(Request $request): Response
+    {
+        return $this->index($request, 'rust', 'RustApps/Index', []);
+    }
+
     /** @param array<int, string> $versions */
     private function index(Request $request, string $runtime, string $page, array $versions): Response
     {
@@ -177,7 +182,7 @@ class AppProjectController extends Controller
             throw ValidationException::withMessages([
                 'entry_file' => $project->runtime === 'node'
                     ? 'Enter an entry file (e.g. server.js) or a start command.'
-                    : 'Enter a WSGI/ASGI app path (e.g. app:app) or a start command.',
+                : ($project->runtime === 'rust' ? 'Enter a Cargo command such as cargo run --release.' : 'Enter a WSGI/ASGI app path (e.g. app:app) or a start command.'),
             ]);
         }
         if ($entry !== '' && (str_contains($entry, '..') || str_starts_with($entry, '/'))) {
@@ -233,13 +238,13 @@ class AppProjectController extends Controller
 
     private function run(AppProject $project, string $action, string $message): RedirectResponse
     {
-        if ($project->runtime === 'python' && in_array($action, ['start', 'restart'], true)) {
+        if (in_array($project->runtime, ['python', 'rust'], true) && in_array($action, ['start', 'restart'], true)) {
             // A disabled unit only comes back after a reboot when started.
             $action = $action === 'restart' && $project->status === 'stopped' ? 'start' : $action;
             $project->forceFill(['status' => 'starting', 'last_error' => null])->save();
             StartAppProjectJob::dispatch($project->id, $action);
 
-            return back()->with('success', "{$project->name}: starting in the background. The first start installs Python and packages, which can take a few minutes.");
+            return back()->with('success', $project->runtime === 'python' ? "{$project->name}: starting in the background. The first start installs Python and packages, which can take a few minutes." : "{$project->name}: building and starting in the background.");
         }
 
         try {

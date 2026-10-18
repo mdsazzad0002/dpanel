@@ -400,6 +400,9 @@ Route::get('/apps/node', [AppProjectController::class, 'nodeIndex'])
 Route::get('/apps/python', [AppProjectController::class, 'pythonIndex'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('apps.python.index');
+Route::get('/apps/rust', [AppProjectController::class, 'rustIndex'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('apps.rust.index');
 Route::post('/apps', [AppProjectController::class, 'store'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
     ->name('apps.store');

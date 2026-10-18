@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** A Node.js or Python app run by systemd from a folder in a site owner's home. */
 class AppProject extends Model
 {
-    public const RUNTIMES = ['node', 'python'];
+    public const RUNTIMES = ['node', 'python', 'rust'];
 
     protected $fillable = [
         'name',

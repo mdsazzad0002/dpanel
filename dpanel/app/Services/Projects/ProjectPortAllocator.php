@@ -13,9 +13,11 @@ class ProjectPortAllocator
 
     public function allocate(string $runtime): int
     {
-        [$start, $end] = $runtime === 'node'
-            ? [WebsiteService::NODE_PORT_RANGE_START, WebsiteService::NODE_PORT_RANGE_END]
-            : [WebsiteService::PYTHON_PORT_RANGE_START, WebsiteService::PYTHON_PORT_RANGE_END];
+        [$start, $end] = match ($runtime) {
+            'node' => [WebsiteService::NODE_PORT_RANGE_START, WebsiteService::NODE_PORT_RANGE_END],
+            'python' => [WebsiteService::PYTHON_PORT_RANGE_START, WebsiteService::PYTHON_PORT_RANGE_END],
+            default => [55000, 59999],
+        };
 
         $used = AppProject::query()->pluck('port')
             ->merge(Website::query()->whereNotNull('node_port')->pluck('node_port'))

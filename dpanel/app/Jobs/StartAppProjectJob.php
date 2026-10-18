@@ -10,9 +10,8 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Starts or restarts a Python project in the background. The first start may
- * install the Python version, build the venv and pip install requirements,
- * which can take minutes, so it must not hold the panel request open.
+ * Starts or restarts Python and Rust projects in the background. Python may
+ * provision dependencies; Rust binaries are started without building.
  */
 class StartAppProjectJob implements ShouldQueue
 {
@@ -44,7 +43,7 @@ class StartAppProjectJob implements ShouldQueue
             $project->forceFill(['last_error' => null])->saveQuietly();
         } catch (\Throwable $e) {
             $project->forceFill(['status' => 'error', 'last_error' => mb_substr($e->getMessage(), 0, 4000)])->saveQuietly();
-            Log::warning('Python project start failed', [
+            Log::warning('App project start failed', [
                 'project_id' => $project->id,
                 'error' => $e->getMessage(),
             ]);

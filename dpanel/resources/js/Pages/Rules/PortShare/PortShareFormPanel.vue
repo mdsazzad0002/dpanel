@@ -23,6 +23,7 @@ const emit = defineEmits(['close']);
 const sources = [
     { value: 'node', label: 'Node.js app', icon: 'bi bi-hexagon' },
     { value: 'python', label: 'Python app', icon: 'bi bi-filetype-py' },
+    { value: 'rust', label: 'Rust app', icon: 'bi bi-gear-wide-connected' },
     { value: 'port', label: 'Any local port', icon: 'bi bi-ethernet' },
 ];
 const appsOf = (source) => props.projects.filter((p) => p.runtime === source);
@@ -47,7 +48,7 @@ watch(() => props.show, (open) => {
         });
         return;
     }
-    const source = appsOf('node').length ? 'node' : (appsOf('python').length ? 'python' : 'port');
+    const source = appsOf('node').length ? 'node' : (appsOf('python').length ? 'python' : (appsOf('rust').length ? 'rust' : 'port'));
     Object.assign(form, { website_id: props.websiteId, path_prefix: '/', source, app_project_id: appsOf(source)[0]?.id ?? '', target_port: '', strip_prefix: false });
 });
 
@@ -67,7 +68,8 @@ const publicUrl = computed(() => (website.value
     : `https://your-site.com${cleanPath.value}`));
 const upstream = computed(() => `127.0.0.1:${port.value || '…'}${form.strip_prefix || cleanPath.value === '/' ? '/' : cleanPath.value}`);
 const baseLabel = computed(() => (website.value?.runtime === 'docker' ? 'Docker' : 'PHP'));
-const appsPage = computed(() => (form.source === 'python' ? 'apps.python.index' : 'apps.node.index'));
+const appsPage = computed(() => ({ python: 'apps.python.index', rust: 'apps.rust.index' }[form.source] || 'apps.node.index'));
+const sourceLabel = computed(() => ({ node: 'Node.js', python: 'Python', rust: 'Rust' }[form.source] || ''));
 
 const submit = () => {
     form.transform((data) => ({
@@ -131,7 +133,7 @@ const submit = () => {
                         <option v-for="p in appsOf(form.source)" :key="p.id" :value="p.id">{{ p.name }} — port {{ p.port }}{{ p.status === 'running' ? '' : ' (stopped)' }}</option>
                     </select>
                     <p v-else class="text-sm text-slate-500 dark:text-slate-400">
-                        No {{ form.source === 'node' ? 'Node.js' : 'Python' }} apps yet.
+                        No {{ sourceLabel }} apps yet.
                         <a :href="panelRoute(appsPage)" class="text-blue-600 hover:underline dark:text-blue-400">Create one</a>, or share a local port.
                     </p>
                     <InputError :message="form.errors.app_project_id" class="mt-1" />

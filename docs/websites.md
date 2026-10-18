@@ -82,6 +82,16 @@ user.
 After a deployment, use **Install Composer Dependencies** and
 **Install & Build NPM** if the project needs them.
 
+## Long-running app processes
+
+Create Node.js, Python, or Rust processes under **Hosting → Apps**. Each app
+runs as its website Linux user from a folder inside that user's home and gets a
+reserved localhost port. Publish it on a domain under **Rules → Port Share**.
+Rust apps must point to an executable binary that has already been built, such
+as `./target/release/my-api`; the Rust runner starts that binary directly and
+does not run Cargo or build it. The binary should bind to `127.0.0.1` and read
+its port from `PORT`.
+
 ## Run a command by hand
 
 To see the full output of a failing step, run it yourself as the site user,

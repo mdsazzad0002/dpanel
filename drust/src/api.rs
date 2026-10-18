@@ -24,6 +24,7 @@ mod media;
 mod migration;
 mod migration_ssh;
 mod node;
+mod rust;
 mod php;
 mod mongo_admin;
 mod mongodb;
@@ -120,6 +121,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(migration::routes())
         .merge(migration_ssh::routes())
         .merge(node::routes())
+        .merge(rust::routes())
         .merge(python::routes())
         .merge(laravel_queue::routes())
         .with_state(Arc::new(state))

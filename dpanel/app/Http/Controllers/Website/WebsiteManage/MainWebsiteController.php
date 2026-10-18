@@ -365,26 +365,9 @@ class MainWebsiteController extends Controller
         $wwwNote = $validated['domain_type'] === 'main' && (bool) ($validated['include_www'] ?? true) && $website->canHaveWwwAlias()
             ? $this->createWwwAlias($request, $website)
             : '';
-        $sslResult = ['status' => 'disabled'];
-        if ($website->enable_ssl) {
-            try {
-                $sslResult = $this->sslLifecycleService->ensureForWebsite($website->fresh());
-            } catch (\Throwable $e) {
-                $website->forceFill([
-                    'status' => 'live',
-                    'ssl_mode' => 'none',
-                ])->saveQuietly();
-
-                return response()->json([
-                    'type' => 'success',
-                    'message' => 'Website created and available over HTTP. SSL status: invalid. '.$e->getMessage().$wwwNote,
-                    'website' => $website->fresh(),
-                    'gateway_activation' => $activation,
-                    'ssl' => ['status' => 'failed', 'error' => $e->getMessage()],
-                ], 422);
-            }
-        }
-
+        // Set up managed DNS records before asking the CA to validate the
+        // domain. Previously the certificate request ran first, so a zone
+        // created as part of this request could not resolve during validation.
         $dnsResult = ['managed' => false, 'created' => false, 'reactivated' => false, 'skipped' => 'not-requested', 'nameservers' => []];
         try {
             $dnsResult = $this->websiteDnsProvisionService->syncWebsite($website->fresh(), (bool) $website->manage_dns);
@@ -397,6 +380,47 @@ class MainWebsiteController extends Controller
                 'domain' => $website->domain,
                 'error' => $e->getMessage(),
             ]);
+        }
+
+        $sslResult = ['status' => 'disabled'];
+        $sslError = null;
+        if ($website->enable_ssl) {
+            try {
+                $sslResult = $this->sslLifecycleService->ensureForWebsite($website->fresh());
+            } catch (\Throwable $e) {
+                $sslError = $e->getMessage();
+                $website->forceFill(['status' => 'live', 'ssl_mode' => 'none'])->saveQuietly();
+            }
+        }
+
+        // A new www alias is created without issuing its certificate. The
+        // root-zone sync above now includes its CNAME, so it can be validated.
+        if ($website->enable_ssl && $validated['domain_type'] === 'main'
+            && (bool) ($validated['include_www'] ?? true) && $website->canHaveWwwAlias()) {
+            $wwwAlias = Website::query()->where('parent_id', (string) $website->id)
+                ->whereIn('type', ['alis', 'alias'])
+                ->whereRaw('LOWER(domain) = ?', ['www.'.strtolower((string) $website->domain)])
+                ->first();
+            if ($wwwAlias !== null) {
+                try {
+                    $wwwAlias->forceFill(['enable_ssl' => true, 'ssl_mode' => 'letsencrypt'])->saveQuietly();
+                    $this->sslLifecycleService->ensureForWebsite($wwwAlias->fresh());
+                } catch (\Throwable $e) {
+                    $wwwAlias->forceFill(['enable_ssl' => false, 'ssl_mode' => 'none'])->saveQuietly();
+                    $wwwNote .= ' www alias SSL failed: '.$e->getMessage();
+                }
+            }
+        }
+
+        if ($sslError !== null) {
+            return response()->json([
+                'type' => 'success',
+                'message' => 'Website created and available over HTTP. SSL status: invalid. '.$sslError.$wwwNote,
+                'website' => $website->fresh(),
+                'gateway_activation' => $activation,
+                'ssl' => ['status' => 'failed', 'error' => $sslError],
+                'dns' => $dnsResult,
+            ], 422);
         }
         $message = 'Website created successfully.';
 
@@ -618,7 +642,9 @@ class MainWebsiteController extends Controller
             'domain' => 'www.'.strtolower((string) $website->domain),
             'parent_id' => (string) $website->id,
             'parent_domain' => (string) $website->domain,
-            'enable_ssl' => (bool) $website->enable_ssl,
+            // The root DNS sync runs before its certificate is requested.
+            // The caller issues the www cert after that sync has added its CNAME.
+            'enable_ssl' => false,
         ]);
         $aliasRequest->headers->set('Accept', 'application/json');
         $aliasRequest->setUserResolver($request->getUserResolver());

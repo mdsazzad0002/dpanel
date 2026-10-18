@@ -10,6 +10,7 @@ mod php;
 mod precompress;
 mod proxy;
 mod python_process;
+pub(crate) mod rust_process;
 mod redirects;
 mod server;
 mod source;

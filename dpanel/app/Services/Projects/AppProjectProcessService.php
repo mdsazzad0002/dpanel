@@ -5,7 +5,7 @@ namespace App\Services\Projects;
 use App\Models\AppProject;
 use Illuminate\Support\Facades\Http;
 
-/** Starts/stops a project's systemd unit through drust's node/python control API. */
+/** Starts/stops a project's systemd unit through drust runtime control APIs. */
 class AppProjectProcessService
 {
     public const ACTIONS = ['start', 'stop', 'restart', 'status', 'remove'];
@@ -23,6 +23,7 @@ class AppProjectProcessService
         }
 
         $node = $project->runtime === 'node';
+        $rust = $project->runtime === 'rust';
         $payload = [
             'site_id' => (string) $project->unit_key,
             'action' => $action,
@@ -36,18 +37,18 @@ class AppProjectProcessService
                 'node_start_command' => $project->start_command,
                 'node_version' => $project->version,
             ]
-            : [
+            : ($rust ? ['rust_start_command' => $project->start_command] : [
                 'python_entry_file' => $project->entry_file,
                 'python_start_command' => $project->start_command,
                 'python_version' => $project->version,
                 'workers' => $project->pythonWorkerCount(),
                 'mode' => $project->pythonMode(),
                 'timeout' => $project->pythonTimeout(),
-            ];
+            ]);
 
-        // A Python start may create the venv and pip install requirements.
-        $timeout ??= in_array($action, ['start', 'restart'], true) ? ($node ? 90 : 280) : 60;
-        $response = $this->request($timeout)->post($this->apiUrl($node ? 'node' : 'python'), $payload);
+        // Python may provision dependencies; Rust starts the existing binary.
+        $timeout ??= in_array($action, ['start', 'restart'], true) ? ($node ? 90 : ($rust ? 600 : 280)) : 60;
+        $response = $this->request($timeout)->post($this->apiUrl($node ? 'node' : ($rust ? 'rust' : 'python')), $payload);
 
         $json = $response->json();
         if (! $response->successful() || ! (bool) ($json['success'] ?? false)) {
