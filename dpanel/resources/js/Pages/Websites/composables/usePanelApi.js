@@ -14,6 +14,17 @@ export function usePanelApi() {
     );
     const csrfToken = computed(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '');
 
+    // Laravel refreshes the XSRF-TOKEN cookie on every response, so it stays
+    // valid even after the session token rotates in another tab. It is only
+    // checked when X-CSRF-TOKEN is absent, so send one or the other.
+    const csrfHeaders = () => {
+        const xsrfCookie = document.cookie.split('; ').find((row) => row.startsWith('XSRF-TOKEN='));
+
+        return xsrfCookie
+            ? { 'X-XSRF-TOKEN': decodeURIComponent(xsrfCookie.slice('XSRF-TOKEN='.length)) }
+            : { 'X-CSRF-TOKEN': csrfToken.value };
+    };
+
     const requestJson = async (url, { method = 'POST', body = {} } = {}) => {
         const response = await fetch(url, {
             method,
@@ -22,7 +33,7 @@ export function usePanelApi() {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
                 'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': csrfToken.value,
+                ...csrfHeaders(),
             },
             // fetch() refuses a body on GET.
             body: method === 'GET' ? undefined : JSON.stringify(body),
@@ -35,5 +46,5 @@ export function usePanelApi() {
         return data;
     };
 
-    return { panelToken, panelRoute, csrfToken, requestJson };
+    return { panelToken, panelRoute, csrfToken, csrfHeaders, requestJson };
 }

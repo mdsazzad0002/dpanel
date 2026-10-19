@@ -2403,6 +2403,7 @@ panel_finalize_default_install() {
 
   panel_refresh_drust_service
   panel_issue_panel_ssl "$env_file"
+  panel_install_scheduler_cron
 
   local admin_username="${PANEL_ADMIN_USERNAME:-}"
   local admin_password="${PANEL_ADMIN_PASSWORD:-}"
@@ -2458,6 +2459,18 @@ panel_issue_panel_ssl() {
   panel_env_set "$env_file" PHPMYADMIN_URL "https://${domain}/phpmyadmin/"
   panel_refresh_phpmyadmin_sso
   panel_info_log "Panel is now served at https://${domain}."
+}
+
+# Install the cron entry that runs Laravel's scheduler (SSL renew check,
+# backups, mail and DNS checks). It is listed as "Panel Scheduler" on the root
+# panel website's Cron Jobs page, so it needs drust and the panel website.
+panel_install_scheduler_cron() {
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
+  [[ -x "${app_dir}/artisan" ]] || return 0
+
+  if ! (cd "$app_dir" && php artisan serverpanel:install-scheduler-cron); then
+    panel_warn_log "Panel scheduler cron was not installed; scheduled tasks will not run. Retry with: cd ${app_dir} && php artisan serverpanel:install-scheduler-cron"
+  fi
 }
 
 panel_write_runtime_templates() {

@@ -45,6 +45,8 @@ class HandleInertiaRequests extends Middleware
                 'name' => config('app.name'),
                 'version' => config('app.version'),
             ],
+            // Re-sent on every visit: a login/logout regenerates it without a full page load.
+            'csrf_token' => $request->hasSession() ? $request->session()->token() : null,
             'panel' => [
                 'token' => $panelToken,
                 'domain' => config('serverpanel.panel_domain'),

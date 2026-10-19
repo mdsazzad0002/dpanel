@@ -52,7 +52,7 @@ class WebsiteCreateEditService
             'site_owner' => $validated['site_owner'],
             'php_version' => $validated['php_version'],
             'enable_ssl' => $validated['enable_ssl'],
-            'assigned_user_id' => null,
+            'assigned_user_id' => $deps['defaultOwnerUserId'](),
             'assigned_reseller_id' => $defaultResellerId,
             'status' => $runtimeStatus,
             'created_at' => now()->toIso8601String(),

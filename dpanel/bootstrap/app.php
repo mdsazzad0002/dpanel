@@ -57,6 +57,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'panel.session' => \App\Http\Middleware\EnsurePanelSessionIsValid::class,
+            'throttle' => \App\Http\Middleware\ThrottleRequestsPerRoute::class,
             'role' => \App\Http\Middleware\CheckRole::class,
             'permission' => \App\Http\Middleware\CheckPermission::class,
             'role_or_permission' => \App\Http\Middleware\CheckRoleOrPermission::class,

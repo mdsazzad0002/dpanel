@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Website\WebsiteManage;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\IssueWebsiteSslJob;
 use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\Domain;
@@ -23,6 +24,7 @@ use App\Services\Website\WebsiteTrashService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -156,9 +158,13 @@ class MainWebsiteController extends Controller
 
         $validated = $validator->validated();
 
-        $assignedUser = ! empty($validated['assigned_user_id'])
-            ? User::query()->find((int) $validated['assigned_user_id'])
-            : null;
+        $actor = $request->user();
+        // A General User always owns the sites they create.
+        $assignedUser = $actor?->hasAnyRole(['general', 'general_user'])
+            ? $actor
+            : (! empty($validated['assigned_user_id'])
+                ? User::query()->find((int) $validated['assigned_user_id'])
+                : null);
         if ($assignedUser !== null && $request->user()?->hasRole('reseller')
             && (int) $assignedUser->reseller_id !== (int) $request->user()->id) {
             abort(403);
@@ -352,7 +358,8 @@ class MainWebsiteController extends Controller
             'assigned_user_id' => $parentWebsite?->assigned_user_id ?? $subdomainParent?->assigned_user_id ?? $assignedUser?->id,
             'assigned_reseller_id' => $parentWebsite?->assigned_reseller_id
                 ?? $subdomainParent?->assigned_reseller_id
-                ?? ($request->user()?->hasRole('reseller') ? (int) $request->user()->id : null),
+                ?? ($request->user()?->hasRole('reseller') ? (int) $request->user()->id : null)
+                ?? ($assignedUser?->reseller_id ? (int) $assignedUser->reseller_id : null),
             'status' => 'live',
             'type' => match ((string) $validated['domain_type']) {
                 'alis' => 'alias',
@@ -382,45 +389,29 @@ class MainWebsiteController extends Controller
             ]);
         }
 
+        // Certificates are issued in the background so the site is created
+        // (and served over HTTP) without waiting on the ACME validation.
         $sslResult = ['status' => 'disabled'];
-        $sslError = null;
         if ($website->enable_ssl) {
-            try {
-                $sslResult = $this->sslLifecycleService->ensureForWebsite($website->fresh());
-            } catch (\Throwable $e) {
-                $sslError = $e->getMessage();
-                $website->forceFill(['status' => 'live', 'ssl_mode' => 'none'])->saveQuietly();
-            }
-        }
+            $sslJobs = [new IssueWebsiteSslJob((string) $website->id)];
 
-        // A new www alias is created without issuing its certificate. The
-        // root-zone sync above now includes its CNAME, so it can be validated.
-        if ($website->enable_ssl && $validated['domain_type'] === 'main'
-            && (bool) ($validated['include_www'] ?? true) && $website->canHaveWwwAlias()) {
-            $wwwAlias = Website::query()->where('parent_id', (string) $website->id)
-                ->whereIn('type', ['alis', 'alias'])
-                ->whereRaw('LOWER(domain) = ?', ['www.'.strtolower((string) $website->domain)])
-                ->first();
-            if ($wwwAlias !== null) {
-                try {
+            // A new www alias is created without issuing its certificate. The
+            // root-zone sync above now includes its CNAME, so it can be validated.
+            if ($validated['domain_type'] === 'main'
+                && (bool) ($validated['include_www'] ?? true) && $website->canHaveWwwAlias()) {
+                $wwwAlias = Website::query()->where('parent_id', (string) $website->id)
+                    ->whereIn('type', ['alis', 'alias'])
+                    ->whereRaw('LOWER(domain) = ?', ['www.'.strtolower((string) $website->domain)])
+                    ->first();
+                if ($wwwAlias !== null) {
                     $wwwAlias->forceFill(['enable_ssl' => true, 'ssl_mode' => 'letsencrypt'])->saveQuietly();
-                    $this->sslLifecycleService->ensureForWebsite($wwwAlias->fresh());
-                } catch (\Throwable $e) {
-                    $wwwAlias->forceFill(['enable_ssl' => false, 'ssl_mode' => 'none'])->saveQuietly();
-                    $wwwNote .= ' www alias SSL failed: '.$e->getMessage();
+                    $sslJobs[] = new IssueWebsiteSslJob((string) $wwwAlias->id, disableSslOnFailure: true);
                 }
             }
-        }
 
-        if ($sslError !== null) {
-            return response()->json([
-                'type' => 'success',
-                'message' => 'Website created and available over HTTP. SSL status: invalid. '.$sslError.$wwwNote,
-                'website' => $website->fresh(),
-                'gateway_activation' => $activation,
-                'ssl' => ['status' => 'failed', 'error' => $sslError],
-                'dns' => $dnsResult,
-            ], 422);
+            // One after the other, so the two ACME runs never overlap.
+            Bus::chain($sslJobs)->dispatch();
+            $sslResult = ['status' => 'pending'];
         }
         $message = 'Website created successfully.';
 

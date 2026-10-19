@@ -1,7 +1,7 @@
 import '../css/app.css';
 import './bootstrap';
 
-import { createInertiaApp } from '@inertiajs/vue3';
+import { createInertiaApp, router } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
@@ -34,6 +34,23 @@ const registerServiceWorker = () => {
 };
 
 registerServiceWorker();
+
+// The <meta> CSRF token and Ziggy's cpsess default are rendered once with the
+// HTML, but login/logout happen as Inertia visits that rotate both. Refresh
+// them from every page's props so fetch() callers never send a stale token.
+const syncSessionTokens = (pageProps) => {
+    const csrfToken = pageProps?.csrf_token;
+    if (csrfToken) {
+        document.querySelector('meta[name="csrf-token"]')?.setAttribute('content', csrfToken);
+    }
+
+    const panelToken = pageProps?.panel?.token;
+    if (window.Ziggy && panelToken) {
+        window.Ziggy.defaults = { ...(window.Ziggy.defaults || {}), token: panelToken };
+    }
+};
+
+router.on('navigate', (event) => syncSessionTokens(event.detail.page.props));
 
 createInertiaApp({
     title: (title) => `${title} - ${appName}`,

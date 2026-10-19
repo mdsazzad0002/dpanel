@@ -1299,7 +1299,22 @@ class WebsiteController extends Controller
             'defaultResellerId' => function () use ($request): ?int {
                 $actor = $request->user();
 
-                return $actor && $actor->hasRole('reseller') ? (int) $actor->id : null;
+                if (! $actor) {
+                    return null;
+                }
+                if ($actor->hasRole('reseller')) {
+                    return (int) $actor->id;
+                }
+
+                // A General User's site belongs to their reseller too.
+                return $actor->hasAnyRole(['general', 'general_user']) && $actor->reseller_id
+                    ? (int) $actor->reseller_id
+                    : null;
+            },
+            'defaultOwnerUserId' => function () use ($request): ?int {
+                $actor = $request->user();
+
+                return $actor && $actor->hasAnyRole(['general', 'general_user']) ? (int) $actor->id : null;
             },
             'websiteModelToArray' => fn (Website $website): array => $this->websiteModelToArray($website),
         ];
