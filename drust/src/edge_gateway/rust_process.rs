@@ -58,7 +58,10 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
             }
             if action == "restart" { systemctl(&["restart", &name])?; } else { systemctl(&["enable", "--now", &name])?; }
             for _ in 0..120 { if listening(port).await { return Ok(()); } tokio::time::sleep(Duration::from_millis(250)).await; }
-            Err(format!("Rust app did not listen on port {port}"))
+            // Show why: the app's own output usually names the problem.
+            let log = Command::new("journalctl").args(["-u", &name, "-n", "25", "--no-pager", "-o", "cat"]).output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+            Err(format!("Rust app did not listen on port {port} (it must read the PORT environment variable). Last output:\n{log}"))
         }
         _ => Err(format!("unknown Rust process action: {action}")),
     }

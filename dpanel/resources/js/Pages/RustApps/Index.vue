@@ -2,8 +2,8 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import RustAppCard from './components/RustAppCard.vue';
 import RustAppFormPanel from './components/RustAppFormPanel.vue';
-import { Head, usePage } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { Head, router, usePage } from '@inertiajs/vue3';
+import { onBeforeUnmount, ref, watch } from 'vue';
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -11,7 +11,7 @@ const panelRoute = (name, params = {}) => (
     panelToken ? route(name, { token: panelToken, ...params }) : route(name, params)
 );
 
-defineProps({
+const props = defineProps({
     projects: { type: Array, default: () => [] },
     owners: { type: Array, default: () => [] },
     versions: { type: Array, default: () => [] },
@@ -21,6 +21,14 @@ const panelOpen = ref(false);
 const editing = ref(null);
 const openCreate = () => { editing.value = null; panelOpen.value = true; };
 const openEdit = (app) => { editing.value = app; panelOpen.value = true; };
+
+// Starts build in a background job: refresh until none is still starting.
+let poll = null;
+watch(() => props.projects.some((app) => app.status === 'starting'), (starting) => {
+    clearInterval(poll);
+    poll = starting ? setInterval(() => router.reload({ only: ['projects'] }), 4000) : null;
+}, { immediate: true });
+onBeforeUnmount(() => clearInterval(poll));
 </script>
 
 <template>
@@ -31,7 +39,7 @@ const openEdit = (app) => { editing.value = app; panelOpen.value = true; };
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 class="text-lg font-semibold">Rust Apps</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">Runs prebuilt Rust binaries as your site user. Publish them from Rules → Port Share.</p>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">Builds Cargo projects and runs them as your site user. Publish them from Rules → Port Share.</p>
                 </div>
                 <button @click="openCreate" :disabled="!owners.length" class="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50">
                     <i class="bi bi-plus-lg mr-1"></i>New Rust app
