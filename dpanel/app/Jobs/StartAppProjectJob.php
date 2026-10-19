@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Starts or restarts Python and Rust projects in the background. Python may
- * provision dependencies; Rust binaries are started without building.
+ * provision dependencies; Rust runs cargo build --release first.
  */
 class StartAppProjectJob implements ShouldQueue
 {

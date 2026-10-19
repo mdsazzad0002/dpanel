@@ -19,7 +19,7 @@ const blank = () => ({
     site_owner: props.owners[0] || '',
     working_directory: '',
     entry_file: '',
-    start_command: './target/release/my-api',
+    start_command: '',
     version: '20',
     port: '',
     start_now: true,
@@ -62,7 +62,7 @@ const submit = () => {
         :show="show"
         width="lg"
         :title="editing ? `Edit ${app.name}` : 'New Rust app'"
-        subtitle="Runs an already-built binary as the home's Linux user. Publish it from Rules → Port Share."
+        subtitle="Builds the Cargo project and runs it as the home's Linux user. Publish it from Rules → Port Share."
         @close="emit('close')"
     >
         <form class="space-y-4" @submit.prevent="submit">
@@ -86,14 +86,14 @@ const submit = () => {
                     <span class="whitespace-nowrap pl-3 font-mono text-xs text-slate-500">{{ home }}</span>
                     <input v-model="form.working_directory" type="text" placeholder="apps/my-api" class="w-full rounded-r-lg border-0 font-mono text-sm focus:ring-0 dark:bg-slate-900" />
                 </div>
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">The folder containing your built executable. Leave blank to use the home directory.</p>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">The folder with Cargo.toml. Leave blank to use the home directory.</p>
                 <InputError :message="form.errors.working_directory" class="mt-1" />
             </div>
 
             <div>
-                <label class="mb-1 block text-sm font-medium">Binary path</label>
-                <input v-model="form.start_command" type="text" placeholder="./target/release/my-api" required class="w-full rounded-lg border-slate-300 font-mono text-sm dark:border-slate-600 dark:bg-slate-900" />
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Runs this existing binary directly with optional plain arguments, without a shell. It does not call Cargo or build. The app must listen on 127.0.0.1 and the configured port.</p>
+                <label class="mb-1 block text-sm font-medium">Arguments <span class="font-normal text-slate-500">(optional)</span></label>
+                <input v-model="form.start_command" type="text" placeholder="serve" class="w-full rounded-lg border-slate-300 font-mono text-sm dark:border-slate-600 dark:bg-slate-900" />
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Each start runs <code>cargo build --release</code> and starts the Cargo binary with these plain arguments, without a shell. To run another file, start with its path, e.g. <code>./bin/my-api serve</code>. The app reads its port from the <code>PORT</code> environment variable and must listen on 127.0.0.1.</p>
                 <InputError :message="form.errors.start_command" class="mt-1" />
             </div>
 

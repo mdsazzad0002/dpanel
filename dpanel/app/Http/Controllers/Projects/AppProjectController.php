@@ -178,11 +178,12 @@ class AppProjectController extends Controller
     {
         $entry = trim((string) ($validated['entry_file'] ?? ''));
         $command = trim((string) ($validated['start_command'] ?? ''));
-        if ($entry === '' && $command === '') {
+        // Rust runs the Cargo binary when no command is given.
+        if ($entry === '' && $command === '' && $project->runtime !== 'rust') {
             throw ValidationException::withMessages([
                 'entry_file' => $project->runtime === 'node'
                     ? 'Enter an entry file (e.g. server.js) or a start command.'
-                : ($project->runtime === 'rust' ? 'Enter a Cargo command such as cargo run --release.' : 'Enter a WSGI/ASGI app path (e.g. app:app) or a start command.'),
+                    : 'Enter a WSGI/ASGI app path (e.g. app:app) or a start command.',
             ]);
         }
         if ($entry !== '' && (str_contains($entry, '..') || str_starts_with($entry, '/'))) {

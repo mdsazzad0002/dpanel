@@ -87,11 +87,14 @@ After a deployment, use **Install Composer Dependencies** and
 Create Node.js, Python, or Rust processes under **Hosting → Apps**. Each app
 runs as its website Linux user from a folder inside that user's home and gets a
 reserved localhost port. Publish it on a domain under **Rules → Port Share**.
-Rust apps must point to an executable binary that has already been built, such
-as `./target/release/my-api`; a command can include plain arguments, for
-example `./bin/dengr-search serve`. The Rust runner starts that binary directly
-and does not run Cargo or build it. The binary should bind to `127.0.0.1` and
-listen on its configured app port.
+For a Rust app, point the working directory at the folder with `Cargo.toml`.
+Every start runs `cargo build --release` as the site user and then runs the
+package's binary (its only one, or the one named after the package). The
+command field holds plain arguments only, for example `serve`; a first word
+with a slash, such as `./bin/my-api serve`, runs that file instead. When
+`target/` belongs to another user (a manual build), the panel builds into
+`.dpanel-target/` so it never changes that user's files. The app gets its port
+in `PORT` and should listen on `127.0.0.1`.
 
 ## Run a command by hand
 

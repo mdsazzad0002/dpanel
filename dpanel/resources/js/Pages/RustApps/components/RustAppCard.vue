@@ -25,9 +25,9 @@ const { busy, live, control, checkStatus, remove } = useAppProjectActions(() => 
 
         <dl class="grid grid-cols-3 gap-2 px-4 py-3 text-xs">
             <div><dt class="text-slate-500 dark:text-slate-400">Port</dt><dd class="font-mono">{{ app.port }}</dd></div>
-            <div><dt class="text-slate-500 dark:text-slate-400">Runtime</dt><dd>Prebuilt binary</dd></div>
+            <div><dt class="text-slate-500 dark:text-slate-400">Runtime</dt><dd>Cargo release</dd></div>
             <div><dt class="text-slate-500 dark:text-slate-400">User</dt><dd class="truncate">{{ app.site_owner }}</dd></div>
-            <div class="col-span-3"><dt class="text-slate-500 dark:text-slate-400">Binary</dt><dd class="truncate font-mono">{{ app.start_command }}</dd></div>
+            <div class="col-span-3"><dt class="text-slate-500 dark:text-slate-400">Command</dt><dd class="truncate font-mono">{{ app.start_command || 'Cargo binary' }}</dd></div>
         </dl>
 
         <div class="px-4 pb-3 text-xs">
