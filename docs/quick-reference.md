@@ -65,6 +65,7 @@ the installer when you want a fix that was just released or merged.
 | Run new migrations | `cd /var/www/dpanel && sudo -u www-data php artisan migrate --force` |
 | Rebuild the panel UI | `cd /var/www/dpanel && npm run build` |
 | Rebuild and restart drust | `sudo /var/www/drust/deploy/install-service.sh` |
+| Remove Drust Cargo build artifacts to free disk space | `sudo dpanel cargo clean` (asks for confirmation; next build recompiles them) |
 
 ## Server accounts and SSH
 

@@ -15,6 +15,7 @@ class CpanelMigrationArchiveTest extends TestCase
             $this->markTestSkipped('ZipArchive is unavailable.');
         }
 
+        config(['database.default' => 'mysql', 'database.connections.mysql.driver' => 'mysql']);
         $run = storage_path('framework/testing/cpanel-archive-'.bin2hex(random_bytes(4)));
         File::ensureDirectoryExists($run);
         File::put($run.'/database-mysql.sql', 'SELECT 1;');
@@ -32,11 +33,20 @@ class CpanelMigrationArchiveTest extends TestCase
             $this->assertStringContainsString('homedir/app-data.zip', (string) $listing);
             $this->assertStringContainsString('mysql/database-mysql.sql', (string) $listing);
             $this->assertStringContainsString('meta/manifest.json', (string) $listing);
+            $this->assertFileDoesNotExist($run.'/app-data.zip');
+            $this->assertFileDoesNotExist($run.'/database-mysql.sql');
 
             $this->artisan('serverpanel:restore', [
                 'archive' => $archive,
                 '--dry-run' => true,
             ])->expectsOutputToContain('Dry run completed')->assertSuccessful();
+
+            config(['database.default' => 'sqlite', 'database.connections.sqlite.driver' => 'sqlite']);
+            $this->artisan('serverpanel:restore', [
+                'archive' => $archive,
+                '--dry-run' => true,
+            ])->expectsOutputToContain('Migration package database artifact does not match the configured target database driver.')
+                ->assertFailed();
 
             $extract = $run.'/extract';
             File::ensureDirectoryExists($extract);

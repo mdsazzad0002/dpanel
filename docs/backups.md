@@ -25,6 +25,8 @@ Every full (`--only=all`) run also creates a portable archive named like:
 
 `backup-MM.DD.YYYY_HH-MM-SS_dpanel.tar.gz`
 
+After this archive is created successfully, the separate `app-data.zip` and database dump are removed; the `.tar.gz` is the single retained full-backup file. Runs using `--only=db` or `--only=files` keep their standalone output because no migration package is created.
+
 The archive follows the familiar cPanel account-backup layout:
 
 - `homedir/app-data.zip` — panel environment and persistent application data
@@ -103,6 +105,9 @@ Restore rejects absolute/traversal paths, verifies every manifest checksum, and 
 ## Use from panel UI
 
 - Open: `/backups`
+- For a full DPanel-to-DPanel move, open `/migrations` and choose **DPanel to DPanel**. Upload the `backup-*_dpanel.tar.gz` package; large files are uploaded in chunks and validated before restore.
+- DPanel restore is admin-only and replaces the target `.env`, `storage/app` data and configured panel database. Back up the target separately and confirm this is the intended destination before restoring.
+- The target may need a fresh login after restore. Review environment/database connectivity, ownership, DNS, SSL, IP addresses and service configuration before sending production traffic to it.
 - Run on-demand backup:
   - `All (DB + Files)`
   - `Database Only`
@@ -120,6 +125,7 @@ Restore rejects absolute/traversal paths, verifies every manifest checksum, and 
 
 Laravel scheduler is already configured in `routes/console.php`:
 - Runs daily at `BACKUP_TIME`.
+- Migration import files are queued for cleanup 8 hours after the import is created.
 
 You must run Laravel scheduler every minute from OS scheduler.
 

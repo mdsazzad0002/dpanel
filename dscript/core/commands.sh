@@ -40,6 +40,7 @@ Commands:
   list                           List modules and maintenance scripts
   logs [install|update|agent]    Show a runtime log
   runtime refresh                Refresh installed runtime and launcher
+  cargo clean                    Remove Drust Cargo build artifacts
   link                           Alias for runtime refresh
   help [command|module|script]   Show detailed help
 
@@ -59,6 +60,7 @@ Examples:
   sudo dpanel chain update
   sudo dpanel module php install 8.3
   sudo dpanel docker              # optional Docker add-on (off by default)
+  sudo dpanel cargo clean         # free space used by Drust build artifacts
   dpanel script list
   sudo dpanel script run reset-web-stack --yes
   dpanel doctor
@@ -554,11 +556,48 @@ dscript_help() {
     module) dscript_module_help "${2:-}" ;;
     script) dscript_script_help "${2:-}" ;;
     php|filemanager|ssh|firewall) dscript_module_help "$topic" ;;
+    cargo) dscript_cargo help ;;
     doctor) printf '%s\n' "Usage: dpanel doctor [--fix]" "Runs dependency, manifest, syntax and runtime checks." ;;
     *)
       if dscript_module_exists "$topic"; then dscript_module_help "$topic"; else panel_die "No help topic: ${topic}"; fi
       ;;
   esac
+}
+
+dscript_cargo() {
+  local action="${1:-help}" root target size
+  shift || true
+  case "$action" in
+    clean) ;;
+    -h|--help|help)
+      printf '%s\n' 'Usage: dpanel cargo clean' 'Removes only /var/www/drust/target (Cargo build artifacts).'
+      return 0
+      ;;
+    *) panel_die "Usage: dpanel cargo clean" ;;
+  esac
+  root="$(panel_repository_root)"
+  target="$(dirname "$root")/drust/target"
+  [[ -d "$(dirname "$target")/.git" || -f "$(dirname "$target")/Cargo.toml" ]] || panel_die "Drust project not found: $(dirname "$target")"
+  if [[ ! -d "$target" ]]; then
+    printf 'Cargo build directory does not exist: %s\n' "$target"
+    return 0
+  fi
+  size="$(du -sh "$target" 2>/dev/null | cut -f1)"
+  if [[ "$DSCRIPT_DRY_RUN" == true ]]; then
+    printf '[DRY-RUN] remove Cargo build artifacts: %s (%s)\n' "$target" "${size:-unknown size}"
+    return 0
+  fi
+  panel_require_root
+  if declare -F confirm_action >/dev/null; then
+    confirm_action "Remove Drust Cargo build artifacts (${size:-unknown size})" "rm -rf -- $target" || {
+      printf 'Cancelled.\n'
+      return 0
+    }
+  else
+    panel_die 'Confirmation helper is unavailable; refusing to clean Cargo artifacts.'
+  fi
+  rm -rf -- "$target"
+  printf 'Removed %s of Cargo build artifacts. The next build will compile dependencies again.\n' "${size:-unknown size}"
 }
 
 dscript_cli() {
@@ -597,6 +636,7 @@ dscript_cli() {
       [[ "${1:-}" == "refresh" ]] || panel_die "Usage: dpanel runtime refresh"
       dscript_runtime_refresh
       ;;
+    cargo) dscript_cargo "$@" ;;
     link)
       dscript_runtime_refresh
       ;;

@@ -542,6 +542,11 @@ Route::prefix('cpsess{token}')
 
             Route::get('/migrations', [MigrationController::class, 'index'])->middleware('role:admin|reseller')->name('migrations.index');
             Route::get('/migrations/cpanel', [MigrationController::class, 'cpanel'])->middleware('role:admin|reseller')->name('migrations.cpanel');
+            Route::get('/migrations/dpanel', [MigrationController::class, 'dpanel'])->middleware('role:admin')->name('migrations.dpanel');
+            Route::post('/migrations/dpanel', [MigrationController::class, 'prepareDpanelImport'])->middleware(['role:admin', 'throttle:10,1'])->name('migrations.dpanel.prepare');
+            Route::post('/migrations/dpanel/{migrationImport}/chunks', [MigrationController::class, 'uploadDpanelImportChunk'])->middleware(['role:admin', 'throttle:3000,1'])->name('migrations.dpanel.chunks');
+            Route::post('/migrations/dpanel/{migrationImport}/complete', [MigrationController::class, 'completeDpanelImport'])->middleware(['role:admin', 'throttle:10,1'])->name('migrations.dpanel.complete');
+            Route::post('/migrations/dpanel/{migrationImport}/restore', [MigrationController::class, 'restoreDpanel'])->middleware(['role:admin', 'throttle:2,1'])->name('migrations.dpanel.restore');
             Route::get('/migrations/cyberpanel-ssh', [MigrationController::class, 'cyberpanelSsh'])->middleware('role:admin|reseller')->name('migrations.cyberpanel-ssh');
             Route::post('/migrations/cyberpanel-ssh/inspect', [MigrationController::class, 'inspectCyberpanelSsh'])->middleware(['role:admin|reseller', 'throttle:10,1'])->name('migrations.cyberpanel-ssh.inspect');
             Route::post('/migrations/cyberpanel-ssh/download', [MigrationController::class, 'downloadCyberpanelSsh'])->middleware(['role:admin|reseller', 'throttle:6,1'])->name('migrations.cyberpanel-ssh.download');

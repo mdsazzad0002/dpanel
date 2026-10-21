@@ -1844,6 +1844,7 @@ class WebsiteController extends Controller
             'item_paths' => ['required', 'array', 'min:1'],
             'item_paths.*' => ['required', 'string', 'max:1500'],
             'zip_name' => ['nullable', 'string', 'max:255'],
+            'archive_format' => ['required', 'in:zip,tar,tar.gz'],
         ]);
 
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
@@ -1859,14 +1860,19 @@ class WebsiteController extends Controller
             return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'No valid items selected for zip.');
         }
 
-        $zipNameInput = trim((string) ($validated['zip_name'] ?? ''));
-        $zipName = $this->sanitizeFilename($zipNameInput !== '' ? $zipNameInput : 'archive-'.now()->format('Ymd-His'));
-        if (! str_ends_with(strtolower($zipName), '.zip')) {
-            $zipName .= '.zip';
-        }
+        $archiveFormat = (string) $validated['archive_format'];
+        $archiveExtension = match ($archiveFormat) {
+            'tar' => '.tar',
+            'tar.gz' => '.tar.gz',
+            default => '.zip',
+        };
+        $archiveNameInput = trim((string) ($validated['zip_name'] ?? ''));
+        $archiveName = $this->sanitizeFilename($archiveNameInput !== '' ? $archiveNameInput : 'archive-'.now()->format('Ymd-His'));
+        $archiveName = preg_replace('/\.(?:tar\.gz|zip|tar)$/i', '', $archiveName) ?? $archiveName;
+        $archiveName .= $archiveExtension;
 
-        $zipRelative = $this->sanitizeRelativePath(trim($currentPath.'/'.$zipName, '/'));
-        $zipPath = $this->resolvePathInsideBase($basePath, $zipRelative);
+        $archiveRelative = $this->sanitizeRelativePath(trim($currentPath.'/'.$archiveName, '/'));
+        $archivePath = $this->resolvePathInsideBase($basePath, $archiveRelative);
 
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
         try {
@@ -1874,13 +1880,13 @@ class WebsiteController extends Controller
                 fn (string $itemRelative): string => $this->resolvePathInsideBase($basePath, $itemRelative),
                 $itemPaths
             );
-            $this->filemanagerService->zipPaths($siteOwner, $sourcePaths, $zipPath);
-            $this->filemanagerService->changePermissions($siteOwner, $zipPath, '644', false);
+            $this->filemanagerService->zipPaths($siteOwner, $sourcePaths, $archivePath, $archiveFormat);
+            $this->filemanagerService->changePermissions($siteOwner, $archivePath, '644', false);
         } catch (\Throwable $e) {
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create zip. '.$e->getMessage());
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to create archive. '.$e->getMessage());
         }
 
-        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Zip created successfully.');
+        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Archive created successfully.');
     }
 
     public function unzipItem(Request $request, string $token, string $id): RedirectResponse|JsonResponse
@@ -1906,29 +1912,29 @@ class WebsiteController extends Controller
             : $currentPath;
         $destinationPath = $this->resolvePathInsideBase($basePath, $destinationRelative);
 
-        if (! str_ends_with(strtolower($zipPath), '.zip')) {
+        if (! preg_match('/\.(?:zip|tar|tar\.gz|tgz|gz)$/i', $zipPath)) {
             if ($request->expectsJson()) {
-                return response()->json(['message' => 'The selected file is not a .zip archive.'], 422);
+                return response()->json(['message' => 'Supported archives are .zip, .tar, .tar.gz, .tgz, and .gz.'], 422);
             }
 
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'The selected file is not a .zip archive.');
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Supported archives are .zip, .tar, .tar.gz, .tgz, and .gz.');
         }
 
         try {
             $this->filemanagerService->unzipFile($siteOwner, $zipPath, $destinationPath);
         } catch (\Throwable $e) {
             if ($request->expectsJson()) {
-                return response()->json(['message' => 'Failed to extract zip. '.$e->getMessage()], 422);
+                return response()->json(['message' => 'Failed to extract archive. '.$e->getMessage()], 422);
             }
 
-            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to extract zip. '.$e->getMessage());
+            return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('error', 'Failed to extract archive. '.$e->getMessage());
         }
 
         if ($request->expectsJson()) {
-            return response()->json(['message' => 'Zip extracted successfully.']);
+            return response()->json(['message' => 'Archive extracted successfully.']);
         }
 
-        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Zip extracted successfully.');
+        return redirect()->route('websites.filemanager', $this->fileManagerRouteParams($id, $currentPath, $scopeRoot))->with('success', 'Archive extracted successfully.');
     }
 
     public function deleteItem(Request $request, string $token, string $id): RedirectResponse

@@ -384,7 +384,7 @@ const quickExport = async () => {
                             {{ itemState[item.key].downloadUrl }}
                         </a>
                         <p v-if="itemState[item.key]?.downloadUrl" class="mt-1 text-[11px] text-slate-400">
-                            Link stays valid for 3 hours — no panel login needed, so it's safe to share with anyone.
+                            Link stays valid for 8 hours — no panel login needed, so it's safe to share with anyone.
                         </p>
                     </div>
                 </div>
@@ -417,7 +417,7 @@ const quickExport = async () => {
 
                 <div v-if="shareUrl" class="mt-4 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs dark:border-emerald-900 dark:bg-emerald-950/30">
                     <p class="break-all font-mono text-emerald-800 dark:text-emerald-300">{{ shareUrl }}</p>
-                    <p class="text-[11px] text-slate-500">Paste this into the destination server's Import & Clone → "Import from another server" field. Valid for 24 hours — no login needed on either side.</p>
+                    <p class="text-[11px] text-slate-500">Paste this into the destination server's Import & Clone → "Import from another server" field. Valid for 8 hours — no login needed on either side.</p>
                     <button type="button" class="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/40" @click="copyShareUrl">
                         <i class="bi bi-clipboard mr-1"></i>Copy link
                     </button>

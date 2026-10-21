@@ -21,6 +21,7 @@ class CpanelMigrationArchive
         File::ensureDirectoryExists($stage.DIRECTORY_SEPARATOR.'meta');
 
         $artifacts = [];
+        $sourceFiles = [];
         foreach (File::files($runDirectory) as $file) {
             $name = $file->getFilename();
             if ($name === 'app-data.zip') {
@@ -32,6 +33,7 @@ class CpanelMigrationArchive
             }
 
             File::copy($file->getPathname(), $stage.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative));
+            $sourceFiles[] = $file->getPathname();
             $artifacts[$relative] = [
                 'sha256' => hash_file('sha256', $file->getPathname()),
                 'size' => $file->getSize(),
@@ -70,6 +72,12 @@ class CpanelMigrationArchive
 
         if (! $result->successful()) {
             throw new RuntimeException('Could not create migration archive: '.trim($result->errorOutput().' '.$result->output()));
+        }
+
+        foreach ($sourceFiles as $sourceFile) {
+            if (! File::delete($sourceFile) || File::exists($sourceFile)) {
+                throw new RuntimeException('Migration archive was created, but a packaged source file could not be removed: '.basename($sourceFile));
+            }
         }
 
         return $archive;

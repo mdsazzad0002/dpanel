@@ -409,6 +409,7 @@ register_dpanel_command
 #   installer.sh php redis        -> dpanel chain install php redis
 #   installer.sh update           -> dpanel chain update
 #   installer.sh chain update     -> dpanel chain update
+#   installer.sh cargo clean     -> dpanel cargo clean
 #
 printf '[INFO] Handing over request to dscript/dpanel.\n'
 if [[ $# -eq 0 ]]; then
@@ -420,6 +421,8 @@ elif [[ "${1:-}" == "install" ]]; then
   shift || true
   dscript_args=(chain install "$@")
 elif [[ "${1:-}" == "chain" ]]; then
+  dscript_args=("$@")
+elif [[ "${1:-}" == "cargo" ]]; then
   dscript_args=("$@")
 else
   dscript_args=(chain install "$@")

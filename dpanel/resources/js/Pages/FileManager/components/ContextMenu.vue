@@ -51,9 +51,9 @@ defineProps({
             <i class="bi bi-file-earmark-zip text-xs text-slate-400"></i>
             Create Zip
         </button>
-        <button v-if="fm.contextZip" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('unzip')">
+        <button v-if="fm.contextArchive" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('unzip')">
             <i class="bi bi-file-earmark-arrow-up text-xs text-slate-400"></i>
-            Extract Zip
+            Extract Archive
         </button>
 
         <div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>

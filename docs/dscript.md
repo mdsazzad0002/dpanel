@@ -14,6 +14,7 @@ belong in the standalone installer.
 ```text
 installer.sh              -> dpanel default-install
 installer.sh update       -> dpanel chain update
+installer.sh cargo clean  -> dpanel cargo clean
 ```
 
 ## 1. Quick start
@@ -161,6 +162,7 @@ PHP repair one version                  dpanel php reinstall <version>
 Website SSL                             dpanel script run issue-ssl <domain> <root> 0 [--alias domain]
 Website SSL with www                    dpanel script run issue-ssl <domain> <root> 1 [--alias domain]
 Rust/Drust install                      bash /var/www/drust/deploy/install-service.sh
+Clean Drust Cargo build files            sudo dpanel cargo clean
 Mail install                            install postfix + dovecot packages
 Node.js install                         install nodejs npm packages
 Create Linux user                       dpanel filemanager user ensure <user> --home <path> --shell <shell>

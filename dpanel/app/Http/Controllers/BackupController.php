@@ -428,6 +428,12 @@ class BackupController extends Controller
         if (! $response->successful() || ! (bool) $response->json('success')) {
             return response()->json(['ok' => false, 'message' => (string) ($response->json('message') ?: 'dRust could not delete the backup run.')], 500);
         }
+        if (is_dir($runPath) || file_exists($runPath)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'dRust reported success, but the backup run still exists in storage.',
+            ], 500);
+        }
 
         return response()->json(['ok' => true, 'message' => 'Backup run deleted.', 'runs' => $this->listRuns(storage_path('app/backups'))]);
     }

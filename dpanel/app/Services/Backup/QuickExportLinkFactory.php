@@ -19,7 +19,7 @@ use Illuminate\Support\Str;
  */
 class QuickExportLinkFactory
 {
-    public const TTL_HOURS = 3;
+    public const TTL_HOURS = 8;
 
     public function make(string $websiteId, string $path, string $fileName): string
     {

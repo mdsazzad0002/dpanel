@@ -285,7 +285,8 @@ export function useFileManager(props) {
     });
 
     const contextItem = computed(() => localItems.value.find((item) => item.path === contextMenu.value.itemPath) || null);
-    const contextZip = computed(() => contextItem.value?.type === 'file' && String(contextItem.value?.name || '').toLowerCase().endsWith('.zip'));
+    const contextArchive = computed(() => contextItem.value?.type === 'file'
+        && /\.(?:zip|tar|tar\.gz|tgz|gz)$/i.test(String(contextItem.value?.name || '')));
 
     function openContextMenu(item, event) {
         if (!selectedPaths.value.includes(item.path)) {
@@ -696,10 +697,18 @@ export function useFileManager(props) {
         zipForm.post(panelRoute('websites.filemanager.zip', fileManagerRouteParams()), {
             onSuccess: () => {
                 zipForm.zip_name = '';
+                zipForm.archive_format = 'zip';
                 selectedPaths.value = [];
                 closeModal();
             },
         });
+    }
+
+    function updateArchiveFormat(format) {
+        const suffix = format === 'tar.gz' ? '.tar.gz' : `.${format}`;
+        const name = String(zipForm.zip_name || '');
+        const baseName = name.replace(/\.(?:tar\.gz|zip|tar)$/i, '');
+        zipForm.zip_name = `${baseName || 'archive'}${suffix}`;
     }
 
     function submitUnzip() {
@@ -718,7 +727,7 @@ export function useFileManager(props) {
                 },
             })
             .then((response) => {
-                const message = response?.data?.message || 'Zip extracted successfully.';
+                const message = response?.data?.message || 'Archive extracted successfully.';
                 pushToast(message, 'success');
                 closeModal();
                 router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ path: props.currentPath })), {}, {
@@ -727,7 +736,7 @@ export function useFileManager(props) {
                 });
             })
             .catch((error) => {
-                const message = error?.response?.data?.message || 'Failed to extract zip.';
+                const message = error?.response?.data?.message || 'Failed to extract archive.';
                 pushToast(message, 'error');
             })
             .finally(() => {
@@ -906,6 +915,7 @@ export function useFileManager(props) {
             }
             case 'zip':
                 zipForm.item_paths = selectedPaths.value.length ? selectedPaths.value : [item.path];
+                zipForm.archive_format = 'zip';
                 zipForm.zip_name = item.type === 'dir' ? `${item.name}.zip` : `${item.name.replace(/\.[^.]+$/, '')}.zip`;
                 openModal('zip');
                 break;
@@ -935,6 +945,7 @@ export function useFileManager(props) {
         if (!paths.length) return;
 
         zipForm.item_paths = paths;
+        zipForm.archive_format = 'zip';
         const sourceItem = localItems.value.find((item) => item.path === paths[0]) || singleSelectedItem.value;
         zipForm.zip_name = sourceItem
             ? (sourceItem.type === 'dir'
@@ -945,7 +956,7 @@ export function useFileManager(props) {
     }
 
     function openUnzipForSelection() {
-        if (!isZipSelected.value || !singleSelectedItem.value) return;
+        if (!isSupportedArchiveSelected.value || !singleSelectedItem.value) return;
 
         unzipForm.zip_path = singleSelectedItem.value.path;
         unzipForm.destination_path = props.currentPath || '';
@@ -983,7 +994,7 @@ export function useFileManager(props) {
     const uploadForm = useForm({ path: props.currentPath, uploads: [] });
     const permissionForm = useForm({ item_path: '', current_path: props.currentPath, permissions: '644', recursive: false });
     const renameForm = useForm({ item_path: '', current_path: props.currentPath, new_name: '' });
-    const zipForm = useForm({ current_path: props.currentPath, item_paths: [], zip_name: '' });
+    const zipForm = useForm({ current_path: props.currentPath, item_paths: [], zip_name: '', archive_format: 'zip' });
     const unzipForm = useForm({ zip_path: '', current_path: props.currentPath, destination_path: '' });
     const moveForm = useForm({ item_path: '', item_paths: [], current_path: props.currentPath, destination_path: props.currentPath });
     const copyForm = useForm({ item_path: '', item_paths: [], current_path: props.currentPath, destination_path: props.currentPath, new_name: '' });
@@ -999,9 +1010,10 @@ export function useFileManager(props) {
         if (selectedPaths.value.length !== 1) return null;
         return localItems.value.find((item) => item.path === selectedPaths.value[0]) || null;
     });
-    const isZipSelected = computed(() => {
+    const isSupportedArchiveSelected = computed(() => {
         if (!singleSelectedItem.value) return false;
-        return singleSelectedItem.value.type === 'file' && String(singleSelectedItem.value.name || '').toLowerCase().endsWith('.zip');
+        return singleSelectedItem.value.type === 'file'
+            && /\.(?:zip|tar|tar\.gz|tgz|gz)$/i.test(String(singleSelectedItem.value.name || ''));
     });
 
     const quickActionsGroups = computed(() => ([
@@ -1019,7 +1031,7 @@ export function useFileManager(props) {
                 { label: 'Permissions', hint: 'Change access mode', icon: 'bi-shield-lock', className: 'text-purple-500', action: () => openPermissionsForSelection(), visible: !!singleSelectedItem.value },
                 { label: 'Download', hint: 'Save locally', icon: 'bi-download', className: 'text-slate-500', action: () => downloadSelected(), visible: !!singleSelectedItem.value && singleSelectedItem.value.type === 'file' },
                 { label: 'Zip', hint: 'Compress selection', icon: 'bi-file-earmark-zip', className: 'text-amber-500', action: () => openZipForSelection(), visible: !!singleSelectedItem.value || selectedCount.value > 0 },
-                { label: 'Extract', hint: 'Unpack archive', icon: 'bi-file-earmark-arrow-up', className: 'text-green-500', action: () => openUnzipForSelection(), visible: isZipSelected.value },
+                { label: 'Extract', hint: 'Unpack archive', icon: 'bi-file-earmark-arrow-up', className: 'text-green-500', action: () => openUnzipForSelection(), visible: isSupportedArchiveSelected.value },
                 { label: cacheClearInProgress.value ? 'Clearing...' : 'Clear Cache', hint: 'Run Laravel optimize:clear', icon: 'bi-lightning-charge', className: 'text-orange-500', action: () => clearProjectCache(), disabled: cacheClearInProgress.value, visible: !!props.hasProjectArtisan },
             ],
         },
@@ -1308,7 +1320,7 @@ export function useFileManager(props) {
         isAllItemsSelected,
         isItemSelected,
         singleSelectedItem,
-        isZipSelected,
+        isSupportedArchiveSelected,
         quickActionsGroups,
         filteredItems,
         treeRows,
@@ -1316,7 +1328,7 @@ export function useFileManager(props) {
         directoryTree: computed(() => props.directoryTree || []),
         selectedFile: computed(() => props.selectedFile || null),
         contextItem,
-        contextZip,
+        contextArchive,
         hasUnsavedChanges,
         unsavedFilePath,
         editorFileName,
@@ -1388,6 +1400,7 @@ export function useFileManager(props) {
         submitMove,
         submitCopy,
         submitZip,
+        updateArchiveFormat,
         submitUnzip,
         submitUpload,
         clearProjectCache,

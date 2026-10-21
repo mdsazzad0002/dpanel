@@ -10,12 +10,11 @@ use Illuminate\Support\Str;
  * Stashes a freshly built clone package (files + database, zipped together)
  * behind a token so a second server can pull it as a plain GET download
  * without a panel session — the random token is the only credential. Mirrors
- * QuickExportLinkFactory but with a longer TTL since the other server's admin
- * needs time to paste the URL/token into their own "Clone & Share" page.
+ * QuickExportLinkFactory; the URL and its file share the same short lifetime.
  */
 class CloneShareLinkFactory
 {
-    public const TTL_HOURS = 24;
+    public const TTL_HOURS = 8;
 
     public function make(string $websiteId, string $path, string $fileName): array
     {

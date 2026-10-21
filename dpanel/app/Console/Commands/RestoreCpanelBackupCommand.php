@@ -80,6 +80,14 @@ class RestoreCpanelBackupCommand extends Command
                 throw new RuntimeException('Unsafe path detected in archive.');
             }
         }
+
+        $verbose = Process::timeout(120)->run(['tar', '-tvzf', $archive]);
+        if (! $verbose->successful()
+            || preg_split('/\R/', trim($verbose->output())) === false
+            || collect(preg_split('/\R/', trim($verbose->output())) ?: [])
+                ->contains(fn (string $entry): bool => ! in_array(substr($entry, 0, 1), ['-', 'd'], true))) {
+            throw new RuntimeException('Migration package contains unsupported links or special files.');
+        }
     }
 
     /** @return array<string, mixed> */
@@ -100,21 +108,76 @@ class RestoreCpanelBackupCommand extends Command
                 throw new RuntimeException('Invalid artifact path in manifest.');
             }
             $path = $temporary.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative);
-            if (! is_file($path) || ! hash_equals((string) ($metadata['sha256'] ?? ''), hash_file('sha256', $path))) {
+            $expectedHash = is_array($metadata) ? (string) ($metadata['sha256'] ?? '') : '';
+            $expectedSize = is_array($metadata) ? (int) ($metadata['size'] ?? -1) : -1;
+            if (! is_file($path)
+                || preg_match('/^[a-f0-9]{64}$/i', $expectedHash) !== 1
+                || $expectedSize !== filesize($path)
+                || ! hash_equals($expectedHash, (string) hash_file('sha256', $path))) {
                 throw new RuntimeException('Checksum validation failed for '.$relative.'.');
             }
         }
 
+        $artifactPaths = array_keys((array) ($manifest['artifacts'] ?? []));
+        $databaseArtifacts = array_values(array_filter($artifactPaths, fn (mixed $path): bool => is_string($path) && preg_match('#^mysql/database-.+\.(?:sql|sqlite)$#', $path) === 1));
+        if (! in_array('homedir/app-data.zip', $artifactPaths, true) || count($databaseArtifacts) !== 1 || count($artifactPaths) !== 2) {
+            throw new RuntimeException('Migration package must contain app-data.zip and exactly one panel database artifact.');
+        }
+        $this->assertDatabaseArtifactCompatible($manifest, $databaseArtifacts[0]);
+        $this->assertSafeAppDataArchive($temporary.DIRECTORY_SEPARATOR.'homedir'.DIRECTORY_SEPARATOR.'app-data.zip');
+
         return $manifest;
     }
 
+    /** @param array<string, mixed> $manifest */
+    private function assertDatabaseArtifactCompatible(array $manifest, string $artifact): void
+    {
+        $connection = (string) config('database.default');
+        $targetDriver = strtolower((string) config("database.connections.{$connection}.driver", $connection));
+        $extension = strtolower(pathinfo($artifact, PATHINFO_EXTENSION));
+        if (($targetDriver === 'sqlite' && $extension !== 'sqlite')
+            || (in_array($targetDriver, ['mysql', 'mariadb', 'pgsql'], true) && $extension !== 'sql')
+            || ! in_array($targetDriver, ['sqlite', 'mysql', 'mariadb', 'pgsql'], true)) {
+            throw new RuntimeException('Migration package database artifact does not match the configured target database driver.');
+        }
+
+        $sourceDriver = strtolower((string) data_get($manifest, 'source.database_driver', ''));
+        $driverFamily = static fn (string $driver): ?string => match ($driver) {
+            'mysql', 'mariadb', 'remotemysql' => 'mysql',
+            'pgsql', 'postgresql' => 'pgsql',
+            'sqlite' => 'sqlite',
+            default => null,
+        };
+        $sourceFamily = $driverFamily($sourceDriver);
+        $targetFamily = $driverFamily($targetDriver);
+        if ($sourceFamily !== null && $sourceFamily !== $targetFamily) {
+            throw new RuntimeException('Source and target panel database drivers are incompatible.');
+        }
+    }
+
     private function restoreFiles(string $archive): void
+    {
+        $this->assertSafeAppDataArchive($archive);
+        $zip = new ZipArchive;
+        if ($zip->open($archive) !== true) {
+            throw new RuntimeException('Cannot open application data archive.');
+        }
+        try {
+            if (! $zip->extractTo(base_path())) {
+                throw new RuntimeException('Could not restore application files.');
+            }
+        } finally {
+            $zip->close();
+        }
+    }
+
+    private function assertSafeAppDataArchive(string $archive): void
     {
         if (! class_exists(ZipArchive::class)) {
             throw new RuntimeException('ZipArchive is required to restore application files.');
         }
         $zip = new ZipArchive;
-        if ($zip->open($archive) !== true) {
+        if ($zip->open($archive, ZipArchive::CHECKCONS) !== true) {
             throw new RuntimeException('Cannot open application data archive.');
         }
         for ($index = 0; $index < $zip->numFiles; $index++) {
@@ -123,10 +186,13 @@ class RestoreCpanelBackupCommand extends Command
                 $zip->close();
                 throw new RuntimeException('Unsafe path in application data archive.');
             }
-        }
-        if (! $zip->extractTo(base_path())) {
-            $zip->close();
-            throw new RuntimeException('Could not restore application files.');
+            $operations = 0;
+            $attributes = 0;
+            if ($zip->getExternalAttributesIndex($index, $operations, $attributes)
+                && (($attributes >> 16) & 0170000) === 0120000) {
+                $zip->close();
+                throw new RuntimeException('Links are not supported in application data archive.');
+            }
         }
         $zip->close();
     }
@@ -163,20 +229,30 @@ class RestoreCpanelBackupCommand extends Command
         $user = (string) ($config['username'] ?? '');
         $database = (string) ($config['database'] ?? '');
         $password = (string) ($config['password'] ?? '');
+        $input = fopen($artifact, 'rb');
+        if ($input === false) {
+            throw new RuntimeException('Could not read database backup artifact.');
+        }
 
-        if (in_array($driver, ['mysql', 'mariadb'], true)) {
-            $args = [trim((string) env('MYSQL_PATH', 'mysql')), '--host='.$host, '--port='.$port, '--user='.$user];
-            if ($password !== '') {
-                $args[] = '--password='.$password;
+        try {
+            if (in_array($driver, ['mysql', 'mariadb'], true)) {
+                $args = [trim((string) env('MYSQL_PATH', 'mysql')), '--host='.$host, '--port='.$port, '--user='.$user];
+                if ($password !== '') {
+                    $args[] = '--password='.$password;
+                }
+                $args[] = $database;
+                $result = Process::timeout(1800)->input($input)->run($args);
+            } elseif ($driver === 'pgsql') {
+                $result = Process::timeout(1800)->env(['PGPASSWORD' => $password])->input($input)->run([
+                    trim((string) env('PSQL_PATH', 'psql')), '--host='.$host, '--port='.$port, '--username='.$user, '--dbname='.$database,
+                ]);
+            } else {
+                throw new RuntimeException('Unsupported configured database driver: '.$driver);
             }
-            $args[] = $database;
-            $result = Process::timeout(1800)->input(File::get($artifact))->run($args);
-        } elseif ($driver === 'pgsql') {
-            $result = Process::timeout(1800)->env(['PGPASSWORD' => $password])->input(File::get($artifact))->run([
-                trim((string) env('PSQL_PATH', 'psql')), '--host='.$host, '--port='.$port, '--username='.$user, '--dbname='.$database,
-            ]);
-        } else {
-            throw new RuntimeException('Unsupported configured database driver: '.$driver);
+        } finally {
+            if (is_resource($input)) {
+                fclose($input);
+            }
         }
 
         if (! $result->successful()) {

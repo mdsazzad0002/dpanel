@@ -92,7 +92,7 @@ Every endpoint except `GET /health` requires the bearer token.
 | SSL | `ssl/ensure` |
 | Databases | `database-request`, `database-config`, `postgresql/service`, `postgresql/pgadmin-login` |
 | Mail | `mailbox-storage` |
-| Backups | `backup/run`, `backup/delete` |
+| Backups | `backup/run`, `backup/delete` (uses `DRUST_PANEL_ROOT` for backup storage and confirms deletion) |
 | Migration | `migration/cpanel/{inspect, restore}`, `migration/cyberpanel-ssh/{discover, transfer}`, `migration/generic/restore` |
 | Security | `security`, `security/scan` |
 | Docker | `docker` (GET status, POST actions), `docker/{logs, inspect, stats, exec}`, `docker/{networks, volumes, system, stacks}` (GET list, POST actions), `docker/stacks/{show, logs}` |
@@ -298,12 +298,37 @@ Body:
 }
 ```
 
+Supported input formats are `.zip`, `.tar`, `.tar.gz`, `.tgz`, and standalone
+single-file `.gz`. Tar and gzip extraction is streamed without shelling out.
 The archive is extracted into `destination` when provided, otherwise beside the
-zip file. Paths must remain inside the account home. Symbolic-link entries and
-unsafe paths are skipped. Existing regular files are replaced, and extracted
+archive; standalone `.gz` files are written using the archive name without its
+`.gz` suffix. Paths must remain inside the account home. Unsafe paths are
+rejected; ZIP symlink entries are skipped, while tar links and other unsupported
+entry types are rejected. Existing regular files are replaced, and extracted
 files/folders are owned by the account user. Dotfiles are preserved. The default
 limits are 100,000 entries and 20 GiB expanded data; override them with
 `DRUST_MAX_ZIP_ENTRIES` and `DRUST_MAX_ZIP_EXPANDED_BYTES`.
+
+### File manager archive creation
+
+```http
+POST /api/v1/filemanager/zip
+```
+
+Body:
+
+```json
+{
+  "username": "example",
+  "paths": ["/home/example/public_html/site"],
+  "destination": "/home/example/public_html/site.tar.gz",
+  "format": "tar.gz"
+}
+```
+
+The `format` field accepts `zip`, `tar`, or `tar.gz`; it defaults to `zip` for
+existing API clients. The destination filename must use the matching extension.
+Symbolic links and non-regular files are omitted.
 
 ### File manager chmod
 

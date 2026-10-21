@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\InspectDpanelMigrationImportJob;
 use App\Jobs\InspectMigrationImportJob;
 use App\Jobs\RestoreGenericWebsiteJob;
+use App\Jobs\RestoreDpanelMigrationImportJob;
 use App\Jobs\RestoreMigrationImportJob;
 use App\Models\DatabaseRequest;
 use App\Models\MigrationImport;
@@ -16,17 +18,23 @@ use App\Services\Security\UploadScanner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class MigrationController extends Controller
 {
+    private const DPANEL_IMPORT_CHUNK_BYTES = 6 * 1024 * 1024;
+
+    private const DPANEL_IMPORT_MAX_BYTES = 10 * 1024 * 1024 * 1024;
+
     public function index(Request $request, string $token): Response
     {
         return Inertia::render('Migrations/Index', [
             'provider' => null,
             'imports' => [],
+            'canDpanelMigration' => $request->user()->hasRole('admin'),
         ]);
     }
 
@@ -39,6 +47,163 @@ class MigrationController extends Controller
                 ->latest()
                 ->get(),
         ]);
+    }
+
+    public function dpanel(Request $request, string $token): Response
+    {
+        return Inertia::render('Migrations/Index', [
+            'provider' => 'dpanel',
+            'imports' => MigrationImport::visibleTo($request->user())
+                ->where('provider', 'dpanel')
+                ->latest()
+                ->get(),
+        ]);
+    }
+
+    public function prepareDpanelImport(Request $request, string $token): JsonResponse
+    {
+        $data = $request->validate([
+            'archive_name' => ['required', 'string', 'max:255', 'regex:/^backup-\d{2}\.\d{2}\.\d{4}_\d{2}-\d{2}-\d{2}_dpanel\.tar\.gz$/'],
+            'archive_size' => ['required', 'integer', 'min:1', 'max:'.self::DPANEL_IMPORT_MAX_BYTES],
+        ]);
+        $id = (string) Str::uuid();
+        $directory = storage_path('app/migrations/'.$id);
+        File::ensureDirectoryExists($directory, 0750);
+        $archiveName = basename($data['archive_name']);
+        $archivePath = $directory.'/'.$archiveName;
+        $actor = $request->user();
+        $import = MigrationImport::create([
+            'id' => $id,
+            'provider' => 'dpanel',
+            'original_name' => $archiveName,
+            'archive_path' => $archivePath,
+            'archive_size' => (int) $data['archive_size'],
+            'status' => 'uploading',
+            'inventory' => [
+                'upload_dir' => $directory,
+                'uploads' => ['archive' => ['name' => $archiveName, 'size' => (int) $data['archive_size']]],
+            ],
+            'created_by' => $actor->id,
+        ]);
+
+        return response()->json([
+            'tracking_id' => $import->id,
+            'chunk_size' => self::DPANEL_IMPORT_CHUNK_BYTES,
+            'total_chunks' => (int) ceil($import->archive_size / self::DPANEL_IMPORT_CHUNK_BYTES),
+        ], 201);
+    }
+
+    public function uploadDpanelImportChunk(Request $request, string $token, string $migrationImport): JsonResponse
+    {
+        $import = $this->dpanelImport($request, $migrationImport);
+        abort_unless($import->status === 'uploading', 422, 'This DPanel archive is not accepting uploads.');
+        $data = $request->validate([
+            'index' => ['required', 'integer', 'min:0'],
+            'total' => ['required', 'integer', 'between:1,10000'],
+            'chunk' => ['required', 'file', 'max:6144'],
+        ]);
+        $expectedTotal = (int) ceil($import->archive_size / self::DPANEL_IMPORT_CHUNK_BYTES);
+        abort_unless((int) $data['total'] === $expectedTotal && (int) $data['index'] < $expectedTotal, 422, 'Invalid archive chunk index or count.');
+
+        $chunkDirectory = (string) data_get($import->inventory, 'upload_dir').'/chunks';
+        File::ensureDirectoryExists($chunkDirectory, 0750);
+        $path = $chunkDirectory.'/archive.'.(int) $data['index'].'.part';
+        $incomingHash = hash_file('sha256', $request->file('chunk')->getRealPath());
+        $duplicate = is_file($path);
+        if ($duplicate) {
+            abort_unless(hash_file('sha256', $path) === $incomingHash, 409, 'A different archive chunk already exists at this index.');
+        } else {
+            $request->file('chunk')->move($chunkDirectory, basename($path));
+        }
+
+        return response()->json([
+            'tracking_id' => $import->id,
+            'index' => (int) $data['index'],
+            'total' => $expectedTotal,
+            'duplicate' => $duplicate,
+        ]);
+    }
+
+    public function completeDpanelImport(Request $request, UploadScanner $scanner, string $token, string $migrationImport): JsonResponse
+    {
+        $import = $this->dpanelImport($request, $migrationImport);
+        abort_unless($import->status === 'uploading', 422, 'This DPanel archive upload is already being processed.');
+        $data = $request->validate(['total' => ['required', 'integer', 'between:1,10000']]);
+        $expectedTotal = (int) ceil($import->archive_size / self::DPANEL_IMPORT_CHUNK_BYTES);
+        abort_unless((int) $data['total'] === $expectedTotal, 422, 'Archive chunk count does not match the original file.');
+
+        $uploadDir = (string) data_get($import->inventory, 'upload_dir');
+        $chunkDirectory = $uploadDir.'/chunks';
+        $lock = fopen($uploadDir.'/archive.lock', 'c');
+        abort_if($lock === false || ! flock($lock, LOCK_EX), 503, 'Archive upload finalization is busy.');
+        try {
+            if (! is_file($import->archive_path)) {
+                $temporary = $import->archive_path.'.assembling';
+                $output = fopen($temporary, 'wb');
+                abort_if($output === false, 500, 'Cannot assemble DPanel archive.');
+                try {
+                    for ($index = 0; $index < $expectedTotal; $index++) {
+                        $part = $chunkDirectory.'/archive.'.$index.'.part';
+                        abort_if(! is_file($part) || is_link($part), 422, "Missing or invalid archive chunk {$index}.");
+                        $input = fopen($part, 'rb');
+                        abort_if($input === false, 500, "Cannot read archive chunk {$index}.");
+                        stream_copy_to_stream($input, $output);
+                        fclose($input);
+                    }
+                } catch (\Throwable $exception) {
+                    fclose($output);
+                    @unlink($temporary);
+                    throw $exception;
+                }
+                fclose($output);
+                if (! rename($temporary, $import->archive_path)) {
+                    @unlink($temporary);
+                    abort(500, 'Could not finalize DPanel archive upload.');
+                }
+            }
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+
+        abort_if(filesize($import->archive_path) !== $import->archive_size, 422, 'Assembled archive size does not match the original file.');
+        try {
+            $scanner->assertClean($import->archive_path, $import->original_name);
+        } catch (UploadRejectedException $exception) {
+            @unlink($import->archive_path);
+            File::deleteDirectory($chunkDirectory);
+            $import->update(['status' => 'failed', 'last_error' => $exception->getMessage()]);
+
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        File::deleteDirectory($chunkDirectory);
+        $import->update(['status' => 'inspecting', 'last_error' => null]);
+        InspectDpanelMigrationImportJob::dispatch($import->id)->afterCommit();
+
+        return response()->json(['message' => 'DPanel backup uploaded. Package validation is running.', 'status' => 'inspecting'], 202);
+    }
+
+    public function restoreDpanel(Request $request, string $token, string $migrationImport): JsonResponse
+    {
+        $import = $this->dpanelImport($request, $migrationImport);
+        abort_unless($import->status === 'ready', 422, 'This DPanel archive is not ready to restore.');
+        $request->validate(['confirmation' => ['required', 'in:RESTORE']]);
+
+        $import->update(['status' => 'restoring', 'last_error' => null]);
+        RestoreDpanelMigrationImportJob::dispatch($import->id)->afterCommit();
+
+        return response()->json([
+            'message' => 'Full DPanel restore started. The target .env, application storage, and configured panel database will be replaced.',
+            'status' => 'restoring',
+        ], 202);
+    }
+
+    private function dpanelImport(Request $request, string $migrationImport): MigrationImport
+    {
+        return MigrationImport::visibleTo($request->user())
+            ->where('provider', 'dpanel')
+            ->findOrFail($migrationImport);
     }
 
     public function cyberpanelSsh(Request $request, string $token): Response
@@ -520,7 +685,13 @@ class MigrationController extends Controller
     public function destroy(Request $request, string $token, string $migrationImport): JsonResponse
     {
         $import = MigrationImport::visibleTo($request->user())->findOrFail($migrationImport);
-        if (is_file($import->archive_path)) {
+        abort_unless($import->status !== 'restoring', 422, 'A migration cannot be removed while it is restoring.');
+        if ($import->provider === 'dpanel') {
+            $root = realpath(storage_path('app/migrations'));
+            $uploadDir = realpath((string) data_get($import->inventory, 'upload_dir', ''));
+            abort_if($root === false || $uploadDir === false || ! str_starts_with($uploadDir, $root.DIRECTORY_SEPARATOR), 422, 'Invalid DPanel upload storage path.');
+            abort_unless(File::deleteDirectory($uploadDir), 500, 'Could not remove DPanel migration upload files.');
+        } elseif (is_file($import->archive_path)) {
             unlink($import->archive_path);
         }
         if ($import->provider === 'generic') {

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -38,19 +38,16 @@ pub fn unzip_user_archive(
     let (user_home, canonical_home, group) = validate_account(username)?;
     let archive_path = validate_user_path(username, archive)?;
     if !archive_path.is_file() {
-        return Err(format!("Zip archive not found: {}", archive_path.display()));
+        return Err(format!("Archive not found: {}", archive_path.display()));
     }
-    if archive_path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| !value.eq_ignore_ascii_case("zip"))
-        .unwrap_or(true)
-    {
-        return Err("The selected file is not a .zip archive.".into());
+    let archive_kind = archive_kind(&archive_path)
+        .ok_or_else(|| "Supported archives are .zip, .tar, .tar.gz, .tgz, and .gz.".to_string())?;
+    if archive_kind == ArchiveKind::Gzip && archive_path.file_name().is_none() {
+        return Err("The gzip archive filename is invalid.".into());
     }
 
     let canonical_archive =
-        ensure_canonical_inside_home(&canonical_home, &archive_path, "Zip archive")?;
+        ensure_canonical_inside_home(&canonical_home, &archive_path, "Archive")?;
     let canonical_root = match destination.map(str::trim).filter(|value| !value.is_empty()) {
         Some(destination) => {
             let destination_path = validate_user_path(username, destination)?;
@@ -66,7 +63,7 @@ pub fn unzip_user_archive(
         None => {
             let extract_root = archive_path
                 .parent()
-                .ok_or_else(|| "Zip archive parent is missing.".to_string())?;
+                .ok_or_else(|| "Archive parent is missing.".to_string())?;
             ensure_canonical_inside_home(&canonical_home, extract_root, "Extract folder")?
         }
     };
@@ -76,8 +73,58 @@ pub fn unzip_user_archive(
 
     let max_entries = env_usize("DRUST_MAX_ZIP_ENTRIES", DEFAULT_MAX_ENTRIES);
     let max_expanded_bytes = env_u64("DRUST_MAX_ZIP_EXPANDED_BYTES", DEFAULT_MAX_EXPANDED_BYTES);
+    if archive_kind == ArchiveKind::Tar || archive_kind == ArchiveKind::TarGzip {
+        let file = fs::File::open(&canonical_archive)
+            .map_err(|e| format!("failed to open tar archive: {e}"))?;
+        if archive_kind == ArchiveKind::TarGzip {
+            let decoder = flate2::read::MultiGzDecoder::new(file);
+            extract_tar(
+                username,
+                &group,
+                decoder,
+                &canonical_archive,
+                &canonical_root,
+                max_entries,
+                max_expanded_bytes,
+            )?;
+        } else {
+            extract_tar(
+                username,
+                &group,
+                file,
+                &canonical_archive,
+                &canonical_root,
+                max_entries,
+                max_expanded_bytes,
+            )?;
+        }
+        fix_laravel_writable_dirs(&canonical_root.to_string_lossy())?;
+        info(&format!(
+            "tar archive extracted: {} -> {}",
+            archive_path.display(),
+            canonical_root.display()
+        ));
+        return Ok(());
+    }
+    if archive_kind == ArchiveKind::Gzip {
+        extract_gzip(
+            username,
+            &group,
+            &canonical_archive,
+            &canonical_root,
+            max_expanded_bytes,
+        )?;
+        fix_laravel_writable_dirs(&canonical_root.to_string_lossy())?;
+        info(&format!(
+            "gzip archive extracted: {} -> {}",
+            archive_path.display(),
+            canonical_root.display()
+        ));
+        return Ok(());
+    }
+
     let source = fs::File::open(&canonical_archive)
-        .map_err(|e| format!("failed to open zip archive: {e}"))?;
+        .map_err(|e| format!("failed to open ZIP archive: {e}"))?;
     let mut zip = zip::ZipArchive::new(source)
         .map_err(|e| format!("invalid or unsupported zip archive: {e}"))?;
 
@@ -94,6 +141,7 @@ pub fn unzip_user_archive(
         if relative.as_os_str().is_empty() {
             continue;
         }
+
         if is_symlink_entry(&entry) {
             continue;
         }
@@ -104,10 +152,11 @@ pub fn unzip_user_archive(
         }
 
         let parent_relative = relative.parent().unwrap_or_else(|| Path::new(""));
-        let parent = ensure_directory_tree(&canonical_root, parent_relative, &mut touched_dirs, true)?;
+        let parent =
+            ensure_directory_tree(&canonical_root, parent_relative, &mut touched_dirs, true)?;
         let target = canonical_root.join(&relative);
         if target == canonical_archive {
-            return Err("Zip archive cannot overwrite itself during extraction.".into());
+            return Err("Archive cannot overwrite itself during extraction.".into());
         }
         replace_existing_target(&target, false)?;
 
@@ -156,6 +205,202 @@ pub fn unzip_user_archive(
         canonical_root.display()
     ));
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArchiveKind {
+    Zip,
+    Tar,
+    TarGzip,
+    Gzip,
+}
+
+fn archive_kind(path: &Path) -> Option<ArchiveKind> {
+    let name = path.file_name()?.to_str()?.to_ascii_lowercase();
+    if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+        Some(ArchiveKind::TarGzip)
+    } else if name.ends_with(".tar") {
+        Some(ArchiveKind::Tar)
+    } else if name.ends_with(".gz") {
+        Some(ArchiveKind::Gzip)
+    } else if name.ends_with(".zip") {
+        Some(ArchiveKind::Zip)
+    } else {
+        None
+    }
+}
+
+fn extract_tar<R: Read>(
+    username: &str,
+    group: &str,
+    reader: R,
+    archive_path: &Path,
+    root: &Path,
+    max_entries: usize,
+    max_expanded_bytes: u64,
+) -> Result<(), String> {
+    let mut archive = tar::Archive::new(reader);
+    let entries = archive
+        .entries()
+        .map_err(|e| format!("invalid or unsupported tar archive: {e}"))?;
+    let mut touched_dirs = HashSet::new();
+    let mut touched_files = Vec::new();
+    let mut expanded_bytes = 0_u64;
+    let mut entry_count = 0_usize;
+
+    for entry_result in entries {
+        let mut entry = entry_result.map_err(|e| format!("failed to read tar entry: {e}"))?;
+        entry_count += 1;
+        if entry_count > max_entries {
+            return Err(format!(
+                "Tar contains too many entries (more than {max_entries})."
+            ));
+        }
+
+        let entry_path = entry
+            .path()
+            .map_err(|e| format!("failed to read tar entry path: {e}"))?;
+        let relative = safe_tar_entry_path(&entry_path)?;
+        if relative.as_os_str().is_empty() {
+            continue;
+        }
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_dir() {
+            ensure_directory_tree(root, &relative, &mut touched_dirs, true)?;
+            continue;
+        }
+        if !entry_type.is_file() {
+            return Err(format!(
+                "Tar entry type is not supported: {}",
+                relative.display()
+            ));
+        }
+
+        let declared_size = entry
+            .header()
+            .size()
+            .map_err(|e| format!("failed to read tar entry size: {e}"))?;
+        expanded_bytes = expanded_bytes.saturating_add(declared_size);
+        if expanded_bytes > max_expanded_bytes {
+            return Err("Tar expanded data exceeds the server limit.".into());
+        }
+
+        let parent_relative = relative.parent().unwrap_or_else(|| Path::new(""));
+        let parent = ensure_directory_tree(root, parent_relative, &mut touched_dirs, true)?;
+        let target = root.join(&relative);
+        if target == archive_path {
+            return Err("Archive cannot overwrite itself during extraction.".into());
+        }
+        validate_replaceable_existing_target(&target)?;
+        replace_existing_target(&target, false)?;
+        let temporary = extraction_temp_path(&parent, entry_count);
+        let extract_result = (|| -> Result<(), String> {
+            let mut output = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&temporary)
+                .map_err(|e| format!("failed to create {}: {e}", temporary.display()))?;
+            let copied = io::copy(&mut entry, &mut output)
+                .map_err(|e| format!("failed to extract {}: {e}", relative.display()))?;
+            if copied != declared_size {
+                return Err(format!("Tar entry size mismatch: {}", relative.display()));
+            }
+            output
+                .flush()
+                .map_err(|e| format!("failed to flush {}: {e}", relative.display()))?;
+            fs::rename(&temporary, &target)
+                .map_err(|e| format!("failed to install {}: {e}", target.display()))?;
+            Ok(())
+        })();
+        if extract_result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        extract_result?;
+        touched_files.push(target);
+    }
+
+    fix_touched_permissions(username, group, &touched_dirs, &touched_files)
+}
+
+fn extract_gzip(
+    username: &str,
+    group: &str,
+    archive_path: &Path,
+    root: &Path,
+    max_expanded_bytes: u64,
+) -> Result<(), String> {
+    let name = archive_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Gzip archive filename is invalid.".to_string())?;
+    let output_name = name
+        .get(..name.len().saturating_sub(3))
+        .filter(|_| name.to_ascii_lowercase().ends_with(".gz"))
+        .filter(|name| !name.is_empty() && *name != "." && *name != "..")
+        .ok_or_else(|| "Gzip archive must have a filename before .gz.".to_string())?;
+    let target = root.join(output_name);
+    if target == archive_path {
+        return Err("Archive cannot overwrite itself during extraction.".into());
+    }
+    validate_replaceable_existing_target(&target)?;
+    replace_existing_target(&target, false)?;
+
+    let temporary = extraction_temp_path(root, 0);
+    let result = (|| -> Result<(), String> {
+        let file = fs::File::open(archive_path)
+            .map_err(|e| format!("failed to open gzip archive: {e}"))?;
+        let decoder = flate2::read::MultiGzDecoder::new(file);
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)
+            .map_err(|e| format!("failed to create {}: {e}", temporary.display()))?;
+        let copied = io::copy(
+            &mut decoder.take(max_expanded_bytes.saturating_add(1)),
+            &mut output,
+        )
+        .map_err(|e| format!("failed to decompress gzip archive: {e}"))?;
+        if copied > max_expanded_bytes {
+            return Err("Gzip expanded data exceeds the server limit.".into());
+        }
+        output
+            .flush()
+            .map_err(|e| format!("failed to flush {}: {e}", output_name))?;
+        fs::rename(&temporary, &target)
+            .map_err(|e| format!("failed to install {}: {e}", target.display()))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+        return result;
+    }
+
+    fix_touched_permissions(username, group, &HashSet::new(), &[target])
+}
+
+fn extraction_temp_path(parent: &Path, index: usize) -> PathBuf {
+    parent.join(format!(
+        ".dpanel-unarchive-{}-{index}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ))
+}
+
+fn safe_tar_entry_path(path: &Path) -> Result<PathBuf, String> {
+    if path.as_os_str().is_empty()
+        || path.to_string_lossy().contains('\\')
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
+    {
+        return Err(format!("Tar entry has an unsafe path: {}", path.display()));
+    }
+    Ok(path.to_path_buf())
 }
 
 pub(crate) fn validate_archive<R: io::Read + io::Seek>(
@@ -516,7 +761,7 @@ pub(crate) async fn handle(
     })
     .await;
     match result {
-        Ok(result) => operation_response(result, "Zip extracted"),
+        Ok(result) => operation_response(result, "Archive extracted"),
         Err(error) => axum::response::IntoResponse::into_response(ApiResponse::error(&format!(
             "Unzip worker failed: {error}"
         ))),
@@ -525,11 +770,15 @@ pub(crate) async fn handle(
 
 #[cfg(test)]
 mod replace_tests {
-    use super::{ensure_directory_tree, ensure_tree_has_no_symlinks, replace_existing_target};
+    use super::{
+        ArchiveKind, archive_kind, ensure_directory_tree, ensure_tree_has_no_symlinks,
+        replace_existing_target, safe_tar_entry_path,
+    };
     use std::{collections::HashSet, fs, path::Path};
 
     fn scratch(name: &str) -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!("drust-replace-{name}-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("drust-replace-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         root
@@ -567,7 +816,9 @@ mod replace_tests {
         let root = scratch("tree");
         fs::write(root.join("assets"), "file").unwrap();
         let mut touched = HashSet::new();
-        assert!(ensure_directory_tree(&root, Path::new("assets/css"), &mut touched, false).is_err());
+        assert!(
+            ensure_directory_tree(&root, Path::new("assets/css"), &mut touched, false).is_err()
+        );
         ensure_directory_tree(&root, Path::new("assets/css"), &mut touched, true).unwrap();
         assert!(root.join("assets/css").is_dir());
         fs::remove_dir_all(&root).unwrap();
@@ -581,5 +832,38 @@ mod replace_tests {
         std::os::unix::fs::symlink("/etc", root.join("a/b/etc")).unwrap();
         assert!(ensure_tree_has_no_symlinks(&root).is_err());
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn recognizes_supported_archive_suffixes_case_insensitively() {
+        assert_eq!(
+            archive_kind(Path::new("backup.ZIP")),
+            Some(ArchiveKind::Zip)
+        );
+        assert_eq!(
+            archive_kind(Path::new("backup.tar")),
+            Some(ArchiveKind::Tar)
+        );
+        assert_eq!(
+            archive_kind(Path::new("backup.TAR.GZ")),
+            Some(ArchiveKind::TarGzip)
+        );
+        assert_eq!(
+            archive_kind(Path::new("backup.tgz")),
+            Some(ArchiveKind::TarGzip)
+        );
+        assert_eq!(
+            archive_kind(Path::new("backup.gz")),
+            Some(ArchiveKind::Gzip)
+        );
+        assert_eq!(archive_kind(Path::new("backup.rar")), None);
+    }
+
+    #[test]
+    fn rejects_unsafe_tar_paths() {
+        for path in ["../outside", "/absolute/path", "folder/../../outside"] {
+            assert!(safe_tar_entry_path(Path::new(path)).is_err(), "{path}");
+        }
+        assert!(safe_tar_entry_path(Path::new("folder/file.txt")).is_ok());
     }
 }

@@ -116,8 +116,8 @@ const fm = useFileManager(props);
                                 : fm.modalType === 'permissions' ? 'Change Permissions'
                                 : fm.modalType === 'move' ? 'Move Item'
                                 : fm.modalType === 'copy' ? 'Copy Item'
-                                : fm.modalType === 'zip' ? 'Create Zip'
-                                : fm.modalType === 'unzip' ? 'Extract Zip'
+                                : fm.modalType === 'zip' ? 'Create Archive'
+                                : fm.modalType === 'unzip' ? 'Extract Archive'
                                 : fm.modalType === 'trash' ? 'Trash'
                                 : 'Upload File'
                         }}

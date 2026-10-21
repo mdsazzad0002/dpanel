@@ -426,7 +426,7 @@ class FilemanagerService
     }
 
     /** @param array<int, string> $paths */
-    public function zipPaths(string $username, array $paths, string $destination): void
+    public function zipPaths(string $username, array $paths, string $destination, string $format = 'zip'): void
     {
         $username = $this->normalizeUsername($username);
         $paths = array_values(array_filter(array_map(
@@ -442,6 +442,7 @@ class FilemanagerService
             'username' => $username,
             'paths' => $paths,
             'destination' => $destination,
+            'format' => $format,
         ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
         if (! $result['success']) {
             $output = trim((string) $result['output']);
