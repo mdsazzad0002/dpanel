@@ -238,6 +238,33 @@ pkg_install_available() {
   pkg_install "${packages[@]}"
 }
 
+# pkg_install leaves installed packages alone; this brings the installed ones
+# up to the repository's newest version and never installs missing ones.
+pkg_upgrade_installed() {
+  local package
+  local packages=()
+
+  pkg_require_root
+
+  for package in "$@"; do
+    if pkg_package_installed "$package"; then
+      packages+=("$package")
+    fi
+  done
+
+  [[ ${#packages[@]} -gt 0 ]] || return 0
+  pkg_update_index
+
+  case "$(pkg_distro_family)" in
+    debian)
+      pkg_apt_install_retry --only-upgrade "${packages[@]}"
+      ;;
+    rpm)
+      dnf upgrade -y "${packages[@]}"
+      ;;
+  esac
+}
+
 pkg_remove_if_installed() {
   local package
   local packages=()

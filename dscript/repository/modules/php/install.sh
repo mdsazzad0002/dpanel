@@ -29,6 +29,26 @@ if [[ "$php_version" == "all" || -z "$php_version" ]]; then
   php_version="${PHP_VERSION:-8.3}"
 fi
 
+php_version_below() {
+  [[ "$(printf '%s\n%s\n' "$php_version" "$1" | sort -V | head -n 1)" == "$php_version" && "$php_version" != "$1" ]]
+}
+
+php_binary_name() {
+  case "$(pkg_distro_family)" in
+    debian) printf 'php%s' "$php_version" ;;
+    *) printf 'php' ;;
+  esac
+}
+
+# Full patch version (e.g. 8.3.14), empty when this PHP is not installed.
+php_patch_version() {
+  local php_binary
+  php_binary="$(php_binary_name)"
+
+  command -v "$php_binary" >/dev/null 2>&1 || return 0
+  "$php_binary" -r 'echo PHP_VERSION;' 2>/dev/null || true
+}
+
 php_core_packages() {
   case "$(pkg_distro_family)" in
     debian)
@@ -69,11 +89,14 @@ php_extension_packages() {
         "php${php_version}-bcmath" \
         "php${php_version}-gd" \
         "php${php_version}-intl" \
-        "php${php_version}-opcache" \
         "php${php_version}-pgsql" \
         "php${php_version}-readline" \
         "php${php_version}-redis" \
         "php${php_version}-soap"
+      # PHP 8.5 compiles opcache into core; there is no package to install.
+      if php_version_below 8.5; then
+        printf '%s\n' "php${php_version}-opcache"
+      fi
       ;;
     rpm)
       printf '%s\n' \
@@ -103,8 +126,7 @@ php_enable_and_verify_imap() {
   local php_binary
 
   case "$(pkg_distro_family)" in
-    debian) php_binary="php${php_version}" ;;
-    rpm) php_binary="php" ;;
+    debian|rpm) php_binary="$(php_binary_name)" ;;
     *) panel_die "Unsupported distro for PHP IMAP verification." ;;
   esac
 
@@ -128,14 +150,17 @@ php_stop_service() {
   fi
 }
 
-php_install() {
-  local core_packages=()
+php_install_packages() {
   local extension_packages=()
 
   pkg_require_root
   pkg_install_php_stack "$php_version"
   mapfile -t extension_packages < <(php_extension_packages)
   pkg_install_available "${extension_packages[@]}"
+}
+
+php_install() {
+  php_install_packages
   php_enable_and_verify_imap
   panel_info_log "php ${php_version} installed."
 }
@@ -163,9 +188,26 @@ php_remove() {
 }
 
 php_update() {
-  php_install
-  php_reload_service
-  panel_info_log "php ${php_version} updated."
+  local core_packages=()
+  local extension_packages=()
+  local before after
+
+  before="$(php_patch_version)"
+  php_install_packages
+  mapfile -t core_packages < <(php_core_packages)
+  mapfile -t extension_packages < <(php_extension_packages)
+  pkg_upgrade_installed "${core_packages[@]}" "${extension_packages[@]}"
+  # Restarts FPM too, so sites run the upgraded binary.
+  php_enable_and_verify_imap
+  after="$(php_patch_version)"
+
+  if [[ -z "$before" ]]; then
+    panel_info_log "php ${php_version} installed (${after:-unknown})."
+  elif [[ "$before" == "$after" ]]; then
+    panel_info_log "php ${php_version} already up to date (${after})."
+  else
+    panel_info_log "php ${php_version} updated: ${before} -> ${after}."
+  fi
 }
 
 case "$action" in
