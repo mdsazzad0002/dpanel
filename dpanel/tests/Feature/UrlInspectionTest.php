@@ -61,14 +61,14 @@ class UrlInspectionTest extends TestCase
 
     public function test_internal_website_path_builds_the_url(): void
     {
-        $this->expectInspect('https://shop.test/blog/post?page=2', 'googlebot');
+        $this->expectInspect('https://shop.test/blog/post?page=2', 'googlebot', ['shop.test']);
 
         $this->inspect(['website_id' => 'site-1', 'path' => 'blog/post?page=2', 'agent' => 'googlebot'])->assertOk()->assertJsonPath('ok', true);
     }
 
     public function test_internal_root_and_external_urls(): void
     {
-        $this->expectInspect('https://shop.test/', 'default');
+        $this->expectInspect('https://shop.test/', 'default', ['shop.test']);
         $this->inspect(['website_id' => 'site-1'])->assertOk();
 
         $this->expectInspect('http://example.org/a/b?x=1', 'default');
@@ -96,10 +96,10 @@ class UrlInspectionTest extends TestCase
         $this->inspect(['website_id' => 'panel'])->assertNotFound();
     }
 
-    private function expectInspect(string $url, string $agent): void
+    private function expectInspect(string $url, string $agent, array $localHosts = []): void
     {
         $inspector = Mockery::mock(UrlInspector::class);
-        $inspector->shouldReceive('inspect')->once()->with($url, $agent)->andReturn(['ok' => true]);
+        $inspector->shouldReceive('inspect')->once()->with($url, $agent, $localHosts)->andReturn(['ok' => true]);
         $this->app->instance(UrlInspector::class, $inspector);
     }
 

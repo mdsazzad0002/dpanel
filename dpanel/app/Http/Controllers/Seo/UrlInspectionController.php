@@ -53,9 +53,12 @@ class UrlInspectionController extends Controller
             $website = $this->websites($request)->findOrFail($validated['website_id']);
             [$host, $https, $path] = [(string) $website->domain, (bool) $website->enable_ssl, $validated['path'] ?? null];
         }
+        $internal = ($validated['source'] ?? 'internal') !== 'external';
         $url = ($https ? 'https' : 'http').'://'.strtolower($host).'/'.ltrim((string) $path, '/');
 
-        return response()->json($inspector->inspect($url, $validated['agent'] ?? 'default'));
+        // Internal websites are hosted here, so they are fetched from this
+        // server even when their domain does not resolve publicly.
+        return response()->json($inspector->inspect($url, $validated['agent'] ?? 'default', $internal ? [strtolower($host)] : []));
     }
 
     /** The panel's own site is not inspected. */

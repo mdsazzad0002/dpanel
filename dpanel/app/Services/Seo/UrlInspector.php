@@ -59,12 +59,18 @@ class UrlInspector
 
     public function __construct(private readonly PublicHttpFetcher $http) {}
 
-    /** @return array<string, mixed> */
-    public function inspect(string $url, string $agent = 'default'): array
+    /**
+     * @param  array<int, string>  $localHosts  hosts served by this server, fetched from 127.0.0.1
+     * @return array<string, mixed>
+     */
+    public function inspect(string $url, string $agent = 'default', array $localHosts = []): array
     {
         $this->checks = array_fill_keys(array_keys(self::SECTIONS), []);
         $ua = self::AGENTS[$agent]['ua'] ?? null;
         $this->client = $ua === null ? $this->http : $this->http->withUserAgent($ua);
+        if ($localHosts !== []) {
+            $this->client = $this->client->withLocalHosts($localHosts);
+        }
 
         // A plain HTTP URL is also tried over HTTPS, to tell a missing
         // certificate apart from a missing redirect.

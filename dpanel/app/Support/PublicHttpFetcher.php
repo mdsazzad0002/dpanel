@@ -7,6 +7,8 @@ namespace App\Support;
  * against private/reserved ranges and pinned with CURLOPT_RESOLVE, so a second
  * DNS answer cannot point the request at the local network. Redirects are
  * never followed here; callers decide whether the next hop is acceptable.
+ * Hosts named with withLocalHosts() are the exception: they are served by this
+ * server, so they go to 127.0.0.1 whatever their DNS says.
  */
 class PublicHttpFetcher
 {
@@ -15,11 +17,28 @@ class PublicHttpFetcher
         private readonly int $timeout = 10,
     ) {}
 
+    /** @var array<int, string> */
+    private array $localHosts = [];
+
     /** A copy that sends another User-Agent, e.g. to see what a crawler is served. */
     public function withUserAgent(string $userAgent): static
     {
         $copy = clone $this;
         $copy->userAgent = $userAgent;
+
+        return $copy;
+    }
+
+    /**
+     * A copy that sends these hosts to this server, for websites hosted here
+     * whose domains do not resolve publicly (e.g. *.localhost).
+     *
+     * @param  array<int, string>  $hosts
+     */
+    public function withLocalHosts(array $hosts): static
+    {
+        $copy = clone $this;
+        $copy->localHosts = array_map('strtolower', $hosts);
 
         return $copy;
     }
@@ -100,7 +119,7 @@ class PublicHttpFetcher
         if (! in_array($scheme, ['http', 'https'], true) || $host === '' || isset($parts['user']) || isset($parts['port'])) {
             return [null, 'Only plain http(s) URLs on the default port are fetched.'];
         }
-        $ip = $this->publicAddress(trim($host, '[]'));
+        $ip = in_array($host, $this->localHosts, true) ? '127.0.0.1' : $this->publicAddress(trim($host, '[]'));
         if ($ip === null) {
             return [null, "{$host} does not resolve to a public address."];
         }
