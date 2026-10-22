@@ -29,6 +29,7 @@ class SitemapVerifyController extends Controller
                     'domain' => (string) $website->domain,
                     'enable_ssl' => (bool) $website->enable_ssl,
                 ])->values(),
+            'canManageWebsites' => $request->user()->hasAnyRole(['admin', 'reseller']) || $request->user()->hasAccess('manage_websites'),
         ]);
     }
 

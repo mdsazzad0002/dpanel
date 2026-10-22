@@ -6,11 +6,12 @@ import SitemapBatchBar from '@/Pages/Seo/components/SitemapBatchBar.vue';
 import SitemapPanel from '@/Pages/Seo/components/SitemapPanel.vue';
 import { badge } from '@/Pages/Seo/seoBadges';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import { computed, provide, reactive, ref } from 'vue';
 
 const props = defineProps({
     websites: { type: Array, default: () => [] },
+    canManageWebsites: { type: Boolean, default: false },
 });
 
 const { panelRoute, requestJson } = usePanelApi();
@@ -26,6 +27,9 @@ const error = ref('');
 const report = ref(null);
 // The target of the current report; sitemaps are opened against it even if the form changes.
 let target = null;
+// The website the shown report belongs to, when it was an internal check.
+const reportSiteId = ref(null);
+const manageHref = computed(() => (props.canManageWebsites && reportSiteId.value ? panelRoute('websites.manage', { id: reportSiteId.value }) : null));
 
 const websiteOptions = computed(() => props.websites.map((w) => ({ value: w.id, label: w.domain })));
 
@@ -43,6 +47,7 @@ const verify = async () => {
         : { source: 'external', url: externalUrl.value.trim() };
     try {
         report.value = await requestJson(panelRoute('seo.sitemap-verify.run'), { body: target });
+        reportSiteId.value = target.source === 'internal' ? target.website_id : null;
     } catch (e) {
         error.value = e.message || 'Verification failed.';
     } finally {
@@ -261,6 +266,9 @@ provide('sitemapVerify', {
                         <p class="font-semibold">{{ overall.title }}</p>
                         <p class="truncate text-sm text-slate-500 dark:text-slate-400">{{ report.base_url }} · checked {{ new Date(report.checked_at).toLocaleString() }}</p>
                     </div>
+                    <Link v-if="manageHref" :href="manageHref" class="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
+                        <i class="bi bi-gear"></i>Manage
+                    </Link>
                 </div>
 
                 <section v-if="report.sitemaps.length" class="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">

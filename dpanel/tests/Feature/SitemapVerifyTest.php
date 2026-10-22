@@ -48,6 +48,14 @@ class SitemapVerifyTest extends TestCase
         DB::table('websites')->insert(['id' => 'site-1', 'domain' => 'shop.test', 'scope' => 'user', 'enable_ssl' => true]);
     }
 
+    public function test_page_tells_whether_websites_can_be_managed(): void
+    {
+        $this->withoutMiddleware()->actingAs($this->admin)
+            ->get(route('seo.sitemap-verify.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->component('Seo/SitemapVerify', false)->where('canManageWebsites', true));
+    }
+
     public function test_internal_is_the_default_source(): void
     {
         $this->expectVerify('shop.test', true, '/feed.xml');
