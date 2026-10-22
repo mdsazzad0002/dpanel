@@ -161,6 +161,9 @@ const saveRuntimeSettings = async () => {
         router.reload({ only: ['website'], preserveScroll: true });
     } catch (error) {
         pushToast?.(error?.message || 'Failed to update website settings.', 'error');
+        // A failed gateway refresh (502) still saves the settings, so show
+        // what is stored now instead of the stale version.
+        router.reload({ only: ['website'], preserveScroll: true });
     } finally {
         updateLoading.value = false;
     }
