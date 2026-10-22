@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Seo;
 
 use App\Http\Controllers\Controller;
 use App\Models\Website;
+use App\Services\Seo\PreviewProxy;
 use App\Services\Seo\PublicUrl;
 use App\Services\Seo\UrlInspector;
 use Illuminate\Database\Eloquent\Builder;
@@ -32,7 +33,7 @@ class UrlInspectionController extends Controller
         ]);
     }
 
-    public function inspect(Request $request, string $token, UrlInspector $inspector): JsonResponse
+    public function inspect(Request $request, string $token, UrlInspector $inspector, PreviewProxy $proxy): JsonResponse
     {
         $validated = $request->validate([
             'source' => ['nullable', 'in:internal,external'],
@@ -56,9 +57,16 @@ class UrlInspectionController extends Controller
         $internal = ($validated['source'] ?? 'internal') !== 'external';
         $url = ($https ? 'https' : 'http').'://'.strtolower($host).'/'.ltrim((string) $path, '/');
 
+        $agent = $validated['agent'] ?? 'default';
+        $localHost = $internal ? strtolower($host) : null;
+
         // Internal websites are hosted here, so they are fetched from this
         // server even when their domain does not resolve publicly.
-        return response()->json($inspector->inspect($url, $validated['agent'] ?? 'default', $internal ? [strtolower($host)] : []));
+        $report = $inspector->inspect($url, $agent, $localHost ? [$localHost] : []);
+        // The Preview tab loads the page, and all it links to, through the panel.
+        $report['preview_url'] = $proxy->url($report['final_url'] ?? $url, $agent, $localHost);
+
+        return response()->json($report);
     }
 
     /** The panel's own site is not inspected. */

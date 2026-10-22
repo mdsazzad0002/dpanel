@@ -228,9 +228,12 @@ async fn fastcgi_request(
         }
         log_php_stderr(&stderr);
     });
+    // Fused: the compression layer polls once more after the end, and a bare
+    // unfold panics then, cutting gzip responses off before their last bytes.
     let body = futures_util::stream::unfold(receiver, |mut receiver| async move {
         receiver.recv().await.map(|item| (item, receiver))
-    });
+    })
+    .fuse();
     *response.body_mut() = Body::from_stream(body);
     Ok(response)
 }
@@ -922,6 +925,34 @@ mod tests {
         assert_eq!(body.len(), output_len);
         assert!(body.iter().all(|byte| *byte == b'x'));
         assert_eq!(server.await.unwrap(), 2 * 1024 * 1024 + 1);
+        let _ = fs::remove_file(&socket);
+    }
+
+    #[tokio::test]
+    async fn large_output_survives_gzip_compression() {
+        use std::io::Read;
+        use tower::{ServiceBuilder, ServiceExt};
+
+        let output_len = 3 * BUFFERED_RESPONSE_BYTES;
+        let (socket, _server) = fake_fpm("gzip", output_len).await;
+        let response = fastcgi_request(&socket, &[], RequestInput::Buffered(Bytes::new()), deadline()).await.unwrap();
+        let mut response = Some(response);
+        let service = ServiceBuilder::new()
+            .layer(super::super::compression::layer())
+            .service_fn(move |_: axum::http::Request<Body>| {
+                let response = response.take().unwrap();
+                async move { Ok::<_, std::convert::Infallible>(response) }
+            });
+        let request = axum::http::Request::builder()
+            .header(header::ACCEPT_ENCODING, "gzip")
+            .body(Body::empty())
+            .unwrap();
+        let compressed = service.oneshot(request).await.unwrap();
+        assert_eq!(compressed.headers().get(header::CONTENT_ENCODING).unwrap(), "gzip");
+        let gz = axum::body::to_bytes(Body::new(compressed.into_body()), usize::MAX).await.unwrap();
+        let mut body = Vec::new();
+        flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut body).unwrap();
+        assert_eq!(body.len(), output_len);
         let _ = fs::remove_file(&socket);
     }
 

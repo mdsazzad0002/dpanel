@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\AiGatewayApiController;
 use App\Http\Controllers\Api\WhmcsController;
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\BackupController;
+use App\Http\Controllers\Seo\PreviewProxyController;
 use App\Http\Controllers\BillingSystemController;
 use App\Http\Controllers\ChatEngineBusinessAppController;
 use App\Http\Controllers\ChatEngineBusinessController;
@@ -134,6 +135,21 @@ Route::get('/quick-exports/download/{downloadToken}', [BackupController::class, 
 Route::get('/clone-share/download/{downloadToken}', [CloneShareController::class, 'download'])
     ->middleware('throttle:30,1')
     ->name('clone-share.download');
+// Outside the panel session too: the URL Inspection Preview frame has an opaque
+// origin and sends no cookies. The token signs the site's origin (PreviewProxy).
+// No session or cookies either, or every proxied file would start a session.
+Route::get('/seo/preview-proxy/{token}/{path?}', [PreviewProxyController::class, 'show'])
+    ->where('path', '.*')
+    ->middleware('throttle:1200,1')
+    ->withoutMiddleware([
+        \Illuminate\Cookie\Middleware\EncryptCookies::class,
+        \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+        \Illuminate\Session\Middleware\StartSession::class,
+        \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+        \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+        \App\Http\Middleware\HandleInertiaRequests::class,
+    ])
+    ->name('seo.preview-proxy');
 Route::post('/api/v1/alias', [RedisCacheController::class, 'aliasApiHandle'])->middleware('throttle:30,1')->name('api.alias');
 Route::prefix('/api/whmcs/v1')->middleware(['whmcs.auth', 'throttle:120,1'])->group(function (): void {
     Route::post('/handshake', [WhmcsController::class, 'handshake'])->name('api.whmcs.handshake');

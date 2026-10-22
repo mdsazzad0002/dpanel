@@ -46,7 +46,11 @@ const inspect = async () => {
         ? { source: 'internal', website_id: websiteId.value, path: path.value.trim() || null, agent: agent.value }
         : { source: 'external', url: externalUrl.value.trim(), agent: agent.value };
     try {
-        report.value = await requestJson(panelRoute('seo.url-inspection.run'), { body });
+        const data = await requestJson(panelRoute('seo.url-inspection.run'), { body });
+        // A 200 that is not a report (a login page after the session expired,
+        // a cut-off body) parses to {} — say so instead of rendering it.
+        if (!data?.totals) throw new Error('The server did not send an inspection report. Reload the page and try again.');
+        report.value = data;
         inspectedSiteId.value = body.source === 'internal' ? body.website_id : null;
         // Preview tabs only exist for HTML pages.
         if (!tabs.value.some((t) => t.key === tab.value)) tab.value = 'overview';

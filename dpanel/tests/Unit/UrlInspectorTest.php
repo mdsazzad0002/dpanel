@@ -148,7 +148,6 @@ class UrlInspectorTest extends TestCase
         $this->assertSame([16, 32, 48], collect($report['icons'])->firstWhere('rel', 'favicon.ico')['sizes']);
         $this->assertSame('https://shop.test/icon-192.png', collect($report['icons'])->firstWhere('google', true)['url']);
 
-        $this->assertStringContainsString('<title>Running shoes for every distance | Shop</title>', $report['html']);
 
         $preview = $report['preview'];
         $this->assertSame('Running shoes for every distance | Shop', $preview['title']);
@@ -219,7 +218,6 @@ class UrlInspectorTest extends TestCase
             'https://shop.test/file.pdf' => ['status' => 200, 'type' => 'application/pdf', 'body' => '%PDF'],
         ])->inspect('https://shop.test/file.pdf');
         $this->assertNull($report['meta']);
-        $this->assertNull($report['html']);
         $this->assertSame('warn', $this->checks($report)['type']['status']);
 
         $report = $this->inspector([
@@ -227,12 +225,6 @@ class UrlInspectorTest extends TestCase
         ])->inspect('https://shop.test/');
         $this->assertSame('fail', $this->checks($report)['status']['status']);
         $this->assertSame('fail', $report['engines'][0]['verdict']);
-
-        $report = $this->inspector([
-            'https://shop.test/gone' => ['status' => 404, 'type' => 'text/html', 'body' => '<html><body>Not found</body></html>'],
-        ])->inspect('https://shop.test/gone');
-        $this->assertNull($report['meta']);
-        $this->assertStringContainsString('Not found', $report['html']);
     }
 
     public function test_plain_http_is_told_apart_from_a_missing_certificate(): void

@@ -1,8 +1,10 @@
 <script setup>
 import { computed, ref } from 'vue';
 
-// The fetched HTML rendered in a sandboxed frame. Without allow-same-origin the
-// page gets an opaque origin, so even with scripts on it cannot reach the panel.
+// The page loaded through the panel's preview proxy (PreviewProxy.php), which
+// rewrites every URL in it, so styles, scripts and images come from this
+// server and the browser never contacts the site. Without allow-same-origin
+// the frame gets an opaque origin, so even with scripts on it cannot reach the panel.
 const props = defineProps({
     report: { type: Object, required: true },
 });
@@ -15,15 +17,11 @@ const devices = [
 ];
 const width = computed(() => devices.find((d) => d.key === device.value).width);
 
-const escapeAttr = (value) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-// A <base> so relative styles, images and links load from the inspected site.
-const srcdoc = computed(() => {
-    const head = `<base href="${escapeAttr(props.report.final_url)}" target="_blank"><meta name="referrer" content="no-referrer">`;
-    const html = props.report.html || '';
-    return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (tag) => tag + head) : head + html;
-});
 const status = computed(() => props.report.http?.status ?? 0);
-const isImage = computed(() => status.value === 200 && String(props.report.http?.type ?? '').startsWith('image/'));
+const type = computed(() => String(props.report.http?.type ?? ''));
+// Error pages (404, 500) are HTML too and are shown as they are.
+const isPage = computed(() => status.value > 0 && !!props.report.preview_url && (type.value === '' || type.value.includes('html')));
+const isImage = computed(() => status.value === 200 && !!props.report.preview_url && type.value.startsWith('image/'));
 const sandbox = computed(() => (scripts.value ? 'allow-scripts allow-popups' : 'allow-popups'));
 const toggle = (active) => (active ? 'bg-white text-slate-800 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200');
 </script>
@@ -31,12 +29,12 @@ const toggle = (active) => (active ? 'bg-white text-slate-800 shadow-sm dark:bg-
 <template>
     <div class="space-y-3">
         <div class="flex flex-wrap items-center gap-3">
-            <div v-if="report.html" class="inline-flex rounded-lg bg-slate-100 p-1 dark:bg-slate-900">
+            <div v-if="isPage" class="inline-flex rounded-lg bg-slate-100 p-1 dark:bg-slate-900">
                 <button v-for="d in devices" :key="d.key" type="button" class="flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium" :class="toggle(device === d.key)" @click="device = d.key">
                     <i class="bi" :class="d.icon"></i>{{ d.label }}
                 </button>
             </div>
-            <label v-if="report.html" class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <label v-if="isPage" class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <input v-model="scripts" type="checkbox" class="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-900" />
                 Run JavaScript
             </label>
@@ -45,17 +43,17 @@ const toggle = (active) => (active ? 'bg-white text-slate-800 shadow-sm dark:bg-
             </a>
         </div>
 
-        <p v-if="report.html && status !== 200" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+        <p v-if="isPage && status !== 200" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
             <i class="bi bi-exclamation-triangle mr-1"></i>The server answered {{ status }}, so this is its error page, not the page itself.
         </p>
-        <p v-if="report.html" class="text-xs text-slate-500 dark:text-slate-400">
-            The HTML as fetched with the {{ report.agent }} user agent. Styles and images load from the site; with JavaScript off this is close to what a crawler reads before rendering.
+        <p v-if="isPage" class="text-xs text-slate-500 dark:text-slate-400">
+            Fetched with the {{ report.agent }} user agent. Everything the page loads comes through this server, never straight from the site; with JavaScript off this is close to what a crawler reads before rendering.
         </p>
 
-        <div v-if="report.html" class="flex justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900">
+        <div v-if="isPage" class="flex justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900">
             <iframe
                 :key="`${device}-${scripts}`"
-                :srcdoc="srcdoc"
+                :src="report.preview_url"
                 :sandbox="sandbox"
                 :style="{ width }"
                 title="Page preview"
@@ -64,7 +62,7 @@ const toggle = (active) => (active ? 'bg-white text-slate-800 shadow-sm dark:bg-
             ></iframe>
         </div>
         <div v-else-if="isImage" class="flex justify-center rounded-xl border border-slate-200 bg-slate-100 p-4 dark:border-slate-700 dark:bg-slate-900">
-            <img :src="report.final_url" alt="Inspected image" referrerpolicy="no-referrer" class="max-h-[75vh] max-w-full object-contain" />
+            <img :src="report.preview_url" alt="Inspected image" referrerpolicy="no-referrer" class="max-h-[75vh] max-w-full object-contain" />
         </div>
         <div v-else class="rounded-xl border border-dashed border-slate-300 px-4 py-12 text-center dark:border-slate-700">
             <i class="bi bi-window-x text-3xl text-slate-300 dark:text-slate-600"></i>

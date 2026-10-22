@@ -99,7 +99,6 @@ class UrlInspector
             'images' => [],
             'manifest' => null,
             'preview' => null,
-            'html' => null,
             'robots' => null,
         ];
 
@@ -125,11 +124,6 @@ class UrlInspector
         $report['engines'] = $this->engines($final, $response, $doc, $metas, $robots, $isHtml);
 
         if (! $isHtml) {
-            // An HTML error page (404, 500) still shows in the Preview tab.
-            if (($response['type'] === '' || str_contains($response['type'], 'html')) && $response['body'] !== '') {
-                $report['html'] = $this->utf8($response['body'], $response['headers']['content-type'] ?? '');
-            }
-
             return $this->finish($report);
         }
 
@@ -138,8 +132,6 @@ class UrlInspector
         $report['icons'] = $this->favicons($icons, $files, $robots['rules'], $final);
         $report['manifest'] = $this->pwa($manifestUrl, $manifestUrl ? $files[$manifestUrl] : null, $metas, $html, $final);
         $report['preview'] = $this->preview($final, $report);
-        // The page as fetched, rendered in the Preview tab.
-        $report['html'] = $html;
         // Share images are sent once, inside the preview.
         foreach ($report['images'] as &$image) {
             $image['preview'] = null;
@@ -1030,7 +1022,7 @@ class UrlInspector
     }
 
     /** Converts a page declared in another charset to UTF-8. */
-    private function utf8(string $html, string $contentType): string
+    public static function utf8(string $html, string $contentType): string
     {
         $charset = preg_match('/charset=["\']?([\w-]+)/i', $contentType, $m) ? $m[1]
             : (preg_match('/<meta[^>]+charset=["\']?([\w-]+)/i', substr($html, 0, 4096), $m) ? $m[1] : 'UTF-8');
@@ -1123,7 +1115,7 @@ class UrlInspector
     }
 
     /** Resolves a link against the page URL; null for anything but http(s). */
-    private function absolute(string $base, ?string $ref): ?string
+    public static function absolute(string $base, ?string $ref): ?string
     {
         $ref = trim((string) $ref);
         if ($ref === '' || str_starts_with($ref, '#')) {
