@@ -148,6 +148,8 @@ class UrlInspectorTest extends TestCase
         $this->assertSame([16, 32, 48], collect($report['icons'])->firstWhere('rel', 'favicon.ico')['sizes']);
         $this->assertSame('https://shop.test/icon-192.png', collect($report['icons'])->firstWhere('google', true)['url']);
 
+        $this->assertStringContainsString('<title>Running shoes for every distance | Shop</title>', $report['html']);
+
         $preview = $report['preview'];
         $this->assertSame('Running shoes for every distance | Shop', $preview['title']);
         $this->assertSame('Shoe Shop', $preview['site_name']);
@@ -217,6 +219,7 @@ class UrlInspectorTest extends TestCase
             'https://shop.test/file.pdf' => ['status' => 200, 'type' => 'application/pdf', 'body' => '%PDF'],
         ])->inspect('https://shop.test/file.pdf');
         $this->assertNull($report['meta']);
+        $this->assertNull($report['html']);
         $this->assertSame('warn', $this->checks($report)['type']['status']);
 
         $report = $this->inspector([

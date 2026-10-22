@@ -89,6 +89,7 @@ class UrlInspector
             'images' => [],
             'manifest' => null,
             'preview' => null,
+            'html' => null,
             'robots' => null,
         ];
 
@@ -122,6 +123,8 @@ class UrlInspector
         $report['icons'] = $this->favicons($icons, $files, $robots['rules'], $final);
         $report['manifest'] = $this->pwa($manifestUrl, $manifestUrl ? $files[$manifestUrl] : null, $metas, $html, $final);
         $report['preview'] = $this->preview($final, $report);
+        // The page as fetched, rendered in the Preview tab.
+        $report['html'] = $html;
         // Share images are sent once, inside the preview.
         foreach ($report['images'] as &$image) {
             $image['preview'] = null;

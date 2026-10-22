@@ -4,6 +4,7 @@ import SearchableSelect from '@/Components/SearchableSelect.vue';
 import CheckList from '@/Pages/Seo/components/inspection/CheckList.vue';
 import FaviconPanel from '@/Pages/Seo/components/inspection/FaviconPanel.vue';
 import InspectionDetails from '@/Pages/Seo/components/inspection/InspectionDetails.vue';
+import PagePreview from '@/Pages/Seo/components/inspection/PagePreview.vue';
 import PwaPanel from '@/Pages/Seo/components/inspection/PwaPanel.vue';
 import SearchPreviews from '@/Pages/Seo/components/inspection/SearchPreviews.vue';
 import SocialPreviews from '@/Pages/Seo/components/inspection/SocialPreviews.vue';
@@ -79,6 +80,7 @@ const tabs = computed(() => [
     { key: 'social', label: 'Share previews', icon: 'bi-share', status: sectionStatus('social'), needs: 'preview' },
     { key: 'favicon', label: 'Favicon', icon: 'bi-star', status: sectionStatus('favicon'), needs: 'preview' },
     { key: 'pwa', label: 'Web app', icon: 'bi-phone', status: sectionStatus('pwa'), needs: 'preview' },
+    { key: 'page', label: 'Preview', icon: 'bi-window', needs: 'html' },
     { key: 'details', label: 'Details', icon: 'bi-code-square' },
 ].filter((t) => !t.needs || report.value?.[t.needs]));
 
@@ -214,6 +216,7 @@ const statusText = computed(() => {
                 <SocialPreviews v-else-if="tab === 'social'" :report="report" />
                 <FaviconPanel v-else-if="tab === 'favicon'" :report="report" />
                 <PwaPanel v-else-if="tab === 'pwa'" :report="report" />
+                <PagePreview v-else-if="tab === 'page'" :report="report" />
                 <InspectionDetails v-else-if="tab === 'details'" :report="report" @inspect="inspectUrl" />
             </template>
         </div>
