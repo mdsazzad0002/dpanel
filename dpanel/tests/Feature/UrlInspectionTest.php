@@ -51,6 +51,14 @@ class UrlInspectionTest extends TestCase
         ]);
     }
 
+    public function test_page_tells_whether_websites_can_be_managed(): void
+    {
+        $this->withoutMiddleware()->actingAs($this->admin)
+            ->get(route('seo.url-inspection.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->component('Seo/UrlInspection', false)->where('canManageWebsites', true));
+    }
+
     public function test_internal_website_path_builds_the_url(): void
     {
         $this->expectInspect('https://shop.test/blog/post?page=2', 'googlebot');

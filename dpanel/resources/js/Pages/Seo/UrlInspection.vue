@@ -10,7 +10,7 @@ import SearchPreviews from '@/Pages/Seo/components/inspection/SearchPreviews.vue
 import SocialPreviews from '@/Pages/Seo/components/inspection/SocialPreviews.vue';
 import { badge } from '@/Pages/Seo/seoBadges';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
@@ -72,11 +72,12 @@ const overall = computed(() => {
     return { ...badge.pass, title: 'Everything checks out' };
 });
 
-// SSL is fixed on the website's manage page.
+// SSL and redirects are fixed on the website's manage page.
+const manageHref = computed(() => (props.canManageWebsites && inspectedSiteId.value ? panelRoute('websites.manage', { id: inspectedSiteId.value }) : null));
 const checkActions = computed(() => {
     const https = report.value?.sections.find((s) => s.key === 'http')?.checks.find((c) => c.key === 'https');
-    if (!props.canManageWebsites || !inspectedSiteId.value || !https || https.status === 'pass') return {};
-    return { https: { label: 'Manage', icon: 'bi-gear', href: panelRoute('websites.manage', { id: inspectedSiteId.value }) } };
+    if (!manageHref.value || !https || https.status === 'pass') return {};
+    return { https: { label: 'Manage', icon: 'bi-gear', href: manageHref.value } };
 });
 
 const sectionStatus = (key) => {
@@ -177,6 +178,9 @@ const statusText = computed(() => {
                             · fetched as {{ report.agent }} · {{ new Date(report.checked_at).toLocaleString() }}
                         </p>
                     </div>
+                    <Link v-if="manageHref" :href="manageHref" class="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
+                        <i class="bi bi-gear"></i>Manage
+                    </Link>
                     <div class="flex gap-2 text-xs">
                         <span v-for="key in ['pass', 'warn', 'fail']" :key="key" class="rounded px-2 py-1 font-medium" :class="badge[key].bg">
                             <i class="bi mr-1" :class="badge[key].icon"></i>{{ report.totals[key] }}
