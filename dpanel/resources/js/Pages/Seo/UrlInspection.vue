@@ -92,7 +92,7 @@ const tabs = computed(() => [
     { key: 'social', label: 'Share previews', icon: 'bi-share', status: sectionStatus('social'), needs: 'preview' },
     { key: 'favicon', label: 'Favicon', icon: 'bi-star', status: sectionStatus('favicon'), needs: 'preview' },
     { key: 'pwa', label: 'Web app', icon: 'bi-phone', status: sectionStatus('pwa'), needs: 'preview' },
-    { key: 'page', label: 'Preview', icon: 'bi-window', needs: 'html' },
+    { key: 'page', label: 'Preview', icon: 'bi-window' },
     { key: 'details', label: 'Details', icon: 'bi-code-square' },
 ].filter((t) => !t.needs || report.value?.[t.needs]));
 

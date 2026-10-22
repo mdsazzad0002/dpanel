@@ -227,6 +227,12 @@ class UrlInspectorTest extends TestCase
         ])->inspect('https://shop.test/');
         $this->assertSame('fail', $this->checks($report)['status']['status']);
         $this->assertSame('fail', $report['engines'][0]['verdict']);
+
+        $report = $this->inspector([
+            'https://shop.test/gone' => ['status' => 404, 'type' => 'text/html', 'body' => '<html><body>Not found</body></html>'],
+        ])->inspect('https://shop.test/gone');
+        $this->assertNull($report['meta']);
+        $this->assertStringContainsString('Not found', $report['html']);
     }
 
     public function test_plain_http_is_told_apart_from_a_missing_certificate(): void

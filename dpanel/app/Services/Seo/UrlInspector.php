@@ -119,6 +119,11 @@ class UrlInspector
         $report['engines'] = $this->engines($final, $response, $doc, $metas, $robots, $isHtml);
 
         if (! $isHtml) {
+            // An HTML error page (404, 500) still shows in the Preview tab.
+            if (($response['type'] === '' || str_contains($response['type'], 'html')) && $response['body'] !== '') {
+                $report['html'] = $this->utf8($response['body'], $response['headers']['content-type'] ?? '');
+            }
+
             return $this->finish($report);
         }
 
