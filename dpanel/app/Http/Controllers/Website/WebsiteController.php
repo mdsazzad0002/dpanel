@@ -726,6 +726,27 @@ class WebsiteController extends Controller
             : back()->with('success', $message);
     }
 
+    public function uninstallSsl(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->findAuthorizedWebsiteOrFail($id);
+        $website = Website::query()->findOrFail($id);
+
+        try {
+            $this->sslLifecycleService->removeForWebsite($website);
+        } catch (\Throwable $e) {
+            return response()->json(['type' => 'error', 'message' => 'SSL uninstall failed. '.$e->getMessage()], 422);
+        }
+
+        // Aliases follow the parent onto HTTP, as with Disable SSL.
+        $childErrors = $this->cascadeSslToChildren($website, false);
+        $message = 'SSL certificate uninstalled. The site is now served over HTTP.';
+        if ($childErrors !== []) {
+            $message .= ' Some child domains failed to follow: '.implode('; ', $childErrors);
+        }
+
+        return response()->json(['type' => 'success', 'message' => $message]);
+    }
+
     public function updateSslStatus(Request $request, string $token, string $id): JsonResponse
     {
         $this->findAuthorizedWebsiteOrFail($id);

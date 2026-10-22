@@ -39,3 +39,23 @@ pub(crate) async fn handle(
         Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
     }
 }
+
+#[derive(Deserialize)]
+pub(crate) struct RemoveRequest {
+    pub domain: String,
+}
+
+pub(crate) async fn remove(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<RemoveRequest>,
+) -> impl IntoResponse {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+
+    match certificate::remove(&request.domain) {
+        Ok(data) => ApiResponse::ok_data("SSL certificate removed", data).into_response(),
+        Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+    }
+}

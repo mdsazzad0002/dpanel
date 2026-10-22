@@ -5,5 +5,7 @@ use axum::{Router, routing::post};
 use super::ApiState;
 
 pub fn routes() -> Router<Arc<ApiState>> {
-    Router::new().route("/api/v1/ssl/ensure", post(crate::ssl::ensure::handle))
+    Router::new()
+        .route("/api/v1/ssl/ensure", post(crate::ssl::ensure::handle))
+        .route("/api/v1/ssl/remove", post(crate::ssl::ensure::remove))
 }

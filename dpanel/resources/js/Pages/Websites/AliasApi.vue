@@ -87,6 +87,10 @@ const onSslReinstalled = (alias, data) => {
     alias.ssl_status = 'valid'; alias.ssl_expires_at = data?.ssl?.expires_at || alias.ssl_expires_at;
     showResult(data, 'success', 'SSL reinstalled successfully.');
 };
+const onSslUninstalled = (alias, data) => {
+    alias.enable_ssl = false; alias.ssl_status = 'disabled'; alias.ssl_expires_at = null;
+    showResult(data, 'success', 'SSL uninstalled.');
+};
 const toggleAliasSsl = async (alias) => {
     if (sslToggleId.value || isLocalDomain(alias.domain)) return;
     sslToggleId.value = String(alias.id);
@@ -256,7 +260,7 @@ if (verification.verified) {
                                 <span v-if="isLocalDomain(alias.domain)" class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400" title="Local domains cannot use SSL">
                                     Local domain — SSL unavailable
                                 </span>
-                                <SslBadgeMenu v-else :website="alias" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(alias)]" :title="formatExpiry(alias.ssl_expires_at)" @reinstalled="(data) => onSslReinstalled(alias, data)" @failed="(message) => showResult({ message }, 'error', 'SSL reinstall failed.')">
+                                <SslBadgeMenu v-else :website="alias" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(alias)]" :title="formatExpiry(alias.ssl_expires_at)" @reinstalled="(data) => onSslReinstalled(alias, data)" @uninstalled="(data) => onSslUninstalled(alias, data)" @failed="(message) => showResult({ message }, 'error', 'SSL reinstall failed.')">
                                     <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
                                     <span>SSL</span><span class="opacity-40">|</span><span>{{ sslValidityLabel(alias) }}</span>
                                 </SslBadgeMenu>

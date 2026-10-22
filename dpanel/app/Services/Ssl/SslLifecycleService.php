@@ -66,19 +66,7 @@ class SslLifecycleService
             );
         }
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $apiUrl = $baseUrl !== '' ? rtrim($baseUrl, '/').'/api/v1/ssl/ensure' : '';
-        if ($apiUrl === '') {
-            throw new \RuntimeException('drust SSL API is not configured.');
-        }
-
-        $request = Http::acceptJson()->asJson()->timeout(300);
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
-        if ($token !== '') {
-            $request = $request->withToken($token);
-        }
-
-        $response = $request->post($apiUrl, [
+        $response = $this->drustSslRequest('ensure', [
             'domain' => $domainName,
             'root_path' => $this->websiteService->resolveWebsiteDocumentRoot(
                 (string) $website->root_path,
@@ -123,5 +111,46 @@ class SslLifecycleService
         app(EdgeGatewayReloader::class)->reload();
 
         return $data;
+    }
+
+    /**
+     * Uninstall: drust deletes the certificate files, SSL is switched off and
+     * the panel forgets the certificate.
+     */
+    public function removeForWebsite(Website $website): void
+    {
+        $domainName = strtolower(trim((string) $website->domain));
+        $response = $this->drustSslRequest('remove', ['domain' => $domainName]);
+        $json = $response->json();
+        if (! $response->successful() || ! (bool) ($json['success'] ?? false)) {
+            throw new \RuntimeException((string) ($json['message'] ?? $response->body() ?: 'SSL remove failed.'));
+        }
+
+        $website->forceFill(['enable_ssl' => false])->save();
+        Domain::query()->where('name', $domainName)->update([
+            'ssl_enabled' => false,
+            'ssl_status' => 'disabled',
+            'ssl_expires_at' => null,
+            'ssl_checked_at' => now(),
+        ]);
+        SslCertificate::query()->where('domain', $domainName)->delete();
+
+        app(EdgeGatewayReloader::class)->reload();
+    }
+
+    protected function drustSslRequest(string $action, array $payload): \Illuminate\Http\Client\Response
+    {
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        if ($baseUrl === '') {
+            throw new \RuntimeException('drust SSL API is not configured.');
+        }
+
+        $request = Http::acceptJson()->asJson()->timeout(300);
+        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        if ($token !== '') {
+            $request = $request->withToken($token);
+        }
+
+        return $request->post(rtrim($baseUrl, '/').'/api/v1/ssl/'.$action, $payload);
     }
 }

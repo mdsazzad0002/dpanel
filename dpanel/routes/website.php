@@ -142,6 +142,9 @@ Route::get('/websites/{id}/ssl', [WebsiteOperationsController::class, 'sslManage
 Route::post('/websites/{id}/ssl/issue', [WebsiteOperationsController::class, 'issueSsl'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ssl.issue');
+Route::delete('/websites/{id}/ssl', [WebsiteOperationsController::class, 'uninstallSsl'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.ssl.uninstall');
 Route::patch('/websites/{id}/ssl/status', [WebsiteOperationsController::class, 'updateSslStatus'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ssl.status.update');

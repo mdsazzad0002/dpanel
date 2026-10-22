@@ -139,8 +139,9 @@ const issueWebsiteSsl = async () => {
     }
 };
 
-const onSslReinstalled = (data) => {
-    pushToast?.(data.message || 'SSL certificate reinstalled successfully.', 'success');
+// Reinstall and uninstall both just need the fresh SSL state.
+const onSslChanged = (data) => {
+    pushToast?.(data.message || 'SSL certificate updated successfully.', 'success');
     router.reload({ only: ['website', 'sslStatus', 'autoRenewNotice'], preserveScroll: true });
 };
 
@@ -185,7 +186,7 @@ const disableWebsiteSsl = async () => {
                 <template #fallback>
                     <span class="inline-flex h-[26px] w-24 animate-pulse items-center rounded-full border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></span>
                 </template>
-                <SslBadgeMenu :website="website" :badge-class="['px-3 py-1 text-xs', sslCompactValidityClass]" @reinstalled="onSslReinstalled" @failed="(message) => pushToast?.(message, 'error')">
+                <SslBadgeMenu :website="website" :badge-class="['px-3 py-1 text-xs', sslCompactValidityClass]" @reinstalled="onSslChanged" @uninstalled="onSslChanged" @failed="(message) => pushToast?.(message, 'error')">
                     <i class="bi bi-shield-check"></i>
                     <span>SSL</span>
                     <span class="opacity-40">|</span>

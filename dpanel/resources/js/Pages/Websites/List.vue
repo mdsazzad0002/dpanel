@@ -255,6 +255,14 @@ const onSslReinstalled = (item, data) => {
     pushToast(data?.message || 'SSL certificate reinstalled successfully.');
 };
 
+const onSslUninstalled = (item, data) => {
+    item.enable_ssl = false;
+    item.ssl_status = 'disabled';
+    item.ssl_expires_at = null;
+    item.ssl_days_remaining = null;
+    pushToast(data?.message || 'SSL certificate uninstalled.');
+};
+
 const toggleAliasSsl = async (alias) => {
     const id = String(alias?.id || '');
     if (!id || sslLoadingId.value) return;
@@ -564,7 +572,7 @@ const saveOwnership = async () => {
                                             <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current opacity-50"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" /></svg>
                                             {{ item.root_path || '-' }}
                                         </span>
-                                        <SslBadgeMenu v-if="item.enable_ssl" :website="item" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(item)]" :title="item.ssl_expires_at ? `Expires ${formatDate(item.ssl_expires_at)}` : 'Certificate expiry is unavailable'" @reinstalled="(data) => onSslReinstalled(item, data)" @failed="(message) => pushToast(message, 'error')">
+                                        <SslBadgeMenu v-if="item.enable_ssl" :website="item" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(item)]" :title="item.ssl_expires_at ? `Expires ${formatDate(item.ssl_expires_at)}` : 'Certificate expiry is unavailable'" @reinstalled="(data) => onSslReinstalled(item, data)" @uninstalled="(data) => onSslUninstalled(item, data)" @failed="(message) => pushToast(message, 'error')">
                                             <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
                                             <span>SSL</span>
                                             <span class="opacity-40">|</span>
@@ -710,7 +718,7 @@ const saveOwnership = async () => {
                                         <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(alias.status)"></span>
                                         {{ alias.status }}
                                     </span>
-                                    <SslBadgeMenu v-if="alias.enable_ssl" :website="alias" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(alias)]" :title="alias.ssl_expires_at ? `Expires ${formatDate(alias.ssl_expires_at)}` : 'Certificate expiry is unavailable'" @reinstalled="(data) => onSslReinstalled(alias, data)" @failed="(message) => pushToast(message, 'error')">
+                                    <SslBadgeMenu v-if="alias.enable_ssl" :website="alias" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(alias)]" :title="alias.ssl_expires_at ? `Expires ${formatDate(alias.ssl_expires_at)}` : 'Certificate expiry is unavailable'" @reinstalled="(data) => onSslReinstalled(alias, data)" @uninstalled="(data) => onSslUninstalled(alias, data)" @failed="(message) => pushToast(message, 'error')">
                                         <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
                                         <span>SSL</span>
                                         <span class="opacity-40">|</span>
