@@ -2,6 +2,7 @@
 import { computed, inject, ref } from 'vue';
 import { Deferred, router } from '@inertiajs/vue3';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
 
 const props = defineProps({
     website: {
@@ -138,6 +139,11 @@ const issueWebsiteSsl = async () => {
     }
 };
 
+const onSslReinstalled = (data) => {
+    pushToast?.(data.message || 'SSL certificate reinstalled successfully.', 'success');
+    router.reload({ only: ['website', 'sslStatus', 'autoRenewNotice'], preserveScroll: true });
+};
+
 const disableWebsiteSsl = async () => {
     if (sslActionLoading.value) return;
     if (!window.confirm('Disable SSL for this website? Visitors will be served over HTTP until SSL is re-enabled.')) return;
@@ -179,12 +185,12 @@ const disableWebsiteSsl = async () => {
                 <template #fallback>
                     <span class="inline-flex h-[26px] w-24 animate-pulse items-center rounded-full border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></span>
                 </template>
-                <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium" :class="sslCompactValidityClass">
+                <SslBadgeMenu :website="website" :badge-class="['px-3 py-1 text-xs', sslCompactValidityClass]" @reinstalled="onSslReinstalled" @failed="(message) => pushToast?.(message, 'error')">
                     <i class="bi bi-shield-check"></i>
                     <span>SSL</span>
                     <span class="opacity-40">|</span>
                     <span>{{ sslEnabled ? sslValidityLabel : 'Disabled' }}</span>
-                </span>
+                </SslBadgeMenu>
             </Deferred>
         </div>
 

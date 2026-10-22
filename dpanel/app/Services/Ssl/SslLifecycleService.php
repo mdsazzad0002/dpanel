@@ -36,7 +36,7 @@ class SslLifecycleService
     }
 
     /** @return array<string, mixed> */
-    public function ensureForWebsite(Website $website): array
+    public function ensureForWebsite(Website $website, bool $force = false): array
     {
         $domainName = strtolower(trim((string) $website->domain));
         $domain = Domain::query()->firstOrNew(['name' => $domainName]);
@@ -85,6 +85,8 @@ class SslLifecycleService
                 (string) $website->start_directory,
             ),
             'renew_before_days' => max(0, (int) config('serverpanel.ssl_auto_renew_days', 30)),
+            // Reinstall: issue a new certificate even when the current one is valid.
+            'force' => $force,
         ]);
         $json = $response->json();
         $data = is_array($json['data'] ?? null) ? $json['data'] : [];

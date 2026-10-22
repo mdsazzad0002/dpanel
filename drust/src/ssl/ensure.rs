@@ -16,6 +16,7 @@ pub(crate) struct Request {
     pub root_path: String,
     pub include_www: Option<bool>,
     pub renew_before_days: Option<u64>,
+    pub force: Option<bool>,
 }
 
 pub(crate) async fn handle(
@@ -32,6 +33,7 @@ pub(crate) async fn handle(
         &request.root_path,
         request.include_www.unwrap_or(false),
         request.renew_before_days.unwrap_or(30),
+        request.force.unwrap_or(false),
     ) {
         Ok(data) => ApiResponse::ok_data("SSL certificate is valid", data).into_response(),
         Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),

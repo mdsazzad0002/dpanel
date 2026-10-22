@@ -148,19 +148,20 @@ fn ip_matches_certificate(path: &str, ip: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn ensure_ip(ip: &str, root_path: &str, renew_before_days: u64) -> Result<Value, String> {
+fn ensure_ip(ip: &str, root_path: &str, renew_before_days: u64, force: bool) -> Result<Value, String> {
     let lineage_exists = Path::new(&format!("/etc/letsencrypt/live/{ip}/fullchain.pem")).is_file();
     if !is_public_ipv4(ip) {
-        return ensure_self_signed(ip, renew_before_days, None);
+        return ensure_self_signed(ip, renew_before_days, force, None);
     }
     if !certbot_supports_ip() {
         return ensure_self_signed(
             ip,
             renew_before_days,
+            force,
             Some("Installed certbot cannot issue IP certificates (needs 5.1+); using a self-signed certificate."),
         );
     }
-    match ensure_letsencrypt_ip(ip, root_path) {
+    match ensure_letsencrypt_ip(ip, root_path, force) {
         Ok(data) => Ok(data),
         // The gateway prefers an existing Let's Encrypt lineage, so a
         // self-signed fallback would never be served; report the failure.
@@ -168,6 +169,7 @@ fn ensure_ip(ip: &str, root_path: &str, renew_before_days: u64) -> Result<Value,
         Err(error) => ensure_self_signed(
             ip,
             renew_before_days,
+            force,
             Some(&format!("Let's Encrypt IP certificate failed, using a self-signed certificate. {error}")),
         ),
     }
@@ -175,13 +177,14 @@ fn ensure_ip(ip: &str, root_path: &str, renew_before_days: u64) -> Result<Value,
 
 /// Short-lived (~6 day) Let's Encrypt certificate for a public IP, validated
 /// over HTTP-01 like a domain (DNS-01 is not available for IPs).
-fn ensure_letsencrypt_ip(ip: &str, root_path: &str) -> Result<Value, String> {
+fn ensure_letsencrypt_ip(ip: &str, root_path: &str, force: bool) -> Result<Value, String> {
     let live_dir = format!("/etc/letsencrypt/live/{ip}");
     let certificate_path = format!("{live_dir}/fullchain.pem");
     let private_key_path = format!("{live_dir}/privkey.pem");
     let existed = Path::new(&certificate_path).is_file();
-    let needs_issue =
-        !existed || !ip_certificate_valid(&certificate_path, ip, IP_CERT_RENEW_BEFORE_DAYS);
+    let needs_issue = force
+        || !existed
+        || !ip_certificate_valid(&certificate_path, ip, IP_CERT_RENEW_BEFORE_DAYS);
 
     if needs_issue {
         let auth_hook = http_auth_hook(root_path);
@@ -251,11 +254,17 @@ fn ensure_letsencrypt_ip(ip: &str, root_path: &str) -> Result<Value, String> {
     }))
 }
 
-fn ensure_self_signed(ip: &str, renew_before_days: u64, note: Option<&str>) -> Result<Value, String> {
+fn ensure_self_signed(
+    ip: &str,
+    renew_before_days: u64,
+    force: bool,
+    note: Option<&str>,
+) -> Result<Value, String> {
     let certificate_path = format!("{SELF_SIGNED_DIR}/{ip}.crt");
     let private_key_path = format!("{SELF_SIGNED_DIR}/{ip}.key");
     let existed = Path::new(&certificate_path).is_file() && Path::new(&private_key_path).is_file();
-    let needs_issue = !existed || !ip_certificate_valid(&certificate_path, ip, renew_before_days);
+    let needs_issue =
+        force || !existed || !ip_certificate_valid(&certificate_path, ip, renew_before_days);
 
     if needs_issue {
         std::fs::create_dir_all(SELF_SIGNED_DIR)
@@ -345,6 +354,7 @@ pub(super) fn ensure(
     root_path: &str,
     include_www: bool,
     renew_before_days: u64,
+    force: bool,
 ) -> Result<Value, String> {
     ensure_root()?;
     let domain = domain.trim().to_lowercase();
@@ -366,7 +376,7 @@ pub(super) fn ensure(
         return Err(format!("Website root path does not exist: {root_path}"));
     }
     if is_ip_address(&domain) {
-        return ensure_ip(&domain, root_path, renew_before_days);
+        return ensure_ip(&domain, root_path, renew_before_days, force);
     }
 
     let live_dir = format!("/etc/letsencrypt/live/{domain}");
@@ -382,7 +392,8 @@ pub(super) fn ensure(
             .unwrap_or(false);
     let www_valid = !include_www
         || (existed && certificate_valid(&certificate_path, &www_domain, renew_before_days));
-    let needs_issue = !main_valid || !www_valid;
+    // force: reinstall requested from the panel, even for a valid certificate.
+    let needs_issue = force || !main_valid || !www_valid;
 
     if needs_issue {
         if !command_success("sh", &["-c", "command -v certbot >/dev/null 2>&1"]) {
@@ -414,6 +425,10 @@ pub(super) fn ensure(
         if include_www {
             args.push("-d");
             args.push(&www_domain);
+        }
+        if force && existed {
+            // Without it certbot keeps a certificate that is not yet due for renewal.
+            args.push("--force-renewal");
         }
         let output = Command::new("certbot")
             .args(&args)

@@ -699,13 +699,14 @@ class WebsiteController extends Controller
     public function issueSsl(Request $request, string $token, string $id): RedirectResponse|JsonResponse
     {
         $this->findAuthorizedWebsiteOrFail($id);
+        $force = $request->boolean('force');
         $website = Website::query()->findOrFail($id);
         $website->forceFill(['enable_ssl' => true])->save();
 
         try {
-            $result = $this->sslLifecycleService->ensureForWebsite($website->fresh());
+            $result = $this->sslLifecycleService->ensureForWebsite($website->fresh(), $force);
         } catch (\Throwable $e) {
-            $message = 'SSL issue failed. '.$e->getMessage();
+            $message = ($force ? 'SSL reinstall failed. ' : 'SSL issue failed. ').$e->getMessage();
 
             return $request->expectsJson()
                 ? response()->json(['type' => 'error', 'message' => $message], 422)
@@ -714,7 +715,7 @@ class WebsiteController extends Controller
 
         $childErrors = $this->cascadeSslToChildren($website, true);
 
-        $action = ! empty($result['renewed']) ? 'renewed' : (! empty($result['issued']) ? 'issued' : 'verified');
+        $action = $force ? 'reinstalled' : (! empty($result['renewed']) ? 'renewed' : (! empty($result['issued']) ? 'issued' : 'verified'));
         $message = "SSL certificate {$action} successfully.";
         if ($childErrors !== []) {
             $message .= ' Some child domains failed to follow: '.implode('; ', $childErrors);

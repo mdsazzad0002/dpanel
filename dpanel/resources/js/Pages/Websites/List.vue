@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
+import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
 
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
@@ -242,6 +243,16 @@ const issueAliasSsl = async (alias) => {
     } finally {
         sslLoadingId.value = '';
     }
+};
+
+const onSslReinstalled = (item, data) => {
+    const expiresAt = data?.ssl?.expires_at;
+    if (expiresAt) {
+        item.ssl_expires_at = expiresAt;
+        item.ssl_days_remaining = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 86400000));
+    }
+    item.ssl_status = 'valid';
+    pushToast(data?.message || 'SSL certificate reinstalled successfully.');
 };
 
 const toggleAliasSsl = async (alias) => {
@@ -553,12 +564,12 @@ const saveOwnership = async () => {
                                             <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current opacity-50"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" /></svg>
                                             {{ item.root_path || '-' }}
                                         </span>
-                                        <span v-if="item.enable_ssl" class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="sslValidityClass(item)" :title="item.ssl_expires_at ? `Expires ${formatDate(item.ssl_expires_at)}` : 'Certificate expiry is unavailable'">
+                                        <SslBadgeMenu v-if="item.enable_ssl" :website="item" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(item)]" :title="item.ssl_expires_at ? `Expires ${formatDate(item.ssl_expires_at)}` : 'Certificate expiry is unavailable'" @reinstalled="(data) => onSslReinstalled(item, data)" @failed="(message) => pushToast(message, 'error')">
                                             <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
                                             <span>SSL</span>
                                             <span class="opacity-40">|</span>
                                             <span>{{ sslValidityLabel(item) }}</span>
-                                        </span>
+                                        </SslBadgeMenu>
                                     </div>
                                 </div>
                             </div>
@@ -699,12 +710,12 @@ const saveOwnership = async () => {
                                         <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(alias.status)"></span>
                                         {{ alias.status }}
                                     </span>
-                                    <span v-if="alias.enable_ssl" class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="sslValidityClass(alias)" :title="alias.ssl_expires_at ? `Expires ${formatDate(alias.ssl_expires_at)}` : 'Certificate expiry is unavailable'">
+                                    <SslBadgeMenu v-if="alias.enable_ssl" :website="alias" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(alias)]" :title="alias.ssl_expires_at ? `Expires ${formatDate(alias.ssl_expires_at)}` : 'Certificate expiry is unavailable'" @reinstalled="(data) => onSslReinstalled(alias, data)" @failed="(message) => pushToast(message, 'error')">
                                         <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
                                         <span>SSL</span>
                                         <span class="opacity-40">|</span>
                                         <span>{{ sslValidityLabel(alias) }}</span>
-                                    </span>
+                                    </SslBadgeMenu>
                                 </div>
                             </div>
                             <div class="flex items-center gap-1">
