@@ -1,4 +1,5 @@
 <script setup>
+import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 const props = defineProps({
@@ -15,6 +16,9 @@ const initials = computed(() => String(props.user?.name ?? 'U')
 const formatLoginTime = (value) => value
     ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
     : 'Not recorded';
+
+// The monitoring page is limited to these roles.
+const canMonitor = computed(() => props.roles.some((role) => ['admin', 'reseller'].includes(role)));
 
 const percentOf = (used, total) => (Number(total) > 0 ? Math.min(100, Math.round((Number(used || 0) / Number(total)) * 100)) : 0);
 const loadBar = (p) => (p < 50 ? 'bg-emerald-500' : p < 75 ? 'bg-amber-500' : 'bg-red-500');
@@ -85,6 +89,9 @@ const load = computed(() => {
                     <div :class="['h-full rounded-full transition-all duration-700', loadBar(item.percent)]" :style="{ width: (stats ? item.percent : 0) + '%' }"></div>
                 </div>
             </div>
+            <Link v-if="canMonitor" :href="route('monitoring.index')" class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
+                <i class="bi bi-activity"></i>View monitoring<i class="bi bi-arrow-right"></i>
+            </Link>
         </div>
     </section>
 </template>
