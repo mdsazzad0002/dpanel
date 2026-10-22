@@ -27,6 +27,7 @@ class UrlInspectionController extends Controller
                     'domain' => (string) $website->domain,
                     'enable_ssl' => (bool) $website->enable_ssl,
                 ])->values(),
+            'canManageWebsites' => $request->user()->hasAnyRole(['admin', 'reseller']) || $request->user()->hasAccess('manage_websites'),
             'agents' => collect(UrlInspector::AGENTS)->map(fn (array $agent, string $key): array => ['value' => $key, 'label' => $agent['label']])->values(),
         ]);
     }

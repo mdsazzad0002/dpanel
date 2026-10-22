@@ -229,6 +229,24 @@ class UrlInspectorTest extends TestCase
         $this->assertSame('fail', $report['engines'][0]['verdict']);
     }
 
+    public function test_plain_http_is_told_apart_from_a_missing_certificate(): void
+    {
+        $page = ['status' => 200, 'body' => '<html><head><title>Home</title></head></html>'];
+
+        $report = $this->inspector(['http://shop.test/' => $page, 'https://shop.test/' => $page])->inspect('http://shop.test/');
+        $https = $this->checks($report)['https'];
+        $this->assertSame('warn', $https['status']);
+        $this->assertStringContainsString('certificate works', $https['detail']);
+
+        $report = $this->inspector(['http://shop.test/' => $page, 'https://shop.test/' => ['status' => 0, 'error' => 'SSL certificate problem']])->inspect('http://shop.test/');
+        $https = $this->checks($report)['https'];
+        $this->assertSame('fail', $https['status']);
+        $this->assertStringContainsString('HTTPS failed: SSL certificate problem.', $https['detail']);
+
+        $report = $this->inspector(['http://shop.test/' => ['status' => 301, 'location' => 'https://shop.test/'], 'https://shop.test/' => $page])->inspect('http://shop.test/');
+        $this->assertSame('pass', $this->checks($report)['https']['status']);
+    }
+
     public function test_redirect_loops_stop(): void
     {
         $report = $this->inspector([

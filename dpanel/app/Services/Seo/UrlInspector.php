@@ -66,7 +66,11 @@ class UrlInspector
         $ua = self::AGENTS[$agent]['ua'] ?? null;
         $this->client = $ua === null ? $this->http : $this->http->withUserAgent($ua);
 
-        $page = $this->fetchFollowing([$url], self::PAGE_BYTES)[$url];
+        // A plain HTTP URL is also tried over HTTPS, to tell a missing
+        // certificate apart from a missing redirect.
+        $secure = str_starts_with($url, 'http://') ? 'https://'.substr($url, 7) : null;
+        $pages = $this->fetchFollowing(array_values(array_filter([$url, $secure])), self::PAGE_BYTES);
+        $page = $pages[$url];
         $response = $page['response'];
         $final = $page['url'];
         $report = [
@@ -93,7 +97,7 @@ class UrlInspector
             'robots' => null,
         ];
 
-        $this->httpChecks($url, $page);
+        $this->httpChecks($url, $page, $secure ? $pages[$secure] : null);
         $isHtml = $response['status'] === 200 && ($response['type'] === '' || str_contains($response['type'], 'html'));
         $origin = $this->origin($final);
         $html = $isHtml ? $this->utf8($response['body'], $response['headers']['content-type'] ?? '') : '';
@@ -153,8 +157,11 @@ class UrlInspector
         return $report;
     }
 
-    /** @param array{url: string, response: array<string, mixed>, chain: array<int, array<string, mixed>>} $page */
-    private function httpChecks(string $requested, array $page): void
+    /**
+     * @param  array{url: string, response: array<string, mixed>, chain: array<int, array<string, mixed>>}  $page
+     * @param  array{url: string, response: array<string, mixed>, chain: array<int, array<string, mixed>>}|null  $secure  the same URL over HTTPS
+     */
+    private function httpChecks(string $requested, array $page, ?array $secure): void
     {
         $response = $page['response'];
         $hops = count($page['chain']) - 1;
@@ -184,9 +191,14 @@ class UrlInspector
         }
 
         $https = str_starts_with($page['url'], 'https://');
-        $this->check('http', 'https', 'HTTPS', $https ? 'pass' : 'fail', $https
-            ? 'Served over HTTPS.'
-            : 'Served over plain HTTP. Browsers mark it "Not secure" and search engines prefer HTTPS pages.');
+        if ($https) {
+            $this->check('http', 'https', 'HTTPS', 'pass', 'Served over HTTPS.');
+        } elseif ($secure !== null && $secure['response']['status'] > 0 && str_starts_with($secure['url'], 'https://')) {
+            $this->check('http', 'https', 'HTTPS', 'warn', "The SSL certificate works ({$secure['chain'][0]['url']} answers), but this URL stays on plain HTTP. Redirect HTTP to HTTPS with a 301 so browsers and search engines use the secure version.");
+        } else {
+            $reason = $secure !== null && $secure['response']['status'] === 0 ? ' HTTPS failed: '.rtrim((string) ($secure['response']['error'] ?? 'no response'), '.').'.' : '';
+            $this->check('http', 'https', 'HTTPS', 'fail', 'Served over plain HTTP. Browsers mark it "Not secure" and search engines prefer HTTPS pages.'.$reason);
+        }
         if ($response['status'] === 0) {
             return;
         }

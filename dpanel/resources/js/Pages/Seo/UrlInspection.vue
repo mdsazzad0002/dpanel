@@ -16,6 +16,7 @@ import { computed, ref } from 'vue';
 const props = defineProps({
     websites: { type: Array, default: () => [] },
     agents: { type: Array, default: () => [] },
+    canManageWebsites: { type: Boolean, default: false },
 });
 
 const { panelRoute, requestJson } = usePanelApi();
@@ -31,6 +32,8 @@ const running = ref(false);
 const error = ref('');
 const report = ref(null);
 const tab = ref('overview');
+// The website the shown report belongs to, when it was an internal inspection.
+const inspectedSiteId = ref(null);
 
 const websiteOptions = computed(() => props.websites.map((w) => ({ value: w.id, label: w.domain })));
 const selectedSite = computed(() => props.websites.find((w) => w.id === websiteId.value));
@@ -44,6 +47,7 @@ const inspect = async () => {
         : { source: 'external', url: externalUrl.value.trim(), agent: agent.value };
     try {
         report.value = await requestJson(panelRoute('seo.url-inspection.run'), { body });
+        inspectedSiteId.value = body.source === 'internal' ? body.website_id : null;
         // Preview tabs only exist for HTML pages.
         if (!tabs.value.some((t) => t.key === tab.value)) tab.value = 'overview';
     } catch (e) {
@@ -66,6 +70,13 @@ const overall = computed(() => {
     if (t.fail) return { ...badge.fail, title: `${t.fail} ${t.fail === 1 ? 'problem' : 'problems'} to fix` };
     if (t.warn) return { ...badge.warn, title: `${t.warn} ${t.warn === 1 ? 'warning' : 'warnings'}` };
     return { ...badge.pass, title: 'Everything checks out' };
+});
+
+// SSL is fixed on the website's manage page.
+const checkActions = computed(() => {
+    const https = report.value?.sections.find((s) => s.key === 'http')?.checks.find((c) => c.key === 'https');
+    if (!props.canManageWebsites || !inspectedSiteId.value || !https || https.status === 'pass') return {};
+    return { https: { label: 'Manage', icon: 'bi-gear', href: panelRoute('websites.manage', { id: inspectedSiteId.value }) } };
 });
 
 const sectionStatus = (key) => {
@@ -210,7 +221,7 @@ const statusText = computed(() => {
                 </div>
 
                 <div v-if="tab === 'overview'" class="space-y-4">
-                    <CheckList v-for="section in report.sections" :key="section.key" :title="section.label" :checks="section.checks" />
+                    <CheckList v-for="section in report.sections" :key="section.key" :title="section.label" :checks="section.checks" :actions="checkActions" />
                 </div>
                 <SearchPreviews v-else-if="tab === 'search'" :report="report" />
                 <SocialPreviews v-else-if="tab === 'social'" :report="report" />
