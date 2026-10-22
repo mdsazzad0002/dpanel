@@ -4,6 +4,7 @@ import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 import Modal from '@/Components/Modal.vue';
+import TopbarProfileMenu from '@/Layouts/components/TopbarProfileMenu.vue';
 import { Link, router, usePage, useRemember } from '@inertiajs/vue3';
 import { buildPanelMenu, filterPanelMenu, resolveItemRouteName } from '@/navigation/panelMenu';
 
@@ -149,7 +150,6 @@ const userRoles = computed(() => page.props.auth?.roles ?? []);
 // AI Gateway chat is open to all authenticated users (see routes/web.php
 // ai-gateway prefix group) — the "Ask AI" affordance mirrors that gate.
 const canUseAiSearch = computed(() => userRoles.value.length > 0);
-const userRoleLabel = computed(() => userRoles.value.join(', ') || 'No role');
 const userPermissions = computed(() => page.props.auth?.permissions ?? []);
 const panelToken = computed(() => page.props.panel?.token ?? '');
 const appName = computed(() => page.props.app?.name ?? 'dPanel');
@@ -158,13 +158,6 @@ const panelSearchItems = computed(() => Array.isArray(page.props.panelSearch?.it
 const currentUser = computed(() => page.props.auth?.user ?? {});
 const impersonation = computed(() => page.props.auth?.impersonation ?? null);
 const userName = computed(() => String(currentUser.value?.name ?? 'User'));
-const userEmail = computed(() => String(currentUser.value?.email ?? ''));
-const userInitials = computed(() => userName.value
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('') || 'U');
 
 const panelRoute = (name, params = {}) => (panelToken.value
     ? route(name, { token: panelToken.value, ...params })
@@ -989,74 +982,16 @@ watch(isSearchOpen, async (open) => {
                             </template>
                         </Dropdown>
 
-                        <!-- User Dropdown -->
-                        <Dropdown align="right" width="64">
-                            <template #trigger>
-                                <button
-                                    type="button"
-                                    class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800"
-                                >
-                                    <span class="relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-[10px] font-semibold text-white shadow-sm ring-2 ring-white dark:ring-slate-900">
-                                        {{ userInitials }}
-                                        <span class="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400 dark:border-slate-900"></span>
-                                    </span>
-                                    <span class="hidden text-left sm:block">
-                                        <span class="block text-xs font-semibold text-slate-900 dark:text-slate-100">{{ userName }}</span>
-                                    </span>
-                                    <i class="bi bi-chevron-down text-[10px] text-slate-400"></i>
-                                </button>
-                            </template>
-
-                            <template #content>
-                                <!-- Profile Header -->
-                                <div class="border-b border-slate-200 px-4 py-4 dark:border-slate-700">
-                                    <div class="flex items-center gap-3">
-                                        <span class="relative inline-flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-sm font-bold text-white shadow-lg">
-                                            {{ userInitials }}
-                                            <span class="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400 dark:border-slate-900"></span>
-                                        </span>
-                                        <div class="min-w-0 flex-1">
-                                            <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{{ userName }}</p>
-                                            <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ userEmail }}</p>
-                                            <span class="mt-1.5 inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-                                                {{ userRoleLabel }}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Menu Items -->
-                                <div class="py-2">
-                                    <DropdownLink :href="panelRoute('profile.edit')">
-                                        <i class="bi bi-person mr-3 text-slate-400"></i>
-                                        <span>My Profile</span>
-                                    </DropdownLink>
-                                    <DropdownLink :href="panelRoute('profile.edit')">
-                                        <i class="bi bi-gear mr-3 text-slate-400"></i>
-                                        <span>Settings</span>
-                                    </DropdownLink>
-                                    <DropdownLink v-if="route().has('security.manager')" :href="panelRoute('security.manager')">
-                                        <i class="bi bi-shield-lock mr-3 text-slate-400"></i>
-                                        <span>Security</span>
-                                    </DropdownLink>
-                                    <DropdownLink v-if="route().has('self-connection.manager')" :href="panelRoute('self-connection.manager')">
-                                        <i class="bi bi-hdd-network mr-3 text-slate-400"></i>
-                                        <span>Database & Redis</span>
-                                    </DropdownLink>
-                                </div>
-
-                                <!-- Divider -->
-                                <div class="border-t border-slate-200 dark:border-slate-700"></div>
-
-                                <!-- Logout -->
-                                <div class="py-2">
-                                    <DropdownLink :href="panelRoute('logout')" method="post" as="button" class="text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
-                                        <i class="bi bi-box-arrow-right mr-3"></i>
-                                        <span>Log Out</span>
-                                    </DropdownLink>
-                                </div>
-                            </template>
-                        </Dropdown>
+                        <TopbarProfileMenu
+                            :user="currentUser"
+                            :roles="userRoles"
+                            :impersonation="impersonation"
+                            :theme="theme"
+                            :app-name="appName"
+                            :app-version="appVersion"
+                            :panel-route="panelRoute"
+                            @toggle-theme="toggleTheme"
+                        />
                     </div>
                 </div>
             </header>

@@ -101,7 +101,9 @@ const tabs = [
     },
 ];
 
-const activeTab = ref('profile');
+// ?tab= lets the topbar profile menu open a tab directly.
+const requestedTab = new URLSearchParams(window.location.search).get('tab');
+const activeTab = ref(tabs.some((tab) => tab.key === requestedTab) ? requestedTab : 'profile');
 const setActiveTab = (tab) => {
     activeTab.value = tab;
 };
