@@ -67,11 +67,20 @@ class UrlInspectionTest extends TestCase
         $this->inspect(['source' => 'external', 'url' => 'http://Example.org/a/b?x=1'])->assertOk();
     }
 
+    public function test_external_public_ip_addresses(): void
+    {
+        $this->expectInspect('http://[2407:3640:2326:7377::1]/', 'default');
+        $this->inspect(['source' => 'external', 'url' => 'http://[2407:3640:2326:7377::1]/'])->assertOk();
+
+        $this->expectInspect('https://8.8.8.8/page', 'default');
+        $this->inspect(['source' => 'external', 'url' => '8.8.8.8/page'])->assertOk();
+    }
+
     public function test_invalid_input_is_rejected(): void
     {
         $this->app->instance(UrlInspector::class, Mockery::mock(UrlInspector::class)->shouldNotReceive('inspect')->getMock());
 
-        foreach (['https://example.org:8443/', 'https://user@example.org/', 'http://10.0.0.1/', 'javascript:alert(1)'] as $url) {
+        foreach (['https://example.org:8443/', 'https://user@example.org/', 'http://10.0.0.1/', 'http://[::1]/', 'http://[fd00::1]/', 'http://[8.8.8.8]/', 'javascript:alert(1)'] as $url) {
             $this->inspect(['source' => 'external', 'url' => $url])->assertUnprocessable()->assertJsonValidationErrors('url');
         }
         $this->inspect(['website_id' => 'site-1', 'path' => 'https://evil.test/'])->assertUnprocessable()->assertJsonValidationErrors('path');

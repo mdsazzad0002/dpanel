@@ -110,7 +110,8 @@ class PublicHttpFetcher
         $state[$id] = ['body' => '', 'headers' => [], 'truncated' => false];
         $port = $scheme === 'https' ? 443 : 80;
         curl_setopt_array($curl, [
-            CURLOPT_RESOLVE => [$host.':'.$port.':'.(str_contains($ip, ':') ? '['.$ip.']' : $ip)],
+            // An IP literal is connected to as written; only names need pinning.
+            CURLOPT_RESOLVE => $ip === trim($host, '[]') ? [] : [$host.':'.$port.':'.(str_contains($ip, ':') ? '['.$ip.']' : $ip)],
             CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_CONNECTTIMEOUT => 5,
