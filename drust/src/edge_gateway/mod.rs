@@ -1,4 +1,5 @@
 mod bandwidth;
+mod bind;
 mod compression;
 mod config;
 mod dispatcher;

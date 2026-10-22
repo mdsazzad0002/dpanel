@@ -30,8 +30,15 @@ pub async fn run_h3_listener(
         .parse()
         .map_err(|error| format!("quic bind address invalid: {error}"))?;
     let server_config = build_quic_server_config(resolver)?;
-    let endpoint = quinn::Endpoint::server(server_config, addr)
+    let socket = super::bind::bind_udp(addr)
         .map_err(|error| format!("quic endpoint bind failed: {error}"))?;
+    let endpoint = quinn::Endpoint::new(
+        quinn::EndpointConfig::default(),
+        Some(server_config),
+        socket,
+        Arc::new(quinn::TokioRuntime),
+    )
+    .map_err(|error| format!("quic endpoint bind failed: {error}"))?;
     info!(bind = %bind, "HTTP/3 (QUIC) listener ready");
 
     while let Some(incoming) = endpoint.accept().await {

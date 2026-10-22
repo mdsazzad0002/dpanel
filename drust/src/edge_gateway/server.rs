@@ -125,7 +125,7 @@ pub fn serve_gateway_with_tls(
         let app_router = build_demo_router(state).layer(map_request(ensure_host_header));
         let https_router = app_router.clone().layer(map_request(mark_https_request));
 
-        let http_listener = tokio::net::TcpListener::bind(http_bind)
+        let http_listener = super::bind::bind_tcp(http_bind)
             .await
             .map_err(|error| format!("http bind failed: {error}"))?;
         info!(bind = http_bind, "HTTP listener ready");
@@ -1066,7 +1066,7 @@ pub fn serve_demo_with_tls(
         spawn_redis_reload_listener(state.clone());
         spawn_snapshot_poll(state.clone());
         let router = build_demo_router(state);
-        let http_listener = tokio::net::TcpListener::bind(http_bind)
+        let http_listener = super::bind::bind_tcp(http_bind)
             .await
             .map_err(|error| format!("http bind failed: {error}"))?;
         info!(bind = http_bind, "HTTP listener ready");
@@ -1128,7 +1128,7 @@ async fn run_https_listener(
     server_config: ServerConfig,
 ) -> Result<(), String> {
     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
-    let listener = tokio::net::TcpListener::bind(&bind)
+    let listener = super::bind::bind_tcp(&bind)
         .await
         .map_err(|error| format!("https bind failed: {error}"))?;
     info!(bind = %bind, "HTTPS listener ready");
