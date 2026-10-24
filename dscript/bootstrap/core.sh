@@ -1858,7 +1858,7 @@ panel_install_frontend_assets() {
 }
 
 panel_ensure_node20() {
-  local major version
+  local major version npm_version="" npm_major=""
   local arch node_version node_url node_dir tarball
 
   if ! command -v node >/dev/null 2>&1; then
@@ -1868,14 +1868,20 @@ panel_ensure_node20() {
     major="${version%%.*}"
   fi
 
-  # Distro nodejs packages (Ubuntu/Debian) ship without npm, so a new enough
-  # node alone is not enough.
-  if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 20 )) && command -v npm >/dev/null 2>&1; then
+  # Distro nodejs packages (Ubuntu/Debian) ship without npm, or with an old
+  # one (Ubuntu's npm 9.2 cannot parse "npm:" alias overrides that current
+  # Laravel starter kits use), so a new enough node alone is not enough.
+  if command -v npm >/dev/null 2>&1; then
+    npm_version="$(npm -v 2>/dev/null)"
+    npm_major="${npm_version%%.*}"
+  fi
+  if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 20 )) \
+    && [[ "$npm_major" =~ ^[0-9]+$ ]] && (( npm_major >= 10 )); then
     panel_link_node_tools "$(dirname "$(command -v node)")"
     return 0
   fi
 
-  panel_warn_log "Node.js ${version:-missing} (npm: $(command -v npm >/dev/null 2>&1 && echo present || echo missing)) is not usable for Vite; installing Node.js 20."
+  panel_warn_log "Node.js ${version:-missing} (npm: ${npm_version:-missing}) is not usable for Vite; installing Node.js 22."
 
   arch="$(uname -m)"
   case "$arch" in
@@ -1887,7 +1893,7 @@ panel_ensure_node20() {
       ;;
   esac
 
-  node_version="v20.19.0"
+  node_version="v22.22.1"
   node_url="https://nodejs.org/dist/${node_version}/node-${node_version}-${node_arch}.tar.xz"
   node_dir="${DPANEL_BASE_DIR:-/opt/dpanel}/node-${node_version}"
   tarball="${node_dir}.tar.xz"
@@ -1913,7 +1919,7 @@ panel_ensure_node20() {
 }
 
 # Website installers run as the site user with a fixed PATH
-# (/usr/local/bin before /usr/bin), so the Node.js 20 used for the panel must
+# (/usr/local/bin before /usr/bin), so the Node.js used for the panel must
 # be linked there; otherwise they find no npm, or the distro's old one.
 panel_link_node_tools() {
   local bin_dir="$1" tool
