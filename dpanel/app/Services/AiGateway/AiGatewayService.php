@@ -119,7 +119,7 @@ class AiGatewayService
                 'system' => $options['system'] ?? null,
                 'temperature' => $options['temperature'] ?? config('aigateway.default_temperature', 0.3),
                 'max_tokens' => $options['max_tokens'] ?? config('aigateway.default_max_tokens', 2048),
-                'tools' => $options['tools'] ?? null,
+                'tools' => $this->normaliseTools($options['tools'] ?? null),
                 'tool_choice' => $options['tool_choice'] ?? null,
             ]);
         } catch (\Throwable $e) {
@@ -197,7 +197,7 @@ class AiGatewayService
                 'system' => $options['system'] ?? null,
                 'temperature' => $options['temperature'] ?? config('aigateway.default_temperature', 0.3),
                 'max_tokens' => $options['max_tokens'] ?? config('aigateway.default_max_tokens', 2048),
-                'tools' => $options['tools'] ?? null,
+                'tools' => $this->normaliseTools($options['tools'] ?? null),
                 'tool_choice' => $options['tool_choice'] ?? null,
             ], $onDelta);
         } catch (\Throwable $e) {
@@ -395,6 +395,67 @@ class AiGatewayService
             'latency_ms' => 0,
             'created_by' => $options['created_by'] ?? auth()->id() ?? null,
         ]);
+    }
+
+    /**
+     * Tools arrive JSON-decoded as PHP arrays, so an empty schema object
+     * like `"properties": {}` comes back out of json_encode as `[]` —
+     * which OpenAI, Groq and Gemini reject as an invalid schema (only
+     * OpenRouter tolerates it). Restore those keywords to empty objects
+     * before any adapter serialises the request.
+     */
+    private function normaliseTools(?array $tools): ?array
+    {
+        if (empty($tools)) {
+            return $tools;
+        }
+
+        return array_map(function ($tool) {
+            if (! is_array($tool)) {
+                return $tool;
+            }
+
+            if (isset($tool['function']) && is_array($tool['function'])) {
+                $params = $tool['function']['parameters'] ?? null;
+                $tool['function']['parameters'] = empty($params)
+                    ? ['type' => 'object', 'properties' => new \stdClass()]
+                    : $this->normaliseSchema($params);
+            } elseif (array_key_exists('parameters', $tool)) {
+                $tool['parameters'] = empty($tool['parameters'])
+                    ? ['type' => 'object', 'properties' => new \stdClass()]
+                    : $this->normaliseSchema($tool['parameters']);
+            }
+
+            return $tool;
+        }, $tools);
+    }
+
+    private function normaliseSchema(mixed $schema): mixed
+    {
+        if (! is_array($schema)) {
+            return $schema;
+        }
+
+        if (array_is_list($schema)) {
+            return array_map(fn ($v) => $this->normaliseSchema($v), $schema);
+        }
+
+        static $mapKeywords = ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'];
+        static $schemaKeywords = ['items', 'additionalProperties', 'not', 'contains', 'propertyNames'];
+
+        foreach ($schema as $key => $value) {
+            if (in_array($key, $mapKeywords, true) && is_array($value)) {
+                $schema[$key] = $value === []
+                    ? new \stdClass()
+                    : array_map(fn ($v) => $v === [] ? new \stdClass() : $this->normaliseSchema($v), $value);
+            } elseif (in_array($key, $schemaKeywords, true) && $value === []) {
+                $schema[$key] = new \stdClass();
+            } elseif (is_array($value)) {
+                $schema[$key] = $this->normaliseSchema($value);
+            }
+        }
+
+        return $schema;
     }
 
     private function trimForLog(mixed $value): ?string
