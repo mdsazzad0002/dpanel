@@ -32,4 +32,18 @@ class FtpProvisioningService
             throw new RuntimeException((string) ($json['message'] ?? 'FTP provisioning failed.'));
         }
     }
+
+    /**
+     * What an FTP client needs to connect, shown on every FTP accounts page.
+     *
+     * @return array{host: string, port: int, tls: bool}
+     */
+    public function connection(string $host): array
+    {
+        return [
+            'host' => $host,
+            'port' => (int) config('serverpanel.ftp.port', 21),
+            'tls' => (bool) config('serverpanel.ftp.tls', true),
+        ];
+    }
 }

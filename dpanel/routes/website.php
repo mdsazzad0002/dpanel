@@ -4,6 +4,7 @@ use App\Http\Controllers\BackupController;
 use App\Http\Controllers\CloneShareController;
 use App\Http\Controllers\CronJobController;
 use App\Http\Controllers\FilemanagerTrashController;
+use App\Http\Controllers\Ftp\FtpAccountController;
 use App\Http\Controllers\MigrationController;
 use App\Http\Controllers\RedisCacheController;
 use App\Http\Controllers\RedisExplorerController;
@@ -18,7 +19,6 @@ use App\Http\Controllers\Website\WebsiteController;
 use App\Http\Controllers\Website\WebsiteDockerController;
 use App\Http\Controllers\Website\WebsiteEdgeCacheController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
-use App\Http\Controllers\Website\WebsiteFtpAccountController;
 use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
@@ -79,14 +79,31 @@ Route::post('/websites/{id}/status/check', [WebsiteController::class, 'refreshRu
 Route::get('/websites/{id}/manage', [WebsiteOperationsController::class, 'manage'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.manage');
-Route::get('/websites/{id}/ftp-accounts', [WebsiteFtpAccountController::class, 'index'])
+Route::get('/ftp', [FtpAccountController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('ftp.index');
+Route::get('/ftp/create', [FtpAccountController::class, 'create'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('ftp.create');
+Route::get('/ftp/connect', [FtpAccountController::class, 'connect'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('ftp.connect');
+Route::post('/ftp/connect/test', [FtpAccountController::class, 'testServer'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])->name('ftp.test');
+Route::get('/ftp/{account}', [FtpAccountController::class, 'show'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('ftp.show');
+Route::post('/ftp/{account}/test', [FtpAccountController::class, 'testLogin'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('ftp.test-login');
+Route::get('/ftp/{account}/filezilla', [FtpAccountController::class, 'filezilla'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('ftp.filezilla');
+Route::get('/ftp/{account}/vscode', [FtpAccountController::class, 'vscode'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('ftp.vscode');
+Route::post('/ftp', [FtpAccountController::class, 'store'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('ftp.store');
+Route::patch('/ftp/{account}/password', [FtpAccountController::class, 'updatePassword'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('ftp.password');
+Route::delete('/ftp/{account}', [FtpAccountController::class, 'destroy'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('ftp.destroy');
+// Old per-website page; FTP now lives in its own module, filtered to that site.
+Route::get('/websites/{id}/ftp-accounts', fn (string $token, string $id) => redirect()->route('ftp.index', ['website' => $id]))
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.ftp.index');
-Route::post('/websites/{id}/ftp-accounts', [WebsiteFtpAccountController::class, 'store'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.ftp.store');
-Route::patch('/websites/{id}/ftp-accounts/{account}/password', [WebsiteFtpAccountController::class, 'updatePassword'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.ftp.password');
-Route::delete('/websites/{id}/ftp-accounts/{account}', [WebsiteFtpAccountController::class, 'destroy'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.ftp.destroy');
 Route::get('/websites/{id}/quick-export', [WebsiteOperationsController::class, 'quickExportPage'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.quick-export.page');
