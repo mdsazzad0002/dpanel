@@ -157,6 +157,21 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
     // to traverse into it. Re-assert that after the recursive chmod above.
     run_status("chmod", &["711", path.as_ref()])?;
 
+    // The recursive chmod above keeps an existing execute bit, so a Passport
+    // key uploaded as 755 ends up 750, and league/oauth2-server rejects any
+    // key mode outside 400/440/600/640/660. PHP-FPM runs as the site user,
+    // so owner-only access is enough.
+    run_status(
+        "find",
+        &[
+            path.as_ref(),
+            "-type", "f",
+            "-path", "*/storage/*",
+            "(", "-name", "oauth-private.key", "-o", "-name", "oauth-public.key", ")",
+            "-exec", "chmod", "0600", "{}", "+",
+        ],
+    )?;
+
     // Maildirs belong to the site user alone, as mailbox-storage creates them.
     // Dovecot copies a Maildir's group onto every new file and runs as the
     // site user, who is not in www-data, so the recursive chown above made
