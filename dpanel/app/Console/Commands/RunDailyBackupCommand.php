@@ -292,6 +292,7 @@ class RunDailyBackupCommand extends Command
         if (File::isDirectory($storageAppPath)) {
             $this->addDirectoryToZip($zip, $storageAppPath, 'storage/app', [
                 DIRECTORY_SEPARATOR.'backups'.DIRECTORY_SEPARATOR,
+                DIRECTORY_SEPARATOR.'website-trash'.DIRECTORY_SEPARATOR,
             ]);
         }
 

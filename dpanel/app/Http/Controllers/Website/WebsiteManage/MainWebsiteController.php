@@ -758,7 +758,8 @@ class MainWebsiteController extends Controller
 
         $message = 'Domain removed without deleting shared files or system user.';
         if ($request->header('X-Inertia')) {
-            return back()->with('success', $message);
+            // The removed alias's own pages are gone, so never go back to them.
+            return redirect()->route('websites.list')->with('success', $message);
         }
 
         return $request->expectsJson()

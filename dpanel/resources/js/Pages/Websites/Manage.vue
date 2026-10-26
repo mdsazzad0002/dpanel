@@ -13,6 +13,7 @@ import MetricsGrid from '@/Pages/Websites/components/MetricsGrid.vue';
 import ServicesGrid from '@/Pages/Websites/components/ServicesGrid.vue';
 import ActivityTimeline from '@/Pages/Websites/components/ActivityTimeline.vue';
 import RuntimeSettingsModal from '@/Pages/Websites/components/RuntimeSettingsModal.vue';
+import DeleteWebsitePanel from '@/Pages/Websites/components/DeleteWebsitePanel.vue';
 
 const props = defineProps({
     website: {
@@ -162,6 +163,9 @@ const showQueueWorkers = computed(() => props.queueWorkerCount > 0
 
                 <ActivityTimeline :activities="activities" />
             </section>
+
+            <!-- Site 1 is the panel itself, as on the websites list. -->
+            <DeleteWebsitePanel v-if="String(website.id) !== '1'" :website="website" />
         </div>
 
         <RuntimeSettingsModal v-model="editingRuntimeSettings" :website="website" :php-versions="phpVersions" :docker="docker" />

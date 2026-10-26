@@ -199,7 +199,7 @@ onBeforeUnmount(stopBatchPolling);
                                 {{ remoteUpload?.enabled ? 'Enabled' : 'Disabled' }}
                             </span>
                         </div>
-                        <p class="mt-1 text-sm capitalize text-slate-500">{{ storageDriver.replace('_', ' ') }} · Configure destination and sequential processing.</p>
+                        <p class="mt-1 text-sm capitalize text-slate-500">{{ storageDriver ? storageDriver.replace('_', ' ') : 'No destination' }} · Configure destination and sequential processing.</p>
                     </div>
                     <i class="itc bi bi-chevron-right shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-indigo-600"></i>
             </Link>

@@ -140,13 +140,17 @@ class BackupController extends Controller
         $configs[$driver] = collect($validated)->except(['activate', 'account_delay_seconds'])->all();
         $state['storage_configs'] = $configs;
         $state['account_delay_seconds'] = $validated['account_delay_seconds'];
+        $deactivated = false;
         if ($validated['activate']) {
             $state['storage_driver'] = $driver;
+        } elseif ($state['storage_driver'] === $driver) {
+            $state['storage_driver'] = '';
+            $deactivated = true;
         }
         $this->settings->write($state);
 
         return redirect()->route('backups.storage.configure', ['driver' => $driver])
-            ->with('success', 'Storage configuration saved'.($validated['activate'] ? ' and activated.' : '.'));
+            ->with('success', 'Storage configuration saved'.($validated['activate'] ? ' and activated.' : ($deactivated ? ' and deactivated.' : '.')));
     }
 
     public function updateScpSettings(Request $request): RedirectResponse

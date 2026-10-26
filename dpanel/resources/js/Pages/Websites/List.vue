@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { computed, reactive, ref, watch } from 'vue';
 import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
 
 const page = usePage();
@@ -9,12 +9,13 @@ const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
-const statusForm = useForm({ status: '' });
 const search = ref('');
 const statusFilter = ref('all');
 const currentPage = ref(1);
-const sslLoadingId = ref('');
-const deleteLoadingId = ref('');
+// Per-site busy sets, so a slow action on one site never locks the others.
+const sslLoadingIds = reactive(new Set());
+const deleteLoadingIds = reactive(new Set());
+const statusLoadingIds = reactive(new Set());
 const cacheReloading = ref(false);
 const ownershipItem = ref(null);
 const ownershipMode = ref('owner');
@@ -158,8 +159,8 @@ const formatDate = (value) => {
 const deleteRequest = async (id) => {
     if (!confirm('Delete this website?')) return;
     const deletingId = String(id);
-    if (!deletingId || deleteLoadingId.value) return;
-    deleteLoadingId.value = deletingId;
+    if (!deletingId || deleteLoadingIds.has(deletingId)) return;
+    deleteLoadingIds.add(deletingId);
 
     try {
         const response = await fetch(panelRoute('websites.destroy', { id }), {
@@ -182,15 +183,21 @@ const deleteRequest = async (id) => {
     } catch (error) {
         pushToast(error?.message || 'Website delete failed.', 'error');
     } finally {
-        deleteLoadingId.value = '';
+        deleteLoadingIds.delete(deletingId);
     }
 };
 
 const toggleStatus = (item) => {
     const current = String(item.status || '').toLowerCase();
     const next = current === 'disabled' ? 'enabled' : 'disabled';
-    statusForm.status = next;
-    statusForm.patch(panelRoute('websites.status.update', { id: item.id }), { preserveScroll: true });
+    const id = String(item.id);
+    if (statusLoadingIds.has(id)) return;
+    statusLoadingIds.add(id);
+    router.patch(panelRoute('websites.status.update', { id: item.id }), { status: next }, {
+        preserveScroll: true,
+        async: true,
+        onFinish: () => statusLoadingIds.delete(id),
+    });
 };
 
 const pushToast = (message, type = 'success') => {
@@ -218,8 +225,8 @@ const reloadGatewayCache = async () => {
 
 const issueAliasSsl = async (alias) => {
     const id = String(alias?.id || '');
-    if (!id || sslLoadingId.value) return;
-    sslLoadingId.value = id;
+    if (!id || sslLoadingIds.has(id)) return;
+    sslLoadingIds.add(id);
 
     try {
         const response = await fetch(panelRoute('websites.ssl.issue', { id }), {
@@ -241,7 +248,7 @@ const issueAliasSsl = async (alias) => {
     } catch (error) {
         pushToast(error?.message || 'SSL issue failed.', 'error');
     } finally {
-        sslLoadingId.value = '';
+        sslLoadingIds.delete(id);
     }
 };
 
@@ -265,8 +272,8 @@ const onSslUninstalled = (item, data) => {
 
 const toggleAliasSsl = async (alias) => {
     const id = String(alias?.id || '');
-    if (!id || sslLoadingId.value) return;
-    sslLoadingId.value = id;
+    if (!id || sslLoadingIds.has(id)) return;
+    sslLoadingIds.add(id);
     const enabled = !Boolean(alias.enable_ssl);
 
     try {
@@ -289,7 +296,7 @@ const toggleAliasSsl = async (alias) => {
     } catch (error) {
         pushToast(error?.message || 'SSL status update failed.', 'error');
     } finally {
-        sslLoadingId.value = '';
+        sslLoadingIds.delete(id);
     }
 };
 
@@ -649,7 +656,7 @@ const saveOwnership = async () => {
                             </Link>
                             <button
                                 type="button"
-                                :disabled="Boolean(sslLoadingId)"
+                                :disabled="sslLoadingIds.has(String(item.id))"
                                 class="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition disabled:opacity-50"
                                 :class="item.enable_ssl
                                     ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'
@@ -657,12 +664,12 @@ const saveOwnership = async () => {
                                 :title="item.aliases?.length ? 'Also applies to alias child domains' : ''"
                                 @click="toggleAliasSsl(item)"
                             >
-                                {{ sslLoadingId === String(item.id) ? 'Updating...' : (item.enable_ssl ? 'Disable SSL' : 'Enable SSL') }}
+                                {{ sslLoadingIds.has(String(item.id)) ? 'Updating...' : (item.enable_ssl ? 'Disable SSL' : 'Enable SSL') }}
                             </button>
                             <button
                                 v-if="String(item.id) !== '1'"
                                 type="button"
-                                :disabled="statusForm.processing"
+                                :disabled="statusLoadingIds.has(String(item.id))"
                                 class="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition disabled:opacity-50"
                                 :class="String(item.status || '').toLowerCase() === 'disabled'
                                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400'
@@ -673,12 +680,12 @@ const saveOwnership = async () => {
                             </button>
                             <button
                                 v-if="String(item.id) !== '1'"
-                                :disabled="Boolean(deleteLoadingId)"
+                                :disabled="deleteLoadingIds.has(String(item.id))"
                                 class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
                                 @click="deleteRequest(item.id)"
                             >
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg>
-                                {{ deleteLoadingId === String(item.id) ? 'Deleting...' : 'Delete' }}
+                                {{ deleteLoadingIds.has(String(item.id)) ? 'Deleting...' : 'Delete' }}
                             </button>
                             </div>
                         </div>
@@ -729,29 +736,29 @@ const saveOwnership = async () => {
                             <div class="flex items-center gap-1">
                                 <button
                                     type="button"
-                                    :disabled="Boolean(sslLoadingId)"
+                                    :disabled="sslLoadingIds.has(String(alias.id))"
                                     class="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition disabled:opacity-50"
                                     :class="alias.enable_ssl
                                         ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'
                                         : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400'"
                                     @click="toggleAliasSsl(alias)"
                                 >
-                                    {{ sslLoadingId === String(alias.id) ? 'Updating...' : (alias.enable_ssl ? 'Disable SSL' : 'Enable SSL') }}
+                                    {{ sslLoadingIds.has(String(alias.id)) ? 'Updating...' : (alias.enable_ssl ? 'Disable SSL' : 'Enable SSL') }}
                                 </button>
                                 <button
                                     type="button"
-                                    :disabled="Boolean(sslLoadingId)"
+                                    :disabled="sslLoadingIds.has(String(alias.id))"
                                     class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
                                     @click="issueAliasSsl(alias)"
                                 >
-                                    {{ sslLoadingId === String(alias.id) ? 'Issuing...' : 'Issue SSL' }}
+                                    {{ sslLoadingIds.has(String(alias.id)) ? 'Issuing...' : 'Issue SSL' }}
                                 </button>
                                 <button
-                                    :disabled="Boolean(deleteLoadingId)"
+                                    :disabled="deleteLoadingIds.has(String(alias.id))"
                                     class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
                                     @click="deleteRequest(alias.id)"
                                 >
-                                    {{ deleteLoadingId === String(alias.id) ? 'Deleting...' : 'Delete' }}
+                                    {{ deleteLoadingIds.has(String(alias.id)) ? 'Deleting...' : 'Delete' }}
                                 </button>
                             </div>
                         </div>
