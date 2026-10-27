@@ -5,6 +5,7 @@
 | I want to… | Read |
 | --- | --- |
 | Install dPanel on a new server | [Installation](installation.md#install-dpanel) |
+| Check whether my Linux distribution is supported | [Supported distributions](supported-distributions.md) |
 | Update a server, or get a fix from `main` | [Versions and updates](installation.md#versions-and-updates) |
 | Find a command quickly | [Quick Reference](quick-reference.md) |
 | Fix an error message | [Troubleshooting](troubleshooting.md) |
@@ -17,6 +18,7 @@
 | Guide | Description |
 | --- | --- |
 | [Installation](installation.md) | First install, configuration files, and website permissions |
+| [Supported distributions](supported-distributions.md) | Native OS support, package stacks, and support boundaries |
 | [Architecture](architecture.md) | Components, request flow, PHP execution, and the edge gateway |
 | [Quick Reference](quick-reference.md) | The most-used commands, by task |
 | [Troubleshooting](troubleshooting.md) | Error messages and how to fix them |

@@ -112,8 +112,8 @@ preflight() {
 
   os="$(distro)"
   case "${os%% *}" in
-    ubuntu|debian|rocky|almalinux) ok "Operating system: ${os}" ;;
-    *) fail "Operating system ${os} is not supported (Ubuntu, Debian, Rocky, AlmaLinux)"; failures=$((failures + 1)) ;;
+    ubuntu|debian|rhel|centos|rocky|almalinux|fedora) ok "Operating system: ${os}" ;;
+    *) fail "Operating system ${os} is not supported (Ubuntu, Debian, RHEL, Rocky, AlmaLinux, CentOS Stream, Fedora)"; failures=$((failures + 1)) ;;
   esac
 
   total="$(meminfo_mb MemTotal)"

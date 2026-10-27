@@ -61,22 +61,68 @@ apt_get() {
   DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 "$@"
 }
 
+distro_family() {
+  local distro=""
+  [[ -r /etc/os-release ]] && distro="$(. /etc/os-release; printf '%s' "${ID:-}")"
+  case "$distro" in
+    ubuntu|debian) printf 'debian' ;;
+    rhel|centos|rocky|almalinux|fedora) printf 'rpm' ;;
+    *) echo "Unsupported distribution: ${distro:-unknown}" >&2; return 1 ;;
+  esac
+}
+
+package_installed() {
+  case "$(distro_family)" in
+    debian) dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^ii' ;;
+    rpm) rpm -q "$1" >/dev/null 2>&1 ;;
+  esac
+}
+
+package_update() {
+  case "$(distro_family)" in
+    debian) apt_get update ;;
+    rpm) dnf makecache -y ;;
+  esac
+}
+
+package_install() {
+  case "$(distro_family)" in
+    debian) apt_get install -y "$@" ;;
+    rpm) dnf install -y "$@" ;;
+  esac
+}
+
+prepare_distribution_repositories() {
+  [[ "$(distro_family)" == rpm ]] || return 0
+  # PowerDNS, ClamAV, Rspamd, fail2ban and Supervisor are supplied by EPEL on
+  # Enterprise Linux. Fedora already carries them, so this is harmless there.
+  dnf install -y epel-release >/dev/null 2>&1 || true
+  if command -v crb >/dev/null 2>&1; then
+    crb enable >/dev/null 2>&1 || true
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf config-manager --set-enabled crb >/dev/null 2>&1 || \
+      dnf config-manager --set-enabled powertools >/dev/null 2>&1 || true
+  fi
+}
+
 # whisper-rs builds whisper.cpp (cmake, clang) and the tesseract bindings
 # need libtesseract/leptonica headers and libclang for bindgen.
 DRUST_CARGO_FEATURE_ARGS=()
 ensure_native_build_deps() {
-  local packages=(cmake clang libclang-dev libtesseract-dev libleptonica-dev
-    tesseract-ocr tesseract-ocr-eng tesseract-ocr-ben)
+  local packages=()
+  case "$(distro_family)" in
+    debian) packages=(cmake clang libclang-dev libtesseract-dev libleptonica-dev tesseract-ocr tesseract-ocr-eng tesseract-ocr-ben) ;;
+    rpm) packages=(cmake clang clang-devel tesseract-devel leptonica-devel tesseract tesseract-langpack-eng) ;;
+  esac
   local missing=() package
   ensure_tesseract5_repo
   for package in "${packages[@]}"; do
-    dpkg-query -W -f='${db:Status-Abbrev}' "$package" 2>/dev/null | grep -q '^ii' \
-      || missing+=("$package")
+    package_installed "$package" || missing+=("$package")
   done
   if (( ${#missing[@]} )); then
     echo "[drust] Installing build dependencies: ${missing[*]}"
-    apt_get update
-    apt_get install -y "${missing[@]}"
+    package_update
+    package_install "${missing[@]}"
   fi
 
   # The tesseract crate uses the Tesseract 5 C API. Older system versions
@@ -145,8 +191,8 @@ ensure_dpanel_dependencies() {
 
   if ! command -v composer >/dev/null 2>&1; then
     echo "[drust] composer is missing; installing it."
-    apt_get update
-    apt_get install -y composer
+    package_update
+    package_install composer
   fi
 
   echo "[drust] Installing dPanel PHP dependencies with composer."
@@ -161,8 +207,12 @@ ensure_rust_toolchain() {
     return 0
   fi
 
-  apt_get update
-  apt_get install -y build-essential pkg-config openssl ca-certificates curl
+  package_update
+  if [[ "$(distro_family)" == debian ]]; then
+    package_install build-essential pkg-config openssl ca-certificates curl
+  else
+    package_install gcc gcc-c++ make pkgconf-pkg-config openssl-devel ca-certificates curl
+  fi
   if [[ ! -x "${CARGO_HOME}/bin/rustup" ]]; then
     # The official installer, on every distro. The path check would stop it
     # when a distro rustc or rustup is already on PATH.
@@ -187,18 +237,22 @@ ensure_rust_toolchain() {
 # generates its bindings with bindgen, which needs libclang. whisper-rs
 # compiles its bundled whisper.cpp with cmake.
 ensure_build_dependencies() {
-  local packages=(build-essential pkg-config cmake libleptonica-dev libtesseract-dev libclang-dev clang)
+  local packages=()
+  case "$(distro_family)" in
+    debian) packages=(build-essential pkg-config cmake libleptonica-dev libtesseract-dev libclang-dev clang) ;;
+    rpm) packages=(gcc gcc-c++ make pkgconf-pkg-config cmake leptonica-devel tesseract-devel clang-devel clang) ;;
+  esac
   local missing=()
   local package
 
   for package in "${packages[@]}"; do
-    dpkg-query -W -f='${db:Status-Abbrev}' "${package}" 2>/dev/null | grep -q '^ii' || missing+=("${package}")
+    package_installed "${package}" || missing+=("${package}")
   done
   (( ${#missing[@]} == 0 )) && return 0
 
   echo "[drust] Installing build dependencies: ${missing[*]}"
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
+  package_update
+  package_install "${missing[@]}"
 }
 
 read_env_value() {
@@ -273,10 +327,11 @@ install_powerdns() {
   systemctl disable --now named.service bind9.service >/dev/null 2>&1 || true
   systemctl mask named.service >/dev/null 2>&1 || true
 
-  if ! dpkg-query -W -f='${db:Status-Abbrev}\n' pdns-server pdns-backend-mysql 2>/dev/null \
-    | awk 'BEGIN { ok = 1; count = 0 } { count++; if ($0 !~ /^ii /) ok = 0 } END { exit !(ok && count == 2) }'; then
-    apt_get update
-    apt_get install -y pdns-server pdns-backend-mysql
+  if [[ "$(distro_family)" == debian ]]; then
+    package_installed pdns-server && package_installed pdns-backend-mysql || package_install pdns-server pdns-backend-mysql
+  else
+    package_install epel-release || true
+    package_installed pdns && package_installed pdns-backend-mysql || package_install pdns pdns-backend-mysql
   fi
   systemctl stop pdns.service >/dev/null 2>&1 || true
 
@@ -350,11 +405,12 @@ install_powerdns() {
   echo "[drust] PowerDNS is serving ${listen_address}:53 over UDP and TCP."
 }
 
+prepare_distribution_repositories
 ensure_rust_toolchain
 ensure_build_dependencies
 if ! command -v certbot >/dev/null 2>&1; then
-  apt_get update
-  apt_get install -y certbot
+  package_update
+  package_install certbot
 fi
 install -d -m 0750 /etc/drust
 # Drust executes only scripts from its isolated runtime directory. Keep that

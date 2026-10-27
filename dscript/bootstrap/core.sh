@@ -132,10 +132,10 @@ panel_detect_os() {
   VERSION="${VERSION_ID:-unknown}"
 
   case "$DISTRO" in
-    ubuntu|debian|rocky|almalinux)
+    ubuntu|debian|rhel|centos|rocky|almalinux|fedora)
       ;;
     *)
-      panel_warn_log "Unsupported distro '$DISTRO'; continuing with best effort."
+      panel_die "Unsupported distro '$DISTRO'. See docs/supported-distributions.md."
       ;;
   esac
 }

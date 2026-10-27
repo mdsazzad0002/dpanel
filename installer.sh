@@ -12,6 +12,22 @@ die() {
   exit 1
 }
 
+require_supported_os() {
+  [[ -r /etc/os-release ]] || die "/etc/os-release is required."
+  local distro
+  distro="$(. /etc/os-release; printf '%s' "${ID:-unknown}")"
+  case "$distro" in
+    ubuntu|debian)
+      command -v apt-get >/dev/null 2>&1 || die "apt-get is required on ${distro}."
+      ;;
+    rhel|centos|rocky|almalinux|fedora)
+      command -v dnf >/dev/null 2>&1 || die "dnf is required on ${distro}."
+      ;;
+    *) die "Unsupported distribution '${distro}'. See docs/supported-distributions.md." ;;
+  esac
+  command -v systemctl >/dev/null 2>&1 || die "systemd is required."
+}
+
 cleanup() { rm -rf "$TMP_DIR"; }
 
 download() {
@@ -262,6 +278,7 @@ done
 set -- "${handover_args[@]}"
 
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Run this installer as root."
+require_supported_os
 
 DPANEL_RELEASE_REF=""
 DPANEL_RELEASE_COMMIT=""

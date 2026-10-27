@@ -11,6 +11,7 @@
 [![License](https://img.shields.io/badge/license-Free%20Use-blue)](LICENSE)
 
 [Installation](docs/installation.md) ·
+[Supported distributions](docs/supported-distributions.md) ·
 [Documentation](docs/README.md) ·
 [Screenshots](docs/screenshots.md) ·
 [Contributing](CONTRIBUTING.md) ·
@@ -85,6 +86,10 @@ See [Architecture](docs/architecture.md) for the full request flow.
 ## Quick Start
 
 Run on a fresh server as a user with `sudo` access:
+
+Supported hosts are Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, CentOS
+Stream, and Fedora. See the [support matrix](docs/supported-distributions.md)
+before installing.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh -o installer.sh

@@ -28,7 +28,7 @@ pkg_distro_family() {
     ubuntu|debian)
       printf 'debian'
       ;;
-    rocky|almalinux)
+    rhel|centos|rocky|almalinux|fedora)
       printf 'rpm'
       ;;
     *)
