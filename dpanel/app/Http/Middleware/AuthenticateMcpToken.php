@@ -49,6 +49,12 @@ class AuthenticateMcpToken
             'jsonrpc' => '2.0',
             'id' => null,
             'error' => ['code' => -32001, 'message' => $message],
-        ], 401, ['WWW-Authenticate' => 'Bearer realm="dpanel-mcp"']);
+        ], 401, [
+            // Points OAuth-capable clients at the sign-in metadata (RFC 9728).
+            'WWW-Authenticate' => sprintf(
+                'Bearer realm="dpanel-mcp", resource_metadata="%s/.well-known/oauth-protected-resource/api/mcp"',
+                rtrim(request()->getSchemeAndHttpHost(), '/'),
+            ),
+        ]);
     }
 }

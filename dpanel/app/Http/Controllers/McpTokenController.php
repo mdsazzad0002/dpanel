@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\McpAccessToken;
 use App\Services\ActivityLogService;
+use App\Services\Mcp\LocalHostAccess;
 use App\Services\Mcp\McpServer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -20,16 +21,18 @@ class McpTokenController extends Controller
 {
     public function __construct(private readonly ActivityLogService $activityLog) {}
 
-    public function index(Request $request): Response
+    public function index(Request $request, LocalHostAccess $localAccess): Response
     {
         return Inertia::render('Settings/McpAccess', [
             'tokens' => McpAccessToken::query()
-                ->with('user:id,name,email')
+                ->with(['user:id,name,email', 'oauthClient:id,client_name'])
                 ->orderByDesc('created_at')
                 ->get()
                 ->map(fn (McpAccessToken $t) => $this->serialise($t)),
             'endpointUrl' => rtrim($request->getSchemeAndHttpHost(), '/').'/api/mcp',
             'enabled' => (bool) config('mcp.enabled', true),
+            'oauthEnabled' => (bool) config('mcp.oauth.enabled', true),
+            'localAccess' => $localAccess->level(),
             'tools' => array_map(function (string $class) {
                 $tool = app($class);
 
@@ -93,8 +96,11 @@ class McpTokenController extends Controller
             'owner' => $t->user?->email,
             'last_used_at' => $t->last_used_at?->toIso8601String(),
             'last_used_ip' => $t->last_used_ip,
-            'expires_at' => $t->expires_at?->toIso8601String(),
-            'expired' => $t->expires_at !== null && $t->expires_at->isPast(),
+            'via_oauth' => $t->isOAuth(),
+            'oauth_client' => $t->oauthClient?->client_name,
+            // An OAuth grant lasts as long as its refresh token, not its hourly access token.
+            'expires_at' => ($t->isOAuth() ? $t->refresh_expires_at : $t->expires_at)?->toIso8601String(),
+            'expired' => $t->isExpired(),
             'created_at' => $t->created_at?->toIso8601String(),
         ];
     }

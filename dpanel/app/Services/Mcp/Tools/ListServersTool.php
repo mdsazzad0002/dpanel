@@ -5,9 +5,13 @@ namespace App\Services\Mcp\Tools;
 use App\Models\McpAccessToken;
 use App\Models\Server;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Services\Mcp\LocalHostAccess;
+use App\Services\Mcp\McpCommandExecutor;
 
 class ListServersTool implements McpTool
 {
+    public function __construct(private readonly LocalHostAccess $localAccess) {}
+
     public function name(): string
     {
         return 'list_servers';
@@ -20,7 +24,7 @@ class ListServersTool implements McpTool
 
     public function description(): string
     {
-        return 'Servers managed by dPanel over SSH, with their id, host, OS and last known status. Pass the id as server_id to the command and log tools.';
+        return 'Where commands can run: the panel host itself (id "local", when enabled) and the servers dPanel manages over SSH, with their host, OS and last known status. Pass the id as server_id to the command and log tools.';
     }
 
     public function inputSchema(): array
@@ -52,6 +56,22 @@ class ListServersTool implements McpTool
             'error_message' => $server->error_message,
         ])->values()->all();
 
-        return ['servers' => $servers];
+        $level = $this->localAccess->level();
+
+        return [
+            'panel_host' => [
+                'id' => McpCommandExecutor::LOCAL,
+                'name' => 'This panel host',
+                'hostname' => gethostname() ?: null,
+                'mcp_commands' => $level,
+                'note' => match ($level) {
+                    LocalHostAccess::OFF => 'Off. An admin can enable it with: sudo dpanel mcp local on [read|full]',
+                    LocalHostAccess::READ => 'Diagnostic commands only, run as an unprivileged user.',
+                    LocalHostAccess::FULL => 'Full-access tokens run commands as root; read-only tokens run unprivileged.',
+                    default => 'Enabled, but the panel cannot read the setting.',
+                },
+            ],
+            'servers' => $servers,
+        ];
     }
 }

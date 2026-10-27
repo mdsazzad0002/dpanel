@@ -35,7 +35,7 @@ class ReadServiceLogsTool implements McpTool
                 'lines' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 1000, 'default' => 200],
                 'since' => ['type' => 'string', 'description' => 'journalctl --since value.'],
                 'grep' => ['type' => 'string', 'description' => 'Only lines matching this pattern.'],
-                'server_id' => ['type' => 'integer'],
+                'server_id' => ServerTarget::SCHEMA,
             ],
             'required' => ['service'],
         ];

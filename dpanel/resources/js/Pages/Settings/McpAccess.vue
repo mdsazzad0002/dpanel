@@ -14,6 +14,8 @@ const props = defineProps({
     tokens: { type: Array, default: () => [] },
     endpointUrl: { type: String, default: '' },
     enabled: { type: Boolean, default: true },
+    oauthEnabled: { type: Boolean, default: true },
+    localAccess: { type: String, default: 'off' },
     tools: { type: Array, default: () => [] },
 });
 
@@ -26,11 +28,12 @@ const creating = ref(false);
 const createError = ref('');
 const newToken = ref(null);
 const copiedKey = ref(null);
-const client = ref('claude-code');
+const client = ref(props.oauthEnabled ? 'claude-ai' : 'claude-code');
 
 const shownToken = computed(() => newToken.value || 'dp-mcp-YOUR_TOKEN');
 
 const snippets = computed(() => ({
+    'claude-ai': `Name: dPanel\nRemote MCP server URL: ${props.endpointUrl}`,
     'claude-code': `claude mcp add --transport http dpanel ${props.endpointUrl} \\\n  --header "Authorization: Bearer ${shownToken.value}"`,
     'claude-desktop': JSON.stringify({
         mcpServers: {
@@ -61,7 +64,8 @@ const snippets = computed(() => ({
 }));
 
 const clients = [
-    { id: 'claude-code', label: 'Claude Code', hint: 'Run in your terminal.' },
+    ...(props.oauthEnabled ? [{ id: 'claude-ai', label: 'claude.ai / Claude apps', hint: 'Settings → Connectors → Add custom connector. No token needed: you sign in to this panel and approve it.' }] : []),
+    { id: 'claude-code', label: 'Claude Code', hint: props.oauthEnabled ? 'Run in your terminal. Or drop the --header and sign in with /mcp instead.' : 'Run in your terminal.' },
     { id: 'claude-desktop', label: 'Claude Desktop', hint: 'Add to claude_desktop_config.json (needs Node.js for mcp-remote).' },
     { id: 'cursor', label: 'Cursor', hint: 'Add to ~/.cursor/mcp.json.' },
     { id: 'vscode', label: 'VS Code', hint: 'Add to .vscode/mcp.json.' },
@@ -136,6 +140,20 @@ const fmtDate = (iso) => {
                 The MCP endpoint is turned off (<code>DPANEL_MCP_ENABLED=false</code>). Tokens can be issued, but clients can't connect until it's enabled.
             </div>
 
+            <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-800">
+                <div>
+                    <span class="font-medium">Commands on this panel host:</span>
+                    <span class="ml-1 rounded px-2 py-0.5 text-xs" :class="{
+                        'bg-slate-100 text-slate-500': localAccess === 'off',
+                        'bg-sky-100 text-sky-700': localAccess === 'read',
+                        'bg-amber-100 text-amber-700': localAccess === 'full',
+                        'bg-slate-100 text-slate-600': localAccess === 'unknown',
+                    }">{{ { off: 'Off', read: 'Read-only', full: 'Full', unknown: 'Enabled' }[localAccess] || localAccess }}</span>
+                    <p class="mt-1 text-xs text-slate-500">Lets MCP clients run commands here without adding this machine as an SSH server. Only root on the host can change it.</p>
+                </div>
+                <code class="rounded bg-slate-100 px-2 py-1 text-xs dark:bg-slate-900">sudo dpanel mcp local {{ localAccess === 'off' ? 'on read' : 'off' }}</code>
+            </div>
+
             <div v-if="newToken" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm dark:border-emerald-800 dark:bg-emerald-950">
                 <p class="font-medium text-emerald-800 dark:text-emerald-300">Copy this token now — it won't be shown again. The setup snippets below already include it.</p>
                 <div class="mt-2 flex items-center gap-2">
@@ -189,7 +207,10 @@ const fmtDate = (iso) => {
                             <td colspan="8" class="px-4 py-6 text-center text-sm text-slate-400">No MCP tokens yet.</td>
                         </tr>
                         <tr v-for="t in tokenList" :key="t.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/40">
-                            <td class="px-4 py-3 font-medium">{{ t.name }}</td>
+                            <td class="px-4 py-3 font-medium">
+                                {{ t.name }}
+                                <span v-if="t.via_oauth" class="ml-1 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-normal text-violet-700" title="Connected by signing in with OAuth">OAuth</span>
+                            </td>
                             <td class="px-4 py-3"><code class="text-xs text-slate-400">{{ t.token_prefix }}</code></td>
                             <td class="px-4 py-3">
                                 <span class="rounded px-2 py-0.5 text-xs" :class="t.scope === 'full' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ t.scope === 'full' ? 'Full' : 'Read-only' }}</span>

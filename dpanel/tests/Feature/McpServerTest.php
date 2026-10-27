@@ -8,6 +8,7 @@ use App\Models\McpAccessToken;
 use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\ScriptExecutionGateway;
 use App\Services\ServerPanel\SshClientService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -19,21 +20,106 @@ class McpServerTest extends TestCase
 {
     use RefreshDatabase;
 
+    private string $localConfig;
+
     protected function setUp(): void
     {
         parent::setUp();
 
         Storage::fake('local');
         Queue::fake();
+
+        $this->localConfig = sys_get_temp_dir().'/mcp-local-'.uniqid().'.conf';
+        config(['mcp.local_config_path' => $this->localConfig]);
+    }
+
+    protected function tearDown(): void
+    {
+        @unlink($this->localConfig);
+
+        parent::tearDown();
+    }
+
+    public function test_local_host_is_used_when_enabled_and_runs_unprivileged_for_read_tokens(): void
+    {
+        [$plain] = $this->issueToken('read');
+        file_put_contents($this->localConfig, "MCP_LOCAL_EXEC=full\n");
+
+        $this->gateway(315)
+            ->shouldReceive('execute')
+            ->once()
+            ->with('mcp-exec.sh', ['read', '300', 'df -h'])
+            ->andReturn(['success' => true, 'ran' => true, 'exit_code' => 0, 'output' => "Filesystem Size\n__DPANEL_MCP_EXIT__=0", 'api_url' => '', 'script_path' => '']);
+
+        $this->callTool($plain, 'run_command', ['command' => 'df -h'])
+            ->assertJsonPath('result.isError', false)
+            ->assertJsonPath('result.structuredContent.output', 'Filesystem Size')
+            ->assertJsonPath('result.structuredContent.exit_code', 0);
+
+        $this->assertDatabaseHas('activity_logs', ['action' => 'mcp.local_command']);
+        $this->assertSame(0, CommandJob::query()->count());
+    }
+
+    public function test_full_token_runs_as_root_on_a_full_access_host(): void
+    {
+        [$plain] = $this->issueToken('full');
+        file_put_contents($this->localConfig, "MCP_LOCAL_EXEC=full\n");
+
+        $this->gateway(315)
+            ->shouldReceive('execute')
+            ->once()
+            ->with('mcp-exec.sh', ['full', '300', 'systemctl restart nginx'])
+            ->andReturn(['success' => true, 'ran' => true, 'exit_code' => 0, 'output' => "boom\n__DPANEL_MCP_EXIT__=1", 'api_url' => '', 'script_path' => '']);
+
+        $this->callTool($plain, 'run_command', ['command' => 'systemctl restart nginx', 'server_id' => 'local'])
+            ->assertJsonPath('result.structuredContent.status', 'failed')
+            ->assertJsonPath('result.structuredContent.exit_code', 1);
+    }
+
+    public function test_restart_is_refused_on_a_read_only_host(): void
+    {
+        [$plain] = $this->issueToken('full');
+        file_put_contents($this->localConfig, "MCP_LOCAL_EXEC=read\n");
+        $this->mock(ScriptExecutionGateway::class)->shouldNotReceive('execute');
+
+        $this->callTool($plain, 'restart_service', ['service' => 'nginx'])
+            ->assertJsonPath('result.isError', true);
+    }
+
+    public function test_local_target_explains_how_to_enable_it(): void
+    {
+        [$plain] = $this->issueToken();
+
+        $response = $this->callTool($plain, 'run_command', ['command' => 'df -h', 'server_id' => 'local'])
+            ->assertJsonPath('result.isError', true);
+
+        $this->assertStringContainsString('sudo dpanel mcp local on', $response->json('result.structuredContent.error'));
+    }
+
+    public function test_script_refusal_is_reported_to_the_model(): void
+    {
+        [$plain] = $this->issueToken('read');
+        file_put_contents($this->localConfig, "MCP_LOCAL_EXEC=read\n");
+
+        $this->gateway()
+            ->shouldReceive('execute')
+            ->andReturn(['success' => false, 'ran' => true, 'exit_code' => 500, 'output' => json_encode(['success' => false, 'message' => 'Failed: /x/mcp-exec.sh failed with status exit status: 1: [mcp-exec] Local MCP commands are off on this host.']), 'api_url' => '', 'script_path' => '']);
+
+        $response = $this->callTool($plain, 'run_command', ['command' => 'uptime']);
+
+        $response->assertJsonPath('result.isError', true);
+        $this->assertStringContainsString('Local MCP commands are off on this host.', $response->json('result.structuredContent.error'));
     }
 
     public function test_requests_without_a_valid_token_are_rejected(): void
     {
         $this->postJson('/api/mcp', $this->rpc('ping'))->assertStatus(401);
 
-        $this->postJson('/api/mcp', $this->rpc('ping'), ['Authorization' => 'Bearer dp-mcp-wrong'])
+        $response = $this->postJson('/api/mcp', $this->rpc('ping'), ['Authorization' => 'Bearer dp-mcp-wrong'])
             ->assertStatus(401)
             ->assertJsonPath('error.code', -32001);
+
+        $this->assertStringContainsString('/.well-known/oauth-protected-resource/api/mcp"', (string) $response->headers->get('WWW-Authenticate'));
     }
 
     public function test_token_stops_working_when_owner_is_no_longer_admin(): void
@@ -256,6 +342,14 @@ class McpServerTest extends TestCase
         ]);
 
         return [$generated['plain'], $token->fresh('user')];
+    }
+
+    private function gateway(?int $timeout = null): Mockery\MockInterface
+    {
+        $gateway = $this->mock(ScriptExecutionGateway::class);
+        $gateway->shouldReceive('withTimeout')->with($timeout ?? Mockery::any())->andReturnSelf();
+
+        return $gateway;
     }
 
     private function server(): Server

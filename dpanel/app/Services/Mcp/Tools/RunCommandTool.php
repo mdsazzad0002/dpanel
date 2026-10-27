@@ -32,7 +32,7 @@ class RunCommandTool implements McpTool
             'type' => 'object',
             'properties' => [
                 'command' => ['type' => 'string', 'description' => 'The shell command to run.'],
-                'server_id' => ['type' => 'integer', 'description' => 'Target server; optional when only one exists.'],
+                'server_id' => ServerTarget::SCHEMA,
             ],
             'required' => ['command'],
         ];

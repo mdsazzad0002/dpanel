@@ -60,6 +60,7 @@ Examples:
   sudo dpanel chain update
   sudo dpanel module php install 8.3
   sudo dpanel docker              # optional Docker add-on (off by default)
+  sudo dpanel mcp local on read   # let MCP clients diagnose this host
   sudo dpanel cargo clean         # free space used by Drust build artifacts
   dpanel script list
   sudo dpanel script run reset-web-stack --yes
@@ -229,6 +230,7 @@ php-detect-versions|Detect installed PHP versions|
 reset-web-stack|Back up and reset legacy web configuration|--yes
 reset-drust|Rebuild drust and/or rotate its synchronized API secret|<--binary|--secret|--all> --yes
 docker-installer|Optional Docker add-on: check, install, status or remove|[install|status|remove] [--yes] [--force] [--purge]
+mcp-local|Allow or stop MCP clients running commands on this host|status | on [read|full] | off
 sync-vhost|Create/update/remove a vhost through drust|<action> <domain> <root-path> [php-version] [options]
 EOF
 }
@@ -243,7 +245,7 @@ dscript_script_path() {
     script_root="${DPANEL_RUNTIME_DIR}/scripts"
   fi
   case "$name" in
-    configure-phpmyadmin-signon|reconcile-system-records|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|set-mail-server-ip|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-drust|reset-web-stack|sync-vhost|docker-installer)
+    configure-phpmyadmin-signon|reconcile-system-records|create-admin-user|create-demo-site|database-request|disable-root-login|set-system-user-password|set-panel-domain|set-mail-server-ip|fix-permissions|fix-dpanel-root|fix-panel-web-stack|fix-web-stack|install-roundcube-dovecot-mysql|issue-ssl|php-config-apply|php-detect-config|php-detect-extensions|php-detect-versions|reset-drust|reset-web-stack|sync-vhost|docker-installer|mcp-local)
       printf '%s/%s.sh' "$script_root" "$name"
       ;;
     *) printf '%s' '' ;;
@@ -664,6 +666,11 @@ dscript_cli() {
       ;;
     # Optional add-on; never part of the default install or chain.
     docker) dscript_run_script docker-installer "$@" ;;
+    mcp)
+      [[ "${1:-}" == local ]] || panel_die "Usage: dpanel mcp local status | on [read|full] | off"
+      shift
+      dscript_run_script mcp-local "$@"
+      ;;
     user:create) dscript_run_script create-admin-user "$@" ;;
     user:password) dscript_run_script set-system-user-password "$@" ;;
     panel:domain) dscript_run_script set-panel-domain "$@" ;;

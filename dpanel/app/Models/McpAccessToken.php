@@ -14,24 +14,30 @@ class McpAccessToken extends Model
 {
     public const PREFIX = 'dp-mcp-';
 
+    public const REFRESH_PREFIX = 'dp-mcpr-';
+
     public const SCOPE_READ = 'read';
 
     public const SCOPE_FULL = 'full';
 
     protected $fillable = [
         'user_id',
+        'oauth_client_id',
         'name',
         'token_prefix',
         'token_hash',
+        'refresh_token_hash',
         'scope',
         'is_active',
         'last_used_at',
         'last_used_ip',
         'expires_at',
+        'refresh_expires_at',
     ];
 
     protected $hidden = [
         'token_hash',
+        'refresh_token_hash',
     ];
 
     protected function casts(): array
@@ -40,12 +46,18 @@ class McpAccessToken extends Model
             'is_active' => 'boolean',
             'last_used_at' => 'datetime',
             'expires_at' => 'datetime',
+            'refresh_expires_at' => 'datetime',
         ];
     }
 
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function oauthClient(): BelongsTo
+    {
+        return $this->belongsTo(McpOAuthClient::class, 'oauth_client_id');
     }
 
     /**
@@ -62,6 +74,16 @@ class McpAccessToken extends Model
         ];
     }
 
+    /**
+     * @return array{plain: string, hash: string}
+     */
+    public static function generateRefresh(): array
+    {
+        $plain = self::REFRESH_PREFIX.Str::random(48);
+
+        return ['plain' => $plain, 'hash' => hash('sha256', $plain)];
+    }
+
     public static function findUsableByPlainToken(string $plain): ?self
     {
         return static::query()
@@ -70,6 +92,19 @@ class McpAccessToken extends Model
             ->where('is_active', true)
             ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))
             ->first();
+    }
+
+    public function isOAuth(): bool
+    {
+        return $this->oauth_client_id !== null;
+    }
+
+    /** Whether the token is over for good; an OAuth grant lasts as long as its refresh token. */
+    public function isExpired(): bool
+    {
+        $until = $this->isOAuth() ? $this->refresh_expires_at : $this->expires_at;
+
+        return $until !== null && $until->isPast();
     }
 
     public function allowsMutations(): bool

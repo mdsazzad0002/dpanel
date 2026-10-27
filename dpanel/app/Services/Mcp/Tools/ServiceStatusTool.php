@@ -31,7 +31,7 @@ class ServiceStatusTool implements McpTool
             'type' => 'object',
             'properties' => [
                 'service' => ['type' => 'string', 'description' => 'systemd unit name, e.g. mariadb or php8.3-fpm.'],
-                'server_id' => ['type' => 'integer', 'description' => 'Target server; optional when only one exists.'],
+                'server_id' => ServerTarget::SCHEMA,
             ],
             'required' => ['service'],
         ];

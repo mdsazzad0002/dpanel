@@ -34,7 +34,7 @@ class ReadLogFileTool implements McpTool
                 'path' => ['type' => 'string', 'description' => 'Absolute path under /var/log.'],
                 'lines' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 2000, 'default' => 200],
                 'grep' => ['type' => 'string', 'description' => 'Only lines matching this fixed string.'],
-                'server_id' => ['type' => 'integer'],
+                'server_id' => ServerTarget::SCHEMA,
             ],
             'required' => ['path'],
         ];

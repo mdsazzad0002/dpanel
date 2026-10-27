@@ -7,6 +7,7 @@ use App\Http\Controllers\AiGatewayModelController;
 use App\Http\Controllers\AiGatewayProviderController;
 use App\Http\Controllers\Api\AiGatewayApiController;
 use App\Http\Controllers\Api\McpController;
+use App\Http\Controllers\Api\McpOAuthController;
 use App\Http\Controllers\Api\WhmcsController;
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\BackupController;
@@ -60,6 +61,7 @@ use App\Http\Controllers\Docker\DockerStackController;
 use App\Http\Controllers\Docker\DockerSystemController;
 use App\Http\Controllers\Docker\DockerVolumeController;
 use App\Http\Controllers\MailHostnameController;
+use App\Http\Controllers\McpOAuthConsentController;
 use App\Http\Controllers\McpTokenController;
 use App\Http\Controllers\SelfConnectionController;
 use App\Http\Controllers\ServerController;
@@ -176,6 +178,21 @@ Route::middleware(['ai_gateway.key', 'throttle:60,1'])->group(function (): void 
 Route::match(['GET', 'POST', 'DELETE'], '/api/mcp', [McpController::class, 'handle'])
     ->middleware(['mcp.token', 'throttle:'.config('mcp.rate_limit', 120).',1'])
     ->name('api.mcp');
+
+// OAuth 2.1 sign-in for MCP clients that don't take a pasted token (e.g.
+// claude.ai connectors). The consent screen is inside the panel session below.
+Route::get('/.well-known/oauth-protected-resource/{path?}', [McpOAuthController::class, 'protectedResource'])
+    ->where('path', '.*')->name('mcp.oauth.protected-resource');
+Route::get('/.well-known/oauth-authorization-server/{path?}', [McpOAuthController::class, 'authorizationServer'])
+    ->where('path', '.*')->name('mcp.oauth.metadata');
+Route::post('/oauth/register', [McpOAuthController::class, 'register'])
+    ->middleware('throttle:10,1')->name('mcp.oauth.register');
+Route::get('/oauth/authorize', [McpOAuthController::class, 'authorizeRequest'])
+    ->middleware('throttle:30,1')->name('mcp.oauth.authorize');
+Route::post('/oauth/token', [McpOAuthController::class, 'token'])
+    ->middleware('throttle:60,1')->name('mcp.oauth.token');
+Route::post('/oauth/revoke', [McpOAuthController::class, 'revoke'])
+    ->middleware('throttle:30,1')->name('mcp.oauth.revoke');
 Route::get('/telegram/webhook-url', [TelegramWebhookController::class, 'url'])
     ->name('telegram.webhook-url');
 
@@ -1135,6 +1152,14 @@ Route::prefix('cpsess{token}')
             Route::delete('/settings/mcp/tokens/{mcpToken}', [McpTokenController::class, 'destroy'])
                 ->middleware('role:admin')
                 ->name('mcp.tokens.destroy');
+            Route::get('/settings/mcp/authorize/{requestId}', [McpOAuthConsentController::class, 'show'])
+                ->middleware('role:admin')
+                ->where('requestId', '[A-Za-z0-9]{40}')
+                ->name('mcp.oauth.consent');
+            Route::post('/settings/mcp/authorize/{requestId}', [McpOAuthConsentController::class, 'decide'])
+                ->middleware(['role:admin', 'throttle:20,1'])
+                ->where('requestId', '[A-Za-z0-9]{40}')
+                ->name('mcp.oauth.decide');
 
             Route::get('/databases/remote-access', [RemoteMysqlAccessController::class, 'index'])
                 ->middleware('role:admin')

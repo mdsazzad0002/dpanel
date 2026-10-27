@@ -4,12 +4,16 @@ namespace App\Services\Mcp\Tools;
 
 use App\Models\McpAccessToken;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Services\Mcp\LocalHostAccess;
 use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpToolException;
 
 class RestartServiceTool implements McpTool
 {
-    public function __construct(private readonly McpCommandExecutor $executor) {}
+    public function __construct(
+        private readonly McpCommandExecutor $executor,
+        private readonly LocalHostAccess $localAccess,
+    ) {}
 
     public function name(): string
     {
@@ -33,7 +37,7 @@ class RestartServiceTool implements McpTool
             'properties' => [
                 'service' => ['type' => 'string', 'description' => 'systemd unit name.'],
                 'action' => ['type' => 'string', 'enum' => ['restart', 'reload', 'start', 'stop'], 'default' => 'restart'],
-                'server_id' => ['type' => 'integer'],
+                'server_id' => ServerTarget::SCHEMA,
             ],
             'required' => ['service'],
         ];
@@ -57,6 +61,9 @@ class RestartServiceTool implements McpTool
         }
 
         $server = $this->executor->resolveServer($arguments['server_id'] ?? null);
+        if ($server === null && $this->localAccess->level() === LocalHostAccess::READ) {
+            throw new McpToolException('The panel host only allows read-only MCP commands. An admin can allow fixes with: sudo dpanel mcp local on full');
+        }
         $quoted = escapeshellarg($unit);
 
         return $this->executor->run(
