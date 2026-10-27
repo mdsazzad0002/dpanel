@@ -146,6 +146,7 @@ Full steps, configuration, and permission setup are in the
 | [drust API](docs/drust-api.md) | Endpoint reference for the localhost execution API |
 | [Backups](docs/backups.md) | Scheduled backups, remote upload, and restore |
 | [Server Task Runner](docs/ssh-command-runner.md) | SSH connector, command safety rules, and task reports |
+| [MCP Access](docs/mcp.md) | Connect Claude, Cursor or another AI client to diagnose and fix the server |
 | [WHMCS Integration](dpanel/integrations/whmcs/README.md) | Connecting dPanel to WHMCS billing |
 
 ## Support Model

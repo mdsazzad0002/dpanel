@@ -6,6 +6,7 @@ use App\Http\Controllers\AiGatewayLogController;
 use App\Http\Controllers\AiGatewayModelController;
 use App\Http\Controllers\AiGatewayProviderController;
 use App\Http\Controllers\Api\AiGatewayApiController;
+use App\Http\Controllers\Api\McpController;
 use App\Http\Controllers\Api\WhmcsController;
 use App\Http\Controllers\Auth\TelegramWebhookController;
 use App\Http\Controllers\BackupController;
@@ -59,6 +60,7 @@ use App\Http\Controllers\Docker\DockerStackController;
 use App\Http\Controllers\Docker\DockerSystemController;
 use App\Http\Controllers\Docker\DockerVolumeController;
 use App\Http\Controllers\MailHostnameController;
+use App\Http\Controllers\McpTokenController;
 use App\Http\Controllers\SelfConnectionController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerTaskController;
@@ -167,6 +169,13 @@ Route::middleware(['ai_gateway.key', 'throttle:60,1'])->group(function (): void 
     Route::get('/api/v1/models', [AiGatewayApiController::class, 'models'])->name('api.ai-gateway.models');
     Route::post('/api/v1/chat/completions', [AiGatewayApiController::class, 'chatCompletions'])->name('api.ai-gateway.chat.completions');
 });
+// Remote MCP (Model Context Protocol) endpoint, so AI clients such as Claude
+// or Cursor can diagnose and fix this server from anywhere. Authenticated via
+// `Authorization: Bearer dp-mcp-...` (issued under Settings → MCP Access),
+// not the panel session.
+Route::match(['GET', 'POST', 'DELETE'], '/api/mcp', [McpController::class, 'handle'])
+    ->middleware(['mcp.token', 'throttle:'.config('mcp.rate_limit', 120).',1'])
+    ->name('api.mcp');
 Route::get('/telegram/webhook-url', [TelegramWebhookController::class, 'url'])
     ->name('telegram.webhook-url');
 
@@ -1113,6 +1122,19 @@ Route::prefix('cpsess{token}')
             Route::post('/settings/self-connection/redis/apply', [SelfConnectionController::class, 'applyRedis'])
                 ->middleware('role:admin')
                 ->name('self-connection.redis.apply');
+
+            Route::get('/settings/mcp', [McpTokenController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('mcp.tokens.index');
+            Route::post('/settings/mcp/tokens', [McpTokenController::class, 'store'])
+                ->middleware(['role:admin', 'throttle:20,1'])
+                ->name('mcp.tokens.store');
+            Route::patch('/settings/mcp/tokens/{mcpToken}/toggle', [McpTokenController::class, 'toggle'])
+                ->middleware('role:admin')
+                ->name('mcp.tokens.toggle');
+            Route::delete('/settings/mcp/tokens/{mcpToken}', [McpTokenController::class, 'destroy'])
+                ->middleware('role:admin')
+                ->name('mcp.tokens.destroy');
 
             Route::get('/databases/remote-access', [RemoteMysqlAccessController::class, 'index'])
                 ->middleware('role:admin')

@@ -44,6 +44,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/v1/alias',
             'api/v1/chat/completions',
             'api/v1/models',
+            'api/mcp',
             'api/whmcs/*',
             'webhooks/chat/telegram/*',
             'webhooks/chat/facebook',
@@ -62,6 +63,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \App\Http\Middleware\CheckPermission::class,
             'role_or_permission' => \App\Http\Middleware\CheckRoleOrPermission::class,
             'ai_gateway.key' => \App\Http\Middleware\AuthenticateAiGatewayApiKey::class,
+            'mcp.token' => \App\Http\Middleware\AuthenticateMcpToken::class,
             'whmcs.auth' => \App\Http\Middleware\AuthenticateWhmcsRequest::class,
             'chatengine.telegram.webhook' => \App\Http\Middleware\VerifyTelegramChatWebhook::class,
         ]);

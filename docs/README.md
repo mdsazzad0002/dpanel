@@ -11,6 +11,7 @@
 | Fix an error message | [Troubleshooting](troubleshooting.md) |
 | Install Laravel/WordPress or build a site with npm/composer | [Websites and Apps](websites.md) |
 | Run Docker containers (optional, off by default) | [Docker](docker.md) |
+| Let Claude, Cursor or another AI client fix server problems | [MCP Access](mcp.md) |
 | See what the panel looks like | [Screenshots](screenshots.md) |
 
 ## Getting started
@@ -35,6 +36,7 @@
 | [Backups](backups.md) | Scheduled backups, remote upload, and restore |
 | [Docker](docker.md) | Optional add-on: cost, install, panel pages, security, and removal |
 | [Server Task Runner](ssh-command-runner.md) | SSH connector, command safety rules, and task reports |
+| [MCP Access](mcp.md) | Remote MCP server: connecting AI clients, tokens, tools, and command safety |
 | [AI Chat Engine](chat-engine.md) | Businesses, apps, app transfer, and what the AI can reply |
 | [WHMCS Integration](../dpanel/integrations/whmcs/README.md) | Connecting dPanel to WHMCS billing |
 
