@@ -184,7 +184,7 @@ class McpServerTest extends TestCase
 
         $names = collect($this->mcp($plain, 'tools/list')->assertOk()->json('result.tools'))->pluck('name');
 
-        foreach (['get_panel_overview', 'list_websites', 'get_website', 'read_service_logs', 'run_command', 'restart_service'] as $tool) {
+        foreach (['get_panel_overview', 'list_websites', 'get_website', 'check_website', 'list_dns_records', 'list_databases', 'list_cron_jobs', 'get_mail_status', 'list_backups', 'list_security_findings', 'analyze_disk_usage', 'read_service_logs', 'run_command', 'restart_service'] as $tool) {
             $this->assertContains($tool, $names);
         }
     }
@@ -199,6 +199,60 @@ class McpServerTest extends TestCase
         $response->assertJsonPath('result.isError', false)
             ->assertJsonPath('result.structuredContent.total', 1)
             ->assertJsonPath('result.structuredContent.websites.0.domain', 'example.com');
+    }
+
+    public function test_overview_returns_alerts_and_cpu_details(): void
+    {
+        [$plain] = $this->issueToken();
+
+        $this->callTool($plain, 'get_panel_overview', [])
+            ->assertJsonPath('result.isError', false)
+            ->assertJsonStructure(['result' => ['structuredContent' => ['alerts', 'cpu_cores', 'failed_units', 'top_cpu_processes']]]);
+    }
+
+    public function test_dns_records_come_with_site_and_mail_checks(): void
+    {
+        [$plain] = $this->issueToken();
+        $zone = \App\Models\DnsZone::query()->create(['id' => 'zone-1', 'domain' => 'example.com', 'status' => 'active']);
+        $zone->records()->createMany([
+            ['id' => 'r-1', 'type' => 'A', 'name' => '@', 'content' => '203.0.113.5', 'ttl' => 300, 'is_active' => true],
+            ['id' => 'r-2', 'type' => 'TXT', 'name' => '@', 'content' => '"v=spf1 mx -all"', 'ttl' => 300, 'is_active' => true],
+            ['id' => 'r-3', 'type' => 'TXT', 'name' => '@', 'content' => 'v=spf1 a -all', 'ttl' => 300, 'is_active' => true],
+        ]);
+
+        $checks = $this->callTool($plain, 'list_dns_records', ['domain' => 'www.example.com'])
+            ->assertJsonPath('result.isError', false)
+            ->assertJsonPath('result.structuredContent.zone', 'example.com')
+            ->json('result.structuredContent.checks');
+
+        $this->assertContains('ok: apex has an address record', $checks);
+        $this->assertContains('missing: no MX record (mail to this domain will not arrive)', $checks);
+        $this->assertContains('error: more than one SPF record (receivers treat that as no SPF)', $checks);
+        $this->assertContains('missing: no DMARC record at _dmarc', $checks);
+    }
+
+    public function test_databases_never_include_passwords(): void
+    {
+        [$plain] = $this->issueToken();
+        \App\Models\DatabaseRequest::query()->create(['id' => 'db-1', 'domain' => 'example.com', 'database_name' => 'shop', 'database_user' => 'shop_u', 'database_password' => 'secret-pass', 'status' => 'active']);
+
+        $response = $this->callTool($plain, 'list_databases', ['search' => 'shop'])
+            ->assertJsonPath('result.structuredContent.total', 1)
+            ->assertJsonPath('result.structuredContent.databases.0.name', 'shop');
+
+        $this->assertStringNotContainsString('secret-pass', $response->getContent());
+    }
+
+    public function test_backups_summarize_failures_and_last_success(): void
+    {
+        [$plain] = $this->issueToken();
+        \App\Models\Backup::query()->forceCreate(['id' => 'b-1', 'name' => 'nightly', 'type' => 'full', 'status' => 'completed', 'created_at' => now()->subHours(6), 'completed_at' => now()->subHours(5)]);
+        \App\Models\Backup::query()->forceCreate(['id' => 'b-2', 'name' => 'nightly', 'type' => 'full', 'status' => 'failed', 'error_message' => 'disk full']);
+
+        $this->callTool($plain, 'list_backups', [])
+            ->assertJsonPath('result.structuredContent.summary.failed_last_7d', 1)
+            ->assertJsonPath('result.structuredContent.summary.hours_since_last_success', 5)
+            ->assertJsonPath('result.structuredContent.backups.0.error', 'disk full');
     }
 
     public function test_unknown_website_is_a_tool_error_not_a_protocol_error(): void

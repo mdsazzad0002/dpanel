@@ -47,11 +47,50 @@ const onToolsModeChange = () => {
         // Not remembered; still applies to this page.
     }
 };
+// Icon and readable name per server tool; unknown tools fall back to their raw name.
+const TOOL_META = {
+    get_panel_overview: ['bi-speedometer2', 'Server overview'],
+    list_servers: ['bi-hdd-network', 'List servers'],
+    list_websites: ['bi-globe2', 'List websites'],
+    get_website: ['bi-globe', 'Website details'],
+    check_website: ['bi-activity', 'Live website check'],
+    list_ssl_certificates: ['bi-shield-lock', 'SSL certificates'],
+    list_dns_records: ['bi-signpost-split', 'DNS records'],
+    list_databases: ['bi-database', 'Databases'],
+    list_cron_jobs: ['bi-clock-history', 'Cron jobs'],
+    get_mail_status: ['bi-envelope-check', 'Mail status'],
+    list_backups: ['bi-archive', 'Backups'],
+    list_security_findings: ['bi-shield-exclamation', 'Security findings'],
+    get_service_status: ['bi-cpu', 'Service status'],
+    read_service_logs: ['bi-journal-text', 'Service logs'],
+    read_log_file: ['bi-file-earmark-text', 'Read log'],
+    list_recent_commands: ['bi-terminal', 'Recent commands'],
+    list_recent_activity: ['bi-list-check', 'Recent activity'],
+    find_website_errors: ['bi-bug', 'Find website errors'],
+    list_directory: ['bi-folder2-open', 'List directory'],
+    read_file: ['bi-file-earmark-code', 'Read file'],
+    search_files: ['bi-search', 'Search files'],
+    analyze_disk_usage: ['bi-pie-chart', 'Disk usage'],
+    write_file: ['bi-pencil-square', 'Write file'],
+    edit_file: ['bi-pencil', 'Edit file'],
+    file_operation: ['bi-files', 'File operation'],
+    run_command: ['bi-terminal-fill', 'Run command'],
+    restart_service: ['bi-arrow-clockwise', 'Restart service'],
+};
+const toolIcon = (step) => TOOL_META[step.name]?.[0] ?? 'bi-tools';
 const toolLabel = (step) => {
     const args = step.arguments && typeof step.arguments === 'object' ? step.arguments : {};
     const main = args.path || args.domain || args.command || args.service || args.pattern || args.name || '';
-    return main ? `${step.name} · ${String(main).slice(0, 80)}` : step.name;
+    const title = TOOL_META[step.name]?.[1] ?? step.name;
+    return main ? `${title} · ${String(main).slice(0, 80)}` : title;
 };
+// Long tool runs fold into one summary row once finished; open while running.
+const toolSummary = (tools) => {
+    const seconds = tools.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0) / 1000;
+    const failed = tools.filter((t) => t.status === 'error').length;
+    return `Used ${tools.length} tool${tools.length === 1 ? '' : 's'} · ${seconds.toFixed(1)}s${failed ? ` · ${failed} failed` : ''}`;
+};
+const toolsFolded = (m) => m.tools.length > 3 && !m.toolsOpen && !m.tools.some((t) => t.status === 'running');
 
 const providerId = ref(props.initialProviderId ?? props.providers[0]?.id ?? null);
 const isAuto = computed(() => providerId.value === AUTO);
@@ -145,7 +184,7 @@ const useSuggestion = (text) => {
 const suggestions = computed(() => (mode.value === 'image'
     ? ['A minimalist logo for a hosting company, flat vector', 'A cozy server room at night, cinematic lighting']
     : props.canUseServerTools && toolsMode.value !== 'off'
-        ? ['Check the edge-gateway logs for recent problems', 'Which services are using the most memory?', 'Is there enough free disk space?']
+        ? ['Run a full health check of this server', 'Why is my website slow or down?', 'What is filling up the disk?', 'Check mail delivery and DNS for my domains', 'Are there any security issues?', 'Are my backups working?']
         : ['Explain how to set up a cron job in Laravel', 'Write a bash script to back up a MySQL database', 'Explain how a reverse proxy routes traffic to PHP-FPM']));
 
 // Images waiting to go with the next message: [{ id, owner, preview, uploading }].
@@ -670,13 +709,18 @@ onBeforeUnmount(() => {
                                     <i class="bi bi-stars"></i>
                                 </div>
                                 <div class="min-w-0 flex-1 text-slate-800 dark:text-slate-100">
-                                    <div v-if="m.tools?.length" class="mb-3 space-y-1">
+                                    <button v-if="m.tools?.length > 3 && !m.tools.some((t) => t.status === 'running')" type="button" @click="m.toolsOpen = !m.toolsOpen" class="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-blue-500/50 dark:hover:text-blue-300">
+                                        <i class="bi bi-tools"></i> {{ toolSummary(m.tools) }}
+                                        <i class="bi" :class="m.toolsOpen ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+                                    </button>
+                                    <div v-if="m.tools?.length && !toolsFolded(m)" class="mb-3 space-y-1">
                                         <div v-for="step in m.tools" :key="step.id" class="rounded-lg border border-slate-200 bg-slate-50 text-xs dark:border-slate-700 dark:bg-slate-900/60">
                                             <button type="button" @click="step.open = !step.open" class="flex w-full items-center gap-2 px-2.5 py-1.5 text-left">
                                                 <span v-if="step.status === 'running'" class="inline-block h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-blue-500"></span>
                                                 <i v-else-if="step.status === 'ok'" class="bi bi-check-circle-fill text-emerald-500"></i>
                                                 <i v-else class="bi bi-x-circle-fill text-red-500"></i>
-                                                <span class="min-w-0 flex-1 truncate font-mono">{{ toolLabel(step) }}</span>
+                                                <i class="bi flex-shrink-0 text-slate-400" :class="toolIcon(step)"></i>
+                                                <span class="min-w-0 flex-1 truncate" :title="step.name">{{ toolLabel(step) }}</span>
                                                 <span v-if="step.duration_ms != null" class="shrink-0 text-slate-400">{{ (step.duration_ms / 1000).toFixed(1) }}s</span>
                                                 <i class="bi text-slate-400" :class="step.open ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
                                             </button>

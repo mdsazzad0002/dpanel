@@ -159,11 +159,18 @@ When the panel host is enabled, it is the default target. Pass
 
 | Tool | Read-only | What it does |
 | --- | --- | --- |
-| `get_panel_overview` | ✓ | Host health: OS, uptime, load, memory, disk, core service states, counts |
+| `get_panel_overview` | ✓ | Host health: OS, uptime, load, CPU cores, memory, disk, core service states, failed units, top memory/CPU processes, counts, and an `alerts` list |
 | `list_servers` | ✓ | The panel host (`local`) and servers managed over SSH, with ids for the other tools |
 | `list_websites` | ✓ | Websites, filtered by domain or status |
 | `get_website` | ✓ | One site's document root, runtime, PHP-FPM socket, SSL certificate, aliases |
+| `check_website` | ✓ | Live probe: DNS vs this server's IPs, http→https redirect, HTTPS status with timing (DNS, connect, TLS, TTFB), the live certificate, key headers, the same request straight to the origin, and detected `issues` |
 | `list_ssl_certificates` | ✓ | Certificates by expiry, e.g. ones expiring within 14 days |
+| `list_dns_records` | ✓ | Zones, or one zone's records with checks for apex/www, MX, SPF, DMARC, DKIM and CNAME conflicts |
+| `list_databases` | ✓ | Panel databases (engine, name, user, host, domain); never passwords |
+| `list_cron_jobs` | ✓ | Panel cron jobs: schedule, command, status, website |
+| `get_mail_status` | ✓ | Delivery rate, recent classified failures, Postfix queue, mail domains with DKIM/SPF/DMARC |
+| `list_backups` | ✓ | Recent backups with errors, failures in the last 7 days, time since the last success |
+| `list_security_findings` | ✓ | Open scanner findings by severity, and the last 24 hours of security events with top source IPs |
 | `get_service_status` | ✓ | `systemctl status` for a unit |
 | `read_service_logs` | ✓ | `journalctl -u` with line count, `since` and `grep` filters |
 | `read_log_file` | ✓ | Tail (and optionally grep) a file under `/var/log` |
@@ -173,6 +180,7 @@ When the panel host is enabled, it is the default target. Pass
 | `list_directory` | ✓ | Browse a directory (optionally a tree up to 5 levels): type, mode, owner, size, modified |
 | `read_file` | ✓ | Read a text file or a range of its lines, with its sha256 |
 | `search_files` | ✓ | Grep file contents (`path:line:text`) or find files by name |
+| `analyze_disk_usage` | ✓ | Filesystem and inode usage, the biggest directories under a path, files over 50 MB |
 | `write_file` | ✗ | Create a file or replace its content |
 | `edit_file` | ✗ | Replace an exact piece of text in a file |
 | `file_operation` | ✗ | `mkdir`, `move`, `copy`, `delete`, `chmod`, `chown` |

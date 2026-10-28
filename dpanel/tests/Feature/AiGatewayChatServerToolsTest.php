@@ -84,6 +84,40 @@ class AiGatewayChatServerToolsTest extends TestCase
         $this->assertDatabaseHas('mcp_access_tokens', ['user_id' => $admin->id, 'name' => GatewayChatTools::tokenName('read'), 'scope' => 'read']);
     }
 
+    public function test_repeated_read_only_call_is_not_run_twice(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        Website::query()->create(['id' => 'site-1', 'domain' => 'example.com', 'status' => 'active', 'type' => 'primary', 'php_version' => '8.3']);
+
+        $turns = [];
+        $this->mock(AiGatewayService::class)
+            ->shouldReceive('chatStreamAuto')
+            ->times(3)
+            ->andReturnUsing(function (?string $model, array $messages, array $options, \Closure $onDelta) use (&$turns) {
+                $turns[] = $messages;
+                $result = ['input_tokens' => 1, 'output_tokens' => 1, 'model' => 'test-model', 'raw' => [], 'provider' => new \App\Models\AiGatewayProvider(['name' => 'Test'])];
+                // Same call twice, arguments in a different order.
+                $arguments = count($turns) === 1 ? '{"search":"example","limit":5}' : '{"limit":5,"search":"example"}';
+
+                return count($turns) < 3
+                    ? [...$result, 'content' => '', 'tool_calls' => [['id' => 'call_'.count($turns), 'type' => 'function', 'function' => ['name' => 'list_websites', 'arguments' => $arguments]]]]
+                    : [...$result, 'content' => 'Done.'];
+            });
+
+        $this->actingAs($admin)
+            ->post(route('ai-gateway.chat.auto.stream', ['token' => $this->session]), [
+                'messages' => [['role' => 'user', 'content' => 'List sites']],
+                'tools' => 'read',
+            ], ['Accept' => 'text/event-stream'])
+            ->assertOk()
+            ->streamedContent();
+
+        $results = collect($turns[2])->where('role', 'tool')->pluck('content')->values();
+        $this->assertStringContainsString('example.com', $results[0]);
+        $this->assertStringContainsString('reuse that result', $results[1]);
+        $this->assertStringContainsString('Playbooks:', collect($turns[0])->where('role', 'system')->pluck('content')->implode("\n"));
+    }
+
     public function test_tools_are_refused_for_non_admins_and_disabled_chat_tokens(): void
     {
         $this->mock(AiGatewayService::class)->shouldNotReceive('chatStreamAuto');

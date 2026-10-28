@@ -26,7 +26,13 @@ class GatewayChatTools
     private const MAX_RESULT_CHARS = 40000;
 
     /** Model turns per message; each turn may call several tools. */
-    private const MAX_TOOL_ROUNDS = 15;
+    private const MAX_TOOL_ROUNDS = 20;
+
+    /** From this many turns left, each tool result tells the model to wrap up. */
+    private const WRAP_UP_ROUNDS = 3;
+
+    /** Failures of one tool in a row before the model is told to change course. */
+    private const MAX_TOOL_FAILURES = 2;
 
     public function __construct(
         private readonly McpServer $server,
@@ -134,6 +140,9 @@ class GatewayChatTools
         $texts = [];
         $inputTokens = 0;
         $outputTokens = 0;
+        // Read-only results already given this message, until something changes.
+        $seen = [];
+        $failures = [];
 
         for ($round = 0; ; $round++) {
             if ($round === self::MAX_TOOL_ROUNDS) {
@@ -173,7 +182,29 @@ class GatewayChatTools
                 $onStep(['id' => $id, 'name' => $call['function']['name'] ?? '', 'arguments' => json_decode((string) ($call['function']['arguments'] ?? '{}'), true) ?: new \stdClass, 'status' => 'running']);
 
                 $started = hrtime(true);
-                $outcome = $this->call($call, $token);
+                $key = $this->callKey($call);
+                $tool = $this->server->tools()[$call['function']['name'] ?? ''] ?? null;
+
+                if (isset($seen[$key])) {
+                    $outcome = [...$seen[$key], 'content' => '{"note":"Same call with the same arguments as earlier in this message, and nothing has been changed since; reuse that result instead of calling again."}'];
+                } else {
+                    $outcome = $this->call($call, $token);
+                    if (! $outcome['is_error'] && $tool?->readOnly()) {
+                        $seen[$key] = $outcome;
+                    } elseif (! $outcome['is_error']) {
+                        // A change can make earlier reads stale, so verifying is a fresh call.
+                        $seen = [];
+                    }
+                }
+
+                $failures[$outcome['name']] = $outcome['is_error'] ? ($failures[$outcome['name']] ?? 0) + 1 : 0;
+                if ($failures[$outcome['name']] >= self::MAX_TOOL_FAILURES) {
+                    $outcome['content'] .= "\n[{$outcome['name']} failed {$failures[$outcome['name']]} times in a row. Stop retrying it: use a different tool, or tell the user what blocks you.]";
+                }
+                $left = self::MAX_TOOL_ROUNDS - $round - 1;
+                if ($left <= self::WRAP_UP_ROUNDS) {
+                    $outcome['content'] .= "\n[{$left} tool turn(s) left for this message: finish the most important step, then answer.]";
+                }
                 $onStep([
                     'id' => $id,
                     'name' => $outcome['name'],
@@ -209,8 +240,12 @@ class GatewayChatTools
         }
 
         $json = (string) json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
-        if (mb_strlen($json) > self::MAX_RESULT_CHARS) {
-            $json = mb_substr($json, 0, self::MAX_RESULT_CHARS).'… [cut: the result was '.mb_strlen($json).' characters; ask for less, e.g. a line range or a narrower search]';
+        if (($length = mb_strlen($json)) > self::MAX_RESULT_CHARS) {
+            // Keep the end too: the latest log lines and a command's exit status are there.
+            $head = intdiv(self::MAX_RESULT_CHARS * 3, 4);
+            $json = mb_substr($json, 0, $head)
+                ."\n… [cut ".($length - self::MAX_RESULT_CHARS)." of {$length} characters from the middle; ask for less, e.g. a line range or a narrower search] …\n"
+                .mb_substr($json, $length - (self::MAX_RESULT_CHARS - $head));
         }
 
         return [
@@ -222,6 +257,17 @@ class GatewayChatTools
         ];
     }
 
+    /** Same tool and arguments, whatever the key order. */
+    private function callKey(array $call): string
+    {
+        $arguments = json_decode((string) ($call['function']['arguments'] ?? '{}'), true);
+        if (is_array($arguments)) {
+            ksort($arguments);
+        }
+
+        return ($call['function']['name'] ?? '').' '.json_encode($arguments);
+    }
+
     public function systemPrompt(McpAccessToken $token): string
     {
         $access = $token->allowsMutations()
@@ -231,7 +277,19 @@ class GatewayChatTools
         return implode("\n", [
             'Server tools are ON for this chat. You can call dPanel\'s MCP tools to look at the real server: websites, services, logs, files and commands. These tools act on the live server, so the earlier rule that you cannot perform actions does not apply to them.',
             'About this server: dPanel runs websites behind its own web server, edge-gateway (part of drust), with PHP-FPM, MariaDB/MySQL, Redis, Postfix/Dovecot and PowerDNS. There is no nginx or Apache, so do not look for their services or logs. Site logs come from get_website and find_website_errors.',
-            'Work efficiently: call get_panel_overview first; it already gives memory, disk, load, every core service\'s state and memory use, and the processes using the most memory. Do not re-check with commands what it already answered. Then use the dedicated tool for the job (get_website, find_website_errors, get_service_status, read_service_logs, read_log_file, list_directory, read_file, search_files) and reach for run_command only when no tool covers it.',
+            'Current server time: '.now()->format('Y-m-d H:i T').'. Use it to judge how recent log lines, backups and certificates are.',
+            'Work efficiently: call get_panel_overview first; it already gives memory, disk, load, CPU, every core service\'s state, failed units, the heaviest processes, and an alerts list. Do not re-check with commands what it already answered. Call independent tools in the same turn (e.g. get_website and check_website together). Use the dedicated tool for the job and reach for run_command only when no tool covers it.',
+            'Playbooks:',
+            '- Site down, 5xx or blank page: check_website (tells DNS/proxy from origin problems), then find_website_errors, then read_file around the failing line; for Node/Python/Docker sites, get_service_status and read_service_logs of the app.',
+            '- Site slow: check_website for the timing breakdown, get_panel_overview for CPU/memory pressure, then the PHP-FPM log (slow or max_children reached) and the database service.',
+            '- Certificate warning: check_website (live certificate, names, expiry) and list_ssl_certificates (renewal state).',
+            '- Domain not resolving or wrong server: list_dns_records and the dns part of check_website.',
+            '- Mail not sent or received: get_mail_status (failures, queue), then list_dns_records for MX/SPF/DKIM/DMARC, then read_service_logs for postfix or dovecot.',
+            '- Disk full: analyze_disk_usage on /, then drill into the biggest directory.',
+            '- Hacked or suspicious traffic: list_security_findings, then read_file on the flagged files.',
+            '- Scheduled jobs not running: list_cron_jobs, then the cron log.',
+            '- Before a risky change: list_backups to know a recent backup exists.',
+            'Answer format: lead with the cause (or the most likely one, and how sure you are), then the evidence from the tools in a few bullets, then the fix or the change made and how it was verified. Use short sections and code blocks for commands and file excerpts. Match the user\'s language.',
             'If a tool call is refused or fails, do not retry the same thing with small variations; read the error, switch to another tool, or tell the user what is needed.',
             $access,
             'Report what the tools actually returned; never claim a change you did not make. Every call is recorded in the panel.',
