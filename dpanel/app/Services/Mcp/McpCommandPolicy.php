@@ -16,7 +16,7 @@ class McpCommandPolicy
     private const PIPE_FILTERS = ['grep', 'egrep', 'fgrep', 'head', 'tail', 'wc', 'sort', 'uniq', 'cut', 'column'];
 
     /** Paths a read-only token must never read (secrets, keys). */
-    private const SENSITIVE_PATHS = ['/etc/shadow', '/etc/gshadow', '/etc/sudoers', '/.ssh', 'id_rsa', 'id_ed25519', 'id_ecdsa', '.env', '/etc/drust', '/etc/letsencrypt', 'privkey', '.pem', '.key', 'wp-config.php', 'debian.cnf', '.my.cnf', '.bash_history', '/proc/'];
+    public const SENSITIVE_PATHS = ['/etc/shadow', '/etc/gshadow', '/etc/sudoers', '/.ssh', 'id_rsa', 'id_ed25519', 'id_ecdsa', '.env', '/etc/drust', '/etc/letsencrypt', 'privkey', '.pem', '.key', 'wp-config.php', 'debian.cnf', '.my.cnf', '.bash_history', '/proc/'];
 
     public function __construct(private readonly CommandSafetyService $safety) {}
 

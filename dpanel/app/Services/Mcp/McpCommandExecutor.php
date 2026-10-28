@@ -78,9 +78,10 @@ class McpCommandExecutor
     /**
      * @param  bool  $trusted  The command was built by a tool from validated
      *                         input, so it skips the free-form policy check.
+     * @param  int|null  $outputLimit  Characters of output to keep; defaults to mcp.max_output_chars.
      * @return array<string, mixed>
      */
-    public function run(?Server $server, string $command, McpAccessToken $token, bool $trusted = false): array
+    public function run(?Server $server, string $command, McpAccessToken $token, bool $trusted = false, ?int $outputLimit = null): array
     {
         $command = trim($command);
 
@@ -94,14 +95,14 @@ class McpCommandExecutor
         @set_time_limit((int) config('serverpanel.command_timeout', 300) + 60);
 
         return $server === null
-            ? $this->runLocal($command, $token)
-            : $this->runOverSsh($server, $command, $token, $trusted);
+            ? $this->runLocal($command, $token, $outputLimit)
+            : $this->runOverSsh($server, $command, $token, $trusted, $outputLimit);
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function runOverSsh(Server $server, string $command, McpAccessToken $token, bool $trusted): array
+    private function runOverSsh(Server $server, string $command, McpAccessToken $token, bool $trusted, ?int $outputLimit): array
     {
         $job = $this->commandRunner->createAndDispatch($server, $command, $token->user, [
             'dispatch' => false,
@@ -142,13 +143,14 @@ class McpCommandExecutor
             (string) $job->output,
             (string) $job->error_output,
             ['job_id' => $job->id],
+            $outputLimit,
         );
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function runLocal(string $command, McpAccessToken $token): array
+    private function runLocal(string $command, McpAccessToken $token, ?int $outputLimit): array
     {
         $classification = $this->safety->classify($command);
         if ($classification['risk_level'] === 'blocked') {
@@ -185,6 +187,7 @@ class McpCommandExecutor
             $output,
             '',
             [],
+            $outputLimit,
         );
     }
 
@@ -205,9 +208,9 @@ class McpCommandExecutor
      * @param  array<string, mixed>  $extra
      * @return array<string, mixed>
      */
-    private function present(string $target, string $command, string $status, ?int $exitCode, string $output, string $errorOutput, array $extra): array
+    private function present(string $target, string $command, string $status, ?int $exitCode, string $output, string $errorOutput, array $extra, ?int $outputLimit = null): array
     {
-        $limit = (int) config('mcp.max_output_chars', 30000);
+        $limit = $outputLimit ?? (int) config('mcp.max_output_chars', 30000);
         $truncated = mb_strlen($output) > $limit || mb_strlen($errorOutput) > $limit;
 
         return [

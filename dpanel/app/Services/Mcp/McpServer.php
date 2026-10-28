@@ -30,6 +30,13 @@ class McpServer
         Tools\ReadLogFileTool::class,
         Tools\ListRecentCommandsTool::class,
         Tools\ListRecentActivityTool::class,
+        Tools\FindWebsiteErrorsTool::class,
+        Tools\ListDirectoryTool::class,
+        Tools\ReadFileTool::class,
+        Tools\SearchFilesTool::class,
+        Tools\WriteFileTool::class,
+        Tools\EditFileTool::class,
+        Tools\FileOperationTool::class,
         Tools\RunCommandTool::class,
         Tools\RestartServiceTool::class,
     ];
@@ -98,7 +105,8 @@ class McpServer
             ],
             'instructions' => implode("\n", [
                 'You are connected to a dPanel web hosting control panel (websites, PHP/Node/Python/Docker apps, databases, mail, DNS, SSL).',
-                'To troubleshoot: start with get_panel_overview, look up the site with get_website, then check get_service_status, read_service_logs or read_log_file.',
+                'To troubleshoot: start with get_panel_overview, look up the site with get_website, then run find_website_errors and check get_service_status, read_service_logs or read_log_file.',
+                'To change code or config: browse with list_directory and search_files, read_file before editing, then edit_file (or write_file). Every write keeps a backup and delete moves to a trash folder; the tools return where, so a fix can be undone.',
                 'Explain the cause before changing anything. Prefer the smallest fix, and verify it afterwards.',
                 'Every command you run is recorded in the panel. Read-only tokens cannot change server state.',
             ]),

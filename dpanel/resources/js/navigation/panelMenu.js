@@ -251,6 +251,7 @@ export const buildPanelMenu = (userRoles = []) => [
             { label: 'Scheduled Messages', hint: 'Broadcasts and one-off sends', icon: 'SM', iconClass: 'bi bi-calendar2-event', routeName: 'chat-engine.scheduled-messages.index', activeRouteNames: ['chat-engine.scheduled-messages.index', 'chat-engine.scheduled-messages.create'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
         ],
     },
+    { section: 'AI', label: 'MCP Access', hint: 'Let AI clients diagnose and fix the panel', icon: 'MC', iconClass: 'bi bi-plug', routeName: 'mcp.tokens.index', activeRouteNames: ['mcp.tokens.index', 'mcp.oauth.consent'], roles: ['admin'], color: 'violet' },
 ];
 
 export const hasMenuAccess = (item, roles = [], permissions = []) => {

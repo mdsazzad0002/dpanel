@@ -9,6 +9,8 @@ return [
     'rate_limit' => (int) env('DPANEL_MCP_RATE_LIMIT', 120),
     // Log files read_log_file may read must live under one of these.
     'log_roots' => ['/var/log/'],
+    // write_file/edit_file back up old files here, and delete moves into its trash/.
+    'backup_root' => env('DPANEL_MCP_BACKUP_ROOT', '/var/backups/dpanel-mcp'),
     // Written by `sudo dpanel mcp local on [read|full]`; enables commands on the panel host.
     'local_config_path' => env('DPANEL_MCP_LOCAL_CONFIG', '/etc/dpanel/mcp-local.conf'),
     'oauth' => [

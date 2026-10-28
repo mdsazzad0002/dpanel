@@ -117,8 +117,8 @@ Registering a client grants nothing until an admin approves it.
 
 | Access | Can do |
 | --- | --- |
-| **Read-only** | All read tools, plus `run_command` limited to known diagnostic commands |
-| **Full** | Everything, including state-changing commands and `restart_service` |
+| **Read-only** | All read tools (including browsing and reading files, but not secrets), plus `run_command` limited to known diagnostic commands |
+| **Full** | Everything, including state-changing commands, `restart_service` and the file-changing tools |
 
 - A token acts as the admin who created it. If that user is suspended or is no
   longer an admin, all of their tokens stop working.
@@ -143,7 +143,7 @@ sudo dpanel mcp local off
 | Host setting | Read-only token | Full token |
 | --- | --- | --- |
 | `off` | Panel host not available | Panel host not available |
-| `read` | Runs as `nobody` | Runs as `nobody`; `restart_service` is refused |
+| `read` | Runs as `nobody` | Runs as `nobody`; `restart_service` and file changes are refused |
 | `full` | Runs as `nobody` | Runs as root |
 
 `nobody` runs with the `adm` and `systemd-journal` groups, so it can read the
@@ -169,6 +169,13 @@ When the panel host is enabled, it is the default target. Pass
 | `read_log_file` | ✓ | Tail (and optionally grep) a file under `/var/log` |
 | `list_recent_commands` | ✓ | Recent server commands, with the panel's AI error summaries |
 | `list_recent_activity` | ✓ | The panel activity log: who changed what, and when |
+| `find_website_errors` | ✓ | Requests a site's home page and returns the latest error lines from the logs it wrote recently (Laravel, `error_log`, WordPress `debug.log`, app logs, PHP-FPM) |
+| `list_directory` | ✓ | Browse a directory (optionally a tree up to 5 levels): type, mode, owner, size, modified |
+| `read_file` | ✓ | Read a text file or a range of its lines, with its sha256 |
+| `search_files` | ✓ | Grep file contents (`path:line:text`) or find files by name |
+| `write_file` | ✗ | Create a file or replace its content |
+| `edit_file` | ✗ | Replace an exact piece of text in a file |
+| `file_operation` | ✗ | `mkdir`, `move`, `copy`, `delete`, `chmod`, `chown` |
 | `run_command` | limited | Run a shell command on a server (see below) |
 | `restart_service` | ✗ | Restart, reload, start or stop a unit, then show its status |
 
@@ -244,3 +251,31 @@ curl -s https://panel.example.com/api/mcp \
   -H "Authorization: Bearer dp-mcp-…" -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_panel_overview","arguments":{}}}'
 ```
+
+## File tools
+
+The file tools work on the panel host and on SSH servers alike, and every call
+is recorded the same way as a command.
+
+- **Writes are atomic and reversible.** `write_file` and `edit_file` write to a
+  temp file and move it into place, keep the file's owner and mode (a new file
+  takes its directory's owner), and copy the old file to
+  `/var/backups/dpanel-mcp/files/<time>/<path>` first. The backup path is in the
+  result.
+- **Delete moves to trash.** `file_operation` `delete` moves the path to
+  `/var/backups/dpanel-mcp/trash/<time>/<path>`; move it back to restore.
+  Clean the folder up yourself when you no longer need it.
+- **No lost updates.** `read_file` returns a sha256; pass it to `write_file` as
+  `expected_sha256` and the write is refused if the file changed meanwhile.
+  `edit_file` does this check on its own.
+- **Limits.** Files up to 1 MiB can be written or edited; `read_file` returns
+  up to 200 KB per call (use `offset`/`limit` for longer files).
+- **Guarded paths.** `/proc`, `/sys`, `/dev`, `/boot`, `/etc/shadow`,
+  `/etc/passwd`, `/etc/group`, `/etc/sudoers`, the MCP host setting and the
+  backup folder itself are never changed, also not through a symlink.
+  Directories directly under `/` or one level below (`/etc`, `/var/www`,
+  `/home/user`) cannot be deleted, moved or changed recursively.
+- **Read-only tokens** can browse, read and search, but not secrets (`.env`,
+  keys, `wp-config.php`, …), and search skips those files.
+
+The backup folder can be changed with `DPANEL_MCP_BACKUP_ROOT`.
