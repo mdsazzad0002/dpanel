@@ -17,7 +17,39 @@ const currentUserId = computed(() => page.props.auth?.user?.id ?? null);
 const props = defineProps({
     providers: { type: Array, default: () => [] },
     initialProviderId: { type: [Number, String], default: null },
+    canUseServerTools: { type: Boolean, default: false },
 });
+
+// Server tools let the model call the MCP tools (logs, files, commands) on
+// the real server. Remembered per browser; full access asks once each time.
+const TOOLS_KEY = 'dpanel.aiChat.serverTools';
+const readToolsMode = () => {
+    try {
+        const saved = localStorage.getItem(TOOLS_KEY);
+        return saved === 'read' ? 'read' : 'off';
+    } catch {
+        return 'off';
+    }
+};
+const toolsMode = ref(props.canUseServerTools ? readToolsMode() : 'off');
+let previousToolsMode = toolsMode.value;
+const onToolsModeChange = () => {
+    if (toolsMode.value === 'full' && !confirm('Full access lets the AI change this server: edit files, run commands and restart services. Every change is recorded and files are backed up. Continue?')) {
+        toolsMode.value = previousToolsMode;
+        return;
+    }
+    previousToolsMode = toolsMode.value;
+    try {
+        localStorage.setItem(TOOLS_KEY, toolsMode.value);
+    } catch {
+        // Not remembered; still applies to this page.
+    }
+};
+const toolLabel = (step) => {
+    const args = step.arguments && typeof step.arguments === 'object' ? step.arguments : {};
+    const main = args.path || args.domain || args.command || args.service || args.pattern || args.name || '';
+    return main ? `${step.name} · ${String(main).slice(0, 80)}` : step.name;
+};
 
 const providerId = ref(props.initialProviderId ?? props.providers[0]?.id ?? null);
 const isAuto = computed(() => providerId.value === AUTO);
@@ -204,7 +236,7 @@ const send = async () => {
     // would never match and silently include the empty placeholder.
     const outgoingMessages = messages.value.map((m) => ({ role: m.role, content: m.content }));
 
-    messages.value.push({ role: 'assistant', content: '', usage: null, model: '', providerName: '' });
+    messages.value.push({ role: 'assistant', content: '', usage: null, model: '', providerName: '', tools: [] });
     const assistantMessage = messages.value[messages.value.length - 1];
 
     abortController = new AbortController();
@@ -214,6 +246,14 @@ const send = async () => {
     const handleStreamEvent = (eventName, payload) => {
         if (eventName === 'delta') {
             assistantMessage.content += payload.text;
+            scrollToBottom();
+        } else if (eventName === 'tool') {
+            const step = assistantMessage.tools.find((t) => t.id === payload.id);
+            if (step) {
+                Object.assign(step, { status: payload.status, preview: payload.preview || '' });
+            } else {
+                assistantMessage.tools.push({ ...payload, preview: payload.preview || '', open: false });
+            }
             scrollToBottom();
         } else if (eventName === 'done') {
             assistantMessage.content = payload.content;
@@ -257,6 +297,7 @@ const send = async () => {
         await axios.post(streamRoute(), {
             model: model.value === MODEL_AUTO ? null : model.value,
             messages: outgoingMessages,
+            tools: toolsMode.value,
         }, {
             signal: abortController.signal,
             responseType: 'text',
@@ -376,6 +417,15 @@ onBeforeUnmount(() => {
                         </template>
                     </select>
                     <span v-if="readOnly" class="text-xs text-slate-400">Viewing another user's chat (read-only)</span>
+                    <label v-else-if="canUseServerTools" class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400" title="Let the AI use the MCP tools on this server (logs, files, commands)">
+                        <i class="bi bi-tools"></i>
+                        <span>Server tools</span>
+                        <select v-model="toolsMode" @change="onToolsModeChange" :disabled="sending" class="rounded-md border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900" :class="toolsMode === 'full' ? 'border-amber-400 text-amber-700 dark:text-amber-400' : ''">
+                            <option value="off">Off</option>
+                            <option value="read">Read-only</option>
+                            <option value="full">Full access</option>
+                        </select>
+                    </label>
                 </div>
 
                 <div ref="scrollEl" class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
@@ -390,6 +440,17 @@ onBeforeUnmount(() => {
                                 ? 'bg-blue-600 text-white'
                                 : 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100'"
                         >
+                            <div v-if="m.tools?.length" class="mb-2 space-y-1 whitespace-normal">
+                                <div v-for="step in m.tools" :key="step.id" class="rounded-md border border-slate-200 bg-white/60 text-xs dark:border-slate-600 dark:bg-slate-800/60">
+                                    <button type="button" @click="step.open = !step.open" class="flex w-full items-center gap-2 px-2 py-1 text-left">
+                                        <span v-if="step.status === 'running'" class="inline-block h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-blue-500"></span>
+                                        <i v-else-if="step.status === 'ok'" class="bi bi-check-circle-fill text-emerald-500"></i>
+                                        <i v-else class="bi bi-x-circle-fill text-red-500"></i>
+                                        <span class="truncate font-mono">{{ toolLabel(step) }}</span>
+                                    </button>
+                                    <pre v-if="step.open" class="max-h-48 overflow-auto whitespace-pre-wrap break-all border-t border-slate-200 px-2 py-1 font-mono text-[11px] dark:border-slate-600">{{ JSON.stringify(step.arguments, null, 2) }}{{ step.preview ? `\n→ ${step.preview}` : '' }}</pre>
+                                </div>
+                            </div>
                             {{ m.content }}<span v-if="sending && i === messages.length - 1 && m.role === 'assistant'" class="animate-pulse">▍</span>
                             <div v-if="m.role === 'assistant' && m.usage" class="mt-1 text-[10px] opacity-60">
                                 {{ m.model }}<span v-if="m.providerName"> via {{ m.providerName }}</span> · {{ m.usage.input }}→{{ m.usage.output }} tokens

@@ -18,11 +18,6 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-
-        // CORS: only applies to paths listed in config/cors.php (the public
-        // website chat widget) — every other route is unaffected.
-        $middleware->prepend(\Illuminate\Http\Middleware\HandleCors::class);
-
         // Without this the panel builds http:// asset/redirect URLs on an https page.
         $middleware->trustProxies(
             at: ['127.0.0.1', '::1'],
@@ -49,14 +44,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'oauth/token',
             'oauth/revoke',
             'api/whmcs/*',
-            'webhooks/chat/telegram/*',
-            'webhooks/chat/facebook',
-            'webhooks/chat/facebook/*',
-            'webhooks/chat/whatsapp/*',
-            'webhooks/chat/instagram/*',
-            'webhooks/chat/slack/*',
             'webhooks/git/*',
-            'widget/chat/*',
         ]);
 
         $middleware->alias([
@@ -68,7 +56,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'ai_gateway.key' => \App\Http\Middleware\AuthenticateAiGatewayApiKey::class,
             'mcp.token' => \App\Http\Middleware\AuthenticateMcpToken::class,
             'whmcs.auth' => \App\Http\Middleware\AuthenticateWhmcsRequest::class,
-            'chatengine.telegram.webhook' => \App\Http\Middleware\VerifyTelegramChatWebhook::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

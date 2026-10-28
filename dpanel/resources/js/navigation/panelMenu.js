@@ -234,23 +234,6 @@ export const buildPanelMenu = (userRoles = []) => [
             { label: 'API Docs', hint: 'How to call the gateway from outside', icon: 'DC', iconClass: 'bi bi-file-earmark-code', routeName: 'ai-gateway.docs', activeRouteNames: ['ai-gateway.docs'], roles: ['admin', 'reseller'] },
         ],
     },
-    {
-        section: 'AI',
-        id: 'chat-engine',
-        label: 'AI Chat Engine',
-        hint: 'Channels, conversations and broadcasts',
-        icon: 'CE',
-        iconClass: 'bi bi-chat-square-text',
-        color: 'teal',
-        children: [
-            { label: 'Businesses', hint: 'Apps, knowledge and AI settings', icon: 'BZ', iconClass: 'bi bi-briefcase', routeName: 'chat-engine.businesses.index', activeRouteNames: ['chat-engine.businesses.index', 'chat-engine.businesses.create', 'chat-engine.businesses.edit'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
-            { label: 'Channels', hint: 'Every connected app, across businesses', icon: 'CN', iconClass: 'bi bi-broadcast', routeName: 'chat-engine.channels.index', activeRouteNames: ['chat-engine.channels.index', 'chat-engine.channels.create'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
-            { label: 'Facebook Apps', hint: 'Auto-connect Pages via Facebook Login', icon: 'FB', iconClass: 'bi bi-facebook', routeName: 'chat-engine.facebook-apps.index', activeRouteNames: ['chat-engine.facebook-apps.index'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
-            { label: 'Facebook Posts', hint: 'Publish content to connected Pages', icon: 'FP', iconClass: 'bi bi-file-post', routeName: 'chat-engine.facebook-posts.index', activeRouteNames: ['chat-engine.facebook-posts.index'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
-            { label: 'Conversations', hint: 'Inbox and AI auto-reply', icon: 'CV', iconClass: 'bi bi-chat-dots', routeName: 'chat-engine.conversations.index', activeRouteNames: ['chat-engine.conversations.index', 'chat-engine.conversations.show'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
-            { label: 'Scheduled Messages', hint: 'Broadcasts and one-off sends', icon: 'SM', iconClass: 'bi bi-calendar2-event', routeName: 'chat-engine.scheduled-messages.index', activeRouteNames: ['chat-engine.scheduled-messages.index', 'chat-engine.scheduled-messages.create'], roles: ['admin', 'reseller'], permissions: ['manage_chat_engine'] },
-        ],
-    },
     { section: 'AI', label: 'MCP Access', hint: 'Let AI clients diagnose and fix the panel', icon: 'MC', iconClass: 'bi bi-plug', routeName: 'mcp.tokens.index', activeRouteNames: ['mcp.tokens.index', 'mcp.oauth.consent'], roles: ['admin'], color: 'violet' },
 ];
 

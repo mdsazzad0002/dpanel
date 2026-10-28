@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\AiGatewayService;
 use App\Services\AiGateway\ChatHistoryStore;
+use App\Services\Mcp\GatewayChatTools;
 use App\Support\StreamsSseChat;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -23,8 +24,8 @@ class AiGatewayProviderController extends Controller
         private readonly AiGatewayService $gateway,
         private readonly ChatHistoryStore $chatHistory,
         private readonly PanelSearchController $panelSearch,
-    ) {
-    }
+        private readonly GatewayChatTools $chatTools,
+    ) {}
 
     public function index(): Response
     {
@@ -97,9 +98,7 @@ class AiGatewayProviderController extends Controller
             ->with('success', 'AI provider "'.$provider->name.'" created. Add models for it on the Models page, or use "Sync Default Models" on the provider\'s edit page.');
     }
 
-
-
-    public function edit($token , AiGatewayProvider $provider): Response
+    public function edit($token, AiGatewayProvider $provider): Response
     {
         return Inertia::render('AiGateway/Providers/Edit', [
             'provider' => [
@@ -231,6 +230,7 @@ class AiGatewayProviderController extends Controller
                 'models' => $p->models->map(fn ($m) => ['name' => $m->name, 'display_name' => $m->display_name])->values(),
             ])->values(),
             'initialProviderId' => $selected?->id ?? ($providers->count() > 1 ? '__auto__' : $providers->first()?->id),
+            'canUseServerTools' => GatewayChatTools::allowedFor($request->user()),
         ]);
     }
 
@@ -289,17 +289,18 @@ class AiGatewayProviderController extends Controller
                 'messages.*.role' => ['required', 'in:user,assistant,system'],
                 'messages.*.content' => ['required', 'string'],
                 'context' => ['nullable', 'string', 'in:playground,panel_search'],
+                'tools' => ['nullable', Rule::in(GatewayChatTools::MODES)],
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->sseValidationError($e);
         }
 
-        $userId = $request->user()?->id;
+        $user = $request->user();
         $context = $data['context'] ?? 'playground';
         $messages = $this->withAssistantPersona($request, $data['messages'], $context);
 
-        return $this->sseResponse(function (\Closure $send) use ($data, $messages, $context, $provider, $userId): void {
-            $options = ['channel' => $context, 'operation' => 'chat', 'created_by' => $userId];
+        return $this->sseResponse(function (\Closure $send) use ($data, $messages, $context, $provider, $user): void {
+            $options = ['channel' => $context, 'operation' => 'chat', 'created_by' => $user?->id];
             $onDelta = function (string $delta) use ($send): void {
                 $send('delta', ['text' => $delta]);
             };
@@ -308,12 +309,14 @@ class AiGatewayProviderController extends Controller
                 if ($data['model']) {
                     // A specific model was picked — pin to exactly that, no failover.
                     $modelRecord = $provider->models()->where('name', $data['model'])->first();
-                    $result = $this->gateway->chatStreamWithProvider($provider, $modelRecord, $data['model'], $messages, $options, $onDelta);
+                    $chat = fn (array $messages, array $options): array => $this->gateway->chatStreamWithProvider($provider, $modelRecord, $data['model'], $messages, $options, $onDelta);
                 } else {
                     // No model picked — auto-select among this provider's own models,
                     // with failover between them on rate-limit/quota errors.
-                    $result = $this->gateway->chatStreamAuto(null, $messages, $options, $onDelta, $provider->id);
+                    $chat = fn (array $messages, array $options): array => $this->gateway->chatStreamAuto(null, $messages, $options, $onDelta, $provider->id);
                 }
+
+                $result = $this->runChat($chat, $messages, $options, $data['tools'] ?? GatewayChatTools::MODE_OFF, $user, $send);
 
                 $send('done', [
                     'content' => $result['content'],
@@ -388,24 +391,29 @@ class AiGatewayProviderController extends Controller
                 // "Ask AI" modal (AuthenticatedLayout.vue) call this one endpoint;
                 // context only changes tagging/persona, not routing.
                 'context' => ['nullable', 'string', 'in:playground,panel_search'],
+                'tools' => ['nullable', Rule::in(GatewayChatTools::MODES)],
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->sseValidationError($e);
         }
 
-        $userId = $request->user()?->id;
+        $user = $request->user();
         $context = $data['context'] ?? 'playground';
         $messages = $this->withAssistantPersona($request, $data['messages'], $context);
 
-        return $this->sseResponse(function (\Closure $send) use ($data, $messages, $context, $userId): void {
+        return $this->sseResponse(function (\Closure $send) use ($data, $messages, $context, $user): void {
+            $onDelta = function (string $delta) use ($send): void {
+                $send('delta', ['text' => $delta]);
+            };
+
             try {
-                $result = $this->gateway->chatStreamAuto(
-                    $data['model'] ?? null,
+                $result = $this->runChat(
+                    fn (array $messages, array $options): array => $this->gateway->chatStreamAuto($data['model'] ?? null, $messages, $options, $onDelta),
                     $messages,
-                    ['channel' => $context, 'operation' => 'chat', 'created_by' => $userId],
-                    function (string $delta) use ($send): void {
-                        $send('delta', ['text' => $delta]);
-                    }
+                    ['channel' => $context, 'operation' => 'chat', 'created_by' => $user?->id],
+                    $data['tools'] ?? GatewayChatTools::MODE_OFF,
+                    $user,
+                    $send,
                 );
 
                 $send('done', [
@@ -420,6 +428,84 @@ class AiGatewayProviderController extends Controller
                 $send('error', ['message' => $e->getMessage()]);
             }
         });
+    }
+
+    /** Model turns per message when server tools are on; each turn may call several tools. */
+    private const MAX_TOOL_ROUNDS = 15;
+
+    /**
+     * One chat reply. With server tools on, the model may call the MCP tools
+     * (see GatewayChatTools): each call is announced as a `tool` SSE event
+     * (status running, then ok/error), its result goes back to the model, and
+     * this repeats until the model answers in text.
+     *
+     * @param  \Closure(array, array): array  $chat  One streamed model turn: ($messages, $options) => result.
+     * @param  \Closure(string, array): void  $send
+     */
+    private function runChat(\Closure $chat, array $messages, array $options, string $toolsMode, ?\App\Models\User $user, \Closure $send): array
+    {
+        if ($toolsMode === GatewayChatTools::MODE_OFF) {
+            return $chat($messages, $options);
+        }
+
+        if (! GatewayChatTools::allowedFor($user)) {
+            throw new \RuntimeException('Server tools are only available to admins, and only while MCP is enabled.');
+        }
+
+        $token = $this->chatTools->tokenFor($user, $toolsMode);
+        // Right after the persona, so it overrides its "you cannot act" rule.
+        array_splice($messages, 1, 0, [['role' => 'system', 'content' => $this->chatTools->systemPrompt($token)]]);
+        $options['tools'] = $this->chatTools->definitions($token);
+
+        $texts = [];
+        $inputTokens = 0;
+        $outputTokens = 0;
+
+        for ($round = 0; ; $round++) {
+            if ($round === self::MAX_TOOL_ROUNDS) {
+                // Out of turns: one last answer, with tools still defined (some
+                // providers require that once tool calls are in the history).
+                $options['tool_choice'] = 'none';
+                $messages[] = ['role' => 'user', 'content' => 'Tool limit for this message reached. Summarize what you found and changed so far, and what is left to do.'];
+            }
+
+            $result = $chat($messages, $options);
+            $inputTokens += (int) ($result['input_tokens'] ?? 0);
+            $outputTokens += (int) ($result['output_tokens'] ?? 0);
+
+            $text = trim((string) ($result['content'] ?? ''));
+            if ($text !== '') {
+                $texts[] = $text;
+            }
+
+            if (empty($result['tool_calls']) || $round >= self::MAX_TOOL_ROUNDS) {
+                break;
+            }
+
+            if ($text !== '') {
+                $send('delta', ['text' => "\n\n"]);
+            }
+
+            // Each result must name its call; not every provider sends ids.
+            $calls = array_map(
+                fn (array $call, int $index): array => [...$call, 'id' => (string) ($call['id'] ?? '') ?: "call_{$round}_{$index}"],
+                $result['tool_calls'],
+                array_keys($result['tool_calls']),
+            );
+            $messages[] = ['role' => 'assistant', 'content' => $result['content'] ?? '', 'tool_calls' => $calls];
+
+            foreach ($calls as $call) {
+                $id = $call['id'];
+                $send('tool', ['id' => $id, 'name' => $call['function']['name'] ?? '', 'arguments' => json_decode((string) ($call['function']['arguments'] ?? '{}'), true) ?: new \stdClass, 'status' => 'running']);
+
+                $outcome = $this->chatTools->call($call, $token);
+                $send('tool', ['id' => $id, 'name' => $outcome['name'], 'status' => $outcome['is_error'] ? 'error' : 'ok', 'preview' => $outcome['preview']]);
+
+                $messages[] = ['role' => 'tool', 'tool_call_id' => $id, 'name' => $outcome['name'], 'content' => $outcome['content']];
+            }
+        }
+
+        return [...$result, 'content' => implode("\n\n", $texts), 'input_tokens' => $inputTokens, 'output_tokens' => $outputTokens];
     }
 
     /**
@@ -518,7 +604,7 @@ class AiGatewayProviderController extends Controller
         $appName = (string) config('app.name', 'dPanel');
         $roleLabel = $request->user()?->getRoleNames()->first() ?? 'panel user';
         $surface = $context === 'panel_search'
-            ? "the command-palette search (opened via Cmd/Ctrl+K, \"Ask AI\")"
+            ? 'the command-palette search (opened via Cmd/Ctrl+K, "Ask AI")'
             : 'the AI chat playground page';
         $lengthRule = $context === 'panel_search'
             ? 'Keep answers concise by default — this is a small chat panel, not a full page. Prefer a short paragraph or a brief bullet list; expand only if the user explicitly asks for more detail.'
@@ -653,7 +739,6 @@ class AiGatewayProviderController extends Controller
 
         return response()->json(['ok' => true]);
     }
-
 
     private function validateProvider(Request $request, ?AiGatewayProvider $provider = null): array
     {

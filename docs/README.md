@@ -37,7 +37,6 @@
 | [Docker](docker.md) | Optional add-on: cost, install, panel pages, security, and removal |
 | [Server Task Runner](ssh-command-runner.md) | SSH connector, command safety rules, and task reports |
 | [MCP Access](mcp.md) | Remote MCP server: connecting AI clients, tokens, tools, and command safety |
-| [AI Chat Engine](chat-engine.md) | Businesses, apps, app transfer, and what the AI can reply |
 | [WHMCS Integration](../dpanel/integrations/whmcs/README.md) | Connecting dPanel to WHMCS billing |
 
 ## Project policies

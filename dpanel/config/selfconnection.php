@@ -10,7 +10,7 @@ return [
 
     'queue_supervisor_programs' => array_values(array_filter(array_map('trim', explode(',', (string) env(
         'SELFCONNECTION_QUEUE_PROGRAMS',
-        'dpanel-queue,dpanel-heavy-queue,dpanel-chat-queue'
+        'dpanel-queue,dpanel-heavy-queue'
     ))))),
 
     'restart_settle_ms' => (int) env('SELFCONNECTION_RESTART_SETTLE_MS', 500),

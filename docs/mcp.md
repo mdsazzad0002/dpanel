@@ -279,3 +279,23 @@ is recorded the same way as a command.
   keys, `wp-config.php`, …), and search skips those files.
 
 The backup folder can be changed with `DPANEL_MCP_BACKUP_ROOT`.
+
+## Server tools in the AI Gateway chat
+
+The panel's own **AI Gateway → Chat** can use the same tools, with any
+provider configured in the gateway (Claude, OpenAI, Gemini, …) that supports
+function calling. Admins pick **Server tools** above the chat:
+
+| Setting | The AI can |
+| --- | --- |
+| **Off** (default) | Only answer from what it knows, as before |
+| **Read-only** | Use the read tools and diagnostic `run_command`, like a read-only token |
+| **Full access** | Also edit files, run fixing commands and restart services; asks for confirmation when you switch to it, every time |
+
+Each tool call shows up in the reply as a step you can expand to see its
+arguments and result. The chat acts through an MCP token of its own per admin
+and access level, named **AI Gateway Chat (read-only)** / **(full access)** on
+the MCP Access page: its last use shows there, every call is recorded like any
+other MCP call, and disabling that token turns the chat's tools off. The token
+has no usable secret, so it works only from inside the panel. A reply can use
+up to 15 model turns; after that the AI summarises where it got to.

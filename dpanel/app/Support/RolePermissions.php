@@ -30,7 +30,6 @@ class RolePermissions
         'manage_ssl',
         'manage_git',
         'use_file_manager',
-        'manage_chat_engine',
         'manage_migrations',
         'manage_php',
         'view_monitoring',
@@ -56,7 +55,6 @@ class RolePermissions
         'manage_ssl',
         'manage_git',
         'use_file_manager',
-        'manage_chat_engine',
     ];
 
     private const RESELLER_PERMISSIONS = [
@@ -91,9 +89,6 @@ class RolePermissions
             'manage_ssl',
             'manage_git',
             'use_file_manager',
-        ],
-        'AI Chat Engine' => [
-            'manage_chat_engine',
         ],
         'Tools & Monitoring' => [
             'manage_migrations',

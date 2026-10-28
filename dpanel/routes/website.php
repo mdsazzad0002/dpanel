@@ -28,7 +28,6 @@ use App\Http\Controllers\Website\AppInstallerController;
 use App\Http\Controllers\Website\LaravelInstallerController;
 use App\Http\Controllers\Website\LaravelQueueController;
 use App\Http\Controllers\Website\WordpressController;
-use App\Http\Controllers\WebsiteChatController;
 // Manage Website ===================================================================
 use Illuminate\Support\Facades\Route;
 
@@ -328,9 +327,6 @@ Route::get('/websites/{id}/alias-api', [RedisCacheController::class, 'aliasApiPa
 Route::get('/websites/{id}/alias-api/settings', [RedisCacheController::class, 'aliasApiSettings'])->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.alias-api.settings');
 Route::post('/websites/{id}/alias-api/rotate', [RedisCacheController::class, 'aliasApiRotate'])->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.alias-api.rotate');
 Route::patch('/websites/{id}/alias-api', [RedisCacheController::class, 'aliasApiToggle'])->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.alias-api.toggle');
-Route::get('/websites/{id}/chat-widget', [WebsiteChatController::class, 'index'])->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.chat-widget.index');
-Route::post('/websites/{id}/chat-widget/connect', [WebsiteChatController::class, 'connect'])->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.chat-widget.connect');
-Route::patch('/websites/{id}/chat-widget', [WebsiteChatController::class, 'toggle'])->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.chat-widget.toggle');
 Route::get('/websites/{id}/filemanager', [WebsiteFileManagerController::class, 'fileManager'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager');

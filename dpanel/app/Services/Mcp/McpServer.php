@@ -149,26 +149,7 @@ class McpServer
             throw new McpProtocolException('arguments must be an object.', -32602);
         }
 
-        try {
-            $data = $tool->handle($arguments, $token);
-            $isError = false;
-        } catch (McpToolException $e) {
-            $data = ['error' => $e->getMessage()];
-            $isError = true;
-        } catch (\Throwable $e) {
-            Log::error('MCP tool failed', ['tool' => $name, 'exception' => $e]);
-            $data = ['error' => 'The tool failed: '.$e->getMessage()];
-            $isError = true;
-        }
-
-        if (! $tool->readOnly()) {
-            $this->activityLog->log('mcp.tool_called', $token, [
-                'tool' => $name,
-                'arguments' => $arguments,
-                'token' => $token->name,
-                'is_error' => $isError,
-            ]);
-        }
+        ['data' => $data, 'is_error' => $isError] = $this->runTool($tool, $arguments, $token);
 
         $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
@@ -180,9 +161,42 @@ class McpServer
     }
 
     /**
+     * Run one tool call; a failure comes back as data for the model, not as
+     * an exception. Also used by the AI Gateway chat (GatewayChatTools).
+     *
+     * @param  array<string, mixed>  $arguments
+     * @return array{data: array<string, mixed>, is_error: bool}
+     */
+    public function runTool(McpTool $tool, array $arguments, McpAccessToken $token): array
+    {
+        try {
+            $data = $tool->handle($arguments, $token);
+            $isError = false;
+        } catch (McpToolException $e) {
+            $data = ['error' => $e->getMessage()];
+            $isError = true;
+        } catch (\Throwable $e) {
+            Log::error('MCP tool failed', ['tool' => $tool->name(), 'exception' => $e]);
+            $data = ['error' => 'The tool failed: '.$e->getMessage()];
+            $isError = true;
+        }
+
+        if (! $tool->readOnly()) {
+            $this->activityLog->log('mcp.tool_called', $token, [
+                'tool' => $tool->name(),
+                'arguments' => $arguments,
+                'token' => $token->name,
+                'is_error' => $isError,
+            ]);
+        }
+
+        return ['data' => $data, 'is_error' => $isError];
+    }
+
+    /**
      * @return array<string, McpTool>
      */
-    private function tools(): array
+    public function tools(): array
     {
         if ($this->tools === null) {
             $this->tools = [];
