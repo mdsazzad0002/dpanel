@@ -148,6 +148,9 @@ fn apply(request: &Request) -> Result<PathBuf, String> {
         ),
         "wordpress" => update_wordpress(original, request, host)?,
         "codeigniter4" => update_codeigniter4(original, request, host, &port, driver),
+        "codeigniter3" if is_env_file(&path) => {
+            update_codeigniter3_env(original, request, host, &port, driver)
+        }
         "codeigniter3" => update_codeigniter3(original, request, host, &port, driver)?,
         _ => return Err("Only Laravel, WordPress, and CodeIgniter projects are supported.".into()),
     };
@@ -185,13 +188,18 @@ fn validate(request: &Request) -> Result<(), String> {
     {
         return Err("Configuration path is outside the website owner's home.".into());
     }
-    let expected = match request.framework.as_str() {
-        "laravel" | "codeigniter4" => ".env",
-        "wordpress" => "wp-config.php",
-        "codeigniter3" => "database.php",
+    let expected: &[&str] = match request.framework.as_str() {
+        "laravel" | "codeigniter4" => &[".env"],
+        "wordpress" => &["wp-config.php"],
+        // CI3 projects that load a root .env (phpdotenv) keep credentials there.
+        "codeigniter3" => &["database.php", ".env"],
         _ => return Err("Unsupported project type.".into()),
     };
-    if path.file_name().and_then(|name| name.to_str()) != Some(expected) {
+    if !path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| expected.contains(&name))
+    {
         return Err("Unexpected project configuration file.".into());
     }
     if !path.is_file()
@@ -392,6 +400,56 @@ fn update_codeigniter3(
     Ok(text)
 }
 
+fn is_env_file(path: &Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some(".env")
+}
+
+/// CI3 has no .env convention of its own: keep whichever key style the project
+/// already uses (CI4-style `database.default.*` or `DB_*`, including common
+/// aliases), and fall back to the Laravel-style `DB_*` names for missing keys.
+fn update_codeigniter3_env(
+    text: String,
+    request: &Request,
+    host: &str,
+    port: &str,
+    driver: &str,
+) -> String {
+    let uses_ci4_keys = text.lines().any(|line| {
+        line.trim()
+            .trim_start_matches('#')
+            .trim_start()
+            .starts_with("database.default.")
+    });
+    if uses_ci4_keys {
+        return update_codeigniter4(text, request, host, port, driver);
+    }
+    let groups: [(&[&str], &str); 6] = [
+        (&["DB_HOST", "DB_HOSTNAME"], host),
+        (&["DB_PORT"], port),
+        (&["DB_DATABASE", "DB_NAME"], request.database_name.as_str()),
+        (&["DB_USERNAME", "DB_USER"], request.database_user.as_str()),
+        (&["DB_PASSWORD", "DB_PASS"], request.database_password.as_str()),
+        (&["DB_DRIVER", "DB_DBDRIVER", "DB_CONNECTION"], driver),
+    ];
+    let mut values: Vec<(&str, &str)> = Vec::new();
+    for (keys, value) in groups {
+        let present: Vec<&str> = keys
+            .iter()
+            .copied()
+            .filter(|key| {
+                let prefix = format!("{key}=");
+                text.lines().any(|line| line.trim_start().starts_with(&prefix))
+            })
+            .collect();
+        if present.is_empty() {
+            values.push((keys[0], value));
+        } else {
+            values.extend(present.into_iter().map(|key| (key, value)));
+        }
+    }
+    update_env(text, &values)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,6 +518,28 @@ mod tests {
         assert!(output.contains("'password' => 's\\'ecret',"));
         assert!(output.contains("'dbdriver' => 'mysqli',"));
         assert!(output.contains("'port' => '3307',"));
+    }
+
+    #[test]
+    fn updates_codeigniter3_env_keeping_existing_key_names() {
+        let input = "APP_ENV=production\nDB_HOSTNAME=localhost\nDB_USER=old\nDB_PASS=old\nDB_NAME=old\n";
+        let output = update_codeigniter3_env(input.into(), &request("codeigniter3"), "db", "3306", "mysqli");
+        assert!(output.contains("DB_HOSTNAME=db\n"));
+        assert!(output.contains("DB_USER=app_user\n"));
+        assert!(output.contains("DB_PASS=\"s'ecret\"\n"));
+        assert!(output.contains("DB_NAME=app_db\n"));
+        assert!(output.contains("DB_PORT=3306\n"));
+        assert!(output.contains("DB_DRIVER=mysqli\n"));
+        assert!(!output.contains("DB_USERNAME="));
+    }
+
+    #[test]
+    fn updates_codeigniter3_env_with_ci4_style_keys() {
+        let input = "# database.default.hostname = localhost\n";
+        let output = update_codeigniter3_env(input.into(), &request("codeigniter3"), "db", "3306", "mysqli");
+        assert!(output.contains("database.default.hostname = db"));
+        assert!(output.contains("database.default.database = app_db"));
+        assert!(!output.contains("DB_HOST"));
     }
 
     #[test]

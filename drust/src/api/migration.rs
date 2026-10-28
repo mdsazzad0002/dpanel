@@ -1075,11 +1075,12 @@ fn detect_generic_application(root: &Path) -> (Option<&'static str>, Option<Path
         );
     }
     if root.join("application/config/database.php").is_file() {
-        return (
-            Some("codeigniter3"),
-            Some(root.join("application/config/database.php")),
-            root.to_path_buf(),
-        );
+        let config = if root.join(".env").is_file() {
+            root.join(".env")
+        } else {
+            root.join("application/config/database.php")
+        };
+        return (Some("codeigniter3"), Some(config), root.to_path_buf());
     }
     (None, None, root.to_path_buf())
 }

@@ -1060,7 +1060,8 @@ class WebsiteController extends Controller
         return [$framework, match ($framework) {
             'laravel', 'codeigniter4' => $root.'/.env',
             'wordpress' => $root.'/wp-config.php',
-            'codeigniter3' => $root.'/application/config/database.php',
+            // CI3 projects that ship a root .env read DB credentials from it.
+            'codeigniter3' => is_file($root.'/.env') ? $root.'/.env' : $root.'/application/config/database.php',
         }];
     }
 
@@ -1083,11 +1084,12 @@ class WebsiteController extends Controller
             return null;
         }
 
-        $pattern = match ($framework) {
-            'laravel' => '/^\s*DB_DATABASE\s*=\s*["\']?([^"\'\s#]*)/m',
-            'codeigniter4' => '/^\s*database\.default\.database\s*=\s*["\']?([^"\'\s#]*)/m',
-            'wordpress' => '/define\(\s*[\'"]DB_NAME[\'"]\s*,\s*[\'"]([^\'"]*)[\'"]/',
-            'codeigniter3' => '/\$db\[[\'"]default[\'"]\]\[[\'"]database[\'"]\]\s*=\s*[\'"]([^\'"]*)[\'"]/',
+        $pattern = match (true) {
+            $framework === 'laravel' => '/^\s*DB_DATABASE\s*=\s*["\']?([^"\'\s#]*)/m',
+            $framework === 'codeigniter4' => '/^\s*database\.default\.database\s*=\s*["\']?([^"\'\s#]*)/m',
+            $framework === 'wordpress' => '/define\(\s*[\'"]DB_NAME[\'"]\s*,\s*[\'"]([^\'"]*)[\'"]/',
+            str_ends_with($configPath, '/.env') => '/^\s*(?:DB_DATABASE|DB_NAME|database\.default\.database)\s*=\s*["\']?([^"\'\s#]*)/m',
+            default => '/\$db\[[\'"]default[\'"]\]\[[\'"]database[\'"]\]\s*=\s*[\'"]([^\'"]*)[\'"]/',
         };
 
         return preg_match($pattern, $content, $match) && $match[1] !== '' ? $match[1] : null;
