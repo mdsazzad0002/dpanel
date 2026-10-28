@@ -20,7 +20,16 @@ const props = defineProps({
 
 const filteredProvider = props.providers.find((p) => p.id === props.providerFilter);
 
-const addForm = useForm({ provider_id: props.providerFilter || '', name: '', display_name: '', context_window: 0, max_output_tokens: 0, is_active: true });
+const addForm = useForm({ provider_id: props.providerFilter || '', name: '', display_name: '', context_window: 0, max_output_tokens: 0, capabilities: [], is_active: true });
+
+// What each capability changes; vision and image_generation steer routing.
+const CAPABILITIES = [
+    { value: 'chat', label: 'chat', hint: 'Answers chat messages' },
+    { value: 'vision', label: 'vision', hint: 'Sees images itself; without it, images are read by OCR first' },
+    { value: 'tools', label: 'tools', hint: 'Function calling (server tools)' },
+    { value: 'code', label: 'code', hint: 'Good at code' },
+    { value: 'image_generation', label: 'image generation', hint: 'Makes images; without "chat" it gets no chat requests' },
+];
 const statusForm = useForm({});
 const delForm = useForm({});
 
@@ -81,6 +90,7 @@ const applyKnownModel = (form, suggestions) => {
     form.display_name = known.display_name || form.name;
     if (!form.context_window) form.context_window = known.context_window || 0;
     if (!form.max_output_tokens) form.max_output_tokens = known.max_output_tokens || 0;
+    if (!form.capabilities.length && known.capabilities?.length) form.capabilities = [...known.capabilities];
 };
 
 const addModelInfo = computed(() => suggestionsFor(addForm.provider_id));
@@ -103,7 +113,7 @@ const toggle = async (m) => {
 const remove = (m) => { if (confirm(`Remove model "${m.name}"?`)) delForm.delete(panelRoute('ai-gateway.models.destroy', { model: m.id })); };
 
 const editingId = ref(null);
-const editForm = useForm({ provider_id: '', name: '', display_name: '', context_window: 0, max_output_tokens: 0 });
+const editForm = useForm({ provider_id: '', name: '', display_name: '', context_window: 0, max_output_tokens: 0, capabilities: [] });
 const editModelInfo = computed(() => suggestionsFor(editForm.provider_id));
 const editSuggestions = computed(() => editModelInfo.value.models);
 const onEditModelInput = () => applyKnownModel(editForm, editSuggestions.value);
@@ -144,6 +154,7 @@ const pickModel = (m) => {
     form.display_name = m.display_name || m.name;
     form.context_window = m.context_window || 0;
     form.max_output_tokens = m.max_output_tokens || 0;
+    if (m.capabilities?.length) form.capabilities = [...m.capabilities];
     closePicker();
 };
 
@@ -156,6 +167,7 @@ const startEdit = (m) => {
     editForm.display_name = m.display_name || '';
     editForm.context_window = m.context_window || 0;
     editForm.max_output_tokens = m.max_output_tokens || 0;
+    editForm.capabilities = [...(m.capabilities || [])];
 };
 
 const cancelEdit = () => {
@@ -229,6 +241,16 @@ const saveEdit = (m) => {
                     <input v-model="addForm.display_name" type="text"
                         class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
                 </div>
+                <div class="sm:col-span-2 lg:col-span-4">
+                    <label class="mb-1 block text-xs font-medium">Capabilities</label>
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                        <label v-for="c in CAPABILITIES" :key="c.value" class="flex items-center gap-1" :title="c.hint">
+                            <input v-model="addForm.capabilities" type="checkbox" :value="c.value" class="rounded border-slate-300" />
+                            {{ c.label }}
+                        </label>
+                    </div>
+                    <div v-if="addForm.errors.capabilities" class="text-xs text-red-600">{{ addForm.errors.capabilities }}</div>
+                </div>
                 <div class="flex items-end">
                     <button type="submit" :disabled="addForm.processing"
                         class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">Add
@@ -286,7 +308,12 @@ const saveEdit = (m) => {
                                         <input v-model.number="editForm.max_output_tokens" type="number"
                                             class="w-24 rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900" />
                                     </td>
-                                    <td class="px-4 py-3 text-slate-500">{{ (m.capabilities || []).join(', ') || '—' }}</td>
+                                    <td class="px-4 py-3">
+                                        <label v-for="c in CAPABILITIES" :key="c.value" class="flex items-center gap-1 whitespace-nowrap text-xs" :title="c.hint">
+                                            <input v-model="editForm.capabilities" type="checkbox" :value="c.value" class="rounded border-slate-300" />
+                                            {{ c.label }}
+                                        </label>
+                                    </td>
                                     <td class="px-4 py-3">
                                         <button v-if="m.is_default"
                                             class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">Default</button>

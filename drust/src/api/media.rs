@@ -9,12 +9,11 @@ use axum::{
 use serde::Deserialize;
 use std::{process::Command, sync::Arc, time::Duration};
 
-/// The panel's chat channels (Telegram, WhatsApp, website widget, ...) hand
-/// us a URL to a voice note or an image; we never accept raw bytes over this
-/// API because every caller already has the file behind a URL from its own
-/// platform. Both handlers download once, then hand off to a blocking
-/// worker thread since whisper.cpp/tesseract are synchronous CPU-bound
-/// libraries with no async API.
+/// Callers hand us either a URL to a voice note or an image, which we
+/// download, or the file itself as base64 `data` (the AI Gateway chat's
+/// uploaded images have no public URL). Both handlers then hand off to a
+/// blocking worker thread since whisper.cpp/tesseract are synchronous
+/// CPU-bound libraries with no async API.
 const MAX_MEDIA_BYTES: usize = 25 * 1024 * 1024;
 const DEFAULT_WHISPER_MODEL_PATH: &str = "/var/lib/drust/models/ggml-base-q5_1.bin";
 
@@ -30,7 +29,11 @@ pub fn routes() -> Router<Arc<ApiState>> {
 
 #[derive(Deserialize)]
 struct MediaRequest {
-    url: String,
+    #[serde(default)]
+    url: Option<String>,
+    /// The file itself, base64-encoded, instead of a url.
+    #[serde(default)]
+    data: Option<String>,
     /// ISO 639-1 language hint for transcription (e.g. "bn", "en"). Omitted
     /// or "auto" lets whisper.cpp detect the spoken language itself.
     language: Option<String>,
@@ -52,7 +55,7 @@ async fn handle_transcribe(
         return e.into_response();
     }
 
-    let bytes = match download(&req.url, &req.headers).await {
+    let bytes = match media_bytes(&req).await {
         Ok(bytes) => bytes,
         Err(error) => return ApiResponse::error(&error).into_response(),
     };
@@ -79,7 +82,7 @@ async fn handle_ocr(
         return e.into_response();
     }
 
-    let bytes = match download(&req.url, &req.headers).await {
+    let bytes = match media_bytes(&req).await {
         Ok(bytes) => bytes,
         Err(error) => return ApiResponse::error(&error).into_response(),
     };
@@ -91,6 +94,24 @@ async fn handle_ocr(
         }
         Ok(Err(error)) => ApiResponse::error(&error).into_response(),
         Err(error) => ApiResponse::error(&format!("OCR worker failed: {error}")).into_response(),
+    }
+}
+
+async fn media_bytes(req: &MediaRequest) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+
+    match (&req.data, &req.url) {
+        (Some(data), _) => {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(data.trim())
+                .map_err(|error| format!("data is not valid base64: {error}"))?;
+            if bytes.len() > MAX_MEDIA_BYTES {
+                return Err("media exceeds the 25MB size limit".into());
+            }
+            Ok(bytes)
+        }
+        (None, Some(url)) => download(url, &req.headers).await,
+        (None, None) => Err("pass url or data".into()),
     }
 }
 

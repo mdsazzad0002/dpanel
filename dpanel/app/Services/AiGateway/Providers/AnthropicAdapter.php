@@ -235,6 +235,11 @@ class AnthropicAdapter implements ProviderAdapter
      * @param  array<int, array{role:string, content:?string, tool_calls?:array, tool_call_id?:string}>  $messages
      * @return array{0: ?string, 1: array<int, array{role:string, content:mixed}>}
      */
+    public function generateImage(AiGatewayProvider $provider, string $model, string $prompt, array $options = []): array
+    {
+        throw new \App\Services\AiGateway\Exceptions\AiGatewayException("Anthropic models cannot generate images; [{$provider->name}] / {$model} should not have the image_generation capability.");
+    }
+
     private function convertMessages(array $messages, ?string $system): array
     {
         $converted = [];
@@ -271,11 +276,23 @@ class AnthropicAdapter implements ProviderAdapter
                         'type' => 'tool_use',
                         'id' => $toolCall['id'] ?? (string) Str::uuid(),
                         'name' => $toolCall['function']['name'] ?? '',
-                        'input' => json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: new \stdClass(),
+                        'input' => json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: new \stdClass,
                     ];
                 }
 
                 $converted[] = ['role' => 'assistant', 'content' => $blocks];
+
+                continue;
+            }
+
+            if (! empty($message['images'])) {
+                $converted[] = ['role' => $role, 'content' => [
+                    ...array_map(fn (array $image): array => [
+                        'type' => 'image',
+                        'source' => ['type' => 'base64', 'media_type' => $image['mime'], 'data' => $image['data']],
+                    ], $message['images']),
+                    ['type' => 'text', 'text' => (string) ($message['content'] ?? '') ?: ' '],
+                ]];
 
                 continue;
             }
@@ -295,7 +312,7 @@ class AnthropicAdapter implements ProviderAdapter
         return collect($tools)->map(fn (array $t): array => [
             'name' => $t['function']['name'] ?? $t['name'] ?? '',
             'description' => $t['function']['description'] ?? $t['description'] ?? '',
-            'input_schema' => $t['function']['parameters'] ?? $t['parameters'] ?? ['type' => 'object', 'properties' => new \stdClass()],
+            'input_schema' => $t['function']['parameters'] ?? $t['parameters'] ?? ['type' => 'object', 'properties' => new \stdClass],
         ])->values()->all();
     }
 
@@ -335,7 +352,7 @@ class AnthropicAdapter implements ProviderAdapter
                 'type' => 'function',
                 'function' => [
                     'name' => $b['name'] ?? '',
-                    'arguments' => json_encode($b['input'] ?? new \stdClass()),
+                    'arguments' => json_encode($b['input'] ?? new \stdClass),
                 ],
             ])
             ->values()
@@ -393,4 +410,3 @@ class AnthropicAdapter implements ProviderAdapter
             ->all();
     }
 }
-

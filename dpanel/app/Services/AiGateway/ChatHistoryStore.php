@@ -14,6 +14,9 @@ use Illuminate\Support\Str;
  */
 class ChatHistoryStore
 {
+    /** Images in a transcript are lines like ![image](dpanel-media:<id>), see GatewayMedia. */
+    private const IMAGE_SCHEME = 'dpanel-media:';
+
     private function disk()
     {
         return Storage::disk('local');
@@ -95,7 +98,8 @@ class ChatHistoryStore
             $chunk = '';
             foreach ($newMessages as $message) {
                 $role = ($message['role'] ?? 'user') === 'assistant' ? 'Assistant' : 'User';
-                $chunk .= "### {$role}\n\n".trim((string) ($message['content'] ?? ''))."\n\n";
+                $images = array_map(fn (string $id): string => '![image]('.self::IMAGE_SCHEME.$id.')', array_filter((array) ($message['images'] ?? []), fn ($id) => is_string($id) && Str::isUuid($id)));
+                $chunk .= "### {$role}\n\n".trim(trim((string) ($message['content'] ?? ''))."\n\n".implode("\n", $images))."\n\n";
             }
 
             $this->disk()->put(
@@ -149,19 +153,23 @@ class ChatHistoryStore
     }
 
     /**
-     * @return array<int, array{role:string, content:string}>
+     * @return array<int, array{role:string, content:string, images?:array<int, string>}>
      */
     private function parseMessages(string $content): array
     {
         $messages = [];
         $parts = preg_split('/^###\s+(User|Assistant)\s*$/mi', $content, -1, PREG_SPLIT_DELIM_CAPTURE);
+        $imageLine = '/^!\[image\]\('.preg_quote(self::IMAGE_SCHEME, '/').'([0-9a-f-]{36})\)\s*$/mi';
 
         for ($i = 1; $i < count($parts); $i += 2) {
             $role = strtolower($parts[$i]) === 'assistant' ? 'assistant' : 'user';
-            $text = trim($parts[$i + 1] ?? '');
+            $text = $parts[$i + 1] ?? '';
 
-            if ($text !== '') {
-                $messages[] = ['role' => $role, 'content' => $text];
+            preg_match_all($imageLine, $text, $images);
+            $text = trim((string) preg_replace($imageLine, '', $text));
+
+            if ($text !== '' || $images[1] !== []) {
+                $messages[] = ['role' => $role, 'content' => $text] + ($images[1] !== [] ? ['images' => $images[1]] : []);
             }
         }
 

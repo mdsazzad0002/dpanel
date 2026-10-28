@@ -222,6 +222,53 @@ class GeminiAdapter implements ProviderAdapter
      * @param  array<int, array{role:string, content:?string, tool_calls?:array, name?:string}>  $messages
      * @return array{0: ?string, 1: array<int, array{role:string, parts:array}>}
      */
+    /**
+     * Gemini's image models (gemini-2.5-flash-image, …) answer
+     * generateContent with inline image parts when asked for the IMAGE
+     * modality. One image per call, so n > 1 calls again.
+     */
+    public function generateImage(AiGatewayProvider $provider, string $model, string $prompt, array $options = []): array
+    {
+        $apiKey = $provider->getApiKey();
+
+        if (! $apiKey) {
+            throw AiGatewayException::missingCredentials($provider->name);
+        }
+
+        $url = rtrim($provider->base_url ?: self::BASE_URL, '/').'/v1beta/models/'.$model.':generateContent?key='.urlencode($apiKey);
+        $images = [];
+        $texts = [];
+
+        for ($i = 0; $i < max(1, (int) ($options['n'] ?? 1)); $i++) {
+            $response = Http::timeout((int) config('aigateway.image_timeout', 180))
+                ->acceptJson()
+                ->post($url, [
+                    'contents' => [['role' => 'user', 'parts' => [['text' => $prompt]]]],
+                    'generationConfig' => ['responseModalities' => ['TEXT', 'IMAGE']],
+                ]);
+
+            if ($response->failed()) {
+                $error = $response->json('error.message') ?: (string) $response->body();
+                throw AiGatewayException::upstream($provider->name, $error !== '' ? $error : 'HTTP '.$response->status(), $response->status());
+            }
+
+            foreach ((array) $response->json('candidates.0.content.parts', []) as $part) {
+                $inline = $part['inlineData'] ?? $part['inline_data'] ?? null;
+                if (is_array($inline) && ! empty($inline['data'])) {
+                    $images[] = ['mime' => (string) ($inline['mimeType'] ?? $inline['mime_type'] ?? 'image/png'), 'data' => (string) $inline['data']];
+                } elseif (isset($part['text']) && trim((string) $part['text']) !== '') {
+                    $texts[] = trim((string) $part['text']);
+                }
+            }
+        }
+
+        if ($images === []) {
+            throw AiGatewayException::upstream($provider->name, 'No image came back'.($texts !== [] ? ': '.implode(' ', $texts) : '. Is this an image model?'));
+        }
+
+        return ['images' => $images, 'text' => implode("\n", $texts), 'model' => $model];
+    }
+
     private function convertMessages(array $messages, ?string $system): array
     {
         $contents = [];
@@ -258,7 +305,7 @@ class GeminiAdapter implements ProviderAdapter
                     $parts[] = [
                         'functionCall' => [
                             'name' => $toolCall['function']['name'] ?? '',
-                            'args' => json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: new \stdClass(),
+                            'args' => json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: new \stdClass,
                         ],
                     ];
                 }
@@ -270,7 +317,12 @@ class GeminiAdapter implements ProviderAdapter
 
             $contents[] = [
                 'role' => $role === 'assistant' ? 'model' : 'user',
-                'parts' => [['text' => (string) ($message['content'] ?? '')]],
+                'parts' => [
+                    ...array_map(fn (array $image): array => [
+                        'inline_data' => ['mime_type' => $image['mime'], 'data' => $image['data']],
+                    ], $message['images'] ?? []),
+                    ['text' => (string) ($message['content'] ?? '')],
+                ],
             ];
         }
 
@@ -285,7 +337,7 @@ class GeminiAdapter implements ProviderAdapter
         $declarations = collect($tools)->map(fn (array $t): array => [
             'name' => $t['function']['name'] ?? $t['name'] ?? '',
             'description' => $t['function']['description'] ?? $t['description'] ?? '',
-            'parameters' => $this->sanitizeSchema($t['function']['parameters'] ?? $t['parameters'] ?? ['type' => 'object', 'properties' => new \stdClass()]),
+            'parameters' => $this->sanitizeSchema($t['function']['parameters'] ?? $t['parameters'] ?? ['type' => 'object', 'properties' => new \stdClass]),
         ])->values()->all();
 
         return [['functionDeclarations' => $declarations]];
@@ -366,7 +418,7 @@ class GeminiAdapter implements ProviderAdapter
                 'type' => 'function',
                 'function' => [
                     'name' => $p['functionCall']['name'] ?? '',
-                    'arguments' => json_encode($p['functionCall']['args'] ?? new \stdClass()),
+                    'arguments' => json_encode($p['functionCall']['args'] ?? new \stdClass),
                 ],
             ])
             ->values()
@@ -436,4 +488,3 @@ class GeminiAdapter implements ProviderAdapter
             ->all();
     }
 }
-

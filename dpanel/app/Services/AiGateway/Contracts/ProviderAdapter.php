@@ -28,6 +28,9 @@ interface ProviderAdapter
     /**
      * Perform a chat completion against the provider.
      *
+     * A user message may carry `images: [{mime, data}]` (base64) next to its
+     * text; adapters send them in their provider's multimodal format.
+     *
      * Messages may include an assistant `tool_calls` array (OpenAI shape:
      * `[{id, type:'function', function:{name, arguments}}]`, `arguments`
      * JSON-encoded) and/or a `tool` role message with a `tool_call_id`
@@ -73,4 +76,14 @@ interface ProviderAdapter
      * @return array{content:string, input_tokens:int, output_tokens:int, model:string, raw:array, tool_calls?:?array, finish_reason?:string}
      */
     public function stream(AiGatewayProvider $provider, string $model, array $messages, array $options, \Closure $onDelta): array;
+
+    /**
+     * Generate images from a text prompt.
+     *
+     * @param  array{size?: ?string, n?: int}  $options
+     * @return array{images: array<int, array{mime: string, data: string}>, text: string, model: string}
+     *
+     * @throws \App\Services\AiGateway\Exceptions\AiGatewayException when the provider cannot.
+     */
+    public function generateImage(AiGatewayProvider $provider, string $model, string $prompt, array $options = []): array;
 }

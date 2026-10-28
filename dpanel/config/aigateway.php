@@ -17,6 +17,9 @@ return [
     // Default network timeout (seconds) for outbound provider requests.
     'timeout' => (int) env('AIGATEWAY_TIMEOUT', 90),
 
+    // Image generation takes longer than a chat reply.
+    'image_timeout' => (int) env('AIGATEWAY_IMAGE_TIMEOUT', 180),
+
     // Maximum number of retries for transient provider failures.
     'max_retries' => (int) env('AIGATEWAY_MAX_RETRIES', 1),
 
@@ -50,6 +53,8 @@ return [
             ['name' => 'gpt-4.1', 'display_name' => 'GPT-4.1', 'context_window' => 1047576, 'max_output_tokens' => 32768, 'capabilities' => ['chat', 'vision', 'code'], 'input_price' => 2.00, 'output_price' => 8.00],
             ['name' => 'gpt-4o-mini', 'display_name' => 'GPT-4o mini', 'context_window' => 128000, 'max_output_tokens' => 16384, 'capabilities' => ['chat', 'vision', 'code'], 'input_price' => 0.15, 'output_price' => 0.60],
             ['name' => 'gpt-4o', 'display_name' => 'GPT-4o', 'context_window' => 128000, 'max_output_tokens' => 16384, 'capabilities' => ['chat', 'vision', 'code'], 'input_price' => 2.50, 'output_price' => 10.00],
+            // Image model: "image_generation" without "chat" keeps it out of chat routing.
+            ['name' => 'gpt-image-1', 'display_name' => 'GPT Image 1', 'context_window' => 0, 'max_output_tokens' => 0, 'capabilities' => ['image_generation'], 'input_price' => 0, 'output_price' => 0],
         ],
         // Free-tier models on OpenRouter (":free" suffix). Subject to daily
         // rate limits set by OpenRouter, not by this gateway.
@@ -64,6 +69,7 @@ return [
         'gemini' => [
             ['name' => 'gemini-2.5-flash', 'display_name' => 'Gemini 2.5 Flash', 'context_window' => 1048576, 'max_output_tokens' => 65536, 'capabilities' => ['chat', 'vision', 'code'], 'input_price' => 0.30, 'output_price' => 2.50],
             ['name' => 'gemini-2.5-pro', 'display_name' => 'Gemini 2.5 Pro', 'context_window' => 1048576, 'max_output_tokens' => 65536, 'capabilities' => ['chat', 'vision', 'code'], 'input_price' => 1.25, 'output_price' => 10.00],
+            ['name' => 'gemini-2.5-flash-image', 'display_name' => 'Gemini 2.5 Flash Image', 'context_window' => 32768, 'max_output_tokens' => 32768, 'capabilities' => ['image_generation'], 'input_price' => 0, 'output_price' => 0],
         ],
         // Groq's free tier is generous and very fast (LPU inference).
         'groq' => [

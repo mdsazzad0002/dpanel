@@ -11,7 +11,8 @@
 | Fix an error message | [Troubleshooting](troubleshooting.md) |
 | Install Laravel/WordPress or build a site with npm/composer | [Websites and Apps](websites.md) |
 | Run Docker containers (optional, off by default) | [Docker](docker.md) |
-| Let Claude, Cursor or another AI client fix server problems | [MCP Access](mcp.md) |
+| Let Claude, Cursor or another AI client fix server problems | [AI Gateway: images](ai-gateway.md) | Images in chat (vision or OCR), image generation, and the image API |
+| [MCP Access](mcp.md) |
 | See what the panel looks like | [Screenshots](screenshots.md) |
 
 ## Getting started

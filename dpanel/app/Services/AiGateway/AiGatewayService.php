@@ -23,8 +23,7 @@ class RegisteredAdapter
         public readonly string $label,
         public readonly string $baseUrl,
         public readonly string $apiKeyUrl,
-    ) {
-    }
+    ) {}
 }
 
 class AiGatewayService
@@ -34,13 +33,17 @@ class AiGatewayService
      */
     private array $adapters;
 
+    private readonly GatewayMedia $media;
+
     public function __construct(
         private readonly Router $router,
+        ?GatewayMedia $media = null,
     ) {
+        $this->media = $media ?? app(GatewayMedia::class);
         $this->adapters = [
-            new AnthropicAdapter(),
-            new OpenAiAdapter(),
-            new GeminiAdapter(),
+            new AnthropicAdapter,
+            new OpenAiAdapter,
+            new GeminiAdapter,
         ];
     }
 
@@ -115,7 +118,7 @@ class AiGatewayService
         $start = microtime(true);
 
         try {
-            $result = $adapter->chat($provider, $modelName, $messages, [
+            $result = $adapter->chat($provider, $modelName, $this->media->prepareForModel($messages, $modelRecord), [
                 'system' => $options['system'] ?? null,
                 'temperature' => $options['temperature'] ?? config('aigateway.default_temperature', 0.3),
                 'max_tokens' => $options['max_tokens'] ?? config('aigateway.default_max_tokens', 2048),
@@ -151,7 +154,7 @@ class AiGatewayService
             'operation' => $options['operation'] ?? 'chat',
             'model' => $modelName,
             'status' => 'success',
-            'request_payload' => config('aigateway.log_payloads', true) ? $this->trimForLog($messages) : null,
+            'request_payload' => config('aigateway.log_payloads', true) ? $this->trimForLog(GatewayMedia::withoutImageData($messages)) : null,
             'response_snippet' => config('aigateway.log_payloads', true) ? $this->trimForLog($result['content']) : null,
             'input_tokens' => $result['input_tokens'],
             'output_tokens' => $result['output_tokens'],
@@ -193,7 +196,7 @@ class AiGatewayService
         $start = microtime(true);
 
         try {
-            $result = $adapter->stream($provider, $modelName, $messages, [
+            $result = $adapter->stream($provider, $modelName, $this->media->prepareForModel($messages, $modelRecord), [
                 'system' => $options['system'] ?? null,
                 'temperature' => $options['temperature'] ?? config('aigateway.default_temperature', 0.3),
                 'max_tokens' => $options['max_tokens'] ?? config('aigateway.default_max_tokens', 2048),
@@ -229,7 +232,7 @@ class AiGatewayService
             'operation' => $options['operation'] ?? 'chat',
             'model' => $modelName,
             'status' => 'success',
-            'request_payload' => config('aigateway.log_payloads', true) ? $this->trimForLog($messages) : null,
+            'request_payload' => config('aigateway.log_payloads', true) ? $this->trimForLog(GatewayMedia::withoutImageData($messages)) : null,
             'response_snippet' => config('aigateway.log_payloads', true) ? $this->trimForLog($result['content']) : null,
             'input_tokens' => $result['input_tokens'],
             'output_tokens' => $result['output_tokens'],
@@ -268,7 +271,7 @@ class AiGatewayService
      */
     public function chatAuto(?string $modelName, array $messages, array $options = [], ?int $providerId = null): array
     {
-        $candidates = $this->router->candidates($modelName, $providerId, empty($options['tools']) ? [] : ['tools']);
+        $candidates = $this->router->candidates($modelName, $providerId, $this->requiredCapabilities($messages, $options));
 
         if ($candidates->isEmpty()) {
             throw Exceptions\AiGatewayException::noActiveProvider();
@@ -310,7 +313,7 @@ class AiGatewayService
      */
     public function chatStreamAuto(?string $modelName, array $messages, array $options, \Closure $onDelta, ?int $providerId = null): array
     {
-        $candidates = $this->router->candidates($modelName, $providerId, empty($options['tools']) ? [] : ['tools']);
+        $candidates = $this->router->candidates($modelName, $providerId, $this->requiredCapabilities($messages, $options));
 
         if ($candidates->isEmpty()) {
             throw Exceptions\AiGatewayException::noActiveProvider();
@@ -338,6 +341,85 @@ class AiGatewayService
         }
 
         throw $lastException;
+    }
+
+    /**
+     * Generate images from a prompt with a model tagged "image_generation",
+     * failing over between such models like chatAuto().
+     *
+     * @param  array{size?: string, n?: int, channel?: string, created_by?: int|null}  $options
+     * @return array{images: array<int, array{mime: string, data: string}>, text: string, model: string, provider: AiGatewayProvider, trace_id: string}
+     */
+    public function generateImage(?string $modelName, string $prompt, array $options = [], ?int $providerId = null): array
+    {
+        $candidates = $this->router->candidates($modelName, $providerId, ['image_generation']);
+
+        if ($candidates->isEmpty()) {
+            throw new Exceptions\AiGatewayException('No active image model. Add one (e.g. gpt-image-1 or gemini-2.5-flash-image) under AI Gateway → Models and give it the "image_generation" capability.');
+        }
+
+        $lastException = null;
+
+        foreach ($candidates as $modelRecord) {
+            $provider = $modelRecord->provider;
+            $traceId = (string) Str::uuid();
+            $start = microtime(true);
+            $options['operation'] = 'image';
+
+            try {
+                $result = $this->adapterFor($provider->driver)->generateImage($provider, $modelRecord->name, $prompt, [
+                    'size' => $options['size'] ?? null,
+                    'n' => max(1, min(4, (int) ($options['n'] ?? 1))),
+                ]);
+            } catch (\Throwable $e) {
+                $lastException = $e;
+                $this->recordFailure($provider, $modelRecord, $modelRecord->name, $traceId, $options, $e);
+
+                if ($e instanceof Exceptions\AiGatewayException) {
+                    $modelRecord->recordFailure($e->suggestedRetrySeconds());
+
+                    continue;
+                }
+
+                throw $e;
+            }
+
+            $modelRecord->recordSuccess();
+            AiGatewayUsageRecord::record($provider->id, $modelRecord->id, 0, 0, 0);
+            AiGatewayRequestLog::create([
+                'trace_id' => $traceId,
+                'channel' => $options['channel'] ?? 'gateway',
+                'provider_id' => $provider->id,
+                'model_id' => $modelRecord->id,
+                'operation' => 'image',
+                'model' => $modelRecord->name,
+                'status' => 'success',
+                'request_payload' => config('aigateway.log_payloads', true) ? $this->trimForLog($prompt) : null,
+                'response_snippet' => count($result['images']).' image(s)'.($result['text'] !== '' ? ': '.Str::limit($result['text'], 500) : ''),
+                'input_tokens' => 0,
+                'output_tokens' => 0,
+                'cost' => 0,
+                'latency_ms' => (int) round((microtime(true) - $start) * 1000),
+                'created_by' => $options['created_by'] ?? auth()->id() ?? null,
+            ]);
+
+            return [...$result, 'provider' => $provider, 'trace_id' => $traceId];
+        }
+
+        throw $lastException;
+    }
+
+    /**
+     * Capabilities auto-routing should prefer for a request.
+     *
+     * @return array<int, string>
+     */
+    private function requiredCapabilities(array $messages, array $options): array
+    {
+        return array_values(array_filter([
+            empty($options['tools']) ? null : 'tools',
+            GatewayMedia::hasImages($messages) ? 'vision' : null,
+        ]));
     }
 
     /**
@@ -418,11 +500,11 @@ class AiGatewayService
             if (isset($tool['function']) && is_array($tool['function'])) {
                 $params = $tool['function']['parameters'] ?? null;
                 $tool['function']['parameters'] = empty($params)
-                    ? ['type' => 'object', 'properties' => new \stdClass()]
+                    ? ['type' => 'object', 'properties' => new \stdClass]
                     : $this->normaliseSchema($params);
             } elseif (array_key_exists('parameters', $tool)) {
                 $tool['parameters'] = empty($tool['parameters'])
-                    ? ['type' => 'object', 'properties' => new \stdClass()]
+                    ? ['type' => 'object', 'properties' => new \stdClass]
                     : $this->normaliseSchema($tool['parameters']);
             }
 
@@ -446,10 +528,10 @@ class AiGatewayService
         foreach ($schema as $key => $value) {
             if (in_array($key, $mapKeywords, true) && is_array($value)) {
                 $schema[$key] = $value === []
-                    ? new \stdClass()
-                    : array_map(fn ($v) => $v === [] ? new \stdClass() : $this->normaliseSchema($v), $value);
+                    ? new \stdClass
+                    : array_map(fn ($v) => $v === [] ? new \stdClass : $this->normaliseSchema($v), $value);
             } elseif (in_array($key, $schemaKeywords, true) && $value === []) {
-                $schema[$key] = new \stdClass();
+                $schema[$key] = new \stdClass;
             } elseif (is_array($value)) {
                 $schema[$key] = $this->normaliseSchema($value);
             }
@@ -471,4 +553,3 @@ class AiGatewayService
         return null;
     }
 }
-

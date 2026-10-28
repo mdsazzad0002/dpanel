@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\AiGateway\AiGatewayService;
 use App\Services\AiGateway\Exceptions\AiGatewayException;
+use App\Services\AiGateway\GatewayMedia;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -21,8 +22,7 @@ class AiGatewayApiController extends Controller
 {
     public function __construct(
         private readonly AiGatewayService $gateway,
-    ) {
-    }
+    ) {}
 
     /**
      * GET /api/v1/models — only the pseudo "auto" entry is offered; the
@@ -66,7 +66,8 @@ class AiGatewayApiController extends Controller
             'model' => ['nullable', 'string', 'max:255'],
             'messages' => ['required', 'array', 'min:1'],
             'messages.*.role' => ['required', 'in:system,user,assistant,tool'],
-            'messages.*.content' => ['nullable', 'string'],
+            // A string, or OpenAI's content parts: {type: text} and {type: image_url}.
+            'messages.*.content' => ['nullable'],
             'messages.*.tool_calls' => ['nullable', 'array'],
             'messages.*.tool_calls.*.id' => ['nullable', 'string'],
             'messages.*.tool_calls.*.type' => ['nullable', 'string'],
@@ -96,6 +97,12 @@ class AiGatewayApiController extends Controller
         }
 
         $data['model'] = null;
+
+        try {
+            $data['messages'] = array_map(fn (array $message): array => $this->contentParts($message), $data['messages']);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => ['message' => $e->getMessage(), 'type' => 'invalid_request_error', 'code' => 'invalid_content']], 400);
+        }
 
         $options = [
             'channel' => 'api',
@@ -143,6 +150,103 @@ class AiGatewayApiController extends Controller
         ]);
     }
 
+    /**
+     * POST /api/v1/images/generations — OpenAI-compatible image generation,
+     * routed automatically (like chat) to a model with the "image_generation"
+     * capability. Images come back as base64 (`b64_json`) only.
+     */
+    public function imageGenerations(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'prompt' => ['required', 'string', 'max:4000'],
+            'model' => ['nullable', 'string', 'max:255'],
+            'n' => ['nullable', 'integer', 'min:1', 'max:4'],
+            'size' => ['nullable', 'string', 'max:20'],
+            'response_format' => ['nullable', 'in:b64_json'],
+        ]);
+
+        if (! empty($data['model']) && strtolower($data['model']) !== 'auto') {
+            return response()->json([
+                'error' => [
+                    'message' => 'This gateway only supports automatic routing — omit "model" or set it to "auto".',
+                    'type' => 'invalid_request_error',
+                    'code' => 'unsupported_model',
+                ],
+            ], 400);
+        }
+
+        try {
+            $result = $this->gateway->generateImage(
+                null,
+                $data['prompt'],
+                ['n' => $data['n'] ?? 1, 'size' => ($data['size'] ?? 'auto') === 'auto' ? null : $data['size'], 'channel' => 'api', 'created_by' => null],
+            );
+        } catch (\Throwable $e) {
+            return $this->errorResponse($e);
+        }
+
+        return response()->json([
+            'created' => now()->timestamp,
+            'model' => $result['model'],
+            'provider' => $result['provider']->name,
+            'data' => array_map(fn (array $image): array => array_filter([
+                'b64_json' => $image['data'],
+                'mime_type' => $image['mime'],
+                'revised_prompt' => $result['text'] !== '' ? $result['text'] : null,
+            ]), $result['images']),
+        ]);
+    }
+
+    /**
+     * OpenAI content parts to the gateway's message shape: text parts are
+     * joined, image_url parts become `images`. Only data: URLs are taken —
+     * the gateway does not fetch URLs on a caller's behalf.
+     *
+     * @throws \InvalidArgumentException
+     */
+    private function contentParts(array $message): array
+    {
+        $content = $message['content'] ?? null;
+        if (! is_array($content)) {
+            $message['content'] = $content === null ? null : (string) $content;
+
+            return $message;
+        }
+
+        $texts = [];
+        $images = [];
+        foreach ($content as $part) {
+            $type = is_array($part) ? ($part['type'] ?? '') : '';
+            if ($type === 'text') {
+                $texts[] = (string) ($part['text'] ?? '');
+            } elseif ($type === 'image_url') {
+                $url = (string) (is_array($part['image_url'] ?? null) ? ($part['image_url']['url'] ?? '') : ($part['image_url'] ?? ''));
+                if (preg_match('#^data:(image/[a-z+.-]+);base64,(.+)$#is', $url, $match) !== 1) {
+                    throw new \InvalidArgumentException('image_url must be a data: URL with base64 image data (data:image/png;base64,...); the gateway does not download images.');
+                }
+                $bytes = base64_decode($match[2], true);
+                $mime = $bytes === false ? null : GatewayMedia::detectMime($bytes);
+                if ($mime === null || strlen($bytes) > GatewayMedia::MAX_BYTES) {
+                    throw new \InvalidArgumentException('Images must be PNG, JPEG, WebP or GIF, up to '.(GatewayMedia::MAX_BYTES / 1024 / 1024).' MB.');
+                }
+                $images[] = ['mime' => $mime, 'data' => base64_encode($bytes)];
+            } else {
+                throw new \InvalidArgumentException('Unsupported content part type: '.($type ?: 'none').'. Use "text" or "image_url".');
+            }
+        }
+
+        if (count($images) > GatewayMedia::MAX_IMAGES) {
+            throw new \InvalidArgumentException('At most '.GatewayMedia::MAX_IMAGES.' images per message.');
+        }
+
+        $message['content'] = implode("\n", $texts);
+        if ($images !== []) {
+            $message['images'] = $images;
+        }
+
+        return $message;
+    }
+
     private function streamCompletion(string $completionId, array $data, array $options): StreamedResponse
     {
         $response = new StreamedResponse(function () use ($completionId, $data, $options): void {
@@ -183,7 +287,7 @@ class AiGatewayApiController extends Controller
                     $send($chunk(['tool_calls' => $result['tool_calls']]));
                 }
 
-                $send($chunk(new \stdClass(), $result['finish_reason'] ?? 'stop'));
+                $send($chunk(new \stdClass, $result['finish_reason'] ?? 'stop'));
             } catch (\Throwable $e) {
                 $send([
                     'error' => [

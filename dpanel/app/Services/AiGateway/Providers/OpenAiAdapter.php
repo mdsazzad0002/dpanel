@@ -5,6 +5,7 @@ namespace App\Services\AiGateway\Providers;
 use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\Contracts\ProviderAdapter;
 use App\Services\AiGateway\Exceptions\AiGatewayException;
+use App\Services\AiGateway\GatewayMedia;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -41,6 +42,60 @@ class OpenAiAdapter implements ProviderAdapter
     public static function driverMeta(): array
     {
         return array_map(fn (array $meta) => ['base_url' => $meta[1], 'api_key_url' => $meta[2]], self::DRIVERS);
+    }
+
+    /**
+     * OpenAI's /images/generations, which OpenAI-compatible providers that
+     * make images (xAI, Together, …) also serve.
+     */
+    public function generateImage(AiGatewayProvider $provider, string $model, string $prompt, array $options = []): array
+    {
+        $apiKey = $provider->getApiKey();
+
+        if (! $apiKey) {
+            throw AiGatewayException::missingCredentials($provider->name);
+        }
+
+        $body = array_filter([
+            'model' => $model,
+            'prompt' => $prompt,
+            'n' => (int) ($options['n'] ?? 1),
+            'size' => $options['size'] ?? null,
+        ], fn ($value) => $value !== null);
+
+        // gpt-image-* always answer in base64 and reject response_format;
+        // DALL·E answers with short-lived URLs unless asked.
+        if (str_starts_with($model, 'dall-e')) {
+            $body['response_format'] = 'b64_json';
+        }
+
+        $response = $this->requestFor($provider, $apiKey, (int) config('aigateway.image_timeout', 180))
+            ->post(rtrim($this->baseUrlFor($provider), '/').'/images/generations', $body);
+
+        if ($response->failed()) {
+            throw AiGatewayException::upstream($provider->name, $this->extractErrorMessage($response), $response->status());
+        }
+
+        $images = [];
+        $notes = [];
+        foreach ((array) $response->json('data', []) as $item) {
+            $bytes = isset($item['b64_json'])
+                ? base64_decode((string) $item['b64_json'], true)
+                : (isset($item['url']) ? Http::timeout(60)->get((string) $item['url'])->body() : false);
+
+            if (is_string($bytes) && $bytes !== '') {
+                $images[] = ['mime' => GatewayMedia::detectMime($bytes) ?? 'image/png', 'data' => base64_encode($bytes)];
+            }
+            if (! empty($item['revised_prompt'])) {
+                $notes[] = (string) $item['revised_prompt'];
+            }
+        }
+
+        if ($images === []) {
+            throw AiGatewayException::upstream($provider->name, 'The response contained no images.', $response->status());
+        }
+
+        return ['images' => $images, 'text' => implode("\n", $notes), 'model' => $model];
     }
 
     private function baseUrlFor(AiGatewayProvider $provider): string
@@ -246,6 +301,17 @@ class OpenAiAdapter implements ProviderAdapter
     private function normaliseMessages(array $messages): array
     {
         return array_map(function (array $m): array {
+            if (! empty($m['images'])) {
+                $m['content'] = [
+                    ['type' => 'text', 'text' => (string) ($m['content'] ?? '')],
+                    ...array_map(fn (array $image): array => [
+                        'type' => 'image_url',
+                        'image_url' => ['url' => 'data:'.$image['mime'].';base64,'.$image['data']],
+                    ], $m['images']),
+                ];
+            }
+            unset($m['images']);
+
             if (! empty($m['tool_calls'])) {
                 $m['tool_calls'] = array_map(fn (array $tc): array => $tc + ['type' => 'function'], $m['tool_calls']);
             }

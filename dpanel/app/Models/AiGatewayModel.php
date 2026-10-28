@@ -21,6 +21,13 @@ class AiGatewayModel extends Model
      */
     public const COOLDOWN_MINUTES = 5;
 
+    /**
+     * Tags an admin can set. Routing uses "tools", "vision" (images go to
+     * the model instead of through OCR) and "image_generation" (an image
+     * model; without "chat" it never gets chat requests).
+     */
+    public const CAPABILITIES = ['chat', 'vision', 'code', 'tools', 'image_generation'];
+
     protected $fillable = [
         'provider_id',
         'name',

@@ -58,12 +58,12 @@ class Router
      * top-weight one until it hits its rate limit.
      *
      * @param  array<int, string>  $requireCapabilities  When non-empty (e.g.
-     *   ["tools"] for a request carrying function-calling tools), candidates
-     *   are preferred in order: models whose `capabilities` array explicitly
-     *   lists every required tag first, then everything else (including
-     *   models with capabilities left unset, since most of the fleet hasn't
-     *   been tagged yet) — a soft preference, not a hard filter, so a request
-     *   never fails outright just because no model happens to be tagged.
+     *                                                   ["tools"] for a request carrying function-calling tools), candidates
+     *                                                   are preferred in order: models whose `capabilities` array explicitly
+     *                                                   lists every required tag first, then everything else (including
+     *                                                   models with capabilities left unset, since most of the fleet hasn't
+     *                                                   been tagged yet) — a soft preference, not a hard filter, so a request
+     *                                                   never fails outright just because no model happens to be tagged.
      * @return \Illuminate\Support\Collection<int, AiGatewayModel>
      */
     public function candidates(?string $modelName = null, ?int $providerId = null, array $requireCapabilities = []): \Illuminate\Support\Collection
@@ -76,8 +76,16 @@ class Router
             ->with('provider')
             ->get()
             ->filter(fn (AiGatewayModel $m) => ! $m->isInCooldown())
+            // "image_generation" is a hard filter, unlike the soft preference
+            // below: an image request can only go to an image model, and a
+            // chat never to a model that only makes images.
+            ->filter(fn (AiGatewayModel $m) => in_array('image_generation', $requireCapabilities, true)
+                ? in_array('image_generation', $m->capabilities ?? [], true)
+                : ! self::isImageOnly($m))
             ->sortByDesc(fn (AiGatewayModel $m) => $m->provider->weight * 1000 + random_int(0, 999))
             ->values();
+
+        $requireCapabilities = array_values(array_diff($requireCapabilities, ['image_generation']));
 
         $fallbackTail = collect();
 
@@ -109,6 +117,13 @@ class Router
         Cache::put($cacheKey, $cursor + 1, now()->addHours(6));
 
         return $base->slice($cursor)->concat($base->slice(0, $cursor))->concat($fallbackTail)->values();
+    }
+
+    public static function isImageOnly(AiGatewayModel $model): bool
+    {
+        $caps = $model->capabilities ?? [];
+
+        return in_array('image_generation', $caps, true) && ! in_array('chat', $caps, true);
     }
 
     private function finalise(AiGatewayProvider $provider, ?AiGatewayModel $model, ?string $requestedModel): array

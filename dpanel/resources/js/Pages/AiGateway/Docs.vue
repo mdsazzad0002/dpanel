@@ -71,6 +71,28 @@ const curlToolsFollowup = computed(() => `curl ${props.apiBaseUrl}/chat/completi
     "tools": [{ "type": "function", "function": { "name": "get_weather", "parameters": { "type": "object", "properties": { "city": { "type": "string" } } } } }]
   }'`);
 
+const curlVision = computed(() => `curl ${props.apiBaseUrl}/chat/completions \\
+  -H "Authorization: Bearer sk-ag-..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "auto",
+    "messages": [{
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "What does this screenshot say?" },
+        { "type": "image_url", "image_url": { "url": "data:image/png;base64,iVBORw0KG..." } }
+      ]
+    }]
+  }'`);
+
+const curlImages = computed(() => `curl ${props.apiBaseUrl}/images/generations \\
+  -H "Authorization: Bearer sk-ag-..." \\
+  -H "Content-Type: application/json" \\
+  -d '{ "prompt": "A lighthouse at dusk, watercolor", "size": "1024x1024", "n": 1 }'
+
+# => { "created": 1730000000, "model": "gpt-image-1", "provider": "OpenAI",
+#      "data": [{ "b64_json": "iVBORw0KG...", "mime_type": "image/png" }] }`);
+
 const pythonSdk = computed(() => `from openai import OpenAI
 
 client = OpenAI(
@@ -162,6 +184,28 @@ Authorization: Bearer sk-ag-...</code></pre>
                     In streaming mode, <code>tool_calls</code> arrive complete in a single chunk (not streamed
                     argument-by-argument) followed by a chunk with <code>finish_reason: "tool_calls"</code>.
                 </p>
+            </section>
+
+            <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+                <h2 class="text-sm font-semibold">Images in chat (vision)</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    Send OpenAI-style content parts: <code>text</code> and <code>image_url</code>. Images must be inline
+                    <code>data:</code> URLs (PNG, JPEG, WebP or GIF, up to 10 MB, 8 per message); the gateway does not
+                    download image links. Requests with images prefer models tagged <code>vision</code>, which get the image
+                    itself. A model without <code>vision</code> gets the text OCR reads from the image instead.
+                </p>
+                <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlVision }}</code></pre>
+            </section>
+
+            <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+                <h2 class="text-sm font-semibold">POST /images/generations</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    OpenAI-compatible image generation, routed automatically to a model tagged <code>image_generation</code>
+                    (e.g. <code>gpt-image-1</code>, <code>gemini-2.5-flash-image</code>) with failover between them.
+                    Options: <code>prompt</code> (required), <code>n</code> (1–4), <code>size</code> (e.g. <code>1024x1024</code>;
+                    ignored by models that pick their own). Images come back as base64 in <code>b64_json</code>.
+                </p>
+                <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlImages }}</code></pre>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">

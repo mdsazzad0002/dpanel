@@ -17,8 +17,7 @@ class AiGatewayModelController extends Controller
 {
     public function __construct(
         private readonly AiGatewayService $gateway,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -96,6 +95,8 @@ class AiGatewayModelController extends Controller
             'input_price' => ['nullable', 'numeric', 'min:0'],
             'output_price' => ['nullable', 'numeric', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
+            'capabilities' => ['nullable', 'array'],
+            'capabilities.*' => [Rule::in(AiGatewayModel::CAPABILITIES)],
         ]);
 
         $provider = AiGatewayProvider::findOrFail($data['provider_id']);
@@ -108,6 +109,7 @@ class AiGatewayModelController extends Controller
             'max_output_tokens' => $data['max_output_tokens'] ?? 0,
             'input_price' => $data['input_price'] ?? 0,
             'output_price' => $data['output_price'] ?? 0,
+            'capabilities' => array_values(array_unique($data['capabilities'] ?? [])) ?: null,
             'is_active' => $data['is_active'] ?? true,
             'is_default' => $isFirstModel,
         ]);
@@ -139,6 +141,8 @@ class AiGatewayModelController extends Controller
             'input_price' => ['nullable', 'numeric', 'min:0'],
             'output_price' => ['nullable', 'numeric', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
+            'capabilities' => ['nullable', 'array'],
+            'capabilities.*' => [Rule::in(AiGatewayModel::CAPABILITIES)],
         ], [
             'name.unique' => 'That provider already has a model with this ID.',
         ]);
@@ -157,6 +161,7 @@ class AiGatewayModelController extends Controller
             'max_output_tokens' => $data['max_output_tokens'] ?? $model->max_output_tokens,
             'input_price' => $data['input_price'] ?? $model->input_price,
             'output_price' => $data['output_price'] ?? $model->output_price,
+            'capabilities' => array_key_exists('capabilities', $data) ? (array_values(array_unique($data['capabilities'] ?? [])) ?: null) : $model->capabilities,
             'is_active' => $data['is_active'] ?? $model->is_active,
         ]);
 

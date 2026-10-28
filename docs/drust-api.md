@@ -96,7 +96,7 @@ Every endpoint except `GET /health` requires the bearer token.
 | Migration | `migration/cpanel/{inspect, restore}`, `migration/cyberpanel-ssh/{discover, transfer}`, `migration/generic/restore` |
 | Security | `security`, `security/scan` |
 | Docker | `docker` (GET status, POST actions), `docker/{logs, inspect, stats, exec}`, `docker/{networks, volumes, system, stacks}` (GET list, POST actions), `docker/stacks/{show, logs}` |
-| Media | `media/ocr`, `media/transcribe` |
+| Media | `media/ocr`, `media/transcribe` (each takes a `url` to download, or the file as base64 `data`) |
 | Scripts | `script/run` |
 
 Paths in the table are relative to `/api/v1/`. The legacy `sync-vhost`

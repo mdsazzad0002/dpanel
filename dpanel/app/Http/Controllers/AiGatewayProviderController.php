@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\AiGatewayService;
 use App\Services\AiGateway\ChatHistoryStore;
+use App\Services\AiGateway\GatewayMedia;
 use App\Services\Mcp\GatewayChatTools;
 use App\Support\StreamsSseChat;
 use Illuminate\Http\JsonResponse;
@@ -25,6 +26,7 @@ class AiGatewayProviderController extends Controller
         private readonly ChatHistoryStore $chatHistory,
         private readonly PanelSearchController $panelSearch,
         private readonly GatewayChatTools $chatTools,
+        private readonly GatewayMedia $media,
     ) {}
 
     public function index(): Response
@@ -227,7 +229,7 @@ class AiGatewayProviderController extends Controller
                 'driver' => $p->driver,
                 'driver_label' => $p->getDriverLabel(),
                 'default_model' => $p->default_model,
-                'models' => $p->models->map(fn ($m) => ['name' => $m->name, 'display_name' => $m->display_name])->values(),
+                'models' => $p->models->map(fn ($m) => ['name' => $m->name, 'display_name' => $m->display_name, 'capabilities' => $m->capabilities ?? []])->values(),
             ])->values(),
             'initialProviderId' => $selected?->id ?? ($providers->count() > 1 ? '__auto__' : $providers->first()?->id),
             'canUseServerTools' => GatewayChatTools::allowedFor($request->user()),
@@ -240,9 +242,13 @@ class AiGatewayProviderController extends Controller
             'model' => ['nullable', 'string', 'max:255'],
             'messages' => ['required', 'array', 'min:1'],
             'messages.*.role' => ['required', 'in:user,assistant,system'],
-            'messages.*.content' => ['required', 'string'],
+            'messages.*.content' => ['nullable', 'string', 'required_without:messages.*.images'],
+            'messages.*.images' => ['nullable', 'array', 'max:'.GatewayMedia::MAX_IMAGES],
+            'messages.*.images.*' => ['string', 'uuid'],
             'context' => ['nullable', 'string', 'in:playground,panel_search'],
         ]);
+
+        $data['messages'] = $this->withImages($request, $data['messages']);
 
         $context = $data['context'] ?? 'playground';
         $messages = $this->withAssistantPersona($request, $data['messages'], $context);
@@ -287,10 +293,13 @@ class AiGatewayProviderController extends Controller
                 'model' => ['nullable', 'string', 'max:255'],
                 'messages' => ['required', 'array', 'min:1'],
                 'messages.*.role' => ['required', 'in:user,assistant,system'],
-                'messages.*.content' => ['required', 'string'],
+                'messages.*.content' => ['nullable', 'string', 'required_without:messages.*.images'],
+            'messages.*.images' => ['nullable', 'array', 'max:'.GatewayMedia::MAX_IMAGES],
+            'messages.*.images.*' => ['string', 'uuid'],
                 'context' => ['nullable', 'string', 'in:playground,panel_search'],
                 'tools' => ['nullable', Rule::in(GatewayChatTools::MODES)],
             ]);
+            $data['messages'] = $this->withImages($request, $data['messages']);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->sseValidationError($e);
         }
@@ -348,9 +357,13 @@ class AiGatewayProviderController extends Controller
             'model' => ['nullable', 'string', 'max:255'],
             'messages' => ['required', 'array', 'min:1'],
             'messages.*.role' => ['required', 'in:user,assistant,system'],
-            'messages.*.content' => ['required', 'string'],
+            'messages.*.content' => ['nullable', 'string', 'required_without:messages.*.images'],
+            'messages.*.images' => ['nullable', 'array', 'max:'.GatewayMedia::MAX_IMAGES],
+            'messages.*.images.*' => ['string', 'uuid'],
             'context' => ['nullable', 'string', 'in:playground,panel_search'],
         ]);
+
+        $data['messages'] = $this->withImages($request, $data['messages']);
 
         $context = $data['context'] ?? 'playground';
         $messages = $this->withAssistantPersona($request, $data['messages'], $context);
@@ -386,13 +399,16 @@ class AiGatewayProviderController extends Controller
                 'model' => ['nullable', 'string', 'max:255'],
                 'messages' => ['required', 'array', 'min:1'],
                 'messages.*.role' => ['required', 'in:user,assistant,system'],
-                'messages.*.content' => ['required', 'string'],
+                'messages.*.content' => ['nullable', 'string', 'required_without:messages.*.images'],
+            'messages.*.images' => ['nullable', 'array', 'max:'.GatewayMedia::MAX_IMAGES],
+            'messages.*.images.*' => ['string', 'uuid'],
                 // Both the full-page playground (Chat.vue) and the command-palette
                 // "Ask AI" modal (AuthenticatedLayout.vue) call this one endpoint;
                 // context only changes tagging/persona, not routing.
                 'context' => ['nullable', 'string', 'in:playground,panel_search'],
                 'tools' => ['nullable', Rule::in(GatewayChatTools::MODES)],
             ]);
+            $data['messages'] = $this->withImages($request, $data['messages']);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->sseValidationError($e);
         }
@@ -428,6 +444,31 @@ class AiGatewayProviderController extends Controller
                 $send('error', ['message' => $e->getMessage()]);
             }
         });
+    }
+
+    /**
+     * Turn the image ids a message carries into the image data adapters
+     * send, from the sender's own uploads.
+     *
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    private function withImages(Request $request, array $messages): array
+    {
+        try {
+            return array_map(function (array $message) use ($request): array {
+                $ids = $message['images'] ?? [];
+                unset($message['images']);
+                $message['content'] = (string) ($message['content'] ?? '');
+
+                if ($ids !== [] && $message['role'] === 'user') {
+                    $message['images'] = $this->media->forMessage($request->user()->id, $ids);
+                }
+
+                return $message;
+            }, $messages);
+        } catch (\InvalidArgumentException $e) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['messages' => $e->getMessage()]);
+        }
     }
 
     /** Model turns per message when server tools are on; each turn may call several tools. */
@@ -661,7 +702,9 @@ class AiGatewayProviderController extends Controller
             'session_id' => ['nullable', 'string', 'max:64'],
             'messages' => ['required', 'array', 'min:1'],
             'messages.*.role' => ['required', 'in:user,assistant'],
-            'messages.*.content' => ['required', 'string'],
+            'messages.*.content' => ['nullable', 'string', 'required_without:messages.*.images'],
+            'messages.*.images' => ['nullable', 'array', 'max:'.GatewayMedia::MAX_IMAGES],
+            'messages.*.images.*' => ['string', 'uuid'],
         ]);
 
         $user = $request->user();
@@ -717,7 +760,9 @@ class AiGatewayProviderController extends Controller
             'session_id' => ['nullable', 'string', 'max:64'],
             'messages' => ['required', 'array', 'min:1'],
             'messages.*.role' => ['required', 'in:user,assistant'],
-            'messages.*.content' => ['required', 'string'],
+            'messages.*.content' => ['nullable', 'string', 'required_without:messages.*.images'],
+            'messages.*.images' => ['nullable', 'array', 'max:'.GatewayMedia::MAX_IMAGES],
+            'messages.*.images.*' => ['string', 'uuid'],
         ]);
 
         $user = $request->user();

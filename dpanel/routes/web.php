@@ -2,6 +2,7 @@
 use Illuminate\Http\Request;
 use App\Http\Controllers\AiGatewayApiKeyController;
 use App\Http\Controllers\AiGatewayController;
+use App\Http\Controllers\AiGatewayMediaController;
 use App\Http\Controllers\AiGatewayLogController;
 use App\Http\Controllers\AiGatewayModelController;
 use App\Http\Controllers\AiGatewayProviderController;
@@ -154,6 +155,7 @@ Route::get('/whmcs/sso/{token}', [WhmcsController::class, 'consumeSso'])->middle
 Route::middleware(['ai_gateway.key', 'throttle:60,1'])->group(function (): void {
     Route::get('/api/v1/models', [AiGatewayApiController::class, 'models'])->name('api.ai-gateway.models');
     Route::post('/api/v1/chat/completions', [AiGatewayApiController::class, 'chatCompletions'])->name('api.ai-gateway.chat.completions');
+    Route::post('/api/v1/images/generations', [AiGatewayApiController::class, 'imageGenerations'])->name('api.ai-gateway.images.generations');
 });
 // Remote MCP (Model Context Protocol) endpoint, so AI clients such as Claude
 // or Cursor can diagnose and fix this server from anywhere. Authenticated via
@@ -605,6 +607,15 @@ Route::prefix('cpsess{token}')
                     Route::post('chat/history', [AiGatewayProviderController::class, 'chatHistorySaveAuto'])->name('ai-gateway.chat.auto.history.save');
                     Route::get('chat/history/{session}', [AiGatewayProviderController::class, 'chatHistoryShowAuto'])->name('ai-gateway.chat.auto.history.show');
                     Route::delete('chat/history/{session}', [AiGatewayProviderController::class, 'chatHistoryDestroyAuto'])->name('ai-gateway.chat.auto.history.destroy');
+
+                    // Images: attach to a chat message, generate, and view.
+                    Route::post('media', [AiGatewayMediaController::class, 'upload'])
+                        ->middleware('throttle:30,1')
+                        ->name('ai-gateway.media.upload');
+                    Route::get('media/{media}', [AiGatewayMediaController::class, 'show'])->name('ai-gateway.media.show');
+                    Route::post('images/generate', [AiGatewayMediaController::class, 'generate'])
+                        ->middleware('throttle:10,1')
+                        ->name('ai-gateway.images.generate');
                 });
 
             Route::prefix('ai-gateway')
