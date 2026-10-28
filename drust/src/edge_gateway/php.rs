@@ -23,8 +23,9 @@ use tracing::{info, warn};
 
 /// PHP output up to this size is read whole and returned with an exact
 /// length, so the edge cache can store it. Anything larger (downloads,
-/// exports) is streamed to the client as PHP produces it instead of being
-/// held in memory first.
+/// exports), and any response that asks not to be buffered (Server-Sent
+/// Events, `X-Accel-Buffering: no`), is streamed to the client as PHP
+/// produces it instead of being held in memory first.
 const BUFFERED_RESPONSE_BYTES: usize = 1024 * 1024;
 /// Request bodies with a declared length above this are streamed to PHP-FPM
 /// rather than read into memory; PHP's own post_max_size still applies.
@@ -194,12 +195,12 @@ async fn fastcgi_request(
             }
             FcgiRecord::Other => {}
         }
-        if stdout.len() > BUFFERED_RESPONSE_BYTES {
+        if stdout.len() > BUFFERED_RESPONSE_BYTES || wants_streaming(&stdout) {
             break;
         }
     }
 
-    // Too big to hold: send what is here and stream the rest as it comes.
+    // Too big to hold, or live output: send what is here and stream the rest as it comes.
     let (header_end, separator) = find_header_end(&stdout)
         .ok_or_else(|| "invalid FastCGI response: headers missing".to_string())?;
     let first = Bytes::from(stdout.split_off(header_end + separator));
@@ -811,6 +812,22 @@ fn find_header_end(output: &[u8]) -> Option<(usize, usize)> {
         })
 }
 
+/// Whether PHP's headers, once complete, ask for output to reach the client
+/// as it is written: an event stream, or nginx's `X-Accel-Buffering: no`.
+fn wants_streaming(output: &[u8]) -> bool {
+    let Some((header_end, _)) = find_header_end(output) else {
+        return false;
+    };
+    String::from_utf8_lossy(&output[..header_end]).lines().any(|line| {
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        let (name, value) = (name.trim(), value.trim().to_ascii_lowercase());
+        (name.eq_ignore_ascii_case("content-type") && value.starts_with("text/event-stream"))
+            || (name.eq_ignore_ascii_case("x-accel-buffering") && value == "no")
+    })
+}
+
 fn parse_cgi_response(output: &[u8]) -> Result<Response<Body>, String> {
     let split = find_header_end(output)
         .ok_or_else(|| "invalid FastCGI response: headers missing".to_string())?;
@@ -954,6 +971,56 @@ mod tests {
         flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut body).unwrap();
         assert_eq!(body.len(), output_len);
         let _ = fs::remove_file(&socket);
+    }
+
+    #[tokio::test]
+    async fn event_streams_reach_the_client_before_php_finishes() {
+        let socket = std::env::temp_dir().join(format!("drust-fpm-sse-{}.sock", std::process::id()));
+        let _ = fs::remove_file(&socket);
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut stream = BufReader::new(stream);
+            loop {
+                let mut header = [0u8; 8];
+                stream.read_exact(&mut header).await.unwrap();
+                let length = u16::from_be_bytes([header[4], header[5]]) as usize;
+                let mut content = vec![0; length + header[6] as usize];
+                stream.read_exact(&mut content).await.unwrap();
+                if header[1] == 5 && length == 0 {
+                    break;
+                }
+            }
+            let stream = stream.get_mut();
+            write_fcgi_record(stream, 6, b"Content-Type: text/event-stream\r\n\r\nevent: tool\ndata: {}\n\n").await.unwrap();
+            // PHP is still working: the rest only comes once the test has seen the first event.
+            released.await.unwrap();
+            write_fcgi_record(stream, 6, b"event: done\ndata: {}\n\n").await.unwrap();
+            write_fcgi_record(stream, 3, &[0; 8]).await.unwrap();
+        });
+
+        let response = tokio::time::timeout(
+            Duration::from_secs(5),
+            fastcgi_request(&socket, &[], RequestInput::Buffered(Bytes::new()), deadline()),
+        )
+        .await
+        .expect("an event stream must not wait for PHP to finish")
+        .unwrap();
+        let mut body = response.into_body().into_data_stream();
+        assert_eq!(body.next().await.unwrap().unwrap(), Bytes::from_static(b"event: tool\ndata: {}\n\n"));
+        release.send(()).unwrap();
+        assert_eq!(body.next().await.unwrap().unwrap(), Bytes::from_static(b"event: done\ndata: {}\n\n"));
+        let _ = fs::remove_file(&socket);
+    }
+
+    #[test]
+    fn only_unbuffered_responses_stream_early() {
+        assert!(wants_streaming(b"Content-Type: text/event-stream; charset=utf-8\r\n\r\n"));
+        assert!(wants_streaming(b"Content-Type: text/plain\r\nX-Accel-Buffering: no\r\n\r\n"));
+        assert!(!wants_streaming(b"Content-Type: text/html\r\n\r\n<html>"));
+        // Headers not complete yet.
+        assert!(!wants_streaming(b"Content-Type: text/event-stream\r\n"));
     }
 
     #[tokio::test]

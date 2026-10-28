@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
+import MarkdownContent from '@/Components/MarkdownContent.vue';
 import Modal from '@/Components/Modal.vue';
 import TopbarProfileMenu from '@/Layouts/components/TopbarProfileMenu.vue';
 import { Link, router, usePage, useRemember } from '@inertiajs/vue3';
@@ -150,6 +151,8 @@ const userRoles = computed(() => page.props.auth?.roles ?? []);
 // AI Gateway chat is open to all authenticated users (see routes/web.php
 // ai-gateway prefix group) — the "Ask AI" affordance mirrors that gate.
 const canUseAiSearch = computed(() => userRoles.value.length > 0);
+// People ask here about the system, so admins get read-only server tools.
+const aiServerTools = computed(() => (page.props.auth?.can_use_server_tools ? 'read' : 'off'));
 const userPermissions = computed(() => page.props.auth?.permissions ?? []);
 const panelToken = computed(() => page.props.panel?.token ?? '');
 const appName = computed(() => page.props.app?.name ?? 'dPanel');
@@ -369,8 +372,9 @@ const sendAiMessage = async (text) => {
     if (!content || aiStreaming.value) return;
 
     aiMessages.value.push({ role: 'user', content });
-    const assistantMessage = { role: 'assistant', content: '' };
-    aiMessages.value.push(assistantMessage);
+    aiMessages.value.push({ role: 'assistant', content: '', tools: [] });
+    // The reactive copy, so streamed changes re-render.
+    const assistantMessage = aiMessages.value[aiMessages.value.length - 1];
     scrollAiChatToBottom();
 
     const outgoingMessages = aiMessages.value.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
@@ -385,6 +389,11 @@ const sendAiMessage = async (text) => {
     const handleStreamEvent = (eventName, payload) => {
         if (eventName === 'delta') {
             assistantMessage.content += payload.text;
+            scrollAiChatToBottom();
+        } else if (eventName === 'tool') {
+            const step = assistantMessage.tools.find((t) => t.id === payload.id);
+            if (step) Object.assign(step, payload);
+            else assistantMessage.tools.push(payload);
             scrollAiChatToBottom();
         } else if (eventName === 'done') {
             assistantMessage.content = payload.content;
@@ -428,6 +437,7 @@ const sendAiMessage = async (text) => {
             model: null,
             messages: outgoingMessages,
             context: 'panel_search',
+            tools: aiServerTools.value,
         }, {
             signal: aiAbortController.signal,
             responseType: 'text',
@@ -1152,15 +1162,27 @@ watch(isSearchOpen, async (open) => {
                 <div ref="aiChatRef" class="max-h-[50vh] min-h-[30vh] space-y-3 overflow-y-auto p-4">
                     <div v-for="(message, index) in aiMessages" :key="index" class="flex" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
                         <div
-                            class="max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm"
+                            class="max-w-[85%] rounded-2xl px-4 py-2 text-sm"
                             :class="message.role === 'user'
-                                ? 'bg-violet-600 text-white'
+                                ? 'whitespace-pre-wrap bg-violet-600 text-white'
                                 : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'"
                         >
-                            <span v-if="message.role === 'assistant' && !message.content && aiStreaming" class="inline-flex items-center gap-1 text-slate-400">
-                                <i class="bi bi-three-dots animate-pulse"></i> Thinking…
-                            </span>
-                            <template v-else>{{ message.content }}</template>
+                            <template v-if="message.role === 'user'">{{ message.content }}</template>
+                            <template v-else>
+                                <div v-if="message.tools?.length" class="mb-2 space-y-1">
+                                    <div v-for="step in message.tools" :key="step.id" class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                        <span v-if="step.status === 'running'" class="inline-block h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-violet-500"></span>
+                                        <i v-else-if="step.status === 'ok'" class="bi bi-check-circle-fill text-emerald-500"></i>
+                                        <i v-else class="bi bi-x-circle-fill text-red-500"></i>
+                                        <span class="truncate font-mono">{{ step.name }}</span>
+                                        <span v-if="step.duration_ms != null" class="shrink-0 opacity-60">{{ (step.duration_ms / 1000).toFixed(1) }}s</span>
+                                    </div>
+                                </div>
+                                <span v-if="!message.content && aiStreaming" class="inline-flex items-center gap-1 text-slate-400">
+                                    <i class="bi bi-three-dots animate-pulse"></i> {{ message.tools?.some((t) => t.status === 'running') ? 'Checking the server…' : 'Thinking…' }}
+                                </span>
+                                <MarkdownContent v-else :content="message.content" />
+                            </template>
                         </div>
                     </div>
                     <p v-if="aiError" class="text-center text-xs text-red-600">{{ aiError }}</p>

@@ -164,6 +164,22 @@ Authorization: Bearer sk-ag-...</code></pre>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+                <h2 class="text-sm font-semibold">Server tools (ask about this server)</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    Add <code>"server_tools": "read"</code> and the gateway answers questions about this server itself,
+                    calling the panel's read-only tools (overview, service status, logs, files) until it can answer.
+                    Only read-only access is offered, the key must have been created by an admin, and it can't be
+                    combined with your own <code>tools</code>.
+                </p>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    Every step is reported when it starts and when it finishes. When streaming, it comes as a chunk with an
+                    empty <code>delta</code> and a <code>dpanel_tool_step</code> field
+                    (<code>{id, name, arguments, status: "running"}</code>, then <code>{id, name, status: "ok"|"error", preview, duration_ms}</code>);
+                    without streaming, the finished steps are in <code>dpanel_tool_steps</code>.
+                </p>
+            </section>
+
+            <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
                 <h2 class="text-sm font-semibold">Tool / function calling (agent mode)</h2>
                 <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
                     Same shape as OpenAI's tool calling: pass <code>tools</code> (and optionally <code>tool_choice</code> —

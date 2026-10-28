@@ -27,7 +27,7 @@ class PanelOverviewTool implements McpTool
 
     public function description(): string
     {
-        return 'Health snapshot of the dPanel host: hostname, OS, uptime, load, memory, disk, core service states (edge gateway, drust, PHP-FPM, database, Redis, mail, DNS) and resource counts. Start here when diagnosing a problem.';
+        return 'Health snapshot of the dPanel host: hostname, OS, uptime, load, memory, disk, each core service\'s state and memory use (edge gateway, drust, PHP-FPM, database, Redis, mail, DNS), the processes using the most memory, and resource counts. Start here when diagnosing a problem.';
     }
 
     public function inputSchema(): array
@@ -58,6 +58,7 @@ class PanelOverviewTool implements McpTool
                 'used_percent' => round(100 - ((float) $diskFree / $diskTotal * 100), 1),
             ] : null,
             'services' => $this->serviceStates(),
+            'top_memory_processes' => $this->topMemoryProcesses(),
             'counts' => [
                 'servers' => Server::query()->count(),
                 'websites' => Website::query()->count(),
@@ -73,7 +74,7 @@ class PanelOverviewTool implements McpTool
     }
 
     /**
-     * @return array<string, string> unit => active|inactive|failed|unknown|not-installed
+     * @return array<string, string|array{state: string, memory_mb: int|null}> unit => state and memory, or 'unknown'
      */
     private function serviceStates(): array
     {
@@ -82,7 +83,7 @@ class PanelOverviewTool implements McpTool
         }
 
         $units = array_map(fn (string $unit) => escapeshellarg($unit.'.service'), self::SERVICES);
-        $output = @shell_exec('systemctl show --property=Id,LoadState,ActiveState '.implode(' ', $units).' 2>/dev/null');
+        $output = @shell_exec('systemctl show --property=Id,LoadState,ActiveState,MemoryCurrent '.implode(' ', $units).' 2>/dev/null');
 
         if (! is_string($output) || trim($output) === '') {
             return array_fill_keys(self::SERVICES, 'unknown');
@@ -99,10 +100,41 @@ class PanelOverviewTool implements McpTool
                 continue;
             }
 
-            $states[$id[1]] = $active[1] ?? 'unknown';
+            preg_match('/^MemoryCurrent=(\d+)$/m', $block, $memory);
+            $states[$id[1]] = [
+                'state' => $active[1] ?? 'unknown',
+                'memory_mb' => isset($memory[1]) ? intdiv((int) $memory[1], 1048576) : null,
+            ];
         }
 
         return $states;
+    }
+
+    /**
+     * @return array<int, array{pid: int, user: string, command: string, memory_mb: int, memory_percent: float}>
+     */
+    private function topMemoryProcesses(): array
+    {
+        if (PHP_OS_FAMILY !== 'Linux' || ! function_exists('shell_exec')) {
+            return [];
+        }
+
+        $output = @shell_exec('ps -eo pid=,user=,rss=,pmem=,comm= --sort=-rss 2>/dev/null | head -n 10');
+
+        $processes = [];
+        foreach (preg_split('/\R/', trim((string) $output)) ?: [] as $line) {
+            if (preg_match('/^\s*(\d+)\s+(\S+)\s+(\d+)\s+([\d.]+)\s+(.+)$/', $line, $m) === 1) {
+                $processes[] = [
+                    'pid' => (int) $m[1],
+                    'user' => $m[2],
+                    'command' => trim($m[5]),
+                    'memory_mb' => intdiv((int) $m[3], 1024),
+                    'memory_percent' => (float) $m[4],
+                ];
+            }
+        }
+
+        return $processes;
     }
 
     private function osName(): ?string

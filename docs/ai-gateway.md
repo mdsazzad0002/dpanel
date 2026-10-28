@@ -113,6 +113,33 @@ gateway does not download image links and rejects them with
 }
 ```
 
+### Server tools in `POST /api/v1/chat/completions`
+
+Add `"server_tools": "read"` and the gateway answers questions about this
+server itself: the model calls the panel's read-only MCP tools (overview,
+service status, logs, files, diagnostic commands) until it can answer.
+
+- Only `"read"` (or `"off"`) is accepted; the API never gets full access.
+- The API key must have been created by an admin, and MCP must be enabled.
+  Otherwise the request fails with `400 server_tools_unavailable`.
+- It cannot be combined with your own `tools`.
+- Calls use the same "AI Gateway Chat (read-only)" MCP token as the panel
+  chat, so turning that token off under Settings → MCP Access turns this off
+  too.
+
+Each tool step is reported when it starts and when it finishes. With
+`"stream": true` it arrives as a normal chunk with an empty `delta` and a
+`dpanel_tool_step` field, which OpenAI clients that don't know it ignore:
+
+```
+data: {"object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":null}],"dpanel_tool_step":{"id":"call_1","name":"get_service_status","arguments":{"service":"mariadb"},"status":"running"}}
+
+data: {"object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":null}],"dpanel_tool_step":{"id":"call_1","name":"get_service_status","status":"ok","preview":"● mariadb.service ...","duration_ms":84}}
+```
+
+Without streaming, the finished steps are listed in `dpanel_tool_steps` on
+the response.
+
 ### `POST /api/v1/images/generations`
 
 ```json

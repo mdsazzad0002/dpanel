@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\McpAccessToken;
 use App\Services\AiGateway\AiGatewayService;
 use App\Services\AiGateway\Exceptions\AiGatewayException;
 use App\Services\AiGateway\GatewayMedia;
+use App\Services\Mcp\GatewayChatTools;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -22,6 +24,7 @@ class AiGatewayApiController extends Controller
 {
     public function __construct(
         private readonly AiGatewayService $gateway,
+        private readonly GatewayChatTools $chatTools,
     ) {}
 
     /**
@@ -59,6 +62,13 @@ class AiGatewayApiController extends Controller
      * message with `tool_calls` plus a `tool` role message per call
      * result (`tool_call_id` + `content`) to continue the agent loop.
      * Each provider family gets this translated to its own tool format.
+     *
+     * dPanel extension: `server_tools: "read"` lets the gateway itself call
+     * the panel's read-only MCP tools (logs, service status, files) to answer
+     * questions about this server, when the key was created by an admin.
+     * Each step is reported as it starts and finishes: in a stream as a
+     * chunk with an empty delta and a `dpanel_tool_step` field, otherwise as
+     * `dpanel_tool_steps` on the response.
      */
     public function chatCompletions(Request $request): JsonResponse|StreamedResponse
     {
@@ -84,7 +94,27 @@ class AiGatewayApiController extends Controller
             'tools.*.function.description' => ['nullable', 'string'],
             'tools.*.function.parameters' => ['nullable', 'array'],
             'tool_choice' => ['nullable'],
+            'server_tools' => ['nullable', 'in:off,read'],
         ]);
+
+        $toolsToken = null;
+        if (($data['server_tools'] ?? 'off') === 'read') {
+            $creator = $request->attributes->get('ai_gateway_api_key')?->creator;
+            $error = match (true) {
+                ! empty($data['tools']) => 'server_tools cannot be combined with your own tools.',
+                ! GatewayChatTools::allowedFor($creator) => 'server_tools needs an API key created by an admin, with MCP enabled.',
+                default => null,
+            };
+            if ($error) {
+                return response()->json(['error' => ['message' => $error, 'type' => 'invalid_request_error', 'code' => 'server_tools_unavailable']], 400);
+            }
+
+            try {
+                $toolsToken = $this->chatTools->tokenFor($creator, 'read');
+            } catch (\RuntimeException $e) {
+                return response()->json(['error' => ['message' => $e->getMessage(), 'type' => 'invalid_request_error', 'code' => 'server_tools_unavailable']], 400);
+            }
+        }
 
         if (! empty($data['model']) && strtolower($data['model']) !== 'auto') {
             return response()->json([
@@ -117,11 +147,19 @@ class AiGatewayApiController extends Controller
         $completionId = 'chatcmpl-'.Str::uuid();
 
         if ($data['stream'] ?? false) {
-            return $this->streamCompletion($completionId, $data, $options);
+            return $this->streamCompletion($completionId, $data, $options, $toolsToken);
         }
 
+        $steps = [];
         try {
-            $result = $this->gateway->chatAuto($data['model'], $data['messages'], $options);
+            $chat = fn (array $messages, array $options): array => $this->gateway->chatAuto($data['model'], $messages, $options);
+            $result = $toolsToken
+                ? $this->chatTools->run($chat, $data['messages'], $options, $toolsToken, function (array $step) use (&$steps): void {
+                    if ($step['status'] !== 'running') {
+                        $steps[] = $step;
+                    }
+                })
+                : $chat($data['messages'], $options);
         } catch (\Throwable $e) {
             return $this->errorResponse($e);
         }
@@ -147,6 +185,7 @@ class AiGatewayApiController extends Controller
                 'completion_tokens' => $result['output_tokens'],
                 'total_tokens' => $result['input_tokens'] + $result['output_tokens'],
             ],
+            ...($toolsToken ? ['dpanel_tool_steps' => $steps] : []),
         ]);
     }
 
@@ -247,9 +286,9 @@ class AiGatewayApiController extends Controller
         return $message;
     }
 
-    private function streamCompletion(string $completionId, array $data, array $options): StreamedResponse
+    private function streamCompletion(string $completionId, array $data, array $options, ?McpAccessToken $toolsToken = null): StreamedResponse
     {
-        $response = new StreamedResponse(function () use ($completionId, $data, $options): void {
+        $response = new StreamedResponse(function () use ($completionId, $data, $options, $toolsToken): void {
             $created = now()->timestamp;
             $model = $data['model'] ?? null;
 
@@ -281,7 +320,17 @@ class AiGatewayApiController extends Controller
             };
 
             try {
-                $result = $this->gateway->chatStreamAuto($data['model'], $data['messages'], $options, $onDelta);
+                $chat = fn (array $messages, array $options): array => $this->gateway->chatStreamAuto($data['model'], $messages, $options, $onDelta);
+                $result = $toolsToken
+                    ? $this->chatTools->run(
+                        $chat,
+                        $data['messages'],
+                        $options,
+                        $toolsToken,
+                        fn (array $step) => $send([...$chunk(new \stdClass), 'dpanel_tool_step' => $step]),
+                        $onDelta,
+                    )
+                    : $chat($data['messages'], $options);
 
                 if (! empty($result['tool_calls'])) {
                     $send($chunk(['tool_calls' => $result['tool_calls']]));

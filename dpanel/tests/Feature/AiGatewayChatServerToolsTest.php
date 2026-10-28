@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Middleware\EnsurePanelSessionIsValid;
+use App\Models\AiGatewayApiKey;
 use App\Models\McpAccessToken;
 use App\Models\User;
 use App\Models\Website;
@@ -69,6 +70,9 @@ class AiGatewayChatServerToolsTest extends TestCase
         $this->assertContains('read_file', $offered);
         $this->assertContains('run_command', $offered);
         $this->assertNotContains('write_file', $offered);
+        // A read-only token is told exactly which commands run_command accepts.
+        $runCommand = collect($turns[0]['options']['tools'])->firstWhere('function.name', 'run_command');
+        $this->assertStringContainsString('systemctl show', $runCommand['function']['description']);
         $readFile = collect($turns[0]['options']['tools'])->firstWhere('function.name', 'read_file');
         $this->assertSame('string', $readFile['function']['parameters']['properties']['server_id']['type']);
 
@@ -110,5 +114,73 @@ class AiGatewayChatServerToolsTest extends TestCase
             ], ['Accept' => 'text/event-stream'])
             ->streamedContent();
         $this->assertStringContainsString('turned off under Settings', $body);
+    }
+
+    public function test_api_streams_each_server_tool_step(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        Website::query()->create(['id' => 'site-1', 'domain' => 'example.com', 'status' => 'active', 'type' => 'primary', 'php_version' => '8.3']);
+        $headers = $this->apiKeyHeaders($admin);
+
+        $turn = 0;
+        $this->mock(AiGatewayService::class)
+            ->shouldReceive('chatStreamAuto')
+            ->twice()
+            ->andReturnUsing(function (?string $model, array $messages, array $options, \Closure $onDelta) use (&$turn) {
+                $result = ['input_tokens' => 1, 'output_tokens' => 1, 'model' => 'test-model', 'raw' => [], 'provider' => new \App\Models\AiGatewayProvider(['name' => 'Test'])];
+                if (++$turn === 1) {
+                    return [...$result, 'content' => '', 'tool_calls' => [
+                        ['id' => 'call_1', 'type' => 'function', 'function' => ['name' => 'list_websites', 'arguments' => '{}']],
+                    ]];
+                }
+                $onDelta('example.com is active.');
+
+                return [...$result, 'content' => 'example.com is active.'];
+            });
+
+        $body = $this->post('/api/v1/chat/completions', [
+            'messages' => [['role' => 'user', 'content' => 'Is example.com up?']],
+            'stream' => true,
+            'server_tools' => 'read',
+        ], $headers)->assertOk()->streamedContent();
+
+        $this->assertStringContainsString('"dpanel_tool_step":{"id":"call_1","name":"list_websites","arguments":{},"status":"running"}', $body);
+        $this->assertMatchesRegularExpression('/"dpanel_tool_step":\{"id":"call_1","name":"list_websites","status":"ok".*"duration_ms":\d+/', $body);
+        $this->assertStringContainsString('example.com is active.', $body);
+        $this->assertStringEndsWith("data: [DONE]\n\n", $body);
+    }
+
+    public function test_api_server_tools_need_an_admin_key_and_no_own_tools(): void
+    {
+        $this->mock(AiGatewayService::class)->shouldNotReceive('chatAuto', 'chatStreamAuto');
+
+        $this->postJson('/api/v1/chat/completions', [
+            'messages' => [['role' => 'user', 'content' => 'hi']],
+            'server_tools' => 'read',
+        ], $this->apiKeyHeaders(User::factory()->create(['role' => 'reseller'])))
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'server_tools_unavailable');
+
+        $this->postJson('/api/v1/chat/completions', [
+            'messages' => [['role' => 'user', 'content' => 'hi']],
+            'server_tools' => 'read',
+            'tools' => [['type' => 'function', 'function' => ['name' => 'mine']]],
+        ], $this->apiKeyHeaders(User::factory()->create(['role' => 'admin'])))
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'server_tools_unavailable');
+
+        $this->postJson('/api/v1/chat/completions', [
+            'messages' => [['role' => 'user', 'content' => 'hi']],
+            'server_tools' => 'full',
+        ], $this->apiKeyHeaders(User::factory()->create(['role' => 'admin'])))
+            ->assertStatus(422);
+    }
+
+    private function apiKeyHeaders(User $creator): array
+    {
+        $generated = AiGatewayApiKey::generate();
+        AiGatewayApiKey::query()->create(['name' => 'test', 'key_prefix' => $generated['prefix'], 'key_hash' => $generated['hash'], 'is_active' => true, 'created_by' => $creator->id]);
+
+        return ['Authorization' => 'Bearer '.$generated['plain'], 'Accept' => 'application/json'];
     }
 }

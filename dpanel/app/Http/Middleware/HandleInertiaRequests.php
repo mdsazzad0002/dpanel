@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Http\Controllers\PanelSearchController;
+use App\Services\Mcp\GatewayChatTools;
 use App\Services\Docker\DrustDockerClient;
 use App\Support\UserAccessCache;
 use Illuminate\Http\Request;
@@ -68,6 +69,8 @@ class HandleInertiaRequests extends Middleware
                 'user' => $user,
                 'roles' => $userAccess['roles'],
                 'permissions' => $userAccess['permissions'],
+                // The AI chats ask with read-only server tools when this is on.
+                'can_use_server_tools' => GatewayChatTools::allowedFor($user),
                 'impersonation' => $request->hasSession() && $request->session()->has('impersonation.admin_id')
                     ? [
                         'active' => true,

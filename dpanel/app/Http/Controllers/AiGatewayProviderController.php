@@ -471,14 +471,10 @@ class AiGatewayProviderController extends Controller
         }
     }
 
-    /** Model turns per message when server tools are on; each turn may call several tools. */
-    private const MAX_TOOL_ROUNDS = 15;
-
     /**
      * One chat reply. With server tools on, the model may call the MCP tools
-     * (see GatewayChatTools): each call is announced as a `tool` SSE event
-     * (status running, then ok/error), its result goes back to the model, and
-     * this repeats until the model answers in text.
+     * (see GatewayChatTools::run); each step is streamed as a `tool` SSE event
+     * when it starts (status running) and when it finishes (ok/error).
      *
      * @param  \Closure(array, array): array  $chat  One streamed model turn: ($messages, $options) => result.
      * @param  \Closure(string, array): void  $send
@@ -493,60 +489,14 @@ class AiGatewayProviderController extends Controller
             throw new \RuntimeException('Server tools are only available to admins, and only while MCP is enabled.');
         }
 
-        $token = $this->chatTools->tokenFor($user, $toolsMode);
-        // Right after the persona, so it overrides its "you cannot act" rule.
-        array_splice($messages, 1, 0, [['role' => 'system', 'content' => $this->chatTools->systemPrompt($token)]]);
-        $options['tools'] = $this->chatTools->definitions($token);
-
-        $texts = [];
-        $inputTokens = 0;
-        $outputTokens = 0;
-
-        for ($round = 0; ; $round++) {
-            if ($round === self::MAX_TOOL_ROUNDS) {
-                // Out of turns: one last answer, with tools still defined (some
-                // providers require that once tool calls are in the history).
-                $options['tool_choice'] = 'none';
-                $messages[] = ['role' => 'user', 'content' => 'Tool limit for this message reached. Summarize what you found and changed so far, and what is left to do.'];
-            }
-
-            $result = $chat($messages, $options);
-            $inputTokens += (int) ($result['input_tokens'] ?? 0);
-            $outputTokens += (int) ($result['output_tokens'] ?? 0);
-
-            $text = trim((string) ($result['content'] ?? ''));
-            if ($text !== '') {
-                $texts[] = $text;
-            }
-
-            if (empty($result['tool_calls']) || $round >= self::MAX_TOOL_ROUNDS) {
-                break;
-            }
-
-            if ($text !== '') {
-                $send('delta', ['text' => "\n\n"]);
-            }
-
-            // Each result must name its call; not every provider sends ids.
-            $calls = array_map(
-                fn (array $call, int $index): array => [...$call, 'id' => (string) ($call['id'] ?? '') ?: "call_{$round}_{$index}"],
-                $result['tool_calls'],
-                array_keys($result['tool_calls']),
-            );
-            $messages[] = ['role' => 'assistant', 'content' => $result['content'] ?? '', 'tool_calls' => $calls];
-
-            foreach ($calls as $call) {
-                $id = $call['id'];
-                $send('tool', ['id' => $id, 'name' => $call['function']['name'] ?? '', 'arguments' => json_decode((string) ($call['function']['arguments'] ?? '{}'), true) ?: new \stdClass, 'status' => 'running']);
-
-                $outcome = $this->chatTools->call($call, $token);
-                $send('tool', ['id' => $id, 'name' => $outcome['name'], 'status' => $outcome['is_error'] ? 'error' : 'ok', 'preview' => $outcome['preview']]);
-
-                $messages[] = ['role' => 'tool', 'tool_call_id' => $id, 'name' => $outcome['name'], 'content' => $outcome['content']];
-            }
-        }
-
-        return [...$result, 'content' => implode("\n\n", $texts), 'input_tokens' => $inputTokens, 'output_tokens' => $outputTokens];
+        return $this->chatTools->run(
+            $chat,
+            $messages,
+            $options,
+            $this->chatTools->tokenFor($user, $toolsMode),
+            fn (array $step) => $send('tool', $step),
+            fn (string $text) => $send('delta', ['text' => $text]),
+        );
     }
 
     /**

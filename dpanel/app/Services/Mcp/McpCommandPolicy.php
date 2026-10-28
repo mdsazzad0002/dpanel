@@ -15,6 +15,16 @@ class McpCommandPolicy
     /** Commands a read-only command may pipe its output into. */
     private const PIPE_FILTERS = ['grep', 'egrep', 'fgrep', 'head', 'tail', 'wc', 'sort', 'uniq', 'cut', 'column'];
 
+    /**
+     * Read-only diagnostics allowed over MCP on top of serverpanel.safe_patterns.
+     * Kept here rather than in that config, which also auto-approves commands
+     * in the panel's own command runner.
+     */
+    private const READ_ONLY_EXTRA = [
+        'ps aux', 'ps -e', 'ps -o', 'ps -p', 'top -b', 'vmstat', 'nproc', 'lscpu', 'du -sh', 'du -h', 'df -i',
+        'systemctl show', 'systemctl is-active', 'systemctl is-enabled', 'systemctl is-failed', 'systemctl list-units', 'systemctl list-timers', 'systemctl --failed',
+    ];
+
     /** Paths a read-only token must never read (secrets, keys). */
     public const SENSITIVE_PATHS = ['/etc/shadow', '/etc/gshadow', '/etc/sudoers', '/.ssh', 'id_rsa', 'id_ed25519', 'id_ecdsa', '.env', '/etc/drust', '/etc/letsencrypt', 'privkey', '.pem', '.key', 'wp-config.php', 'debian.cnf', '.my.cnf', '.bash_history', '/proc/'];
 
@@ -57,7 +67,7 @@ class McpCommandPolicy
         $segments = array_map('trim', explode('|', $normalized));
         $first = array_shift($segments);
 
-        if ($this->safety->classify((string) $first)['risk_level'] !== 'safe') {
+        if (! $this->isReadOnlyCommand((string) $first)) {
             return $this->deny('approval_required', 'Not a known read-only command. Use a full-access MCP token, or one of the dedicated diagnostic tools.');
         }
 
@@ -69,6 +79,39 @@ class McpCommandPolicy
         }
 
         return ['allowed' => true, 'risk_level' => 'safe', 'reason' => $classification['risk_reason']];
+    }
+
+    /**
+     * Command prefixes a read-only token may run, for telling the model up
+     * front instead of letting it guess and be refused.
+     *
+     * @return array<int, string>
+     */
+    public function readOnlyCommands(): array
+    {
+        return array_values(array_unique([...(array) config('serverpanel.safe_patterns', []), ...self::READ_ONLY_EXTRA]));
+    }
+
+    private function isReadOnlyCommand(string $normalized): bool
+    {
+        if ($this->safety->classify($normalized)['risk_level'] === 'safe') {
+            return true;
+        }
+
+        foreach ((array) config('serverpanel.approval_required_patterns', []) as $pattern) {
+            if ($pattern !== '' && str_contains($normalized, mb_strtolower((string) $pattern))) {
+                return false;
+            }
+        }
+
+        foreach (self::READ_ONLY_EXTRA as $prefix) {
+            // Whole words only, so "id" does not let "idle-script" through.
+            if ($normalized === $prefix || str_starts_with($normalized, $prefix.' ')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
