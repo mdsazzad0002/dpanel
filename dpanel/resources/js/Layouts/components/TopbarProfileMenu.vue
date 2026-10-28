@@ -142,6 +142,10 @@ const copyEmail = async () => {
                     <i class="bi bi-hdd-network mr-3 text-slate-400"></i>
                     <span>Database & Redis</span>
                 </DropdownLink>
+                <DropdownLink v-if="route().has('mcp.tokens.index')" :href="panelRoute('mcp.tokens.index')">
+                    <i class="bi bi-plug mr-3 text-slate-400"></i>
+                    <span>MCP Access</span>
+                </DropdownLink>
             </div>
 
             <!-- Appearance -->

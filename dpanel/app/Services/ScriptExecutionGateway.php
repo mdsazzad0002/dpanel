@@ -6,6 +6,20 @@ use Illuminate\Support\Facades\Http;
 
 class ScriptExecutionGateway
 {
+    private ?int $timeoutOverride = null;
+
+    /**
+     * A copy of this gateway whose execute() waits up to $seconds for the
+     * execution API instead of serverpanel.execution_api_timeout.
+     */
+    public function withTimeout(int $seconds): static
+    {
+        $gateway = clone $this;
+        $gateway->timeoutOverride = $seconds;
+
+        return $gateway;
+    }
+
     /**
      * Execute a bootstrap/runtime script through the execution API.
      *
@@ -40,7 +54,7 @@ class ScriptExecutionGateway
 
         $request = Http::acceptJson()
             ->asJson()
-            ->timeout((int) config('serverpanel.execution_api_timeout', 60));
+            ->timeout($this->timeoutOverride ?? (int) config('serverpanel.execution_api_timeout', 60));
 
         $token = trim((string) config('serverpanel.execution_api_token', ''));
         if ($token !== '') {
