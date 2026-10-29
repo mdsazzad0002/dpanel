@@ -53,8 +53,9 @@ pkg_update_index() {
 }
 
 # Another package manager often holds the dpkg lock (unattended-upgrades right
-# after a fresh boot, or a second apt session). Wait for it with a progress line
-# every 15 s instead of failing; give up after APT_LOCK_TIMEOUT seconds.
+# after a fresh boot, or a second apt session). Wait APT_LOCK_KILL_AFTER seconds
+# (default 15), then stop the holder and free the lock; give up after
+# APT_LOCK_TIMEOUT seconds if it keeps coming back.
 apt_lock_holder() {
   if command -v fuser >/dev/null 2>&1; then
     fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock \
@@ -64,14 +65,38 @@ apt_lock_holder() {
   fi
 }
 
+# Stops the auto-update units (until next boot) and kills the lock holder.
+# dpkg --configure -a in apt_wait_for_lock repairs a run cut off mid-install.
+apt_force_release() {
+  local pid="$1" holder="$2"
+  printf '[WARN] apt/dpkg still busy; stopping PID %s (%s) to free the lock.\n' "$pid" "${holder:-unknown}"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop unattended-upgrades apt-daily.service apt-daily-upgrade.service \
+      apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+  fi
+  kill "$pid" 2>/dev/null || true
+  sleep 3
+  kill -9 "$pid" 2>/dev/null || true
+  # Only drop the lock files once nothing holds them any more.
+  if [[ -z "$(apt_lock_holder)" ]]; then
+    rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock \
+      /var/cache/apt/archives/lock /var/lib/apt/lists/lock
+  fi
+}
+
 apt_wait_for_lock() {
-  local timeout="${APT_LOCK_TIMEOUT:-1800}" waited=0 pid holder
+  local timeout="${APT_LOCK_TIMEOUT:-1800}" kill_after="${APT_LOCK_KILL_AFTER:-15}" waited=0 pid holder
   while pid="$(apt_lock_holder)"; [[ -n "$pid" ]]; do
     holder="$(ps -o args= -p "$pid" 2>/dev/null | cut -c1-70)"
     if (( waited >= timeout )); then
       printf '[ERROR] apt is still busy after %ss (PID %s: %s). Retry later, or stop it with: kill %s\n' \
         "$waited" "$pid" "${holder:-unknown}" "$pid" >&2
       return 1
+    fi
+    if (( waited >= kill_after )); then
+      apt_force_release "$pid" "$holder"
+      waited=$((waited + 3))
+      continue
     fi
     if (( waited % 15 == 0 )); then
       printf '[WAIT] apt/dpkg is busy (PID %s: %s); waiting... %ss elapsed, limit %ss\n' \
