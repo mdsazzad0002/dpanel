@@ -92,17 +92,95 @@ const deleteRun = async (runName) => {
     }
 };
 
+// Restore runs on the heavy queue; these mirror the steps dRust reports
+// (see RestoreProgress in drust/src/api/website.rs) so a failure names the
+// step it died in instead of just "500".
+const restoreSteps = [
+    { key: 'queued', label: 'Queued' },
+    { key: 'validating', label: 'Validate' },
+    { key: 'inspecting', label: 'Inspect archive' },
+    { key: 'disk_check', label: 'Disk space' },
+    { key: 'extracting', label: 'Extract' },
+    { key: 'reading_manifest', label: 'Metadata' },
+    { key: 'account', label: 'System user' },
+    { key: 'files', label: 'Copy files' },
+    { key: 'databases', label: 'Databases' },
+    { key: 'permissions', label: 'Permissions' },
+    { key: 'finalizing', label: 'Panel records' },
+];
+const RESTORE_STORAGE_KEY = 'dpanel.backups.activeRestore';
+const restore = ref(null);
+let restorePoll = null;
+
+const restoreStepIndex = computed(() => {
+    const step = restore.value?.stage === 'failed' ? restore.value?.failed_step : restore.value?.step;
+    if (restore.value?.stage === 'completed') return restoreSteps.length;
+
+    return Math.max(0, restoreSteps.findIndex((item) => item.key === step));
+});
+const restoreStepState = (index) => {
+    if (restore.value?.stage === 'completed' || index < restoreStepIndex.value) return 'done';
+    if (index === restoreStepIndex.value) return restore.value?.stage === 'failed' ? 'failed' : 'current';
+
+    return 'pending';
+};
+const restoreStepLabel = (key) => restoreSteps.find((item) => item.key === key)?.label || key || 'unknown step';
+
+const rememberRestore = (value) => {
+    try {
+        if (value) window.localStorage.setItem(RESTORE_STORAGE_KEY, JSON.stringify(value));
+        else window.localStorage.removeItem(RESTORE_STORAGE_KEY);
+    } catch {
+        // storage unavailable — progress still shows for this page view
+    }
+};
+
+const stopRestorePolling = () => {
+    if (restorePoll) window.clearInterval(restorePoll);
+    restorePoll = null;
+};
+
+const pollRestore = async () => {
+    const id = restore.value?.id;
+    if (!id) return;
+    try {
+        const { data } = await axios.get(route('backups.restore.status', { restoreId: id }), { headers: { Accept: 'application/json' } });
+        restore.value = { ...restore.value, ...data, id };
+    } catch (error) {
+        if (error.response?.status === 404) {
+            restore.value = { ...restore.value, stage: 'failed', message: 'Restore job status expired or was not found.' };
+        }
+        return;
+    }
+    if (['completed', 'failed'].includes(restore.value.stage)) {
+        stopRestorePolling();
+        restoringFile.value = '';
+        rememberRestore(null);
+        responseOk.value = restore.value.stage === 'completed';
+        responseMessage.value = restore.value.stage === 'completed'
+            ? restore.value.message
+            : `Restore failed at "${restoreStepLabel(restore.value.failed_step)}": ${restore.value.message}`;
+    }
+};
+
+const startRestorePolling = () => {
+    stopRestorePolling();
+    pollRestore();
+    restorePoll = window.setInterval(pollRestore, 3000);
+};
+
 const restoreBackup = async (runName, file) => {
     if (!confirm(`Restore ${file.label || file.name}? Current website files and database data will be replaced.`)) return;
     restoringFile.value = `${runName}:${file.name}`;
+    responseMessage.value = '';
     try {
         const { data } = await axios.post(route('backups.restore', { run: runName, encoded: downloadToken(file.name) }), {}, { headers: { Accept: 'application/json' } });
-        responseOk.value = true;
-        responseMessage.value = data.message;
+        restore.value = { id: data.restore_id, run: runName, file: file.name, label: file.label || file.name, stage: 'queued', step: 'queued', percent: 0, message: data.message };
+        rememberRestore({ id: data.restore_id, run: runName, file: file.name, label: file.label || file.name });
+        startRestorePolling();
     } catch (error) {
-        showError(error, 'Backup restore failed.');
-    } finally {
         restoringFile.value = '';
+        showError(error, 'Backup restore could not be started.');
     }
 };
 
@@ -136,8 +214,21 @@ const stopBatchPolling = () => {
 onMounted(async () => {
     await loadRuns();
     if (['queued', 'running'].includes(batch.value?.stage)) startBatchPolling();
+    try {
+        const saved = JSON.parse(window.localStorage.getItem(RESTORE_STORAGE_KEY) || 'null');
+        if (saved?.id) {
+            restore.value = { ...saved, stage: 'queued', percent: 0 };
+            restoringFile.value = `${saved.run}:${saved.file}`;
+            startRestorePolling();
+        }
+    } catch {
+        // ignore unreadable saved state
+    }
 });
-onBeforeUnmount(stopBatchPolling);
+onBeforeUnmount(() => {
+    stopBatchPolling();
+    stopRestorePolling();
+});
 
 </script>
 
@@ -288,6 +379,42 @@ onBeforeUnmount(stopBatchPolling);
                     </form>
                 </aside>
             </div>
+
+            <section v-if="restore" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="min-w-0">
+                        <h2 class="font-semibold">Restoring {{ restore.label || restore.file }}</h2>
+                        <p class="font-mono text-[11px] text-slate-400">{{ restore.run }} / {{ restore.file }}</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span :class="{
+                            'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300': restore.stage === 'completed',
+                            'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300': restore.stage === 'failed',
+                            'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300': !['completed', 'failed'].includes(restore.stage),
+                        }" class="rounded-full px-2 py-0.5 text-[11px] font-medium capitalize">{{ restore.stage }}</span>
+                        <span class="text-sm font-semibold tabular-nums">{{ restore.stage === 'completed' ? 100 : (restore.percent || 0) }}%</span>
+                        <button v-if="['completed', 'failed'].includes(restore.stage)" type="button" class="text-slate-400 hover:text-slate-600" aria-label="Dismiss" @click="restore = null"><i class="itc bi bi-x-lg"></i></button>
+                    </div>
+                </div>
+                <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div :class="restore.stage === 'failed' ? 'bg-red-500' : (restore.stage === 'completed' ? 'bg-emerald-500' : 'bg-indigo-500')" class="h-full rounded-full transition-all duration-500" :style="{ width: `${restore.stage === 'completed' ? 100 : Math.max(2, restore.percent || 0)}%` }"></div>
+                </div>
+                <ol class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    <li v-for="(step, index) in restoreSteps" :key="step.key" class="flex items-center gap-1" :class="{
+                        'text-emerald-600 dark:text-emerald-400': restoreStepState(index) === 'done',
+                        'font-semibold text-indigo-600 dark:text-indigo-400': restoreStepState(index) === 'current',
+                        'font-semibold text-red-600 dark:text-red-400': restoreStepState(index) === 'failed',
+                        'text-slate-400': restoreStepState(index) === 'pending',
+                    }">
+                        <i v-if="restoreStepState(index) === 'done'" class="itc bi bi-check-circle-fill"></i>
+                        <i v-else-if="restoreStepState(index) === 'current'" class="itc bi bi-arrow-repeat animate-spin"></i>
+                        <i v-else-if="restoreStepState(index) === 'failed'" class="itc bi bi-x-circle-fill"></i>
+                        <i v-else class="itc bi bi-circle"></i>
+                        {{ step.label }}
+                    </li>
+                </ol>
+                <p :class="restore.stage === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'" class="mt-2 break-words text-xs whitespace-pre-line">{{ restore.message }}</p>
+            </section>
 
             <section class="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <table class="min-w-full text-left text-sm">

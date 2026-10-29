@@ -46,6 +46,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'oauth/revoke',
             'api/whmcs/*',
             'webhooks/git/*',
+            'api/site-push/*',
         ]);
 
         $middleware->alias([

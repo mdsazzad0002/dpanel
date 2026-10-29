@@ -138,17 +138,18 @@ class QuickExportJob implements ShouldQueue
 
         $fileName = $safeDomain.'-files-'.now()->format('Y-m-d_H-i-s').'.zip';
         $downloadUrl = $links->make($this->websiteId, $targetPath, $fileName);
-        $this->succeed($notifications, $user, $website, $itemLabel, $downloadUrl);
+        $this->succeed($notifications, $user, $website, $itemLabel, $downloadUrl, (string) ($result['warning'] ?? ''));
     }
 
-    private function succeed(NotificationService $notifications, User $user, Website $website, string $itemLabel, string $downloadUrl): void
+    private function succeed(NotificationService $notifications, User $user, Website $website, string $itemLabel, string $downloadUrl, string $warning = ''): void
     {
-        QuickExportJobStatus::set($this->exportId, ['stage' => 'ready', 'download_url' => $downloadUrl]);
+        QuickExportJobStatus::set($this->exportId, ['stage' => 'ready', 'download_url' => $downloadUrl, 'message' => $warning]);
         $notifications->notifyUser(
             actor: $user,
             type: 'quick_export',
             status: 'completed',
             title: "Quick export ready: {$website->domain} ({$itemLabel})",
+            message: $warning !== '' ? $warning : null,
             subject: $website,
             data: ['download_url' => $downloadUrl],
         );

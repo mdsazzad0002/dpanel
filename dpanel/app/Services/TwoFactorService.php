@@ -101,10 +101,18 @@ class TwoFactorService
         return $this->base32Encode(random_bytes(20));
     }
 
-    public function buildProvisioningUri(User $user, string $secret, ?string $issuer = null): string
+    public function buildProvisioningUri(User $user, string $secret, ?string $issuer = null, ?string $host = null): string
     {
-        $issuer ??= (string) config('app.name', 'dPanel');
-        $label = rawurlencode($issuer.':'.$user->email);
+        // The same panel can be served from several domains/servers, and a bare
+        // "dPanel" entry made every one look identical in the authenticator app,
+        // so the issuer carries the panel's domain: dPanel:{domain}:{email}.
+        if ($issuer === null) {
+            $host = strtolower(trim((string) ($host ?: parse_url((string) config('app.url'), PHP_URL_HOST))));
+            $issuer = (string) config('app.name', 'dPanel').($host !== '' ? ':'.$host : '');
+        }
+        // Label is the account only: apps already show the issuer next to it,
+        // and an "issuer:" prefix here made the domain appear twice.
+        $label = rawurlencode((string) $user->email);
 
         return sprintf(
             'otpauth://totp/%s?secret=%s&issuer=%s&algorithm=SHA1&digits=6&period=30',

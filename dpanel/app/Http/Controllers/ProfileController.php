@@ -37,7 +37,7 @@ class ProfileController extends Controller
                 'available_methods' => $this->twoFactor->availableMethods($user),
                 'global_policy' => $this->securitySettings->read()['two_factor'],
                 'provisioning_uri' => $this->twoFactor->hasTotpSecret($user)
-                    ? $this->twoFactor->buildProvisioningUri($user, (string) $user->two_factor_secret)
+                    ? $this->twoFactor->buildProvisioningUri($user, (string) $user->two_factor_secret, host: $request->getHost())
                     : '',
             ],
         ]);

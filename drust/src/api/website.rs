@@ -22,6 +22,7 @@ use axum::routing::post;
 pub fn routes() -> Router<Arc<ApiState>> {
     Router::new()
         .route("/api/v1/website/archive", post(handle))
+        .route("/api/v1/website/clone-package", post(clone_package_handle))
         .route(
             "/api/v1/website/archive/restore",
             post(restore_archive_handle),
@@ -208,6 +209,166 @@ pub(crate) async fn handle(
     }
 }
 
+pub(crate) async fn clone_package_handle(
+    State(state): State<Arc<ApiState>>,
+    headers: HeaderMap,
+    Json(request): Json<ArchiveRequest>,
+) -> Response {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+    let result =
+        tokio::task::spawn_blocking(move || build_clone_package(&request.zip_path, request.website))
+            .await
+            .unwrap_or_else(|error| Err(format!("clone package worker crashed: {error}")));
+    match result {
+        Ok(data) => ApiResponse::ok_data("Clone package created", data).into_response(),
+        Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+    }
+}
+
+/// Builds the portable package used by Clone & Share and Push to Live in one
+/// root-side step: files.zip (a quick_files archive of the docroot),
+/// database.sql (the site's first database) and manifest.json. Doing it here
+/// rather than in PHP matters because every site's files belong to a
+/// different system user, and the panel's PHP worker can neither read them
+/// nor reliably write next to archives dRust created as root.
+fn build_clone_package(
+    package_path: &str,
+    mut website: WebsiteArchive,
+) -> Result<serde_json::Value, String> {
+    let package = normalize_path(package_path);
+    let root = Path::new("/var/www/dpanel/storage/app/backups/clone-share");
+    if !package.starts_with(root)
+        || package.extension().and_then(|v| v.to_str()) != Some("zip")
+        || package
+            .components()
+            .any(|part| matches!(part, Component::ParentDir))
+    {
+        return Err("refusing to write a clone package outside storage/app/backups/clone-share".into());
+    }
+    fs::create_dir_all(root).map_err(|e| format!("cannot create package directory: {e}"))?;
+    let files_path = package.with_extension("files.tmp.zip");
+    let sql_path = package.with_extension("sql.tmp");
+    let cleanup = || {
+        fs::remove_file(&files_path).ok();
+        fs::remove_file(&sql_path).ok();
+    };
+
+    let result = (|| {
+        let databases = std::mem::take(&mut website.database_requests);
+        website.content = "quick_files".into();
+        let files = archive_website(files_path.to_string_lossy().as_ref(), &website)?;
+
+        let database = databases.first();
+        if let Some(database) = database {
+            dump_database_to_file(database, &sql_path)?;
+        }
+
+        let output = fs::File::create(&package)
+            .map_err(|e| format!("cannot create clone package {}: {e}", package.display()))?;
+        let mut writer = ZipWriter::new(output);
+        // files.zip is already compressed; re-deflating multi-GB data only costs time.
+        let stored = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .unix_permissions(0o644);
+        let deflated = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Deflated)
+            .unix_permissions(0o644);
+        copy_into_zip(&mut writer, &files_path, "files.zip", stored)?;
+        if database.is_some() {
+            copy_into_zip(&mut writer, &sql_path, "database.sql", deflated)?;
+        }
+        let manifest = serde_json::json!({
+            "domain": website.domain,
+            "php_version": website.php_version,
+            "has_database": database.is_some(),
+            "created_at": chrono_like_now(),
+        });
+        writer
+            .start_file("manifest.json", deflated)
+            .map_err(|e| format!("cannot write package manifest: {e}"))?;
+        writer
+            .write_all(manifest.to_string().as_bytes())
+            .map_err(|e| format!("cannot write package manifest: {e}"))?;
+        writer
+            .finish()
+            .map_err(|e| format!("cannot finalize clone package: {e}"))?;
+
+        // The panel's PHP worker reads it back (to upload or serve it).
+        #[cfg(unix)]
+        fs::set_permissions(&package, fs::Permissions::from_mode(0o640))
+            .map_err(|e| format!("cannot protect clone package: {e}"))?;
+        let _ = Command::new("chown")
+            .args(["root:www-data", package.to_string_lossy().as_ref()])
+            .status();
+
+        Ok(serde_json::json!({
+            "package_path": package.display().to_string(),
+            "size": fs::metadata(&package).map(|m| m.len()).unwrap_or(0),
+            "has_database": database.is_some(),
+            "files": files.get("files").cloned().unwrap_or_default(),
+            "skipped": files.get("skipped").cloned().unwrap_or_default(),
+            "skipped_samples": files.get("skipped_samples").cloned().unwrap_or_default(),
+        }))
+    })();
+    cleanup();
+    if result.is_err() {
+        fs::remove_file(&package).ok();
+    }
+    result
+}
+
+/// mysqldump straight to a file: a large database never sits in memory.
+fn dump_database_to_file(database: &DatabaseArchive, target: &Path) -> Result<(), String> {
+    if database.name.is_empty() || database.user.is_empty() {
+        return Err("database name and user are required".into());
+    }
+    let output_file =
+        fs::File::create(target).map_err(|e| format!("cannot create database dump file: {e}"))?;
+    let output = Command::new("mysqldump")
+        .env("MYSQL_PWD", &database.password)
+        .args([
+            "--single-transaction",
+            "--skip-lock-tables",
+            "--routines",
+            "--triggers",
+            "--host",
+            database.host.as_str(),
+            "--user",
+            database.user.as_str(),
+            database.name.as_str(),
+        ])
+        .stdout(Stdio::from(output_file))
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("cannot run mysqldump for {}: {e}", database.name))?;
+    if !output.status.success() {
+        return Err(format!(
+            "database dump failed for {}: {}",
+            database.name,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+fn copy_into_zip(
+    writer: &mut ZipWriter<std::fs::File>,
+    source: &Path,
+    name: &str,
+    options: SimpleFileOptions,
+) -> Result<(), String> {
+    let mut input =
+        fs::File::open(source).map_err(|e| format!("cannot open {}: {e}", source.display()))?;
+    let size = input.metadata().map(|m| m.len()).unwrap_or(0);
+    writer
+        .start_file(name, options.large_file(size >= u64::from(u32::MAX)))
+        .map_err(|e| format!("cannot add {name} to package: {e}"))?;
+    std::io::copy(&mut input, writer).map_err(|e| format!("cannot write {name} to package: {e}"))?;
+    Ok(())
+}
+
 fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_json::Value, String> {
     if !matches!(
         website.content.as_str(),
@@ -283,6 +444,8 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     let system_gid = numeric_account_id("-g", owner);
 
     let is_quick_files = website.content.as_str() == "quick_files";
+    let includes_files = matches!(website.content.as_str(), "all" | "files" | "quick_files");
+    let mut stats = ArchiveStats::default();
 
     if !is_quick_files {
         let manifest = serde_json::json!({
@@ -328,9 +491,13 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
         } else {
             website.root_path.as_str()
         });
-        if source_path.exists() && source_path.is_dir() {
-            add_dir(&mut writer, &source_path, "", options, dir_options)?;
+        if !source_path.is_dir() {
+            return Err(format!(
+                "website files directory not found: {}",
+                source_path.display()
+            ));
         }
+        add_dir(&mut writer, &source_path, "", options, dir_options, &mut stats)?;
 
         // For frameworks (Laravel etc.) root_path is a docroot subdirectory
         // (e.g. project_root/public) while .env, composer.json and similar
@@ -354,17 +521,29 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
                     if path == source_path.join(name) {
                         continue;
                     }
-                    let Ok(mut file) = fs::File::open(&path) else {
-                        continue;
+                    let mut file = match fs::File::open(&path) {
+                        Ok(file) => file,
+                        Err(error) => {
+                            stats.skip(&path, error);
+                            continue;
+                        }
                     };
+                    let size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
                     let file_options = file_permissions(&path)
                         .map(|mode| options.unix_permissions(mode))
-                        .unwrap_or(options);
+                        .unwrap_or(options)
+                        .large_file(size >= u64::from(u32::MAX));
                     let archive_path = format!("__project_root_extras__/{name}");
-                    if writer.start_file(&archive_path, file_options).is_err() {
+                    if let Err(error) = writer.start_file(&archive_path, file_options) {
+                        stats.skip(&path, error);
                         continue;
                     }
-                    let _ = std::io::copy(&mut file, &mut writer);
+                    if let Err(error) = std::io::copy(&mut file, &mut writer) {
+                        let _ = writer.abort_file();
+                        stats.skip(&path, error);
+                        continue;
+                    }
+                    stats.files += 1;
                 }
             }
         }
@@ -376,12 +555,23 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
         } else {
             website.project_root.as_str()
         });
-        if source_path.exists() && source_path.is_dir() {
-            writer
-                .add_directory("homedir/public_html/", dir_options)
-                .map_err(|e| format!("failed to create homedir layout: {e}"))?;
-            add_dir(&mut writer, &source_path, "homedir/public_html", options, dir_options)?;
+        if !source_path.is_dir() {
+            return Err(format!(
+                "website files directory not found: {}",
+                source_path.display()
+            ));
         }
+        writer
+            .add_directory("homedir/public_html/", dir_options)
+            .map_err(|e| format!("failed to create homedir layout: {e}"))?;
+        add_dir(
+            &mut writer,
+            &source_path,
+            "homedir/public_html",
+            options,
+            dir_options,
+            &mut stats,
+        )?;
     }
 
     if matches!(website.content.as_str(), "all" | "database") {
@@ -393,13 +583,26 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     writer
         .finish()
         .map_err(|e| format!("failed to finalize zip: {e}"))?;
+    if includes_files && stats.files == 0 && stats.skipped > 0 {
+        fs::remove_file(&zip_path).ok();
+        return Err(format!(
+            "no website files could be read ({} skipped), e.g. {}",
+            stats.skipped,
+            stats.skipped_samples.join("; ")
+        ));
+    }
     #[cfg(unix)]
     fs::set_permissions(&zip_path, fs::Permissions::from_mode(0o640))
         .map_err(|e| format!("failed to protect archive: {e}"))?;
     let _ = Command::new("chown")
         .args(["root:www-data", zip_path.to_string_lossy().as_ref()])
         .status();
-    Ok(serde_json::json!({ "zip_path": zip_path.display().to_string() }))
+    Ok(serde_json::json!({
+        "zip_path": zip_path.display().to_string(),
+        "files": stats.files,
+        "skipped": stats.skipped,
+        "skipped_samples": stats.skipped_samples,
+    }))
 }
 
 fn archive_cpmove(
@@ -428,7 +631,14 @@ fn archive_cpmove(
     }
 
     let owner_home = PathBuf::from(format!("/home/{owner}"));
-    if matches!(website.content.as_str(), "all" | "files") && owner_home.is_dir() {
+    if matches!(website.content.as_str(), "all" | "files") && !owner_home.is_dir() {
+        fs::remove_dir_all(&stage).ok();
+        return Err(format!(
+            "account home not found: {} — refusing to write a backup without website files",
+            owner_home.display()
+        ));
+    }
+    if matches!(website.content.as_str(), "all" | "files") {
         let source = format!("{}/.", owner_home.display());
         let target = package.join("homedir");
         let output = Command::new("cp")
@@ -600,15 +810,36 @@ fn archive_cpmove(
     )
 }
 
+#[derive(Deserialize)]
+pub(crate) struct RestoreArchiveRequest {
+    pub zip_path: String,
+    /// Optional JSON file the panel polls while this (long, synchronous)
+    /// restore runs — see RestoreProgress.
+    #[serde(default)]
+    pub progress_path: Option<String>,
+}
+
 pub(crate) async fn restore_archive_handle(
     State(state): State<Arc<ApiState>>,
     headers: HeaderMap,
-    Json(request): Json<DeleteArchiveRequest>,
+    Json(request): Json<RestoreArchiveRequest>,
 ) -> Response {
     if let Err(error) = check_token(&state, &headers) {
         return error.into_response();
     }
-    match restore_archive(&request.zip_path) {
+    // A multi-GB restore runs tar/cp/mysql for many minutes; keep that off the
+    // async runtime's worker threads.
+    let result = tokio::task::spawn_blocking(move || {
+        let progress = RestoreProgress::new(request.progress_path.as_deref());
+        let result = restore_archive(&request.zip_path, &progress);
+        if let Err(error) = &result {
+            progress.fail(error);
+        }
+        result
+    })
+    .await
+    .unwrap_or_else(|error| Err(format!("restore worker crashed: {error}")));
+    match result {
         Ok(website) => ApiResponse::ok_data(
             "Website archive restored",
             serde_json::json!({ "website": website }),
@@ -618,7 +849,194 @@ pub(crate) async fn restore_archive_handle(
     }
 }
 
-fn restore_archive(value: &str) -> Result<serde_json::Value, String> {
+/// Stage/percent snapshot written to a JSON file the panel's restore status
+/// endpoint reads, so the UI can show which step a restore is on (and which
+/// one it died in) instead of a bare 500.
+pub(crate) struct RestoreProgress {
+    path: Option<PathBuf>,
+    stage: std::cell::RefCell<String>,
+}
+
+impl RestoreProgress {
+    fn new(value: Option<&str>) -> Self {
+        let root = Path::new("/var/www/dpanel/storage/app/restore-progress");
+        let path = value.map(normalize_path).filter(|path| {
+            path.starts_with(root)
+                && path.extension().and_then(|v| v.to_str()) == Some("json")
+                && !path
+                    .components()
+                    .any(|part| matches!(part, Component::ParentDir))
+        });
+        Self {
+            path,
+            stage: std::cell::RefCell::new(String::new()),
+        }
+    }
+
+    fn update(&self, stage: &str, percent: u8, message: &str) {
+        *self.stage.borrow_mut() = stage.to_string();
+        self.write(serde_json::json!({
+            "stage": stage,
+            "percent": percent.min(100),
+            "message": message,
+        }));
+    }
+
+    fn fail(&self, error: &str) {
+        let stage = self.stage.borrow().clone();
+        self.write(serde_json::json!({
+            "stage": "failed",
+            "failed_stage": stage,
+            "message": error,
+        }));
+    }
+
+    fn write(&self, value: serde_json::Value) {
+        let Some(path) = &self.path else { return };
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let temp = path.with_extension("json.tmp");
+        if fs::write(&temp, value.to_string()).is_ok() {
+            let _ = fs::rename(&temp, path);
+        }
+    }
+}
+
+/// Streams `path` into `command`'s stdin, reporting byte progress between
+/// `from`..`to` percent. stdout/stderr are drained on their own threads so a
+/// chatty child (tar -t on a big tree) can't deadlock against our writes, and a
+/// child that exits early (mysql on a bad statement) surfaces its own stderr
+/// instead of a bare "Broken pipe".
+fn pipe_file_into(
+    mut command: Command,
+    path: &Path,
+    progress: &RestoreProgress,
+    stage: &str,
+    label: &str,
+    (from, to): (u8, u8),
+) -> Result<Vec<u8>, String> {
+    let mut input = fs::File::open(path).map_err(|e| format!("cannot open {label}: {e}"))?;
+    let total = input.metadata().map(|m| m.len()).unwrap_or(0).max(1);
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("cannot start {label}: {e}"))?;
+    let mut stdout = child.stdout.take().ok_or("child stdout unavailable")?;
+    let mut stderr = child.stderr.take().ok_or("child stderr unavailable")?;
+    let stdout_reader = std::thread::spawn(move || {
+        let mut buffer = Vec::new();
+        let _ = stdout.read_to_end(&mut buffer);
+        buffer
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        let mut buffer = Vec::new();
+        let _ = stderr.read_to_end(&mut buffer);
+        buffer
+    });
+
+    let mut stdin = child.stdin.take().ok_or("child stdin unavailable")?;
+    let mut buffer = vec![0u8; 1024 * 1024];
+    let mut sent: u64 = 0;
+    let mut last_percent = u8::MAX;
+    let mut write_error = None;
+    loop {
+        let read = match input.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(e) => {
+                write_error = Some(format!("cannot read {label}: {e}"));
+                break;
+            }
+        };
+        if let Err(e) = stdin.write_all(&buffer[..read]) {
+            write_error = Some(format!("{label} stopped reading input: {e}"));
+            break;
+        }
+        sent += read as u64;
+        let span = u64::from(to.saturating_sub(from));
+        let percent = from + ((sent.min(total) * span) / total) as u8;
+        if percent != last_percent {
+            last_percent = percent;
+            progress.update(
+                stage,
+                percent,
+                &format!(
+                    "{label}: {} / {}",
+                    human_bytes(sent),
+                    human_bytes(total)
+                ),
+            );
+        }
+    }
+    drop(stdin);
+    let status = child
+        .wait()
+        .map_err(|e| format!("cannot finish {label}: {e}"))?;
+    let stdout = stdout_reader.join().unwrap_or_default();
+    let stderr = stderr_reader.join().unwrap_or_default();
+    if !status.success() {
+        let detail = String::from_utf8_lossy(&stderr).trim().to_string();
+        return Err(format!(
+            "{label} failed ({status}): {}",
+            if detail.is_empty() {
+                write_error.unwrap_or_else(|| "no error output".into())
+            } else {
+                detail
+            }
+        ));
+    }
+    if let Some(error) = write_error {
+        return Err(error);
+    }
+    Ok(stdout)
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const GB: f64 = 1024.0 * 1024.0 * 1024.0;
+    const MB: f64 = 1024.0 * 1024.0;
+    let value = bytes as f64;
+    if value >= GB {
+        format!("{:.2} GB", value / GB)
+    } else {
+        format!("{:.1} MB", value / MB)
+    }
+}
+
+/// Free bytes on the filesystem holding `path` (via df, which every target has).
+fn available_bytes(path: &Path) -> Option<u64> {
+    let output = Command::new("df")
+        .args(["--output=avail", "-B1"])
+        .arg(path)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .nth(1)?
+        .trim()
+        .parse()
+        .ok()
+}
+
+fn ensure_free_space(path: &Path, needed: u64, purpose: &str) -> Result<(), String> {
+    match available_bytes(path) {
+        Some(free) if free < needed => Err(format!(
+            "not enough disk space for {purpose}: {} free on {}, about {} needed",
+            human_bytes(free),
+            path.display(),
+            human_bytes(needed)
+        )),
+        _ => Ok(()),
+    }
+}
+
+fn restore_archive(value: &str, progress: &RestoreProgress) -> Result<serde_json::Value, String> {
+    progress.update("validating", 1, "Checking backup archive");
     let path = normalize_path(value);
     let allowed_roots = [
         Path::new("/var/www/dpanel/storage/app/backups"),
@@ -633,7 +1051,7 @@ fn restore_archive(value: &str) -> Result<serde_json::Value, String> {
         return Err("invalid backup archive path".into());
     }
     if path.to_string_lossy().ends_with(".tar.gz") {
-        return restore_cpmove(&path);
+        return restore_cpmove(&path, progress);
     }
     if path.extension().and_then(|v| v.to_str()) != Some("zip") {
         return Err("unsupported backup archive type".into());
@@ -719,6 +1137,7 @@ fn restore_archive(value: &str) -> Result<serde_json::Value, String> {
     }
     fs::create_dir_all(&project_root).map_err(|e| format!("cannot create website root: {e}"))?;
 
+    progress.update("files", 20, "Restoring website files");
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
@@ -772,6 +1191,7 @@ fn restore_archive(value: &str) -> Result<serde_json::Value, String> {
             {
                 return Err("invalid database identity in archive".into());
             }
+            progress.update("databases", 70, &format!("Importing database {name}"));
             let sql_password = password.replace('\\', "\\\\").replace('\'', "\\'");
             let provision_sql = format!(
                 "CREATE DATABASE IF NOT EXISTS `{name}` CHARACTER SET utf8mb4; CREATE USER IF NOT EXISTS '{user}'@'%' IDENTIFIED BY '{sql_password}'; ALTER USER '{user}'@'%' IDENTIFIED BY '{sql_password}'; GRANT ALL PRIVILEGES ON `{name}`.* TO '{user}'@'%'; FLUSH PRIVILEGES;"
@@ -827,6 +1247,7 @@ fn restore_archive(value: &str) -> Result<serde_json::Value, String> {
             }
         }
     }
+    progress.update("permissions", 90, "Fixing file ownership and permissions");
     let _ = Command::new("chown")
         .args([
             "-R",
@@ -869,15 +1290,35 @@ fn numeric_account_id(flag: &str, owner: &str) -> Option<u64> {
     String::from_utf8(output.stdout).ok()?.trim().parse().ok()
 }
 
-fn restore_cpmove(path: &Path) -> Result<serde_json::Value, String> {
-    let listing = Command::new("tar")
-        .args(["-tzf", path.to_string_lossy().as_ref()])
-        .output()
-        .map_err(|e| format!("cannot inspect cpmove archive: {e}"))?;
-    if !listing.status.success() {
-        return Err("invalid cpmove tarball".into());
+fn restore_cpmove(path: &Path, progress: &RestoreProgress) -> Result<serde_json::Value, String> {
+    let staging = PathBuf::from(format!(
+        "/var/www/dpanel/storage/app/restore-staging/{}",
+        std::process::id()
+    ));
+    if staging.exists() {
+        fs::remove_dir_all(&staging).ok();
     }
-    for name in String::from_utf8_lossy(&listing.stdout).lines() {
+    // Every exit path must drop the staging copy: a failed multi-GB restore used
+    // to leave its extracted tree behind, eating the disk the retry then needed.
+    let result = restore_cpmove_staged(path, &staging, progress);
+    fs::remove_dir_all(&staging).ok();
+    result
+}
+
+fn restore_cpmove_staged(
+    path: &Path,
+    staging: &Path,
+    progress: &RestoreProgress,
+) -> Result<serde_json::Value, String> {
+    let archive_size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let path_arg = path.to_string_lossy().to_string();
+
+    // tar -tz reads the whole archive once; stream it so the UI sees progress.
+    let mut list = Command::new("tar");
+    list.args(["-tzf", "-"]);
+    let listing = pipe_file_into(list, path, progress, "inspecting", "Inspecting archive", (2, 15))
+        .map_err(|e| format!("invalid cpmove tarball: {e}"))?;
+    for name in String::from_utf8_lossy(&listing).lines() {
         let entry = Path::new(name);
         if entry.is_absolute()
             || entry
@@ -887,33 +1328,29 @@ fn restore_cpmove(path: &Path) -> Result<serde_json::Value, String> {
             return Err("unsafe path in cpmove archive".into());
         }
     }
-    let staging = PathBuf::from(format!(
-        "/var/www/dpanel/storage/app/restore-staging/{}",
-        std::process::id()
-    ));
-    if staging.exists() {
-        fs::remove_dir_all(&staging).ok();
-    }
-    fs::create_dir_all(&staging).map_err(|e| format!("cannot create restore staging: {e}"))?;
-    let extract = Command::new("tar")
-        .args([
-            "-xzf",
-            path.to_string_lossy().as_ref(),
-            "-C",
-            staging.to_string_lossy().as_ref(),
-            "--no-same-owner",
-            "--no-same-permissions",
-        ])
-        .output()
-        .map_err(|e| format!("cannot extract cpmove archive: {e}"))?;
-    if !extract.status.success() {
-        fs::remove_dir_all(&staging).ok();
-        return Err(format!(
-            "cannot extract cpmove archive: {}",
-            String::from_utf8_lossy(&extract.stderr)
-        ));
-    }
-    let package = fs::read_dir(&staging)
+
+    // The gzip'd archive expands (typically 1.5–3x) into staging and is then
+    // copied again into /home, so check both filesystems up front rather than
+    // dying with ENOSPC half way through.
+    progress.update("disk_check", 15, "Checking free disk space");
+    fs::create_dir_all(staging).map_err(|e| format!("cannot create restore staging: {e}"))?;
+    ensure_free_space(staging, archive_size.saturating_mul(2), "extracting the archive")?;
+    ensure_free_space(Path::new("/home"), archive_size.saturating_mul(2), "restoring the home directory")?;
+
+    let mut extract = Command::new("tar");
+    extract.args([
+        "-xzf",
+        "-",
+        "-C",
+        staging.to_string_lossy().as_ref(),
+        "--no-same-owner",
+        "--no-same-permissions",
+    ]);
+    pipe_file_into(extract, path, progress, "extracting", "Extracting archive", (15, 55))
+        .map_err(|e| format!("cannot extract cpmove archive {path_arg}: {e}"))?;
+
+    progress.update("reading_manifest", 55, "Reading backup metadata");
+    let package = fs::read_dir(staging)
         .map_err(|e| format!("cannot read restore staging: {e}"))?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
@@ -947,6 +1384,8 @@ fn restore_cpmove(path: &Path) -> Result<serde_json::Value, String> {
     {
         return Err("invalid account owner".into());
     }
+
+    progress.update("account", 58, &format!("Preparing system user {owner}"));
     if !Command::new("id")
         .args(["-u", owner])
         .status()
@@ -954,7 +1393,7 @@ fn restore_cpmove(path: &Path) -> Result<serde_json::Value, String> {
         .unwrap_or(false)
     {
         let _ = Command::new("groupadd").args(["--force", owner]).status();
-        let status = Command::new("useradd")
+        let output = Command::new("useradd")
             .args([
                 "--create-home",
                 "--gid",
@@ -963,12 +1402,17 @@ fn restore_cpmove(path: &Path) -> Result<serde_json::Value, String> {
                 "/usr/sbin/nologin",
                 owner,
             ])
-            .status()
+            .output()
             .map_err(|e| format!("cannot recreate account user: {e}"))?;
-        if !status.success() {
-            return Err("cannot recreate account user".into());
+        if !output.status.success() {
+            return Err(format!(
+                "cannot recreate account user: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
         }
     }
+
+    progress.update("files", 60, "Copying website files into the home directory");
     let home = PathBuf::from(format!("/home/{owner}"));
     fs::create_dir_all(&home).map_err(|e| format!("cannot create account home: {e}"))?;
     let homedir_source = format!("{}/.", package.join("homedir").display());
@@ -984,7 +1428,8 @@ fn restore_cpmove(path: &Path) -> Result<serde_json::Value, String> {
     }
 
     if let Some(databases) = website.get("databases").and_then(|v| v.as_array()) {
-        for database in databases {
+        let count = databases.len().max(1);
+        for (index, database) in databases.iter().enumerate() {
             let name = database.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let user = database.get("user").and_then(|v| v.as_str()).unwrap_or("");
             let password = database
@@ -1006,6 +1451,9 @@ fn restore_cpmove(path: &Path) -> Result<serde_json::Value, String> {
             {
                 return Err("invalid database identity in cpmove metadata".into());
             }
+            let from = 75 + (index * 20 / count) as u8;
+            let to = 75 + ((index + 1) * 20 / count) as u8;
+            progress.update("databases", from, &format!("Creating database {name}"));
             let escaped = password.replace('\\', "\\\\").replace('\'', "\\'");
             let sql = format!(
                 "CREATE DATABASE IF NOT EXISTS `{name}` CHARACTER SET utf8mb4; CREATE USER IF NOT EXISTS '{user}'@'%' IDENTIFIED BY '{escaped}'; ALTER USER '{user}'@'%' IDENTIFIED BY '{escaped}'; GRANT ALL PRIVILEGES ON `{name}`.* TO '{user}'@'%'; FLUSH PRIVILEGES;"
@@ -1030,32 +1478,28 @@ fn restore_cpmove(path: &Path) -> Result<serde_json::Value, String> {
                     }
                 })
                 .collect();
-            let dump = fs::read(package.join("mysql").join(format!("{safe_name}.sql")))
-                .map_err(|e| format!("cannot read database dump {name}: {e}"))?;
-            let mut child = Command::new("mysql")
-                .env("MYSQL_PWD", password)
-                .args(["--host", host, "--user", user, name])
-                .stdin(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .map_err(|e| format!("cannot start database restore: {e}"))?;
-            child
-                .stdin
-                .as_mut()
-                .ok_or("database restore stdin unavailable")?
-                .write_all(&dump)
-                .map_err(|e| format!("cannot stream database dump: {e}"))?;
-            let output = child
-                .wait_with_output()
-                .map_err(|e| format!("cannot finish database restore: {e}"))?;
-            if !output.status.success() {
-                return Err(format!(
-                    "database restore failed for {name}: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ));
+            // Streamed rather than fs::read: a multi-GB dump loaded whole into
+            // memory can exhaust RAM on a smaller server.
+            let dump = package.join("mysql").join(format!("{safe_name}.sql"));
+            if !dump.is_file() {
+                return Err(format!("database dump missing for {name}"));
             }
+            let mut import = Command::new("mysql");
+            import
+                .env("MYSQL_PWD", password)
+                .args(["--host", host, "--user", user, name]);
+            pipe_file_into(
+                import,
+                &dump,
+                progress,
+                "databases",
+                &format!("Importing database {name}"),
+                (from, to),
+            )
+            .map_err(|e| format!("database restore failed for {name}: {e}"))?;
         }
     }
+    progress.update("permissions", 96, "Fixing file ownership");
     let _ = Command::new("chown")
         .args([
             "-R",
@@ -1063,7 +1507,7 @@ fn restore_cpmove(path: &Path) -> Result<serde_json::Value, String> {
             home.to_string_lossy().as_ref(),
         ])
         .status();
-    fs::remove_dir_all(&staging).ok();
+    progress.update("finalizing", 98, "Saving panel records");
     Ok(website)
 }
 
@@ -1115,12 +1559,34 @@ fn add_database_dump(
     Ok(())
 }
 
+/// What add_dir actually managed to put in the archive. Unreadable entries are
+/// still skipped rather than aborting the export, but they are counted and
+/// reported back — previously they vanished silently, so an export whose files
+/// all failed still "succeeded" with nothing but the database dump in it.
+#[derive(Default)]
+struct ArchiveStats {
+    files: u64,
+    skipped: u64,
+    skipped_samples: Vec<String>,
+}
+
+impl ArchiveStats {
+    fn skip(&mut self, path: &Path, reason: impl std::fmt::Display) {
+        self.skipped += 1;
+        if self.skipped_samples.len() < 10 {
+            self.skipped_samples
+                .push(format!("{}: {reason}", path.display()));
+        }
+    }
+}
+
 fn add_dir(
     writer: &mut ZipWriter<std::fs::File>,
     source: &Path,
     zip_root: &str,
     options: SimpleFileOptions,
     dir_options: SimpleFileOptions,
+    stats: &mut ArchiveStats,
 ) -> Result<(), String> {
     if !source.exists() {
         return Ok(());
@@ -1129,13 +1595,19 @@ fn add_dir(
     let entries = match fs::read_dir(source) {
         Ok(entries) => entries,
         // A directory we can't list (permission denied, gone mid-walk, etc.)
-        // shouldn't fail the whole archive — just skip it.
-        Err(_) => return Ok(()),
+        // shouldn't fail the whole archive — skip it, but report it.
+        Err(error) => {
+            stats.skip(source, error);
+            return Ok(());
+        }
     };
     for entry in entries {
         let entry = match entry {
             Ok(item) => item,
-            Err(_) => continue,
+            Err(error) => {
+                stats.skip(source, error);
+                continue;
+            }
         };
         let path = entry.path();
         if !path.exists() {
@@ -1144,7 +1616,10 @@ fn add_dir(
 
         let name = match path.file_name().and_then(|v| v.to_str()) {
             Some(v) => v.to_string(),
-            None => continue,
+            None => {
+                stats.skip(&path, "file name is not valid UTF-8");
+                continue;
+            }
         };
         let archive_path = if zip_root.is_empty() {
             name
@@ -1153,13 +1628,11 @@ fn add_dir(
         };
 
         if path.is_dir() {
-            if writer
-                .add_directory(format!("{}/", archive_path), dir_options)
-                .is_err()
-            {
+            if let Err(error) = writer.add_directory(format!("{}/", archive_path), dir_options) {
+                stats.skip(&path, error);
                 continue;
             }
-            add_dir(writer, &path, &archive_path, options, dir_options)?;
+            add_dir(writer, &path, &archive_path, options, dir_options, stats)?;
             continue;
         }
 
@@ -1168,17 +1641,31 @@ fn add_dir(
                 Ok(file) => file,
                 // Unreadable file (permission denied, socket, etc.) — skip it,
                 // don't abort the entire export over one file.
-                Err(_) => continue,
+                Err(error) => {
+                    stats.skip(&path, error);
+                    continue;
+                }
             };
+            let size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
             let file_options = file_permissions(&path)
                 .map(|mode| options.unix_permissions(mode))
-                .unwrap_or(options);
-            if writer.start_file(&archive_path, file_options).is_err() {
+                .unwrap_or(options)
+                // Without ZIP64 the zip writer aborts any entry past 4 GiB
+                // ("Large file option has not been set"), which dropped big
+                // files (media, nested backups) from large sites.
+                .large_file(size >= u64::from(u32::MAX));
+            if let Err(error) = writer.start_file(&archive_path, file_options) {
+                stats.skip(&path, error);
                 continue;
             }
-            if std::io::copy(&mut file, writer).is_err() {
+            if let Err(error) = std::io::copy(&mut file, writer) {
+                // Drop the half-written entry instead of leaving a truncated
+                // file in the archive.
+                let _ = writer.abort_file();
+                stats.skip(&path, error);
                 continue;
             }
+            stats.files += 1;
         }
     }
 

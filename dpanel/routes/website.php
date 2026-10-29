@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\CloneShareController;
+use App\Http\Controllers\SitePushController;
 use App\Http\Controllers\CronJobController;
 use App\Http\Controllers\FilemanagerTrashController;
 use App\Http\Controllers\Ftp\FtpAccountController;
@@ -124,6 +125,22 @@ Route::post('/websites/{id}/clone-share/import', [CloneShareController::class, '
 Route::get('/websites/{id}/clone-share/status/{jobId}', [CloneShareController::class, 'status'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.clone-share.status');
+Route::get('/websites/{id}/push-to-live', [SitePushController::class, 'page'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.push-to-live.index');
+Route::post('/websites/{id}/push-to-live/tokens', [SitePushController::class, 'createToken'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('websites.push-to-live.tokens.store');
+Route::delete('/websites/{id}/push-to-live/tokens/{tokenId}', [SitePushController::class, 'revokeToken'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->whereNumber('tokenId')
+    ->name('websites.push-to-live.tokens.destroy');
+Route::post('/websites/{id}/push-to-live/push', [SitePushController::class, 'push'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->name('websites.push-to-live.push');
+Route::get('/websites/{id}/push-to-live/status/{pushId}', [SitePushController::class, 'status'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.push-to-live.status');
 Route::get('/websites/{id}/ip-rules', [WebsiteOperationsController::class, 'ipRules'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ip-rules.index');

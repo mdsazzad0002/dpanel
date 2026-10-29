@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\QuickExportJob;
+use App\Jobs\RestoreBackupJob;
 use App\Jobs\RunAccountBackupsJob;
 use App\Models\DatabaseRequest;
 use App\Models\Website;
+use App\Services\Backup\BackupRestoreStatus;
 use App\Services\Backup\QuickExportJobStatus;
 use App\Services\Backup\WebsiteArchiver;
 use App\Support\BackupSettings;
@@ -456,63 +458,35 @@ class BackupController extends Controller
 
         $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
         $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
-        // php.ini's default max_execution_time (30s) would otherwise kill this
-        // worker mid-restore on any non-trivial archive — this call blocks on
-        // dRust for as long as that same execution API timeout allows.
-        set_time_limit((int) config('serverpanel.execution_api_upload_timeout', 3600));
-        try {
-            $response = Http::acceptJson()->asJson()->withToken($apiToken)
-                ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
-                ->post(rtrim($baseUrl, '/').'/api/v1/website/archive/restore', ['zip_path' => $archive]);
-        } catch (\Throwable $e) {
-            return response()->json(['ok' => false, 'message' => 'Restore API request failed: '.$e->getMessage()], 500);
-        }
-        if (! $response->successful() || ! (bool) $response->json('success')) {
-            return response()->json(['ok' => false, 'message' => (string) ($response->json('message') ?: 'Restore failed.')], 500);
+        if ($baseUrl === '' || $apiToken === '') {
+            return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
         }
 
-        $website = (array) $response->json('data.website', []);
-        if (($website['domain'] ?? '') !== '') {
-            Website::query()->updateOrCreate(
-                ['domain' => (string) $website['domain'], 'parent_id' => null],
-                array_filter([
-                    'id' => (string) ($website['id'] ?? str()->uuid()),
-                    'hostname' => (string) $website['domain'],
-                    'root_path' => $website['root_path'] ?? null,
-                    'project_root' => $website['project_root'] ?? null,
-                    'start_directory' => $website['start_directory'] ?? null,
-                    'site_owner' => $website['site_owner'] ?? null,
-                    'php_version' => $website['php_version'] ?? null,
-                    'status' => $website['status'] ?? 'active',
-                    'type' => $website['type'] ?? 'main',
-                    'enable_ssl' => (bool) ($website['enable_ssl'] ?? false),
-                    'assigned_user_id' => $website['assigned_user_id'] ?? $request->user()?->id,
-                    'assigned_reseller_id' => $website['assigned_reseller_id'] ?? null,
-                ], static fn ($value) => $value !== null)
-            );
+        // Runs on the 'heavy' queue: a multi-GB archive takes many minutes to
+        // extract/import, which inline turned every hiccup into a bare 500.
+        // Backups/Index.vue polls restoreStatus() for the step and percent.
+        $restoreId = (string) Str::uuid();
+        BackupRestoreStatus::set($restoreId, [
+            'stage' => 'queued',
+            'step' => 'queued',
+            'percent' => 0,
+            'message' => 'Waiting for the backup worker',
+            'run' => $run,
+            'file' => $file,
+        ]);
+        RestoreBackupJob::dispatch($restoreId, $archive, $request->user()?->id);
 
-            foreach ((array) ($website['databases'] ?? []) as $database) {
-                if (! is_array($database) || trim((string) ($database['name'] ?? '')) === '') {
-                    continue;
-                }
-                $databaseRecord = DatabaseRequest::query()->firstOrNew(['database_name' => (string) $database['name']]);
-                if (! $databaseRecord->exists) {
-                    $databaseRecord->id = (string) str()->uuid();
-                }
-                $databaseRecord->fill([
-                    'domain' => (string) $website['domain'],
-                    'database_user' => (string) ($database['user'] ?? ''),
-                    'database_password' => (string) ($database['password'] ?? ''),
-                    'database_host' => (string) ($database['host'] ?? '127.0.0.1'),
-                    'charset' => 'utf8mb4',
-                    'collation' => 'utf8mb4_unicode_ci',
-                    'status' => 'active',
-                    'assigned_user_id' => $website['assigned_user_id'] ?? $request->user()?->id,
-                ])->save();
-            }
+        return response()->json(['ok' => true, 'restore_id' => $restoreId, 'message' => 'Restore started.']);
+    }
+
+    public function restoreStatus(string $token, string $restoreId): JsonResponse
+    {
+        $status = BackupRestoreStatus::get($restoreId);
+        if ($status === null) {
+            return response()->json(['ok' => false, 'message' => 'Restore job not found.'], 404);
         }
 
-        return response()->json(['ok' => true, 'message' => 'Website files, databases and panel record restored from this version.']);
+        return response()->json(['ok' => true, ...$status]);
     }
 
     private function decodeFileToken(string $encoded): ?string

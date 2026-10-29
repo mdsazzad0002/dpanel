@@ -6,6 +6,7 @@ use App\Models\DatabaseRequest;
 use App\Models\User;
 use App\Models\Website;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -17,14 +18,47 @@ use Throwable;
  */
 class WebsiteArchiver
 {
-    /** @return array{ok:bool,message:string} */
+    /** @return array{ok:bool,message:string,warning?:string} */
     public function archive(User $user, Website $website, string $content, string $baseUrl, string $token, ?string $targetPath = null, ?string $onlyDatabaseId = null): array
     {
         $timestamp = now()->format('Ymd_His');
         $runDirectory = storage_path('app/backups/'.$timestamp);
         $safeOwner = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) ($website->site_owner ?: 'account')) ?: 'account';
         $zipPath = $targetPath ?: $runDirectory.DIRECTORY_SEPARATOR.'backup-'.now()->format('m.d.Y_H-i-s').'_'.$safeOwner.'.tar.gz';
-        $databases = DatabaseRequest::query()
+        $databases = $this->databases($user, $website, $onlyDatabaseId);
+
+        if ($content === 'database' && $databases === []) {
+            return ['ok' => false, 'message' => 'No approved database is linked to this main domain.'];
+        }
+
+        $response = $this->post($baseUrl, $token, '/api/v1/website/archive', $zipPath, $website, $content, $databases);
+
+        if (! $response->successful() || ! (bool) $response->json('success')) {
+            return ['ok' => false, 'message' => (string) ($response->json('message') ?: 'Website backup failed.')];
+        }
+
+        return ['ok' => true, 'message' => '', 'warning' => $this->skippedWarning($response)];
+    }
+
+    /**
+     * Builds a Clone & Share / Push to Live package in one dRust call — as
+     * root, since each site's files belong to its own system user.
+     *
+     * @return array{ok:bool,message:string,has_database?:bool,warning?:string}
+     */
+    public function clonePackage(User $user, Website $website, string $baseUrl, string $token, string $packagePath): array
+    {
+        $response = $this->post($baseUrl, $token, '/api/v1/website/clone-package', $packagePath, $website, 'quick_files', $this->databases($user, $website, null));
+        if (! $response->successful() || ! (bool) $response->json('success')) {
+            return ['ok' => false, 'message' => (string) ($response->json('message') ?: 'Clone package could not be built.')];
+        }
+
+        return ['ok' => true, 'message' => '', 'has_database' => (bool) $response->json('data.has_database'), 'warning' => $this->skippedWarning($response)];
+    }
+
+    private function databases(User $user, Website $website, ?string $onlyDatabaseId): array
+    {
+        return DatabaseRequest::query()
             ->visibleTo($user)
             ->where('domain', $website->domain)
             ->where('status', 'active')
@@ -36,19 +70,18 @@ class WebsiteArchiver
                 'password' => (string) $database->database_password,
                 'host' => (string) ($database->database_host ?: '127.0.0.1'),
             ])->values()->all();
+    }
 
-        if ($content === 'database' && $databases === []) {
-            return ['ok' => false, 'message' => 'No approved database is linked to this main domain.'];
-        }
-
+    private function post(string $baseUrl, string $token, string $path, string $zipPath, Website $website, string $content, array $databases): Response
+    {
         // A drust restart (an update, a config change) refuses connections or
         // drops the open one for a few seconds. The archive is written to the
         // same path again, so retrying is safe; a timeout is not retried
         // because drust may still be working on it.
-        $response = Http::acceptJson()->asJson()->withToken($token)
+        return Http::acceptJson()->asJson()->withToken($token)
             ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
             ->retry(6, fn (int $attempt) => min(10000, 1000 * 2 ** ($attempt - 1)), fn (Throwable $e) => self::isDrustRestart($e), throw: false)
-            ->post(rtrim($baseUrl, '/').'/api/v1/website/archive', [
+            ->post(rtrim($baseUrl, '/').$path, [
                 'zip_path' => $zipPath,
                 'website' => [
                     'id' => (string) $website->id,
@@ -67,12 +100,17 @@ class WebsiteArchiver
                     'database_requests' => $databases,
                 ],
             ]);
+    }
 
-        if (! $response->successful() || ! (bool) $response->json('success')) {
-            return ['ok' => false, 'message' => (string) ($response->json('message') ?: 'Website backup failed.')];
-        }
+    // dRust skips unreadable entries instead of aborting, but now reports
+    // them — surface that so a partial export doesn't pass as complete.
+    private function skippedWarning(Response $response): string
+    {
+        $skipped = (int) $response->json('data.skipped', 0);
 
-        return ['ok' => true, 'message' => ''];
+        return $skipped > 0
+            ? $skipped.' file(s) could not be read and were left out: '.implode('; ', (array) $response->json('data.skipped_samples', []))
+            : '';
     }
 
     /** Connection refused (cURL 7) or dropped mid-request (52, 56). */

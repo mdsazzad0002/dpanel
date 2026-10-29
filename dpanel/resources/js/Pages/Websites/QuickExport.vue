@@ -130,6 +130,9 @@ const pollExportStatuses = async () => {
             if (data.stage === 'ready') {
                 itemState.value[item.key].downloadUrl = data.download_url;
                 itemState.value[item.key].stage = 'ready';
+                // Set when some files couldn't be read and were left out of the zip.
+                itemState.value[item.key].warning = data.message || '';
+                if (data.message) pushToast(data.message, 'error');
                 if (autoDownload.value) {
                     triggerDownload(item);
                 }
@@ -380,6 +383,9 @@ const quickExport = async () => {
                                 </button>
                             </div>
                         </div>
+                        <p v-if="itemState[item.key]?.warning" class="mt-2 break-words rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                            <i class="bi bi-exclamation-triangle mr-1"></i>{{ itemState[item.key].warning }}
+                        </p>
                         <a v-if="itemState[item.key]?.downloadUrl" :href="itemState[item.key].downloadUrl" class="mt-2 block break-all text-xs text-blue-600 hover:underline dark:text-blue-400">
                             {{ itemState[item.key].downloadUrl }}
                         </a>

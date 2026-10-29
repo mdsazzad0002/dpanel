@@ -17,6 +17,7 @@ use App\Http\Controllers\BillingSystemController;
 use App\Http\Controllers\GithubIntegrationController;
 use App\Http\Controllers\Webhooks\GitDeployWebhookController;
 use App\Http\Controllers\CloneShareController;
+use App\Http\Controllers\SitePushApiController;
 use App\Http\Controllers\BandwidthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
@@ -124,6 +125,25 @@ Route::get('/quick-exports/download/{downloadToken}', [BackupController::class, 
 Route::get('/clone-share/download/{downloadToken}', [CloneShareController::class, 'download'])
     ->middleware('throttle:30,1')
     ->name('clone-share.download');
+// Push to Live: another panel (often a local box with no public address, so
+// this server can't pull from it) pushes a website here. Bearer push token
+// only — no session, cookies or CSRF (see SitePushApiController).
+Route::prefix('/api/site-push/v1')
+    ->withoutMiddleware([
+        \Illuminate\Cookie\Middleware\EncryptCookies::class,
+        \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+        \Illuminate\Session\Middleware\StartSession::class,
+        \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+        \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+        \App\Http\Middleware\HandleInertiaRequests::class,
+    ])
+    ->group(function (): void {
+        Route::post('/handshake', [SitePushApiController::class, 'handshake'])->middleware('throttle:30,1')->name('api.site-push.handshake');
+        Route::post('/uploads', [SitePushApiController::class, 'startUpload'])->middleware('throttle:10,1')->name('api.site-push.uploads.store');
+        Route::post('/uploads/{uploadId}/chunks/{index}', [SitePushApiController::class, 'chunk'])->whereUuid('uploadId')->whereNumber('index')->middleware('throttle:600,1')->name('api.site-push.uploads.chunk');
+        Route::post('/uploads/{uploadId}/complete', [SitePushApiController::class, 'complete'])->whereUuid('uploadId')->middleware('throttle:10,1')->name('api.site-push.uploads.complete');
+        Route::get('/uploads/{uploadId}', [SitePushApiController::class, 'status'])->whereUuid('uploadId')->middleware('throttle:120,1')->name('api.site-push.uploads.status');
+    });
 // Outside the panel session too: the URL Inspection Preview frame has an opaque
 // origin and sends no cookies. The token signs the site's origin (PreviewProxy).
 // No session or cookies either, or every proxied file would start a session.
