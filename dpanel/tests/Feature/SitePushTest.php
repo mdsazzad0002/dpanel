@@ -15,6 +15,7 @@ use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -26,6 +27,28 @@ use Tests\TestCase;
 class SitePushTest extends TestCase
 {
     use RefreshDatabase;
+
+    private string $storageRoot;
+
+    // Keep these tests' files out of the real storage/: run as a login user,
+    // they left root dirs (storage/app/migrations/site-push, restore-progress)
+    // the www-data worker then couldn't create subdirectories in.
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->storageRoot = sys_get_temp_dir().'/dpanel-test-storage-'.bin2hex(random_bytes(6));
+        foreach (['app', 'framework/views', 'framework/cache/data', 'logs'] as $directory) {
+            File::ensureDirectoryExists($this->storageRoot.'/'.$directory);
+        }
+        $this->app->useStoragePath($this->storageRoot);
+        config(['view.compiled' => $this->storageRoot.'/framework/views']);
+    }
+
+    protected function tearDown(): void
+    {
+        File::deleteDirectory($this->storageRoot);
+        parent::tearDown();
+    }
 
     public function test_host_url_is_reduced_to_scheme_host_and_port(): void
     {
@@ -49,15 +72,52 @@ class SitePushTest extends TestCase
         [, $sourcePlain] = WebsitePushToken::issue($source, $user, 'Self', now()->addDay());
 
         $push = function (string $plain) use ($user, $source) {
-            $request = Request::create('/', 'POST', ['host_url' => 'https://this-server.test', 'push_token' => $plain]);
+            $request = Request::create('/', 'POST', ['host_url' => 'https://this-server.test', 'push_token' => $plain, 'confirm_domain' => 'Target.Test']);
             $request->setUserResolver(fn () => $user);
 
             return app(SitePushController::class)->push($request, 'token', (string) $source->id);
         };
 
         $this->assertSame(200, $push($targetPlain)->getStatusCode());
-        Queue::assertPushed(PushWebsiteToLiveJob::class, fn (PushWebsiteToLiveJob $job) => $job->liveUrl === 'https://this-server.test');
+        Queue::assertPushed(PushWebsiteToLiveJob::class, fn (PushWebsiteToLiveJob $job) => $job->liveUrl === 'https://this-server.test' && $job->expectedDomain === 'target.test');
         $this->assertSame(422, $push($sourcePlain)->getStatusCode());
+    }
+
+    public function test_connect_shows_what_the_token_would_overwrite(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+        $source = $this->website(['assigned_user_id' => $user->id]);
+        Http::fake(['https://live.example.com/api/site-push/v1/handshake' => Http::response([
+            'ok' => true, 'domain' => 'shop.example.com', 'server' => 'live-1', 'token_name' => 'Laptop', 'chunk_size' => 5242880, 'max_chunks' => 10000,
+        ])]);
+        $request = Request::create('/', 'POST', ['host_url' => 'live.example.com/cpsess'.str_repeat('a', 64), 'push_token' => 'dp-push-abc']);
+        $request->setUserResolver(fn () => $user);
+
+        $data = app(SitePushController::class)->connect($request, 'token', (string) $source->id)->getData(true);
+
+        $this->assertSame(['https://live.example.com', 'shop.example.com', 'live-1', 'Laptop', $source->domain], [
+            $data['host_url'], $data['live_domain'], $data['server'], $data['token_name'], $data['source_domain'],
+        ]);
+    }
+
+    public function test_push_stops_if_the_token_now_points_at_another_domain(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+        $website = $this->website(['assigned_user_id' => $user->id]);
+        $builder = $this->mock(ClonePackageBuilder::class);
+        $builder->shouldNotReceive('build');
+        Http::fake(['*' => Http::response(['ok' => true, 'domain' => 'other.example.com', 'chunk_size' => 5242880, 'max_chunks' => 10000])]);
+
+        $pushId = (string) Str::uuid();
+        (new PushWebsiteToLiveJob($pushId, (string) $website->id, $user->id, 'https://live.example.com', Crypt::encryptString('dp-push-x'), 'shop.example.com'))
+            ->handle($builder, app(\App\Services\NotificationService::class));
+
+        $status = CloneShareJobStatus::get($pushId);
+        $this->assertSame('failed', $status['stage']);
+        $this->assertSame('connecting', $status['failed_stage']);
+        $this->assertStringContainsString('other.example.com', $status['message']);
     }
 
     public function test_api_rejects_missing_revoked_and_system_tokens(): void
@@ -167,6 +227,57 @@ class SitePushTest extends TestCase
         $this->assertSame($packageBytes, $received);
         $this->assertSame('completed', CloneShareJobStatus::get($pushId)['stage']);
         $this->assertFileDoesNotExist(storage_path('app/backups/clone-share/push-'.$pushId.'.zip'));
+    }
+
+    public function test_a_failure_right_after_packaging_still_removes_the_package(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+        $website = $this->website(['assigned_user_id' => $user->id]);
+        $pushId = (string) Str::uuid();
+        $packagePath = storage_path('app/backups/clone-share/push-'.$pushId.'.zip');
+        $builder = $this->mock(ClonePackageBuilder::class);
+        $builder->shouldReceive('build')->once()->andReturnUsing(function ($u, $w, string $path) {
+            File::ensureDirectoryExists(dirname($path));
+            File::put($path, 'pkg');
+
+            return ['path' => $path, 'has_database' => false, 'warning' => ''];
+        });
+        Http::fake(function ($request) {
+            return str_ends_with(parse_url($request->url(), PHP_URL_PATH), '/handshake')
+                ? Http::response(['ok' => true, 'domain' => 'live.example.com', 'chunk_size' => 1048576, 'max_chunks' => 10000])
+                : Http::response(['ok' => false, 'message' => 'mkdir(): Permission denied'], 500);
+        });
+
+        (new PushWebsiteToLiveJob($pushId, (string) $website->id, $user->id, 'https://live.example.com', Crypt::encryptString('dp-push-x')))
+            ->handle($builder, app(\App\Services\NotificationService::class));
+
+        $this->assertSame('failed', CloneShareJobStatus::get($pushId)['stage']);
+        $this->assertFileDoesNotExist($packagePath);
+    }
+
+    public function test_waiting_for_the_live_restore_frees_the_worker(): void
+    {
+        // Same-server push: the live restore needs this same heavy worker, so
+        // the push job must requeue itself rather than sleep-poll.
+        Queue::fake();
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+        $website = $this->website(['assigned_user_id' => $user->id]);
+        $pushId = (string) Str::uuid();
+        Cache::put(PushWebsiteToLiveJob::stateKey($pushId), [
+            'package_path' => '', 'upload_id' => (string) Str::uuid(), 'size' => 1, 'chunk_size' => 1,
+            'total' => 1, 'next_index' => 1, 'completed' => true, 'live_domain' => 'live.example.com', 'warning' => '',
+        ], now()->addHour());
+        Http::fake(['*' => Http::response(['ok' => true, 'stage' => 'queued'])]);
+
+        $started = microtime(true);
+        (new PushWebsiteToLiveJob($pushId, (string) $website->id, $user->id, 'https://live.example.com', Crypt::encryptString('dp-push-x')))
+            ->handle($this->mock(ClonePackageBuilder::class), app(\App\Services\NotificationService::class));
+
+        $this->assertLessThan(3, microtime(true) - $started);
+        $this->assertSame('remote_queued', CloneShareJobStatus::get($pushId)['stage']);
+        Queue::assertPushed(PushWebsiteToLiveJob::class, fn (PushWebsiteToLiveJob $job) => $job->pushId === $pushId && $job->delay !== null);
     }
 
     public function test_page_shows_this_panels_host_url(): void

@@ -33,6 +33,9 @@ class SitePushApiController extends Controller
         return response()->json([
             'ok' => true,
             'domain' => (string) $token->website?->domain,
+            // Shown to the pushing admin to confirm they picked the right target.
+            'server' => (string) gethostname(),
+            'token_name' => (string) $token->name,
             'chunk_size' => self::CHUNK_SIZE,
             'max_chunks' => self::MAX_CHUNKS,
         ]);

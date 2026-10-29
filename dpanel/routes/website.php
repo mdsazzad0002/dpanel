@@ -135,6 +135,9 @@ Route::delete('/websites/{id}/push-to-live/tokens/{tokenId}', [SitePushControlle
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->whereNumber('tokenId')
     ->name('websites.push-to-live.tokens.destroy');
+Route::post('/websites/{id}/push-to-live/connect', [SitePushController::class, 'connect'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('websites.push-to-live.connect');
 Route::post('/websites/{id}/push-to-live/push', [SitePushController::class, 'push'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
     ->name('websites.push-to-live.push');

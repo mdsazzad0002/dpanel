@@ -15,13 +15,29 @@ use Tests\TestCase;
 
 class BackupRestoreJobTest extends TestCase
 {
+    private string $storageRoot;
+
+    // Keep these tests' files out of the real storage/: run as a login user,
+    // they left root dirs (storage/app/migrations/site-push, restore-progress)
+    // the www-data worker then couldn't create subdirectories in.
     protected function setUp(): void
     {
         parent::setUp();
+        $this->storageRoot = sys_get_temp_dir().'/dpanel-test-storage-'.bin2hex(random_bytes(6));
+        foreach (['app', 'framework/views', 'framework/cache/data', 'logs'] as $directory) {
+            File::ensureDirectoryExists($this->storageRoot.'/'.$directory);
+        }
+        $this->app->useStoragePath($this->storageRoot);
         config([
             'serverpanel.execution_api_token' => 'test-token',
             'serverpanel.execution_api_base_url' => 'http://drust.test',
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        File::deleteDirectory($this->storageRoot);
+        parent::tearDown();
     }
 
     public function test_restore_is_queued_and_reports_its_status(): void

@@ -17,7 +17,7 @@ class SitePushClient
 {
     public function __construct(private readonly string $baseUrl, private readonly string $token) {}
 
-    /** @return array{domain:string,chunk_size:int,max_chunks:int} */
+    /** @return array{domain:string,server:string,token_name:string,chunk_size:int,max_chunks:int} */
     public function handshake(): array
     {
         return $this->call(fn (PendingRequest $http) => $http->post($this->url('handshake')));

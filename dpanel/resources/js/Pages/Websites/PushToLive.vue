@@ -13,6 +13,10 @@ const props = defineProps({
 
 const { panelRoute, requestJson } = usePanelApi();
 
+// The site being pushed from, shown up top so it's clear what gets sent.
+const sourceUrl = computed(() => (props.website.domain ? `${props.website.enable_ssl ? 'https' : 'http'}://${props.website.domain}` : ''));
+const sourceDirectory = computed(() => String(props.website.root_path || props.website.project_root || ''));
+
 // ---- Receive side (this server is the live one) ----
 const tokens = ref([...props.tokens]);
 const tokenName = ref('');
@@ -75,7 +79,15 @@ const pushSteps = [
 const STORAGE_KEY = `dpanel.pushToLive.${props.website.id}`;
 const hostUrl = ref('');
 const pushToken = ref('');
-const canPush = computed(() => hostUrl.value.trim() !== '' && pushToken.value.trim() !== '');
+const canConnect = computed(() => hostUrl.value.trim() !== '' && pushToken.value.trim() !== '');
+// Set by "Connect": what the token would overwrite on the live panel. Push
+// stays locked until the admin types that domain back, since pushing to the
+// wrong site replaces it.
+const target = ref(null);
+const confirmDomain = ref('');
+const connecting = ref(false);
+const connectError = ref('');
+const domainConfirmed = computed(() => target.value && confirmDomain.value.trim().toLowerCase() === target.value.live_domain.toLowerCase());
 const push = ref(null);
 const lastStepIndex = ref(0);
 const starting = ref(false);
@@ -138,16 +150,40 @@ const startPolling = () => {
     pollTimer = window.setInterval(poll, 3000);
 };
 
+const resetTarget = () => {
+    target.value = null;
+    confirmDomain.value = '';
+    connectError.value = '';
+};
+
+const connect = async () => {
+    if (!canConnect.value) return;
+    connecting.value = true;
+    resetTarget();
+    try {
+        target.value = await requestJson(panelRoute('websites.push-to-live.connect', { id: props.website.id }), {
+            body: { host_url: hostUrl.value.trim(), push_token: pushToken.value.trim() },
+        });
+        hostUrl.value = target.value.host_url;
+    } catch (error) {
+        connectError.value = error.message || 'Could not connect to the live panel.';
+    } finally {
+        connecting.value = false;
+    }
+};
+
 const startPush = async () => {
-    if (!canPush.value) return;
-    if (!confirm('The live website will be overwritten with this site\'s files and database. Its current files are moved to its .trash first. Continue?')) return;
+    if (!domainConfirmed.value) return;
     starting.value = true;
     try {
-        const data = await requestJson(panelRoute('websites.push-to-live.push', { id: props.website.id }), { body: { host_url: hostUrl.value.trim(), push_token: pushToken.value.trim() } });
+        const data = await requestJson(panelRoute('websites.push-to-live.push', { id: props.website.id }), {
+            body: { host_url: target.value.host_url, push_token: pushToken.value.trim(), confirm_domain: target.value.live_domain },
+        });
         push.value = { id: data.push_id, stage: 'queued', percent: 0, message: 'Waiting for the backup worker', live_domain: data.live_domain };
         lastStepIndex.value = 0;
         remember(data.push_id);
         pushToken.value = '';
+        resetTarget();
         startPolling();
     } catch (error) {
         push.value = { stage: 'failed', percent: 0, message: error.message || 'Push could not be started.' };
@@ -185,6 +221,24 @@ onUnmounted(stopPolling);
             </div>
         </template>
 
+        <section class="mb-6 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Pushing from this site</p>
+            <dl class="mt-2 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
+                <dt class="text-slate-500"><i class="bi bi-globe2 mr-1"></i>URL</dt>
+                <dd class="min-w-0 break-all">
+                    <a v-if="sourceUrl" :href="sourceUrl" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 hover:underline dark:text-blue-400">{{ sourceUrl }}</a>
+                    <span v-else>-</span>
+                </dd>
+                <dt class="text-slate-500"><i class="bi bi-folder2 mr-1"></i>Directory</dt>
+                <dd class="flex min-w-0 items-center gap-2">
+                    <span class="break-all font-mono text-xs">{{ sourceDirectory || '-' }}</span>
+                    <button v-if="sourceDirectory" type="button" class="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800" title="Copy directory" aria-label="Copy directory" @click="copyText('dir', sourceDirectory)">
+                        <i :class="copied === 'dir' ? 'bi bi-check2' : 'bi bi-clipboard'"></i>
+                    </button>
+                </dd>
+            </dl>
+        </section>
+
         <div class="grid gap-6 lg:grid-cols-2">
             <section class="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <div class="flex items-start gap-3">
@@ -196,13 +250,37 @@ onUnmounted(stopPolling);
                 </div>
 
                 <label class="mt-4 block text-xs font-medium text-slate-600 dark:text-slate-300" for="push-host">Live panel host URL</label>
-                <input id="push-host" v-model="hostUrl" :disabled="pushRunning || starting" type="text" placeholder="https://panel.example.com:2083" autocomplete="url" class="mt-1 w-full rounded-lg border-slate-300 text-sm dark:border-slate-700 dark:bg-slate-950" />
+                <input id="push-host" v-model="hostUrl" :disabled="pushRunning || starting || connecting" type="text" placeholder="https://panel.example.com:2083" autocomplete="url" class="mt-1 w-full rounded-lg border-slate-300 text-sm dark:border-slate-700 dark:bg-slate-950" @input="resetTarget" />
                 <label class="mt-3 block text-xs font-medium text-slate-600 dark:text-slate-300" for="push-token">Push token</label>
-                <input id="push-token" v-model="pushToken" :disabled="pushRunning || starting" type="password" placeholder="dp-push-…" autocomplete="off" class="mt-1 w-full rounded-lg border-slate-300 font-mono text-xs dark:border-slate-700 dark:bg-slate-950" />
-                <div class="mt-3 flex justify-end">
-                    <button type="button" :disabled="!canPush || pushRunning || starting" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startPush">
-                        <i class="bi bi-rocket-takeoff mr-1"></i>{{ starting ? 'Starting…' : 'Push to live' }}
+                <input id="push-token" v-model="pushToken" :disabled="pushRunning || starting || connecting" type="password" placeholder="dp-push-…" autocomplete="off" class="mt-1 w-full rounded-lg border-slate-300 font-mono text-xs dark:border-slate-700 dark:bg-slate-950" @input="resetTarget" />
+                <p v-if="connectError" class="mt-2 break-words text-xs text-red-600">{{ connectError }}</p>
+                <div v-if="!target" class="mt-3 flex justify-end">
+                    <button type="button" :disabled="!canConnect || pushRunning || connecting" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50" @click="connect">
+                        <i class="bi bi-plug mr-1"></i>{{ connecting ? 'Connecting…' : 'Connect' }}
                     </button>
+                </div>
+
+                <div v-if="target" class="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300"><i class="bi bi-exclamation-triangle mr-1"></i>Confirm the target</p>
+                    <dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                        <dt class="text-slate-500">From</dt>
+                        <dd class="break-all"><span class="font-medium">{{ sourceUrl || target.source_domain }}</span> <span class="text-xs text-slate-500">(this panel)</span><span v-if="sourceDirectory" class="block font-mono text-xs text-slate-500">{{ sourceDirectory }}</span></dd>
+                        <dt class="text-slate-500">Will overwrite</dt>
+                        <dd class="break-all text-base font-bold text-red-700 dark:text-red-400">{{ target.live_domain }}</dd>
+                        <dt class="text-slate-500">Live panel</dt>
+                        <dd class="break-all">{{ target.host_url }}<span v-if="target.server" class="text-xs text-slate-500"> · server {{ target.server }}</span></dd>
+                        <dt v-if="target.token_name" class="text-slate-500">Token</dt>
+                        <dd v-if="target.token_name" class="break-all">{{ target.token_name }}</dd>
+                    </dl>
+                    <p class="mt-3 text-xs text-amber-800 dark:text-amber-200">{{ target.live_domain }}'s files and database will be replaced with this site's. Its current files are moved to its .trash first.</p>
+                    <label class="mt-3 block text-xs font-medium text-slate-700 dark:text-slate-200" for="push-confirm">Type <span class="font-mono font-semibold">{{ target.live_domain }}</span> to confirm</label>
+                    <input id="push-confirm" v-model="confirmDomain" :disabled="starting" type="text" autocomplete="off" spellcheck="false" class="mt-1 w-full rounded-lg border-amber-300 font-mono text-sm dark:border-amber-800 dark:bg-slate-950" @keydown.enter="startPush" />
+                    <div class="mt-3 flex justify-end gap-2">
+                        <button type="button" :disabled="starting" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-600" @click="resetTarget">Cancel</button>
+                        <button type="button" :disabled="!domainConfirmed || starting" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startPush">
+                            <i class="bi bi-rocket-takeoff mr-1"></i>{{ starting ? 'Starting…' : `Push to ${target.live_domain}` }}
+                        </button>
+                    </div>
                 </div>
 
                 <div v-if="push" class="mt-5 rounded-lg border border-slate-200 p-4 dark:border-slate-700">

@@ -37,6 +37,11 @@ class PushWebsiteToLiveJob implements ShouldQueue
 
     private const STATE_TTL_HOURS = 48;
 
+    private const REMOTE_POLL_SECONDS = 5;
+
+    /** The live restore job itself may run an hour, after waiting its turn. */
+    private const REMOTE_WAIT_LIMIT = 4 * 3600;
+
     /** Last stage reported, so a failure can say which step it died in. */
     private string $stage = 'queued';
 
@@ -46,6 +51,8 @@ class PushWebsiteToLiveJob implements ShouldQueue
         public int $userId,
         public string $liveUrl,
         public string $encryptedToken,
+        // The live domain the admin confirmed after connecting ('' = not checked).
+        public string $expectedDomain = '',
     ) {
         $this->onQueue('heavy');
     }
@@ -103,23 +110,25 @@ class PushWebsiteToLiveJob implements ShouldQueue
                 'backing_up_target' => [92, 'Live panel is moving the current site to .trash'],
                 'restoring' => [95, 'Live panel is restoring files and database'],
             ];
-            while (true) {
-                $remote = $client->status($state['upload_id']);
-                $stage = (string) ($remote['stage'] ?? '');
-                if ($stage === 'completed') {
-                    break;
-                }
-                if ($stage === 'failed') {
-                    throw new SitePushException('Live panel could not restore the site: '.($remote['message'] ?? 'unknown error'));
+            // One status check per run, then requeue with a delay instead of
+            // sleeping here: when the live panel is this same server its
+            // restore job needs this same heavy worker, so holding the worker
+            // while waiting would deadlock the push until the run budget ran out.
+            $state['remote_since'] ??= time();
+            $remote = $client->status($state['upload_id']);
+            $stage = (string) ($remote['stage'] ?? '');
+            if ($stage === 'failed') {
+                throw new SitePushException('Live panel could not restore the site: '.($remote['message'] ?? 'unknown error'));
+            }
+            if ($stage !== 'completed') {
+                if (time() - $state['remote_since'] > self::REMOTE_WAIT_LIMIT) {
+                    throw new SitePushException('The live panel has not finished restoring after '.intdiv(self::REMOTE_WAIT_LIMIT, 3600).' hours — check its heavy queue worker.');
                 }
                 [$percent, $label] = $remoteStageLabels[$stage] ?? [87, 'Live panel is working'];
                 $this->status('remote_'.$stage, $percent, $label);
-                if (time() - $startedAt > self::RUN_BUDGET) {
-                    $this->continueLater($state);
+                $this->continueLater($state, self::REMOTE_POLL_SECONDS);
 
-                    return;
-                }
-                sleep(5);
+                return;
             }
         } catch (Throwable $e) {
             $this->finish($state);
@@ -146,9 +155,13 @@ class PushWebsiteToLiveJob implements ShouldQueue
         // Check the host URL + token against the live panel before spending minutes packaging.
         $this->status('connecting', 2, 'Connecting to '.$this->liveUrl);
         $live = $client->handshake();
+        $liveDomain = strtolower((string) ($live['domain'] ?? ''));
+        if ($this->expectedDomain !== '' && $liveDomain !== $this->expectedDomain) {
+            throw new SitePushException("The push token now points at {$liveDomain}, not the {$this->expectedDomain} you confirmed — nothing was sent. Connect again.");
+        }
 
         $labels = ['archiving' => [5, 'dRust is packaging the website files and database']];
-        $packagePath = storage_path('app/backups/clone-share/push-'.$this->pushId.'.zip');
+        $packagePath = $this->packagePath();
         $package = $builder->build($user, $website, $packagePath, function (string $stage) use ($labels): void {
             [$percent, $label] = $labels[$stage] ?? [10, $stage];
             $this->status($stage, $percent, $label);
@@ -191,10 +204,11 @@ class PushWebsiteToLiveJob implements ShouldQueue
         return $bytes;
     }
 
-    private function continueLater(array $state): void
+    private function continueLater(array $state, int $delaySeconds = 0): void
     {
         $this->saveState($state);
-        self::dispatch($this->pushId, $this->websiteId, $this->userId, $this->liveUrl, $this->encryptedToken);
+        self::dispatch($this->pushId, $this->websiteId, $this->userId, $this->liveUrl, $this->encryptedToken, $this->expectedDomain)
+            ->delay(now()->addSeconds($delaySeconds));
     }
 
     private function saveState(array $state): void
@@ -202,11 +216,16 @@ class PushWebsiteToLiveJob implements ShouldQueue
         Cache::put(self::stateKey($this->pushId), $state, now()->addHours(self::STATE_TTL_HOURS));
     }
 
+    private function packagePath(): string
+    {
+        return storage_path('app/backups/clone-share/push-'.$this->pushId.'.zip');
+    }
+
     private function finish(array $state): void
     {
-        if (! empty($state['package_path'])) {
-            File::delete($state['package_path']);
-        }
+        // The package exists before its path is saved in $state (packaging
+        // runs first), so a failure in between must still remove it.
+        File::delete($state['package_path'] ?? $this->packagePath());
         Cache::forget(self::stateKey($this->pushId));
     }
 

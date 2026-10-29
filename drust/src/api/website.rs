@@ -533,6 +533,7 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
                         .map(|mode| options.unix_permissions(mode))
                         .unwrap_or(options)
                         .large_file(size >= u64::from(u32::MAX));
+                    let file_options = with_modified_time(&path, file_options);
                     let archive_path = format!("__project_root_extras__/{name}");
                     if let Err(error) = writer.start_file(&archive_path, file_options) {
                         stats.skip(&path, error);
@@ -1628,7 +1629,10 @@ fn add_dir(
         };
 
         if path.is_dir() {
-            if let Err(error) = writer.add_directory(format!("{}/", archive_path), dir_options) {
+            if let Err(error) = writer.add_directory(
+                format!("{}/", archive_path),
+                with_modified_time(&path, dir_options),
+            ) {
                 stats.skip(&path, error);
                 continue;
             }
@@ -1654,6 +1658,7 @@ fn add_dir(
                 // ("Large file option has not been set"), which dropped big
                 // files (media, nested backups) from large sites.
                 .large_file(size >= u64::from(u32::MAX));
+            let file_options = with_modified_time(&path, file_options);
             if let Err(error) = writer.start_file(&archive_path, file_options) {
                 stats.skip(&path, error);
                 continue;
@@ -1670,6 +1675,32 @@ fn add_dir(
     }
 
     Ok(())
+}
+
+/// Stamps an entry with the file's real modification time. Without it the
+/// zip writer uses its 1980-01-01 default, and since restore extracts with
+/// `unzip` (which applies entry times), every restored file looked ancient.
+/// Zip times are local time, which is how `unzip` reads them back.
+fn with_modified_time(path: &Path, options: SimpleFileOptions) -> SimpleFileOptions {
+    use chrono::{Datelike, Timelike};
+    let Ok(modified) = fs::metadata(path).and_then(|meta| meta.modified()) else {
+        return options;
+    };
+    let local: chrono::DateTime<chrono::Local> = modified.into();
+    let (Ok(year), Ok(month), Ok(day), Ok(hour), Ok(minute), Ok(second)) = (
+        u16::try_from(local.year()),
+        u8::try_from(local.month()),
+        u8::try_from(local.day()),
+        u8::try_from(local.hour()),
+        u8::try_from(local.minute()),
+        u8::try_from(local.second()),
+    ) else {
+        return options;
+    };
+    match zip::DateTime::from_date_and_time(year, month, day, hour, minute, second) {
+        Ok(time) => options.last_modified_time(time),
+        Err(_) => options,
+    }
 }
 
 // The archive doesn't store uid/gid, so a mode copied verbatim from the source

@@ -52,6 +52,11 @@ struct GenericRestoreRequest {
     // home/migration_uploads when absent or outside the site owner's home.
     #[serde(default)]
     database_backup_dir: Option<String>,
+    // Keep a copy of the archive/SQL in the owner's home/migration_uploads.
+    // Wanted for a file the admin uploaded on the Import page; Clone & Share
+    // and Push to Live send false, or every push left another package there.
+    #[serde(default = "default_preserve_uploads")]
+    preserve_uploads: bool,
     sql_path: Option<String>,
     database_host: String,
     database_port: u16,
@@ -512,7 +517,7 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
             None
         };
         restore_generic_database(req, &sql)?;
-        let saved_database = Some(preserve_generic_upload(&sql, &home)?);
+        let saved_database = keep_generic_upload(req, &sql, &home)?;
         return Ok(serde_json::json!({
             "project_root": null, "document_root": null, "framework": null, "config_path": null,
             "saved_archive": null, "saved_database": saved_database, "database_backup": database_backup,
@@ -626,11 +631,11 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
             database_backup = Some(backup_generic_database(req, &home)?);
         }
         restore_generic_database(req, &sql)?;
-        Some(preserve_generic_upload(&sql, &home)?)
+        keep_generic_upload(req, &sql, &home)?
     } else {
         None
     };
-    let saved_archive = preserve_generic_upload(&source, &home)?;
+    let saved_archive = keep_generic_upload(req, &source, &home)?;
     let (framework, config_path, document_root) = detect_generic_application(&project_root);
     let _ = Command::new("chown")
         .args([
@@ -699,6 +704,21 @@ fn backup_generic_database(req: &GenericRestoreRequest, home: &Path) -> Result<P
         ));
     }
     Ok(destination)
+}
+
+fn default_preserve_uploads() -> bool {
+    true
+}
+
+fn keep_generic_upload(
+    req: &GenericRestoreRequest,
+    source: &Path,
+    home: &Path,
+) -> Result<Option<PathBuf>, String> {
+    if !req.preserve_uploads {
+        return Ok(None);
+    }
+    preserve_generic_upload(source, home).map(Some)
 }
 
 fn preserve_generic_upload(source: &Path, home: &Path) -> Result<PathBuf, String> {

@@ -6,6 +6,7 @@ use App\Jobs\PushWebsiteToLiveJob;
 use App\Models\Website;
 use App\Models\WebsitePushToken;
 use App\Services\Backup\CloneShareJobStatus;
+use App\Services\SitePush\SitePushClient;
 use App\Services\Website\WebsiteAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -70,30 +71,72 @@ class SitePushController extends Controller
         return response()->json(['ok' => true, 'tokens' => $this->tokens((string) $website->id)]);
     }
 
+    /**
+     * Step 1 of a push: checks the host URL + token against the live panel
+     * and returns what the token would overwrite there, so the admin can
+     * confirm the target domain before anything is packaged or sent.
+     */
+    public function connect(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->website($request, $id);
+        [$hostUrl, $pushToken, $error] = $this->target($request, $website);
+        if ($error !== null) {
+            return $error;
+        }
+
+        try {
+            $live = (new SitePushClient($hostUrl, $pushToken))->handshake();
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'host_url' => $hostUrl,
+            'live_domain' => (string) ($live['domain'] ?? ''),
+            'server' => (string) ($live['server'] ?? ''),
+            'token_name' => (string) ($live['token_name'] ?? ''),
+            'source_domain' => (string) $website->domain,
+        ]);
+    }
+
+    /** Step 2: starts the push, only for the target domain the admin confirmed. */
     public function push(Request $request, string $token, string $id): JsonResponse
     {
         $website = $this->website($request, $id);
+        [$hostUrl, $pushToken, $error] = $this->target($request, $website);
+        if ($error !== null) {
+            return $error;
+        }
+        $confirmed = strtolower(trim((string) $request->validate(['confirm_domain' => ['required', 'string', 'max:255']])['confirm_domain']));
+
+        $pushId = (string) Str::uuid();
+        CloneShareJobStatus::set($pushId, ['stage' => 'queued', 'percent' => 0, 'message' => 'Waiting for the backup worker', 'live_url' => $hostUrl]);
+        PushWebsiteToLiveJob::dispatch($pushId, (string) $website->id, (int) $request->user()->id, $hostUrl, Crypt::encryptString($pushToken), $confirmed);
+
+        return response()->json(['ok' => true, 'push_id' => $pushId, 'live_domain' => $confirmed]);
+    }
+
+    /** @return array{0:string,1:string,2:JsonResponse|null} normalized host URL, token, or an error response */
+    private function target(Request $request, Website $website): array
+    {
         $data = $request->validate([
             'host_url' => ['required', 'string', 'max:2048'],
             'push_token' => ['required', 'string', 'starts_with:'.WebsitePushToken::PREFIX, 'max:255'],
         ]);
         $hostUrl = $this->normalizeHostUrl($data['host_url']);
         if ($hostUrl === null) {
-            return response()->json(['ok' => false, 'message' => 'Enter the live panel host URL, e.g. https://panel.example.com:2083'], 422);
+            return ['', '', response()->json(['ok' => false, 'message' => 'Enter the live panel host URL, e.g. https://panel.example.com:2083'], 422)];
         }
         $pushToken = trim($data['push_token']);
 
         // The live panel may well be this same server (pushing one site onto
         // another here); only pushing a website onto itself makes no sense.
         if (WebsitePushToken::findActive($pushToken)?->website_id === (string) $website->id) {
-            return response()->json(['ok' => false, 'message' => 'This push token is for this same website — use it on the panel you are pushing from.'], 422);
+            return ['', '', response()->json(['ok' => false, 'message' => 'This push token is for this same website — use it on the panel you are pushing from.'], 422)];
         }
 
-        $pushId = (string) Str::uuid();
-        CloneShareJobStatus::set($pushId, ['stage' => 'queued', 'percent' => 0, 'message' => 'Waiting for the backup worker', 'live_url' => $hostUrl]);
-        PushWebsiteToLiveJob::dispatch($pushId, (string) $website->id, (int) $request->user()->id, $hostUrl, Crypt::encryptString($pushToken));
-
-        return response()->json(['ok' => true, 'push_id' => $pushId, 'live_domain' => (string) parse_url($hostUrl, PHP_URL_HOST)]);
+        return [$hostUrl, $pushToken, null];
     }
 
     /**

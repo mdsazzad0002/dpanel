@@ -95,6 +95,9 @@ class ClonePackageRestorer
                 'database_user' => $database?->database_user ?? '',
                 'database_password' => $database?->database_password ?? '',
                 'overwrite_database' => $sqlPath !== null,
+                // The package is a throwaway transport copy — don't leave one in
+                // the owner's home/migration_uploads on every clone or push.
+                'preserve_uploads' => false,
             ];
             if ($target->project_root) {
                 // Lets the restore put the archive's .env/composer.json extras
