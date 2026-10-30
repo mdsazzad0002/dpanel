@@ -59,6 +59,7 @@ use App\Http\Controllers\SelfConnectionController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerTaskController;
 use App\Http\Controllers\SsoController;
+use App\Http\Controllers\SystemMailController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WebsiteTrashBackupController;
 use Illuminate\Support\Facades\Auth;
@@ -302,6 +303,19 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->name('server-tasks.cancel');
 
+            // Before the /emails/{id} routes, which would otherwise take "system-mail" as an id.
+            Route::get('/emails/system-mail', [SystemMailController::class, 'show'])
+                ->middleware('role:admin')
+                ->name('emails.system-mail');
+            Route::put('/emails/system-mail', [SystemMailController::class, 'update'])
+                ->middleware('role:admin')
+                ->name('emails.system-mail.update');
+            Route::delete('/emails/system-mail', [SystemMailController::class, 'destroy'])
+                ->middleware('role:admin')
+                ->name('emails.system-mail.destroy');
+            Route::post('/emails/system-mail/test', [SystemMailController::class, 'test'])
+                ->middleware(['role:admin', 'throttle:5,1'])
+                ->name('emails.system-mail.test');
             Route::get('/emails/create', [EmailController::class, 'create'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.create');

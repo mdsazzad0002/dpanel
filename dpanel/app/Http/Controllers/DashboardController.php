@@ -9,6 +9,7 @@ use App\Models\PanelSession;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Bandwidth\BandwidthUsageService;
+use App\Services\Mail\SystemMailer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -27,7 +28,18 @@ class DashboardController extends Controller
             'dashboardStats' => Inertia::defer(fn () => $this->buildStats($actor), 'system'),
             'accountSummary' => Inertia::defer(fn () => $this->buildAccountSummary($actor), 'account'),
             'canViewServerUsage' => (bool) $actor?->hasRole('admin'),
+            // Admins only: without a system email, login codes and reset links
+            // are never delivered. Null when it is set up, so nothing shows.
+            'systemMailWarning' => $actor?->hasRole('admin') ? $this->systemMailWarning() : null,
         ]);
+    }
+
+    /** @return array{problem: string, source: string}|null */
+    private function systemMailWarning(): ?array
+    {
+        $status = app(SystemMailer::class)->status();
+
+        return $status['ready'] ? null : ['problem' => (string) $status['problem'], 'source' => $status['source']];
     }
 
     /** @return array<string, mixed> */

@@ -2360,6 +2360,19 @@ panel_refresh_phpmyadmin_sso() {
   fi
 }
 
+# A fresh panel has no system email, and Laravel's default "log" mailer only
+# writes its mail to a file: login codes (OTP), password reset and
+# verification links never reach anyone. Say so at the end of the install;
+# the dashboard keeps reminding admins until one is set.
+panel_recommend_system_email() {
+  local env_file domain
+  env_file="$(panel_resolve_app_env_file 2>/dev/null || true)"
+  domain="$(sed -n 's/^APP_URL=//p' "${env_file:-/dev/null}" 2>/dev/null | tail -n1 | tr -d '"' | sed -E 's#^[a-z]+://##; s#[:/].*$##')"
+  panel_warn_log "Recommended next step: create a system email (for example noreply@${domain:-your-panel-domain}) in Email Management > Create Email,"
+  panel_warn_log "then select it in Email Management > System Email. The panel sends login codes, password reset and verification links from it;"
+  panel_warn_log "without it those emails are not delivered and users can be locked out."
+}
+
 panel_finalize_default_install() {
   panel_collect_first_install_config
 
