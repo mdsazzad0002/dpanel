@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\DatabaseExportJob;
 use App\Models\DatabaseRequest as DatabaseRequestModel;
 use App\Models\Website;
+use App\Services\Backup\QuickExportJobStatus;
 use App\Services\MongoAdminClient;
 use App\Services\MongodbServiceManager;
 use App\Services\PgAdminSsoService;
 use App\Services\PostgresqlServiceManager;
 use App\Services\ResourceQuotaService;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -275,6 +278,40 @@ class DatabaseController extends Controller
     /**
      * Delete a database request.
      */
+    /**
+     * Queue an export of one database. Bulk export on the Databases page
+     * calls this once per selected database, so each dump downloads as soon
+     * as it is ready instead of after all of them are zipped together.
+     */
+    public function export(Request $request, string $token, string $id): JsonResponse
+    {
+        $database = DatabaseRequestModel::query()->visibleTo($request->user())->find($id);
+        if ($database === null) {
+            return response()->json(['ok' => false, 'message' => 'Database not found.'], 404);
+        }
+        if ($database->status !== 'active') {
+            return response()->json(['ok' => false, 'message' => "{$database->database_name} is not active yet."], 422);
+        }
+
+        $exportId = (string) Str::uuid();
+        $userId = (int) $request->user()->id;
+        QuickExportJobStatus::set($exportId, ['stage' => 'queued', 'user_id' => $userId, 'database_id' => $database->id]);
+        DatabaseExportJob::dispatch($exportId, (string) $database->id, $userId);
+
+        return response()->json(['ok' => true, 'export_id' => $exportId]);
+    }
+
+    public function exportStatus(Request $request, string $token, string $exportId): JsonResponse
+    {
+        $status = QuickExportJobStatus::get($exportId);
+        if ($status === null || (int) ($status['user_id'] ?? 0) !== (int) $request->user()->id) {
+            return response()->json(['ok' => false, 'message' => 'Export not found.'], 404);
+        }
+        unset($status['user_id']);
+
+        return response()->json(['ok' => true, ...$status]);
+    }
+
     public function destroy(Request $request, string $token, string $id): RedirectResponse
     {
         $this->migrateLegacyJsonRequests();

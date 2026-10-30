@@ -727,6 +727,12 @@ Route::prefix('cpsess{token}')
             Route::delete('/databases/{id}', [DatabaseController::class, 'destroy'])
                 ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.destroy');
+            Route::post('/databases/{id}/export', [DatabaseController::class, 'export'])
+                ->middleware(['role_or_permission:admin|reseller|manage_databases', 'throttle:60,1'])
+                ->name('databases.export');
+            Route::get('/databases/exports/{exportId}', [DatabaseController::class, 'exportStatus'])
+                ->middleware('role_or_permission:admin|reseller|manage_databases')
+                ->name('databases.export.status');
             Route::get('/databases/list', [DatabaseController::class, 'index'])
                 ->middleware('role_or_permission:admin|reseller|manage_databases')
                 ->name('databases.list');
