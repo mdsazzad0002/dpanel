@@ -97,6 +97,11 @@ class SitePushApiController extends Controller
     public function complete(Request $request, string $uploadId): JsonResponse
     {
         $upload = $this->upload($request, $uploadId);
+        // A retry after the first call's response was dropped (e.g. a proxy
+        // timeout while assembling): that call already queued the restore.
+        if ((CloneShareJobStatus::get($this->jobId($uploadId))['stage'] ?? 'uploading') !== 'uploading') {
+            return response()->json(['ok' => true, 'upload_id' => $uploadId]);
+        }
         $directory = $this->directory($uploadId);
         $packagePath = $directory.'/package.zip';
 
@@ -129,7 +134,8 @@ class SitePushApiController extends Controller
     {
         $token = $this->token($request);
         $status = CloneShareJobStatus::get($this->jobId($uploadId));
-        abort_if($status === null || Cache::get($this->ownerKey($uploadId)) !== $token->id, 404, 'Push not found.');
+        // Redis stores a bare integer unserialized, so it reads back as a string.
+        abort_if($status === null || (string) Cache::get($this->ownerKey($uploadId)) !== (string) $token->id, 404, 'Push not found.');
 
         return response()->json(['ok' => true, ...$status]);
     }

@@ -155,6 +155,9 @@ class SitePushTest extends TestCase
 
         try {
             $this->withToken($plain)->postJson("/api/site-push/v1/uploads/{$uploadId}/complete")->assertOk();
+            // A retried complete (first response dropped) doesn't queue a second restore.
+            $this->withToken($plain)->postJson("/api/site-push/v1/uploads/{$uploadId}/complete")->assertOk();
+            Queue::assertPushed(RestorePushedWebsiteJob::class, 1);
 
             Queue::assertPushed(RestorePushedWebsiteJob::class, fn (RestorePushedWebsiteJob $job) => $job->tokenId === $token->id
                 && hash_file('sha256', $job->packagePath) === hash('sha256', $package));
@@ -278,6 +281,51 @@ class SitePushTest extends TestCase
         $this->assertLessThan(3, microtime(true) - $started);
         $this->assertSame('remote_queued', CloneShareJobStatus::get($pushId)['stage']);
         Queue::assertPushed(PushWebsiteToLiveJob::class, fn (PushWebsiteToLiveJob $job) => $job->pushId === $pushId && $job->delay !== null);
+    }
+
+    public function test_a_failed_status_check_after_upload_is_retried_not_failed(): void
+    {
+        Queue::fake();
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+        $website = $this->website(['assigned_user_id' => $user->id]);
+        $pushId = (string) Str::uuid();
+        Cache::put(PushWebsiteToLiveJob::stateKey($pushId), [
+            'package_path' => '', 'upload_id' => (string) Str::uuid(), 'size' => 1, 'chunk_size' => 1,
+            'total' => 1, 'next_index' => 1, 'completed' => true, 'live_domain' => 'live.example.com', 'warning' => '',
+        ], now()->addHour());
+        Http::fake(['*' => Http::response(['message' => 'Push not found.'], 404)]);
+
+        (new PushWebsiteToLiveJob($pushId, (string) $website->id, $user->id, 'https://live.example.com', Crypt::encryptString('dp-push-x')))
+            ->handle($this->mock(ClonePackageBuilder::class), app(\App\Services\NotificationService::class));
+
+        $this->assertSame('remote_checking', CloneShareJobStatus::get($pushId)['stage']);
+        $this->assertSame(1, Cache::get(PushWebsiteToLiveJob::stateKey($pushId))['status_errors']);
+        Queue::assertPushed(PushWebsiteToLiveJob::class, fn (PushWebsiteToLiveJob $job) => $job->pushId === $pushId && $job->delay !== null);
+    }
+
+    public function test_status_check_gives_up_after_repeated_failures(): void
+    {
+        Queue::fake();
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+        $website = $this->website(['assigned_user_id' => $user->id]);
+        $pushId = (string) Str::uuid();
+        Cache::put(PushWebsiteToLiveJob::stateKey($pushId), [
+            'package_path' => '', 'upload_id' => (string) Str::uuid(), 'size' => 1, 'chunk_size' => 1,
+            'total' => 1, 'next_index' => 1, 'completed' => true, 'live_domain' => 'live.example.com', 'warning' => '',
+            'status_errors' => 11,
+        ], now()->addHour());
+        Http::fake(['*' => Http::response(['message' => 'Push not found.'], 404)]);
+
+        (new PushWebsiteToLiveJob($pushId, (string) $website->id, $user->id, 'https://live.example.com', Crypt::encryptString('dp-push-x')))
+            ->handle($this->mock(ClonePackageBuilder::class), app(\App\Services\NotificationService::class));
+
+        $status = CloneShareJobStatus::get($pushId);
+        $this->assertSame('failed', $status['stage']);
+        $this->assertSame('remote_checking', $status['failed_stage']);
+        $this->assertStringContainsString('accepted the upload', $status['message']);
+        Queue::assertNotPushed(PushWebsiteToLiveJob::class);
     }
 
     public function test_page_shows_this_panels_host_url(): void

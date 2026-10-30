@@ -42,6 +42,15 @@ class PushWebsiteToLiveJob implements ShouldQueue
     /** The live restore job itself may run an hour, after waiting its turn. */
     private const REMOTE_WAIT_LIMIT = 4 * 3600;
 
+    /**
+     * Once the live panel has the package, a failed status check doesn't mean
+     * the push failed (the restore may well be done) — retry this many times
+     * in a row, REMOTE_RETRY_SECONDS apart, before giving up.
+     */
+    private const REMOTE_STATUS_RETRIES = 12;
+
+    private const REMOTE_RETRY_SECONDS = 15;
+
     /** Last stage reported, so a failure can say which step it died in. */
     private string $stage = 'queued';
 
@@ -115,7 +124,21 @@ class PushWebsiteToLiveJob implements ShouldQueue
             // restore job needs this same heavy worker, so holding the worker
             // while waiting would deadlock the push until the run budget ran out.
             $state['remote_since'] ??= time();
-            $remote = $client->status($state['upload_id']);
+            try {
+                $remote = $client->status($state['upload_id']);
+                $state['status_errors'] = 0;
+            } catch (Throwable $e) {
+                $state['status_errors'] = (int) ($state['status_errors'] ?? 0) + 1;
+                // A requeued run starts at 'queued'; a failure here belongs to the live restore step.
+                $this->stage = 'remote_checking';
+                if ($state['status_errors'] >= self::REMOTE_STATUS_RETRIES) {
+                    throw new SitePushException('The live panel accepted the upload, but its restore progress could not be checked ('.$e->getMessage().'). Open '.$state['live_domain'].' to see whether it was updated.');
+                }
+                $this->status('remote_checking', 87, sprintf('Could not check the live panel (%s) — trying again (%d/%d)', $e->getMessage(), $state['status_errors'], self::REMOTE_STATUS_RETRIES));
+                $this->continueLater($state, self::REMOTE_RETRY_SECONDS);
+
+                return;
+            }
             $stage = (string) ($remote['stage'] ?? '');
             if ($stage === 'failed') {
                 throw new SitePushException('Live panel could not restore the site: '.($remote['message'] ?? 'unknown error'));
