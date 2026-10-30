@@ -4,6 +4,7 @@ namespace App\Services\AiGateway\Providers;
 
 use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\Contracts\ProviderAdapter;
+use App\Services\AiGateway\ModelCatalog;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -397,11 +398,19 @@ class AnthropicAdapter implements ProviderAdapter
 
         return collect($response->json('data') ?? [])
             ->filter(fn ($m) => is_array($m) && ! empty($m['id']))
+            // Claude 3.x is deprecated or retired; the API can still list it for a while.
+            ->reject(fn (array $m) => ModelCatalog::flaggedDeprecated($m) || preg_match('/^claude-(2|instant|3-)/', (string) $m['id']))
             ->map(fn (array $m): array => [
                 'name' => (string) $m['id'],
                 'display_name' => $m['display_name'] ?? null,
-                'context_window' => null,
-                'max_output_tokens' => null,
+                'context_window' => isset($m['max_input_tokens']) ? (int) $m['max_input_tokens'] : null,
+                'max_output_tokens' => isset($m['max_tokens']) ? (int) $m['max_tokens'] : null,
+                // Every current Claude model chats, sees images and calls tools;
+                // trust the API's own flag when it reports one.
+                'capabilities' => ModelCatalog::withCodeHint((string) $m['id'], array_merge(
+                    ['chat', 'tools'],
+                    data_get($m, 'capabilities.image_input.supported', true) ? ['vision'] : [],
+                )),
                 'input_price' => null,
                 'output_price' => null,
             ])

@@ -5,6 +5,7 @@ namespace App\Services\AiGateway\Providers;
 use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\Contracts\ProviderAdapter;
 use App\Services\AiGateway\Exceptions\AiGatewayException;
+use App\Services\AiGateway\ModelCatalog;
 use App\Services\AiGateway\GatewayMedia;
 use Illuminate\Support\Facades\Http;
 
@@ -443,16 +444,117 @@ class OpenAiAdapter implements ProviderAdapter
 
         return collect($response->json('data') ?? [])
             ->filter(fn ($m) => is_array($m) && ! empty($m['id']))
-            ->map(fn (array $m): array => [
-                'name' => (string) $m['id'],
-                'display_name' => null,
-                'context_window' => isset($m['context_length']) ? (int) $m['context_length'] : null,
-                'max_output_tokens' => null,
-                'input_price' => isset($m['pricing']['prompt']) ? round(((float) $m['pricing']['prompt']) * 1_000_000, 4) : null,
-                'output_price' => isset($m['pricing']['completion']) ? round(((float) $m['pricing']['completion']) * 1_000_000, 4) : null,
-            ])
+            ->map(function (array $m) use ($provider): ?array {
+                $name = (string) $m['id'];
+                $capabilities = $this->capabilitiesFor($provider->driver, $name, $m);
+
+                if ($capabilities === null || ModelCatalog::flaggedDeprecated($m) || $this->isLegacy($provider->driver, $name)) {
+                    return null;
+                }
+
+                $context = $m['context_length'] ?? $m['context_window'] ?? $m['max_context_length'] ?? null;
+                $maxOutput = $m['top_provider']['max_completion_tokens'] ?? $m['max_completion_tokens'] ?? null;
+
+                return [
+                    'name' => $name,
+                    'display_name' => isset($m['name']) && is_string($m['name']) ? $m['name'] : null,
+                    'context_window' => $context !== null ? (int) $context : null,
+                    'max_output_tokens' => $maxOutput !== null ? (int) $maxOutput : null,
+                    'capabilities' => $capabilities,
+                    'input_price' => isset($m['pricing']['prompt']) ? round(((float) $m['pricing']['prompt']) * 1_000_000, 4) : null,
+                    'output_price' => isset($m['pricing']['completion']) ? round(((float) $m['pricing']['completion']) * 1_000_000, 4) : null,
+                ];
+            })
+            ->filter()
             ->sortBy('name')
             ->values()
             ->all();
+    }
+
+    /**
+     * What a listed model can do, or null when it can't serve chat or image
+     * requests at all (embeddings, speech, moderation, ...). Uses the
+     * provider's own metadata where it reports any — OpenRouter/Kilo
+     * modalities and parameters, Mistral's capability flags — and falls back
+     * to the model id for providers that only return ids.
+     *
+     * @return ?array<int, string>
+     */
+    private function capabilitiesFor(string $driver, string $name, array $m): ?array
+    {
+        $id = strtolower($name);
+
+        if (preg_match('/embed|whisper|tts|transcribe|moderation|guard|audio|realtime|speech|ocr|rerank|sora|veo/', $id)) {
+            return null;
+        }
+
+        // OpenRouter and Kilo describe each model's modalities and parameters.
+        if (isset($m['architecture']) && is_array($m['architecture'])) {
+            $in = (array) ($m['architecture']['input_modalities'] ?? ['text']);
+            $out = (array) ($m['architecture']['output_modalities'] ?? ['text']);
+
+            $capabilities = array_merge(
+                in_array('text', $out, true) ? ['chat'] : [],
+                in_array('image', $out, true) ? ['image_generation'] : [],
+                in_array('image', $in, true) ? ['vision'] : [],
+                in_array('tools', (array) ($m['supported_parameters'] ?? []), true) ? ['tools'] : [],
+            );
+
+            return in_array('chat', $capabilities, true) || in_array('image_generation', $capabilities, true)
+                ? ModelCatalog::withCodeHint($name, $capabilities)
+                : null;
+        }
+
+        // Mistral reports capability flags per model.
+        if (isset($m['capabilities']) && is_array($m['capabilities'])) {
+            $flags = $m['capabilities'];
+            if (empty($flags['completion_chat'])) {
+                return null;
+            }
+
+            return ModelCatalog::withCodeHint($name, array_merge(
+                ['chat'],
+                ! empty($flags['vision']) ? ['vision'] : [],
+                ! empty($flags['function_calling']) ? ['tools'] : [],
+            ));
+        }
+
+        if (preg_match('/^(gpt-image|dall-e)/', $id)) {
+            return ['image_generation'];
+        }
+
+        // OpenAI models only served by the Responses API, which this adapter doesn't speak.
+        if ($driver === 'openai' && preg_match('/codex|-pro\b|deep-research|search|computer-use|^(babbage|davinci)/', $id)) {
+            return null;
+        }
+
+        $capabilities = ['chat'];
+
+        if ($driver === 'openai') {
+            if (preg_match('/^(gpt-4o|gpt-4\.1|gpt-5|o1(?!-mini)|o3|o4)/', $id)) {
+                $capabilities[] = 'vision';
+            }
+            if (preg_match('/^(gpt-4|gpt-5|o1(?!-mini)|o3|o4)/', $id)) {
+                $capabilities[] = 'tools';
+            }
+        } else {
+            if (preg_match('/vision|llama-4|-vl\b|pixtral|gemma-3|kimi-k2\.5|qwen.*-vl/', $id)) {
+                $capabilities[] = 'vision';
+            }
+            // DeepSeek, Groq, Cerebras and Mistral chat models all take tools.
+            $capabilities[] = 'tools';
+        }
+
+        return ModelCatalog::withCodeHint($name, $capabilities);
+    }
+
+    /**
+     * Models the provider has announced as deprecated or retired but that can
+     * still show up in an id-only listing (OpenAI reports no deprecation field).
+     */
+    private function isLegacy(string $driver, string $name): bool
+    {
+        return $driver === 'openai'
+            && preg_match('/^(gpt-3\.5|gpt-4-|gpt-4$|gpt-4\.5|o1-(preview|mini)|chatgpt-4o|dall-e-2)/', strtolower($name)) === 1;
     }
 }

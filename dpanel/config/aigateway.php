@@ -45,8 +45,6 @@ return [
     'driver_default_models' => [
         'anthropic' => [
             ['name' => 'claude-sonnet-4-20250514', 'display_name' => 'Claude Sonnet 4', 'context_window' => 200000, 'max_output_tokens' => 64000, 'capabilities' => ['chat', 'vision', 'code'], 'input_price' => 3.00, 'output_price' => 15.00],
-            ['name' => 'claude-3-7-sonnet-20250219', 'display_name' => 'Claude 3.7 Sonnet', 'context_window' => 200000, 'max_output_tokens' => 64000, 'capabilities' => ['chat', 'vision', 'code'], 'input_price' => 3.00, 'output_price' => 15.00],
-            ['name' => 'claude-3-5-haiku-20241022', 'display_name' => 'Claude 3.5 Haiku', 'context_window' => 200000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0.80, 'output_price' => 4.00],
             ['name' => 'claude-opus-4-20250514', 'display_name' => 'Claude Opus 4', 'context_window' => 200000, 'max_output_tokens' => 32000, 'capabilities' => ['chat', 'vision', 'code'], 'input_price' => 15.00, 'output_price' => 75.00],
         ],
         'openai' => [
@@ -63,7 +61,6 @@ return [
             ['name' => 'deepseek/deepseek-chat-v3.1:free', 'display_name' => 'DeepSeek Chat v3.1 (free)', 'context_window' => 163840, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
             ['name' => 'meta-llama/llama-3.3-70b-instruct:free', 'display_name' => 'Llama 3.3 70B (free)', 'context_window' => 131072, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
             ['name' => 'qwen/qwen3-235b-a22b:free', 'display_name' => 'Qwen3 235B (free)', 'context_window' => 131072, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
-            ['name' => 'google/gemini-2.0-flash-exp:free', 'display_name' => 'Gemini 2.0 Flash Exp (free)', 'context_window' => 1048576, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'vision', 'code'], 'input_price' => 0, 'output_price' => 0],
             ['name' => 'openai/gpt-oss-20b:free', 'display_name' => 'GPT-OSS 20B (free)', 'context_window' => 131072, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
         ],
         'gemini' => [
@@ -75,8 +72,6 @@ return [
         'groq' => [
             ['name' => 'llama-3.3-70b-versatile', 'display_name' => 'Llama 3.3 70B (free)', 'context_window' => 128000, 'max_output_tokens' => 32768, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
             ['name' => 'llama-3.1-8b-instant', 'display_name' => 'Llama 3.1 8B Instant (free)', 'context_window' => 128000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
-            ['name' => 'deepseek-r1-distill-llama-70b', 'display_name' => 'DeepSeek R1 Distill 70B (free)', 'context_window' => 128000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
-            ['name' => 'gemma2-9b-it', 'display_name' => 'Gemma 2 9B (free)', 'context_window' => 8192, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
         ],
         'deepseek' => [
             ['name' => 'deepseek-chat', 'display_name' => 'DeepSeek Chat (V3)', 'context_window' => 64000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0.27, 'output_price' => 1.10],

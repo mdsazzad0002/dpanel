@@ -154,7 +154,8 @@ const pickModel = (m) => {
     form.display_name = m.display_name || m.name;
     form.context_window = m.context_window || 0;
     form.max_output_tokens = m.max_output_tokens || 0;
-    if (m.capabilities?.length) form.capabilities = [...m.capabilities];
+    // Capabilities come from the provider's own model metadata.
+    if (Array.isArray(m.capabilities)) form.capabilities = [...m.capabilities];
     closePicker();
 };
 
@@ -379,6 +380,7 @@ const saveEdit = (m) => {
                             class="cursor-pointer rounded hover:bg-slate-100 dark:hover:bg-slate-700/40">
                             <td class="px-3 py-2 font-medium">{{ m.display_name || m.name }}</td>
                             <td class="px-3 py-2 text-xs text-slate-400">{{ m.name }}</td>
+                            <td class="px-3 py-2 text-xs text-slate-500">{{ (m.capabilities || []).map((c) => c.replace('_', ' ')).join(', ') }}</td>
                             <td class="px-3 py-2 text-right text-xs text-slate-400">{{ m.context_window ? m.context_window.toLocaleString() : '' }}</td>
                         </tr>
                     </tbody>

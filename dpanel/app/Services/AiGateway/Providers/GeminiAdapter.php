@@ -5,6 +5,7 @@ namespace App\Services\AiGateway\Providers;
 use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\Contracts\ProviderAdapter;
 use App\Services\AiGateway\Exceptions\AiGatewayException;
+use App\Services\AiGateway\ModelCatalog;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -475,16 +476,60 @@ class GeminiAdapter implements ProviderAdapter
 
         return collect($response->json('models') ?? [])
             ->filter(fn ($m) => is_array($m) && ! empty($m['name']))
-            ->map(fn (array $m): array => [
-                'name' => Str::after($m['name'], 'models/'),
-                'display_name' => $m['displayName'] ?? null,
-                'context_window' => isset($m['inputTokenLimit']) ? (int) $m['inputTokenLimit'] : null,
-                'max_output_tokens' => isset($m['outputTokenLimit']) ? (int) $m['outputTokenLimit'] : null,
-                'input_price' => null,
-                'output_price' => null,
-            ])
+            ->map(function (array $m): ?array {
+                $name = Str::after($m['name'], 'models/');
+                $capabilities = $this->capabilitiesFor($name, (array) ($m['supportedGenerationMethods'] ?? []));
+
+                if ($capabilities === null
+                    || ModelCatalog::flaggedDeprecated($m)
+                    || ModelCatalog::describedAsDeprecated($m['description'] ?? null)) {
+                    return null;
+                }
+
+                return [
+                    'name' => $name,
+                    'display_name' => $m['displayName'] ?? null,
+                    'context_window' => isset($m['inputTokenLimit']) ? (int) $m['inputTokenLimit'] : null,
+                    'max_output_tokens' => isset($m['outputTokenLimit']) ? (int) $m['outputTokenLimit'] : null,
+                    'capabilities' => $capabilities,
+                    'input_price' => null,
+                    'output_price' => null,
+                ];
+            })
+            ->filter()
             ->sortBy('name')
             ->values()
             ->all();
+    }
+
+    /**
+     * What a Gemini model can do here, or null when this gateway can't use
+     * it at all: everything goes through generateContent, so embedding,
+     * Imagen/Veo (predict), TTS and Live-only audio models are left out.
+     *
+     * @param  array<int, string>  $methods
+     * @return ?array<int, string>
+     */
+    private function capabilitiesFor(string $name, array $methods): ?array
+    {
+        if (! in_array('generateContent', $methods, true)
+            || preg_match('/embedding|aqa|tts|native-audio|-live|computer-use|robotics/i', $name)) {
+            return null;
+        }
+
+        // Image models answer with pictures; without "chat" the router keeps
+        // ordinary chat requests away from them.
+        if (str_contains($name, 'image')) {
+            return ['vision', 'image_generation'];
+        }
+
+        // Gemma runs without function calling; Gemma 3 (except 1B) sees images.
+        if (str_starts_with($name, 'gemma')) {
+            $capabilities = preg_match('/^gemma-3n?-(?!1b)/', $name) ? ['chat', 'vision'] : ['chat'];
+
+            return ModelCatalog::withCodeHint($name, $capabilities);
+        }
+
+        return ModelCatalog::withCodeHint($name, ['chat', 'vision', 'tools']);
     }
 }
