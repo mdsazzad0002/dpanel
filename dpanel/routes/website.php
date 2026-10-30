@@ -158,6 +158,16 @@ Route::post('/websites/{id}/git/probe', [WebsiteGitController::class, 'probe'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])->name('websites.git.probe');
 Route::post('/websites/{id}/git/run', [WebsiteGitController::class, 'run'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.run');
+Route::post('/websites/{id}/git/conflicts', [WebsiteGitController::class, 'conflicts'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])->name('websites.git.conflicts');
+Route::post('/websites/{id}/git/conflicts/ai', [WebsiteGitController::class, 'aiSuggest'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:6,1'])->name('websites.git.conflicts.ai');
+Route::post('/websites/{id}/git/resolve', [WebsiteGitController::class, 'resolve'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.git.resolve');
+Route::post('/websites/{id}/git/resolve/pending', [WebsiteGitController::class, 'pendingResolution'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])->name('websites.git.resolve.pending');
+Route::post('/websites/{id}/git/resolve/finish', [WebsiteGitController::class, 'finishResolution'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.git.resolve.finish');
 Route::put('/websites/{id}/git/webhook', [WebsiteGitController::class, 'webhook'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.webhook');
 Route::delete('/websites/{id}/git', [WebsiteGitController::class, 'destroy'])

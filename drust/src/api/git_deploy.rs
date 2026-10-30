@@ -16,6 +16,8 @@ use serde::Deserialize;
 use sha1::{Digest, Sha1};
 
 use crate::api::{ApiResponse, ApiState, check_token};
+
+mod conflicts;
 use crate::app::{run_status, user_group};
 
 pub fn routes() -> Router<Arc<ApiState>> {
@@ -32,6 +34,12 @@ struct Request {
     username: Option<String>,
     token: Option<String>,
     message: Option<String>,
+    /// resolve: live | remote | both | custom (see conflicts.rs).
+    #[serde(default)]
+    strategy: Option<String>,
+    /// resolve with strategy custom: path → how to settle that file.
+    #[serde(default)]
+    resolutions: std::collections::BTreeMap<String, conflicts::Resolution>,
 }
 
 async fn handle(
@@ -84,9 +92,17 @@ fn execute(request: &Request) -> Result<String, String> {
         "probe" => probe(request, &target, &auth),
         "status" => git(request, &target, &auth, &["status", "--short", "--branch"]),
         "pull" => pull(request, &target, &auth),
+        "push" if conflicts::awaiting_confirmation(request, &target, &auth) => {
+            Err(conflicts::AWAITING.into())
+        }
         "push" => push(request, &target, &auth),
         "sync" => sync(request, &target, &auth),
         "checkout" => checkout(request, &target, &auth),
+        "conflicts" => conflicts::inspect(request, &target, &auth),
+        "resolve" => conflicts::resolve(request, &target, &auth),
+        "pending" => conflicts::pending(request, &target, &auth),
+        "confirm_push" => conflicts::confirm_push(request, &target, &auth),
+        "undo_resolve" => conflicts::undo_resolve(request, &target, &auth),
         _ => Err("Unsupported Git action.".into()),
     }
 }
@@ -155,17 +171,24 @@ fn validate(request: &Request) -> Result<(), String> {
 }
 
 fn command(request: &Request, auth: &Auth) -> Command {
-    let mut command = Command::new("runuser");
-    command
-        .args([
+    // Tests run git directly against temporary repositories.
+    let mut command = if cfg!(test) {
+        Command::new("git")
+    } else {
+        let mut runuser = Command::new("runuser");
+        runuser.args([
             "--preserve-environment",
             "-u",
             &request.site_owner,
             "--",
             "git",
-        ])
-        .env("HOME", format!("/home/{}", request.site_owner))
-        .env("GIT_TERMINAL_PROMPT", "0");
+        ]);
+        runuser
+    };
+    if !cfg!(test) {
+        command.env("HOME", format!("/home/{}", request.site_owner));
+    }
+    command.env("GIT_TERMINAL_PROMPT", "0");
     if let Some(header) = &auth.header {
         command
             .env("GIT_CONFIG_COUNT", "1")
@@ -433,6 +456,9 @@ fn ancestor(request: &Request, target: &Path, auth: &Auth, older: &str, newer: &
         .unwrap_or(false)
 }
 fn pull(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    if conflicts::awaiting_confirmation(request, target, auth) {
+        return Err(conflicts::AWAITING.into());
+    }
     if !clean(request, target, auth)? {
         return Err("Local files have uncommitted changes; pull stopped.".into());
     }
@@ -473,6 +499,9 @@ fn push(request: &Request, target: &Path, auth: &Auth) -> Result<String, String>
     )
 }
 fn sync(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    if conflicts::awaiting_confirmation(request, target, auth) {
+        return Err(conflicts::AWAITING.into());
+    }
     git(
         request,
         target,
@@ -499,6 +528,9 @@ fn sync(request: &Request, target: &Path, auth: &Auth) -> Result<String, String>
 /// clone is `--single-branch --depth 1`, so the branch is added to the
 /// remote's fetch refspec (later pulls then track it) and fetched shallowly.
 fn checkout(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    if conflicts::awaiting_confirmation(request, target, auth) {
+        return Err(conflicts::AWAITING.into());
+    }
     if !clean(request, target, auth)? {
         return Err("Local files have uncommitted changes; branch switch stopped.".into());
     }

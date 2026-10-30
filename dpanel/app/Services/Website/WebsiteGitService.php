@@ -21,6 +21,9 @@ class WebsiteGitService
     {
     }
 
+    /** How a conflict can be settled (see drust git_deploy/conflicts.rs). */
+    public const STRATEGIES = ['live', 'remote', 'both', 'custom'];
+
     /** @return array{success: bool, output: string, exit_code: int} */
     public function run(WebsiteGitDeployment $deployment, string $action, ?int $actorId = null, string $message = 'Automated website update', ?string $branch = null): array
     {
@@ -28,6 +31,102 @@ class WebsiteGitService
         if (! in_array($action, self::ACTIONS, true)) {
             throw new \InvalidArgumentException('Unsupported Git action.');
         }
+
+        return $this->perform($deployment, $action, $actorId, $message, $branch);
+    }
+
+    /**
+     * True when a failed pull/push/sync stopped because the live site and the
+     * repository both changed — the page then offers conflict resolution.
+     */
+    public static function needsResolution(?string $message): bool
+    {
+        $message = (string) $message;
+
+        return str_contains($message, 'history diverged')
+            || str_contains($message, 'both changed')
+            || str_contains($message, 'Remote contains changes not present locally')
+            || str_contains($message, 'uncommitted changes; pull stopped');
+    }
+
+    /**
+     * Read-only: what the repository has that the site lacks and the files
+     * whose changes collide, with base / live / remote versions.
+     *
+     * @return array{behind: bool, ahead: bool, dirty: bool, conflicts: array<int, array<string, mixed>>}
+     */
+    public function conflicts(WebsiteGitDeployment $deployment): array
+    {
+        $website = $deployment->website()->firstOrFail();
+        [$username, $secret] = $this->credentials($deployment);
+        $result = $this->callDrust($website, (string) $deployment->repository_url, (string) $deployment->branch, 'conflicts', $username, $secret, '');
+        $state = $result['success'] ? json_decode($result['output'], true) : null;
+        if (! is_array($state)) {
+            throw new \RuntimeException($result['output'] ?: 'Could not compare the site with the repository.');
+        }
+
+        return [
+            'behind' => (bool) ($state['behind'] ?? false),
+            'ahead' => (bool) ($state['ahead'] ?? false),
+            'dirty' => (bool) ($state['dirty'] ?? false),
+            'conflicts' => array_values((array) ($state['conflicts'] ?? [])),
+        ];
+    }
+
+    /**
+     * Merge the repository into the live site, settling conflicts by
+     * $strategy, on the server only: nothing is pushed until
+     * confirmResolution(). custom takes $resolutions: path => {take: live|remote|both} or {content}.
+     *
+     * @param  array<string, array{take?: string, content?: string}>  $resolutions
+     * @return array{success: bool, output: string, exit_code: int}
+     */
+    public function resolve(WebsiteGitDeployment $deployment, string $strategy, array $resolutions = [], ?int $actorId = null): array
+    {
+        if (! in_array($strategy, self::STRATEGIES, true)) {
+            throw new \InvalidArgumentException('Choose live, remote, both, or custom.');
+        }
+
+        return $this->perform($deployment, 'resolve', $actorId, 'Resolve conflicts', null, [
+            'strategy' => $strategy,
+            'resolutions' => (object) $resolutions,
+        ]);
+    }
+
+    /**
+     * The resolved merge waiting for its push: commits and files the
+     * repository does not have yet.
+     *
+     * @return array{pending: bool, commits?: array<int, string>, files?: array<int, array{status: string, path: string}>, summary?: string}
+     */
+    public function pendingResolution(WebsiteGitDeployment $deployment): array
+    {
+        $website = $deployment->website()->firstOrFail();
+        [$username, $secret] = $this->credentials($deployment);
+        $result = $this->callDrust($website, (string) $deployment->repository_url, (string) $deployment->branch, 'pending', $username, $secret, '');
+        $state = $result['success'] ? json_decode($result['output'], true) : null;
+        if (! is_array($state)) {
+            throw new \RuntimeException($result['output'] ?: 'Could not read the resolved merge.');
+        }
+
+        return $state;
+    }
+
+    /** @return array{success: bool, output: string, exit_code: int} */
+    public function confirmResolution(WebsiteGitDeployment $deployment, ?int $actorId = null): array
+    {
+        return $this->perform($deployment, 'confirm_push', $actorId, 'Push resolved merge', null);
+    }
+
+    /** @return array{success: bool, output: string, exit_code: int} */
+    public function undoResolution(WebsiteGitDeployment $deployment, ?int $actorId = null): array
+    {
+        return $this->perform($deployment, 'undo_resolve', $actorId, 'Undo resolved merge', null);
+    }
+
+    /** @return array{success: bool, output: string, exit_code: int} */
+    private function perform(WebsiteGitDeployment $deployment, string $action, ?int $actorId, string $message, ?string $branch, array $extra = []): array
+    {
         // Only checkout moves the working tree to another branch; every other
         // action runs against the deployment's saved branch.
         $branch = $action === 'checkout' ? (string) $branch : (string) $deployment->branch;
@@ -51,10 +150,10 @@ class WebsiteGitService
                 $this->preOverwriteBackup->snapshot($website, 'git_clone');
             }
             [$username, $secret] = $this->credentials($deployment);
-            if ($secret === '' && in_array($action, ['init', 'push', 'sync'], true)) {
+            if ($secret === '' && in_array($action, ['init', 'push', 'sync', 'confirm_push'], true)) {
                 throw new \RuntimeException('Pushing needs credentials. Select a connected GitHub account (or add an access token) in the connection settings and save.');
             }
-            $result = $this->callDrust($website, (string) $deployment->repository_url, $branch, $action, $username, $secret, $message);
+            $result = $this->callDrust($website, (string) $deployment->repository_url, $branch, $action, $username, $secret, $message, $extra);
 
             $success = (bool) ($result['success'] ?? false);
             $output = mb_substr(trim((string) ($result['output'] ?? '')), 0, 12000);
@@ -111,9 +210,11 @@ class WebsiteGitService
     }
 
     /** @return array{success: bool, output: string, exit_code: int} */
-    private function callDrust(\App\Models\Website $website, string $repositoryUrl, string $branch, string $action, string $username, string $secret, string $message): array
+    private function callDrust(\App\Models\Website $website, string $repositoryUrl, string $branch, string $action, string $username, string $secret, string $message, array $extra = []): array
     {
-        $request = Http::acceptJson()->asJson()->timeout(max((int) config('serverpanel.execution_api_timeout', 60), $action === 'init' ? 300 : 0));
+        // init pushes everything; conflicts/resolve may first fetch the full history.
+        $slow = in_array($action, ['init', 'conflicts', 'resolve', 'confirm_push'], true);
+        $request = Http::acceptJson()->asJson()->timeout(max((int) config('serverpanel.execution_api_timeout', 60), $slow ? 300 : 0));
         $token = trim((string) config('serverpanel.execution_api_token', ''));
         if ($token !== '') $request = $request->withToken($token);
         $response = $request->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/git-deploy', [
@@ -125,7 +226,7 @@ class WebsiteGitService
             'message' => mb_substr(trim($message) ?: 'Website update', 0, 200),
             'username' => $username,
             'token' => $secret,
-        ]);
+        ] + $extra);
         $json = $response->json();
         $data = is_array($json['data'] ?? null) ? $json['data'] : [];
 
