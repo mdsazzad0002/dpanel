@@ -134,4 +134,32 @@ class SystemMailTest extends TestCase
         $this->as($this->user('admin'))->get("/cpsess{$this->token}/dashboard")
             ->assertInertia(fn (AssertableInertia $page) => $page->where('systemMailWarning', null));
     }
+
+    public function test_mailbox_list_offers_the_button_to_admins_without_leaking_passwords(): void
+    {
+        $good = $this->mailbox('noreply@panel.test');
+        $this->mailbox('test@panel.test', ['delivery_mode' => 'sandbox']);
+        app(MailSettings::class)->write(['system_mailbox_id' => $good->id]);
+
+        $response = $this->as($this->user('admin'))->get("/cpsess{$this->token}/emails/list");
+        $response->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('systemMailboxId', $good->id)
+            ->where('canSetSystemMail', true)
+            ->where('mailboxes', fn ($rows) => collect($rows)->every(fn ($row) => ! array_key_exists('client_password', $row))
+                && collect($rows)->firstWhere('email', 'noreply@panel.test')['system_mail_problem'] === null
+                && str_contains((string) collect($rows)->firstWhere('email', 'test@panel.test')['system_mail_problem'], 'sandbox')));
+        $this->assertStringNotContainsString('secret-pass', $response->getContent());
+
+        $this->as($this->user('reseller'))->get("/cpsess{$this->token}/emails/list")
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('canSetSystemMail', false)->where('systemMailboxId', null));
+    }
+
+    public function test_edit_page_does_not_leak_the_mailbox_password(): void
+    {
+        $mailbox = $this->mailbox('noreply@panel.test');
+
+        $response = $this->as($this->user('admin'))->get("/cpsess{$this->token}/emails/{$mailbox->id}/edit");
+        $response->assertOk();
+        $this->assertStringNotContainsString('secret-pass', $response->getContent());
+    }
 }

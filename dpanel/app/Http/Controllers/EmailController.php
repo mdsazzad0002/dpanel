@@ -9,6 +9,8 @@ use App\Services\Mail\MailboxDeliveryHealth;
 use App\Support\MailPasswordHash;
 use App\Models\Website;
 use App\Services\Mail\MailboxImapService;
+use App\Services\Mail\SystemMailer;
+use App\Support\MailSettings;
 use App\Services\Mail\MailDnsRecords;
 use App\Services\Mail\MailIps;
 use App\Services\Mail\MailDnsVerifier;
@@ -19,6 +21,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -53,15 +56,23 @@ class EmailController extends Controller
     public function index(): Response
     {
         $setupCheck = $this->buildMailSetupCheck();
+        $isAdmin = (bool) request()->user()?->hasRole('admin');
+        $systemMailer = app(SystemMailer::class);
         $mailboxes = Mailbox::query()
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn (Mailbox $mailbox): array => $this->toMailboxListRow($mailbox, $setupCheck))
+            ->map(fn (Mailbox $mailbox): array => $this->toMailboxListRow($mailbox, $setupCheck) + [
+                // Why this mailbox cannot be the system email (admins only).
+                'system_mail_problem' => $isAdmin ? $systemMailer->problemWith($mailbox) : null,
+            ])
             ->all();
 
         return Inertia::render('Email/Manage/ListEmails', [
             'mailboxes' => $mailboxes,
             'setupCheck' => $setupCheck,
+            // Only admins choose the system email.
+            'systemMailboxId' => $isAdmin ? app(MailSettings::class)->read()['system_mailbox_id'] : null,
+            'canSetSystemMail' => $isAdmin,
         ]);
     }
 
@@ -393,7 +404,7 @@ class EmailController extends Controller
         abort_if($mailbox === null, 404);
 
         return Inertia::render('Email/Manage/EditEmail', [
-            'mailbox' => array_merge($mailbox->toArray(), ['password' => '']),
+            'mailbox' => array_merge(Arr::except($mailbox->toArray(), ['client_password']), ['password' => '']),
             'websiteDomains' => $this->readWebsiteDomains(),
         ]);
     }
@@ -589,7 +600,8 @@ class EmailController extends Controller
     {
         $row = $mailbox->toArray();
         $autoLoginCheck = $this->evaluateMailboxAutoLogin($row, $setupCheck);
-        unset($row['password']);
+        // client_password is decrypted by its cast; it must never reach the page.
+        unset($row['password'], $row['client_password']);
         $row['autologin_ready'] = $autoLoginCheck['ready'];
         $row['autologin_message'] = $autoLoginCheck['message'];
 
