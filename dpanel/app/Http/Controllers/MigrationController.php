@@ -10,6 +10,7 @@ use App\Jobs\RestoreMigrationImportJob;
 use App\Models\DatabaseRequest;
 use App\Models\MigrationImport;
 use App\Models\MigrationSshConnection;
+use App\Services\Migration\AccountArchiveMigrationProvider;
 use App\Services\Migration\CyberPanelSshInventoryService;
 use App\Services\Migration\GenericWebsiteMigrationProvider;
 use App\Services\Php\PhpService;
@@ -40,12 +41,48 @@ class MigrationController extends Controller
 
     public function cpanel(Request $request, string $token): Response
     {
+        return $this->accountArchivePage($request, 'cpanel');
+    }
+
+    public function cpanelPartial(Request $request, string $token): Response
+    {
+        return $this->accountArchivePage($request, 'cpanel-partial');
+    }
+
+    public function directadmin(Request $request, string $token): Response
+    {
+        return $this->accountArchivePage($request, 'directadmin');
+    }
+
+    public function plesk(Request $request, string $token): Response
+    {
+        return $this->accountArchivePage($request, 'plesk');
+    }
+
+    private function accountArchivePage(Request $request, string $provider): Response
+    {
         return Inertia::render('Migrations/Index', [
-            'provider' => 'cpanel',
+            'provider' => $provider,
             'imports' => MigrationImport::visibleTo($request->user())
-                ->where('provider', 'cpanel')
+                ->where('provider', $provider)
                 ->latest()
                 ->get(),
+        ]);
+    }
+
+    /**
+     * WordPress: pick the website to move it into; the website's Import
+     * page then takes the files and database and rewrites the site address.
+     */
+    public function wordpress(Request $request, string $token): Response
+    {
+        return Inertia::render('Migrations/Index', [
+            'provider' => 'wordpress',
+            'imports' => [],
+            'websites' => \App\Models\Website::query()->visibleTo($request->user())
+                ->orderBy('domain')
+                ->get(['id', 'domain', 'site_owner'])
+                ->values(),
         ]);
     }
 
@@ -502,6 +539,8 @@ class MigrationController extends Controller
             'database_name' => (string) ($database?->database_name ?? ''), 'database_user' => (string) ($database?->database_user ?? ''),
             'database_password' => (string) ($database?->database_password ?? ''),
             'overwrite_database' => $databaseFileName !== null && $database->exists,
+            // A WordPress import is moved to this address (siteurl/home).
+            'site_url' => ($website->enable_ssl ? 'https://' : 'http://').strtolower((string) $website->domain),
             'uploads' => ['archive' => $archiveName === null ? null : ['name' => $archiveName, 'size' => (int) $data['archive_size']],
                 'database' => $databaseFileName === null ? null : ['name' => $databaseFileName, 'size' => (int) $data['database_size']]]];
         $actor = $request->user();
@@ -630,30 +669,60 @@ class MigrationController extends Controller
 
     public function store(Request $request, UploadScanner $scanner, string $token): JsonResponse
     {
-        $request->validate(['provider' => ['required', 'in:cpanel'], 'archive' => ['required', 'file', 'max:5242880']]);
-        $file = $request->file('archive');
-        $name = (string) $file->getClientOriginalName();
-        abort_unless(preg_match('/\.(?:tar\.gz|tgz)$/i', $name), 422, 'Upload a cpmove-USER.tar.gz or .tgz archive.');
+        $data = $request->validate([
+            'provider' => ['required', 'in:'.implode(',', array_keys(AccountArchiveMigrationProvider::PROVIDERS))],
+            'archive' => ['required_unless:provider,cpanel-partial', 'file', 'max:5242880'],
+            'archives' => ['required_if:provider,cpanel-partial', 'array', 'max:50'],
+            'archives.*' => ['file', 'max:5242880'],
+            'account' => ['required_if:provider,cpanel-partial', 'nullable', 'string', 'max:32', 'regex:/^[a-z_][a-z0-9_-]*$/'],
+            'domain' => ['nullable', 'string', 'max:253', 'regex:/^[A-Za-z0-9.-]+\.[A-Za-z0-9-]+$/'],
+        ]);
+        $provider = $data['provider'];
+        $formats = AccountArchiveMigrationProvider::PROVIDERS[$provider];
+        $files = $provider === 'cpanel-partial' ? $request->file('archives', []) : [$request->file('archive')];
+        foreach ($files as $file) {
+            $name = (string) $file->getClientOriginalName();
+            abort_unless(AccountArchiveMigrationProvider::accepts($provider, $name), 422, "{$name}: upload {$formats['formats']}.");
+        }
 
         $id = (string) Str::uuid();
-        $directory = storage_path('app/migrations');
-        if (! is_dir($directory)) {
-            mkdir($directory, 0750, true);
-        }
-        $path = $directory.'/'.$id.'-'.preg_replace('/[^A-Za-z0-9._-]/', '_', basename($name));
-        $file->move($directory, basename($path));
-        try {
-            $scanner->assertClean($path, $name);
-        } catch (UploadRejectedException $e) {
-            @unlink($path);
+        $root = storage_path('app/migrations');
+        File::ensureDirectoryExists($root, 0750);
+        // A partial backup is several files (home directory + MySQL dumps),
+        // so it gets a directory of its own.
+        $directory = $provider === 'cpanel-partial' ? $root.'/'.$id : $root;
+        File::ensureDirectoryExists($directory, 0750);
+        $paths = [];
+        foreach ($files as $file) {
+            $name = (string) $file->getClientOriginalName();
+            $safe = preg_replace('/[^A-Za-z0-9._-]/', '_', basename($name));
+            $path = $provider === 'cpanel-partial' ? $directory.'/'.$safe : $directory.'/'.$id.'-'.$safe;
+            $file->move($directory, basename($path));
+            $paths[] = $path;
+            try {
+                $scanner->assertClean($path, $name);
+            } catch (UploadRejectedException $e) {
+                array_map('unlink', array_filter($paths, 'is_file'));
+                if ($provider === 'cpanel-partial') {
+                    File::deleteDirectory($directory);
+                }
 
-            return response()->json(['message' => $e->getMessage()], 422);
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
         }
 
         $actor = $request->user();
+        $partial = $provider === 'cpanel-partial';
         $import = MigrationImport::create([
-            'id' => $id, 'provider' => 'cpanel', 'original_name' => $name,
-            'archive_path' => $path, 'archive_size' => filesize($path), 'status' => 'inspecting',
+            'id' => $id, 'provider' => $provider,
+            'original_name' => $partial ? implode(', ', array_map(fn ($file) => (string) $file->getClientOriginalName(), $files)) : (string) $files[0]->getClientOriginalName(),
+            'archive_path' => $partial ? $directory : $paths[0],
+            'archive_size' => array_sum(array_map('filesize', $paths)),
+            'status' => 'inspecting',
+            'inventory' => $partial ? [
+                'upload_dir' => $directory,
+                'options' => ['account' => $data['account'], 'domain' => strtolower((string) ($data['domain'] ?? ''))],
+            ] : null,
             'created_by' => $actor->id, 'assigned_reseller_id' => $actor->hasRole('reseller') ? $actor->id : null,
         ]);
         InspectMigrationImportJob::dispatch($import->id)->afterCommit();
@@ -663,7 +732,9 @@ class MigrationController extends Controller
 
     public function restore(Request $request, string $token, string $migrationImport): JsonResponse
     {
-        $import = MigrationImport::visibleTo($request->user())->findOrFail($migrationImport);
+        $import = MigrationImport::visibleTo($request->user())
+            ->whereIn('provider', array_keys(AccountArchiveMigrationProvider::PROVIDERS))
+            ->findOrFail($migrationImport);
         abort_unless($import->status === 'ready', 422, 'This archive is not ready.');
         $selection = $request->validate([
             'domains' => ['array'], 'domains.*' => ['string'], 'files' => ['array'], 'files.*' => ['string'],
@@ -686,11 +757,11 @@ class MigrationController extends Controller
     {
         $import = MigrationImport::visibleTo($request->user())->findOrFail($migrationImport);
         abort_unless($import->status !== 'restoring', 422, 'A migration cannot be removed while it is restoring.');
-        if ($import->provider === 'dpanel') {
+        if (in_array($import->provider, ['dpanel', 'cpanel-partial'], true) && is_dir((string) data_get($import->inventory, 'upload_dir', ''))) {
             $root = realpath(storage_path('app/migrations'));
             $uploadDir = realpath((string) data_get($import->inventory, 'upload_dir', ''));
-            abort_if($root === false || $uploadDir === false || ! str_starts_with($uploadDir, $root.DIRECTORY_SEPARATOR), 422, 'Invalid DPanel upload storage path.');
-            abort_unless(File::deleteDirectory($uploadDir), 500, 'Could not remove DPanel migration upload files.');
+            abort_if($root === false || $uploadDir === false || ! str_starts_with($uploadDir, $root.DIRECTORY_SEPARATOR), 422, 'Invalid migration upload storage path.');
+            abort_unless(File::deleteDirectory($uploadDir), 500, 'Could not remove migration upload files.');
         } elseif (is_file($import->archive_path)) {
             unlink($import->archive_path);
         }

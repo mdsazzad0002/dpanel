@@ -531,6 +531,10 @@ Route::prefix('cpsess{token}')
 
             Route::get('/migrations', [MigrationController::class, 'index'])->middleware('role:admin|reseller')->name('migrations.index');
             Route::get('/migrations/cpanel', [MigrationController::class, 'cpanel'])->middleware('role:admin|reseller')->name('migrations.cpanel');
+            Route::get('/migrations/cpanel-partial', [MigrationController::class, 'cpanelPartial'])->middleware('role:admin|reseller')->name('migrations.cpanel-partial');
+            Route::get('/migrations/directadmin', [MigrationController::class, 'directadmin'])->middleware('role:admin|reseller')->name('migrations.directadmin');
+            Route::get('/migrations/plesk', [MigrationController::class, 'plesk'])->middleware('role:admin|reseller')->name('migrations.plesk');
+            Route::get('/migrations/wordpress', [MigrationController::class, 'wordpress'])->middleware('role:admin|reseller')->name('migrations.wordpress');
             Route::get('/migrations/dpanel', [MigrationController::class, 'dpanel'])->middleware('role:admin')->name('migrations.dpanel');
             Route::post('/migrations/dpanel', [MigrationController::class, 'prepareDpanelImport'])->middleware(['role:admin', 'throttle:10,1'])->name('migrations.dpanel.prepare');
             Route::post('/migrations/dpanel/{migrationImport}/chunks', [MigrationController::class, 'uploadDpanelImportChunk'])->middleware(['role:admin', 'throttle:3000,1'])->name('migrations.dpanel.chunks');
