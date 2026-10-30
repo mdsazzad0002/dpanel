@@ -16,6 +16,8 @@ use serde::Deserialize;
 use sha1::{Digest, Sha1};
 
 use crate::api::{ApiResponse, ApiState, check_token};
+
+mod conflicts;
 use crate::app::{run_status, user_group};
 
 pub fn routes() -> Router<Arc<ApiState>> {
@@ -32,6 +34,12 @@ struct Request {
     username: Option<String>,
     token: Option<String>,
     message: Option<String>,
+    /// resolve: live | remote | both | custom (see conflicts.rs).
+    #[serde(default)]
+    strategy: Option<String>,
+    /// resolve with strategy custom: path → how to settle that file.
+    #[serde(default)]
+    resolutions: std::collections::BTreeMap<String, conflicts::Resolution>,
 }
 
 async fn handle(
@@ -87,6 +95,8 @@ fn execute(request: &Request) -> Result<String, String> {
         "push" => push(request, &target, &auth),
         "sync" => sync(request, &target, &auth),
         "checkout" => checkout(request, &target, &auth),
+        "conflicts" => conflicts::inspect(request, &target, &auth),
+        "resolve" => conflicts::resolve(request, &target, &auth),
         _ => Err("Unsupported Git action.".into()),
     }
 }
@@ -155,17 +165,24 @@ fn validate(request: &Request) -> Result<(), String> {
 }
 
 fn command(request: &Request, auth: &Auth) -> Command {
-    let mut command = Command::new("runuser");
-    command
-        .args([
+    // Tests run git directly against temporary repositories.
+    let mut command = if cfg!(test) {
+        Command::new("git")
+    } else {
+        let mut runuser = Command::new("runuser");
+        runuser.args([
             "--preserve-environment",
             "-u",
             &request.site_owner,
             "--",
             "git",
-        ])
-        .env("HOME", format!("/home/{}", request.site_owner))
-        .env("GIT_TERMINAL_PROMPT", "0");
+        ]);
+        runuser
+    };
+    if !cfg!(test) {
+        command.env("HOME", format!("/home/{}", request.site_owner));
+    }
+    command.env("GIT_TERMINAL_PROMPT", "0");
     if let Some(header) = &auth.header {
         command
             .env("GIT_CONFIG_COUNT", "1")

@@ -8,6 +8,7 @@ use App\Models\GithubOAuthApp;
 use App\Models\Website;
 use App\Models\WebsiteGitDeployment;
 use App\Services\Github\GithubClient;
+use App\Services\Website\GitConflictAi;
 use App\Services\Website\WebsiteGitService;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -21,6 +22,7 @@ class WebsiteGitController extends Controller
     public function __construct(
         private readonly WebsiteGitService $git,
         private readonly GithubClient $github,
+        private readonly GitConflictAi $ai,
     ) {}
 
     public function index(Request $request, string $token, string $id): Response
@@ -35,6 +37,7 @@ class WebsiteGitController extends Controller
                 'accounts' => GithubAccount::query()->ownedBy($request->user())->orderBy('login')->get()
                     ->map(fn (GithubAccount $account): array => $account->summary()),
             ],
+            'aiAvailable' => $this->ai->available(),
             ...$this->state($deployment),
         ]);
     }
@@ -49,6 +52,8 @@ class WebsiteGitController extends Controller
             'deployment' => $deployment ? $this->present($deployment->refresh()) : null,
             'repositoryConnected' => (bool) $deployment?->logs()->whereIn('action', WebsiteGitService::CONNECTING_ACTIONS)->where('status', 'success')->exists(),
             'logs' => $deployment?->logs()->latest()->limit(30)->get() ?? [],
+            // The last pull/push/sync stopped because both sides changed.
+            'needsResolution' => $deployment?->last_status === 'failed' && WebsiteGitService::needsResolution($deployment->last_message),
         ];
     }
 
@@ -194,6 +199,63 @@ class WebsiteGitController extends Controller
         $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
         try {
             $result = $this->git->run($deployment, $validated['action'], $request->user()?->id, $validated['message'] ?? 'Website update', $validated['branch'] ?? null);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment)], 422);
+        }
+
+        return response()->json(['message' => $result['output'], 'success' => $result['success'], ...$this->state($deployment)], $result['success'] ? 200 : 422);
+    }
+
+    /** Compare the live site with the repository (read-only). */
+    public function conflicts(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->website($request, $id);
+        $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        try {
+            return response()->json($this->git->conflicts($deployment) + ['ai_available' => $this->ai->available()]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * Ask the AI Gateway for a merged version of each conflicting file. The
+     * conflicts are read again here, never taken from the browser.
+     */
+    public function aiSuggest(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->website($request, $id);
+        $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        if (! $this->ai->available()) {
+            return response()->json(['message' => 'Add an AI provider under AI Gateway to resolve conflicts with AI.'], 422);
+        }
+        try {
+            $state = $this->git->conflicts($deployment);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($this->ai->suggest($website, $state['conflicts'], $request->user()?->id) + ['conflicts' => $state['conflicts']]);
+    }
+
+    /** Merge the repository into the live site, settling conflicts as chosen, and push. */
+    public function resolve(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->website($request, $id);
+        $validated = $request->validate([
+            'strategy' => ['required', Rule::in(WebsiteGitService::STRATEGIES)],
+            'resolutions' => ['array', 'max:500', 'required_if:strategy,custom'],
+            'resolutions.*.path' => ['required', 'string', 'max:4096'],
+            'resolutions.*.take' => ['nullable', 'in:live,remote,both', 'required_without:resolutions.*.content'],
+            'resolutions.*.content' => ['nullable', 'string', 'max:1048576'],
+        ]);
+        $resolutions = [];
+        foreach ($validated['resolutions'] ?? [] as $item) {
+            $resolutions[$item['path']] = array_filter(['take' => $item['take'] ?? null, 'content' => $item['content'] ?? null], fn ($value) => $value !== null);
+        }
+        $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        try {
+            $result = $this->git->resolve($deployment, $validated['strategy'], $resolutions, $request->user()?->id);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment)], 422);
         }

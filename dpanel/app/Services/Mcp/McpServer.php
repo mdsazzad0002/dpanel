@@ -47,6 +47,8 @@ class McpServer
         Tools\FileOperationTool::class,
         Tools\RunCommandTool::class,
         Tools\RestartServiceTool::class,
+        Tools\ListGitConflictsTool::class,
+        Tools\ResolveGitConflictsTool::class,
     ];
 
     /** @var array<string, McpTool>|null */
