@@ -98,6 +98,25 @@ class OpenAiAdapter implements ProviderAdapter
         return ['images' => $images, 'text' => implode("\n", $notes), 'model' => $model];
     }
 
+    /**
+     * OpenAI's own API rejects max_tokens on its newer models (gpt-5.x, o-series)
+     * and takes max_completion_tokens on every chat model; the compatible
+     * providers (OpenRouter, Groq, Kilo, ...) still expect max_tokens.
+     */
+    private function tokenLimitKey(AiGatewayProvider $provider): string
+    {
+        return $provider->driver === 'openai' ? 'max_completion_tokens' : 'max_tokens';
+    }
+
+    /**
+     * Whether the model is an ordinary chat model. OpenAI's reasoning models (gpt-5.x,
+     * o1/o3/o4...) only accept the default temperature and reject any other value.
+     */
+    private function supportsTemperature(AiGatewayProvider $provider, string $model): bool
+    {
+        return ! ($provider->driver === 'openai' && preg_match('/^(gpt-5|o\d)/', $model));
+    }
+
     private function baseUrlFor(AiGatewayProvider $provider): string
     {
         return $provider->base_url ?: (self::DRIVERS[$provider->driver][1] ?? self::DRIVERS['openai'][1]);
@@ -139,16 +158,21 @@ class OpenAiAdapter implements ProviderAdapter
             'messages' => $chatMessages,
         ];
 
-        if (isset($options['temperature'])) {
+        if (isset($options['temperature']) && $this->supportsTemperature($provider, $model)) {
             $body['temperature'] = (float) $options['temperature'];
         }
 
         if (isset($options['max_tokens'])) {
-            $body['max_tokens'] = (int) $options['max_tokens'];
+            $body[$this->tokenLimitKey($provider)] = (int) $options['max_tokens'];
         }
 
         if (! empty($options['tools'])) {
             $body['tools'] = $this->normaliseTools($options['tools']);
+
+            // OpenAI's reasoning models only take function tools on /chat/completions with reasoning switched off.
+            if (! $this->supportsTemperature($provider, $model)) {
+                $body['reasoning_effort'] = 'none';
+            }
 
             if (! empty($options['tool_choice'])) {
                 $body['tool_choice'] = $options['tool_choice'];
@@ -203,16 +227,21 @@ class OpenAiAdapter implements ProviderAdapter
             'stream_options' => ['include_usage' => true],
         ];
 
-        if (isset($options['temperature'])) {
+        if (isset($options['temperature']) && $this->supportsTemperature($provider, $model)) {
             $body['temperature'] = (float) $options['temperature'];
         }
 
         if (isset($options['max_tokens'])) {
-            $body['max_tokens'] = (int) $options['max_tokens'];
+            $body[$this->tokenLimitKey($provider)] = (int) $options['max_tokens'];
         }
 
         if (! empty($options['tools'])) {
             $body['tools'] = $this->normaliseTools($options['tools']);
+
+            // OpenAI's reasoning models only take function tools on /chat/completions with reasoning switched off.
+            if (! $this->supportsTemperature($provider, $model)) {
+                $body['reasoning_effort'] = 'none';
+            }
 
             if (! empty($options['tool_choice'])) {
                 $body['tool_choice'] = $options['tool_choice'];
