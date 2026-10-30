@@ -1,9 +1,11 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
+import DatabaseTargetPicker from './components/DatabaseTargetPicker.vue';
+import JobPipeline from './components/JobPipeline.vue';
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -37,10 +39,34 @@ const newDatabaseName = ref(props.suggestedDatabaseName);
 // creates it, so there is nothing to overwrite or confirm.
 const primaryDatabaseMissing = computed(() => !!databases.value[0]?.missing_on_server);
 
-// Clone: replace one of this website's databases, or create a new one.
-const cloneDatabaseTarget = ref(databases.value.length ? databases.value[0].id : 'new');
-const cloneNewDatabaseName = ref(props.suggestedDatabaseName);
-const cloneTargetDatabase = computed(() => databases.value.find((entry) => entry.id === cloneDatabaseTarget.value));
+// Clone and share-link import: replace one of this website's databases, or
+// create a new one. The list is loaded from the server once a source is
+// chosen, so it reflects what exists right now rather than page-load state.
+const liveDatabases = ref([]);
+const liveDatabasesStatus = ref('idle'); // idle | loading | loaded | error
+const loadLiveDatabases = async () => {
+    if (liveDatabasesStatus.value === 'loading') return;
+    liveDatabasesStatus.value = 'loading';
+    try {
+        const { data } = await axios.get(panelRoute('websites.import.databases', { id: props.website.id }));
+        liveDatabases.value = data.databases || [];
+        liveDatabasesStatus.value = 'loaded';
+        for (const choice of [cloneDatabase, importDatabase]) {
+            if (choice.target !== 'new' && !liveDatabases.value.some((db) => db.id === choice.target)) choice.target = '';
+            if (!choice.target) choice.target = liveDatabases.value[0]?.id || 'new';
+            if (!choice.newName) choice.newName = data.suggested_database_name || '';
+        }
+    } catch {
+        liveDatabasesStatus.value = 'error';
+    }
+};
+const cloneDatabase = reactive({ target: '', newName: '' });
+const importDatabase = reactive({ target: '', newName: '' });
+const chosenDatabase = (choice) => liveDatabases.value.find((db) => db.id === choice.target);
+const cloneTargetDatabase = computed(() => chosenDatabase(cloneDatabase));
+const importTargetDatabase = computed(() => chosenDatabase(importDatabase));
+const confirmDatabaseOverwrite = (db) => !db || db.missing_on_server
+    || window.confirm(`Database ${db.database_name} will be overwritten with the incoming database. A backup is taken first. Continue?`);
 
 const submitGeneric = async () => {
     if (!generic.archive && !generic.database) { error.value = 'Choose website files, a database dump, or both.'; return; }
@@ -137,21 +163,29 @@ const postJson = async (url, body) => {
     return data;
 };
 
-const cloneStageText = (stage) => ({
-    queued: 'Queued…',
-    archiving: 'Archiving website files…',
-    exporting_database: 'Exporting database…',
-    restoring: 'Restoring into this website…',
-    downloading: 'Downloading package…',
-    ready: 'Done',
-    failed: 'Failed',
-}[stage] || 'Working…');
-
 const otherWebsiteOptions = computed(() => props.otherWebsites.map((site) => ({ value: site.id, label: site.domain })));
 
 const sourceWebsiteId = ref('');
+// Blocks that appear as the form fills in fade/slide in instead of popping.
+const reveal = {
+    enterActiveClass: 'transition duration-300 ease-out',
+    enterFromClass: 'opacity-0 -translate-y-1',
+    leaveActiveClass: 'transition duration-150 ease-in',
+    leaveToClass: 'opacity-0 -translate-y-1',
+};
+watch(sourceWebsiteId, (id) => { if (id) loadLiveDatabases(); });
 const pullRunning = ref(false);
 const pullStage = ref(null);
+const pullJobId = ref('');
+const pullFailedAt = ref(null);
+watch(pullStage, (stage, previous) => { if (stage === 'failed') pullFailedAt.value = previous; });
+const CLONE_STEPS = [
+    { key: 'queued', label: 'Queued' },
+    { key: 'archiving', label: 'Website files' },
+    { key: 'exporting_database', label: 'Database export' },
+    { key: 'backing_up_target', label: 'Backup of this website' },
+    { key: 'restoring', label: 'Restore into this website' },
+];
 const pullMessage = ref('');
 let pullPollTimer = null;
 
@@ -186,23 +220,18 @@ const pollPullStatus = async (cloneId) => {
 
 const startPull = async () => {
     if (pullRunning.value || !sourceWebsiteId.value) return;
-    const replacing = cloneTargetDatabase.value;
-    if (replacing && !replacing.missing_on_server) {
-        const confirmed = window.confirm(
-            `Database ${replacing.database_name} will be overwritten with the source website's database. A backup is taken first. Continue?`,
-        );
-        if (!confirmed) return;
-    }
+    if (liveDatabasesStatus.value !== 'loaded' || !confirmDatabaseOverwrite(cloneTargetDatabase.value)) return;
     pullRunning.value = true;
     pullStage.value = 'queued';
     pullMessage.value = '';
     try {
         const data = await postJson(panelRoute('websites.clone-share.clone', { id: sourceWebsiteId.value }), {
             target_website_id: props.website.id,
-            database_target: cloneDatabaseTarget.value,
-            new_database_name: cloneDatabaseTarget.value === 'new' ? cloneNewDatabaseName.value : null,
+            database_target: cloneDatabase.target,
+            new_database_name: cloneDatabase.target === 'new' ? cloneDatabase.newName : null,
         });
         stopPullPoll();
+        pullJobId.value = data.clone_id;
         pullPollTimer = window.setInterval(() => pollPullStatus(data.clone_id), 5000);
         pollPullStatus(data.clone_id);
     } catch (error) {
@@ -215,8 +244,17 @@ const startPull = async () => {
 
 // ---- Import from another server's share link ----
 const importUrl = ref('');
+watch(importUrl, (url) => { if (/^https?:\/\/\S+/.test(url.trim())) loadLiveDatabases(); });
 const importRunning = ref(false);
 const importStage = ref(null);
+const importJobId = ref('');
+const importFailedAt = ref(null);
+watch(importStage, (stage, previous) => { if (stage === 'failed') importFailedAt.value = previous; });
+const IMPORT_STEPS = [
+    { key: 'queued', label: 'Queued' },
+    { key: 'downloading', label: 'Download package' },
+    { key: 'restoring', label: 'Restore into this website' },
+];
 const importMessage = ref('');
 let importPollTimer = null;
 
@@ -251,12 +289,18 @@ const pollImportStatus = async (cloneId) => {
 
 const startUrlImport = async () => {
     if (importRunning.value || !importUrl.value) return;
+    if (liveDatabasesStatus.value !== 'loaded' || !confirmDatabaseOverwrite(importTargetDatabase.value)) return;
     importRunning.value = true;
     importStage.value = 'queued';
     importMessage.value = '';
     try {
-        const data = await postJson(panelRoute('websites.clone-share.import', { id: props.website.id }), { source_url: importUrl.value });
+        const data = await postJson(panelRoute('websites.clone-share.import', { id: props.website.id }), {
+            source_url: importUrl.value,
+            database_target: importDatabase.target,
+            new_database_name: importDatabase.target === 'new' ? importDatabase.newName : null,
+        });
         stopImportPoll();
+        importJobId.value = data.clone_id;
         importPollTimer = window.setInterval(() => pollImportStatus(data.clone_id), 5000);
         pollImportStatus(data.clone_id);
     } catch (error) {
@@ -300,21 +344,9 @@ onUnmounted(() => {
                         <template v-else-if="databaseConnection?.available"><i class="bi bi-database-check mr-1 text-emerald-500"></i>{{ databases.length > 1 ? `${databases.length} databases are linked to this website — choose a database dump to pick which one to replace.` : `Existing database ${databaseConnection.database_name} requires confirmation and will be backed up before overwrite.` }}</template>
                         <template v-else><i class="bi bi-database-add mr-1 text-indigo-500"></i>No active database exists. Uploading SQL will automatically create and connect one.</template>
                     </div>
-                    <div v-if="generic.database" class="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60 md:col-span-2">
-                        <span class="block text-xs font-semibold text-slate-700 dark:text-slate-200">Database target</span>
-                        <label v-for="db in databases" :key="db.id" class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
-                            <input v-model="databaseTarget" :value="db.id" type="radio" class="text-indigo-600 focus:ring-indigo-500" />
-                            <span v-if="db.missing_on_server" class="text-slate-700 dark:text-slate-200">Create <b>{{ db.database_name }}</b> <span class="block text-xs text-amber-600">Linked to this website but missing on the server — it will be created, nothing is overwritten.</span></span>
-                            <span v-else class="text-slate-700 dark:text-slate-200">Replace <b>{{ db.database_name }}</b></span>
-                        </label>
-                        <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
-                            <input v-model="databaseTarget" value="new" type="radio" class="mt-0.5 text-indigo-600 focus:ring-indigo-500" />
-                            <span class="min-w-0 flex-1">
-                                <span class="block text-slate-700 dark:text-slate-200">Create new database</span>
-                                <input v-if="databaseTarget === 'new'" v-model="newDatabaseName" type="text" class="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white p-1.5 text-xs dark:border-slate-700 dark:bg-slate-800" placeholder="database name" />
-                            </span>
-                        </label>
-                    </div>
+                    <Transition v-bind="reveal">
+                        <DatabaseTargetPicker v-if="generic.database" v-model:target="databaseTarget" v-model:new-name="newDatabaseName" :databases="databases" name="upload-database-target" class="md:col-span-2" />
+                    </Transition>
                     <div v-if="uploading || trackingId" class="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50 md:col-span-2">
                         <div class="flex flex-wrap items-center justify-between gap-2"><h4 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Tracked import pipeline</h4><code v-if="trackingId" class="rounded bg-slate-200 px-2 py-1 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">{{ trackingId }}</code></div>
                         <div v-for="(stage, key) in uploadStages" :key="key">
@@ -327,79 +359,59 @@ onUnmounted(() => {
             </section>
 
             <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100"><i class="bi bi-copy mr-1.5 text-cyan-600"></i>Clone from another website</h3>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Pull another website's files and database from this server into {{ website.domain }} — {{ website.domain }} is always the destination. A separate database is created for {{ website.domain }}; it is never shared with the source.</p>
-
-                <label class="mt-4 block text-xs font-medium text-slate-600 dark:text-slate-300">Clone from</label>
-                <SearchableSelect
-                    v-model="sourceWebsiteId"
-                    class="mt-1"
-                    :options="otherWebsiteOptions"
-                    :disabled="pullRunning"
-                    placeholder="Select a website you own…"
-                    search-placeholder="Search websites…"
-                />
-                <p v-if="otherWebsites.length === 0" class="mt-1 text-xs text-amber-600">You need at least one other website on this server to clone from.</p>
-
-                <label class="mt-4 block text-xs font-medium text-slate-600 dark:text-slate-300">Database</label>
-                <select v-model="cloneDatabaseTarget" :disabled="pullRunning"
-                    class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                    <option value="new">Create new database</option>
-                    <option v-for="db in databases" :key="db.id" :value="db.id">{{ db.missing_on_server ? `Create ${db.database_name} (missing on server)` : `Replace existing: ${db.database_name}` }}</option>
-                </select>
-                <input v-if="cloneDatabaseTarget === 'new'" v-model="cloneNewDatabaseName" :disabled="pullRunning" type="text" placeholder="database name"
-                    class="mt-2 block w-full rounded-lg border border-slate-300 bg-white p-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                <p v-if="cloneTargetDatabase?.missing_on_server" class="mt-1 text-xs text-amber-600">
-                    <i class="bi bi-database-exclamation mr-1"></i>{{ cloneTargetDatabase.database_name }} is linked to {{ website.domain }} but doesn't exist on the server — it will be created, nothing is overwritten.
-                </p>
-                <p v-else-if="cloneTargetDatabase" class="mt-1 text-xs text-amber-600">
-                    <i class="bi bi-exclamation-triangle-fill mr-1"></i>{{ cloneTargetDatabase.database_name }} will be backed up, then overwritten. You'll be asked to confirm.
-                </p>
-
-                <div v-if="pullStage" class="mt-4 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
-                    <div class="flex items-center gap-2">
-                        <i v-if="pullStage === 'ready'" class="bi bi-check-circle-fill text-emerald-600"></i>
-                        <i v-else-if="pullStage === 'failed'" class="bi bi-x-circle-fill text-red-600"></i>
-                        <i v-else class="bi bi-arrow-repeat animate-spin text-cyan-600"></i>
-                        <span>{{ cloneStageText(pullStage) }}</span>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Clone from another website</h3>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Pull another website's files and database from this server into {{ website.domain }} — {{ website.domain }} is always the destination. The source website is never changed.</p>
+                <form class="mt-6 grid gap-4" @submit.prevent="startPull">
+                    <div class="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Clone from
+                        <SearchableSelect v-model="sourceWebsiteId" class="mt-1 font-normal" :options="otherWebsiteOptions" :disabled="pullRunning"
+                            placeholder="Select a website you own…" search-placeholder="Search websites…" />
+                        <span v-if="otherWebsites.length === 0" class="mt-1 block text-xs font-normal text-amber-600">You need at least one other website on this server to clone from.</span>
                     </div>
-                    <p v-if="pullStage === 'failed' && pullMessage" class="mt-1 text-red-600">{{ pullMessage }}</p>
-                </div>
+                    <Transition v-bind="reveal" mode="out-in">
+                        <div v-if="!sourceWebsiteId" key="hint" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+                            <i class="bi bi-database mr-1 text-indigo-500"></i>{{ 'Pick a website to clone — then choose which database to replace or create.' }}
+                        </div>
+                        <div v-else-if="liveDatabasesStatus === 'loading'" key="loading" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+                            <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>Loading {{ website.domain }}'s databases…
+                        </div>
+                        <div v-else-if="liveDatabasesStatus === 'error'" key="error" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300">
+                            Couldn't load {{ website.domain }}'s databases. <button type="button" class="underline" @click="loadLiveDatabases">Retry</button>
+                        </div>
+                        <DatabaseTargetPicker v-else-if="liveDatabasesStatus === 'loaded'" key="picker" v-model:target="cloneDatabase.target" v-model:new-name="cloneDatabase.newName" :databases="liveDatabases" :disabled="pullRunning" name="clone-database-target" />
+                    </Transition>
+                    <Transition v-bind="reveal">
+                        <JobPipeline v-if="pullStage" title="Clone pipeline" :job-id="pullJobId" :steps="CLONE_STEPS" :stage="pullStage" :failed-at="pullFailedAt" :message="pullMessage" />
+                    </Transition>
+                    <div><button :disabled="pullRunning || !sourceWebsiteId || liveDatabasesStatus !== 'loaded'" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{{ pullRunning ? 'Cloning…' : 'Clone & migrate' }}</button></div>
+                </form>
 
-                <div class="mt-5 flex justify-end">
-                    <button type="button" :disabled="pullRunning || !sourceWebsiteId" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startPull">
-                        {{ pullRunning ? 'Cloning…' : 'Clone Now' }}
-                    </button>
-                </div>
+                <hr class="my-6 border-slate-200 dark:border-slate-700" />
 
-                <hr class="my-5 border-slate-200 dark:border-slate-700" />
-
-                <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Import from another server</h4>
-                <p class="mt-1 text-xs text-slate-500">Paste a share link generated on another server's Export & Share page to clone it into this website.</p>
-
-                <input
-                    v-model="importUrl"
-                    type="url"
-                    :disabled="importRunning"
-                    placeholder="https://other-server.example.com/clone-share/download/…"
-                    class="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
-                />
-
-                <div v-if="importStage" class="mt-4 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
-                    <div class="flex items-center gap-2">
-                        <i v-if="importStage === 'ready'" class="bi bi-check-circle-fill text-emerald-600"></i>
-                        <i v-else-if="importStage === 'failed'" class="bi bi-x-circle-fill text-red-600"></i>
-                        <i v-else class="bi bi-arrow-repeat animate-spin text-cyan-600"></i>
-                        <span>{{ cloneStageText(importStage) }}</span>
-                    </div>
-                    <p v-if="importStage === 'failed' && importMessage" class="mt-1 text-red-600">{{ importMessage }}</p>
-                </div>
-
-                <div class="mt-5 flex justify-end">
-                    <button type="button" :disabled="importRunning || !importUrl" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startUrlImport">
-                        {{ importRunning ? 'Importing…' : 'Import Now' }}
-                    </button>
-                </div>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Import from another server</h3>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Paste a share link generated on another server's Export & Share page to clone it into {{ website.domain }}.</p>
+                <form class="mt-6 grid gap-4" @submit.prevent="startUrlImport">
+                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Share link
+                        <input v-model="importUrl" type="url" :disabled="importRunning" placeholder="https://other-server.example.com/clone-share/download/…"
+                            class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 font-normal dark:border-slate-700 dark:bg-slate-800" />
+                    </label>
+                    <Transition v-bind="reveal" mode="out-in">
+                        <div v-if="!importUrl" key="hint" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+                            <i class="bi bi-database mr-1 text-indigo-500"></i>{{ 'Paste a share link — then choose which database to replace or create.' }}
+                        </div>
+                        <div v-else-if="liveDatabasesStatus === 'loading'" key="loading" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+                            <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>Loading {{ website.domain }}'s databases…
+                        </div>
+                        <div v-else-if="liveDatabasesStatus === 'error'" key="error" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300">
+                            Couldn't load {{ website.domain }}'s databases. <button type="button" class="underline" @click="loadLiveDatabases">Retry</button>
+                        </div>
+                        <DatabaseTargetPicker v-else-if="liveDatabasesStatus === 'loaded'" key="picker" v-model:target="importDatabase.target" v-model:new-name="importDatabase.newName" :databases="liveDatabases" :disabled="importRunning" name="import-database-target" />
+                    </Transition>
+                    <Transition v-bind="reveal">
+                        <JobPipeline v-if="importStage" title="Import pipeline" :job-id="importJobId" :steps="IMPORT_STEPS" :stage="importStage" :failed-at="importFailedAt" :message="importMessage" />
+                    </Transition>
+                    <div><button :disabled="importRunning || !importUrl || liveDatabasesStatus !== 'loaded'" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{{ importRunning ? 'Importing…' : 'Import & migrate' }}</button></div>
+                </form>
             </section>
 
             <div v-if="message" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300 lg:col-span-2">{{ message }}</div>

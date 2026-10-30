@@ -154,6 +154,8 @@ Route::get('/websites/{id}/git', [WebsiteGitController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.index');
 Route::put('/websites/{id}/git', [WebsiteGitController::class, 'store'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.store');
+Route::post('/websites/{id}/git/detect', [WebsiteGitController::class, 'detect'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.git.detect');
 Route::post('/websites/{id}/git/probe', [WebsiteGitController::class, 'probe'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])->name('websites.git.probe');
 Route::post('/websites/{id}/git/run', [WebsiteGitController::class, 'run'])
@@ -197,6 +199,9 @@ Route::patch('/websites/{id}/ssl/status', [WebsiteOperationsController::class, '
 Route::post('/websites/{id}/project-cache/clear', [WebsiteOperationsController::class, 'clearProjectCache'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.project-cache.clear');
+Route::post('/websites/{id}/local-development', [WebsiteOperationsController::class, 'localDevelopment'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('websites.local-development');
 Route::post('/websites/{id}/project-permissions/fix', [WebsiteOperationsController::class, 'fixProjectPermissions'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.project-permissions.fix');
@@ -248,6 +253,8 @@ Route::post('/websites/{id}/project-migrate/run', [WebsiteOperationsController::
     ->name('websites.project-migrate.run');
 Route::get('/websites/{id}/import', [MigrationController::class, 'websiteImport'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.import.index');
+Route::get('/websites/{id}/import/databases', [MigrationController::class, 'websiteImportDatabases'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.import.databases');
 Route::post('/websites/{id}/import', [MigrationController::class, 'storeWebsiteImport'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:6,1'])->name('websites.import.store');
 Route::post('/websites/{id}/import/{tracking}/chunks/{kind}', [MigrationController::class, 'uploadWebsiteImportChunk'])

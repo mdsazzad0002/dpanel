@@ -39,13 +39,8 @@ class CloneShareController extends Controller
         }
 
         $databaseTarget = $data['database_target'] ?? null;
-        if ($databaseTarget !== null && $databaseTarget !== 'new') {
-            $linked = DatabaseRequest::query()->visibleTo($request->user())
-                ->whereRaw('LOWER(domain) = ?', [strtolower((string) $target->domain)])
-                ->where('status', 'active')->whereKey($databaseTarget)->exists();
-            if (! $linked) {
-                return response()->json(['ok' => false, 'message' => 'The selected database does not belong to '.$target->domain.'.'], 422);
-            }
+        if (! $this->databaseTargetBelongsTo($request, $target, $databaseTarget)) {
+            return response()->json(['ok' => false, 'message' => 'The selected database does not belong to '.$target->domain.'.'], 422);
         }
 
         $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
@@ -85,19 +80,34 @@ class CloneShareController extends Controller
 
     public function importFromUrl(Request $request, string $token, string $id): JsonResponse
     {
-        $data = $request->validate(['source_url' => ['required', 'url', 'max:2048']]);
+        $data = $request->validate([
+            'source_url' => ['required', 'url', 'max:2048'],
+            'new_database_name' => ['nullable', 'string', 'max:64'],
+            'database_target' => ['nullable', 'string', 'max:64'],
+        ]);
 
         $target = Website::query()->visibleTo($request->user())->find($id);
         if (! $target instanceof Website) {
             return response()->json(['ok' => false, 'message' => 'Website account not found.'], 404);
         }
+        if (! $this->databaseTargetBelongsTo($request, $target, $data['database_target'] ?? null)) {
+            return response()->json(['ok' => false, 'message' => 'The selected database does not belong to '.$target->domain.'.'], 422);
+        }
 
         $cloneId = (string) Str::uuid();
         CloneShareJobStatus::set($cloneId, ['stage' => 'queued']);
 
-        ImportSharedWebsiteJob::dispatch($cloneId, (string) $data['source_url'], (string) $id, (int) $request->user()->id);
+        ImportSharedWebsiteJob::dispatch($cloneId, (string) $data['source_url'], (string) $id, (int) $request->user()->id, $data['database_target'] ?? null, (string) ($data['new_database_name'] ?? ''));
 
         return response()->json(['ok' => true, 'clone_id' => $cloneId]);
+    }
+
+    /** "new", nothing, or the id of one of the target website's active databases. */
+    private function databaseTargetBelongsTo(Request $request, Website $target, ?string $databaseTarget): bool
+    {
+        return $databaseTarget === null || $databaseTarget === 'new' || DatabaseRequest::query()->visibleTo($request->user())
+            ->whereRaw('LOWER(domain) = ?', [strtolower((string) $target->domain)])
+            ->where('status', 'active')->whereKey($databaseTarget)->exists();
     }
 
     public function status(Request $request, string $token, string $id, string $jobId): JsonResponse

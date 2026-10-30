@@ -168,7 +168,20 @@ class GithubIntegrationController extends Controller
         $model->deployments()->update(['github_account_id' => null, 'deploy_on_push' => false]);
         $model->delete();
 
-        return back()->with('success', "Disconnected @{$model->login}. Websites using it will need another account or a token.");
+        return back()->with('success', "Disconnected @{$model->login}.".($model->is_global ? ' It was the global account; websites without their own credentials have none now.' : ' Websites using it will need another account or a token.'));
+    }
+
+    /** Admin only: the account every deployment without its own credentials uses. */
+    public function setGlobal(Request $request, string $token, string $account): RedirectResponse
+    {
+        $model = $this->account($request, $account);
+        $makeGlobal = ! $model->is_global;
+        GithubAccount::query()->where('is_global', true)->update(['is_global' => false]);
+        $model->forceFill(['is_global' => $makeGlobal])->save();
+
+        return back()->with('success', $makeGlobal
+            ? "@{$model->login} is now the global GitHub account: websites without their own account or token use it."
+            : "@{$model->login} is no longer the global GitHub account.");
     }
 
     public function repositories(Request $request, string $token, string $account): JsonResponse

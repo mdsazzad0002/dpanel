@@ -38,6 +38,8 @@ class WebsiteGitController extends Controller
                     ->map(fn (GithubAccount $account): array => $account->summary()),
             ],
             'aiAvailable' => $this->ai->available(),
+            // A checkout already in the website root that can be connected as is.
+            'detectedCheckout' => $deployment ? null : $this->git->detectedCheckout($website),
             ...$this->state($deployment),
         ]);
     }
@@ -375,6 +377,17 @@ class WebsiteGitController extends Controller
         } catch (\Throwable $e) {
             report($e);
         }
+    }
+
+    /** Connect the checkout already in the website root, without re-cloning. */
+    public function detect(Request $request, string $token, string $id): JsonResponse
+    {
+        $result = $this->git->detect($this->website($request, $id), $request->user());
+        if (! $result['success']) {
+            return response()->json(['message' => $result['message']], 422);
+        }
+
+        return response()->json(['message' => $result['message'], ...$this->state($result['deployment'])]);
     }
 
     private function website(Request $request, string $id): Website

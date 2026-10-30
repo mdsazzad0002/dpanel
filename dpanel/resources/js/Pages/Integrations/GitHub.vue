@@ -34,6 +34,10 @@ const disconnect = (account) => {
     if (!confirm(`Disconnect GitHub account @${account.login}?${inUse}`)) return;
     router.delete(panelRoute('github.accounts.destroy', { account: account.id }), { preserveScroll: true });
 };
+const toggleGlobal = (account) => {
+    if (!account.is_global && !confirm(`Use @${account.login} for every website that has no GitHub account or token of its own?`)) return;
+    router.put(panelRoute('github.accounts.global', { account: account.id }), {}, { preserveScroll: true });
+};
 const copy = async (key, value) => {
     try { await navigator.clipboard.writeText(value); copied.value = key; window.setTimeout(() => { copied.value = ''; }, 1500); } catch (e) { /* selectable fallback */ }
 };
@@ -118,9 +122,10 @@ const date = (value) => value ? new Date(value.replace(' ', 'T')).toLocaleString
                         <img v-if="account.avatar_url" :src="account.avatar_url" alt="" class="h-10 w-10 rounded-full" />
                         <span v-else class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"><i class="bi bi-person"></i></span>
                         <div class="min-w-0 flex-1">
-                            <p class="font-medium">@{{ account.login }} <span v-if="account.name" class="font-normal text-slate-500">· {{ account.name }}</span></p>
+                            <p class="font-medium">@{{ account.login }} <span v-if="account.name" class="font-normal text-slate-500">· {{ account.name }}</span> <span v-if="account.is_global" class="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"><i class="bi bi-globe mr-1"></i>Global</span></p>
                             <p class="text-xs text-slate-500">{{ account.deployments_count || 0 }} website(s) · connected {{ date(account.connected_at) }} · last used {{ date(account.last_used_at) }}</p>
                         </div>
+                        <button v-if="isAdmin" type="button" @click="toggleGlobal(account)" class="rounded-lg border px-3 py-2 text-xs dark:border-slate-700" :title="account.is_global ? 'Stop using this account as the fallback' : 'Websites without their own account or token will use this account'"><i class="bi mr-1" :class="account.is_global ? 'bi-globe2' : 'bi-globe'"></i>{{ account.is_global ? 'Unset global' : 'Set as global' }}</button>
                         <a v-if="configured" :href="panelRoute('github.connect')" class="rounded-lg border px-3 py-2 text-xs dark:border-slate-700" title="Re-authorize to refresh the token or scopes"><i class="bi bi-arrow-repeat mr-1"></i>Reconnect</a>
                         <button type="button" @click="disconnect(account)" class="rounded-lg border border-red-300 px-3 py-2 text-xs text-red-600"><i class="bi bi-x-circle mr-1"></i>Disconnect</button>
                     </li>

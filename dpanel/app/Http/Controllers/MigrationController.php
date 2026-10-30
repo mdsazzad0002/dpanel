@@ -433,6 +433,31 @@ class MigrationController extends Controller
         }
     }
 
+    /**
+     * The website's databases as they are right now, loaded by the import page
+     * when a database target is about to be chosen.
+     */
+    public function websiteImportDatabases(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = \App\Models\Website::visibleTo($request->user())->findOrFail($id);
+        $databases = DatabaseRequest::query()
+            ->visibleTo($request->user())
+            ->whereRaw('LOWER(domain) = ?', [strtolower((string) $website->domain)])
+            ->where('status', 'active')
+            ->latest()
+            ->get();
+        $missingOnServer = $this->databasesMissingOnServer($databases);
+
+        return response()->json([
+            'databases' => $databases->map(fn (DatabaseRequest $database): array => [
+                'id' => $database->id,
+                'database_name' => $database->database_name,
+                'missing_on_server' => in_array($database->database_name, $missingOnServer, true),
+            ])->values()->all(),
+            'suggested_database_name' => $this->suggestedDatabaseName($website),
+        ]);
+    }
+
     public function websiteImport(Request $request, string $token, string $id): Response
     {
         $website = \App\Models\Website::visibleTo($request->user())->findOrFail($id);
@@ -569,7 +594,8 @@ class MigrationController extends Controller
             'sql_path' => $sqlPath, 'database_host' => (string) ($database?->database_host ?: '127.0.0.1'), 'database_port' => 3306,
             'database_name' => (string) ($database?->database_name ?? ''), 'database_user' => (string) ($database?->database_user ?? ''),
             'database_password' => (string) ($database?->database_password ?? ''),
-            'overwrite_database' => $databaseFileName !== null && $database->exists,
+            // A panel record whose MySQL database is gone has nothing to back up or overwrite.
+            'overwrite_database' => $databaseFileName !== null && $database->exists && $this->databasesMissingOnServer(collect([$database])) === [],
             // A WordPress import is moved to this address (siteurl/home).
             'site_url' => ($website->enable_ssl ? 'https://' : 'http://').strtolower((string) $website->domain),
             'uploads' => ['archive' => $archiveName === null ? null : ['name' => $archiveName, 'size' => (int) $data['archive_size']],

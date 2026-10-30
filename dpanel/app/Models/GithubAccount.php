@@ -14,7 +14,7 @@ class GithubAccount extends Model
 
     protected $fillable = [
         'user_id', 'github_id', 'login', 'name', 'avatar_url', 'access_token',
-        'refresh_token', 'token_expires_at', 'scopes', 'last_used_at',
+        'refresh_token', 'token_expires_at', 'scopes', 'is_global', 'last_used_at',
     ];
 
     protected $hidden = ['access_token', 'refresh_token'];
@@ -25,6 +25,7 @@ class GithubAccount extends Model
             'access_token' => 'encrypted',
             'refresh_token' => 'encrypted',
             'token_expires_at' => 'datetime',
+            'is_global' => 'boolean',
             'last_used_at' => 'datetime',
         ];
     }
@@ -38,6 +39,12 @@ class GithubAccount extends Model
         return $user ? $query->where('user_id', $user->id) : $query->whereRaw('1 = 0');
     }
 
+    /** The account deployments without their own credentials fall back to. */
+    public static function global(): ?self
+    {
+        return self::query()->where('is_global', true)->first();
+    }
+
     public function summary(): array
     {
         return [
@@ -46,6 +53,7 @@ class GithubAccount extends Model
             'name' => $this->name,
             'avatar_url' => $this->avatar_url,
             'scopes' => $this->scopes,
+            'is_global' => $this->is_global,
             'deployments_count' => $this->deployments_count ?? null,
             'connected_at' => $this->created_at?->toDateTimeString(),
             'last_used_at' => $this->last_used_at?->toDateTimeString(),

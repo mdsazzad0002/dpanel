@@ -33,6 +33,8 @@ class ImportSharedWebsiteJob implements ShouldQueue
         public string $sourceUrl,
         public string $targetWebsiteId,
         public int $userId,
+        public ?string $databaseTarget = null,
+        public string $newDatabaseName = '',
     ) {
         $this->onQueue('heavy');
     }
@@ -63,7 +65,7 @@ class ImportSharedWebsiteJob implements ShouldQueue
                 if ($stage === 'restoring') {
                     CloneShareJobStatus::set($this->cloneId, ['stage' => 'restoring']);
                 }
-            });
+            }, $this->databaseTarget, $this->newDatabaseName);
         } catch (Throwable $e) {
             CloneShareJobStatus::set($this->cloneId, ['stage' => 'failed', 'message' => $e->getMessage()]);
             $notifications->notifyUser(

@@ -908,6 +908,27 @@ class WebsiteController extends Controller
         return $respond(false, 'Project cache clear failed.'.$suffix, 422);
     }
 
+    public function localDevelopment(Request $request, string $token, string $id): JsonResponse
+    {
+        $data = $request->validate(['action' => ['required', 'in:trust,ignore_file_mode,open_permissions']]);
+        $this->findAuthorizedWebsiteOrFail($id);
+        $website = \App\Models\Website::query()->findOrFail($id);
+        if (trim((string) $website->site_owner) === '') {
+            return response()->json(['success' => false, 'message' => 'Website owner is unavailable.'], 422);
+        }
+
+        $result = app(\App\Services\Website\WebsiteGitService::class)->localDevelopment($website, $data['action']);
+        if (! $result['success']) {
+            return response()->json(['success' => false, 'message' => $result['message'] ?: 'The action failed.'], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => trim($result['message'].' '.implode(', ', $result['paths'])),
+            'paths' => $result['paths'],
+        ]);
+    }
+
     public function fixProjectPermissions(Request $request, string $token, string $id): JsonResponse
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);

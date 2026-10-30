@@ -21,7 +21,161 @@ mod conflicts;
 use crate::app::{run_status, user_group};
 
 pub fn routes() -> Router<Arc<ApiState>> {
-    Router::new().route("/api/v1/git-deploy", post(handle))
+    Router::new()
+        .route("/api/v1/git-deploy", post(handle))
+        .route("/api/v1/local-dev", post(handle_local_dev))
+}
+
+#[derive(Deserialize)]
+struct LocalDevRequest {
+    /// trust | ignore_file_mode | open_permissions | detect
+    action: String,
+    site_owner: String,
+    /// Website directories that may hold the repository (docroot, project root).
+    paths: Vec<String>,
+}
+
+/// "For Local Development" helpers on the website page, for a developer who
+/// edits the site's files as their own user (VS Code on the same machine):
+/// - trust: add the repo to the system safe.directory list, so Git doesn't
+///   stop at its "dubious ownership" check for users other than the owner;
+/// - ignore_file_mode: core.fileMode=false, so a chmod doesn't show every
+///   file as modified;
+/// - open_permissions: chmod -R 777 the project so any user can edit it;
+/// - detect: report an existing checkout's origin URL and branch, so the
+///   panel can connect it on the Git page without re-cloning.
+async fn handle_local_dev(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<LocalDevRequest>,
+) -> Response {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+    match local_dev(&request) {
+        Ok((message, data)) => ApiResponse::ok_data(&message, data).into_response(),
+        Err(error) => ApiResponse::error(&error).into_response(),
+    }
+}
+
+fn local_dev(request: &LocalDevRequest) -> Result<(String, serde_json::Value), String> {
+    if request.paths.is_empty() {
+        return Err("No website directory was given.".into());
+    }
+    for path in &request.paths {
+        validate_target(&request.site_owner, path)?;
+    }
+    let repositories: Vec<&Path> = request
+        .paths
+        .iter()
+        .map(Path::new)
+        .filter(|path| path.join(".git").exists())
+        .collect();
+    let repositories_or_error = || {
+        if repositories.is_empty() {
+            Err("No Git repository was found in this website.".to_string())
+        } else {
+            Ok(())
+        }
+    };
+    let display = |paths: &[&Path]| -> serde_json::Value {
+        serde_json::json!({"paths": paths.iter().map(|path| path.to_string_lossy()).collect::<Vec<_>>()})
+    };
+    // Read-only git as the owner, who owns the checkout.
+    let owner_git = |path: &Path, args: &[&str]| -> Result<String, String> {
+        let output = Command::new("runuser")
+            .args(["-u", &request.site_owner, "--", "git", "-C"])
+            .arg(path)
+            .args(args)
+            .env("HOME", format!("/home/{}", request.site_owner))
+            .output()
+            .map_err(|error| format!("Unable to run git: {error}"))?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    };
+
+    match request.action.as_str() {
+        "detect" => {
+            repositories_or_error()?;
+            let path = repositories[0];
+            let remote = owner_git(path, &["remote", "get-url", "origin"])
+                .map_err(|_| "The repository has no origin remote.".to_string())?;
+            let branch = owner_git(path, &["rev-parse", "--abbrev-ref", "HEAD"])
+                .map_err(|_| "The repository has no commit yet.".to_string())?;
+            Ok((
+                "Repository detected.".into(),
+                serde_json::json!({"path": path, "remote": remote, "branch": branch}),
+            ))
+        }
+        "trust" => {
+            repositories_or_error()?;
+            for path in &repositories {
+                trust_directory(path)?;
+            }
+            Ok(("Repository trusted for all users.".into(), display(&repositories)))
+        }
+        "ignore_file_mode" => {
+            repositories_or_error()?;
+            for path in &repositories {
+                // As the owner, so .git/config keeps its ownership.
+                owner_git(path, &["config", "core.fileMode", "false"])
+                    .map_err(|error| format!("Unable to set core.fileMode: {error}"))?;
+            }
+            Ok(("Git now ignores file permission changes.".into(), display(&repositories)))
+        }
+        "open_permissions" => {
+            // The repository root when there is one, otherwise the docroot.
+            let target = repositories
+                .first()
+                .copied()
+                .unwrap_or_else(|| Path::new(&request.paths[0]));
+            if !target.is_dir() {
+                return Err(format!("{} does not exist.", target.display()));
+            }
+            let output = Command::new("chmod")
+                .args(["-R", "777"])
+                .arg(target)
+                .output()
+                .map_err(|error| format!("Unable to run chmod: {error}"))?;
+            if !output.status.success() {
+                return Err(format!(
+                    "Unable to change permissions: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ));
+            }
+            Ok(("Permissions opened to 777.".into(), display(&[target])))
+        }
+        _ => Err("Unsupported local development action.".into()),
+    }
+}
+
+/// Adds `path` to the system-wide safe.directory list unless it's already
+/// there. Returns whether it was added.
+pub(crate) fn trust_directory(path: &Path) -> Result<bool, String> {
+    let path = path.to_string_lossy();
+    let existing = Command::new("git")
+        .args(["config", "--system", "--get-all", "safe.directory"])
+        .output()
+        .map_err(|error| format!("Unable to run git: {error}"))?;
+    if String::from_utf8_lossy(&existing.stdout)
+        .lines()
+        .any(|line| line.trim() == path || line.trim() == "*")
+    {
+        return Ok(false);
+    }
+    let output = Command::new("git")
+        .args(["config", "--system", "--add", "safe.directory", &path])
+        .output()
+        .map_err(|error| format!("Unable to run git: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Unable to mark the repository as safe: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(true)
 }
 
 #[derive(Deserialize)]
@@ -87,8 +241,18 @@ fn execute(request: &Request) -> Result<String, String> {
     let auth = Auth::new(request);
 
     match request.action.as_str() {
-        "clone" => clone_repository(request, &target, &auth),
-        "init" => init_push(request, &target, &auth),
+        "clone" | "init" => {
+            let result = if request.action == "clone" {
+                clone_repository(request, &target, &auth)
+            } else {
+                init_push(request, &target, &auth)
+            };
+            // A freshly connected repo should open cleanly for any user.
+            if result.is_ok() && !cfg!(test) {
+                let _ = trust_directory(&target);
+            }
+            result
+        }
         "probe" => probe(request, &target, &auth),
         "status" => git(request, &target, &auth, &["status", "--short", "--branch"]),
         "pull" => pull(request, &target, &auth),
@@ -130,27 +294,7 @@ impl Auth {
 }
 
 fn validate(request: &Request) -> Result<(), String> {
-    let valid_owner = request
-        .site_owner
-        .chars()
-        .enumerate()
-        .all(|(index, value)| {
-            value.is_ascii_lowercase()
-                || value.is_ascii_digit()
-                || value == '_'
-                || value == '-' && index > 0
-        });
-    if request.site_owner.is_empty() || !valid_owner {
-        return Err("Invalid website owner.".into());
-    }
-    let target = Path::new(&request.target);
-    if !target.starts_with(format!("/home/{}/", request.site_owner))
-        || target
-            .components()
-            .any(|part| matches!(part, std::path::Component::ParentDir))
-    {
-        return Err("Deployment path is outside the website owner's home.".into());
-    }
+    validate_target(&request.site_owner, &request.target)?;
     if !request.repository.starts_with("https://github.com/")
         && !request.repository.starts_with("https://gitlab.com/")
         && !request.repository.starts_with("https://bitbucket.org/")
@@ -166,6 +310,32 @@ fn validate(request: &Request) -> Result<(), String> {
             .all(|value| value.is_ascii_alphanumeric() || "._/-".contains(value))
     {
         return Err("Invalid Git branch.".into());
+    }
+    Ok(())
+}
+
+/// The website owner is a plain system username and the path stays inside
+/// that owner's home.
+fn validate_target(site_owner: &str, target: &str) -> Result<(), String> {
+    let valid_owner = site_owner
+        .chars()
+        .enumerate()
+        .all(|(index, value)| {
+            value.is_ascii_lowercase()
+                || value.is_ascii_digit()
+                || value == '_'
+                || value == '-' && index > 0
+        });
+    if site_owner.is_empty() || !valid_owner {
+        return Err("Invalid website owner.".into());
+    }
+    let target = Path::new(target);
+    if !target.starts_with(format!("/home/{site_owner}/"))
+        || target
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Err("Deployment path is outside the website owner's home.".into());
     }
     Ok(())
 }
@@ -223,6 +393,16 @@ fn finish(output: Output, auth: &Auth) -> Result<String, String> {
         return Err(format!(
             "{WORKFLOW_DENIED} GitHub rejected changes under .github/workflows because the connected GitHub App lacks the \"Workflows: Read and write\" repository permission (an OAuth App token needs the \"workflow\" scope). Add it in the App settings, approve the updated permissions, then reconnect the account.\n\n{combined}"
         ));
+    }
+    // GIT_TERMINAL_PROMPT=0: a private repository without credentials fails
+    // here instead of waiting for a username.
+    if combined.contains("could not read Username") || combined.contains("Authentication failed")
+    {
+        return Err(if auth.header.is_none() {
+            "This repository needs credentials. Select a connected GitHub account (or add an access token) in the connection settings and save (or ask an administrator to set a global GitHub account), then try again.".into()
+        } else {
+            "GitHub rejected the saved credentials. Reconnect the GitHub account (or update the access token) in the connection settings and try again.".into()
+        });
     }
     if combined.contains("403") || combined.contains("Write access to repository not granted") {
         return Err("Repository access denied (403). Verify the repository owner, token expiry, and that the token has Contents: Read and write permission.".into());
@@ -478,7 +658,9 @@ fn push(request: &Request, target: &Path, auth: &Auth) -> Result<String, String>
     git(request, target, auth, &["fetch", "origin", &request.branch])?;
     let remote = format!("origin/{}", request.branch);
     if !ancestor(request, target, auth, &remote, "HEAD") {
-        return Err("Remote contains changes not present locally; push stopped.".into());
+        // The repository moved on (another site or a developer pushed): pull
+        // it in first, so the push carries both sides' changes.
+        conflicts::merge_remote(request, target, auth)?;
     }
     git(request, target, auth, &["add", "-A"])?;
     let _ = git(
@@ -502,26 +684,8 @@ fn sync(request: &Request, target: &Path, auth: &Auth) -> Result<String, String>
     if conflicts::awaiting_confirmation(request, target, auth) {
         return Err(conflicts::AWAITING.into());
     }
-    git(
-        request,
-        target,
-        auth,
-        &["fetch", "--prune", "origin", &request.branch],
-    )?;
-    let remote = format!("origin/{}", request.branch);
-    if ancestor(request, target, auth, &remote, "HEAD") {
-        return push(request, target, auth);
-    }
-    if ancestor(request, target, auth, "HEAD", &remote) {
-        if !clean(request, target, auth)? {
-            return Err(
-                "Remote and local files both changed; sync stopped before conflict.".into(),
-            );
-        }
-        git(request, target, auth, &["merge", "--ff-only", &remote])?;
-        return push(request, target, auth);
-    }
-    Err("Local and remote history diverged; manual resolution is required.".into())
+    // Pull (merging when both sides changed), then push the result.
+    push(request, target, auth)
 }
 
 /// Switch the working tree to another branch of the same repository. The

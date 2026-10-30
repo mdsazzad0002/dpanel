@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
-const props = defineProps({ website: Object, deployment: Object, repositoryConnected: Boolean, logs: { type: Array, default: () => [] }, github: { type: Object, default: () => ({ configured: false, accounts: [] }) }, needsResolution: Boolean, aiAvailable: Boolean, resolutionPending: Boolean });
+const props = defineProps({ website: Object, deployment: Object, repositoryConnected: Boolean, logs: { type: Array, default: () => [] }, github: { type: Object, default: () => ({ configured: false, accounts: [] }) }, needsResolution: Boolean, aiAvailable: Boolean, resolutionPending: Boolean, detectedCheckout: { type: Object, default: null } });
 const page = usePage();
 const token = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => token.value ? route(name, { token: token.value, ...params }) : route(name, params);
@@ -207,6 +207,25 @@ const applyState = (data) => {
     needsResolution.value = Boolean(data.needsResolution);
     form.value.branch = data.deployment.branch;
     targetBranch.value = data.deployment.branch;
+};
+// The website root already holds a checkout (copied in by a clone, or made
+// by hand): connect it as it is instead of cloning again.
+const detectedCheckout = ref(props.detectedCheckout);
+const connectDetected = async () => {
+    busy.value = 'detect'; notice.value = ''; error.value = '';
+    try {
+        const data = await request(panelRoute('websites.git.detect', { id: props.website.id }), 'POST', {});
+        applyState(data);
+        form.value.repository_url = data.deployment.repository_url;
+        form.value.repository_full_name = data.deployment.repository_full_name || '';
+        detectedCheckout.value = null;
+        notice.value = data.message;
+        activePanel.value = 'deploy';
+    } catch (e) {
+        error.value = e.message;
+    } finally {
+        busy.value = '';
+    }
 };
 const save = async () => {
     if (!canSave.value) return false;
@@ -412,6 +431,17 @@ const operationLabel = (action) => ({ clone: 'Deploy website', init: 'Push site 
 
             <section v-show="activePanel === 'connect'" class="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <div class="flex items-start gap-3"><span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 font-semibold text-indigo-700">1</span><div><h2 class="font-semibold">Connect your repository</h2><p class="mt-1 text-sm text-slate-500">GitHub, GitLab এবং Bitbucket HTTPS repository support করে।</p></div></div>
+                <div v-if="!deployment && detectedCheckout" class="mt-5 flex flex-wrap items-center gap-3 rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-200">
+                    <i class="bi bi-git text-lg"></i>
+                    <div class="min-w-0 flex-1">
+                        <p class="font-medium">Ei website-e already ekta Git checkout ache.</p>
+                        <p class="mt-0.5 break-all text-xs"><code>{{ detectedCheckout.repository_url || detectedCheckout.remote }}</code> · branch <code>{{ detectedCheckout.branch }}</code></p>
+                        <p v-if="!detectedCheckout.repository_url" class="mt-1 text-xs text-red-600">Ei remote HTTPS GitHub, GitLab ba Bitbucket na, tai auto-connect kora jabe na.</p>
+                    </div>
+                    <button v-if="detectedCheckout.repository_url" type="button" @click="connectDetected" :disabled="isBusy" class="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-40">
+                        <i :class="['bi mr-1', busy === 'detect' ? 'bi-arrow-repeat inline-block animate-spin' : 'bi-plug-fill']"></i>{{ busy === 'detect' ? 'Connecting…' : 'Connect Git' }}
+                    </button>
+                </div>
                 <div class="mt-5 grid grid-cols-2 rounded-lg bg-slate-100 p-1 sm:max-w-md dark:bg-slate-800"><button type="button" @click="useSource('github')" class="rounded-md px-3 py-2 text-sm" :class="source === 'github' ? 'bg-white font-medium shadow dark:bg-slate-700' : 'text-slate-500'"><i class="bi bi-github mr-1"></i>GitHub account</button><button type="button" @click="useSource('url')" class="rounded-md px-3 py-2 text-sm" :class="source === 'url' ? 'bg-white font-medium shadow dark:bg-slate-700' : 'text-slate-500'"><i class="bi bi-link-45deg mr-1"></i>Repository URL</button></div>
 
                 <div v-if="source === 'github'" class="mt-5">

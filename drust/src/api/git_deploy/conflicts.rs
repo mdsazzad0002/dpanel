@@ -525,6 +525,75 @@ pub(super) fn resolve(request: &Request, target: &Path, auth: &Auth) -> Result<S
     }
 }
 
+/// Pull before a push: commit the live changes, then merge the remote branch
+/// in. Changes that merge on their own are kept from both sides; when the
+/// same lines changed on both, the merge is backed out, the site is left as
+/// it was, and the conflict resolver on the Git page takes over.
+pub(super) fn merge_remote(request: &Request, target: &Path, auth: &Auth) -> Result<(), String> {
+    if target.join(".git/MERGE_HEAD").exists() {
+        return Err("A merge is already in progress in the website root.".into());
+    }
+    fetch(request, target, auth)?;
+    let remote = format!("origin/{}", request.branch);
+    if ancestor(request, target, auth, &remote, "HEAD") {
+        return Ok(());
+    }
+    let pre = rev(request, target, auth, "HEAD").ok_or("The website root has no commit yet.")?;
+    if !clean(request, target, auth)? {
+        git(request, target, auth, &["add", "-A"])?;
+        git(
+            request,
+            target,
+            auth,
+            &[
+                "commit",
+                "-m",
+                request.message.as_deref().unwrap_or("Live server changes before sync"),
+            ],
+        )?;
+    }
+    let message = format!("Merge {remote} into the live site");
+    let merge = run(
+        request,
+        target,
+        auth,
+        &[],
+        &["merge", "--no-edit", "-m", &message, &remote],
+        None,
+    )?;
+    if merge.status.success() {
+        return Ok(());
+    }
+    let files: Vec<String> = unmerged(request, target, auth, &[])
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    if target.join(".git/MERGE_HEAD").exists() {
+        let _ = run(request, target, auth, &[], &["merge", "--abort"], None);
+    }
+    // Back to the uncommitted live changes, as before.
+    let _ = run(
+        request,
+        target,
+        auth,
+        &[],
+        &["reset", "-q", "--mixed", &pre],
+        None,
+    );
+    Err(if files.is_empty() {
+        format!(
+            "Pull before push failed: {}",
+            String::from_utf8_lossy(&merge.stderr).trim()
+        )
+    } else {
+        format!(
+            "The live site and the repository changed the same lines in: {}. Nothing was pushed — open the conflict resolver on the Git page.",
+            files.join(", ")
+        )
+    })
+}
+
 fn merge_and_settle(
     request: &Request,
     target: &Path,
@@ -859,6 +928,36 @@ mod tests {
             .output()
             .unwrap();
         String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    #[test]
+    fn push_pulls_the_remote_first_when_changes_merge_on_their_own() {
+        // Live edits the last line, the developer the first: no overlap.
+        let (_root, live, remote) = setup("one\ntwo\nLIVE\n", "DEV\ntwo\nthree\n");
+        let req = request(None, BTreeMap::new());
+        let auth = Auth::new(&req);
+        push(&req, &live, &auth).unwrap();
+        assert_eq!(remote_file(&remote, "index.php"), "DEV\ntwo\nLIVE\n");
+        assert_eq!(remote_file(&remote, "about.txt"), "about from dev\n");
+        assert_eq!(remote_file(&remote, "uploads.txt"), "new upload\n");
+    }
+
+    #[test]
+    fn push_stops_on_a_real_conflict_and_leaves_the_site_alone() {
+        let (_root, live, remote) = setup("one\nLIVE\nthree\n", "one\nDEV\nthree\n");
+        let req = request(None, BTreeMap::new());
+        let auth = Auth::new(&req);
+        let head_before = text(out(&req, &live, &auth, &[], &["rev-parse", "HEAD"], None).unwrap());
+        let error = push(&req, &live, &auth).unwrap_err();
+        assert!(error.contains("index.php"), "{error}");
+        assert_eq!(remote_file(&remote, "index.php"), "one\nDEV\nthree\n");
+        assert_eq!(
+            text(out(&req, &live, &auth, &[], &["rev-parse", "HEAD"], None).unwrap()),
+            head_before
+        );
+        assert_eq!(fs::read_to_string(live.join("index.php")).unwrap(), "one\nLIVE\nthree\n");
+        assert!(live.join("uploads.txt").is_file());
+        assert!(!live.join(".git/MERGE_HEAD").exists());
     }
 
     #[test]

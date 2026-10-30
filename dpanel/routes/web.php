@@ -1019,6 +1019,9 @@ Route::prefix('cpsess{token}')
             Route::delete('/integrations/github/accounts/{account}', [GithubIntegrationController::class, 'destroyAccount'])
                 ->middleware('role_or_permission:admin|reseller|manage_websites')
                 ->name('github.accounts.destroy');
+            Route::put('/integrations/github/accounts/{account}/global', [GithubIntegrationController::class, 'setGlobal'])
+                ->middleware('role:admin|superadmin')
+                ->name('github.accounts.global');
             Route::get('/integrations/github/accounts/{account}/repositories', [GithubIntegrationController::class, 'repositories'])
                 ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:60,1'])
                 ->name('github.accounts.repositories');

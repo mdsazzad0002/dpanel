@@ -28,8 +28,9 @@ class ClonePackageRestorer
     /**
      * @param  string|null  $snapshotReason  when set, the target's current files are first moved to its .trash
      * @param  Closure(string):void|null  $onStage  called with 'extracting', 'backing_up_target', 'restoring'
+     * @param  string|null  $databaseTarget  "new", or the id of the target database to replace; null replaces the current one
      */
-    public function restore(User $user, Website $target, string $packagePath, ?string $snapshotReason = null, ?Closure $onStage = null): void
+    public function restore(User $user, Website $target, string $packagePath, ?string $snapshotReason = null, ?Closure $onStage = null, ?string $databaseTarget = null, string $newDatabaseName = ''): void
     {
         $owner = (string) $target->site_owner;
         if ($owner === '') {
@@ -63,11 +64,13 @@ class ClonePackageRestorer
 
             $database = null;
             if ($sqlPath !== null) {
-                $database = DatabaseRequest::query()->visibleTo($user)->where('domain', $target->domain)->where('status', 'active')->first();
+                $database = $databaseTarget === 'new' ? null : DatabaseRequest::query()->visibleTo($user)->where('domain', $target->domain)->where('status', 'active')
+                    ->when($databaseTarget !== null, fn ($query) => $query->whereKey($databaseTarget))->first();
                 if (! $database instanceof DatabaseRequest) {
                     $domainPrefix = substr(trim((string) preg_replace('/[^a-z0-9_]/i', '_', explode('.', (string) $target->domain)[0]), '_') ?: 'site', 0, 16);
+                    $customName = trim(strtolower((string) preg_replace('/[^a-z0-9_]/i', '_', $newDatabaseName)), '_');
                     $database = new DatabaseRequest([
-                        'database_name' => substr($owner.'_'.$domainPrefix.'_db', 0, 64),
+                        'database_name' => $customName !== '' ? substr($customName, 0, 64) : substr($owner.'_'.$domainPrefix.'_db', 0, 64),
                         'database_user' => substr($owner.'_'.$domainPrefix.'_user', 0, 64),
                         'database_password' => Str::password(24),
                         'database_host' => '127.0.0.1',
