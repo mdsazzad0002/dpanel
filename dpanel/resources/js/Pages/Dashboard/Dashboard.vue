@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { computed, ref } from 'vue';
-import { Head, usePage } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import { buildPanelMenu, filterPanelMenu, resolveItemRouteName } from '@/navigation/panelMenu';
 import { useDashboardLayout } from './composables/useDashboardLayout';
 import DashboardHeader from './components/DashboardHeader.vue';
@@ -22,6 +22,8 @@ const panelRoute = (name, params = {}) => (
 const dashboardStats = computed(() => page.props.dashboardStats ?? null);
 const accountSummary = computed(() => page.props.accountSummary ?? null);
 const canViewServerUsage = computed(() => page.props.canViewServerUsage === true);
+// Sent to admins only, and only while panel mail cannot be delivered.
+const systemMailWarning = computed(() => page.props.systemMailWarning ?? null);
 const user = computed(() => page.props.auth?.user ?? {});
 const roles = computed(() => page.props.auth?.roles ?? []);
 
@@ -95,6 +97,28 @@ const onDrop = (targetId) => {
             the split waits for xl. Column wrappers are `display: contents` below xl
             so `order` applies across them.
         -->
+        <div
+            v-if="systemMailWarning"
+            role="alert"
+            class="mb-4 flex flex-wrap items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+            <i class="bi bi-envelope-exclamation mt-0.5 text-xl" aria-hidden="true"></i>
+            <div class="min-w-0 flex-1">
+                <p class="font-semibold">{{ systemMailWarning.source === 'system' ? 'The system email is not working' : 'Set up a system email' }}</p>
+                <p class="mt-0.5 text-sm">
+                    The panel sends login codes (OTP), password reset and email verification links from it.
+                    Without one, these emails never arrive and users, including you, can be locked out.
+                </p>
+                <p class="mt-1 text-xs opacity-80">{{ systemMailWarning.problem }}</p>
+            </div>
+            <Link
+                :href="panelRoute('emails.system-mail')"
+                class="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
+            >
+                {{ systemMailWarning.source === 'system' ? 'Fix system email' : 'Set up system email' }}
+            </Link>
+        </div>
+
         <div class="flex min-w-0 flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start xl:gap-5 2xl:grid-cols-[minmax(0,1fr)_22rem]">
             <div class="contents xl:flex xl:min-w-0 xl:flex-col xl:gap-3">
                 <div class="order-2 flex min-w-0 flex-col gap-3 xl:order-none">

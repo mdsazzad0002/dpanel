@@ -8,10 +8,11 @@ use Illuminate\Support\Facades\Schema;
 class MailSettings
 {
     private const TABLE = 'mail_settings';
+
     private const STATE_KEY = 'state';
 
     /**
-     * @return array{outbound_gate: bool}
+     * @return array{outbound_gate: bool, system_mailbox_id: string|null}
      */
     public function read(): array
     {
@@ -27,7 +28,10 @@ class MailSettings
                 ->value('setting_value'), true);
 
             return is_array($decoded)
-                ? ['outbound_gate' => (bool) ($decoded['outbound_gate'] ?? $defaults['outbound_gate'])]
+                ? [
+                    'outbound_gate' => (bool) ($decoded['outbound_gate'] ?? $defaults['outbound_gate']),
+                    'system_mailbox_id' => is_string($decoded['system_mailbox_id'] ?? null) && $decoded['system_mailbox_id'] !== '' ? $decoded['system_mailbox_id'] : null,
+                ]
                 : $defaults;
         } catch (\Throwable) {
             return $defaults;
@@ -35,7 +39,7 @@ class MailSettings
     }
 
     /**
-     * @param  array{outbound_gate?: bool}  $state
+     * @param  array{outbound_gate?: bool, system_mailbox_id?: string|null}  $state
      */
     public function write(array $state): void
     {
@@ -54,13 +58,15 @@ class MailSettings
     }
 
     /**
-     * @return array{outbound_gate: bool}
+     * @return array{outbound_gate: bool, system_mailbox_id: string|null}
      */
     private function defaults(): array
     {
         return [
             // Off until an admin turns it on: holding mail is a choice, not a default.
             'outbound_gate' => false,
+            // Mailbox the panel sends its own mail from (login codes, reset links).
+            'system_mailbox_id' => null,
         ];
     }
 }

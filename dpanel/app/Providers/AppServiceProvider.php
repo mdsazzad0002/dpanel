@@ -20,6 +20,9 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(DnsRegistryService::class);
+        // Panel mail goes out from the admin's chosen system mailbox. Applied
+        // when the mailer is first needed, so other requests skip the lookup.
+        $this->app->afterResolving('mail.manager', fn () => $this->app->make(\App\Services\Mail\SystemMailer::class)->apply());
         // One per request: DNS answers are reused across the mail checks of a page.
         $this->app->scoped(\App\Services\Dns\PublicDnsLookup::class);
         $this->app->singleton(AiGatewayService::class);

@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
 
@@ -17,7 +17,26 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    systemMailboxId: {
+        type: String,
+        default: null,
+    },
+    canSetSystemMail: {
+        type: Boolean,
+        default: false,
+    },
 });
+
+// The mailbox the panel sends login codes, reset and verification links from.
+const settingSystemId = ref('');
+const useAsSystemEmail = (item) => {
+    if (!confirm(`Send the panel's login codes, password reset and verification emails from ${item.email}?`)) return;
+    settingSystemId.value = item.id;
+    router.put(panelRoute('emails.system-mail.update'), { mailbox_id: item.id }, {
+        preserveScroll: true,
+        onFinish: () => { settingSystemId.value = ''; },
+    });
+};
 
 const formatDate = (value) => {
     if (!value) return '-';
@@ -141,6 +160,14 @@ const deleteMailbox = (id) => {
                             <td class="px-4 py-3">{{ item.domain || '-' }}</td>
                             <td class="px-4 py-3 font-medium">
                                 <p>{{ item.email }}</p>
+                                <Link
+                                    v-if="canSetSystemMail && systemMailboxId === item.id"
+                                    :href="panelRoute('emails.system-mail')"
+                                    class="mt-1 inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300"
+                                    title="The panel sends login codes, password reset and verification links from this mailbox"
+                                >
+                                    <i class="bi bi-envelope-check"></i> System email
+                                </Link>
                             </td>
                             <td class="px-4 py-3">
                                 <span v-if="item.plan" class="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">
@@ -220,6 +247,16 @@ const deleteMailbox = (id) => {
                                     >
                                         Login Blocked
                                     </span>
+                                    <button
+                                        v-if="canSetSystemMail && systemMailboxId !== item.id"
+                                        type="button"
+                                        :disabled="Boolean(item.system_mail_problem) || settingSystemId === item.id"
+                                        :title="item.system_mail_problem || 'Send panel login codes, reset and verification links from this mailbox'"
+                                        class="rounded-md border border-violet-300 px-2 py-1 text-xs text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
+                                        @click="useAsSystemEmail(item)"
+                                    >
+                                        {{ settingSystemId === item.id ? 'Saving…' : 'Use as system email' }}
+                                    </button>
                                     <Link :href="panelRoute('emails.edit', { id: item.id })" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
                                         Edit
                                     </Link>

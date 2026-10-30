@@ -109,6 +109,7 @@ export const buildPanelMenu = (userRoles = []) => [
             { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
             { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
             { label: 'Mail DNS Guide', hint: 'Configure MX, SPF, DKIM and DMARC', icon: 'DG', iconClass: 'bi bi-diagram-3', routeName: 'emails.guide', activeRouteNames: ['emails.guide', 'emails.guide.dkim', 'emails.guide.export'], roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+            { label: 'System Email', hint: 'Sender for login codes and reset links', icon: 'SE', iconClass: 'bi bi-envelope-check', routeName: 'emails.system-mail', roles: ['admin'] },
             { label: 'Mail IPs & SSL', hint: 'Mail IPs, hostnames and SMTP/IMAP certificates', icon: 'MS', iconClass: 'bi bi-shield-lock', routeName: 'emails.mail-ssl', roles: ['admin'], permissions: ['manage_mail_server'] },
             { label: 'Mail Health', hint: 'Failures, queue and spam signals', icon: 'MH', iconClass: 'bi bi-heart-pulse', routeName: 'mail-health.index', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
         ],

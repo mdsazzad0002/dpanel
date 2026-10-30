@@ -252,6 +252,7 @@ default_install_sequence() {
   # Install last so Composer, migrations, the application .env and writable
   # storage directories are ready before Supervisor starts the workers.
   dscript_cli module queue install
+  panel_recommend_system_email
 }
 
 run_interactive_menu() {
