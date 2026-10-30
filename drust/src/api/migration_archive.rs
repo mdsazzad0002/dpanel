@@ -9,7 +9,11 @@
 //! were selected, copies them into /home/<account> and imports the dumps
 //! over the local MariaDB socket.
 
-use crate::api::migration::{ROOT, remap_unsupported_collations, strip_privileged_statements};
+use crate::api::database_config::{connect_restored, referenced_database};
+use crate::api::migration::{
+    ROOT, detect_generic_application, remap_unsupported_collations, sql_escape,
+    strip_privileged_statements,
+};
 use crate::api::{ApiResponse, ApiState, check_token};
 use axum::{
     Router,
@@ -107,6 +111,17 @@ struct RestoreRequest {
     options: Options,
     #[serde(default)]
     selection: Selection,
+    /// Database → the login the panel chose for it. Each restored database
+    /// gets that user, and a restored site whose config names the database
+    /// is pointed at it.
+    #[serde(default)]
+    credentials: BTreeMap<String, Credential>,
+}
+
+#[derive(Deserialize, Clone)]
+struct Credential {
+    user: String,
+    password: String,
 }
 
 async fn inspect_handle(
@@ -148,7 +163,7 @@ async fn restore_handle(
     };
     let result = tokio::task::spawn_blocking(move || {
         let layout = read_layout(kind, &req.archive_path, &req.options)?;
-        restore(&layout, &req.selection)
+        restore(&layout, &req.selection, &req.credentials)
     })
     .await
     .unwrap_or_else(|e| Err(e.to_string()));
@@ -748,7 +763,19 @@ fn home_prefix(names: &[String]) -> String {
     }
 }
 
-fn restore(layout: &Layout, selection: &Selection) -> Result<serde_json::Value, String> {
+fn restore(
+    layout: &Layout,
+    selection: &Selection,
+    credentials: &BTreeMap<String, Credential>,
+) -> Result<serde_json::Value, String> {
+    if let Some((db, _)) = credentials.iter().find(|(_, c)| {
+        c.user.len() > 32
+            || !valid_database(&c.user)
+            || c.user.contains('$')
+            || c.password.is_empty()
+    }) {
+        return Err(format!("invalid database login for {db}"));
+    }
     if !selection.full_account
         && selection.domains.is_empty()
         && selection.files.is_empty()
@@ -808,15 +835,23 @@ fn restore(layout: &Layout, selection: &Selection) -> Result<serde_json::Value, 
         .as_nanos();
     let stage = PathBuf::from(format!("{ROOT}/.restore-{}-{nonce}", std::process::id()));
     fs::create_dir(&stage).map_err(|e| e.to_string())?;
-    let result = restore_into(layout, &stage, &files, &databases);
+    let result = restore_into(layout, &stage, &files, &databases, credentials);
     fs::remove_dir_all(&stage).ok();
     let restored_db = result?;
+    let (connected, warnings) = connect_sites(layout, &domains, &restored_db, credentials);
+    let home = layout.home();
+    let _ = Command::new("chown")
+        .args(["-R", &format!("{0}:{0}", layout.account)])
+        .arg(&home)
+        .status();
 
     Ok(serde_json::json!({
         "account": layout.account,
         "domains": domains,
         "files": files,
         "databases": restored_db,
+        "connected": connected,
+        "warnings": warnings,
     }))
 }
 
@@ -825,6 +860,7 @@ fn restore_into(
     stage: &Path,
     files: &BTreeSet<String>,
     databases: &[String],
+    credentials: &BTreeMap<String, Credential>,
 ) -> Result<Vec<String>, String> {
     let home = layout.home();
     ensure_account(&layout.account, &home)?;
@@ -874,6 +910,9 @@ fn restore_into(
         };
         import_database(db, &dump)?;
         fs::remove_dir_all(&work).ok();
+        if let Some(login) = credentials.get(db) {
+            grant(db, login)?;
+        }
         restored.push(db.clone());
     }
 
@@ -883,6 +922,92 @@ fn restore_into(
         .status();
     crate::filemanager::fix_permissions::run(Some(&layout.account), home.to_str(), false)?;
     Ok(restored)
+}
+
+/// Create (or re-password) the database's login with access to it alone.
+fn grant(db: &str, login: &Credential) -> Result<(), String> {
+    let (user, password) = (&login.user, sql_escape(&login.password));
+    let statement = format!(
+        "CREATE USER IF NOT EXISTS '{user}'@'localhost' IDENTIFIED BY '{password}'; \
+         ALTER USER '{user}'@'localhost' IDENTIFIED BY '{password}'; \
+         GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'localhost'; FLUSH PRIVILEGES;"
+    );
+    let out = Command::new("mysql")
+        .args(["--protocol=socket", "--execute", &statement])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(format!(
+            "cannot create the database user {user}: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+/// For each restored domain whose site is WordPress, Laravel or
+/// CodeIgniter, rewrite its config to the restored database's new login.
+/// The database is the one the config already names, or the only one
+/// restored. Problems are reported, not fatal: files and data are in place.
+fn connect_sites(
+    layout: &Layout,
+    domains: &[String],
+    restored: &[String],
+    credentials: &BTreeMap<String, Credential>,
+) -> (Vec<serde_json::Value>, Vec<String>) {
+    let (mut connected, mut warnings) = (Vec::new(), Vec::new());
+    let home = layout.home();
+    for domain in domains {
+        let Some(root) = layout.domains.get(domain) else {
+            continue;
+        };
+        let docroot = home.join(root);
+        let candidates = [Some(docroot.as_path()), docroot.parent()];
+        let Some((framework, config)) = candidates.into_iter().flatten().find_map(|dir| {
+            match detect_generic_application(dir) {
+                (Some(framework), Some(config), _) if config.is_file() => Some((framework, config)),
+                _ => None,
+            }
+        }) else {
+            continue;
+        };
+        let named = fs::read_to_string(&config)
+            .ok()
+            .and_then(|text| referenced_database(framework, &text));
+        let database = named
+            .clone()
+            .filter(|db| restored.contains(db))
+            .or_else(|| (restored.len() == 1).then(|| restored[0].clone()));
+        let Some(database) = database else {
+            if named.is_some() || !restored.is_empty() {
+                warnings.push(format!(
+                    "{domain}: {framework} site uses database {}, which was not restored; connect it on the Databases page",
+                    named.unwrap_or_else(|| "(unknown)".into())
+                ));
+            }
+            continue;
+        };
+        let Some(login) = credentials.get(&database) else {
+            continue;
+        };
+        match connect_restored(
+            &layout.account,
+            framework,
+            &config,
+            &database,
+            &login.user,
+            &login.password,
+        ) {
+            Ok(_) => connected.push(serde_json::json!({
+                "domain": domain, "database": database, "framework": framework, "config": config,
+            })),
+            Err(e) => warnings.push(format!(
+                "{domain}: could not update {}: {e}",
+                config.display()
+            )),
+        }
+    }
+    (connected, warnings)
 }
 
 fn ensure_account(account: &str, home: &Path) -> Result<(), String> {

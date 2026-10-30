@@ -249,6 +249,10 @@ const remove = async (item) => {
           <div class="flex items-center gap-3"><span class="rounded-full px-3 py-1 text-xs font-semibold" :class="['ready', 'completed'].includes(item.status) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : ['uploading', 'inspecting', 'restoring'].includes(item.status) ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400'">{{ item.status }}</span><button :disabled="['inspecting', 'restoring'].includes(item.status)" class="text-sm text-red-600 disabled:opacity-40 dark:text-red-400" @click="remove(item)">Remove</button></div>
         </div>
         <p v-if="item.last_error" class="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300">{{ item.last_error }}</p>
+        <div v-if="item.inventory?.restore_result" class="mt-3 space-y-2 text-sm">
+          <p v-for="site in item.inventory.restore_result.connected" :key="site.domain" class="text-emerald-700 dark:text-emerald-300"><i class="bi bi-plug"></i> {{ site.domain }} ({{ site.framework }}) is connected to database <code>{{ site.database }}</code> with a new login.</p>
+          <p v-for="warning in item.inventory.restore_result.warnings" :key="warning" class="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-200">{{ warning }}</p>
+        </div>
 
         <div v-if="props.provider === 'dpanel' && item.status === 'ready'" class="mt-5 space-y-4">
           <p class="text-sm text-emerald-700 dark:text-emerald-300">{{ item.inventory?.validation || 'Package validation completed.' }}</p>

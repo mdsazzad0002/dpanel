@@ -43,10 +43,16 @@ class AccountArchiveMigrationProvider
         return $this->request($import->provider, 'inspect', $this->payload($import));
     }
 
-    /** @param array{domains:array<int,string>,files:array<int,string>,databases:array<int,string>,full_account:bool} $selection */
-    public function restore(MigrationImport $import, array $selection): array
+    /**
+     * @param  array{domains:array<int,string>,files:array<int,string>,databases:array<int,string>,full_account:bool}  $selection
+     * @param  array<string, array{user: string, password: string}>  $credentials  database => login to create for it
+     */
+    public function restore(MigrationImport $import, array $selection, array $credentials = []): array
     {
-        return $this->request($import->provider, 'restore', $this->payload($import) + ['selection' => $selection]);
+        return $this->request($import->provider, 'restore', $this->payload($import) + [
+            'selection' => $selection,
+            'credentials' => (object) $credentials,
+        ]);
     }
 
     private function payload(MigrationImport $import): array

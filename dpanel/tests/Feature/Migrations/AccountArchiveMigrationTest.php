@@ -4,6 +4,7 @@ namespace Tests\Feature\Migrations;
 
 use App\Jobs\InspectMigrationImportJob;
 use App\Jobs\RestoreMigrationImportJob;
+use App\Models\DatabaseRequest;
 use App\Models\MigrationImport;
 use App\Models\User;
 use App\Models\Website;
@@ -166,6 +167,55 @@ class AccountArchiveMigrationTest extends TestCase
         $this->assertSame('/home/jdoe/domains/example.com/httpdocs', $website->root_path);
         $this->assertSame('jdoe', $website->site_owner);
         $this->assertSame('completed', $import->fresh()->status);
+    }
+
+    public function test_restored_databases_get_a_login_and_appear_on_the_databases_page(): void
+    {
+        Queue::fake();
+        $admin = $this->admin();
+        $path = storage_path('app/migrations/cpmove-bob.tar.gz');
+        File::ensureDirectoryExists(dirname($path));
+        file_put_contents($path, 'x');
+        // Already known to the panel: its login is kept.
+        DatabaseRequest::query()->forceCreate([
+            'id' => (string) Str::uuid(), 'domain' => 'old.test', 'database_name' => 'bob_shop',
+            'database_user' => 'shopuser', 'database_password' => 'keep-me', 'database_host' => '127.0.0.1', 'status' => 'active',
+        ]);
+        $import = MigrationImport::create([
+            'id' => (string) Str::uuid(), 'provider' => 'cpanel', 'original_name' => 'cpmove-bob.tar.gz',
+            'archive_path' => $path, 'archive_size' => 1, 'status' => 'ready', 'created_by' => $admin->id,
+            'inventory' => ['provider' => 'cpanel', 'account' => 'bob',
+                'domains' => [['id' => 'example.com', 'label' => 'example.com', 'document_root' => '/home/bob/public_html']],
+                'files' => [['id' => 'public_html', 'label' => 'public_html']],
+                'databases' => [['id' => 'bob_wp', 'label' => 'bob_wp'], ['id' => 'bob_shop', 'label' => 'bob_shop']]],
+        ]);
+
+        Http::fake(['daemon.test/*' => Http::response(['success' => true, 'data' => [
+            'account' => 'bob', 'databases' => ['bob_wp', 'bob_shop'],
+            'connected' => [['domain' => 'example.com', 'database' => 'bob_wp', 'framework' => 'wordpress', 'config' => '/home/bob/public_html/wp-config.php']],
+            'warnings' => [],
+        ]])]);
+        $selection = ['domains' => [], 'files' => [], 'databases' => [], 'full_account' => true];
+        app()->call([new RestoreMigrationImportJob($import->id, $selection, null), 'handle']);
+
+        $sent = null;
+        Http::assertSent(function (HttpRequest $request) use (&$sent) {
+            if ($request->url() !== 'http://daemon.test/api/v1/migration/cpanel/restore') {
+                return false;
+            }
+            $sent = json_decode($request->body(), true)['credentials'];
+
+            return true;
+        });
+        $this->assertSame('bob_wp', $sent['bob_wp']['user']);
+        $this->assertSame(24, strlen($sent['bob_wp']['password']));
+        $this->assertSame(['user' => 'shopuser', 'password' => 'keep-me'], $sent['bob_shop']);
+
+        $wp = DatabaseRequest::query()->where('database_name', 'bob_wp')->sole();
+        $this->assertSame('example.com', $wp->domain);
+        $this->assertSame($sent['bob_wp']['password'], $wp->database_password);
+        $this->assertSame('old.test', DatabaseRequest::query()->where('database_name', 'bob_shop')->sole()->domain);
+        $this->assertSame('bob_wp', $import->fresh()->inventory['restore_result']['connected'][0]['database']);
     }
 
     public function test_wordpress_page_lists_target_websites_and_imports_carry_the_new_address(): void

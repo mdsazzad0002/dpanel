@@ -510,7 +510,7 @@ fn collapse_single_directory(stage: &Path) -> Result<PathBuf, String> {
     })
 }
 
-fn sql_escape(value: &str) -> String {
+pub(super) fn sql_escape(value: &str) -> String {
     value.replace('\\', "\\\\").replace('\'', "''")
 }
 fn restore_generic_database(req: &GenericRestoreRequest, sql: &Path) -> Result<(), String> {
@@ -795,7 +795,7 @@ fn strip_definer(line: &[u8]) -> Vec<u8> {
     out
 }
 
-fn detect_generic_application(root: &Path) -> (Option<&'static str>, Option<PathBuf>, PathBuf) {
+pub(super) fn detect_generic_application(root: &Path) -> (Option<&'static str>, Option<PathBuf>, PathBuf) {
     if root.join("artisan").is_file() {
         return (
             Some("laravel"),

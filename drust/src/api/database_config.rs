@@ -159,6 +159,64 @@ fn apply(request: &Request) -> Result<PathBuf, String> {
     Ok(backup)
 }
 
+/// Point a site restored from another panel's backup at its database, with
+/// the same backup-then-rewrite as the Connect Database action.
+pub(super) fn connect_restored(
+    site_owner: &str,
+    framework: &str,
+    config_path: &Path,
+    database: &str,
+    user: &str,
+    password: &str,
+) -> Result<PathBuf, String> {
+    apply(&Request {
+        site_owner: site_owner.to_string(),
+        framework: framework.to_string(),
+        config_path: config_path.to_string_lossy().into_owned(),
+        database_name: database.to_string(),
+        database_user: user.to_string(),
+        database_password: password.to_string(),
+        database_host: None,
+        database_port: None,
+        engine: None,
+    })
+}
+
+/// The database name a project's config uses, when it can be read.
+pub(super) fn referenced_database(framework: &str, config: &str) -> Option<String> {
+    let quoted = |text: &str| -> Option<String> {
+        let start = text.find(['\'', '"'])?;
+        let quote = text[start..].chars().next()?;
+        let rest = &text[start + 1..];
+        Some(rest[..rest.find(quote)?].to_string())
+    };
+    let env = |key: &str| -> Option<String> {
+        config.lines().map(str::trim).find_map(|line| {
+            let (k, v) = line.split_once('=')?;
+            (k.trim() == key).then(|| v.trim().trim_matches(['\'', '"']).to_string())
+        })
+    };
+    let value = match framework {
+        "wordpress" => config.lines().find_map(|line| {
+            let at = line
+                .find("'DB_NAME'")
+                .or_else(|| line.find("\"DB_NAME\""))?;
+            quoted(&line[at + 9..])
+        }),
+        "laravel" => env("DB_DATABASE"),
+        "codeigniter4" => env("database.default.database"),
+        "codeigniter3" => env("DB_DATABASE").or_else(|| {
+            config.lines().find_map(|line| {
+                let at = line.find("'database'")?;
+                let arrow = line[at..].find("=>")?;
+                quoted(&line[at + arrow + 2..])
+            })
+        }),
+        _ => None,
+    };
+    value.filter(|v| !v.is_empty())
+}
+
 fn ensure_engine_supported(framework: &str, engine: Engine) -> Result<(), String> {
     if engine == Engine::Postgresql && framework == "wordpress" {
         return Err("WordPress only runs on MySQL/MariaDB; choose a MariaDB database.".into());
@@ -560,6 +618,25 @@ mod tests {
         let output = update_codeigniter4(String::new(), &request("codeigniter4"), "127.0.0.1", "5432", "Postgre");
         assert!(output.contains("database.default.DBDriver = Postgre"));
         assert!(output.contains("database.default.port = 5432"));
+    }
+
+    #[test]
+    fn reads_the_database_a_config_uses() {
+        let wordpress = "define( 'DB_NAME', 'bob_wp' );\ndefine('DB_USER', 'x');";
+        assert_eq!(
+            referenced_database("wordpress", wordpress).as_deref(),
+            Some("bob_wp")
+        );
+        assert_eq!(
+            referenced_database("laravel", "APP_NAME=x\nDB_DATABASE=\"shop\"\n").as_deref(),
+            Some("shop")
+        );
+        let codeigniter = "$db['default'] = array(\n  'database' => 'ci_db',\n);";
+        assert_eq!(
+            referenced_database("codeigniter3", codeigniter).as_deref(),
+            Some("ci_db")
+        );
+        assert_eq!(referenced_database("laravel", "DB_DATABASE=\n"), None);
     }
 
     #[test]
