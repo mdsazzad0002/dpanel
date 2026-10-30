@@ -94,7 +94,7 @@ class ClonePackageRestorer
                 'database_name' => $database?->database_name ?? '',
                 'database_user' => $database?->database_user ?? '',
                 'database_password' => $database?->database_password ?? '',
-                'overwrite_database' => $sqlPath !== null,
+                'overwrite_database' => $sqlPath !== null && $database instanceof DatabaseRequest && $database->exists,
                 // The package is a throwaway transport copy — don't leave one in
                 // the owner's home/migration_uploads on every clone or push.
                 'preserve_uploads' => false,

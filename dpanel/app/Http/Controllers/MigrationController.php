@@ -443,6 +443,8 @@ class MigrationController extends Controller
             ->latest()
             ->get();
 
+        $missingOnServer = $this->databasesMissingOnServer($databases);
+
         $otherWebsites = \App\Models\Website::query()->visibleTo($request->user())
             ->where('id', '!=', $id)
             ->orderBy('domain')
@@ -458,6 +460,9 @@ class MigrationController extends Controller
                 'databases' => $databases->map(fn (DatabaseRequest $database): array => [
                     'id' => $database->id,
                     'database_name' => $database->database_name,
+                    // Panel record whose MySQL database was dropped outside the
+                    // panel: an import creates it instead of overwriting.
+                    'missing_on_server' => in_array($database->database_name, $missingOnServer, true),
                 ])->values()->all(),
             ],
             'suggestedDatabaseName' => $this->suggestedDatabaseName($website),
@@ -478,6 +483,32 @@ class MigrationController extends Controller
         $nameSuffix = $domainPrefix.'_db';
 
         return substr($owner.'_', 0, 64 - strlen($nameSuffix)).$nameSuffix;
+    }
+
+    /**
+     * Names of local databases the panel has a record for but MySQL doesn't.
+     * Remote hosts aren't reachable from here, so they're assumed present.
+     *
+     * @param  \Illuminate\Support\Collection<int, DatabaseRequest>  $databases
+     * @return array<int, string>
+     */
+    private function databasesMissingOnServer($databases): array
+    {
+        $names = $databases
+            ->filter(fn (DatabaseRequest $database): bool => in_array((string) ($database->database_host ?: '127.0.0.1'), ['127.0.0.1', 'localhost'], true))
+            ->pluck('database_name')->filter()->values()->all();
+        if ($names === []) {
+            return [];
+        }
+
+        try {
+            $existing = collect(DB::select('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN ('.implode(',', array_fill(0, count($names), '?')).')', $names))
+                ->pluck('SCHEMA_NAME')->all();
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return array_values(array_diff($names, $existing));
     }
 
     public function storeWebsiteImport(Request $request, string $token, string $id): JsonResponse

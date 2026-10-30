@@ -40,6 +40,7 @@ class CloneWebsiteJob implements ShouldQueue
         public string $targetWebsiteId,
         public int $userId,
         public string $newDatabaseName = '',
+        public ?string $databaseTarget = null,
     ) {
         $this->onQueue('heavy');
     }
@@ -131,7 +132,8 @@ class CloneWebsiteJob implements ShouldQueue
 
             $database = null;
             if ($sqlPath !== null) {
-                $database = DatabaseRequest::query()->visibleTo($user)->whereRaw('LOWER(domain) = ?', [strtolower((string) $target->domain)])->where('status', 'active')->first();
+                $database = $this->databaseTarget === 'new' ? null : DatabaseRequest::query()->visibleTo($user)->whereRaw('LOWER(domain) = ?', [strtolower((string) $target->domain)])->where('status', 'active')
+                    ->when($this->databaseTarget !== null, fn ($query) => $query->whereKey($this->databaseTarget))->first();
                 if (! $database instanceof DatabaseRequest) {
                     $domainPrefix = substr(trim((string) preg_replace('/[^a-z0-9_]/i', '_', explode('.', (string) $target->domain)[0]), '_') ?: 'site', 0, 16);
                     $customName = strtolower(trim((string) preg_replace('/[^a-z0-9_]/i', '_', $this->newDatabaseName)));

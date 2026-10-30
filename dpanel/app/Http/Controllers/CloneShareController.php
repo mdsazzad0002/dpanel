@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\CloneWebsiteJob;
 use App\Jobs\ImportSharedWebsiteJob;
 use App\Jobs\ShareWebsitePackageJob;
+use App\Models\DatabaseRequest;
 use App\Models\Website;
 use App\Services\Backup\CloneShareJobStatus;
 use Illuminate\Http\JsonResponse;
@@ -26,12 +27,25 @@ class CloneShareController extends Controller
         $data = $request->validate([
             'target_website_id' => ['required', 'uuid', 'different:id'],
             'new_database_name' => ['nullable', 'string', 'max:64'],
+            // "new", or the id of one of the target's databases to replace.
+            // Left out, the target's current database is replaced (or one is created).
+            'database_target' => ['nullable', 'string', 'max:64'],
         ]);
 
         $source = Website::query()->visibleTo($request->user())->find($id);
         $target = Website::query()->visibleTo($request->user())->find($data['target_website_id']);
         if (! $source instanceof Website || ! $target instanceof Website) {
             return response()->json(['ok' => false, 'message' => 'Source or target website was not found.'], 404);
+        }
+
+        $databaseTarget = $data['database_target'] ?? null;
+        if ($databaseTarget !== null && $databaseTarget !== 'new') {
+            $linked = DatabaseRequest::query()->visibleTo($request->user())
+                ->whereRaw('LOWER(domain) = ?', [strtolower((string) $target->domain)])
+                ->where('status', 'active')->whereKey($databaseTarget)->exists();
+            if (! $linked) {
+                return response()->json(['ok' => false, 'message' => 'The selected database does not belong to '.$target->domain.'.'], 422);
+            }
         }
 
         $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
@@ -43,7 +57,7 @@ class CloneShareController extends Controller
         $cloneId = (string) Str::uuid();
         CloneShareJobStatus::set($cloneId, ['stage' => 'queued']);
 
-        CloneWebsiteJob::dispatch($cloneId, (string) $id, (string) $data['target_website_id'], (int) $request->user()->id, (string) ($data['new_database_name'] ?? ''));
+        CloneWebsiteJob::dispatch($cloneId, (string) $id, (string) $data['target_website_id'], (int) $request->user()->id, (string) ($data['new_database_name'] ?? ''), $databaseTarget);
 
         return response()->json(['ok' => true, 'clone_id' => $cloneId]);
     }

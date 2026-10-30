@@ -33,12 +33,20 @@ const uploadStages = reactive({ database: { progress: 0, status: 'waiting' }, ar
 const databases = computed(() => props.databaseConnection?.databases || []);
 const databaseTarget = ref(databases.value.length ? databases.value[0].id : 'new');
 const newDatabaseName = ref(props.suggestedDatabaseName);
+// The panel still lists a database whose MySQL database is gone — importing
+// creates it, so there is nothing to overwrite or confirm.
+const primaryDatabaseMissing = computed(() => !!databases.value[0]?.missing_on_server);
+
+// Clone: replace one of this website's databases, or create a new one.
+const cloneDatabaseTarget = ref(databases.value.length ? databases.value[0].id : 'new');
+const cloneNewDatabaseName = ref(props.suggestedDatabaseName);
+const cloneTargetDatabase = computed(() => databases.value.find((entry) => entry.id === cloneDatabaseTarget.value));
 
 const submitGeneric = async () => {
     if (!generic.archive && !generic.database) { error.value = 'Choose website files, a database dump, or both.'; return; }
     const overwriteDatabase = !!generic.database && databaseTarget.value !== 'new';
     const targetDatabase = databases.value.find((entry) => entry.id === databaseTarget.value);
-    if (overwriteDatabase && !window.confirm(`Database ${targetDatabase?.database_name || ''} already exists. A backup will be created first. Continue and overwrite it?`)) return;
+    if (overwriteDatabase && !targetDatabase?.missing_on_server && !window.confirm(`Database ${targetDatabase?.database_name || ''} already exists. A backup will be created first. Continue and overwrite it?`)) return;
     uploading.value = true; error.value = ''; message.value = '';
     Object.values(uploadStages).forEach(stage => { stage.progress = 0; stage.status = 'waiting'; });
     const routeParams = { token: panelToken.value, id: props.website.id };
@@ -178,9 +186,10 @@ const pollPullStatus = async (cloneId) => {
 
 const startPull = async () => {
     if (pullRunning.value || !sourceWebsiteId.value) return;
-    if (props.databaseConnection?.available) {
+    const replacing = cloneTargetDatabase.value;
+    if (replacing && !replacing.missing_on_server) {
         const confirmed = window.confirm(
-            `${props.website.domain} already has an active database (${props.databaseConnection.database_name}). Cloning will overwrite it with the source website's database. Continue?`,
+            `Database ${replacing.database_name} will be overwritten with the source website's database. A backup is taken first. Continue?`,
         );
         if (!confirmed) return;
     }
@@ -188,7 +197,11 @@ const startPull = async () => {
     pullStage.value = 'queued';
     pullMessage.value = '';
     try {
-        const data = await postJson(panelRoute('websites.clone-share.clone', { id: sourceWebsiteId.value }), { target_website_id: props.website.id });
+        const data = await postJson(panelRoute('websites.clone-share.clone', { id: sourceWebsiteId.value }), {
+            target_website_id: props.website.id,
+            database_target: cloneDatabaseTarget.value,
+            new_database_name: cloneDatabaseTarget.value === 'new' ? cloneNewDatabaseName.value : null,
+        });
         stopPullPoll();
         pullPollTimer = window.setInterval(() => pollPullStatus(data.clone_id), 5000);
         pollPullStatus(data.clone_id);
@@ -283,14 +296,16 @@ onUnmounted(() => {
                     <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Website files <span class="font-normal text-slate-400">(optional)</span><input type="file" accept=".zip,.gz,.tgz,application/zip,application/gzip" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.archive = $event.target.files[0]" /></label>
                     <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Database dump <span class="font-normal text-slate-400">(optional)</span><input type="file" accept=".sql,application/sql,text/plain" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.database = $event.target.files[0]" /><span class="mt-1 block text-xs font-normal text-slate-500">Automatically imports into this website's active database. Leave "Website files" empty to import the database only.</span></label>
                     <div v-if="!generic.database" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 md:col-span-2">
-                        <template v-if="databaseConnection?.available"><i class="bi bi-database-check mr-1 text-emerald-500"></i>{{ databases.length > 1 ? `${databases.length} databases are linked to this website — choose a database dump to pick which one to replace.` : `Existing database ${databaseConnection.database_name} requires confirmation and will be backed up before overwrite.` }}</template>
+                        <template v-if="databaseConnection?.available && databases.length === 1 && primaryDatabaseMissing"><i class="bi bi-database-exclamation mr-1 text-amber-500"></i>Database {{ databaseConnection.database_name }} is linked to this website but doesn't exist on the server. Uploading SQL will create it and import into it.</template>
+                        <template v-else-if="databaseConnection?.available"><i class="bi bi-database-check mr-1 text-emerald-500"></i>{{ databases.length > 1 ? `${databases.length} databases are linked to this website — choose a database dump to pick which one to replace.` : `Existing database ${databaseConnection.database_name} requires confirmation and will be backed up before overwrite.` }}</template>
                         <template v-else><i class="bi bi-database-add mr-1 text-indigo-500"></i>No active database exists. Uploading SQL will automatically create and connect one.</template>
                     </div>
                     <div v-if="generic.database" class="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60 md:col-span-2">
                         <span class="block text-xs font-semibold text-slate-700 dark:text-slate-200">Database target</span>
                         <label v-for="db in databases" :key="db.id" class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
                             <input v-model="databaseTarget" :value="db.id" type="radio" class="text-indigo-600 focus:ring-indigo-500" />
-                            <span class="text-slate-700 dark:text-slate-200">Replace <b>{{ db.database_name }}</b></span>
+                            <span v-if="db.missing_on_server" class="text-slate-700 dark:text-slate-200">Create <b>{{ db.database_name }}</b> <span class="block text-xs text-amber-600">Linked to this website but missing on the server — it will be created, nothing is overwritten.</span></span>
+                            <span v-else class="text-slate-700 dark:text-slate-200">Replace <b>{{ db.database_name }}</b></span>
                         </label>
                         <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
                             <input v-model="databaseTarget" value="new" type="radio" class="mt-0.5 text-indigo-600 focus:ring-indigo-500" />
@@ -314,9 +329,6 @@ onUnmounted(() => {
             <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100"><i class="bi bi-copy mr-1.5 text-cyan-600"></i>Clone from another website</h3>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Pull another website's files and database from this server into {{ website.domain }} — {{ website.domain }} is always the destination. A separate database is created for {{ website.domain }}; it is never shared with the source.</p>
-                <p v-if="databaseConnection?.available" class="mt-1 text-xs text-amber-600">
-                    <i class="bi bi-exclamation-triangle-fill mr-1"></i>{{ website.domain }} already has an active database ({{ databaseConnection.database_name }}) — cloning will ask for confirmation before overwriting it.
-                </p>
 
                 <label class="mt-4 block text-xs font-medium text-slate-600 dark:text-slate-300">Clone from</label>
                 <SearchableSelect
@@ -328,6 +340,21 @@ onUnmounted(() => {
                     search-placeholder="Search websites…"
                 />
                 <p v-if="otherWebsites.length === 0" class="mt-1 text-xs text-amber-600">You need at least one other website on this server to clone from.</p>
+
+                <label class="mt-4 block text-xs font-medium text-slate-600 dark:text-slate-300">Database</label>
+                <select v-model="cloneDatabaseTarget" :disabled="pullRunning"
+                    class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                    <option value="new">Create new database</option>
+                    <option v-for="db in databases" :key="db.id" :value="db.id">{{ db.missing_on_server ? `Create ${db.database_name} (missing on server)` : `Replace existing: ${db.database_name}` }}</option>
+                </select>
+                <input v-if="cloneDatabaseTarget === 'new'" v-model="cloneNewDatabaseName" :disabled="pullRunning" type="text" placeholder="database name"
+                    class="mt-2 block w-full rounded-lg border border-slate-300 bg-white p-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                <p v-if="cloneTargetDatabase?.missing_on_server" class="mt-1 text-xs text-amber-600">
+                    <i class="bi bi-database-exclamation mr-1"></i>{{ cloneTargetDatabase.database_name }} is linked to {{ website.domain }} but doesn't exist on the server — it will be created, nothing is overwritten.
+                </p>
+                <p v-else-if="cloneTargetDatabase" class="mt-1 text-xs text-amber-600">
+                    <i class="bi bi-exclamation-triangle-fill mr-1"></i>{{ cloneTargetDatabase.database_name }} will be backed up, then overwritten. You'll be asked to confirm.
+                </p>
 
                 <div v-if="pullStage" class="mt-4 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
                     <div class="flex items-center gap-2">

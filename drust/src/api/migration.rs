@@ -154,7 +154,7 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
             .ok_or_else(|| "no website archive or database dump was provided".to_string())?;
         let sql = archive_under_root(sql_path, &[".sql"])?;
         let database_backup = if req.overwrite_database {
-            Some(backup_generic_database(req, &home)?)
+            backup_generic_database(req, &home)?
         } else {
             None
         };
@@ -273,7 +273,7 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
     let saved_database = if let Some(sql) = req.sql_path.as_deref() {
         let sql = archive_under_root(sql, &[".sql"])?;
         if req.overwrite_database {
-            database_backup = Some(backup_generic_database(req, &home)?);
+            database_backup = backup_generic_database(req, &home)?;
         }
         restore_generic_database(req, &sql)?;
         wordpress_url = rewrite_wordpress_urls(req, &project_root);
@@ -297,7 +297,13 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
     )
 }
 
-fn backup_generic_database(req: &GenericRestoreRequest, home: &Path) -> Result<PathBuf, String> {
+/// Dumps the target database before it is overwritten. Returns `None` when the
+/// target database doesn't exist yet (a fresh clone/import target) — there is
+/// nothing to protect, and the restore creates it.
+fn backup_generic_database(
+    req: &GenericRestoreRequest,
+    home: &Path,
+) -> Result<Option<PathBuf>, String> {
     // When the caller set up a .trash batch for this overwrite (Clone/Import's
     // PreOverwriteBackupService), drop the dump alongside the moved files
     // instead of the unrelated migration_uploads folder, so both halves of
@@ -344,12 +350,21 @@ fn backup_generic_database(req: &GenericRestoreRequest, home: &Path) -> Result<P
         })?;
     if !output.status.success() {
         fs::remove_file(&destination).ok();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if is_unknown_database_error(&stderr) {
+            return Ok(None);
+        }
         return Err(format!(
             "database backup failed; database was not overwritten: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            stderr.trim()
         ));
     }
-    Ok(destination)
+    Ok(Some(destination))
+}
+
+/// MySQL/MariaDB error 1049 (ER_BAD_DB_ERROR): the database doesn't exist.
+fn is_unknown_database_error(stderr: &str) -> bool {
+    stderr.contains("1049") && stderr.contains("Unknown database")
 }
 
 fn default_preserve_uploads() -> bool {
@@ -395,6 +410,21 @@ fn preserve_generic_upload(source: &Path, home: &Path) -> Result<PathBuf, String
     fs::copy(source, &destination)
         .map_err(|error| format!("cannot preserve uploaded migration archive: {error}"))?;
     Ok(destination)
+}
+
+#[cfg(test)]
+mod database_backup_tests {
+    use super::is_unknown_database_error;
+
+    #[test]
+    fn missing_target_database_is_not_a_backup_failure() {
+        assert!(is_unknown_database_error(
+            "mysqldump: Got error: 1049: \"Unknown database 'about_localhost_about_db'\" when selecting the database"
+        ));
+        assert!(!is_unknown_database_error(
+            "mysqldump: Got error: 1045: \"Access denied for user 'x'@'localhost'\""
+        ));
+    }
 }
 
 #[cfg(test)]

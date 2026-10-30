@@ -69,10 +69,16 @@ fn create(request: &Request) -> Result<String, String> {
     let group_output = Command::new("id").args(["-gn", owner]).output().map_err(|error| error.to_string())?;
     if !group_output.status.success() { return Err("Unable to resolve website group.".into()); }
     let group = String::from_utf8_lossy(&group_output.stdout).trim().to_string();
-    let status = Command::new("useradd").args(["--no-create-home", "--home-dir", directory, "--shell", "/usr/sbin/nologin", "--gid", &group, &request.username]).status().map_err(|error| format!("Unable to start useradd: {error}"))?;
+    // Website files are owner:www-data with no access for others, so the FTP
+    // account shares the owner's UID; with its own UID vsftpd cannot even
+    // chdir into public_html, and uploads would belong to the wrong user.
+    let uid_output = Command::new("id").args(["-u", owner]).output().map_err(|error| error.to_string())?;
+    if !uid_output.status.success() { return Err("Unable to resolve website user ID.".into()); }
+    let uid = String::from_utf8_lossy(&uid_output.stdout).trim().to_string();
+    let status = Command::new("useradd").args(["--non-unique", "--uid", &uid, "--no-create-home", "--home-dir", directory, "--shell", "/usr/sbin/nologin", "--gid", &group, &request.username]).status().map_err(|error| format!("Unable to start useradd: {error}"))?;
     if !status.success() { return Err("Unable to create FTP system account.".into()); }
     if let Err(error) = set_password(&request.username, password) {
-        let _ = Command::new("userdel").arg(&request.username).status();
+        let _ = Command::new("userdel").args(["--force", &request.username]).status();
         return Err(error);
     }
     Ok(format!("FTP account {} created.", request.username))
@@ -96,7 +102,9 @@ fn set_password(username: &str, password: &str) -> Result<(), String> {
 fn delete(username: &str) -> Result<String, String> {
     validate_username(username)?;
     if !Command::new("id").args(["-u", username]).status().map_err(|error| error.to_string())?.success() { return Ok("FTP account was already absent.".into()); }
-    let status = Command::new("userdel").arg(username).status().map_err(|error| format!("Unable to start userdel: {error}"))?;
+    // --force: the account shares the site owner's UID, whose PHP-FPM workers
+    // would otherwise make userdel refuse. Without --remove the home stays.
+    let status = Command::new("userdel").args(["--force", username]).status().map_err(|error| format!("Unable to start userdel: {error}"))?;
     if !status.success() { return Err("Unable to delete FTP system account.".into()); }
     Ok(format!("FTP account {username} deleted."))
 }
