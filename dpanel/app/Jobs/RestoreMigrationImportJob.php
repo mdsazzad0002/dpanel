@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Models\MigrationImport;
 use App\Models\Website;
-use App\Services\Migration\CpanelMigrationProvider;
+use App\Services\Migration\AccountArchiveMigrationProvider;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
@@ -24,15 +24,15 @@ class RestoreMigrationImportJob implements ShouldQueue
         $this->onQueue('heavy');
     }
 
-    public function handle(CpanelMigrationProvider $provider): void
+    public function handle(AccountArchiveMigrationProvider $provider): void
     {
         $import = MigrationImport::find($this->importId);
-        if (! $import || ! is_file($import->archive_path)) {
+        if (! $import || ! file_exists($import->archive_path)) {
             return;
         }
 
         try {
-            $provider->restore($import->archive_path, $this->selection);
+            $provider->restore($import, $this->selection);
             $inventory = collect($import->inventory['domains'] ?? [])->keyBy('id');
             $domains = $this->selection['full_account'] ? $inventory->keys()->all() : $this->selection['domains'];
             DB::transaction(function () use ($domains, $inventory, $import): void {

@@ -8,7 +8,6 @@ use axum::{
 };
 use serde::Deserialize;
 use std::{
-    collections::{BTreeMap, BTreeSet},
     fs,
     io::Write,
     path::{Component, Path, PathBuf},
@@ -17,16 +16,13 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const ROOT: &str = "/var/www/dpanel/storage/app/migrations";
+pub(super) const ROOT: &str = "/var/www/dpanel/storage/app/migrations";
 
 pub fn routes() -> Router<Arc<ApiState>> {
-    Router::new()
-        .route("/api/v1/migration/cpanel/inspect", post(inspect_handle))
-        .route("/api/v1/migration/cpanel/restore", post(restore_handle))
-        .route(
-            "/api/v1/migration/generic/restore",
-            post(generic_restore_handle),
-        )
+    Router::new().route(
+        "/api/v1/migration/generic/restore",
+        post(generic_restore_handle),
+    )
 }
 
 #[derive(Deserialize)]
@@ -65,6 +61,12 @@ struct GenericRestoreRequest {
     database_password: String,
     #[serde(default)]
     overwrite_database: bool,
+    // The target website's address. When the import is a WordPress site
+    // with its database, siteurl/home (and links in post content) are
+    // moved from the source address to this one, or WordPress keeps
+    // redirecting to the old domain.
+    #[serde(default)]
+    site_url: Option<String>,
 }
 
 async fn generic_restore_handle(
@@ -79,366 +81,6 @@ async fn generic_restore_handle(
         Ok(v) => ApiResponse::ok_data("Generic website restored", v).into_response(),
         Err(e) => ApiResponse::error(&e).into_response(),
     }
-}
-
-#[derive(Deserialize)]
-struct ArchiveRequest {
-    archive_path: String,
-}
-#[derive(Deserialize, Default)]
-struct Selection {
-    #[serde(default)]
-    domains: Vec<String>,
-    #[serde(default)]
-    files: Vec<String>,
-    #[serde(default)]
-    databases: Vec<String>,
-    #[serde(default)]
-    full_account: bool,
-}
-#[derive(Deserialize)]
-struct RestoreRequest {
-    archive_path: String,
-    #[serde(default)]
-    selection: Selection,
-}
-
-async fn inspect_handle(
-    State(state): State<Arc<ApiState>>,
-    headers: HeaderMap,
-    Json(req): Json<ArchiveRequest>,
-) -> Response {
-    if let Err(e) = check_token(&state, &headers) {
-        return e.into_response();
-    }
-    match inspect(&req.archive_path) {
-        Ok(v) => ApiResponse::ok_data("cPanel archive inspected", v).into_response(),
-        Err(e) => ApiResponse::error(&e).into_response(),
-    }
-}
-async fn restore_handle(
-    State(state): State<Arc<ApiState>>,
-    headers: HeaderMap,
-    Json(req): Json<RestoreRequest>,
-) -> Response {
-    if let Err(e) = check_token(&state, &headers) {
-        return e.into_response();
-    }
-    match restore(&req.archive_path, &req.selection) {
-        Ok(v) => ApiResponse::ok_data("Selected cPanel resources restored", v).into_response(),
-        Err(e) => ApiResponse::error(&e).into_response(),
-    }
-}
-
-fn archive(path: &str) -> Result<PathBuf, String> {
-    let path = PathBuf::from(path);
-    let root = Path::new(ROOT)
-        .canonicalize()
-        .map_err(|_| "migration storage is unavailable")?;
-    let real = path
-        .canonicalize()
-        .map_err(|_| "migration archive was not found")?;
-    if !real.starts_with(&root) || !real.is_file() {
-        return Err("invalid migration archive path".into());
-    }
-    let name = real
-        .file_name()
-        .and_then(|v| v.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if !name.ends_with(".tar.gz") && !name.ends_with(".tgz") {
-        return Err("cPanel provider currently accepts .tar.gz or .tgz archives".into());
-    }
-    Ok(real)
-}
-fn listing(path: &Path) -> Result<Vec<String>, String> {
-    let out = Command::new("tar")
-        .args(["-tzf", path.to_string_lossy().as_ref()])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(format!(
-            "invalid cPanel archive: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
-    let lines: Vec<String> = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|v| v.trim_end_matches('/').to_string())
-        .filter(|v| !v.is_empty())
-        .collect();
-    if lines.iter().any(|v| {
-        Path::new(v).is_absolute()
-            || Path::new(v)
-                .components()
-                .any(|c| matches!(c, Component::ParentDir))
-    }) {
-        return Err("unsafe path in cPanel archive".into());
-    }
-    let verbose = Command::new("tar")
-        .args(["-tvzf", path.to_string_lossy().as_ref()])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !verbose.status.success()
-        || String::from_utf8_lossy(&verbose.stdout)
-            .lines()
-            .any(|line| !matches!(line.as_bytes().first(), Some(b'-' | b'd')))
-    {
-        return Err("cPanel archive contains unsupported links or special files".into());
-    }
-    Ok(lines)
-}
-fn package(lines: &[String]) -> Result<(String, String), String> {
-    let first = lines
-        .iter()
-        .filter_map(|v| v.split('/').next())
-        .find(|v| v.starts_with("cpmove-"))
-        .ok_or("cpmove account directory is missing")?;
-    let owner = first.trim_start_matches("cpmove-");
-    if owner.is_empty()
-        || !owner
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
-        return Err("invalid cPanel account owner".into());
-    }
-    Ok((first.to_string(), owner.to_string()))
-}
-fn member(path: &Path, name: &str) -> Option<String> {
-    let out = Command::new("tar")
-        .args(["-xOzf", path.to_string_lossy().as_ref(), name])
-        .output()
-        .ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
-}
-fn yaml_value(raw: &str, keys: &[&str]) -> Option<String> {
-    raw.lines()
-        .find_map(|line| {
-            let (k, v) = line.trim().split_once(':')?;
-            keys.iter()
-                .any(|x| k.trim().eq_ignore_ascii_case(x))
-                .then(|| v.trim().trim_matches(['\'', '"']).to_string())
-        })
-        .filter(|v| !v.is_empty())
-}
-fn inventory(
-    path: &Path,
-) -> Result<(serde_json::Value, BTreeMap<String, String>, String, String), String> {
-    let lines = listing(path)?;
-    let (prefix, owner) = package(&lines)?;
-    let mut domains = BTreeMap::new();
-    for name in lines
-        .iter()
-        .filter(|n| n.starts_with(&format!("{prefix}/userdata/")) && !n.ends_with("/main.json"))
-    {
-        if let Some(raw) = member(path, name) {
-            if let Some(domain) = yaml_value(&raw, &["server_name", "servername"]) {
-                let root = yaml_value(&raw, &["documentroot", "document_root"])
-                    .unwrap_or_else(|| format!("/home/{owner}/public_html"));
-                domains.insert(domain, root);
-            }
-        }
-    }
-    if domains.is_empty() {
-        if let Some(domain) = member(path, &format!("{prefix}/cp"))
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
-        {
-            domains.insert(domain, format!("/home/{owner}/public_html"));
-        }
-    }
-    let files: BTreeSet<String> = lines
-        .iter()
-        .filter_map(|n| n.strip_prefix(&format!("{prefix}/homedir/")))
-        .filter_map(|r| r.split('/').next())
-        .filter(|v| !v.is_empty())
-        .map(str::to_string)
-        .collect();
-    let databases: BTreeSet<String> = lines
-        .iter()
-        .filter_map(|n| n.strip_prefix(&format!("{prefix}/mysql/")))
-        .filter(|v| v.ends_with(".sql"))
-        .map(|v| v.trim_end_matches(".sql").to_string())
-        .collect();
-    let value = serde_json::json!({"provider":"cpanel","account":owner,"domains":domains.iter().map(|(d,r)|serde_json::json!({"id":d,"label":d,"document_root":r})).collect::<Vec<_>>(),"files":files.iter().map(|v|serde_json::json!({"id":v,"label":v})).collect::<Vec<_>>(),"databases":databases.iter().map(|v|serde_json::json!({"id":v,"label":v})).collect::<Vec<_>>()});
-    Ok((value, domains, prefix, owner))
-}
-fn inspect(value: &str) -> Result<serde_json::Value, String> {
-    let path = archive(value)?;
-    inventory(&path).map(|v| v.0)
-}
-
-fn restore(value: &str, selection: &Selection) -> Result<serde_json::Value, String> {
-    let path = archive(value)?;
-    let (inv, domains, prefix, owner) = inventory(&path)?;
-    if !selection.full_account
-        && selection.domains.is_empty()
-        && selection.files.is_empty()
-        && selection.databases.is_empty()
-    {
-        return Err("select at least one domain, file, or database".into());
-    }
-    let allowed_domains: BTreeSet<_> = domains.keys().cloned().collect();
-    if selection
-        .domains
-        .iter()
-        .any(|v| !allowed_domains.contains(v))
-    {
-        return Err("unknown domain selection".into());
-    }
-    let allowed_files: BTreeSet<String> = inv["files"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|v| v["id"].as_str().map(str::to_string))
-        .collect();
-    if selection.files.iter().any(|v| !allowed_files.contains(v)) {
-        return Err("unknown file selection".into());
-    }
-    let allowed_db: BTreeSet<String> = inv["databases"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|v| v["id"].as_str().map(str::to_string))
-        .collect();
-    if selection.databases.iter().any(|v| !allowed_db.contains(v)) {
-        return Err("unknown database selection".into());
-    }
-    if allowed_db.iter().any(|v| {
-        !v.chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
-    }) {
-        return Err("unsafe database name in cPanel archive".into());
-    }
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_nanos();
-    let stage = PathBuf::from(format!("{ROOT}/.restore-{}-{nonce}", std::process::id()));
-    fs::create_dir(&stage).map_err(|e| e.to_string())?;
-    let out = Command::new("tar")
-        .args([
-            "-xzf",
-            path.to_string_lossy().as_ref(),
-            "-C",
-            stage.to_string_lossy().as_ref(),
-            "--no-same-owner",
-            "--no-same-permissions",
-        ])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).into_owned());
-    }
-    let source = stage.join(&prefix);
-    let home = PathBuf::from(format!("/home/{owner}"));
-    if !home.exists() {
-        let _ = Command::new("groupadd").args(["--force", &owner]).status();
-        let s = Command::new("useradd")
-            .args([
-                "--create-home",
-                "--gid",
-                &owner,
-                "--shell",
-                "/usr/sbin/nologin",
-                &owner,
-            ])
-            .status()
-            .map_err(|e| e.to_string())?;
-        if !s.success() {
-            return Err("cannot create target account".into());
-        }
-    }
-    let mut paths: BTreeSet<String> = if selection.full_account {
-        allowed_files.clone()
-    } else {
-        selection.files.iter().cloned().collect()
-    };
-    for domain in &selection.domains {
-        if let Some(root) = domains.get(domain) {
-            if let Some(rel) = root.strip_prefix(&format!("/home/{owner}/")) {
-                paths.insert(rel.split('/').next().unwrap_or(rel).to_string());
-            }
-        }
-    }
-    for rel in &paths {
-        let from = source.join("homedir").join(rel);
-        if from.exists() {
-            let to = home.join(rel);
-            if let Some(p) = to.parent() {
-                fs::create_dir_all(p).ok();
-            }
-            let o = Command::new("cp")
-                .args([
-                    "-a",
-                    from.to_string_lossy().as_ref(),
-                    to.to_string_lossy().as_ref(),
-                ])
-                .output()
-                .map_err(|e| e.to_string())?;
-            if !o.status.success() {
-                return Err(String::from_utf8_lossy(&o.stderr).into_owned());
-            }
-        }
-    }
-    let selected_db: Vec<String> = if selection.full_account {
-        allowed_db.into_iter().collect()
-    } else {
-        selection.databases.clone()
-    };
-    let mut restored_db = Vec::new();
-    for db in selected_db {
-        let dump = source.join("mysql").join(format!("{db}.sql"));
-        if !dump.is_file() {
-            continue;
-        }
-        let create = Command::new("mysql")
-            .args([
-                "--protocol=socket",
-                "--execute",
-                &format!("CREATE DATABASE IF NOT EXISTS `{db}` CHARACTER SET utf8mb4"),
-            ])
-            .status()
-            .map_err(|e| e.to_string())?;
-        if !create.success() {
-            return Err(format!("cannot create database {db}"));
-        }
-        let bytes = fs::read(&dump).map_err(|e| e.to_string())?;
-        let mut child = Command::new("mysql")
-            .args(["--protocol=socket", &db])
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        child
-            .stdin
-            .as_mut()
-            .ok_or("mysql stdin unavailable")?
-            .write_all(&bytes)
-            .map_err(|e| e.to_string())?;
-        let o = child.wait_with_output().map_err(|e| e.to_string())?;
-        if !o.status.success() {
-            return Err(format!(
-                "database restore failed for {db}: {}",
-                String::from_utf8_lossy(&o.stderr)
-            ));
-        }
-        restored_db.push(db);
-    }
-    let _ = Command::new("chown")
-        .args([
-            "-R",
-            &format!("{owner}:{owner}"),
-            home.to_string_lossy().as_ref(),
-        ])
-        .status();
-    crate::filemanager::fix_permissions::run(Some(&owner), home.to_str(), false)?;
-    fs::remove_dir_all(stage).ok();
-    Ok(
-        serde_json::json!({"account":owner,"domains":if selection.full_account{domains.keys().cloned().collect::<Vec<_>>()}else{selection.domains.clone()},"files":paths,"databases":restored_db}),
-    )
 }
 
 fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, String> {
@@ -517,10 +159,12 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
             None
         };
         restore_generic_database(req, &sql)?;
+        let wordpress_url = rewrite_wordpress_urls(req, Path::new(&req.target_root));
         let saved_database = keep_generic_upload(req, &sql, &home)?;
         return Ok(serde_json::json!({
             "project_root": null, "document_root": null, "framework": null, "config_path": null,
             "saved_archive": null, "saved_database": saved_database, "database_backup": database_backup,
+            "wordpress_url": wordpress_url,
         }));
     }
     let source = archive_under_root(archive_path.unwrap(), &[".zip", ".tar.gz", ".tgz"])?;
@@ -625,12 +269,14 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
         return Err("cannot copy website files".into());
     }
     let mut database_backup = None;
+    let mut wordpress_url = serde_json::Value::Null;
     let saved_database = if let Some(sql) = req.sql_path.as_deref() {
         let sql = archive_under_root(sql, &[".sql"])?;
         if req.overwrite_database {
             database_backup = Some(backup_generic_database(req, &home)?);
         }
         restore_generic_database(req, &sql)?;
+        wordpress_url = rewrite_wordpress_urls(req, &project_root);
         keep_generic_upload(req, &sql, &home)?
     } else {
         None
@@ -647,7 +293,7 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
     crate::filemanager::fix_permissions::run(Some(&req.site_owner), home.to_str(), false)?;
     fs::remove_dir_all(stage).ok();
     Ok(
-        serde_json::json!({"project_root":project_root,"document_root":document_root,"framework":framework,"config_path":config_path,"saved_archive":saved_archive,"saved_database":saved_database,"database_backup":database_backup}),
+        serde_json::json!({"project_root":project_root,"document_root":document_root,"framework":framework,"config_path":config_path,"saved_archive":saved_archive,"saved_database":saved_database,"database_backup":database_backup,"wordpress_url":wordpress_url}),
     )
 }
 
@@ -941,13 +587,98 @@ fn restore_generic_database(req: &GenericRestoreRequest, sql: &Path) -> Result<(
     Ok(())
 }
 
+/// Point a just-imported WordPress database at its new address: siteurl and
+/// home, plus links in post content (plain text, so a REPLACE is safe; the
+/// serialized option/meta values are left alone). Returns {from, to}, a
+/// {warning} when it could not be done, or null when there was nothing to
+/// change. Never fails the import: the site is restored either way.
+fn rewrite_wordpress_urls(req: &GenericRestoreRequest, root: &Path) -> serde_json::Value {
+    let Some(new_url) = req
+        .site_url
+        .as_deref()
+        .map(|v| v.trim().trim_end_matches('/'))
+        .filter(|v| valid_site_url(v))
+    else {
+        return serde_json::Value::Null;
+    };
+    let Ok(config) = fs::read_to_string(root.join("wp-config.php")) else {
+        return serde_json::Value::Null;
+    };
+    let prefix = wordpress_table_prefix(&config);
+    let query = |sql: &str| -> Result<String, String> {
+        let out = Command::new("mysql")
+            .env("MYSQL_PWD", &req.database_password)
+            .args([
+                "--host",
+                &req.database_host,
+                "--port",
+                &req.database_port.to_string(),
+                "--user",
+                &req.database_user,
+                "--batch",
+                "--skip-column-names",
+                "--execute",
+                sql,
+                &req.database_name,
+            ])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+    let old_url = match query(&format!(
+        "SELECT option_value FROM `{prefix}options` WHERE option_name = 'siteurl' LIMIT 1"
+    )) {
+        Ok(v) => v.trim_end_matches('/').to_string(),
+        Err(e) => {
+            return serde_json::json!({"warning": format!("WordPress address was not updated: {e}")});
+        }
+    };
+    if old_url.is_empty() || old_url == new_url {
+        return serde_json::Value::Null;
+    }
+    let (old, new) = (sql_escape(&old_url), sql_escape(new_url));
+    match query(&format!(
+        "UPDATE `{prefix}options` SET option_value = '{new}' WHERE option_name IN ('siteurl', 'home'); \
+         UPDATE `{prefix}posts` SET post_content = REPLACE(post_content, '{old}', '{new}');"
+    )) {
+        Ok(_) => serde_json::json!({"from": old_url, "to": new_url}),
+        Err(e) => serde_json::json!({"warning": format!("WordPress address was not updated: {e}")}),
+    }
+}
+
+fn valid_site_url(value: &str) -> bool {
+    (value.starts_with("http://") || value.starts_with("https://"))
+        && value
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b".-:/_".contains(&c))
+}
+
+/// `$table_prefix = 'wp_';` from wp-config.php; "wp_" when absent or odd.
+fn wordpress_table_prefix(config: &str) -> String {
+    config
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("$table_prefix"))
+        .find_map(|line| {
+            let value = line.split_once('=')?.1.trim();
+            let quote = value.chars().next().filter(|c| *c == '\'' || *c == '"')?;
+            let rest = &value[1..];
+            Some(rest[..rest.find(quote)?].to_string())
+        })
+        .filter(|p| !p.is_empty() && p.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_'))
+        .unwrap_or_else(|| "wp_".to_string())
+}
+
 // MySQL 8's "utf8mb4_0900_*" collation family (including locale variants like
 // utf8mb4_de_pb_0900_ai_ci) doesn't exist on MariaDB below 11.4, so a dump
 // taken from MySQL 8 (or a newer MariaDB that added these for compatibility)
 // fails immediately with "Unknown collation" on an older MariaDB target.
 // Remap them to the closest MariaDB-native equivalent before importing —
 // same data, just a different default text sort order for those columns.
-fn remap_unsupported_collations(bytes: Vec<u8>) -> Vec<u8> {
+pub(super) fn remap_unsupported_collations(bytes: Vec<u8>) -> Vec<u8> {
     const PREFIX: &[u8] = b"utf8mb4_";
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -984,7 +715,7 @@ fn remap_unsupported_collations(bytes: Vec<u8>) -> Vec<u8> {
 // views/triggers/routines and MySQL's GTID / binlog session settings. Only
 // statement lines are touched, never INSERT data. A dump holding several
 // databases is refused rather than silently merged into one.
-fn strip_privileged_statements(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+pub(super) fn strip_privileged_statements(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     let mut out = Vec::with_capacity(bytes.len());
     let mut source_database: Option<Vec<u8>> = None;
 
@@ -1103,6 +834,32 @@ fn detect_generic_application(root: &Path) -> (Option<&'static str>, Option<Path
         return (Some("codeigniter3"), Some(config), root.to_path_buf());
     }
     (None, None, root.to_path_buf())
+}
+
+#[cfg(test)]
+mod wordpress_url_tests {
+    use super::{valid_site_url, wordpress_table_prefix};
+
+    #[test]
+    fn reads_the_table_prefix() {
+        assert_eq!(
+            wordpress_table_prefix("<?php\n$table_prefix = 'wpx7_';\n"),
+            "wpx7_"
+        );
+        assert_eq!(
+            wordpress_table_prefix("$table_prefix  = \"shop_\" ;"),
+            "shop_"
+        );
+        assert_eq!(wordpress_table_prefix("$table_prefix = 'x`; DROP';"), "wp_");
+        assert_eq!(wordpress_table_prefix("<?php // none"), "wp_");
+    }
+
+    #[test]
+    fn only_plain_site_urls_are_used() {
+        assert!(valid_site_url("https://shop.example.com"));
+        assert!(!valid_site_url("shop.example.com"));
+        assert!(!valid_site_url("https://x.com/'; DROP"));
+    }
 }
 
 #[cfg(test)]

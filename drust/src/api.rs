@@ -22,6 +22,7 @@ mod health;
 mod mailbox_storage;
 mod media;
 mod migration;
+mod migration_archive;
 mod migration_ssh;
 mod node;
 mod rust;
@@ -119,6 +120,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(mailbox_storage::routes())
         .merge(media::routes())
         .merge(migration::routes())
+        .merge(migration_archive::routes())
         .merge(migration_ssh::routes())
         .merge(node::routes())
         .merge(rust::routes())
