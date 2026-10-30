@@ -85,7 +85,7 @@ class GitConflictResolutionTest extends TestCase
     public function test_resolving_sends_the_strategy_and_per_file_choices(): void
     {
         $deployment = $this->deployment();
-        $this->daemon('Merged the repository into the live site and pushed.');
+        $this->daemon('Merged on the server; nothing was pushed yet.');
 
         $this->as($this->admin())->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve", [
             'strategy' => 'custom',
@@ -93,7 +93,7 @@ class GitConflictResolutionTest extends TestCase
                 ['path' => 'app/config.php', 'content' => "a\nMERGED\n"],
                 ['path' => 'logo.png', 'take' => 'live'],
             ],
-        ])->assertOk()->assertJsonPath('success', true)->assertJsonPath('needsResolution', false);
+        ])->assertOk()->assertJsonPath('success', true)->assertJsonPath('needsResolution', false)->assertJsonPath('resolutionPending', true);
 
         Http::assertSent(fn (HttpRequest $request) => $request['action'] === 'resolve'
             && $request['strategy'] === 'custom'
@@ -151,15 +151,39 @@ class GitConflictResolutionTest extends TestCase
             'user_id' => $admin->id, 'name' => 'test', 'token_prefix' => 'x', 'token_hash' => hash('sha256', 'x'),
             'scope' => McpAccessToken::SCOPE_FULL, 'is_active' => true,
         ]);
-        $this->daemon('Merged the repository into the live site and pushed.');
+        $this->daemon('Merged on the server; nothing was pushed yet.');
         $result = $tools['resolve_git_conflicts']->handle([
             'domain' => 'shop.test', 'strategy' => 'custom',
             'files' => [['path' => 'app/config.php', 'content' => "a\nMERGED\n"]],
         ], $token);
 
         $this->assertTrue($result['resolved']);
+        $this->assertFalse($result['pushed']);
         Http::assertSent(fn (HttpRequest $request) => $request['action'] === 'resolve'
             && json_decode($request->body(), true)['resolutions']['app/config.php']['content'] === "a\nMERGED\n");
         $this->assertSame('success', $deployment->fresh()->last_status);
+    }
+
+    public function test_the_push_waits_for_confirmation_and_can_be_undone(): void
+    {
+        $deployment = $this->deployment();
+        $admin = $this->admin();
+        \App\Models\WebsiteGitLog::create(['deployment_id' => $deployment->id, 'action' => 'resolve', 'status' => 'success', 'created_at' => now()->subMinute()]);
+        $this->as($admin)->get("/cpsess{$this->token}/websites/{$deployment->website_id}/git")
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('resolutionPending', true));
+
+        $this->daemon(json_encode(['pending' => true, 'commits' => ['abc1234 Merge'], 'files' => [['status' => 'M', 'path' => 'index.php']], 'summary' => '1 file changed']));
+        $this->as($admin)->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve/pending")
+            ->assertOk()->assertJsonPath('pending', true)->assertJsonPath('files.0.path', 'index.php');
+
+        $this->daemon('Pushed the resolved merge to main.');
+        $this->as($admin)->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve/finish", ['decision' => 'confirm'])
+            ->assertOk()->assertJsonPath('resolutionPending', false);
+        Http::assertSent(fn (HttpRequest $request) => $request['action'] === 'confirm_push');
+
+        $this->daemon('Undone.');
+        $this->as($admin)->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve/finish", ['decision' => 'undo'])->assertOk();
+        Http::assertSent(fn (HttpRequest $request) => $request['action'] === 'undo_resolve');
+        $this->as($admin)->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve/finish", ['decision' => 'push'])->assertStatus(422);
     }
 }

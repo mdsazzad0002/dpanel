@@ -429,6 +429,50 @@ fn describe(
     Ok(Some(conflict))
 }
 
+/// HEAD before a resolve, so it can be undone until it is pushed.
+const PRE_RESOLVE_REF: &str = "refs/dpanel/pre-resolve";
+/// The resolved commit waiting for the admin to confirm the push.
+const RESOLVED_REF: &str = "refs/dpanel/resolved";
+
+fn rev(request: &Request, target: &Path, auth: &Auth, name: &str) -> Option<String> {
+    out(
+        request,
+        target,
+        auth,
+        &[],
+        &["rev-parse", "-q", "--verify", name],
+        None,
+    )
+    .ok()
+    .map(text)
+    .filter(|v| !v.is_empty())
+}
+
+fn forget_resolve(request: &Request, target: &Path, auth: &Auth) {
+    for name in [PRE_RESOLVE_REF, RESOLVED_REF] {
+        let _ = run(
+            request,
+            target,
+            auth,
+            &[],
+            &["update-ref", "-d", name],
+            None,
+        );
+    }
+}
+
+/// A resolved merge is waiting for its push to be confirmed: plain pull,
+/// push and sync must not send (or move past) it on their own.
+pub(super) fn awaiting_confirmation(request: &Request, target: &Path, auth: &Auth) -> bool {
+    target.join(".git").is_dir() && rev(request, target, auth, RESOLVED_REF).is_some()
+}
+
+pub(super) const AWAITING: &str =
+    "A resolved merge is waiting on the Git page: confirm the push or undo it first.";
+
+/// Merge the remote branch into the live site and settle the conflicts,
+/// on the server only. Nothing is pushed: `confirm_push` sends it after the
+/// admin has reviewed `pending`, and `undo_resolve` puts the site back.
 pub(super) fn resolve(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
     let strategy = request.strategy.as_deref().unwrap_or("");
     if !["live", "remote", "both", "custom"].contains(&strategy) {
@@ -437,7 +481,56 @@ pub(super) fn resolve(request: &Request, target: &Path, auth: &Auth) -> Result<S
     if target.join(".git/MERGE_HEAD").exists() {
         return Err("A merge is already in progress in the website root.".into());
     }
+    if awaiting_confirmation(request, target, auth) {
+        return Err(AWAITING.into());
+    }
     fetch(request, target, auth)?;
+    let pre = rev(request, target, auth, "HEAD").ok_or("The website root has no commit yet.")?;
+    git(
+        request,
+        target,
+        auth,
+        &["update-ref", PRE_RESOLVE_REF, &pre],
+    )?;
+
+    let result = merge_and_settle(request, target, auth, strategy);
+    match result {
+        Ok(summary) => {
+            let head = rev(request, target, auth, "HEAD").unwrap_or_default();
+            if head == pre {
+                forget_resolve(request, target, auth);
+                return Ok("Nothing to merge: the site already matches the repository.".into());
+            }
+            git(request, target, auth, &["update-ref", RESOLVED_REF, &head])?;
+            Ok(format!(
+                "Merged on the server; nothing was pushed yet. Review the changes and confirm the push, or undo.{summary}"
+            ))
+        }
+        Err(error) => {
+            if target.join(".git/MERGE_HEAD").exists() {
+                let _ = run(request, target, auth, &[], &["merge", "--abort"], None);
+            }
+            // Back to the uncommitted live changes, as before.
+            let _ = run(
+                request,
+                target,
+                auth,
+                &[],
+                &["reset", "-q", "--mixed", &pre],
+                None,
+            );
+            forget_resolve(request, target, auth);
+            Err(error)
+        }
+    }
+}
+
+fn merge_and_settle(
+    request: &Request,
+    target: &Path,
+    auth: &Auth,
+    strategy: &str,
+) -> Result<String, String> {
     if !clean(request, target, auth)? {
         git(request, target, auth, &["add", "-A"])?;
         git(
@@ -449,9 +542,8 @@ pub(super) fn resolve(request: &Request, target: &Path, auth: &Auth) -> Result<S
     }
     let remote = format!("origin/{}", request.branch);
     if ancestor(request, target, auth, &remote, "HEAD") {
-        return push(request, target, auth);
+        return Ok(String::new());
     }
-
     let mut args = vec!["merge", "--no-ff", "--no-commit"];
     match strategy {
         "live" => args.extend(["-X", "ours"]),
@@ -463,33 +555,107 @@ pub(super) fn resolve(request: &Request, target: &Path, auth: &Auth) -> Result<S
     if !target.join(".git/MERGE_HEAD").exists() {
         return finish(merge, auth).and(Err("The merge did not start.".into()));
     }
+    let files = settle(request, target, auth, strategy)?;
+    let message = format!("Merge {remote} into the live site (conflicts: {strategy})");
+    git(
+        request,
+        target,
+        auth,
+        &["commit", "--no-edit", "-m", &message],
+    )?;
+    Ok(if files.is_empty() {
+        String::new()
+    } else {
+        format!(" Resolved ({strategy}): {}.", files.join(", "))
+    })
+}
 
-    let settled = settle(request, target, auth, strategy).and_then(|files| {
-        let message = format!("Merge {remote} into the live site (conflicts: {strategy})");
-        git(
-            request,
-            target,
-            auth,
-            &["commit", "--no-edit", "-m", &message],
-        )?;
-        Ok(files)
-    });
-    let files = match settled {
-        Ok(files) => files,
-        Err(error) => {
-            let _ = run(request, target, auth, &[], &["merge", "--abort"], None);
-            return Err(error);
-        }
+/// What confirming would push: the commits and changed files the
+/// repository does not have yet.
+pub(super) fn pending(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    let Some(resolved) = rev(request, target, auth, RESOLVED_REF) else {
+        return Ok(serde_json::json!({"pending": false}).to_string());
     };
+    let remote = format!("origin/{}", request.branch);
+    let range = format!("{remote}..{resolved}");
+    let commits = text(out(
+        request,
+        target,
+        auth,
+        &[],
+        &["log", "--format=%h %s", &range],
+        None,
+    )?);
+    let files = text(out(
+        request,
+        target,
+        auth,
+        &[],
+        &["diff", "--name-status", "--no-renames", &remote, &resolved],
+        None,
+    )?);
+    let stat = text(out(
+        request,
+        target,
+        auth,
+        &[],
+        &["diff", "--shortstat", &remote, &resolved],
+        None,
+    )?);
+    Ok(serde_json::json!({
+        "pending": true,
+        "commits": commits.lines().collect::<Vec<_>>(),
+        "files": files.lines().filter_map(|line| {
+            let (status, path) = line.split_once('\t')?;
+            Some(serde_json::json!({"status": status, "path": path}))
+        }).collect::<Vec<_>>(),
+        "summary": stat,
+    })
+    .to_string())
+}
+
+/// Push the resolved merge the admin has reviewed.
+pub(super) fn confirm_push(
+    request: &Request,
+    target: &Path,
+    auth: &Auth,
+) -> Result<String, String> {
+    let resolved = rev(request, target, auth, RESOLVED_REF)
+        .ok_or("There is no resolved merge waiting to be pushed.")?;
+    if rev(request, target, auth, "HEAD").as_deref() != Some(resolved.as_str()) {
+        return Err("The site changed since the merge; undo it and resolve again.".into());
+    }
     let pushed = push(request, target, auth)?;
+    forget_resolve(request, target, auth);
     Ok(format!(
-        "Merged the repository into the live site and pushed.{}\n{pushed}",
-        if files.is_empty() {
-            String::new()
-        } else {
-            format!(" Resolved ({strategy}): {}.", files.join(", "))
-        }
+        "Pushed the resolved merge to {}.\n{pushed}",
+        request.branch
     ))
+}
+
+/// Put the site back to how it was before the resolve: same files, live
+/// changes uncommitted again. Only before the push.
+pub(super) fn undo_resolve(
+    request: &Request,
+    target: &Path,
+    auth: &Auth,
+) -> Result<String, String> {
+    let resolved =
+        rev(request, target, auth, RESOLVED_REF).ok_or("There is no resolved merge to undo.")?;
+    let pre = rev(request, target, auth, PRE_RESOLVE_REF)
+        .ok_or("The state before the merge was not recorded.")?;
+    if rev(request, target, auth, "HEAD").as_deref() != Some(resolved.as_str()) {
+        return Err("The site changed since the merge; it cannot be undone automatically.".into());
+    }
+    // The merge's first parent holds the live files (the resolve committed
+    // them); without a merge, the resolved commit itself does.
+    let live = rev(request, target, auth, &format!("{resolved}^2"))
+        .and_then(|_| rev(request, target, auth, &format!("{resolved}^1")))
+        .unwrap_or(resolved);
+    git(request, target, auth, &["reset", "-q", "--hard", &live])?;
+    git(request, target, auth, &["reset", "-q", "--mixed", &pre])?;
+    forget_resolve(request, target, auth);
+    Ok("Undone: the site is back to its files before the merge, and nothing was pushed.".into())
 }
 
 /// Settle every unmerged path of the in-progress merge.
@@ -748,7 +914,24 @@ mod tests {
             let (_root, live, remote) = setup("one\nLIVE\nthree\n", "one\nDEV\nthree\n");
             let req = request(Some(strategy), BTreeMap::new());
             let auth = Auth::new(&req);
+            let before = remote_file(&remote, "index.php");
             resolve(&req, &live, &auth).unwrap();
+            // Merged on the server, but nothing reaches the repository
+            // until the push is confirmed.
+            assert_eq!(remote_file(&remote, "index.php"), before);
+            assert!(awaiting_confirmation(&req, &live, &auth));
+            let report: serde_json::Value =
+                serde_json::from_str(&pending(&req, &live, &auth).unwrap()).unwrap();
+            assert_eq!(report["pending"], true);
+            assert!(
+                report["files"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|f| f["path"] == "uploads.txt")
+            );
+            confirm_push(&req, &live, &auth).unwrap();
+            assert!(!awaiting_confirmation(&req, &live, &auth));
             assert_eq!(
                 fs::read_to_string(live.join("index.php")).unwrap(),
                 expected,
@@ -790,11 +973,46 @@ mod tests {
                 content: Some("one\nMERGED\nthree\n".into()),
             },
         );
-        resolve(&request(Some("custom"), resolutions), &live, &auth).unwrap();
+        let custom = request(Some("custom"), resolutions);
+        resolve(&custom, &live, &auth).unwrap();
+        confirm_push(&custom, &live, &auth).unwrap();
         assert_eq!(
             fs::read_to_string(live.join("index.php")).unwrap(),
             "one\nMERGED\nthree\n"
         );
         assert_eq!(remote_file(&remote, "index.php"), "one\nMERGED\nthree\n");
+    }
+
+    #[test]
+    fn undo_puts_the_site_back_before_the_push() {
+        let (_root, live, remote) = setup("one\nLIVE\nthree\n", "one\nDEV\nthree\n");
+        let req = request(Some("remote"), BTreeMap::new());
+        let auth = Auth::new(&req);
+        let head = text(out(&req, &live, &auth, &[], &["rev-parse", "HEAD"], None).unwrap());
+        resolve(&req, &live, &auth).unwrap();
+        assert_eq!(
+            fs::read_to_string(live.join("index.php")).unwrap(),
+            "one\nDEV\nthree\n"
+        );
+        // A second resolve, or a plain push, waits for the decision.
+        assert!(resolve(&req, &live, &auth).unwrap_err().contains("waiting"));
+
+        undo_resolve(&req, &live, &auth).unwrap();
+        assert_eq!(
+            fs::read_to_string(live.join("index.php")).unwrap(),
+            "one\nLIVE\nthree\n"
+        );
+        assert_eq!(
+            fs::read_to_string(live.join("uploads.txt")).unwrap(),
+            "new upload\n"
+        );
+        assert_eq!(
+            text(out(&req, &live, &auth, &[], &["rev-parse", "HEAD"], None).unwrap()),
+            head
+        );
+        assert!(!clean(&req, &live, &auth).unwrap());
+        assert!(!awaiting_confirmation(&req, &live, &auth));
+        assert!(confirm_push(&req, &live, &auth).is_err());
+        assert_eq!(remote_file(&remote, "uploads.txt"), "");
     }
 }

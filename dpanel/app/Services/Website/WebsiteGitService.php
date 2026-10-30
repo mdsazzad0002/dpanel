@@ -75,7 +75,8 @@ class WebsiteGitService
 
     /**
      * Merge the repository into the live site, settling conflicts by
-     * $strategy, then push. custom takes $resolutions: path => {take: live|remote|both} or {content}.
+     * $strategy, on the server only: nothing is pushed until
+     * confirmResolution(). custom takes $resolutions: path => {take: live|remote|both} or {content}.
      *
      * @param  array<string, array{take?: string, content?: string}>  $resolutions
      * @return array{success: bool, output: string, exit_code: int}
@@ -90,6 +91,37 @@ class WebsiteGitService
             'strategy' => $strategy,
             'resolutions' => (object) $resolutions,
         ]);
+    }
+
+    /**
+     * The resolved merge waiting for its push: commits and files the
+     * repository does not have yet.
+     *
+     * @return array{pending: bool, commits?: array<int, string>, files?: array<int, array{status: string, path: string}>, summary?: string}
+     */
+    public function pendingResolution(WebsiteGitDeployment $deployment): array
+    {
+        $website = $deployment->website()->firstOrFail();
+        [$username, $secret] = $this->credentials($deployment);
+        $result = $this->callDrust($website, (string) $deployment->repository_url, (string) $deployment->branch, 'pending', $username, $secret, '');
+        $state = $result['success'] ? json_decode($result['output'], true) : null;
+        if (! is_array($state)) {
+            throw new \RuntimeException($result['output'] ?: 'Could not read the resolved merge.');
+        }
+
+        return $state;
+    }
+
+    /** @return array{success: bool, output: string, exit_code: int} */
+    public function confirmResolution(WebsiteGitDeployment $deployment, ?int $actorId = null): array
+    {
+        return $this->perform($deployment, 'confirm_push', $actorId, 'Push resolved merge', null);
+    }
+
+    /** @return array{success: bool, output: string, exit_code: int} */
+    public function undoResolution(WebsiteGitDeployment $deployment, ?int $actorId = null): array
+    {
+        return $this->perform($deployment, 'undo_resolve', $actorId, 'Undo resolved merge', null);
     }
 
     /** @return array{success: bool, output: string, exit_code: int} */
@@ -118,7 +150,7 @@ class WebsiteGitService
                 $this->preOverwriteBackup->snapshot($website, 'git_clone');
             }
             [$username, $secret] = $this->credentials($deployment);
-            if ($secret === '' && in_array($action, ['init', 'push', 'sync', 'resolve'], true)) {
+            if ($secret === '' && in_array($action, ['init', 'push', 'sync', 'confirm_push'], true)) {
                 throw new \RuntimeException('Pushing needs credentials. Select a connected GitHub account (or add an access token) in the connection settings and save.');
             }
             $result = $this->callDrust($website, (string) $deployment->repository_url, $branch, $action, $username, $secret, $message, $extra);
@@ -181,7 +213,7 @@ class WebsiteGitService
     private function callDrust(\App\Models\Website $website, string $repositoryUrl, string $branch, string $action, string $username, string $secret, string $message, array $extra = []): array
     {
         // init pushes everything; conflicts/resolve may first fetch the full history.
-        $slow = in_array($action, ['init', 'conflicts', 'resolve'], true);
+        $slow = in_array($action, ['init', 'conflicts', 'resolve', 'confirm_push'], true);
         $request = Http::acceptJson()->asJson()->timeout(max((int) config('serverpanel.execution_api_timeout', 60), $slow ? 300 : 0));
         $token = trim((string) config('serverpanel.execution_api_token', ''));
         if ($token !== '') $request = $request->withToken($token);

@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
-const props = defineProps({ website: Object, deployment: Object, repositoryConnected: Boolean, logs: { type: Array, default: () => [] }, github: { type: Object, default: () => ({ configured: false, accounts: [] }) }, needsResolution: Boolean, aiAvailable: Boolean });
+const props = defineProps({ website: Object, deployment: Object, repositoryConnected: Boolean, logs: { type: Array, default: () => [] }, github: { type: Object, default: () => ({ configured: false, accounts: [] }) }, needsResolution: Boolean, aiAvailable: Boolean, resolutionPending: Boolean });
 const page = usePage();
 const token = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => token.value ? route(name, { token: token.value, ...params }) : route(name, params);
@@ -329,7 +329,7 @@ const askAi = async () => {
 const resolveConflicts = async (strategy) => {
     const files = conflictState.value?.conflicts || [];
     const labels = { live: 'the Live (server) version', remote: 'the Local (GitHub) version', both: 'both versions', custom: 'your choices' };
-    if (!confirm(`Merge ${form.value.branch} into ${props.website.domain} keeping ${labels[strategy]} for conflicting changes, then push?\n\nLive changes are committed first, so they stay in Git history.`)) return;
+    if (!confirm(`Merge ${form.value.branch} into ${props.website.domain} keeping ${labels[strategy]} for conflicting changes?\n\nThis only changes the server. You review the result and confirm before anything is pushed to GitHub.`)) return;
     const payload = { strategy };
     if (strategy === 'custom') {
         payload.resolutions = files.map((file) => choices.value[file.path] === 'ai'
@@ -342,8 +342,33 @@ const resolveConflicts = async (strategy) => {
         applyState(data);
         conflictState.value = null; needsResolution.value = false;
         notice.value = data.message;
+        await loadPending();
+    } catch (e) { applyState(e.data); error.value = e.message; } finally { if (busy.value === 'resolve') busy.value = ''; }
+};
+// The resolved merge waits here until it is pushed or undone.
+const pendingPush = ref(null);
+const loadPending = async () => {
+    try {
+        const data = await request(panelRoute('websites.git.resolve.pending', { id: props.website.id }), 'POST', {});
+        pendingPush.value = data.pending ? data : null;
+    } catch (e) { error.value = e.message; }
+};
+const finishResolution = async (decision) => {
+    const count = pendingPush.value?.files?.length || 0;
+    const question = decision === 'confirm'
+        ? `Push the resolved merge to ${form.value.branch} on GitHub?\n\n${count} file(s) change in the repository. This cannot be undone from here.`
+        : `Undo the merge?\n\nThe site goes back to its files before the merge, and nothing is pushed.`;
+    if (!confirm(question)) return;
+    busy.value = decision === 'confirm' ? 'confirm_push' : 'undo_resolve'; error.value = ''; notice.value = '';
+    try {
+        const data = await request(panelRoute('websites.git.resolve.finish', { id: props.website.id }), 'POST', { decision });
+        applyState(data);
+        pendingPush.value = null;
+        notice.value = data.message;
     } catch (e) { applyState(e.data); error.value = e.message; } finally { busy.value = ''; }
 };
+if (props.resolutionPending) loadPending();
+const fileStatus = (status) => ({ A: 'added', M: 'changed', D: 'deleted' }[status?.[0]] || status);
 const versionText = (file) => ({
     merged: file.merged,
     live: file.live_deleted ? '(deleted on the server)' : file.live,
@@ -352,7 +377,7 @@ const versionText = (file) => ({
     ai: aiSuggestions.value[file.path],
 }[viewing.value[file.path]] ?? (file.kind === 'binary' ? '(binary file)' : file.kind === 'too_large' ? '(too large to show)' : ''));
 const date = (value) => value ? new Date(value).toLocaleString() : 'Not scheduled';
-const operationLabel = (action) => ({ clone: 'Deploy website', init: 'Push site to empty repo', status: 'Check status', pull: 'Pull latest', push: 'Push changes', sync: 'Sync both ways', checkout: 'Switch branch', webhook: 'Updating webhook', conflicts: 'Checking conflicts', ai: 'AI is merging the files', resolve: 'Merging and pushing' }[action] || action);
+const operationLabel = (action) => ({ clone: 'Deploy website', init: 'Push site to empty repo', status: 'Check status', pull: 'Pull latest', push: 'Push changes', sync: 'Sync both ways', checkout: 'Switch branch', webhook: 'Updating webhook', conflicts: 'Checking conflicts', ai: 'AI is merging the files', resolve: 'Merging on the server', confirm_push: 'Pushing to GitHub', undo_resolve: 'Undoing the merge' }[action] || action);
 </script>
 
 <template>
@@ -449,9 +474,22 @@ const operationLabel = (action) => ({ clone: 'Deploy website', init: 'Push site 
                             <p class="text-sm font-medium"><i class="bi bi-sign-merge-left mr-1"></i>Resolve conflicts</p>
                             <p class="mt-1 text-xs text-slate-600 dark:text-slate-300">{{ needsResolution ? 'Last sync stopped: the live site and the repository both changed.' : 'Live site আর GitHub দুই জায়গায় change হলে এখানে merge করুন।' }} <b>Live</b> = server-এর file, <b>Local</b> = GitHub-এ push করা code, <b>Both</b> = দুই দিকের line রাখা।</p>
                         </div>
-                        <button type="button" @click="checkConflicts" :disabled="isBusy" class="rounded-lg border border-amber-400 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-40 dark:text-amber-200 dark:hover:bg-amber-900/30"><i class="bi bi-search mr-1"></i>{{ busy === 'conflicts' ? 'Checking…' : 'Check conflicts' }}</button>
+                        <button v-if="!pendingPush" type="button" @click="checkConflicts" :disabled="isBusy" class="rounded-lg border border-amber-400 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-40 dark:text-amber-200 dark:hover:bg-amber-900/30"><i class="bi bi-search mr-1"></i>{{ busy === 'conflicts' ? 'Checking…' : 'Check conflicts' }}</button>
                     </div>
-                    <template v-if="conflictState">
+                    <div v-if="pendingPush" class="mt-4 rounded-lg border border-emerald-300 bg-white p-4 dark:border-emerald-800 dark:bg-slate-900">
+                        <p class="text-sm font-semibold text-emerald-800 dark:text-emerald-300"><i class="bi bi-hourglass-split mr-1"></i>Merged on the server — not pushed yet</p>
+                        <p class="mt-1 text-xs text-slate-600 dark:text-slate-300">Website-এ এখন merge করা files চলছে। নিচের changes দেখে confirm করলে তবেই GitHub-এ push হবে। Undo করলে আগের অবস্থায় ফিরে যাবে।</p>
+                        <p v-if="pendingPush.summary" class="mt-3 text-xs font-medium">{{ pendingPush.summary }}</p>
+                        <ul class="mt-2 max-h-48 space-y-0.5 overflow-auto font-mono text-[11px]">
+                            <li v-for="file in pendingPush.files" :key="file.path" class="break-all"><span class="inline-block w-16 font-sans" :class="{ added: 'text-emerald-600', deleted: 'text-red-600', changed: 'text-amber-600' }[fileStatus(file.status)]">{{ fileStatus(file.status) }}</span>{{ file.path }}</li>
+                        </ul>
+                        <details v-if="pendingPush.commits?.length" class="mt-2 text-xs"><summary class="cursor-pointer text-slate-500">{{ pendingPush.commits.length }} commit(s)</summary><ul class="mt-1 font-mono text-[11px]"><li v-for="commit in pendingPush.commits" :key="commit">{{ commit }}</li></ul></details>
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <button type="button" @click="finishResolution('confirm')" :disabled="isBusy" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"><i class="bi bi-cloud-upload mr-1"></i>{{ busy === 'confirm_push' ? 'Pushing…' : 'Confirm & push to GitHub' }}</button>
+                            <button type="button" @click="finishResolution('undo')" :disabled="isBusy" class="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 disabled:opacity-40"><i class="bi bi-arrow-counterclockwise mr-1"></i>{{ busy === 'undo_resolve' ? 'Undoing…' : 'Undo merge' }}</button>
+                        </div>
+                    </div>
+                    <template v-if="conflictState && !pendingPush">
                         <p class="mt-3 text-sm" :class="conflictState.conflicts.length ? 'text-amber-800 dark:text-amber-200' : 'text-emerald-700 dark:text-emerald-300'">
                             {{ conflictState.conflicts.length ? `${conflictState.conflicts.length} file(s) changed on both sides.` : (conflictState.behind ? 'No file conflicts: everything merges on its own.' : 'Nothing new in the repository.') }}
                         </p>
@@ -476,7 +514,7 @@ const operationLabel = (action) => ({ clone: 'Deploy website', init: 'Push site 
                             </div>
                             <pre class="mt-2 max-h-72 overflow-auto rounded bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-100">{{ versionText(file) }}</pre>
                         </div>
-                        <button v-if="conflictState.conflicts.length" type="button" @click="resolveConflicts('custom')" :disabled="isBusy" class="mt-4 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"><i class="bi bi-check2-all mr-1"></i>{{ busy === 'resolve' ? 'Merging…' : 'Apply my choices & push' }}</button>
+                        <button v-if="conflictState.conflicts.length" type="button" @click="resolveConflicts('custom')" :disabled="isBusy" class="mt-4 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"><i class="bi bi-check2-all mr-1"></i>{{ busy === 'resolve' ? 'Merging…' : 'Apply my choices' }}</button>
                     </template>
                 </div>
                 <div v-if="cloned && !repoChanged" class="mt-5 rounded-lg border p-4 dark:border-slate-700">

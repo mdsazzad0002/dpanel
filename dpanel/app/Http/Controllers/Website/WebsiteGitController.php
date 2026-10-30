@@ -54,7 +54,19 @@ class WebsiteGitController extends Controller
             'logs' => $deployment?->logs()->latest()->limit(30)->get() ?? [],
             // The last pull/push/sync stopped because both sides changed.
             'needsResolution' => $deployment?->last_status === 'failed' && WebsiteGitService::needsResolution($deployment->last_message),
+            // A resolve merged on the server and its push may still await
+            // confirmation; the page then asks the daemon for the details.
+            'resolutionPending' => $deployment !== null && $this->resolutionPending($deployment),
         ];
+    }
+
+    private function resolutionPending(WebsiteGitDeployment $deployment): bool
+    {
+        $last = fn (array $actions) => $deployment->logs()->whereIn('action', $actions)->where('status', 'success')->max('created_at');
+        $resolved = $last(['resolve']);
+        $finished = $last(['confirm_push', 'undo_resolve']);
+
+        return $resolved !== null && ($finished === null || $resolved > $finished);
     }
 
     public function store(Request $request, string $token, string $id): JsonResponse
@@ -238,7 +250,7 @@ class WebsiteGitController extends Controller
         return response()->json($this->ai->suggest($website, $state['conflicts'], $request->user()?->id) + ['conflicts' => $state['conflicts']]);
     }
 
-    /** Merge the repository into the live site, settling conflicts as chosen, and push. */
+    /** Merge the repository into the live site, settling conflicts as chosen. Nothing is pushed yet. */
     public function resolve(Request $request, string $token, string $id): JsonResponse
     {
         $this->website($request, $id);
@@ -256,6 +268,35 @@ class WebsiteGitController extends Controller
         $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
         try {
             $result = $this->git->resolve($deployment, $validated['strategy'], $resolutions, $request->user()?->id);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment)], 422);
+        }
+
+        return response()->json(['message' => $result['output'], 'success' => $result['success'], ...$this->state($deployment)], $result['success'] ? 200 : 422);
+    }
+
+    /** What confirming the resolved merge would push. */
+    public function pendingResolution(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->website($request, $id);
+        $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        try {
+            return response()->json($this->git->pendingResolution($deployment));
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /** confirm: push the reviewed merge. undo: put the site back as it was. */
+    public function finishResolution(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->website($request, $id);
+        $validated = $request->validate(['decision' => ['required', 'in:confirm,undo']]);
+        $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        try {
+            $result = $validated['decision'] === 'confirm'
+                ? $this->git->confirmResolution($deployment, $request->user()?->id)
+                : $this->git->undoResolution($deployment, $request->user()?->id);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment)], 422);
         }

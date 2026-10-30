@@ -25,7 +25,7 @@ class ResolveGitConflictsTool implements McpTool
 
     public function description(): string
     {
-        return 'Merges the repository into the live website and pushes the result. The live changes are committed first, so nothing is lost from history. strategy "live" keeps the server side of each conflict, "remote" the repository side (the developer\'s pushed code), "both" keeps both sides\' lines; changes that do not conflict always merge. With "custom", give every file from list_git_conflicts in files, each with take (live/remote/both) or the complete final content you wrote. Call list_git_conflicts first and only write content you are confident in.';
+        return 'Merges the repository into the live website on the server. It does not push: the result waits on the website\'s Git page until an admin reviews it and confirms the push (or undoes it), so tell the user to do that. The live changes are committed first, so nothing is lost from history. strategy "live" keeps the server side of each conflict, "remote" the repository side (the developer\'s pushed code), "both" keeps both sides\' lines; changes that do not conflict always merge. With "custom", give every file from list_git_conflicts in files, each with take (live/remote/both) or the complete final content you wrote. Call list_git_conflicts first and only write content you are confident in.';
     }
 
     public function inputSchema(): array
@@ -90,6 +90,6 @@ class ResolveGitConflictsTool implements McpTool
             throw new McpToolException($result['output']);
         }
 
-        return ['resolved' => true, 'output' => $result['output']];
+        return ['resolved' => true, 'pushed' => false, 'next' => 'An admin must review and confirm the push on the website\'s Git page (Deployment → Resolve conflicts), or undo it.', 'output' => $result['output']];
     }
 }

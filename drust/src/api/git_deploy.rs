@@ -92,11 +92,17 @@ fn execute(request: &Request) -> Result<String, String> {
         "probe" => probe(request, &target, &auth),
         "status" => git(request, &target, &auth, &["status", "--short", "--branch"]),
         "pull" => pull(request, &target, &auth),
+        "push" if conflicts::awaiting_confirmation(request, &target, &auth) => {
+            Err(conflicts::AWAITING.into())
+        }
         "push" => push(request, &target, &auth),
         "sync" => sync(request, &target, &auth),
         "checkout" => checkout(request, &target, &auth),
         "conflicts" => conflicts::inspect(request, &target, &auth),
         "resolve" => conflicts::resolve(request, &target, &auth),
+        "pending" => conflicts::pending(request, &target, &auth),
+        "confirm_push" => conflicts::confirm_push(request, &target, &auth),
+        "undo_resolve" => conflicts::undo_resolve(request, &target, &auth),
         _ => Err("Unsupported Git action.".into()),
     }
 }
@@ -450,6 +456,9 @@ fn ancestor(request: &Request, target: &Path, auth: &Auth, older: &str, newer: &
         .unwrap_or(false)
 }
 fn pull(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    if conflicts::awaiting_confirmation(request, target, auth) {
+        return Err(conflicts::AWAITING.into());
+    }
     if !clean(request, target, auth)? {
         return Err("Local files have uncommitted changes; pull stopped.".into());
     }
@@ -490,6 +499,9 @@ fn push(request: &Request, target: &Path, auth: &Auth) -> Result<String, String>
     )
 }
 fn sync(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    if conflicts::awaiting_confirmation(request, target, auth) {
+        return Err(conflicts::AWAITING.into());
+    }
     git(
         request,
         target,
@@ -516,6 +528,9 @@ fn sync(request: &Request, target: &Path, auth: &Auth) -> Result<String, String>
 /// clone is `--single-branch --depth 1`, so the branch is added to the
 /// remote's fetch refspec (later pulls then track it) and fetched shallowly.
 fn checkout(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
+    if conflicts::awaiting_confirmation(request, target, auth) {
+        return Err(conflicts::AWAITING.into());
+    }
     if !clean(request, target, auth)? {
         return Err("Local files have uncommitted changes; branch switch stopped.".into());
     }
