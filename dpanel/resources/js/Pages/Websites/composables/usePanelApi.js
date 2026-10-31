@@ -38,6 +38,11 @@ export function usePanelApi() {
             // fetch() refuses a body on GET.
             body: method === 'GET' ? undefined : JSON.stringify(body),
         });
+        // An expired session redirects to the login page, which fetch()
+        // follows and answers 200 with HTML — that is not a success.
+        if (response.redirected) {
+            throw new Error('Your session has expired — reload the page and sign in again.');
+        }
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
             throw data instanceof Error ? data : new Error(data.message || 'Request failed.');

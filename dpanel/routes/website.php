@@ -131,6 +131,10 @@ Route::get('/websites/{id}/push-to-live', [SitePushController::class, 'page'])
 Route::post('/websites/{id}/push-to-live/tokens', [SitePushController::class, 'createToken'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.push-to-live.tokens.store');
+Route::post('/websites/{id}/push-to-live/tokens/{tokenId}/regenerate', [SitePushController::class, 'regenerateToken'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->whereNumber('tokenId')
+    ->name('websites.push-to-live.tokens.regenerate');
 Route::delete('/websites/{id}/push-to-live/tokens/{tokenId}', [SitePushController::class, 'revokeToken'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->whereNumber('tokenId')

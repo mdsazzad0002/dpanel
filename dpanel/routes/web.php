@@ -140,6 +140,7 @@ Route::prefix('/api/site-push/v1')
     ])
     ->group(function (): void {
         Route::post('/handshake', [SitePushApiController::class, 'handshake'])->middleware('throttle:30,1')->name('api.site-push.handshake');
+        Route::post('/files/manifest', [SitePushApiController::class, 'fileManifest'])->middleware('throttle:10,1')->name('api.site-push.files.manifest');
         Route::post('/uploads', [SitePushApiController::class, 'startUpload'])->middleware('throttle:10,1')->name('api.site-push.uploads.store');
         Route::post('/uploads/{uploadId}/chunks/{index}', [SitePushApiController::class, 'chunk'])->whereUuid('uploadId')->whereNumber('index')->middleware('throttle:600,1')->name('api.site-push.uploads.chunk');
         Route::post('/uploads/{uploadId}/complete', [SitePushApiController::class, 'complete'])->whereUuid('uploadId')->middleware('throttle:10,1')->name('api.site-push.uploads.complete');

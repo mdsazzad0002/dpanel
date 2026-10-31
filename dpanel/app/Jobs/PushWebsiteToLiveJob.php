@@ -7,6 +7,7 @@ use App\Models\Website;
 use App\Services\Backup\ClonePackageBuilder;
 use App\Services\Backup\CloneShareJobStatus;
 use App\Services\NotificationService;
+use App\Services\SitePush\FileSyncService;
 use App\Services\SitePush\SitePushClient;
 use App\Services\SitePush\SitePushException;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -20,6 +21,10 @@ use Throwable;
  * Local side of Push to Live: packages this website (ClonePackageBuilder),
  * uploads it in chunks to a live panel's /api/site-push/v1, asks it to
  * restore, then mirrors the live restore's progress back here.
+ *
+ * In "files" mode it instead compares file manifests with the live site
+ * (FileSyncService) and sends only the changed files — .gitignore applies,
+ * .git and the database are never sent — for ApplyPushedFilesJob there.
  *
  * A multi-GB upload over a home connection can outlast the heavy worker's
  * 3600s limit, so each run works for at most RUN_BUDGET seconds, saves where
@@ -62,6 +67,10 @@ class PushWebsiteToLiveJob implements ShouldQueue
         public string $encryptedToken,
         // The live domain the admin confirmed after connecting ('' = not checked).
         public string $expectedDomain = '',
+        // site | files
+        public string $mode = 'site',
+        // files mode: also remove live files that no longer exist here.
+        public bool $deleteMissing = false,
     ) {
         $this->onQueue('heavy');
     }
@@ -87,6 +96,12 @@ class PushWebsiteToLiveJob implements ShouldQueue
         try {
             if (empty($state['upload_id'])) {
                 $state = $this->prepare($client, $builder, $user, $website);
+            }
+            if (! empty($state['in_sync'])) {
+                $this->finish($state);
+                $this->status('completed', 100, "Nothing to send — {$state['live_domain']} already has the same {$state['unchanged']} files.");
+
+                return;
             }
 
             while ($state['next_index'] < $state['total']) {
@@ -118,6 +133,7 @@ class PushWebsiteToLiveJob implements ShouldQueue
                 'extracting' => [89, 'Live panel is unpacking the package'],
                 'backing_up_target' => [92, 'Live panel is moving the current site to .trash'],
                 'restoring' => [95, 'Live panel is restoring files and database'],
+                'applying' => [95, 'Live panel is writing the changed files'],
             ];
             // One status check per run, then requeue with a delay instead of
             // sleeping here: when the live panel is this same server its
@@ -156,12 +172,22 @@ class PushWebsiteToLiveJob implements ShouldQueue
         } catch (Throwable $e) {
             $this->finish($state);
             $this->status('failed', 0, $e->getMessage(), $this->stage);
-            $notifications->notifyUser(actor: $user, type: 'clone_website', status: 'blocked', title: "Push to live failed: {$website->domain}", message: $e->getMessage(), subject: $website);
+            $title = $this->mode === 'files' ? 'File sync failed' : 'Push to live failed';
+            $notifications->notifyUser(actor: $user, type: 'clone_website', status: 'blocked', title: "{$title}: {$website->domain}", message: $e->getMessage(), subject: $website);
 
             return;
         }
 
         $this->finish($state);
+        if ($this->mode === 'files') {
+            $this->status('completed', 100, sprintf(
+                '%s: %d files updated, %d removed, %d already the same. Replaced files are in the live site\'s .trash.',
+                $state['live_domain'], (int) ($remote['written'] ?? count($state['upload'])), (int) ($remote['deleted'] ?? count($state['delete'])), $state['unchanged'],
+            ));
+            $notifications->notifyUser(actor: $user, type: 'clone_website', status: 'completed', title: "Files synced: {$website->domain} → {$state['live_domain']}", subject: $website);
+
+            return;
+        }
         $this->status('completed', 100, "{$website->domain} is now live on {$state['live_domain']}. The live site's previous files are in its .trash.");
         $notifications->notifyUser(actor: $user, type: 'clone_website', status: 'completed', title: "Pushed to live: {$website->domain} → {$state['live_domain']}", subject: $website);
     }
@@ -183,12 +209,24 @@ class PushWebsiteToLiveJob implements ShouldQueue
             throw new SitePushException("The push token now points at {$liveDomain}, not the {$this->expectedDomain} you confirmed — nothing was sent. Connect again.");
         }
 
-        $labels = ['archiving' => [5, 'dRust is packaging the website files and database']];
+        $liveDomainLabel = (string) ($live['domain'] ?: parse_url($this->liveUrl, PHP_URL_HOST));
         $packagePath = $this->packagePath();
-        $package = $builder->build($user, $website, $packagePath, function (string $stage) use ($labels): void {
-            [$percent, $label] = $labels[$stage] ?? [10, $stage];
-            $this->status($stage, $percent, $label);
-        });
+        $sync = null;
+        if ($this->mode === 'files') {
+            if (empty($live['file_sync'])) {
+                throw new SitePushException('The live panel is too old for "Files only" pushes — update it first.');
+            }
+            [$sync, $package] = $this->packageChangedFiles($client, $website, $packagePath, $liveDomainLabel);
+            if ($sync['upload'] === [] && $sync['delete'] === []) {
+                return ['in_sync' => true, 'live_domain' => $liveDomainLabel, 'unchanged' => $sync['unchanged']];
+            }
+        } else {
+            $labels = ['archiving' => [5, 'dRust is packaging the website files and database']];
+            $package = $builder->build($user, $website, $packagePath, function (string $stage) use ($labels): void {
+                [$percent, $label] = $labels[$stage] ?? [10, $stage];
+                $this->status($stage, $percent, $label);
+            });
+        }
 
         $size = (int) filesize($packagePath);
         $chunkSize = max(1024 * 1024, (int) $live['chunk_size']);
@@ -197,7 +235,7 @@ class PushWebsiteToLiveJob implements ShouldQueue
             throw new SitePushException('The package ('.$this->bytes($size).') is larger than the live panel accepts.');
         }
         $this->status('uploading', 30, 'Starting upload ('.$this->bytes($size).')');
-        $upload = $client->startUpload($size, $total, (string) hash_file('sha256', $packagePath), (string) $website->domain, $package['has_database']);
+        $upload = $client->startUpload($size, $total, (string) hash_file('sha256', $packagePath), (string) $website->domain, $package['has_database'], $this->mode, $sync['delete'] ?? []);
 
         $state = [
             'package_path' => $packagePath,
@@ -206,12 +244,35 @@ class PushWebsiteToLiveJob implements ShouldQueue
             'chunk_size' => $chunkSize,
             'total' => $total,
             'next_index' => 0,
-            'live_domain' => (string) ($live['domain'] ?: parse_url($this->liveUrl, PHP_URL_HOST)),
+            'live_domain' => $liveDomainLabel,
             'warning' => $package['warning'],
         ];
+        if ($sync !== null) {
+            $state += ['upload' => $sync['upload'], 'delete' => $sync['delete'], 'unchanged' => $sync['unchanged']];
+        }
         $this->saveState($state);
 
         return $state;
+    }
+
+    /** @return array{0: array{upload: list<string>, delete: list<string>, unchanged: int}, 1: array{has_database: bool, warning: ?string}} */
+    private function packageChangedFiles(SitePushClient $client, Website $website, string $packagePath, string $liveDomain): array
+    {
+        $files = app(FileSyncService::class);
+        $this->status('comparing', 5, 'Listing this site\'s files (.gitignore applies, .git is skipped)');
+        $local = $files->manifest($website);
+        $this->status('comparing', 12, "Listing {$liveDomain}'s files");
+        $live = $client->fileManifest();
+        $sync = $files->diff($local['files'], (array) ($live['files'] ?? []), $this->deleteMissing);
+        if ($sync['upload'] === [] && $sync['delete'] === []) {
+            return [$sync, ['has_database' => false, 'warning' => null]];
+        }
+
+        $this->status('archiving', 20, sprintf('Packaging %d changed files (%d unchanged%s)', count($sync['upload']), $sync['unchanged'], $sync['delete'] !== [] ? ', '.count($sync['delete']).' to remove' : ''));
+        File::ensureDirectoryExists(dirname($packagePath), 0750);
+        $files->pack($website, $sync['upload'], $packagePath);
+
+        return [$sync, ['has_database' => false, 'warning' => null]];
     }
 
     private function readChunk(array $state, int $index): string
@@ -230,7 +291,7 @@ class PushWebsiteToLiveJob implements ShouldQueue
     private function continueLater(array $state, int $delaySeconds = 0): void
     {
         $this->saveState($state);
-        self::dispatch($this->pushId, $this->websiteId, $this->userId, $this->liveUrl, $this->encryptedToken, $this->expectedDomain)
+        self::dispatch($this->pushId, $this->websiteId, $this->userId, $this->liveUrl, $this->encryptedToken, $this->expectedDomain, $this->mode, $this->deleteMissing)
             ->delay(now()->addSeconds($delaySeconds));
     }
 
@@ -241,7 +302,7 @@ class PushWebsiteToLiveJob implements ShouldQueue
 
     private function packagePath(): string
     {
-        return storage_path('app/backups/clone-share/push-'.$this->pushId.'.zip');
+        return storage_path('app/backups/clone-share/push-'.$this->pushId.($this->mode === 'files' ? '.tar.gz' : '.zip'));
     }
 
     private function finish(array $state): void
@@ -265,6 +326,7 @@ class PushWebsiteToLiveJob implements ShouldQueue
             'message' => $message,
             'warning' => $state['warning'] ?? null,
             'live_url' => $this->liveUrl,
+            'mode' => $this->mode,
         ], static fn ($value) => $value !== null && $value !== ''));
     }
 

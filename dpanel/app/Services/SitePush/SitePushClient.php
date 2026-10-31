@@ -23,12 +23,24 @@ class SitePushClient
         return $this->call(fn (PendingRequest $http) => $http->post($this->url('handshake')));
     }
 
-    /** @return array{upload_id:string} */
-    public function startUpload(int $size, int $total, string $sha256, string $sourceDomain, bool $hasDatabase): array
+    /** @return array{git:bool,files:list<array{path:string,size:int,sha256:string}>} */
+    public function fileManifest(): array
+    {
+        // The live panel hashes every file of the site before answering.
+        return $this->call(fn (PendingRequest $http) => $http->timeout(900)->post($this->url('files/manifest')), retries: 2);
+    }
+
+    /**
+     * @param  string  $mode  site (package for ClonePackageRestorer) | files (changed files only)
+     * @param  list<string>  $delete  files mode: live files to remove
+     * @return array{upload_id:string}
+     */
+    public function startUpload(int $size, int $total, string $sha256, string $sourceDomain, bool $hasDatabase, string $mode = 'site', array $delete = []): array
     {
         return $this->call(fn (PendingRequest $http) => $http->post($this->url('uploads'), [
             'size' => $size, 'total' => $total, 'sha256' => $sha256,
             'source_domain' => $sourceDomain, 'has_database' => $hasDatabase,
+            ...($mode === 'files' ? ['mode' => 'files', 'delete' => $delete] : []),
         ]));
     }
 

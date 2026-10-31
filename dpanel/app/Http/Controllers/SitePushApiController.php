@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ApplyPushedFilesJob;
 use App\Jobs\RestorePushedWebsiteJob;
 use App\Models\WebsitePushToken;
 use App\Services\Backup\CloneShareJobStatus;
+use App\Services\SitePush\FileSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -17,6 +19,8 @@ use Illuminate\Support\Str;
  * usually a local box with no public address, so everything is driven from
  * its side: handshake → start upload → 5 MB chunks → complete → poll status.
  * The token only ever grants writing to the one website it was issued for.
+ * "Files only" pushes first read this site's file manifest, then upload
+ * just the changed files (mode=files), applied by ApplyPushedFilesJob.
  */
 class SitePushApiController extends Controller
 {
@@ -38,7 +42,20 @@ class SitePushApiController extends Controller
             'token_name' => (string) $token->name,
             'chunk_size' => self::CHUNK_SIZE,
             'max_chunks' => self::MAX_CHUNKS,
+            'file_sync' => true,
         ]);
+    }
+
+    /** The live site's files as dRust lists them (.gitignore applied, no .git). */
+    public function fileManifest(Request $request, FileSyncService $sync): JsonResponse
+    {
+        $token = $this->token($request);
+
+        try {
+            return response()->json(['ok' => true, ...$sync->manifest($token->website)]);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
+        }
     }
 
     public function startUpload(Request $request): JsonResponse
@@ -50,6 +67,10 @@ class SitePushApiController extends Controller
             'sha256' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/'],
             'source_domain' => ['nullable', 'string', 'max:255'],
             'has_database' => ['nullable', 'boolean'],
+            'mode' => ['nullable', 'string', 'in:site,files'],
+            // files mode: live files the pushing side no longer has.
+            'delete' => ['nullable', 'array', 'max:100000'],
+            'delete.*' => ['string', 'max:4096'],
         ]);
         abort_if((int) ceil($data['size'] / self::CHUNK_SIZE) !== (int) $data['total'], 422, 'Chunk count does not match the package size.');
 
@@ -61,12 +82,17 @@ class SitePushApiController extends Controller
 
         $uploadId = (string) Str::uuid();
         File::ensureDirectoryExists($this->directory($uploadId).'/chunks', 0750);
+        $mode = (string) ($data['mode'] ?? 'site');
+        if ($mode === 'files') {
+            File::put($this->directory($uploadId).'/delete.json', json_encode(array_values($data['delete'] ?? [])));
+        }
         Cache::put($this->uploadKey($uploadId), [
             'token_id' => $token->id,
             'size' => (int) $data['size'],
             'total' => (int) $data['total'],
             'sha256' => $data['sha256'],
             'source_domain' => (string) ($data['source_domain'] ?? ''),
+            'mode' => $mode,
         ], now()->addHours(self::UPLOAD_TTL_HOURS));
         Cache::put($this->tokenKey($token), $uploadId, now()->addHours(self::UPLOAD_TTL_HOURS));
         Cache::put($this->ownerKey($uploadId), $token->id, now()->addHours(self::UPLOAD_TTL_HOURS * 2));
@@ -103,7 +129,8 @@ class SitePushApiController extends Controller
             return response()->json(['ok' => true, 'upload_id' => $uploadId]);
         }
         $directory = $this->directory($uploadId);
-        $packagePath = $directory.'/package.zip';
+        $files = ($upload['mode'] ?? 'site') === 'files';
+        $packagePath = $directory.($files ? '/package.tar.gz' : '/package.zip');
 
         for ($index = 0; $index < $upload['total']; $index++) {
             abort_unless(is_file($directory.'/chunks/'.$index.'.part'), 422, "Chunk {$index} is missing — resume the push.");
@@ -124,7 +151,12 @@ class SitePushApiController extends Controller
 
         $token = WebsitePushToken::query()->findOrFail($upload['token_id']);
         CloneShareJobStatus::set($this->jobId($uploadId), ['stage' => 'queued']);
-        RestorePushedWebsiteJob::dispatch($this->jobId($uploadId), (int) $token->id, $packagePath, $upload['source_domain']);
+        if ($files) {
+            $delete = (array) json_decode((string) File::get($directory.'/delete.json'), true);
+            ApplyPushedFilesJob::dispatch($this->jobId($uploadId), (int) $token->id, $packagePath, $delete, $upload['source_domain']);
+        } else {
+            RestorePushedWebsiteJob::dispatch($this->jobId($uploadId), (int) $token->id, $packagePath, $upload['source_domain']);
+        }
         Cache::forget($this->tokenKey($token));
 
         return response()->json(['ok' => true, 'upload_id' => $uploadId]);

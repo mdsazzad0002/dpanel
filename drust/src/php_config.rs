@@ -66,8 +66,54 @@ pub fn apply(values: PhpConfigValues<'_>) -> Result<Vec<String>, String> {
 
 pub fn reload_fpm(version: &str) -> Result<(), String> {
     validate_version(version)?;
+    ensure_graceful_reload(version);
     let service = format!("php{version}-fpm");
     run_status("systemctl", &["reload", &service])
+}
+
+/// How long a reload lets running PHP requests finish.
+const PROCESS_CONTROL_TIMEOUT: &str = "30s";
+
+/// PHP-FPM's default process_control_timeout of 0 makes a reload kill every
+/// running request of that PHP version, so creating a site (its new pool
+/// reloads FPM) cut off whatever else was running, the panel's own request
+/// included, with a FastCGI error. Sets it once in [global]; takes effect
+/// from the reload after the one that applies it.
+pub fn ensure_graceful_reload(version: &str) {
+    if validate_version(version).is_err() {
+        return;
+    }
+    let path = format!("/etc/php/{version}/fpm/php-fpm.conf");
+    let Ok(content) = fs::read_to_string(&path) else {
+        return;
+    };
+    if let Some(updated) = with_process_control_timeout(&content) {
+        if fs::write(&path, updated).is_ok() {
+            info(&format!("PHP {version} FPM reloads now wait {PROCESS_CONTROL_TIMEOUT} for running requests"));
+        }
+    }
+}
+
+/// The config with process_control_timeout added after [global], or None
+/// when it is already set (to anything — an admin's own value is kept).
+fn with_process_control_timeout(content: &str) -> Option<String> {
+    let already_set = content.lines().any(|line| {
+        line.trim_start()
+            .split_once('=')
+            .is_some_and(|(key, _)| key.trim() == "process_control_timeout")
+    });
+    if already_set {
+        return None;
+    }
+    let mut lines: Vec<&str> = content.lines().collect();
+    let global = lines.iter().position(|line| line.trim() == "[global]")?;
+    let directive = format!("process_control_timeout = {PROCESS_CONTROL_TIMEOUT}");
+    lines.insert(global + 1, &directive);
+    let mut updated = lines.join("\n");
+    if content.ends_with('\n') {
+        updated.push('\n');
+    }
+    Some(updated)
 }
 
 fn validate_version(value: &str) -> Result<(), String> {
@@ -109,5 +155,22 @@ fn validate_on_off(name: &str, value: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("{name} must be On or Off."))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_process_control_timeout;
+
+    #[test]
+    fn process_control_timeout_is_added_to_global_once() {
+        let stock = "[global]\n;process_control_timeout = 0\nerror_log = /var/log/php.log\ninclude=/etc/php/8.3/fpm/pool.d/*.conf\n";
+        let updated = with_process_control_timeout(stock).unwrap();
+
+        assert!(updated.starts_with("[global]\nprocess_control_timeout = 30s\n;process_control_timeout = 0\n"));
+        assert!(updated.ends_with("pool.d/*.conf\n"));
+        assert!(with_process_control_timeout(&updated).is_none());
+        assert!(with_process_control_timeout("[global]\nprocess_control_timeout = 5s\n").is_none());
+        assert!(with_process_control_timeout("error_log = x\n").is_none());
     }
 }

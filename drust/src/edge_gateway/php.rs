@@ -178,9 +178,7 @@ async fn fastcgi_request(
     input: RequestInput,
     deadline: Instant,
 ) -> Result<Response<Body>, String> {
-    let mut stream = UnixStream::connect(socket)
-        .await
-        .map_err(|e| format!("connect PHP-FPM failed: {e}"))?;
+    let mut stream = connect_fpm(socket, deadline).await?;
     send_fastcgi_request(&mut stream, params, input).await?;
     let mut stream = BufReader::new(stream);
     let mut stdout = Vec::new();
@@ -237,6 +235,29 @@ async fn fastcgi_request(
     .fuse();
     *response.body_mut() = Body::from_stream(body);
     Ok(response)
+}
+
+/// A PHP-FPM reload (a new site's pool being added) recreates every socket
+/// of that PHP version; for a moment they are missing or refuse connections.
+/// Nothing has been sent yet, so retrying for a few seconds is safe.
+async fn connect_fpm(socket: &Path, deadline: Instant) -> Result<UnixStream, String> {
+    let give_up = (Instant::now() + Duration::from_secs(10)).min(deadline);
+    loop {
+        match UnixStream::connect(socket).await {
+            Ok(stream) => return Ok(stream),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound
+                        | std::io::ErrorKind::ConnectionRefused
+                        | std::io::ErrorKind::WouldBlock
+                ) && Instant::now() < give_up =>
+            {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Err(error) => return Err(format!("connect PHP-FPM failed: {error}")),
+        }
+    }
 }
 
 fn log_php_stderr(stderr: &[u8]) {
@@ -783,6 +804,7 @@ fn test_fpm_configuration(version: &str) -> Result<(), String> {
 }
 
 fn reload_fpm_service(version: &str) -> Result<(), String> {
+    crate::php_config::ensure_graceful_reload(version);
     let service = format!("php{version}-fpm");
     let output = std::process::Command::new("systemctl")
         .args(["reload-or-restart", &service])

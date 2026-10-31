@@ -20,7 +20,8 @@ use Inertia\Response;
  *  - live server: issue/revoke push tokens for this website (the other panel
  *    calls SitePushApiController with them);
  *  - local server: enter a live panel's host URL + push token and push this
- *    website there (PushWebsiteToLiveJob).
+ *    website there (PushWebsiteToLiveJob) — the whole site, or in "files"
+ *    mode only the files that differ (.gitignore applies, .git never goes).
  */
 class SitePushController extends Controller
 {
@@ -54,6 +55,21 @@ class SitePushController extends Controller
             trim((string) ($data['name'] ?? '')) ?: 'Push token',
             now()->addHours((int) $data['expires_in_hours']),
         );
+
+        return response()->json([
+            'ok' => true,
+            'push_token' => $plain,
+            'token' => $this->present($pushToken),
+            'tokens' => $this->tokens((string) $website->id),
+        ]);
+    }
+
+    /** A token's plaintext is never stored, so a lost one can only be replaced. */
+    public function regenerateToken(Request $request, string $token, string $id, int $tokenId): JsonResponse
+    {
+        $website = $this->website($request, $id);
+        $pushToken = WebsitePushToken::query()->where('website_id', $website->id)->whereNull('revoked_at')->findOrFail($tokenId);
+        $plain = $pushToken->regenerate();
 
         return response()->json([
             'ok' => true,
@@ -108,13 +124,19 @@ class SitePushController extends Controller
         if ($error !== null) {
             return $error;
         }
-        $confirmed = strtolower(trim((string) $request->validate(['confirm_domain' => ['required', 'string', 'max:255']])['confirm_domain']));
+        $options = $request->validate([
+            'confirm_domain' => ['required', 'string', 'max:255'],
+            'mode' => ['nullable', 'string', 'in:site,files'],
+            'delete_missing' => ['nullable', 'boolean'],
+        ]);
+        $confirmed = strtolower(trim((string) $options['confirm_domain']));
+        $mode = (string) ($options['mode'] ?? 'site');
 
         $pushId = (string) Str::uuid();
         CloneShareJobStatus::set($pushId, ['stage' => 'queued', 'percent' => 0, 'message' => 'Waiting for the backup worker', 'live_url' => $hostUrl]);
-        PushWebsiteToLiveJob::dispatch($pushId, (string) $website->id, (int) $request->user()->id, $hostUrl, Crypt::encryptString($pushToken), $confirmed);
+        PushWebsiteToLiveJob::dispatch($pushId, (string) $website->id, (int) $request->user()->id, $hostUrl, Crypt::encryptString($pushToken), $confirmed, $mode, $mode === 'files' && (bool) ($options['delete_missing'] ?? false));
 
-        return response()->json(['ok' => true, 'push_id' => $pushId, 'live_domain' => $confirmed]);
+        return response()->json(['ok' => true, 'push_id' => $pushId, 'live_domain' => $confirmed, 'mode' => $mode]);
     }
 
     /** @return array{0:string,1:string,2:JsonResponse|null} normalized host URL, token, or an error response */

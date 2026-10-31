@@ -56,6 +56,20 @@ const copyText = async (what, value) => {
     }
 };
 
+// The plaintext isn't stored, so a token that wasn't copied can only be replaced.
+const regenerateToken = async (token) => {
+    if (!confirm(`Regenerate "${token.name}"? The current token stops working immediately — any panel using it needs the new one.`)) return;
+    receiveError.value = '';
+    copied.value = '';
+    try {
+        const data = await requestJson(panelRoute('websites.push-to-live.tokens.regenerate', { id: props.website.id, tokenId: token.id }));
+        newToken.value = { token: data.push_token, name: token.name };
+        tokens.value = data.tokens || tokens.value;
+    } catch (error) {
+        receiveError.value = error.message || 'Token could not be regenerated.';
+    }
+};
+
 const revokeToken = async (token) => {
     if (!confirm(`Revoke "${token.name}"? A push using it will stop working immediately.`)) return;
     try {
@@ -67,13 +81,18 @@ const revokeToken = async (token) => {
 };
 
 // ---- Push side (this server is the local one) ----
+// site: files + database replace the live site; files: only the files that
+// differ are sent (.gitignore applies, .git never goes, the database stays).
+const mode = ref('site');
+const deleteMissing = ref(false);
 // Mirrors the stages PushWebsiteToLiveJob reports, so a failure names its step.
-const pushSteps = [
+const stepsFor = (pushMode) => [
     { key: 'connecting', label: 'Connect' },
+    ...(pushMode === 'files' ? [{ key: 'comparing', label: 'Compare' }] : []),
     { key: 'archiving', label: 'Package' },
     { key: 'uploading', label: 'Upload' },
     { key: 'finishing', label: 'Verify' },
-    { key: 'remote', label: 'Live restore' },
+    { key: 'remote', label: pushMode === 'files' ? 'Live apply' : 'Live restore' },
     { key: 'completed', label: 'Done' },
 ];
 const STORAGE_KEY = `dpanel.pushToLive.${props.website.id}`;
@@ -87,17 +106,18 @@ const target = ref(null);
 const confirmDomain = ref('');
 const connecting = ref(false);
 const connectError = ref('');
-const domainConfirmed = computed(() => target.value && confirmDomain.value.trim().toLowerCase() === target.value.live_domain.toLowerCase());
+const domainConfirmed = computed(() => Boolean(target.value?.live_domain) && confirmDomain.value.trim().toLowerCase() === target.value.live_domain.toLowerCase());
 const push = ref(null);
 const lastStepIndex = ref(0);
+const pushSteps = computed(() => stepsFor(push.value?.mode || mode.value));
 const starting = ref(false);
 let pollTimer = null;
 
 const stepIndexFor = (stage) => {
     if (!stage) return -1;
-    if (stage.startsWith('remote_')) return pushSteps.findIndex((step) => step.key === 'remote');
+    if (stage.startsWith('remote_')) return pushSteps.value.findIndex((step) => step.key === 'remote');
 
-    return pushSteps.findIndex((step) => step.key === stage);
+    return pushSteps.value.findIndex((step) => step.key === stage);
 };
 const currentStepIndex = computed(() => {
     // A failure names the step it happened in; polls may have missed that step.
@@ -161,10 +181,14 @@ const connect = async () => {
     connecting.value = true;
     resetTarget();
     try {
-        target.value = await requestJson(panelRoute('websites.push-to-live.connect', { id: props.website.id }), {
+        const data = await requestJson(panelRoute('websites.push-to-live.connect', { id: props.website.id }), {
             body: { host_url: hostUrl.value.trim(), push_token: pushToken.value.trim() },
         });
-        hostUrl.value = target.value.host_url;
+        if (!data.ok || !data.live_domain) {
+            throw new Error(data.message || 'The live panel did not say which website this token is for.');
+        }
+        target.value = data;
+        hostUrl.value = data.host_url;
     } catch (error) {
         connectError.value = error.message || 'Could not connect to the live panel.';
     } finally {
@@ -177,9 +201,15 @@ const startPush = async () => {
     starting.value = true;
     try {
         const data = await requestJson(panelRoute('websites.push-to-live.push', { id: props.website.id }), {
-            body: { host_url: target.value.host_url, push_token: pushToken.value.trim(), confirm_domain: target.value.live_domain },
+            body: {
+                host_url: target.value.host_url,
+                push_token: pushToken.value.trim(),
+                confirm_domain: target.value.live_domain,
+                mode: mode.value,
+                delete_missing: mode.value === 'files' && deleteMissing.value,
+            },
         });
-        push.value = { id: data.push_id, stage: 'queued', percent: 0, message: 'Waiting for the backup worker', live_domain: data.live_domain };
+        push.value = { id: data.push_id, stage: 'queued', percent: 0, message: 'Waiting for the backup worker', live_domain: data.live_domain, mode: data.mode };
         lastStepIndex.value = 0;
         remember(data.push_id);
         pushToken.value = '';
@@ -253,6 +283,23 @@ onUnmounted(stopPolling);
                 <input id="push-host" v-model="hostUrl" :disabled="pushRunning || starting || connecting" type="text" placeholder="https://panel.example.com:2083" autocomplete="url" class="mt-1 w-full rounded-lg border-slate-300 text-sm dark:border-slate-700 dark:bg-slate-950" @input="resetTarget" />
                 <label class="mt-3 block text-xs font-medium text-slate-600 dark:text-slate-300" for="push-token">Push token</label>
                 <input id="push-token" v-model="pushToken" :disabled="pushRunning || starting || connecting" type="password" placeholder="dp-push-…" autocomplete="off" class="mt-1 w-full rounded-lg border-slate-300 font-mono text-xs dark:border-slate-700 dark:bg-slate-950" @input="resetTarget" />
+                <p class="mt-3 text-xs font-medium text-slate-600 dark:text-slate-300">What to push</p>
+                <div class="mt-1 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="What to push">
+                    <label v-for="option in [
+                        { value: 'site', icon: 'bi-box-seam', title: 'Whole site', text: 'Files and database replace the live site.' },
+                        { value: 'files', icon: 'bi-arrow-left-right', title: 'Files only (sync)', text: 'Only changed files. Follows .gitignore, skips .git, keeps the database.' },
+                    ]" :key="option.value" class="flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-xs" :class="mode === option.value ? 'border-violet-500 bg-violet-50 dark:border-violet-500 dark:bg-violet-950' : 'border-slate-200 dark:border-slate-700'">
+                        <input v-model="mode" type="radio" :value="option.value" :disabled="pushRunning || starting" class="mt-0.5 text-violet-600" />
+                        <span>
+                            <span class="block font-semibold text-slate-800 dark:text-slate-100"><i :class="['bi', option.icon, 'mr-1']"></i>{{ option.title }}</span>
+                            <span class="mt-0.5 block text-slate-500">{{ option.text }}</span>
+                        </span>
+                    </label>
+                </div>
+                <label v-if="mode === 'files'" class="mt-2 flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+                    <input v-model="deleteMissing" type="checkbox" :disabled="pushRunning || starting" class="mt-0.5 rounded text-violet-600" />
+                    <span>Also remove files on the live site that were deleted here <span class="text-slate-400">(files .gitignore excludes on the live site, such as .env or uploads, are never removed)</span></span>
+                </label>
                 <p v-if="connectError" class="mt-2 break-words text-xs text-red-600">{{ connectError }}</p>
                 <div v-if="!target" class="mt-3 flex justify-end">
                     <button type="button" :disabled="!canConnect || pushRunning || connecting" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50" @click="connect">
@@ -272,13 +319,14 @@ onUnmounted(stopPolling);
                         <dt v-if="target.token_name" class="text-slate-500">Token</dt>
                         <dd v-if="target.token_name" class="break-all">{{ target.token_name }}</dd>
                     </dl>
-                    <p class="mt-3 text-xs text-amber-800 dark:text-amber-200">{{ target.live_domain }}'s files and database will be replaced with this site's. Its current files are moved to its .trash first.</p>
+                    <p v-if="mode === 'files'" class="mt-3 text-xs text-amber-800 dark:text-amber-200">Files that differ on {{ target.live_domain }} will be replaced with this site's<template v-if="deleteMissing">, and files deleted here will be removed there</template>. Files .gitignore excludes, .git and the database are left alone. Every replaced or removed file is moved to its .trash first.</p>
+                    <p v-else class="mt-3 text-xs text-amber-800 dark:text-amber-200">{{ target.live_domain }}'s files and database will be replaced with this site's. Its current files are moved to its .trash first.</p>
                     <label class="mt-3 block text-xs font-medium text-slate-700 dark:text-slate-200" for="push-confirm">Type <span class="font-mono font-semibold">{{ target.live_domain }}</span> to confirm</label>
                     <input id="push-confirm" v-model="confirmDomain" :disabled="starting" type="text" autocomplete="off" spellcheck="false" class="mt-1 w-full rounded-lg border-amber-300 font-mono text-sm dark:border-amber-800 dark:bg-slate-950" @keydown.enter="startPush" />
                     <div class="mt-3 flex justify-end gap-2">
                         <button type="button" :disabled="starting" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-600" @click="resetTarget">Cancel</button>
                         <button type="button" :disabled="!domainConfirmed || starting" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startPush">
-                            <i class="bi bi-rocket-takeoff mr-1"></i>{{ starting ? 'Starting…' : `Push to ${target.live_domain}` }}
+                            <i class="bi bi-rocket-takeoff mr-1"></i>{{ starting ? 'Starting…' : mode === 'files' ? `Sync files to ${target.live_domain}` : `Push to ${target.live_domain}` }}
                         </button>
                     </div>
                 </div>
@@ -286,7 +334,8 @@ onUnmounted(stopPolling);
                 <div v-if="push" class="mt-5 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
                     <div class="flex items-center justify-between gap-3">
                         <p class="text-sm font-semibold">
-                            {{ push.stage === 'completed' ? 'Pushed' : push.stage === 'failed' ? 'Push failed' : 'Pushing' }}
+                            <template v-if="push.mode === 'files'">{{ push.stage === 'completed' ? 'Files synced' : push.stage === 'failed' ? 'File sync failed' : 'Syncing files' }}</template>
+                            <template v-else>{{ push.stage === 'completed' ? 'Pushed' : push.stage === 'failed' ? 'Push failed' : 'Pushing' }}</template>
                             <span v-if="push.live_domain || push.live_url" class="font-normal text-slate-500">→ {{ push.live_domain || push.live_url }}</span>
                         </p>
                         <div class="flex items-center gap-3">
@@ -353,7 +402,7 @@ onUnmounted(stopPolling);
                 <p v-if="receiveError" class="mt-2 text-xs text-red-600">{{ receiveError }}</p>
 
                 <div v-if="newToken" class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-950">
-                    <p class="text-xs font-semibold text-emerald-800 dark:text-emerald-200">Copy the push token now — it won't be shown again.</p>
+                    <p class="text-xs font-semibold text-emerald-800 dark:text-emerald-200"><template v-if="newToken.name">New token for "{{ newToken.name }}" — </template>Copy the push token now — it won't be shown again.</p>
                     <p class="mt-3 text-[11px] font-medium text-emerald-800 dark:text-emerald-200">Push token</p>
                     <div class="mt-1 flex items-start gap-2">
                         <p class="min-w-0 flex-1 break-all rounded bg-white p-2 font-mono text-[11px] text-slate-700 dark:bg-slate-900 dark:text-slate-200">{{ newToken.token }}</p>
@@ -381,7 +430,10 @@ onUnmounted(stopPolling);
                                 Last push: {{ token.last_push_status }}<template v-if="token.last_push_message"> — {{ token.last_push_message }}</template>
                             </p>
                         </div>
-                        <button type="button" class="rounded border border-red-300 px-2 py-1 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400" @click="revokeToken(token)">Revoke</button>
+                        <div class="flex shrink-0 gap-2">
+                            <button type="button" class="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800" title="Shows a new token; the current one stops working" @click="regenerateToken(token)"><i class="bi bi-arrow-repeat mr-1"></i>Regenerate</button>
+                            <button type="button" class="rounded border border-red-300 px-2 py-1 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400" @click="revokeToken(token)">Revoke</button>
+                        </div>
                     </li>
                     <li v-if="tokens.length === 0" class="py-4 text-center text-xs text-slate-500">No push tokens yet.</li>
                 </ul>

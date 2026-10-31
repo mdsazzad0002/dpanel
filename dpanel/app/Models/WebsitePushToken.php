@@ -62,6 +62,27 @@ class WebsitePushToken extends Model
         return [$token, $plain];
     }
 
+    /**
+     * Swaps in a new plaintext token (the old one stops working at once),
+     * keeping the name and giving it its original lifetime again from now.
+     */
+    public function regenerate(): string
+    {
+        $lifetime = $this->expires_at && $this->created_at ? $this->created_at->diffInSeconds($this->expires_at) : null;
+        $plain = self::PREFIX.Str::random(48);
+        $this->forceFill([
+            'token_prefix' => substr($plain, 0, 14),
+            'token_hash' => hash('sha256', $plain),
+            'created_at' => now(),
+            'expires_at' => $lifetime !== null ? now()->addSeconds((int) $lifetime) : null,
+            'revoked_at' => null,
+            'last_used_at' => null,
+            'last_used_ip' => null,
+        ])->save();
+
+        return $plain;
+    }
+
     public static function findActive(string $plain): ?self
     {
         if (! str_starts_with($plain, self::PREFIX)) {

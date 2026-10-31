@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\SitePushController;
 use App\Http\Middleware\EnsurePanelSessionIsValid;
+use App\Jobs\ApplyPushedFilesJob;
 use App\Jobs\PushWebsiteToLiveJob;
 use App\Jobs\RestorePushedWebsiteJob;
 use App\Models\User;
@@ -11,6 +12,7 @@ use App\Models\Website;
 use App\Models\WebsitePushToken;
 use App\Services\Backup\ClonePackageBuilder;
 use App\Services\Backup\CloneShareJobStatus;
+use App\Services\SitePush\FileSyncService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
@@ -369,6 +371,165 @@ class SitePushTest extends TestCase
         } finally {
             File::delete($path);
         }
+    }
+
+    public function test_file_sync_diff_sends_changed_files_and_removes_only_when_asked(): void
+    {
+        $local = [['path' => 'index.php', 'sha256' => 'new'], ['path' => 'same.php', 'sha256' => 'a'], ['path' => 'added.php', 'sha256' => 'b']];
+        $live = [['path' => 'index.php', 'sha256' => 'old'], ['path' => 'same.php', 'sha256' => 'a'], ['path' => 'gone.php', 'sha256' => 'c']];
+        $sync = app(FileSyncService::class);
+
+        $this->assertSame(['upload' => ['index.php', 'added.php'], 'delete' => [], 'unchanged' => 1], $sync->diff($local, $live, false));
+        $this->assertSame(['gone.php'], $sync->diff($local, $live, true)['delete']);
+    }
+
+    public function test_files_upload_queues_the_file_apply_with_the_delete_list(): void
+    {
+        Queue::fake();
+        [$token, $plain] = WebsitePushToken::issue($this->website(), null, 'Laptop', now()->addDay());
+        $package = random_bytes(512);
+        $this->withToken($plain)->postJson('/api/site-push/v1/handshake')->assertJson(['file_sync' => true]);
+
+        $uploadId = $this->withToken($plain)->postJson('/api/site-push/v1/uploads', [
+            'size' => strlen($package), 'total' => 1, 'sha256' => hash('sha256', $package), 'mode' => 'files', 'delete' => ['old/gone.php'],
+        ])->assertOk()->json('upload_id');
+        $this->withToken($plain)->post("/api/site-push/v1/uploads/{$uploadId}/chunks/0", [
+            'chunk' => UploadedFile::fake()->createWithContent('chunk-0.part', $package),
+        ], ['Accept' => 'application/json'])->assertOk();
+        $this->withToken($plain)->postJson("/api/site-push/v1/uploads/{$uploadId}/complete")->assertOk();
+
+        Queue::assertNotPushed(RestorePushedWebsiteJob::class);
+        Queue::assertPushed(ApplyPushedFilesJob::class, fn (ApplyPushedFilesJob $job) => $job->tokenId === $token->id
+            && $job->delete === ['old/gone.php']
+            && str_ends_with($job->packagePath, '/package.tar.gz')
+            && hash_file('sha256', $job->packagePath) === hash('sha256', $package));
+    }
+
+    public function test_file_manifest_endpoint_lists_the_token_website(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        $website = $this->website();
+        [, $plain] = WebsitePushToken::issue($website, null, 'Laptop', now()->addDay());
+        Http::fake(['http://drust.test/api/v1/file-sync' => Http::response(['success' => true, 'data' => ['git' => true, 'files' => [['path' => 'a.php', 'size' => 1, 'sha256' => 'x']]]])]);
+
+        $this->withToken($plain)->postJson('/api/site-push/v1/files/manifest')->assertOk()->assertJson(['git' => true, 'files' => [['path' => 'a.php']]]);
+        Http::assertSent(fn ($request) => $request['action'] === 'manifest' && $request['root'] === $website->root_path && $request['site_owner'] === $website->site_owner);
+    }
+
+    public function test_files_mode_job_sends_only_the_changed_files(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+        $website = $this->website(['assigned_user_id' => $user->id]);
+        $builder = $this->mock(ClonePackageBuilder::class);
+        $builder->shouldNotReceive('build');
+
+        $upload = null;
+        $packed = null;
+        Http::fake(function ($request) use (&$upload, &$packed) {
+            $path = parse_url($request->url(), PHP_URL_PATH);
+            if ($path === '/api/v1/file-sync') {
+                return match ($request['action']) {
+                    'manifest' => Http::response(['success' => true, 'data' => ['git' => false, 'files' => [
+                        ['path' => 'index.php', 'size' => 3, 'sha256' => 'new'], ['path' => 'same.php', 'size' => 1, 'sha256' => 'a'],
+                    ]]]),
+                    'pack' => (function () use ($request, &$packed) {
+                        $packed = $request['paths'];
+                        File::put($request['archive'], 'tar-bytes');
+
+                        return Http::response(['success' => true, 'data' => ['files' => 1]]);
+                    })(),
+                };
+            }
+
+            return match (true) {
+                str_ends_with($path, '/handshake') => Http::response(['ok' => true, 'domain' => 'live.example.com', 'chunk_size' => 1024 * 1024, 'max_chunks' => 10000, 'file_sync' => true]),
+                str_ends_with($path, '/files/manifest') => Http::response(['ok' => true, 'git' => true, 'files' => [
+                    ['path' => 'index.php', 'size' => 3, 'sha256' => 'old'], ['path' => 'same.php', 'size' => 1, 'sha256' => 'a'], ['path' => 'gone.php', 'size' => 1, 'sha256' => 'c'],
+                ]]),
+                str_ends_with($path, '/uploads') => (function () use ($request, &$upload) {
+                    $upload = $request->data();
+
+                    return Http::response(['ok' => true, 'upload_id' => (string) Str::uuid()]);
+                })(),
+                str_contains($path, '/chunks/'), str_ends_with($path, '/complete') => Http::response(['ok' => true]),
+                default => Http::response(['ok' => true, 'stage' => 'completed', 'written' => 1, 'deleted' => 1]),
+            };
+        });
+
+        $pushId = (string) Str::uuid();
+        (new PushWebsiteToLiveJob($pushId, (string) $website->id, $user->id, 'https://live.example.com', Crypt::encryptString('dp-push-x'), 'live.example.com', 'files', true))
+            ->handle($builder, app(\App\Services\NotificationService::class));
+
+        $status = CloneShareJobStatus::get($pushId);
+        $this->assertSame('completed', $status['stage'], $status['message'] ?? '');
+        $this->assertSame(['index.php'], $packed);
+        $this->assertSame(['files', ['gone.php']], [$upload['mode'], $upload['delete']]);
+        $this->assertStringContainsString('1 files updated, 1 removed, 1 already the same', $status['message']);
+        $this->assertFileDoesNotExist(storage_path('app/backups/clone-share/push-'.$pushId.'.tar.gz'));
+    }
+
+    public function test_files_mode_with_nothing_changed_uploads_nothing(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+        $website = $this->website(['assigned_user_id' => $user->id]);
+        $files = [['path' => 'index.php', 'size' => 3, 'sha256' => 'same']];
+        Http::fake([
+            'http://drust.test/api/v1/file-sync' => Http::response(['success' => true, 'data' => ['git' => false, 'files' => $files]]),
+            'https://live.example.com/api/site-push/v1/handshake' => Http::response(['ok' => true, 'domain' => 'live.example.com', 'chunk_size' => 1048576, 'max_chunks' => 10000, 'file_sync' => true]),
+            'https://live.example.com/api/site-push/v1/files/manifest' => Http::response(['ok' => true, 'git' => false, 'files' => $files]),
+        ]);
+
+        $pushId = (string) Str::uuid();
+        (new PushWebsiteToLiveJob($pushId, (string) $website->id, $user->id, 'https://live.example.com', Crypt::encryptString('dp-push-x'), '', 'files'))
+            ->handle($this->mock(ClonePackageBuilder::class), app(\App\Services\NotificationService::class));
+
+        $this->assertSame('completed', CloneShareJobStatus::get($pushId)['stage']);
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/uploads'));
+    }
+
+    public function test_apply_job_backs_replaced_files_up_into_the_trash(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        $user = User::factory()->create();
+        $website = $this->website(['assigned_user_id' => $user->id]);
+        [$token] = WebsitePushToken::issue($website, $user, 'Laptop', now()->addDay());
+        Http::fake(['http://drust.test/api/v1/file-sync' => Http::response(['success' => true, 'data' => ['written' => 2, 'deleted' => 1]])]);
+        $jobId = 'push-'.Str::uuid();
+
+        (new ApplyPushedFilesJob($jobId, $token->id, '/nonexistent/package.tar.gz', ['gone.php'], 'local.test'))
+            ->handle(app(FileSyncService::class), app(\App\Services\NotificationService::class));
+
+        $this->assertSame('completed', CloneShareJobStatus::get($jobId)['stage']);
+        Http::assertSent(fn ($request) => $request['action'] === 'apply' && $request['delete'] === ['gone.php']
+            && str_starts_with($request['backup_dir'], '/home/'.$website->site_owner.'/.trash/file_sync_')
+            && str_ends_with($request['backup_dir'], '/_root/public_html'));
+        $this->assertSame('completed', $token->fresh()->last_push_status);
+    }
+
+    public function test_regenerating_a_token_replaces_it_and_renews_its_lifetime(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+        $website = $this->website(['assigned_user_id' => $user->id]);
+        $this->travelTo(now()->subDays(2));
+        [$token, $oldPlain] = WebsitePushToken::issue($website, $user, 'Laptop', now()->addDay());
+        $this->travelBack();
+        $this->assertNull(WebsitePushToken::findActive($oldPlain));
+
+        $request = Request::create('/', 'POST');
+        $request->setUserResolver(fn () => $user);
+        $data = app(SitePushController::class)->regenerateToken($request, 'token', (string) $website->id, $token->id)->getData(true);
+
+        $this->assertNotSame($oldPlain, $data['push_token']);
+        $this->assertSame($token->id, WebsitePushToken::findActive($data['push_token'])?->id);
+        $this->assertNull(WebsitePushToken::findActive($oldPlain));
+        $this->assertSame('Laptop', $data['token']['name']);
+        $this->assertTrue($data['token']['active']);
+        $this->assertEqualsWithDelta(now()->addDay()->timestamp, $token->fresh()->expires_at->timestamp, 5);
     }
 
     private function website(array $overrides = []): Website

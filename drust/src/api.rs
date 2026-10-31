@@ -14,6 +14,7 @@ mod dependencies;
 mod dns;
 mod docker;
 mod fail2ban;
+mod file_sync;
 mod filemanager;
 mod ftp;
 mod git_deploy;
@@ -98,6 +99,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(admin::routes())
         .merge(backup::routes())
         .merge(filemanager::routes())
+        .merge(file_sync::routes())
         .merge(ftp::routes())
         .merge(git_deploy::routes())
         .merge(php::routes())
