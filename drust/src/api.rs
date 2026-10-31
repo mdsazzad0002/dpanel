@@ -19,6 +19,7 @@ mod filemanager;
 mod ftp;
 mod git_deploy;
 mod laravel_queue;
+mod login_users;
 mod health;
 mod mailbox_storage;
 mod media;
@@ -110,6 +111,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(ssl::routes())
         .merge(script::routes())
         .merge(security::routes())
+        .merge(login_users::routes())
         .merge(fail2ban::routes())
         .merge(dns::routes())
         .merge(docker::routes())

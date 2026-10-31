@@ -21,6 +21,7 @@ mod sso_ticket;
 mod postgresql;
 mod script;
 mod scripts;
+mod login_users;
 mod security;
 mod security_scan;
 mod ssl;

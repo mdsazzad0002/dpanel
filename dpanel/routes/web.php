@@ -46,6 +46,7 @@ use App\Http\Controllers\RemoteMysqlAccessController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SecurityCenterController;
 use App\Http\Controllers\SecurityController;
+use App\Http\Controllers\Security\LoginUserController;
 use App\Http\Controllers\Fail2banController;
 use App\Http\Controllers\DockerController;
 use App\Http\Controllers\Docker\DockerNetworkController;
@@ -919,6 +920,17 @@ Route::prefix('cpsess{token}')
             Route::get('/security/firewall-guide', [SecurityController::class, 'firewallGuide'])
                 ->middleware('role:admin|reseller')
                 ->name('security.firewall.guide');
+
+            // Linux accounts that can log in to the server — root-level changes, admins only.
+            Route::get('/security/login-users', [LoginUserController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('security.login-users');
+            Route::get('/security/login-users/list', [LoginUserController::class, 'list'])
+                ->middleware('role:admin')
+                ->name('security.login-users.list');
+            Route::post('/security/login-users', [LoginUserController::class, 'control'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('security.login-users.control');
 
             // Server-wide bans, so admins only.
             Route::get('/security/fail2ban', [Fail2banController::class, 'index'])

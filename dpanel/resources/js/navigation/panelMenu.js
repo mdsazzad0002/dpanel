@@ -177,6 +177,7 @@ export const buildPanelMenu = (userRoles = []) => [
             { label: 'Detection Rules', hint: 'Turn scanner rules on or off', icon: 'DR', iconClass: 'bi bi-list-check', routeName: 'security.center.rules', roles: ['admin'] },
         ],
     },
+    { section: 'Security', label: 'Login Users', hint: 'Server accounts that can log in over SSH', icon: 'LU', iconClass: 'bi bi-person-lock', routeName: 'security.login-users', roles: ['admin'], color: 'violet' },
     { section: 'Security', label: 'Firewall & SSH', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], permissions: ['manage_security'], color: 'red' },
     {
         section: 'Security',
