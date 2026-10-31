@@ -115,6 +115,9 @@ const toggleNotifications = () => {
 };
 
 const closeNotifications = (event) => {
+    // Only real user clicks: the Download button's programmatic link.click()
+    // bubbles up from <body> and would otherwise look like an outside click.
+    if (!event.isTrusted) return;
     // composedPath() is fixed when the click is dispatched, so a button that
     // removes itself (Mark all read, Clear all) still counts as an inside click.
     if (notificationsRef.value && !event.composedPath().includes(notificationsRef.value)) {
@@ -130,8 +133,8 @@ const getNotificationIcon = (notification) => {
 };
 
 const openNotification = (notification) => {
+    // Mark read in place; navigating away made the panel feel like a page refresh.
     markAsRead(notification.id);
-    router.visit(panelRoute('notifications.show', { id: notification.id }));
 };
 
 const downloadNotification = (notification, event) => {
@@ -914,7 +917,7 @@ watch(isSearchOpen, async (open) => {
                                                 v-for="notification in notifications"
                                                 :key="notification.id"
                                                 @click="openNotification(notification)"
-                                                class="flex cursor-pointer items-start gap-3 border-b border-slate-100 px-4 py-3 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50"
+                                                class="flex items-start gap-3 border-b border-slate-100 px-4 py-3 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50"
                                                 :class="{ 'bg-blue-50/50 dark:bg-blue-900/10': !notification.read }"
                                             >
                                                 <span class="mt-0.5">
