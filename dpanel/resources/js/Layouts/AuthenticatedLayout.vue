@@ -1,3 +1,11 @@
+<script>
+import { ref as moduleRef } from 'vue';
+
+// Module scope, not per instance: every page mounts its own layout, so the
+// notification panel stays open across Inertia visits until an outside click.
+const notificationsOpenState = moduleRef(false);
+</script>
+
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
@@ -46,7 +54,7 @@ let aiAbortController = null;
 // polled periodically so background work (quick export, etc.) shows up without a manual refresh.
 const notifications = ref([]);
 const unreadNotificationsCount = ref(0);
-const isNotificationsOpen = ref(false);
+const isNotificationsOpen = notificationsOpenState;
 const notificationsRef = ref(null);
 let notificationsPollTimer = null;
 
@@ -107,7 +115,9 @@ const toggleNotifications = () => {
 };
 
 const closeNotifications = (event) => {
-    if (notificationsRef.value && !notificationsRef.value.contains(event.target)) {
+    // composedPath() is fixed when the click is dispatched, so a button that
+    // removes itself (Mark all read, Clear all) still counts as an inside click.
+    if (notificationsRef.value && !event.composedPath().includes(notificationsRef.value)) {
         isNotificationsOpen.value = false;
     }
 };
@@ -121,7 +131,6 @@ const getNotificationIcon = (notification) => {
 
 const openNotification = (notification) => {
     markAsRead(notification.id);
-    isNotificationsOpen.value = false;
     router.visit(panelRoute('notifications.show', { id: notification.id }));
 };
 
@@ -954,7 +963,7 @@ watch(isSearchOpen, async (open) => {
                                     <div class="border-t border-slate-200 px-4 py-2 dark:border-slate-700">
                                         <button
                                             class="w-full text-center text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                                            @click="isNotificationsOpen = false; router.visit(panelRoute('notifications.all'))"
+                                            @click="router.visit(panelRoute('notifications.all'))"
                                         >
                                             View all notifications
                                         </button>
