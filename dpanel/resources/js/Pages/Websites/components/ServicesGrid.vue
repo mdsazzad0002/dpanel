@@ -31,6 +31,7 @@ const serviceLinks = computed(() => [
     { label: 'Email Accounts', icon: 'bi-envelope', color: 'pink', href: panelRoute('emails.list'), description: 'Mailbox services' },
     { label: 'Databases', icon: 'bi-database', color: 'orange', href: panelRoute('databases.list', { website: props.website.domain }), description: `Databases for ${props.website.domain}` },
     { label: 'DNS Zones', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.zones'), description: 'DNS entries' },
+    { label: 'PHP Info', icon: 'bi-filetype-php', color: 'blue', href: panelRoute('websites.php-info.index', { id: props.website.id }), description: 'Private phpinfo() — see which PHP version this site runs' },
     { label: 'PHP Manager', icon: 'bi-braces', color: 'indigo', href: panelRoute('php.manager'), description: 'PHP versions & modules' },
     { label: 'IP Ban / Whitelist', icon: 'bi-shield-lock', color: 'red', href: panelRoute('websites.ip-rules.index', { id: props.website.id }), description: 'Control website IP access' },
     // App installers are shown last, in their own "Installers" section.

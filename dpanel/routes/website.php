@@ -23,6 +23,7 @@ use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
+use App\Http\Controllers\Website\WebsitePhpInfoController;
 use App\Http\Controllers\Website\WebsiteSshKeyController;
 use App\Http\Controllers\Website\WebsiteTerminalController;
 use App\Http\Controllers\Website\AppInstallerController;
@@ -178,6 +179,10 @@ Route::put('/websites/{id}/git/webhook', [WebsiteGitController::class, 'webhook'
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.webhook');
 Route::delete('/websites/{id}/git', [WebsiteGitController::class, 'destroy'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.destroy');
+Route::get('/websites/{id}/php-info', [WebsitePhpInfoController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.php-info.index');
+Route::get('/websites/{id}/php-info/render', [WebsitePhpInfoController::class, 'render'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])->name('websites.php-info.render');
 Route::get('/websites/{id}/ssh-key', [WebsiteSshKeyController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.ssh-key.index');
 Route::post('/websites/{id}/ssh-key', [WebsiteSshKeyController::class, 'generate'])

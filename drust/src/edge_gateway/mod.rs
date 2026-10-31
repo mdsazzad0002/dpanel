@@ -7,7 +7,7 @@ pub mod edge_cache;
 mod h3_listener;
 mod matching;
 mod node_process;
-mod php;
+pub(crate) mod php;
 mod precompress;
 mod proxy;
 mod python_process;

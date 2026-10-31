@@ -172,6 +172,69 @@ pub async fn execute_php_front_controller(
         .map_err(|_| "PHP-FPM request timed out".to_string())?
 }
 
+/// Runs `phpinfo()` through the same PHP-FPM pool that serves the site, so
+/// the report shows the version, user and ini the site really runs with.
+/// The script lives in a root-owned directory outside every document root,
+/// so it is never reachable over HTTP; only this API can execute it.
+pub(crate) async fn render_phpinfo(
+    php_version: Option<&str>,
+    site_owner: Option<&str>,
+) -> Result<String, String> {
+    if let Some(version) = php_version {
+        validate_php_version(version)?;
+    }
+    let socket = resolve_fpm_socket(php_version, site_owner).await?;
+    let script = tokio::task::spawn_blocking(ensure_phpinfo_script)
+        .await
+        .map_err(|error| format!("phpinfo script worker failed: {error}"))??;
+    let script = script.to_string_lossy().into_owned();
+    let params: Vec<(String, String)> = vec![
+        ("GATEWAY_INTERFACE".into(), "CGI/1.1".into()),
+        ("SERVER_SOFTWARE".into(), "drust-edge-gateway".into()),
+        ("SERVER_PROTOCOL".into(), "HTTP/1.1".into()),
+        ("SERVER_NAME".into(), "localhost".into()),
+        ("REQUEST_METHOD".into(), "GET".into()),
+        ("REQUEST_URI".into(), "/phpinfo.php".into()),
+        ("QUERY_STRING".into(), String::new()),
+        ("SCRIPT_FILENAME".into(), script),
+        ("SCRIPT_NAME".into(), "/phpinfo.php".into()),
+        ("REDIRECT_STATUS".into(), "200".into()),
+        ("REMOTE_ADDR".into(), "127.0.0.1".into()),
+        ("CONTENT_LENGTH".into(), "0".into()),
+    ];
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let response = timeout_at(
+        deadline,
+        fastcgi_request(&socket, &params, RequestInput::Buffered(Bytes::new()), deadline),
+    )
+    .await
+    .map_err(|_| "PHP-FPM request timed out".to_string())??;
+    let body = axum::body::to_bytes(response.into_body(), 8 * 1024 * 1024)
+        .await
+        .map_err(|error| format!("read phpinfo output failed: {error}"))?;
+    Ok(String::from_utf8_lossy(&body).into_owned())
+}
+
+fn ensure_phpinfo_script() -> Result<PathBuf, String> {
+    const CONTENT: &str = "<?php phpinfo();\n";
+    let directory = PathBuf::from("/run/drust-phpinfo");
+    let script = directory.join("phpinfo.php");
+    if fs::read_to_string(&script).is_ok_and(|current| current == CONTENT) {
+        return Ok(script);
+    }
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("cannot create {}: {error}", directory.display()))?;
+    fs::write(&script, CONTENT)
+        .map_err(|error| format!("cannot write {}: {error}", script.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&directory, fs::Permissions::from_mode(0o755));
+        let _ = fs::set_permissions(&script, fs::Permissions::from_mode(0o644));
+    }
+    Ok(script)
+}
+
 async fn fastcgi_request(
     socket: &Path,
     params: &[(String, String)],
