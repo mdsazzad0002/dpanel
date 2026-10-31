@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, reactive, ref, watch } from 'vue';
 import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
+import BulkDownloadPanel from '@/Pages/Websites/components/bulk-download/BulkDownloadPanel.vue';
 
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
@@ -138,6 +139,22 @@ const stats = computed(() => {
 });
 
 watch([search, statusFilter], () => { currentPage.value = 1; });
+
+// Bulk download selection. The system website (id 1) is the panel itself and can't be exported.
+const selectedIds = reactive(new Set());
+const bulkPanelOpen = ref(false);
+const isSelectable = (item) => String(item.id) !== '1';
+const toggleSelected = (item) => {
+    const id = String(item.id);
+    if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+};
+const selectableOnPage = computed(() => paginatedWebsites.value.filter(isSelectable));
+const allOnPageSelected = computed(() => selectableOnPage.value.length > 0 && selectableOnPage.value.every((item) => selectedIds.has(String(item.id))));
+const toggleSelectPage = () => {
+    const select = !allOnPageSelected.value;
+    selectableOnPage.value.forEach((item) => (select ? selectedIds.add(String(item.id)) : selectedIds.delete(String(item.id))));
+};
+const selectedWebsites = computed(() => websiteRequests.value.filter((item) => selectedIds.has(String(item.id))));
 watch(totalPages, (value) => { if (currentPage.value > value) currentPage.value = value; });
 
 const formatDate = (value) => {
@@ -499,7 +516,15 @@ const saveOwnership = async () => {
                         class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-blue-500 dark:focus:bg-slate-900 dark:focus:ring-blue-500/20"
                     />
                 </div>
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                    <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300" title="Select all websites on this page">
+                        <input type="checkbox" class="rounded" :checked="allOnPageSelected" :disabled="!selectableOnPage.length" @change="toggleSelectPage" />
+                        All
+                    </label>
+                    <button type="button" :disabled="!selectedIds.size" class="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300" @click="bulkPanelOpen = true">
+                        <i class="bi bi-download"></i>
+                        Bulk Download<span v-if="selectedIds.size"> ({{ selectedIds.size }})</span>
+                    </button>
                     <button type="button" :disabled="cacheReloading" class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300" @click="reloadGatewayCache">
                         <i class="bi bi-arrow-clockwise" :class="{ 'animate-spin': cacheReloading }"></i>
                         Reload cache
@@ -549,6 +574,15 @@ const saveOwnership = async () => {
                         <!-- Left: Domain Info -->
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-3">
+                                <input
+                                    v-if="isSelectable(item)"
+                                    type="checkbox"
+                                    class="h-4 w-4 shrink-0 rounded"
+                                    :checked="selectedIds.has(String(item.id))"
+                                    :aria-label="`Select ${item.domain}`"
+                                    @change="toggleSelected(item)"
+                                />
+                                <span v-else class="w-4 shrink-0"></span>
                                 <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-sm font-bold text-white shadow-sm">
                                     {{ item.domain?.charAt(0)?.toUpperCase() || 'W' }}
                                 </div>
@@ -794,5 +828,6 @@ const saveOwnership = async () => {
                 </div>
             </div>
         </div>
+        <BulkDownloadPanel :open="bulkPanelOpen" :websites="selectedWebsites" :panel-route="panelRoute" @close="bulkPanelOpen = false" @toast="pushToast" />
     </AuthenticatedLayout>
 </template>

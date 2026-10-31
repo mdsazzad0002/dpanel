@@ -23,6 +23,7 @@ use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
+use App\Http\Controllers\Website\WebsiteBulkExportController;
 use App\Http\Controllers\Website\WebsitePhpInfoController;
 use App\Http\Controllers\Website\WebsiteSshKeyController;
 use App\Http\Controllers\Website\WebsiteTerminalController;
@@ -451,6 +452,9 @@ Route::post('/websites/{id}/filemanager/trash/restore', [FilemanagerTrashControl
 Route::delete('/websites/{id}/filemanager/trash', [FilemanagerTrashController::class, 'destroy'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.trash.destroy');
+Route::post('/websites/bulk-export', [WebsiteBulkExportController::class, 'store'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->name('websites.bulk-export');
 Route::get('/websites/list', [WebsiteController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.list');
