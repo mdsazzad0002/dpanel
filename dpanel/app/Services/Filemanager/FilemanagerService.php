@@ -213,12 +213,18 @@ class FilemanagerService
         ];
     }
 
-    /** @return array{content:string,readonly:bool,message:?string,size:int} */
-    public function readTextFile(string $username, string $path): array
+    /**
+     * With $full false, large files come back as a read-only tail preview
+     * (the editor's view). Callers that write the content back keep the default.
+     *
+     * @return array{content:string,readonly:bool,partial:bool,can_load_full:bool,message:?string,size:int}
+     */
+    public function readTextFile(string $username, string $path, bool $full = true): array
     {
         $result = $this->filemanagerApiRequest('read', [
             'username' => $this->normalizeUsername($username),
             'path' => $this->normalizeAbsolutePath($path),
+            'full' => $full,
         ]);
         if (! $result['success']) {
             throw new \RuntimeException($result['output'] !== '' ? $result['output'] : 'Rust filemanager could not read the file.');
@@ -227,6 +233,8 @@ class FilemanagerService
         return [
             'content' => (string) ($result['data']['content'] ?? ''),
             'readonly' => (bool) ($result['data']['readonly'] ?? false),
+            'partial' => (bool) ($result['data']['partial'] ?? false),
+            'can_load_full' => (bool) ($result['data']['can_load_full'] ?? true),
             'message' => isset($result['data']['message']) ? (string) $result['data']['message'] : null,
             'size' => (int) ($result['data']['size'] ?? 0),
         ];

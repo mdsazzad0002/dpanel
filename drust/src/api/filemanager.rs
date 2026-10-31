@@ -44,7 +44,8 @@ pub fn routes() -> Router<Arc<ApiState>> {
         )
         .route(
             "/api/v1/filemanager/write",
-            post(crate::filemanager::write::handle),
+            post(crate::filemanager::write::handle)
+                .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)),
         )
         .route(
             "/api/v1/filemanager/chmod",

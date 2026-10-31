@@ -69,6 +69,16 @@ defineProps({
                     </div>
                 </div>
 
+                <div v-if="fm.selectedFile?.message" class="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+                    <span>{{ fm.selectedFile.message }}</span>
+                    <button
+                        v-if="fm.selectedFile.partial && fm.selectedFile.can_load_full"
+                        type="button"
+                        class="rounded-md border border-amber-500/40 bg-white px-3 py-1 font-medium text-amber-800 transition hover:bg-amber-100 dark:bg-white/5 dark:text-amber-200 dark:hover:bg-white/10"
+                        @click="fm.loadFullFile"
+                    >Open full file</button>
+                </div>
+
                 <div class="editor-shell flex min-h-0 flex-1 bg-white dark:bg-[#1e1e1e]">
                     <div class="editor-gutter hidden w-12 shrink-0 border-r border-slate-200/80 bg-slate-50 py-4 pr-2 text-right font-mono text-[11px] leading-6 text-slate-400 sm:block dark:border-white/10 dark:bg-[#1e1e1e] dark:text-slate-500">
                         <div v-for="line in fm.editorLineCount" :key="line">{{ line }}</div>
@@ -77,6 +87,7 @@ defineProps({
                     <textarea
                         v-model="fm.saveForm.content"
                         class="editor-textarea min-h-0 flex-1 resize-none border-0 bg-transparent p-4 font-mono text-sm leading-6 text-slate-800 outline-none focus:ring-0 dark:text-slate-100"
+                        :readonly="fm.selectedFile?.readonly"
                         spellcheck="false"
                         wrap="off"
                     ></textarea>

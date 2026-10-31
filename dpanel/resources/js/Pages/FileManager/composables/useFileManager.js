@@ -106,6 +106,7 @@ export function useFileManager(props) {
         if (wasEditor && props.selectedFile?.path) {
             const url = new URL(window.location.href);
             url.searchParams.delete('file_path');
+            url.searchParams.delete('full');
             window.history.replaceState(window.history.state, '', url.toString());
         }
     }
@@ -474,6 +475,20 @@ export function useFileManager(props) {
         router.get(panelRoute('websites.filemanager', fileManagerRouteParams({
             path: props.currentPath,
             file_path: path,
+        })));
+    }
+
+    function loadFullFile() {
+        const file = props.selectedFile;
+        if (!file?.path || !file.partial || !file.can_load_full) return;
+
+        const sizeLabel = `${(Number(file.size || 0) / (1024 * 1024)).toFixed(1)}MB`;
+        if (!confirm(`"${file.name}" is ${sizeLabel}. Loading the whole file may slow down the browser. Open the full file?`)) return;
+
+        router.get(panelRoute('websites.filemanager', fileManagerRouteParams({
+            path: props.currentPath,
+            file_path: file.path,
+            full: 1,
         })));
     }
 
@@ -850,7 +865,7 @@ export function useFileManager(props) {
     }
 
     function submitSaveFile() {
-        if (saveInProgress.value || !hasUnsavedChanges.value) return;
+        if (saveInProgress.value || !hasUnsavedChanges.value || props.selectedFile?.readonly) return;
 
         saveInProgress.value = true;
         window.axios
@@ -1383,6 +1398,7 @@ export function useFileManager(props) {
         handleUploadChange,
         openFileInEditor,
         isEditableFile,
+        loadFullFile,
         deleteSelected,
         downloadSelected,
         openTrash,

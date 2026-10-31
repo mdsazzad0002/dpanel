@@ -1402,7 +1402,7 @@ class WebsiteController extends Controller
         }, $listing['items']);
 
         $selectedFilePath = $this->sanitizeRelativePath((string) ($request->query('file', $request->query('file_path', ''))));
-        $selectedFile = $this->readSelectedFile($siteOwner, $basePath, $selectedFilePath);
+        $selectedFile = $this->readSelectedFile($siteOwner, $basePath, $selectedFilePath, $request->boolean('full'));
         $directoryTree = $listing['directory_tree'];
 
         return Inertia::render('FileManager/FileManager', [
@@ -4053,20 +4053,23 @@ class WebsiteController extends Controller
     /**
      * @return array<string, mixed>|null
      */
-    protected function readSelectedFile(string $siteOwner, string $basePath, string $fileRelative): ?array
+    protected function readSelectedFile(string $siteOwner, string $basePath, string $fileRelative, bool $full = false): ?array
     {
         if ($fileRelative === '') {
             return null;
         }
 
         $filePath = $this->resolvePathInsideBase($basePath, $fileRelative);
-        $file = $this->filemanagerService->readTextFile($siteOwner, $filePath);
+        $file = $this->filemanagerService->readTextFile($siteOwner, $filePath, $full);
 
         return [
             'path' => $fileRelative,
             'name' => basename($filePath),
             'content' => $file['content'],
             'readonly' => $file['readonly'],
+            'partial' => $file['partial'],
+            'can_load_full' => $file['can_load_full'],
+            'size' => $file['size'],
             'message' => $file['message'],
         ];
     }

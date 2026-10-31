@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\URL;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class TwoFactorChallengeController extends Controller
 {
@@ -66,7 +67,7 @@ class TwoFactorChallengeController extends Controller
         ]);
     }
 
-    public function store(Request $request, TwoFactorService $twoFactor): RedirectResponse
+    public function store(Request $request, TwoFactorService $twoFactor): RedirectResponse|HttpResponse
     {
         $pending = $request->session()->get('two_factor.challenge');
         if (! is_array($pending) || ! isset($pending['user_id'])) {
@@ -129,8 +130,12 @@ class TwoFactorChallengeController extends Controller
         $panelCookie = $this->issuePanelSessionProof($request);
 
         $token = (string) $request->session()->get('panel_session_token', '');
-        return redirect(PanelReturnPath::consume($request, $token, (int) $user->id))
-            ->withCookie($panelCookie);
+        // Full page load: the challenge page's HTML carries Ziggy defaults without
+        // the new cpsess token, so an Inertia visit would build token-less URLs.
+        $response = Inertia::location(PanelReturnPath::consume($request, $token, (int) $user->id));
+        $response->headers->setCookie($panelCookie);
+
+        return $response;
     }
 
     public function selectMethod(Request $request, TwoFactorService $twoFactor): RedirectResponse

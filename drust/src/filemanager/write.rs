@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
 use crate::api::{ApiState, check_token, operation_response};
@@ -25,6 +26,13 @@ pub fn write_user_file(
     if must_exist && !path.is_file() {
         return Err(format!("File not found: {}", path.display()));
     }
+    // Keep the mode of an existing file: logs and caches are often group-writable
+    // for PHP-FPM, and resetting them to 0644 breaks the application writing them.
+    let mode = fs::symlink_metadata(&path)
+        .ok()
+        .filter(|metadata| metadata.is_file())
+        .map(|metadata| format!("{:04o}", metadata.permissions().mode() & 0o7777))
+        .unwrap_or_else(|| "0644".to_string());
 
     let parent = path
         .parent()
@@ -39,7 +47,7 @@ pub fn write_user_file(
     )?;
     fs::write(&path, content).map_err(|e| format!("failed to write {}: {e}", path.display()))?;
 
-    apply_owner_and_mode(username, &group, &path, "0644")?;
+    apply_owner_and_mode(username, &group, &path, &mode)?;
     let _ = apply_owner_and_mode(username, &group, &parent, "0755");
     info(&format!("file written: {}", path.display()));
     Ok(())
