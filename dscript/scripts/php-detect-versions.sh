@@ -18,6 +18,35 @@ extract_versions_from_text() {
     done
 }
 
+full_version_for() {
+    local version="${1:-}"
+    local binary=""
+    local full=""
+
+    for binary in "/usr/bin/php${version}" "/usr/local/bin/php${version}" "/usr/bin/php${version/./}"; do
+        [[ -x "${binary}" ]] || continue
+        full="$("${binary}" -r 'echo PHP_VERSION;' 2>/dev/null || true)"
+        [[ -n "${full}" ]] && break
+    done
+
+    if [[ -z "${full}" && -x "/usr/sbin/php-fpm${version}" ]]; then
+        full="$("/usr/sbin/php-fpm${version}" -v 2>/dev/null | head -n 1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || true)"
+    fi
+
+    if [[ -z "${full}" ]] && command -v dpkg-query >/dev/null 2>&1; then
+        full="$(dpkg-query -W -f='${Version}' "php${version}-cli" 2>/dev/null | grep -Eo '^([0-9]+:)?[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^[0-9]*://' || true)"
+    fi
+
+    if [[ "${full}" =~ ^${version//./\\.}\.[0-9]+ ]]; then
+        printf '%s' "${BASH_REMATCH[0]}"
+    fi
+}
+
+WITH_FULL=0
+if [[ "${1:-}" == "--full" ]]; then
+    WITH_FULL=1
+fi
+
 VERSIONS=()
 
 if command -v php >/dev/null 2>&1; then
@@ -59,7 +88,12 @@ if [[ "${#VERSIONS[@]}" -eq 0 ]]; then
     exit 2
 fi
 
-printf '%s\n' "${VERSIONS[@]}" \
-    | awk 'NF > 0' \
-    | sort -uV \
-    | tac
+mapfile -t SORTED < <(printf '%s\n' "${VERSIONS[@]}" | awk 'NF > 0' | sort -uV | tac)
+
+for version in "${SORTED[@]}"; do
+    if [[ "${WITH_FULL}" -eq 1 ]]; then
+        printf '%s %s\n' "${version}" "$(full_version_for "${version}")"
+    else
+        printf '%s\n' "${version}"
+    fi
+done

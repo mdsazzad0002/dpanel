@@ -63,13 +63,15 @@ class PhpManagementController extends Controller
 
     public function manager(Request $request): Response|JsonResponse
     {
-        $versions = $this->detectServerPhpVersionsViaScript();
+        $fullVersions = $this->detectServerPhpVersionsViaScript();
+        $versions = array_keys($fullVersions);
 
         if ($request->expectsJson()) {
             return response()->json([
                 'success' => true,
                 'data' => [
                     'versions' => $versions,
+                    'full_versions' => $fullVersions,
                     'api_available' => count($versions) > 0,
                     'items' => [],
                 ],
@@ -78,6 +80,7 @@ class PhpManagementController extends Controller
 
         return Inertia::render('Php/PhpManager', [
             'versions' => $versions,
+            'fullVersions' => (object) $fullVersions,
             'apiAvailable' => count($versions) > 0,
         ]);
     }
@@ -817,7 +820,10 @@ class PhpManagementController extends Controller
     }
 
     /**
-     * @return array<int, string>
+     * Installed PHP versions keyed by major.minor, valued by the full
+     * major.minor.patch release (falls back to major.minor when unknown).
+     *
+     * @return array<string, string>
      */
     private function detectServerPhpVersionsViaScript(): array
     {
@@ -826,27 +832,31 @@ class PhpManagementController extends Controller
                 base_path('scripts/php-detect-versions.sh'),
                 '/usr/local/bin/serverpanel-php-detect-versions.sh',
             ],
+            ['--full'],
         );
 
         if ($result['exitCode'] !== 0 || trim($result['output']) === '') {
             return [];
         }
 
-        return collect(preg_split('/\r\n|\r|\n/', $result['output']) ?: [])
-            ->map(fn ($line) => trim((string) $line))
-            ->filter(function ($line): bool {
-                if (preg_match('/^(\d+)\.\d+$/', $line, $matches) !== 1) {
-                    return false;
-                }
+        $versions = [];
+        foreach (preg_split('/\r\n|\r|\n/', $result['output']) ?: [] as $line) {
+            if (preg_match('/^((\d+)\.\d+)(?:\s+(\d+\.\d+\.\d+))?\s*$/', trim((string) $line), $matches) !== 1) {
+                continue;
+            }
 
-                $major = (int) $matches[1];
+            $major = (int) $matches[2];
+            if ($major < 5 || $major > 20) {
+                continue;
+            }
 
-                return $major >= 5 && $major <= 20;
-            })
-            ->unique()
-            ->sort(fn ($a, $b) => version_compare((string) $b, (string) $a))
-            ->values()
-            ->all();
+            $full = $matches[3] ?? '';
+            $versions[$matches[1]] = str_starts_with($full, $matches[1].'.') ? $full : $matches[1];
+        }
+
+        uksort($versions, fn ($a, $b) => version_compare((string) $b, (string) $a));
+
+        return $versions;
     }
 
     /**
