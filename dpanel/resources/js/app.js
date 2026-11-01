@@ -5,6 +5,7 @@ import { createInertiaApp, router } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
+import { describePage, trackLinkClicks } from './composables/usePageUsage';
 
 const appName = 'dPanel';
 const THEME_KEY = 'serverpanel-theme';
@@ -50,7 +51,26 @@ const syncSessionTokens = (pageProps) => {
     }
 };
 
-router.on('navigate', (event) => syncSessionTokens(event.detail.page.props));
+// Quick Access ranks tools by link clicks, counted per user in this browser only.
+let currentUserId = null;
+
+router.on('navigate', (event) => {
+    const page = event.detail.page;
+    syncSessionTokens(page.props);
+    currentUserId = page.props?.auth?.user?.id ?? null;
+
+    // <Head> sets document.title after the page renders, so read it a moment later.
+    const userId = currentUserId;
+    const subject = page.props?.website?.domain ?? page.props?.databaseRequest?.database_name ?? null;
+    window.setTimeout(() => {
+        const title = document.title.replace(new RegExp(` - ${appName}$`), '').trim();
+        describePage(userId, page.url, title, subject);
+    }, 150);
+});
+
+if (typeof document !== 'undefined') {
+    trackLinkClicks(router, () => currentUserId);
+}
 
 createInertiaApp({
     title: (title) => `${title} - ${appName}`,

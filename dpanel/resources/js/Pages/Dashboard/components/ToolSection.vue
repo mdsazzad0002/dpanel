@@ -1,6 +1,7 @@
 <script setup>
 import { onBeforeUnmount, ref } from 'vue';
-import { Link } from '@inertiajs/vue3';
+import ToolTile from './ToolTile.vue';
+import { toneOf } from './toolTone';
 
 const props = defineProps({
     section: { type: Object, required: true },
@@ -12,21 +13,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['toggle', 'move', 'hide', 'drag-start', 'drag-end', 'drag-over', 'drop']);
-
-const tone = {
-    blue: 'bg-sky-500/10 text-sky-600 dark:text-sky-300',
-    emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
-    violet: 'bg-violet-500/10 text-violet-600 dark:text-violet-300',
-    amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-300',
-    cyan: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300',
-    indigo: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300',
-    rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-300',
-    red: 'bg-red-500/10 text-red-600 dark:text-red-300',
-    teal: 'bg-teal-500/10 text-teal-600 dark:text-teal-300',
-    orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-300',
-    pink: 'bg-pink-500/10 text-pink-600 dark:text-pink-300',
-};
-const toneOf = (color) => tone[color] ?? tone.emerald;
 
 // The card is only draggable while the grip is held, so text in it stays selectable
 // and links inside don't start a drag.
@@ -103,23 +89,14 @@ const onDragEnd = () => {
 
         <div :class="['grid transition-[grid-template-rows] duration-300 ease-out', collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]']">
             <div class="min-h-0 overflow-hidden">
-                <div class="grid grid-cols-1 gap-1 border-t border-slate-100 p-2 min-[440px]:grid-cols-2 lg:grid-cols-3 dark:border-white/[0.06]">
-                    <Link
+                <div class="grid grid-cols-1 gap-1 border-t border-slate-100 p-2 min-[440px]:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 dark:border-white/[0.06]">
+                    <ToolTile
                         v-for="item in section.items"
                         :key="item.label"
-                        :href="item.href"
-                        :title="item.hint"
+                        :item="item"
+                        :color="section.color"
                         :tabindex="collapsed ? -1 : 0"
-                        class="group/tool flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2.5 transition hover:bg-emerald-400/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-                    >
-                        <span :class="['flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition group-hover/tool:scale-105', toneOf(section.color)]">
-                            <i :class="item.iconClass"></i>
-                        </span>
-                        <span class="min-w-0">
-                            <span class="block truncate text-sm font-medium text-slate-800 group-hover/tool:text-slate-950 dark:text-slate-200 dark:group-hover/tool:text-white">{{ item.label }}</span>
-                            <span class="block truncate text-[11px] text-slate-500 dark:text-slate-400">{{ item.hint }}</span>
-                        </span>
-                    </Link>
+                    />
                 </div>
             </div>
         </div>

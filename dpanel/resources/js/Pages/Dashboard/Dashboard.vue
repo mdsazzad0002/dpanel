@@ -7,6 +7,7 @@ import { useDashboardLayout } from './composables/useDashboardLayout';
 import DashboardHeader from './components/DashboardHeader.vue';
 import SectionCustomizer from './components/SectionCustomizer.vue';
 import ToolSection from './components/ToolSection.vue';
+import QuickAccess from './components/QuickAccess.vue';
 import OverviewCard from './components/OverviewCard.vue';
 import AccountUsage from './components/AccountUsage.vue';
 import ServiceStatusList from './components/ServiceStatusList.vue';
@@ -34,6 +35,11 @@ const looseSectionIcons = {
     System: 'bi bi-gear',
 };
 
+// Left out of the dashboard (and so of Quick Access); still in the sidebar.
+const excludedSections = ['Security', 'AI'];
+const excludedGroups = ['docker', 'rules', 'seo-tools', 'user-management', 'billing-system'];
+const excludedItems = ['Backups', 'Trash Backup'];
+
 // Tool sections come straight from the sidebar menu: every group becomes a card,
 // and stand-alone links are gathered into one card per sidebar section heading.
 const sections = computed(() => {
@@ -47,6 +53,7 @@ const sections = computed(() => {
 
     for (const item of menu) {
         if (item.routeName === 'dashboard') continue;
+        if (excludedSections.includes(item.section) || excludedGroups.includes(item.id) || excludedItems.includes(item.label)) continue;
         if (item.children) {
             result.push({ id: item.id, label: item.label, iconClass: item.iconClass, color: item.color, items: item.children });
             continue;
@@ -91,8 +98,9 @@ const onDrop = (targetId) => {
         </template>
 
         <!--
-            Below xl: one column ordered overview → tools → statistics → services.
-            xl+: tool sections on the left, overview cards in a right rail.
+            Below xl: one column ordered quick access → overview → tools → statistics → services.
+            xl+: quick access across the full width, then tool sections on the left and
+            overview cards in a right rail.
             Breakpoints are viewport-based and the sidebar takes 288px from md up, so
             the split waits for xl. Column wrappers are `display: contents` below xl
             so `order` applies across them.
@@ -120,8 +128,10 @@ const onDrop = (targetId) => {
         </div>
 
         <div class="flex min-w-0 flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start xl:gap-5 2xl:grid-cols-[minmax(0,1fr)_22rem]">
+            <QuickAccess class="order-1 xl:order-none xl:col-span-2" :sections="sections" :user-id="user.id ?? null" />
+
             <div class="contents xl:flex xl:min-w-0 xl:flex-col xl:gap-3">
-                <div class="order-2 flex min-w-0 flex-col gap-3 xl:order-none">
+                <div class="order-3 flex min-w-0 flex-col gap-3 xl:order-none">
                     <div class="flex items-center justify-between gap-3">
                         <h2 class="font-mono text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">Tools</h2>
                         <SectionCustomizer
@@ -162,15 +172,15 @@ const onDrop = (targetId) => {
 
             <div class="contents xl:flex xl:min-w-0 xl:flex-col xl:gap-4">
                 <OverviewCard
-                    class="order-1 xl:order-none"
+                    class="order-2 xl:order-none"
                     :stats="dashboardStats"
                     :summary="accountSummary"
                     :user="user"
                     :roles="roles"
                     :show-server="canViewServerUsage"
                 />
-                <AccountUsage class="order-3 xl:order-none" :summary="accountSummary" />
-                <ServiceStatusList class="order-4 xl:order-none" :services="dashboardStats?.services ?? null" />
+                <AccountUsage class="order-4 xl:order-none" :summary="accountSummary" />
+                <ServiceStatusList class="order-5 xl:order-none" :services="dashboardStats?.services ?? null" />
             </div>
         </div>
     </AuthenticatedLayout>
