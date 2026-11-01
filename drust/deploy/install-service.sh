@@ -495,6 +495,28 @@ cargo_status=0
 wait "$cargo_pid" || cargo_status=$?
 trap - INT TERM
 (( cargo_status == 0 )) || { echo "[drust] cargo build failed (exit ${cargo_status})." >&2; exit "$cargo_status"; }
+# The local LLM runner is opt-in: llama.cpp adds several minutes to the build.
+# Once installed (llm.env exists) it is rebuilt on every update.
+if [[ "${DRUST_INSTALL_LLM:-0}" == "1" || -f /etc/drust/llm.env ]]; then
+  echo "[drust] Building drust-llm (llama.cpp)..."
+  cargo build --release --manifest-path "${DRUST_ROOT}/llm/Cargo.toml" || {
+    echo "[drust] drust-llm build failed; the rest of drust is unaffected." >&2
+  }
+  if [[ -x "${DRUST_ROOT}/llm/target/release/drust-llm" ]]; then
+    id drust-llm >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin drust-llm
+    install -d -m 0750 -o drust-llm -g drust-llm /var/lib/drust/llm
+    if [[ ! -f /etc/drust/llm.env ]]; then
+      install -m 0640 -g drust-llm "${DRUST_ROOT}/deploy/drust-llm.env.example" /etc/drust/llm.env
+      sed -i "s/^DRUST_LLM_API_KEY=.*/DRUST_LLM_API_KEY=$(openssl rand -hex 32)/" /etc/drust/llm.env
+    fi
+    install -m 0755 "${DRUST_ROOT}/llm/target/release/drust-llm" /usr/local/bin/drust-llm
+    install -m 0644 "${DRUST_ROOT}/deploy/drust-llm.service" /etc/systemd/system/drust-llm.service
+    systemctl daemon-reload
+    systemctl enable drust-llm.service
+    systemctl restart drust-llm.service
+  fi
+fi
+
 install -m 0755 "${DRUST_ROOT}/deploy/drust-start" /usr/local/bin/drust-start
 install -m 0755 "${DRUST_ROOT}/deploy/drust-edge-gateway" /usr/local/bin/drust-edge-gateway
 install -m 0755 "${DRUST_ROOT}/deploy/serverinstaller-site" /usr/local/bin/serverinstaller-site

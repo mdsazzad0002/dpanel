@@ -1,0 +1,25 @@
+[Unit]
+Description=drust local LLM runner (OpenAI-compatible)
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/drust/llm.env
+ExecStart=/usr/local/bin/drust-llm
+Restart=always
+RestartSec=5
+# Runs as its own unprivileged user: it only needs its models directory.
+User=drust-llm
+Group=drust-llm
+NoNewPrivileges=yes
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/drust/llm
+# A model that outgrows RAM is killed here instead of dragging down the panel.
+MemoryHigh=85%
+MemoryMax=90%
+OOMScoreAdjust=500
+
+[Install]
+WantedBy=multi-user.target

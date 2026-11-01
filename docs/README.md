@@ -34,6 +34,7 @@
 | [dscript CLI](dscript.md) | The `dpanel` command: chains, modules, scripts, and recovery |
 | [drust Service](drust-service.md) | Installing and running the privileged Rust service |
 | [drust API](drust-api.md) | Endpoint reference for the localhost execution API |
+| [Local LLM runner](local-llm.md) | Run GGUF models on the server for the AI Gateway (drust-llm) |
 | [Backups](backups.md) | Scheduled backups, remote upload, and restore |
 | [Docker](docker.md) | Optional add-on: cost, install, panel pages, security, and removal |
 | [Server Task Runner](ssh-command-runner.md) | SSH connector, command safety rules, and task reports |
