@@ -57,10 +57,10 @@ class WebsiteGitService
      *
      * @return array{behind: bool, ahead: bool, dirty: bool, conflicts: array<int, array<string, mixed>>}
      */
-    public function conflicts(WebsiteGitDeployment $deployment): array
+    public function conflicts(WebsiteGitDeployment $deployment, ?int $actorId = null): array
     {
         $website = $deployment->website()->firstOrFail();
-        [$username, $secret] = $this->credentials($deployment);
+        [$username, $secret] = $this->credentials($deployment, $actorId);
         $result = $this->callDrust($website, (string) $deployment->repository_url, (string) $deployment->branch, 'conflicts', $username, $secret, '');
         $state = $result['success'] ? json_decode($result['output'], true) : null;
         if (! is_array($state)) {
@@ -101,10 +101,10 @@ class WebsiteGitService
      *
      * @return array{pending: bool, commits?: array<int, string>, files?: array<int, array{status: string, path: string}>, summary?: string}
      */
-    public function pendingResolution(WebsiteGitDeployment $deployment): array
+    public function pendingResolution(WebsiteGitDeployment $deployment, ?int $actorId = null): array
     {
         $website = $deployment->website()->firstOrFail();
-        [$username, $secret] = $this->credentials($deployment);
+        [$username, $secret] = $this->credentials($deployment, $actorId);
         $result = $this->callDrust($website, (string) $deployment->repository_url, (string) $deployment->branch, 'pending', $username, $secret, '');
         $state = $result['success'] ? json_decode($result['output'], true) : null;
         if (! is_array($state)) {
@@ -151,7 +151,7 @@ class WebsiteGitService
             if ($action === 'clone') {
                 $this->preOverwriteBackup->snapshot($website, 'git_clone');
             }
-            [$username, $secret] = $this->credentials($deployment);
+            [$username, $secret] = $this->credentials($deployment, $actorId);
             if ($secret === '' && in_array($action, ['init', 'push', 'sync', 'confirm_push'], true)) {
                 throw new \RuntimeException('Pushing needs credentials. Select a connected GitHub account (or add an access token) in the connection settings and save, or ask an administrator to set a global GitHub account.');
             }
@@ -344,9 +344,9 @@ class WebsiteGitService
     }
 
     /** @return array{0: string, 1: string} */
-    public function credentialsFor(WebsiteGitDeployment $deployment): array
+    public function credentialsFor(WebsiteGitDeployment $deployment, ?int $actorId = null): array
     {
-        return $this->credentials($deployment);
+        return $this->credentials($deployment, $actorId);
     }
 
     /** @return array{success: bool, output: string, exit_code: int} */
@@ -378,15 +378,25 @@ class WebsiteGitService
     }
 
     /**
-     * A deployment linked to a connected GitHub account authenticates with
-     * that account's OAuth token (refreshed on demand); otherwise it falls
-     * back to the manually entered username + access token, and without
-     * one to the admin's global default account.
+     * A panel user who linked their own GitHub account or token to this
+     * deployment works with it. Otherwise a deployment linked to a connected
+     * GitHub account authenticates with that account's OAuth token (refreshed
+     * on demand), then the manually entered username + access token, and
+     * without one the admin's global default account. Scheduled syncs and
+     * push webhooks have no actor and always use the deployment's own.
      *
      * @return array{0: string, 1: string}
      */
-    private function credentials(WebsiteGitDeployment $deployment): array
+    private function credentials(WebsiteGitDeployment $deployment, ?int $actorId = null): array
     {
+        $link = $actorId ? $deployment->userLinks()->with('githubAccount')->where('user_id', $actorId)->first() : null;
+        if ($link?->githubAccount) {
+            return [$link->githubAccount->login, $this->github->tokenFor($link->githubAccount)];
+        }
+        if (filled($link?->auth_token)) {
+            return [(string) ($link->auth_username ?: 'x-access-token'), (string) $link->auth_token];
+        }
+
         $account = $deployment->githubAccount;
         if ($account) {
             return [$account->login, $this->github->tokenFor($account)];

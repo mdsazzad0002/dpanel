@@ -15,6 +15,15 @@ class MailHealthChecksEndpointTest extends TestCase
 {
     use RefreshDatabase;
 
+    // Mailboxes are scoped to their owner; an admin reaches every one.
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $admin = \App\Models\User::factory()->create();
+        $admin->assignRole('admin');
+        $this->actingAs($admin->refresh());
+    }
+
     private function gateReturning(array $state): MailOutboundGate
     {
         $gate = Mockery::mock(MailOutboundGate::class);

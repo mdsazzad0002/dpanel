@@ -32,6 +32,8 @@ class WebsiteTrashBackupController extends Controller
             ->visibleTo($request->user())
             ->latest()
             ->get()
+            ->reject(fn (WebsiteTrashBackup $backup): bool => $this->hiddenFrom($backup, $request))
+            ->values()
             ->map(fn (WebsiteTrashBackup $backup): array => [
                 'id' => (string) $backup->id,
                 'website_id' => (string) $backup->website_id,
@@ -53,12 +55,14 @@ class WebsiteTrashBackupController extends Controller
                 'days' => (int) $settings['trash_retention_days'],
                 'time' => (string) $settings['trash_retention_time'],
             ],
-            'canManageRetention' => (bool) ($request->user()?->hasAnyRole(['admin', 'reseller']) ?? false),
+            // The cleanup schedule is one server-wide root cron job: admins only.
+            'canManageRetention' => (bool) ($request->user()?->hasRole('admin') ?? false),
         ]);
     }
 
     public function updateRetention(Request $request): RedirectResponse
     {
+        abort_unless((bool) $request->user()?->hasRole('admin'), 403, 'Only administrators can change the Trash Backup cleanup schedule.');
         $validated = $request->validate([
             'enabled' => ['required', 'boolean'],
             'days' => ['required', 'integer', 'min:1', 'max:3650'],
@@ -125,7 +129,7 @@ class WebsiteTrashBackupController extends Controller
         $backup = WebsiteTrashBackup::query()
             ->visibleTo($request->user())
             ->find($id);
-        if ($backup === null) {
+        if ($backup === null || $this->hiddenFrom($backup, $request)) {
             return response()->json(['message' => 'Trash backup was not found or is not accessible.'], 404);
         }
 
@@ -142,7 +146,7 @@ class WebsiteTrashBackupController extends Controller
     public function restore(Request $request, string $token, string $id): JsonResponse
     {
         $backup = WebsiteTrashBackup::query()->visibleTo($request->user())->find($id);
-        if ($backup === null) {
+        if ($backup === null || $this->hiddenFrom($backup, $request)) {
             return response()->json(['type' => 'error', 'message' => 'Trash backup was not found or is not accessible.'], 404);
         }
 
@@ -236,5 +240,11 @@ class WebsiteTrashBackupController extends Controller
         $prefix = rtrim($root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
 
         return str_starts_with($archive, $prefix) ? $archive : null;
+    }
+
+    /** Non-admins never see system websites' trash archives. */
+    private function hiddenFrom(WebsiteTrashBackup $backup, Request $request): bool
+    {
+        return $backup->isSystem() && ! (bool) $request->user()?->hasRole('admin');
     }
 }

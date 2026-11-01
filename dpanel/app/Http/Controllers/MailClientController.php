@@ -22,11 +22,12 @@ class MailClientController extends Controller
 {
     public function show(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): Response|RedirectResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $folder = (string) $request->query('folder', 'INBOX');
         $relatedMailboxes = Mailbox::query()
+            ->visibleTo($request->user())
             ->where('domain', $mailbox->domain)
             ->orderBy('email')
             ->get(['id', 'email', 'domain'])
@@ -77,7 +78,7 @@ class MailClientController extends Controller
 
     public function data(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $folder = (string) $request->query('folder', 'INBOX');
@@ -127,7 +128,7 @@ class MailClientController extends Controller
 
     public function message(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([
@@ -153,7 +154,7 @@ class MailClientController extends Controller
      */
     public function thread(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([
@@ -176,7 +177,7 @@ class MailClientController extends Controller
      */
     public function raw(Request $request, string $token, string $id, MailboxImapService $mailboxImapService, MailMessageAnalyzer $analyzer, MailSpamAnalyzer $spamAnalyzer): JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([
@@ -213,7 +214,7 @@ class MailClientController extends Controller
      */
     public function rawDownload(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): \Symfony\Component\HttpFoundation\Response
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([
@@ -270,7 +271,7 @@ class MailClientController extends Controller
      */
     public function uploadPhoto(Request $request, string $token, string $id): JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([
@@ -289,7 +290,7 @@ class MailClientController extends Controller
 
     public function deletePhoto(string $token, string $id): JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         if ($mailbox->avatar_path) {
@@ -321,7 +322,7 @@ class MailClientController extends Controller
 
     public function send(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): RedirectResponse|JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([
@@ -385,7 +386,7 @@ class MailClientController extends Controller
 
     public function delete(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): RedirectResponse|JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([
@@ -416,7 +417,7 @@ class MailClientController extends Controller
 
     public function markRead(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([
@@ -436,7 +437,7 @@ class MailClientController extends Controller
 
     public function bulk(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([

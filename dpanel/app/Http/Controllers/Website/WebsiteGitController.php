@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\GithubAccount;
 use App\Models\GithubOAuthApp;
 use App\Models\Website;
+use App\Models\User;
 use App\Models\WebsiteGitDeployment;
 use App\Services\Github\GithubClient;
 use App\Services\Website\GitConflictAi;
+use App\Services\Website\WebsiteGitAccess;
 use App\Services\Website\WebsiteGitService;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -23,6 +25,7 @@ class WebsiteGitController extends Controller
         private readonly WebsiteGitService $git,
         private readonly GithubClient $github,
         private readonly GitConflictAi $ai,
+        private readonly WebsiteGitAccess $access,
     ) {}
 
     public function index(Request $request, string $token, string $id): Response
@@ -40,7 +43,7 @@ class WebsiteGitController extends Controller
             'aiAvailable' => $this->ai->available(),
             // A checkout already in the website root that can be connected as is.
             'detectedCheckout' => $deployment ? null : $this->git->detectedCheckout($website),
-            ...$this->state($deployment),
+            ...$this->state($deployment, $request->user()),
         ]);
     }
 
@@ -48,9 +51,11 @@ class WebsiteGitController extends Controller
      * Deployment state the Git page renders; returned after every operation
      * so the page updates in place without a reload.
      */
-    private function state(?WebsiteGitDeployment $deployment): array
+    private function state(?WebsiteGitDeployment $deployment, ?User $user): array
     {
         return [
+            // Whether this user may pull/push yet, or must link their own account first.
+            'access' => $deployment ? $this->access->describe($deployment, $user) : null,
             'deployment' => $deployment ? $this->present($deployment->refresh()) : null,
             'repositoryConnected' => (bool) $deployment?->logs()->whereIn('action', WebsiteGitService::CONNECTING_ACTIONS)->where('status', 'success')->exists(),
             'logs' => $deployment?->logs()->latest()->limit(30)->get() ?? [],
@@ -90,6 +95,9 @@ class WebsiteGitController extends Controller
             return response()->json(['message' => 'Do not put credentials in the repository URL; use the encrypted token field.'], 422);
         }
         $existing = WebsiteGitDeployment::query()->where('website_id', $id)->first();
+        if ($existing && ($denied = $this->denied($request, $existing))) {
+            return $denied;
+        }
         // Users may only attach their own GitHub accounts, but an account
         // already linked by someone else (e.g. the site owner, when an admin
         // edits the site) may be kept as is.
@@ -155,6 +163,9 @@ class WebsiteGitController extends Controller
         $this->website($request, $id);
         // Only the connection and its activity are removed; website files stay.
         $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->first();
+        if ($deployment && ($denied = $this->denied($request, $deployment))) {
+            return $denied;
+        }
         if ($deployment) {
             $this->removeHook($deployment);
             $deployment->delete();
@@ -190,9 +201,9 @@ class WebsiteGitController extends Controller
             }
             [$username, $secret] = [$account->login, $this->github->tokenFor($account)];
         } elseif (filled($validated['auth_token'] ?? null)) {
-            [$username, $secret] = [(string) ($validated['auth_username'] ?: 'x-access-token'), (string) $validated['auth_token']];
-        } elseif ($deployment && $deployment->repository_url === $validated['repository_url']) {
-            [$username, $secret] = $this->git->credentialsFor($deployment);
+            [$username, $secret] = [(string) (($validated['auth_username'] ?? '') ?: 'x-access-token'), (string) $validated['auth_token']];
+        } elseif ($deployment && $deployment->repository_url === $validated['repository_url'] && $this->access->allows($deployment, $request->user())) {
+            [$username, $secret] = $this->git->credentialsFor($deployment, $request->user()?->id);
         }
 
         try {
@@ -211,13 +222,16 @@ class WebsiteGitController extends Controller
             'branch' => ['required_if:action,checkout', 'nullable', 'string', 'max:255', 'regex:#^[A-Za-z0-9._/-]+$#', 'not_regex:#\.\.|^-#'],
         ]);
         $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        if ($denied = $this->denied($request, $deployment)) {
+            return $denied;
+        }
         try {
             $result = $this->git->run($deployment, $validated['action'], $request->user()?->id, $validated['message'] ?? 'Website update', $validated['branch'] ?? null);
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment)], 422);
+            return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment, $request->user())], 422);
         }
 
-        return response()->json(['message' => $result['output'], 'success' => $result['success'], ...$this->state($deployment)], $result['success'] ? 200 : 422);
+        return response()->json(['message' => $result['output'], 'success' => $result['success'], ...$this->state($deployment, $request->user())], $result['success'] ? 200 : 422);
     }
 
     /** Compare the live site with the repository (read-only). */
@@ -225,8 +239,11 @@ class WebsiteGitController extends Controller
     {
         $this->website($request, $id);
         $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        if ($denied = $this->denied($request, $deployment)) {
+            return $denied;
+        }
         try {
-            return response()->json($this->git->conflicts($deployment) + ['ai_available' => $this->ai->available()]);
+            return response()->json($this->git->conflicts($deployment, $request->user()?->id) + ['ai_available' => $this->ai->available()]);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -240,11 +257,14 @@ class WebsiteGitController extends Controller
     {
         $website = $this->website($request, $id);
         $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        if ($denied = $this->denied($request, $deployment)) {
+            return $denied;
+        }
         if (! $this->ai->available()) {
             return response()->json(['message' => 'Add an AI provider under AI Gateway to resolve conflicts with AI.'], 422);
         }
         try {
-            $state = $this->git->conflicts($deployment);
+            $state = $this->git->conflicts($deployment, $request->user()?->id);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -268,13 +288,16 @@ class WebsiteGitController extends Controller
             $resolutions[$item['path']] = array_filter(['take' => $item['take'] ?? null, 'content' => $item['content'] ?? null], fn ($value) => $value !== null);
         }
         $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        if ($denied = $this->denied($request, $deployment)) {
+            return $denied;
+        }
         try {
             $result = $this->git->resolve($deployment, $validated['strategy'], $resolutions, $request->user()?->id);
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment)], 422);
+            return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment, $request->user())], 422);
         }
 
-        return response()->json(['message' => $result['output'], 'success' => $result['success'], ...$this->state($deployment)], $result['success'] ? 200 : 422);
+        return response()->json(['message' => $result['output'], 'success' => $result['success'], ...$this->state($deployment, $request->user())], $result['success'] ? 200 : 422);
     }
 
     /** What confirming the resolved merge would push. */
@@ -282,8 +305,11 @@ class WebsiteGitController extends Controller
     {
         $this->website($request, $id);
         $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        if ($denied = $this->denied($request, $deployment)) {
+            return $denied;
+        }
         try {
-            return response()->json($this->git->pendingResolution($deployment));
+            return response()->json($this->git->pendingResolution($deployment, $request->user()?->id));
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -295,15 +321,18 @@ class WebsiteGitController extends Controller
         $this->website($request, $id);
         $validated = $request->validate(['decision' => ['required', 'in:confirm,undo']]);
         $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        if ($denied = $this->denied($request, $deployment)) {
+            return $denied;
+        }
         try {
             $result = $validated['decision'] === 'confirm'
                 ? $this->git->confirmResolution($deployment, $request->user()?->id)
                 : $this->git->undoResolution($deployment, $request->user()?->id);
         } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment)], 422);
+            return response()->json(['message' => $e->getMessage(), 'success' => false, ...$this->state($deployment, $request->user())], 422);
         }
 
-        return response()->json(['message' => $result['output'], 'success' => $result['success'], ...$this->state($deployment)], $result['success'] ? 200 : 422);
+        return response()->json(['message' => $result['output'], 'success' => $result['success'], ...$this->state($deployment, $request->user())], $result['success'] ? 200 : 422);
     }
 
     /**
@@ -316,6 +345,9 @@ class WebsiteGitController extends Controller
         $this->website($request, $id);
         $validated = $request->validate(['enabled' => ['required', 'boolean'], 'rotate' => ['boolean']]);
         $deployment = WebsiteGitDeployment::query()->with('githubAccount')->where('website_id', $id)->firstOrFail();
+        if ($denied = $this->denied($request, $deployment)) {
+            return $denied;
+        }
 
         if (! $validated['enabled']) {
             $this->removeHook($deployment);
@@ -387,7 +419,96 @@ class WebsiteGitController extends Controller
             return response()->json(['message' => $result['message']], 422);
         }
 
-        return response()->json(['message' => $result['message'], ...$this->state($result['deployment'])]);
+        return response()->json(['message' => $result['message'], ...$this->state($result['deployment'], $request->user())]);
+    }
+
+    /**
+     * Link the signed-in user's own GitHub account (or token) to this
+     * website's repository, then bring the site up to date with a pull.
+     * The account must be able to read the repository.
+     */
+    public function link(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->website($request, $id);
+        $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        $validated = $request->validate([
+            'github_account_id' => ['nullable', 'string', 'max:64', 'required_without:auth_token'],
+            'auth_username' => ['nullable', 'string', 'max:255'],
+            'auth_token' => ['nullable', 'string', 'max:2000', 'required_without:github_account_id'],
+        ]);
+
+        $account = null;
+        if (filled($validated['github_account_id'] ?? null)) {
+            $account = GithubAccount::query()->ownedBy($request->user())->find($validated['github_account_id']);
+            if (! $account) {
+                return response()->json(['message' => 'Choose one of your connected GitHub accounts.'], 422);
+            }
+            if (parse_url((string) $deployment->repository_url, PHP_URL_HOST) !== 'github.com') {
+                return response()->json(['message' => 'This repository is not on GitHub; use an access token instead.'], 422);
+            }
+            [$username, $secret] = [$account->login, $this->github->tokenFor($account)];
+        } else {
+            [$username, $secret] = [(string) (($validated['auth_username'] ?? '') ?: 'x-access-token'), (string) $validated['auth_token']];
+        }
+
+        try {
+            $this->git->probe($website, (string) $deployment->repository_url, (string) $deployment->branch, $username, $secret);
+        } catch (\Throwable $e) {
+            $who = $account ? "@{$account->login}" : 'This token';
+
+            return response()->json(['message' => "{$who} cannot read {$deployment->repository_url}: {$e->getMessage()}"], 422);
+        }
+
+        $deployment->userLinks()->updateOrCreate(['user_id' => $request->user()->id], [
+            'github_account_id' => $account?->id,
+            'auth_username' => $account ? null : ($validated['auth_username'] ?? null),
+            'auth_token' => $account ? null : $validated['auth_token'],
+        ]);
+        $deployment->logs()->create([
+            'action' => 'link', 'status' => 'success', 'triggered_by' => $request->user()->id,
+            'message' => ($account ? "@{$account->login}" : 'An access token').' linked by '.$request->user()->name.'.',
+        ]);
+
+        // Already deployed: pull right away so the user starts from the repository's latest code.
+        $connected = $deployment->logs()->whereIn('action', WebsiteGitService::CONNECTING_ACTIONS)->where('status', 'success')->exists();
+        if (! $connected) {
+            return response()->json(['message' => 'Your account is linked.', 'success' => true, ...$this->state($deployment, $request->user())]);
+        }
+        try {
+            $result = $this->git->run($deployment, 'pull', $request->user()->id, 'Pull after linking account');
+        } catch (\RuntimeException $e) {
+            $result = ['success' => false, 'output' => $e->getMessage()];
+        }
+
+        return response()->json([
+            'message' => $result['success'] ? "Your account is linked and the files are synced.\n{$result['output']}" : "Your account is linked, but the pull did not finish:\n{$result['output']}",
+            'success' => $result['success'],
+            ...$this->state($deployment, $request->user()),
+        ]);
+    }
+
+    /** Remove the signed-in user's own link; the repository stays connected. */
+    public function unlink(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->website($request, $id);
+        $deployment = WebsiteGitDeployment::query()->where('website_id', $id)->firstOrFail();
+        $deployment->userLinks()->where('user_id', $request->user()->id)->delete();
+
+        return response()->json(['message' => 'Your account was unlinked from this repository.', ...$this->state($deployment, $request->user())]);
+    }
+
+    /** A JSON refusal when this user has to link their own account first. */
+    private function denied(Request $request, WebsiteGitDeployment $deployment): ?JsonResponse
+    {
+        if ($this->access->allows($deployment, $request->user())) {
+            return null;
+        }
+
+        return response()->json([
+            'message' => 'Connect your own GitHub account (or access token) to this repository first.',
+            'needs_link' => true,
+            ...$this->state($deployment, $request->user()),
+        ], 403);
     }
 
     private function website(Request $request, string $id): Website

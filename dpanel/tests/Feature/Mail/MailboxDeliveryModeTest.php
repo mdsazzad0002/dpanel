@@ -15,6 +15,15 @@ class MailboxDeliveryModeTest extends TestCase
 {
     use RefreshDatabase;
 
+    // Mailboxes are scoped to their owner; an admin reaches every one.
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $admin = \App\Models\User::factory()->create();
+        $admin->assignRole('admin');
+        $this->actingAs($admin->refresh());
+    }
+
     private function mailbox(string $email, array $attributes = []): Mailbox
     {
         [$local, $domain] = explode('@', $email);

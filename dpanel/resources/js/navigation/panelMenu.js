@@ -108,10 +108,10 @@ export const buildPanelMenu = (userRoles = []) => [
         children: [
             { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
             { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
-            { label: 'Mail DNS Guide', hint: 'Configure MX, SPF, DKIM and DMARC', icon: 'DG', iconClass: 'bi bi-diagram-3', routeName: 'emails.guide', activeRouteNames: ['emails.guide', 'emails.guide.dkim', 'emails.guide.export'], roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+            { label: 'Mail DNS Guide', hint: 'Configure MX, SPF, DKIM and DMARC', icon: 'DG', iconClass: 'bi bi-diagram-3', routeName: 'emails.guide', activeRouteNames: ['emails.guide', 'emails.guide.dkim', 'emails.guide.export'], roles: ['admin', 'reseller'], permissions: ['manage_mail_dns'] },
             { label: 'System Email', hint: 'Sender for login codes and reset links', icon: 'SE', iconClass: 'bi bi-envelope-check', routeName: 'emails.system-mail', roles: ['admin'] },
             { label: 'Mail IPs & SSL', hint: 'Mail IPs, hostnames and SMTP/IMAP certificates', icon: 'MS', iconClass: 'bi bi-shield-lock', routeName: 'emails.mail-ssl', roles: ['admin'], permissions: ['manage_mail_server'] },
-            { label: 'Mail Health', hint: 'Failures, queue and spam signals', icon: 'MH', iconClass: 'bi bi-heart-pulse', routeName: 'mail-health.index', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
+            { label: 'Mail Health', hint: 'Failures, queue and spam signals', icon: 'MH', iconClass: 'bi bi-heart-pulse', routeName: 'mail-health.index', roles: ['admin', 'reseller'], permissions: ['view_mail_health'] },
         ],
     },
     {
@@ -171,9 +171,9 @@ export const buildPanelMenu = (userRoles = []) => [
         iconClass: 'bi bi-shield-check',
         color: 'red',
         children: [
-            { label: 'Overview', hint: 'Security score, scans and events', icon: 'OV', iconClass: 'bi bi-speedometer2', routeName: 'security.center', roles: ['admin', 'reseller', 'general', 'general_user'] },
-            { label: 'Findings', hint: 'Every issue the scans found', icon: 'FN', iconClass: 'bi bi-bug', routeName: 'security.center.findings', roles: ['admin', 'reseller', 'general', 'general_user'] },
-            { label: 'Scan History', hint: 'Every scan and its result', icon: 'SH', iconClass: 'bi bi-clock-history', routeName: 'security.center.scans', roles: ['admin', 'reseller', 'general', 'general_user'] },
+            { label: 'Overview', hint: 'Security score, scans and events', icon: 'OV', iconClass: 'bi bi-speedometer2', routeName: 'security.center', roles: ['admin'], permissions: ['view_security_center'] },
+            { label: 'Findings', hint: 'Every issue the scans found', icon: 'FN', iconClass: 'bi bi-bug', routeName: 'security.center.findings', roles: ['admin'], permissions: ['view_security_center'] },
+            { label: 'Scan History', hint: 'Every scan and its result', icon: 'SH', iconClass: 'bi bi-clock-history', routeName: 'security.center.scans', roles: ['admin'], permissions: ['view_security_center'] },
             { label: 'Detection Rules', hint: 'Turn scanner rules on or off', icon: 'DR', iconClass: 'bi bi-list-check', routeName: 'security.center.rules', roles: ['admin'] },
         ],
     },

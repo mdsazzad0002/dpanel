@@ -239,6 +239,7 @@ const statusClass = (status) => ({
             <section class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     <div><p class="text-xs uppercase tracking-wide text-slate-500">Delivery rate</p><p class="mt-1 text-lg font-semibold">{{ mailHealth.delivery_rate === null ? 'No data' : `${mailHealth.delivery_rate}%` }}</p></div>
+                    <div title="Outside servers Postfix refused (relay attempts, unknown recipients). Your server blocking them is healthy, so they do not lower the score."><p class="text-xs uppercase tracking-wide text-slate-500">Blocked outside attempts</p><p class="mt-1 text-lg font-semibold">{{ stats.blocked ?? 0 }}</p></div>
                     <div><p class="text-xs uppercase tracking-wide text-slate-500">Queued messages</p><p class="mt-1 text-lg font-semibold">{{ queue.available ? queue.count : 'Unavailable' }}</p></div>
                     <div>
                         <p class="text-xs uppercase tracking-wide text-slate-500">Outbound</p>

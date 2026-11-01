@@ -32,6 +32,14 @@ class WebsiteTrashBackup extends Model
         'deleted_by' => 'integer',
     ];
 
+    /** Archive of a panel/system website (site_owner "system"): admins only. */
+    public function isSystem(): bool
+    {
+        $metadata = is_array($this->metadata) ? $this->metadata : [];
+
+        return ($metadata['website']['site_owner'] ?? null) === 'system';
+    }
+
     public function scopeVisibleTo(Builder $query, ?User $actor): Builder
     {
         if ($actor === null) {

@@ -23,6 +23,8 @@ class RolePermissions
         'manage_websites',
         'manage_dns',
         'manage_email',
+        'view_mail_health',
+        'manage_mail_dns',
         'manage_databases',
         'manage_backups',
         'manage_cron_jobs',
@@ -37,6 +39,7 @@ class RolePermissions
         'manage_packages',
         'manage_users',
         'manage_security',
+        'view_security_center',
         'manage_servers',
         'manage_apache',
         'use_terminal',
@@ -65,6 +68,8 @@ class RolePermissions
         'manage_subscriptions',
         'manage_packages',
         'manage_users',
+        'view_mail_health',
+        'manage_mail_dns',
     ];
 
     /**
@@ -82,6 +87,9 @@ class RolePermissions
             'manage_websites',
             'manage_dns',
             'manage_email',
+            // Not in the general defaults: normal users need these granted.
+            'view_mail_health',
+            'manage_mail_dns',
             'manage_databases',
             'manage_backups',
             'manage_cron_jobs',
@@ -103,6 +111,8 @@ class RolePermissions
         ],
         'System Administration' => [
             'manage_security',
+            // Not in any default role: Security Center is admin-only until granted.
+            'view_security_center',
             'manage_servers',
             'manage_apache',
             'manage_mail_server',

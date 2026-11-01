@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
-const props = defineProps({ website: Object, deployment: Object, repositoryConnected: Boolean, logs: { type: Array, default: () => [] }, github: { type: Object, default: () => ({ configured: false, accounts: [] }) }, needsResolution: Boolean, aiAvailable: Boolean, resolutionPending: Boolean, detectedCheckout: { type: Object, default: null } });
+const props = defineProps({ website: Object, deployment: Object, repositoryConnected: Boolean, logs: { type: Array, default: () => [] }, github: { type: Object, default: () => ({ configured: false, accounts: [] }) }, needsResolution: Boolean, aiAvailable: Boolean, resolutionPending: Boolean, detectedCheckout: { type: Object, default: null }, access: { type: Object, default: null } });
 const page = usePage();
 const token = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => token.value ? route(name, { token: token.value, ...params }) : route(name, params);
@@ -200,6 +200,7 @@ const request = async (url, method, body) => {
 };
 // Apply the deployment state an operation returns, so the page updates in place.
 const applyState = (data) => {
+    if (data && 'access' in data) access.value = data.access;
     if (!data?.deployment) return;
     deployment.value = data.deployment;
     repositoryConnected.value = Boolean(data.repositoryConnected);
@@ -207,6 +208,40 @@ const applyState = (data) => {
     needsResolution.value = Boolean(data.needsResolution);
     form.value.branch = data.deployment.branch;
     targetBranch.value = data.deployment.branch;
+};
+// Users other than the one who connected the repository (admins aside) link
+// their own GitHub account or token before Git actions unlock for them.
+const access = ref(props.access);
+const locked = computed(() => Boolean(deployment.value && access.value && !access.value.connected));
+const ownAccounts = computed(() => props.github?.accounts || []);
+const repoOnGithub = computed(() => /^https:\/\/github\.com\//i.test(deployment.value?.repository_url || ''));
+const linkMode = ref(repoOnGithub.value && props.github?.configured ? 'github' : 'token');
+const linkAccountId = ref(ownAccounts.value[0]?.id || '');
+const linkUsername = ref('');
+const linkToken = ref('');
+const canLink = computed(() => !isBusy.value && (linkMode.value === 'github' ? Boolean(linkAccountId.value) : Boolean(linkToken.value.trim())));
+const linkAccount = async () => {
+    if (!canLink.value) return;
+    busy.value = 'link'; notice.value = ''; error.value = '';
+    const payload = linkMode.value === 'github'
+        ? { github_account_id: linkAccountId.value }
+        : { auth_username: linkUsername.value, auth_token: linkToken.value };
+    try {
+        const data = await request(panelRoute('websites.git.link', { id: props.website.id }), 'POST', payload);
+        applyState(data);
+        linkToken.value = '';
+        (data.success ? notice : error).value = data.message;
+        activePanel.value = 'deploy';
+    } catch (e) { applyState(e.data); error.value = e.message; } finally { busy.value = ''; }
+};
+const unlinkAccount = async () => {
+    if (!confirm('Unlink your account from this repository? You will need to connect it again before pulling or pushing.')) return;
+    busy.value = 'unlink'; notice.value = ''; error.value = '';
+    try {
+        const data = await request(panelRoute('websites.git.unlink', { id: props.website.id }), 'DELETE', {});
+        applyState(data);
+        notice.value = data.message;
+    } catch (e) { error.value = e.message; } finally { busy.value = ''; }
 };
 // The website root already holds a checkout (copied in by a clone, or made
 // by hand): connect it as it is instead of cloning again.
@@ -396,7 +431,7 @@ const versionText = (file) => ({
     ai: aiSuggestions.value[file.path],
 }[viewing.value[file.path]] ?? (file.kind === 'binary' ? '(binary file)' : file.kind === 'too_large' ? '(too large to show)' : ''));
 const date = (value) => value ? new Date(value).toLocaleString() : 'Not scheduled';
-const operationLabel = (action) => ({ clone: 'Deploy website', init: 'Push site to empty repo', status: 'Check status', pull: 'Pull latest', push: 'Push changes', sync: 'Sync both ways', checkout: 'Switch branch', webhook: 'Updating webhook', conflicts: 'Checking conflicts', ai: 'AI is merging the files', resolve: 'Merging on the server', confirm_push: 'Pushing to GitHub', undo_resolve: 'Undoing the merge' }[action] || action);
+const operationLabel = (action) => ({ clone: 'Deploy website', init: 'Push site to empty repo', status: 'Check status', pull: 'Pull latest', push: 'Push changes', sync: 'Sync both ways', checkout: 'Switch branch', webhook: 'Updating webhook', conflicts: 'Checking conflicts', ai: 'AI is merging the files', resolve: 'Merging on the server', confirm_push: 'Pushing to GitHub', undo_resolve: 'Undoing the merge', link: 'Account linked' }[action] || action);
 </script>
 
 <template>
@@ -420,14 +455,54 @@ const operationLabel = (action) => ({ clone: 'Deploy website', init: 'Push site 
                 <div class="border-b p-4 dark:border-slate-700">
                     <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Overview</p>
                     <div class="min-w-0"><div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full" :class="cloned ? 'bg-emerald-500' : deployment ? 'bg-amber-500' : 'bg-slate-300'"></span><p class="truncate font-medium">{{ form.repository_url || 'No repository connected' }}</p></div><p class="mt-1 text-xs text-slate-500">{{ cloned ? `${form.branch} branch is deployed` : deployment ? 'Connection saved — ready for first deploy' : 'Connect a repository to start' }}</p></div>
-                    <dl class="mt-4 space-y-2 border-t pt-3 text-xs dark:border-slate-700"><div class="flex justify-between gap-3"><dt class="text-slate-500">Branch</dt><dd class="font-medium">{{ form.branch || '—' }}</dd></div><div class="flex justify-between gap-3"><dt class="text-slate-500">Access</dt><dd class="truncate" :class="source === 'github' ? '' : 'capitalize'">{{ source === 'github' ? (selectedAccount ? `@${selectedAccount.login}` : 'GitHub') : accessType }}</dd></div><div class="flex justify-between gap-3"><dt class="text-slate-500">Auto update</dt><dd class="capitalize">{{ form.auto_action }}</dd></div><div class="flex justify-between gap-3"><dt class="text-slate-500">Next check</dt><dd class="text-right">{{ form.auto_action === 'off' ? 'Disabled' : date(deployment?.next_sync_at) }}</dd></div></dl>
-                    <button v-if="deployment && !cloned && canFirstAction" @click="run(firstAction)" :disabled="isBusy" class="mt-4 w-full rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"><i class="bi mr-2" :class="firstAction === 'init' ? 'bi-cloud-upload' : 'bi-rocket-takeoff'"></i>{{ firstAction === 'init' ? 'Push now' : 'Deploy now' }}</button>
-                    <button v-else-if="cloned && !repoChanged" @click="run('pull')" :disabled="isBusy" class="mt-4 w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"><i class="bi bi-cloud-download mr-2"></i>Pull latest</button>
+                    <dl class="mt-4 space-y-2 border-t pt-3 text-xs dark:border-slate-700"><div class="flex justify-between gap-3"><dt class="text-slate-500">Branch</dt><dd class="font-medium">{{ form.branch || '—' }}</dd></div><div class="flex justify-between gap-3"><dt class="text-slate-500">Access</dt><dd class="truncate" :class="source === 'github' ? '' : 'capitalize'">{{ source === 'github' ? (selectedAccount ? `@${selectedAccount.login}` : 'GitHub') : accessType }}</dd></div><div v-if="access?.via === 'link'" class="flex items-center justify-between gap-3"><dt class="text-slate-500">You work as</dt><dd class="flex min-w-0 items-center gap-1.5"><span class="truncate">{{ access.login ? `@${access.login}` : 'your token' }}</span><button type="button" @click="unlinkAccount" :disabled="isBusy" class="text-red-600 hover:underline disabled:opacity-40" title="Unlink your account">Unlink</button></dd></div><div class="flex justify-between gap-3"><dt class="text-slate-500">Auto update</dt><dd class="capitalize">{{ form.auto_action }}</dd></div><div class="flex justify-between gap-3"><dt class="text-slate-500">Next check</dt><dd class="text-right">{{ form.auto_action === 'off' ? 'Disabled' : date(deployment?.next_sync_at) }}</dd></div></dl>
+                    <button v-if="deployment && !locked && !cloned && canFirstAction" @click="run(firstAction)" :disabled="isBusy" class="mt-4 w-full rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"><i class="bi mr-2" :class="firstAction === 'init' ? 'bi-cloud-upload' : 'bi-rocket-takeoff'"></i>{{ firstAction === 'init' ? 'Push now' : 'Deploy now' }}</button>
+                    <button v-else-if="cloned && !locked && !repoChanged" @click="run('pull')" :disabled="isBusy" class="mt-4 w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"><i class="bi bi-cloud-download mr-2"></i>Pull latest</button>
                 </div>
                 <nav class="grid grid-cols-5 p-2 lg:block" aria-label="Git deployment sections"><button v-for="tab in [{ id: 'connect', label: 'Connection', icon: 'bi-link-45deg' }, { id: 'deploy', label: 'Deployment', icon: 'bi-rocket-takeoff' }, { id: 'automation', label: 'Automation', icon: 'bi-clock-history' }, { id: 'yaml', label: 'GitHub YAML', icon: 'bi-filetype-yml' }, { id: 'activity', label: 'Activity', icon: 'bi-list-check' }]" :key="tab.id" @click="activePanel = tab.id" class="w-full rounded-lg px-1 py-2.5 text-[11px] font-medium lg:mb-1 lg:flex lg:items-center lg:px-3 lg:text-left lg:text-sm" :class="activePanel === tab.id ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'"><i class="bi mr-1 lg:mr-3" :class="tab.icon"></i>{{ tab.label }}</button></nav>
             </aside>
 
             <main class="min-w-0">
+
+            <section v-if="locked" class="rounded-xl border border-indigo-200 bg-white p-5 shadow-sm dark:border-indigo-900 dark:bg-slate-900">
+                <div class="flex items-start gap-3">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"><i class="bi bi-person-lock text-lg"></i></span>
+                    <div class="min-w-0">
+                        <h2 class="font-semibold">Connect your account to work with this repository</h2>
+                        <p class="mt-1 text-sm text-slate-500">Ei website already Git-e connected<span v-if="access?.connected_by"> ({{ access.connected_by }} connect korechen)</span>. Pull, push ba sync korte apnar nijer GitHub account (ba access token) link korun — link hoyar sathe sathe latest files pull hobe.</p>
+                    </div>
+                </div>
+                <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-slate-50 px-4 py-3 text-sm dark:bg-slate-800/60">
+                    <span class="flex min-w-0 items-center gap-2"><i class="bi bi-journal-code text-indigo-600"></i><span class="truncate font-medium">{{ deployment.repository_full_name || deployment.repository_url }}</span></span>
+                    <span class="text-slate-500"><i class="bi bi-git mr-1"></i>{{ deployment.branch }}</span>
+                </div>
+
+                <div v-if="repoOnGithub && github.configured" class="mt-4 grid grid-cols-2 rounded-lg bg-slate-100 p-1 sm:max-w-md dark:bg-slate-800"><button type="button" @click="linkMode = 'github'" class="rounded-md px-3 py-2 text-sm" :class="linkMode === 'github' ? 'bg-white font-medium shadow dark:bg-slate-700' : 'text-slate-500'"><i class="bi bi-github mr-1"></i>GitHub account</button><button type="button" @click="linkMode = 'token'" class="rounded-md px-3 py-2 text-sm" :class="linkMode === 'token' ? 'bg-white font-medium shadow dark:bg-slate-700' : 'text-slate-500'"><i class="bi bi-key mr-1"></i>Access token</button></div>
+
+                <div v-if="linkMode === 'github'" class="mt-4">
+                    <div v-if="!ownAccounts.length" class="rounded-lg border border-dashed p-5 text-center dark:border-slate-700">
+                        <i class="bi bi-github text-3xl text-slate-400"></i>
+                        <p class="mt-2 text-sm text-slate-500">Apnar kono GitHub account connect kora nei. Connect korle ei page-e fire ashben.</p>
+                        <Link :href="connectGithubUrl" class="mt-3 inline-block rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white dark:bg-indigo-600"><i class="bi bi-plus-lg mr-1"></i>Connect GitHub account</Link>
+                    </div>
+                    <label v-else class="block text-sm font-medium sm:max-w-md">Your GitHub account
+                        <div class="mt-1.5 flex gap-2"><select v-model="linkAccountId" class="min-w-0 flex-1 rounded-lg border-slate-300 dark:bg-slate-800"><option v-for="account in ownAccounts" :key="account.id" :value="account.id">@{{ account.login }}</option></select><Link :href="connectGithubUrl" class="shrink-0 rounded-lg border px-3 py-2 text-sm dark:border-slate-700" title="Connect another GitHub account"><i class="bi bi-plus-lg"></i></Link></div>
+                    </label>
+                </div>
+                <div v-else class="mt-4 grid gap-4 md:grid-cols-2">
+                    <label class="text-sm font-medium">Git username<input v-model.trim="linkUsername" placeholder="Your Git username" class="mt-1.5 w-full rounded-lg border-slate-300 dark:bg-slate-800" /></label>
+                    <label class="text-sm font-medium">Personal access token <span class="text-red-500">*</span><input v-model="linkToken" type="password" autocomplete="new-password" placeholder="Paste access token" class="mt-1.5 w-full rounded-lg border-slate-300 dark:bg-slate-800" /><span class="mt-1 block text-xs font-normal text-slate-500">Repository read/write permission soho token. Encrypted thake, shudhu apnar kaje use hoy.</span></label>
+                </div>
+
+                <div class="mt-5 flex flex-wrap items-center gap-3">
+                    <button type="button" @click="linkAccount" :disabled="!canLink" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40">
+                        <span v-if="busy === 'link'" class="mr-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-r-transparent"></span><i v-else class="bi bi-plug-fill mr-2"></i>{{ busy === 'link' ? 'Connecting and pulling…' : (cloned ? 'Connect & pull files' : 'Connect') }}
+                    </button>
+                    <span class="text-xs text-slate-500">Repository access check kora hobe; tarpor website-er files repository-r sathe sync hobe.</span>
+                </div>
+            </section>
+
+            <template v-else>
 
             <section v-show="activePanel === 'connect'" class="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <div class="flex items-start gap-3"><span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 font-semibold text-indigo-700">1</span><div><h2 class="font-semibold">Connect your repository</h2><p class="mt-1 text-sm text-slate-500">GitHub, GitLab এবং Bitbucket HTTPS repository support করে।</p></div></div>
@@ -609,6 +684,7 @@ const operationLabel = (action) => ({ clone: 'Deploy website', init: 'Push site 
                 <div class="flex items-center justify-between gap-4"><div><h2 class="font-semibold">Deployment activity</h2><p class="text-xs text-slate-500">সর্বশেষ ৩০টি operation এবং error এখানে দেখা যাবে।</p></div><button v-if="deployment" @click="run('status')" :disabled="isBusy" class="rounded-lg border px-3 py-2 text-xs dark:border-slate-700"><i class="bi bi-arrow-clockwise mr-1"></i>Refresh status</button></div>
                 <div class="mt-4 overflow-x-auto"><table class="w-full text-left text-sm"><thead class="text-xs uppercase text-slate-500"><tr><th class="py-2">Time</th><th>Operation</th><th>Result</th><th>Details</th></tr></thead><tbody><tr v-for="log in logs" :key="log.id" class="border-t align-top dark:border-slate-800"><td class="py-3 pr-4 whitespace-nowrap">{{ date(log.created_at) }}</td><td class="pr-4">{{ operationLabel(log.action) }}</td><td class="pr-4"><span class="rounded-full px-2 py-1 text-xs font-medium" :class="log.status === 'success' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'">{{ log.status === 'success' ? 'Successful' : 'Needs attention' }}</span></td><td class="max-w-xl whitespace-pre-wrap break-words text-xs text-slate-600 dark:text-slate-300">{{ log.message }}</td></tr><tr v-if="!logs.length"><td colspan="4" class="py-10 text-center"><i class="bi bi-clock-history block text-2xl text-slate-300"></i><p class="mt-2 text-slate-500">No deployment activity yet</p><p class="text-xs text-slate-400">Connection save করে প্রথম deployment শুরু করুন।</p></td></tr></tbody></table></div>
             </section>
+            </template>
             </main>
             </div>
         </div>

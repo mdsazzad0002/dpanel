@@ -178,6 +178,10 @@ Route::post('/websites/{id}/git/resolve/finish', [WebsiteGitController::class, '
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.git.resolve.finish');
 Route::put('/websites/{id}/git/webhook', [WebsiteGitController::class, 'webhook'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.webhook');
+Route::post('/websites/{id}/git/link', [WebsiteGitController::class, 'link'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])->name('websites.git.link');
+Route::delete('/websites/{id}/git/link', [WebsiteGitController::class, 'unlink'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.unlink');
 Route::delete('/websites/{id}/git', [WebsiteGitController::class, 'destroy'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.git.destroy');
 Route::get('/websites/{id}/php-info', [WebsitePhpInfoController::class, 'index'])

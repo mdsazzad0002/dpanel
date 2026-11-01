@@ -18,6 +18,7 @@ use App\Services\Mail\MailDnsZoneWriter;
 use App\Services\Mail\MailDomainProvisioner;
 use App\Services\ResourceQuotaService;
 use Illuminate\Http\RedirectResponse;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\Request;
@@ -59,11 +60,15 @@ class EmailController extends Controller
         $isAdmin = (bool) request()->user()?->hasRole('admin');
         $systemMailer = app(SystemMailer::class);
         $mailboxes = Mailbox::query()
+            ->visibleTo(auth()->user())
+            ->with(['creator:id,name', 'reseller:id,name'])
             ->orderByDesc('created_at')
             ->get()
             ->map(fn (Mailbox $mailbox): array => $this->toMailboxListRow($mailbox, $setupCheck) + [
                 // Why this mailbox cannot be the system email (admins only).
                 'system_mail_problem' => $isAdmin ? $systemMailer->problemWith($mailbox) : null,
+                'created_by_name' => $mailbox->creator?->name,
+                'reseller' => $mailbox->reseller ? ['id' => $mailbox->reseller->id, 'name' => $mailbox->reseller->name] : null,
             ])
             ->all();
 
@@ -73,6 +78,28 @@ class EmailController extends Controller
             // Only admins choose the system email.
             'systemMailboxId' => $isAdmin ? app(MailSettings::class)->read()['system_mailbox_id'] : null,
             'canSetSystemMail' => $isAdmin,
+            // Admins may hand a mailbox to a reseller.
+            'resellers' => $isAdmin
+                ? User::query()->where('role', 'reseller')->orderBy('name')->get(['id', 'name', 'email'])->all()
+                : [],
+        ]);
+    }
+
+    /** Admin only: give a mailbox to a reseller (or take it back with null). */
+    public function assignReseller(Request $request, string $token, string $id): JsonResponse
+    {
+        abort_unless((bool) $request->user()?->hasRole('admin'), 403, 'Only administrators can assign mailboxes to resellers.');
+        $mailbox = Mailbox::query()->findOrFail($id);
+        $validated = $request->validate([
+            'reseller_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('role', 'reseller')],
+        ]);
+        $mailbox->forceFill(['assigned_reseller_id' => $validated['reseller_id'] ?? null])->save();
+        $reseller = $mailbox->reseller()->first(['id', 'name']);
+
+        return response()->json([
+            'ok' => true,
+            'message' => $reseller ? "{$mailbox->email} is now assigned to {$reseller->name}." : "{$mailbox->email} is no longer assigned to a reseller.",
+            'reseller' => $reseller ? ['id' => $reseller->id, 'name' => $reseller->name] : null,
         ]);
     }
 
@@ -90,7 +117,7 @@ class EmailController extends Controller
 
     public function connectionGuide(string $token, string $id): Response
     {
-        $mailbox = Mailbox::query()->findOrFail($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->findOrFail($id);
 
         return Inertia::render('Email/Manage/EmailConnectionGuide', [
             'mailbox' => $mailbox->only(['id', 'email', 'domain']),
@@ -104,7 +131,7 @@ class EmailController extends Controller
         string $id,
         MailboxImapService $mailboxImapService
     ): RedirectResponse {
-        $mailbox = Mailbox::query()->findOrFail($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->findOrFail($id);
         $validated = $request->validate([
             'recipient' => ['required', 'email:rfc', 'max:254'],
         ]);
@@ -365,6 +392,9 @@ class EmailController extends Controller
                 'delivery_mode' => $validated['delivery_mode'] ?? Mailbox::MODE_LIVE,
                 ...$storage,
                 'plan_id' => $owner?->package_id,
+                // The creator owns it; a reseller creating it is also its reseller.
+                'created_by' => $request->user()?->id,
+                'assigned_reseller_id' => $request->user()?->hasRole('reseller') ? $request->user()->id : null,
             ]));
 
             $storageSync = $this->provisionMailboxStorage($mailboxRecord);
@@ -400,7 +430,7 @@ class EmailController extends Controller
 
     public function edit(string $token, string $id): Response
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         return Inertia::render('Email/Manage/EditEmail', [
@@ -417,7 +447,7 @@ class EmailController extends Controller
         $email = "{$mailboxName}@{$domain}";
         $password = (string) $validated['password'];
 
-        $mailboxRecord = Mailbox::query()->find($id);
+        $mailboxRecord = Mailbox::query()->visibleTo(auth()->user())->find($id);
         if ($mailboxRecord === null) {
             return redirect()->route('emails.list')->with('error', 'Mailbox not found.');
         }
@@ -461,7 +491,7 @@ class EmailController extends Controller
 
     public function destroy(string $token, string $id): RedirectResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         if ($mailbox === null) {
             return redirect()->route('emails.list')->with('error', 'Mailbox not found.');
         }
@@ -492,7 +522,7 @@ class EmailController extends Controller
      */
     public function enable(MailboxDeliveryHealth $health, string $token, string $id): JsonResponse
     {
-        $mailbox = Mailbox::query()->findOrFail($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->findOrFail($id);
         $result = $health->enable($mailbox);
         $mailbox->refresh();
 
@@ -509,7 +539,7 @@ class EmailController extends Controller
 
     public function disable(MailboxDeliveryHealth $health, string $token, string $id): JsonResponse
     {
-        $mailbox = Mailbox::query()->findOrFail($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->findOrFail($id);
         $health->disable($mailbox);
 
         return response()->json([
@@ -526,7 +556,7 @@ class EmailController extends Controller
      */
     public function setDeliveryMode(Request $request, string $token, string $id): JsonResponse
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         $validated = $request->validate([
@@ -546,7 +576,7 @@ class EmailController extends Controller
 
     public function login(string $token, string $id)
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
         $setupCheck = $this->buildMailSetupCheck();
         $mailboxCheck = $this->evaluateMailboxAutoLogin($mailbox->toArray(), $setupCheck);

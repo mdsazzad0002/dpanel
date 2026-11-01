@@ -32,6 +32,10 @@ class MailProfileImageTest extends TestCase
     {
         parent::setUp();
         Storage::fake('local');
+        // Mailboxes are scoped to their owner; an admin reaches every one.
+        $admin = \App\Models\User::factory()->create();
+        $admin->assignRole('admin');
+        $this->actingAs($admin->refresh());
     }
 
     private function resolver(array $dns, array $images = []): MailAvatarResolver

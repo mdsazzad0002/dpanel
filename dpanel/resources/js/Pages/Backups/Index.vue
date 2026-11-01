@@ -5,6 +5,8 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
+    // Server-wide storage/SCP/schedule settings are shown to admins only.
+    isAdmin: { type: Boolean, default: false },
     backupRoot: { type: String, default: '' },
     retentionDays: { type: Number, default: 7 },
     backupSchedule: { type: Object, default: () => ({ enabled: true, time: '02:30' }) },
@@ -280,8 +282,8 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
-            <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Link :href="route('backups.storage.index')" class="group flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-800">
+            <div :class="['grid grid-cols-1 gap-4', isAdmin && 'lg:grid-cols-2']">
+            <Link v-if="isAdmin" :href="route('backups.storage.index')" class="group flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-800">
                     <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-100 text-lg text-indigo-600 transition group-hover:bg-indigo-600 group-hover:text-white dark:bg-indigo-950"><i class="itc bi bi-cloud-arrow-up"></i></span>
                     <div class="min-w-0 flex-1">
                         <div class="flex flex-wrap items-center gap-2">

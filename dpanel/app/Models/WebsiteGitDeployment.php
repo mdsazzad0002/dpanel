@@ -32,4 +32,5 @@ class WebsiteGitDeployment extends Model
     public function website(): BelongsTo { return $this->belongsTo(Website::class); }
     public function githubAccount(): BelongsTo { return $this->belongsTo(GithubAccount::class); }
     public function logs(): HasMany { return $this->hasMany(WebsiteGitLog::class, 'deployment_id'); }
+    public function userLinks(): HasMany { return $this->hasMany(WebsiteGitUserLink::class, 'deployment_id'); }
 }

@@ -153,7 +153,10 @@ class MailDeliveryDiagnosticsService
      */
     private function parseLogLines(array $lines): array
     {
-        $stats = ['sent' => 0, 'bounced' => 0, 'deferred' => 0, 'rejected' => 0, 'spam' => 0];
+        // blocked: outside clients Postfix refused (relay attempts, unknown
+        // recipients, probes). That is the server defending itself, not a
+        // delivery problem, so it is counted apart and never lowers the score.
+        $stats = ['sent' => 0, 'bounced' => 0, 'deferred' => 0, 'rejected' => 0, 'spam' => 0, 'blocked' => 0];
         $failures = [];
         $spamEvents = [];
         $senders = [];
@@ -177,6 +180,8 @@ class MailDeliveryDiagnosticsService
                         trim($match[3])
                     );
                 }
+            } elseif (str_contains($line, 'NOQUEUE: reject:') && $this->isOutsideClient($line)) {
+                $stats['blocked']++;
             } elseif (str_contains($line, 'NOQUEUE: reject:')) {
                 $stats['rejected']++;
                 $reason = trim((string) preg_replace('/^.*NOQUEUE:\s*reject:\s*/', '', $line));
@@ -422,6 +427,23 @@ class MailDeliveryDiagnosticsService
         $penalty += min(20, $stats['spam'] * 2);
 
         return max(0, 100 - $penalty);
+    }
+
+    /**
+     * A rejected SMTP client that is not one of ours: not this machine
+     * (webmail, the panel) and not a mailbox user who logged in.
+     */
+    private function isOutsideClient(string $line): bool
+    {
+        if (str_contains($line, 'sasl_username=')) {
+            return false;
+        }
+        if (! preg_match('/\b(?:RCPT|MAIL|CONNECT|DATA|END-OF-MESSAGE|VRFY|ETRN)?\s*from\s+[^\s\[]*\[([0-9a-fA-F:.]+)\]/', $line, $match)) {
+            return false;
+        }
+        $ip = $match[1];
+
+        return ! ($ip === '::1' || str_starts_with($ip, '127.') || str_starts_with(strtolower($ip), '::ffff:127.'));
     }
 
     private function extractAddress(string $line, string $field): string

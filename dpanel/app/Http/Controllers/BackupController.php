@@ -6,6 +6,7 @@ use App\Jobs\QuickExportJob;
 use App\Jobs\RestoreBackupJob;
 use App\Jobs\RunAccountBackupsJob;
 use App\Models\DatabaseRequest;
+use App\Models\User;
 use App\Models\Website;
 use App\Services\Backup\BackupRestoreStatus;
 use App\Services\Backup\QuickExportJobStatus;
@@ -33,17 +34,20 @@ class BackupController extends Controller
     {
         $backupRoot = storage_path('app/backups');
         $state = $this->settings->read();
+        $isAdmin = $this->isAdmin(request()->user());
 
         return Inertia::render('Backups/Index', [
-            'backupRoot' => $backupRoot,
+            // Storage, SCP and schedule are server-wide settings: admins only.
+            'isAdmin' => $isAdmin,
+            'backupRoot' => $isAdmin ? $backupRoot : '',
             'retentionDays' => (int) $state['retention_days'],
             'backupSchedule' => [
                 'enabled' => (bool) $state['schedule_enabled'],
                 'time' => (string) $state['schedule_time'],
                 'account_delay_seconds' => (int) $state['account_delay_seconds'],
             ],
-            'storageDriver' => (string) $state['storage_driver'],
-            'remoteUpload' => [
+            'storageDriver' => $isAdmin ? (string) $state['storage_driver'] : '',
+            'remoteUpload' => ! $isAdmin ? null : [
                 'enabled' => (bool) $state['remote_upload_enabled'],
                 'host' => (string) $state['remote_host'],
                 'path' => (string) $state['remote_path'],
@@ -54,7 +58,7 @@ class BackupController extends Controller
                 'ssh_path' => (string) $state['remote_ssh_path'],
                 'scp_path' => (string) $state['remote_scp_path'],
             ],
-            'scpStatus' => $this->scpStatus(),
+            'scpStatus' => $isAdmin ? $this->scpStatus() : null,
             'websites' => Website::query()
                 ->visibleTo(request()->user())
                 ->whereNull('parent_id')
@@ -67,12 +71,13 @@ class BackupController extends Controller
                 ->get(['id', 'domain'])
                 ->map(fn (Website $website): array => ['id' => (string) $website->id, 'domain' => (string) $website->domain])
                 ->values(),
-            'runs' => $this->listRuns($backupRoot),
+            'runs' => $this->listRuns($backupRoot, request()->user()),
         ]);
     }
 
     public function scp(): Response
     {
+        $this->abortUnlessAdmin();
         $state = $this->settings->read();
 
         return Inertia::render('Backups/Scp', [
@@ -100,6 +105,7 @@ class BackupController extends Controller
 
     public function storageIndex(): Response
     {
+        $this->abortUnlessAdmin();
         $state = $this->settings->read();
 
         return Inertia::render('Backups/Storage/Index', [
@@ -109,6 +115,7 @@ class BackupController extends Controller
 
     public function storageConfigure(string $token, string $driver): Response
     {
+        $this->abortUnlessAdmin();
         abort_unless(in_array($driver, self::STORAGE_DRIVERS, true), 404);
         $state = $this->settings->read();
 
@@ -122,6 +129,7 @@ class BackupController extends Controller
 
     public function updateStorage(Request $request, string $token, string $driver): RedirectResponse
     {
+        $this->abortUnlessAdmin();
         abort_unless(in_array($driver, self::STORAGE_DRIVERS, true), 404);
         $validated = $request->validate([
             'activate' => ['required', 'boolean'],
@@ -157,6 +165,7 @@ class BackupController extends Controller
 
     public function updateScpSettings(Request $request): RedirectResponse
     {
+        $this->abortUnlessAdmin();
         $validated = $request->validate([
             'remote_upload_enabled' => ['required', 'boolean'],
             'remote_host' => ['nullable', 'string', 'max:255'],
@@ -185,6 +194,7 @@ class BackupController extends Controller
 
     public function updateSettings(Request $request): RedirectResponse
     {
+        $this->abortUnlessAdmin();
         $validated = $request->validate([
             'schedule_enabled' => ['required', 'boolean'],
             'schedule_time' => ['required', 'regex:/^\d{2}:\d{2}$/'],
@@ -202,7 +212,7 @@ class BackupController extends Controller
 
     public function data(): JsonResponse
     {
-        $runs = $this->listRuns(storage_path('app/backups'));
+        $runs = $this->listRuns(storage_path('app/backups'), request()->user());
 
         return response()->json([
             'ok' => true,
@@ -371,7 +381,7 @@ class BackupController extends Controller
 
     public function download(string $token, string $run, string $file): BinaryFileResponse
     {
-        return $this->downloadFile($run, $file);
+        return $this->downloadFile($run, $file, request()->user());
     }
 
     public function downloadFromQuery(Request $request, string $token, string $run): BinaryFileResponse
@@ -380,7 +390,7 @@ class BackupController extends Controller
             'file' => ['required', 'string', 'max:255', 'regex:/^[^\\\\\/]+$/'],
         ]);
 
-        return $this->downloadFile($run, (string) $validated['file']);
+        return $this->downloadFile($run, (string) $validated['file'], $request->user());
     }
 
     public function downloadEncoded(string $token, string $run, string $encoded): BinaryFileResponse
@@ -394,10 +404,10 @@ class BackupController extends Controller
         $file = base64_decode($normalized, true);
         abort_if(! is_string($file) || $file === '', 404, 'Invalid backup file token.');
 
-        return $this->downloadFile($run, $file);
+        return $this->downloadFile($run, $file, request()->user());
     }
 
-    private function downloadFile(string $run, string $file): BinaryFileResponse
+    private function downloadFile(string $run, string $file, ?User $user): BinaryFileResponse
     {
         $runPath = $this->resolveRunPath($run);
         abort_if($runPath === null, 404, 'Backup run not found.');
@@ -410,6 +420,8 @@ class BackupController extends Controller
         if (! is_string($target) || $target === '' || ! is_file($target) || dirname($target) !== $runPath) {
             abort(404, 'Backup file not found.');
         }
+        // Same 404 as a missing file, so other accounts' backups aren't revealed.
+        abort_unless($this->canAccessFile($target, $user), 404, 'Backup file not found.');
 
         return response()->download($target, basename($target));
     }
@@ -419,6 +431,19 @@ class BackupController extends Controller
         $runPath = $this->resolveRunPath($run);
         if ($runPath === null) {
             return response()->json(['ok' => false, 'message' => 'Backup run not found.'], 404);
+        }
+        $user = request()->user();
+        if (! $this->isAdmin($user)) {
+            // A run is one folder and deleting it removes every file in it, so a
+            // non-admin may only delete runs holding nothing but their own backups.
+            $files = collect(File::files($runPath))->reject(fn (\SplFileInfo $f): bool => str_ends_with($f->getFilename(), '.tar.gz.json'));
+            $own = $files->filter(fn (\SplFileInfo $f): bool => $this->canAccessFile((string) $f->getRealPath(), $user));
+            if ($own->isEmpty()) {
+                return response()->json(['ok' => false, 'message' => 'Backup run not found.'], 404);
+            }
+            if ($own->count() !== $files->count()) {
+                return response()->json(['ok' => false, 'message' => 'This backup run also holds backups of other accounts, so only an administrator can delete it.'], 403);
+            }
         }
 
         try {
@@ -441,7 +466,7 @@ class BackupController extends Controller
             ], 500);
         }
 
-        return response()->json(['ok' => true, 'message' => 'Backup run deleted.', 'runs' => $this->listRuns(storage_path('app/backups'))]);
+        return response()->json(['ok' => true, 'message' => 'Backup run deleted.', 'runs' => $this->listRuns(storage_path('app/backups'), $user)]);
     }
 
     public function restore(Request $request, string $token, string $run, string $encoded): JsonResponse
@@ -454,6 +479,9 @@ class BackupController extends Controller
         $archive = realpath($runPath.DIRECTORY_SEPARATOR.$file);
         if (! is_string($archive) || dirname($archive) !== $runPath) {
             return response()->json(['ok' => false, 'message' => 'Invalid backup archive path.'], 422);
+        }
+        if (! $this->canAccessFile($archive, $request->user())) {
+            return response()->json(['ok' => false, 'message' => 'Restorable website archive not found.'], 404);
         }
 
         $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
@@ -501,15 +529,17 @@ class BackupController extends Controller
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function listRuns(string $backupRoot): array
+    private function listRuns(string $backupRoot, ?User $user): array
     {
         if (! File::isDirectory($backupRoot)) {
             return [];
         }
+        $isAdmin = $this->isAdmin($user);
+        $ownWebsites = $isAdmin ? [] : $this->ownWebsiteIds($user);
 
         return collect(File::directories($backupRoot))
             ->filter(fn (string $directory): bool => preg_match('/^\d{8}_\d{6}$/', basename($directory)) === 1)
-            ->map(function (string $directory): ?array {
+            ->map(function (string $directory) use ($isAdmin, $ownWebsites): ?array {
                 $realDirectory = realpath($directory);
                 if (! is_string($realDirectory) || $realDirectory === '' || ! is_dir($realDirectory)) {
                     return null;
@@ -534,14 +564,21 @@ class BackupController extends Controller
                             'label' => $metadata['label'] ?? $file->getFilename(),
                             'domain' => $metadata['domain'] ?? null,
                             'owner' => $metadata['owner'] ?? null,
+                            'website_id' => $metadata['website_id'] ?? null,
                             'restorable' => $metadata !== null,
                             'size_bytes' => is_string($realPath) ? (int) @filesize($realPath) : 0,
                             'updated_at' => Carbon::createFromTimestamp($file->getMTime())->toDateTimeString(),
                         ];
                     })
+                    // Non-admins see only archives of their own websites: never
+                    // system backups (panel database, config) or other accounts.
+                    ->filter(fn (array $file): bool => $isAdmin || ($file['restorable'] && $file['owner'] !== 'system' && in_array($file['website_id'], $ownWebsites, true)))
                     ->sortBy('name')
                     ->values()
                     ->all();
+                if (! $isAdmin && $files === []) {
+                    return null;
+                }
 
                 return [
                     'name' => $runName,
@@ -557,7 +594,7 @@ class BackupController extends Controller
             ->all();
     }
 
-    /** @return array{label:string,domain:string,owner:string}|null */
+    /** @return array{label:string,domain:string,owner:string,website_id:?string}|null */
     private function websiteArchiveMetadata(string $path): ?array
     {
         if (! str_ends_with(strtolower($path), '.tar.gz')) {
@@ -579,7 +616,39 @@ class BackupController extends Controller
         }
         $owner = trim((string) ($website['site_owner'] ?? 'account'));
 
-        return ['label' => $domain.' account backup', 'domain' => $domain, 'owner' => $owner];
+        $id = trim((string) ($website['id'] ?? ''));
+
+        return ['label' => $domain.' account backup', 'domain' => $domain, 'owner' => $owner, 'website_id' => $id !== '' ? $id : null];
+    }
+
+    private function isAdmin(?User $user): bool
+    {
+        return (bool) $user?->hasRole('admin');
+    }
+
+    private function abortUnlessAdmin(): void
+    {
+        abort_unless($this->isAdmin(request()->user()), 403, 'Only administrators can change server backup settings.');
+    }
+
+    /** @return array<int, string> ids of the non-system websites this user may see */
+    private function ownWebsiteIds(?User $user): array
+    {
+        return Website::query()->visibleTo($user)
+            ->where(fn ($query) => $query->whereNull('site_owner')->orWhere('site_owner', '!=', 'system'))
+            ->pluck('id')->map(fn ($id): string => (string) $id)->all();
+    }
+
+    /** Admins reach every backup file; others only archives of their own websites. */
+    private function canAccessFile(string $path, ?User $user): bool
+    {
+        if ($this->isAdmin($user)) {
+            return true;
+        }
+        $metadata = $this->websiteArchiveMetadata($path);
+
+        return $metadata !== null && $metadata['owner'] !== 'system' && $metadata['website_id'] !== null
+            && in_array($metadata['website_id'], $this->ownWebsiteIds($user), true);
     }
 
     private function resolveRunPath(string $run): ?string

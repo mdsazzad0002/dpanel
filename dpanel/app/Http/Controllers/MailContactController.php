@@ -83,7 +83,7 @@ class MailContactController extends Controller
 
     private function mailbox(string $id): Mailbox
     {
-        $mailbox = Mailbox::query()->find($id);
+        $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
 
         return $mailbox;

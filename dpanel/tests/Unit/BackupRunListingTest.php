@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\BackupController;
+use App\Models\User;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use ReflectionClass;
@@ -10,6 +11,18 @@ use Tests\TestCase;
 
 class BackupRunListingTest extends TestCase
 {
+    /** Backups are filtered per user; these tests cover an admin, who sees every run. */
+    private function admin(): User
+    {
+        return new class extends User
+        {
+            public function hasRole($roles, ?string $guard = null): bool
+            {
+                return true;
+            }
+        };
+    }
+
     public function test_internal_backup_directories_are_not_listed_as_downloadable_runs(): void
     {
         $root = sys_get_temp_dir().'/dpanel-backup-list-'.bin2hex(random_bytes(8));
@@ -21,7 +34,7 @@ class BackupRunListingTest extends TestCase
             $reflection = new ReflectionClass(BackupController::class);
             $controller = $reflection->newInstanceWithoutConstructor();
             $method = $reflection->getMethod('listRuns');
-            $runs = $method->invoke($controller, $root);
+            $runs = $method->invoke($controller, $root, $this->admin());
 
             $this->assertSame(['20260827_123456'], array_column($runs, 'name'));
         } finally {
@@ -42,6 +55,8 @@ class BackupRunListingTest extends TestCase
         Http::fake(['http://drust.test/api/v1/backup/delete' => Http::response(['success' => true], 200)]);
 
         try {
+            $admin = $this->admin();
+            request()->setUserResolver(fn () => $admin);
             $controller = (new ReflectionClass(BackupController::class))->newInstanceWithoutConstructor();
             $response = $controller->destroyRun('token', $runName);
 

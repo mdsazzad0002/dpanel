@@ -51,7 +51,16 @@ class BackupRestoreJobTest extends TestCase
 
         try {
             $controller = (new ReflectionClass(BackupController::class))->newInstanceWithoutConstructor();
-            $response = $controller->restore(Request::create('/'), 'token', $runName, $encoded);
+            // Backups are filtered per user; an admin may restore any archive.
+            $request = Request::create('/');
+            $request->setUserResolver(fn () => new class extends \App\Models\User
+            {
+                public function hasRole($roles, ?string $guard = null): bool
+                {
+                    return true;
+                }
+            });
+            $response = $controller->restore($request, 'token', $runName, $encoded);
 
             $this->assertSame(200, $response->getStatusCode());
             $restoreId = $response->getData(true)['restore_id'];

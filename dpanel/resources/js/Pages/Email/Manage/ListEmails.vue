@@ -25,6 +25,11 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    // Sent to admins only: who a mailbox can be handed to.
+    resellers: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 // The mailbox the panel sends login codes, reset and verification links from.
@@ -38,6 +43,10 @@ const useAsSystemEmail = (item) => {
     });
 };
 
+// The Mail DNS Guide is for admins, resellers and roles granted manage_mail_dns.
+const canOpenDnsGuide = ['admin', 'reseller'].some((role) => (page.props.auth?.roles ?? []).includes(role))
+    || (page.props.auth?.permissions ?? []).includes('manage_mail_dns');
+
 const formatDate = (value) => {
     if (!value) return '-';
     return new Date(value).toLocaleString();
@@ -48,6 +57,21 @@ const rows = ref(props.mailboxes.map((row) => ({ ...row })));
 watch(() => props.mailboxes, (value) => { rows.value = value.map((row) => ({ ...row })); });
 const togglingId = ref('');
 const result = ref(null);
+
+// Admins hand a mailbox to a reseller (or take it back) in place.
+const assigningId = ref('');
+const assignReseller = async (item, resellerId) => {
+    assigningId.value = item.id;
+    try {
+        const { data } = await window.axios.patch(panelRoute('emails.assign-reseller', { id: item.id }), { reseller_id: resellerId || null }, { headers: { Accept: 'application/json' } });
+        item.reseller = data.reseller;
+        result.value = { ok: true, message: data.message };
+    } catch (error) {
+        result.value = { ok: false, message: error?.response?.data?.message || 'Could not assign the reseller.' };
+    } finally {
+        assigningId.value = '';
+    }
+};
 
 const isOn = (item) => (item.status || 'active') === 'active';
 
@@ -114,7 +138,7 @@ const deleteMailbox = (id) => {
             </div>
 
             <div class="flex justify-end gap-2">
-                <Link :href="panelRoute('emails.guide')" class="rounded-md border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
+                <Link v-if="canOpenDnsGuide" :href="panelRoute('emails.guide')" class="rounded-md border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
                     <i class="bi bi-book mr-1"></i> Mail DNS Guide
                 </Link>
                 <Link :href="panelRoute('emails.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
@@ -147,6 +171,7 @@ const deleteMailbox = (id) => {
                         <tr>
                             <th class="px-4 py-3">Attached Website</th>
                             <th class="px-4 py-3">Email</th>
+                            <th class="px-4 py-3">Owner</th>
                             <th class="px-4 py-3">Plan</th>
                             <th class="px-4 py-3">Quota</th>
                             <th class="px-4 py-3">Status</th>
@@ -168,6 +193,21 @@ const deleteMailbox = (id) => {
                                 >
                                     <i class="bi bi-envelope-check"></i> System email
                                 </Link>
+                            </td>
+                            <td class="px-4 py-3 text-xs">
+                                <p class="text-slate-700 dark:text-slate-200" title="Created by">{{ item.created_by_name || '—' }}</p>
+                                <select
+                                    v-if="resellers.length"
+                                    :value="item.reseller?.id ?? ''"
+                                    :disabled="assigningId === item.id"
+                                    class="mt-1 w-40 rounded-md border-slate-300 py-1 text-xs dark:border-slate-700 dark:bg-slate-800"
+                                    title="Reseller who can also manage this mailbox"
+                                    @change="assignReseller(item, $event.target.value)"
+                                >
+                                    <option value="">No reseller</option>
+                                    <option v-for="reseller in resellers" :key="reseller.id" :value="reseller.id">{{ reseller.name }}</option>
+                                </select>
+                                <p v-else-if="item.reseller" class="mt-0.5 text-slate-500">Reseller: {{ item.reseller.name }}</p>
                             </td>
                             <td class="px-4 py-3">
                                 <span v-if="item.plan" class="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">

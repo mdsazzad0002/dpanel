@@ -329,7 +329,7 @@ Route::prefix('cpsess{token}')
                 ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:5,1'])
                 ->name('emails.connect-device.send');
             Route::get('/mail-health', [MailHealthController::class, 'index'])
-                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->middleware('role_or_permission:admin|reseller|view_mail_health')
                 ->name('mail-health.index');
             Route::post('/mail-health/clear-log', [MailHealthController::class, 'clearLog'])
                 ->middleware(['role:admin|superadmin', 'throttle:5,1'])
@@ -361,6 +361,9 @@ Route::prefix('cpsess{token}')
             Route::patch('/emails/{id}/delivery-mode', [EmailController::class, 'setDeliveryMode'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.delivery-mode');
+            Route::patch('/emails/{id}/reseller', [EmailController::class, 'assignReseller'])
+                ->middleware('role:admin')
+                ->name('emails.assign-reseller');
             Route::post('/emails/{id}/disable', [EmailController::class, 'disable'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.disable');
@@ -450,23 +453,23 @@ Route::prefix('cpsess{token}')
                 ->name('emails.list');
 
             Route::get('/emails/guide', [EmailController::class, 'dnsGuide'])
-                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->middleware('role_or_permission:admin|reseller|manage_mail_dns')
                 ->name('emails.guide');
             Route::post('/emails/guide/bimi', [MailBimiController::class, 'store'])
-                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:10,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_mail_dns', 'throttle:10,1'])
                 ->name('emails.guide.bimi');
             Route::delete('/emails/guide/bimi', [MailBimiController::class, 'destroy'])
-                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->middleware('role_or_permission:admin|reseller|manage_mail_dns')
                 ->name('emails.guide.bimi.destroy');
             Route::post('/emails/guide/dkim', [EmailController::class, 'generateDkim'])
-                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:3,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_mail_dns', 'throttle:3,1'])
                 ->name('emails.guide.dkim');
             Route::post('/emails/guide/apply-zone', [EmailController::class, 'applyDnsZone'])
-                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:10,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_mail_dns', 'throttle:10,1'])
                 ->name('emails.guide.apply-zone');
             Route::get('/emails/guide/export/{domain}', [EmailController::class, 'exportDnsZone'])
                 ->where('domain', '[A-Za-z0-9.-]+')
-                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->middleware('role_or_permission:admin|reseller|manage_mail_dns')
                 ->name('emails.guide.export');
             Route::get('/emails/mail-ssl', [MailHostnameController::class, 'page'])
                 ->middleware('role_or_permission:admin|manage_mail_server')
@@ -497,7 +500,7 @@ Route::prefix('cpsess{token}')
                 ->name('emails.mail-ips.ssl');
             Route::get('/emails/guide/verify/{domain}', [EmailController::class, 'verifyDns'])
                 ->where('domain', '[A-Za-z0-9.-]+')
-                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:20,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_mail_dns', 'throttle:20,1'])
                 ->name('emails.guide.verify');
 
             Route::post('/mail/{id}/bulk', [MailClientController::class, 'bulk'])
@@ -607,7 +610,7 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller|general|general_user')
                 ->name('trash-backups.index');
             Route::patch('/trash-backups/retention', [WebsiteTrashBackupController::class, 'updateRetention'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role:admin')
                 ->name('trash-backups.retention.update');
             Route::get('/trash-backups/{id}/download', [WebsiteTrashBackupController::class, 'download'])
                 ->middleware('role:admin|reseller|general|general_user')
@@ -861,33 +864,33 @@ Route::prefix('cpsess{token}')
                 ->name('php.settings');
 
             Route::get('/security/center', [SecurityCenterController::class, 'dashboard'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|view_security_center')
                 ->name('security.center');
             Route::get('/security/center/findings', [SecurityCenterController::class, 'findings'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|view_security_center')
                 ->name('security.center.findings');
             Route::get('/security/center/scans', [SecurityCenterController::class, 'scans'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|view_security_center')
                 ->name('security.center.scans');
             Route::post('/security/center/scans', [SecurityCenterController::class, 'startScan'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|view_security_center')
                 ->name('security.center.scans.start');
             Route::post('/security/center/scans/category', [SecurityCenterController::class, 'scanCategory'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|view_security_center')
                 ->name('security.center.scans.category');
             Route::get('/security/center/scans/{scan}', [SecurityCenterController::class, 'scanStatus'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|view_security_center')
                 ->whereNumber('scan')
                 ->name('security.center.scans.show');
             Route::post('/security/center/findings/{finding}/status', [SecurityCenterController::class, 'updateFinding'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|view_security_center')
                 ->whereNumber('finding')
                 ->name('security.center.findings.status');
             Route::delete('/security/center/findings', [SecurityCenterController::class, 'destroyFindings'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|view_security_center')
                 ->name('security.center.findings.destroy');
             Route::delete('/security/center/scans', [SecurityCenterController::class, 'destroyScans'])
-                ->middleware('role:admin|reseller|general|general_user')
+                ->middleware('role_or_permission:admin|view_security_center')
                 ->name('security.center.scans.destroy');
             Route::get('/security/center/rules', [SecurityCenterController::class, 'rules'])
                 ->middleware('role:admin')

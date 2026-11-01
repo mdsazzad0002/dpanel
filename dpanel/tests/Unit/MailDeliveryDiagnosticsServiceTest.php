@@ -46,4 +46,26 @@ class MailDeliveryDiagnosticsServiceTest extends TestCase
         $this->assertSame('other', $diagnosis['category']);
         $this->assertTrue($diagnosis['temporary']);
     }
+
+    public function test_outside_clients_refused_by_postfix_are_blocked_not_failures(): void
+    {
+        $lines = [
+            // Outsiders trying to relay or probe: the server defending itself.
+            '2026-10-16T11:00:08+06:00 mail postfix/smtpd[85731]: NOQUEUE: reject: RCPT from unknown[185.169.4.229]: 454 4.7.1 <spameri@tiscali.it>: Relay access denied; from=<spameri@tiscali.it> to=<spameri@tiscali.it> proto=ESMTP helo=<WIN-CLJ1B0GQ6JP>',
+            '2026-10-16T09:11:38+06:00 mail postfix/smtpd[80060]: NOQUEUE: reject: RCPT from smtp.www-openbugbounty.org[94.72.105.127]: 550 5.1.1 <info@dengrweb.com>: Recipient address rejected: User unknown in virtual mailbox table; from=<security@www-openbugbounty.org> to=<info@dengrweb.com> proto=ESMTP',
+            // Our own sender refused: a real problem.
+            '2026-10-16T12:00:00+06:00 mail postfix/submission/smtpd[1]: NOQUEUE: reject: RCPT from localhost[127.0.0.1]: 554 5.7.1 <x@y.test>: Recipient address rejected: Access denied; from=<dev@dengrweb.com> to=<x@y.test> proto=ESMTP',
+            '2026-10-16T12:00:01+06:00 mail postfix/postfix/smtp[2]: ABC123: to=<a@b.test>, relay=mx.b.test[1.2.3.4]:25, status=sent (250 ok)',
+        ];
+        $method = new \ReflectionMethod(MailDeliveryDiagnosticsService::class, 'parseLogLines');
+        $parsed = $method->invoke(new MailDeliveryDiagnosticsService(), $lines);
+
+        $this->assertSame(2, $parsed['stats']['blocked']);
+        $this->assertSame(1, $parsed['stats']['rejected']);
+        $this->assertCount(1, $parsed['failures']);
+
+        $score = new \ReflectionMethod(MailDeliveryDiagnosticsService::class, 'healthScore');
+        $outsideOnly = ['sent' => 1, 'bounced' => 0, 'deferred' => 0, 'rejected' => 0, 'spam' => 0, 'blocked' => 50];
+        $this->assertSame(100, $score->invoke(new MailDeliveryDiagnosticsService(), $outsideOnly, ['available' => true, 'count' => 0], '/var/log/mail.log'));
+    }
 }
