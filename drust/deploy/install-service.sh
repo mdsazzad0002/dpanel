@@ -510,6 +510,16 @@ if [[ "${DRUST_INSTALL_LLM:-0}" == "1" || -f /etc/drust/llm.env ]]; then
       sed -i "s/^DRUST_LLM_API_KEY=.*/DRUST_LLM_API_KEY=$(openssl rand -hex 32)/" /etc/drust/llm.env
     fi
     install -m 0755 "${DRUST_ROOT}/llm/target/release/drust-llm" /usr/local/bin/drust-llm
+    # The panel's Local Models page talks to drust-llm with the same key.
+    LLM_KEY="$(awk -F= '$1 == "DRUST_LLM_API_KEY" {print substr($0, index($0, "=") + 1); exit}' /etc/drust/llm.env)"
+    if [[ -f "${LARAVEL_ENV}" && -n "${LLM_KEY}" ]]; then
+      if grep -q '^AIGATEWAY_LOCAL_LLM_KEY=' "${LARAVEL_ENV}"; then
+        sed -i "s#^AIGATEWAY_LOCAL_LLM_KEY=.*#AIGATEWAY_LOCAL_LLM_KEY=${LLM_KEY}#" "${LARAVEL_ENV}"
+      else
+        printf 'AIGATEWAY_LOCAL_LLM_KEY=%s\n' "${LLM_KEY}" >> "${LARAVEL_ENV}"
+      fi
+      (cd "${DRUST_ROOT}/../dpanel" && php artisan config:clear >/dev/null 2>&1 || true)
+    fi
     install -m 0644 "${DRUST_ROOT}/deploy/drust-llm.service" /etc/systemd/system/drust-llm.service
     systemctl daemon-reload
     systemctl enable drust-llm.service

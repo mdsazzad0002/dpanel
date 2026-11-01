@@ -156,6 +156,15 @@ impl Registry {
         &self.backend
     }
 
+    /// (id, seconds since last use) for every loaded model.
+    pub async fn loaded_detail(&self) -> Vec<(String, u64)> {
+        let slots = self.slots.lock().await;
+        let mut detail: Vec<_> =
+            slots.iter().map(|(id, slot)| (id.clone(), slot.last_used.elapsed().as_secs())).collect();
+        detail.sort();
+        detail
+    }
+
     pub async fn touch(&self, id: &str) {
         if let Some(slot) = self.slots.lock().await.get_mut(id) {
             slot.last_used = Instant::now();
@@ -193,8 +202,12 @@ pub fn spawn_idle_reaper(state: Arc<AppState>) {
 }
 
 fn mem_available() -> Option<u64> {
+    meminfo("MemAvailable:")
+}
+
+pub fn meminfo(key: &str) -> Option<u64> {
     let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
-    let line = meminfo.lines().find(|line| line.starts_with("MemAvailable:"))?;
+    let line = meminfo.lines().find(|line| line.starts_with(key))?;
     let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
     Some(kb * 1024)
 }

@@ -42,6 +42,22 @@ sudo journalctl -u drust-llm -f
 sudo grep DRUST_LLM_API_KEY /etc/drust/llm.env
 ```
 
+## Manage it from the panel
+
+**AI Gateway → Local Models** (admins only) does everything below without a
+terminal:
+
+- shows whether drust-llm is running, free memory, and the loaded models
+- downloads a recommended model in one click, or any GGUF link, with progress
+- loads, unloads and deletes models
+- **Connect to AI Gateway** creates the "Local models (this server)"
+  provider and adds a model row per installed model. After a download
+  finishes, the page syncs the new model automatically.
+
+The installer writes the runner's key to the panel's `.env` as
+`AIGATEWAY_LOCAL_LLM_KEY`. Settings such as context size and threads are
+shown on the page but are changed in `/etc/drust/llm.env`.
+
 ## Add a model
 
 Download a GGUF file, for example from Hugging Face. Use the `resolve` link,
@@ -63,7 +79,8 @@ model id is the file name without `.gguf`.
 
 ## Connect it to the AI Gateway
 
-Under **AI Gateway → Providers**, add a provider with the **OpenAI** driver
+The **Connect to AI Gateway** button on the Local Models page does this for
+you. To do it by hand: under **AI Gateway → Providers**, add a provider with the **OpenAI** driver
 and replace its base URL:
 
 - Base URL: `http://127.0.0.1:9510/v1`

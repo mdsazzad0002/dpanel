@@ -3,6 +3,7 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\AiGatewayApiKeyController;
 use App\Http\Controllers\AiGatewayController;
 use App\Http\Controllers\AiGatewayMediaController;
+use App\Http\Controllers\AiGatewayLocalLlmController;
 use App\Http\Controllers\AiGatewayLogController;
 use App\Http\Controllers\AiGatewayModelController;
 use App\Http\Controllers\AiGatewayProviderController;
@@ -706,6 +707,21 @@ Route::prefix('cpsess{token}')
 
                     // API docs (how to call the external endpoints below)
                     Route::get('docs', [AiGatewayController::class, 'docs'])->name('ai-gateway.docs');
+                });
+
+            // Local models (drust-llm): downloads use this server's disk and
+            // loaded models its RAM, so only admins manage them.
+            Route::prefix('ai-gateway/local')
+                ->middleware('role:admin')
+                ->where(['model' => '[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}'])
+                ->group(function (): void {
+                    Route::get('/', [AiGatewayLocalLlmController::class, 'index'])->name('ai-gateway.local.index');
+                    Route::get('state', [AiGatewayLocalLlmController::class, 'state'])->name('ai-gateway.local.state');
+                    Route::post('pull', [AiGatewayLocalLlmController::class, 'pull'])->name('ai-gateway.local.pull');
+                    Route::post('connect', [AiGatewayLocalLlmController::class, 'connect'])->name('ai-gateway.local.connect');
+                    Route::post('models/{model}/load', [AiGatewayLocalLlmController::class, 'load'])->name('ai-gateway.local.load');
+                    Route::post('models/{model}/unload', [AiGatewayLocalLlmController::class, 'unload'])->name('ai-gateway.local.unload');
+                    Route::delete('models/{model}', [AiGatewayLocalLlmController::class, 'destroy'])->name('ai-gateway.local.destroy');
                 });
 
             Route::get('/databases/create', [DatabaseController::class, 'create'])

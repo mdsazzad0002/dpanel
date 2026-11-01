@@ -1,6 +1,6 @@
 use crate::{
     AppState, api_error, check_key,
-    registry::{model_path, valid_id},
+    registry::{meminfo, model_path, valid_id},
 };
 use axum::{
     Json, Router,
@@ -27,6 +27,7 @@ pub type Pulls = Mutex<HashMap<String, PullStatus>>;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/admin/status", get(status))
         .route("/admin/models", get(list))
         .route("/admin/models/pull", post(pull))
         .route("/admin/models/{id}/load", post(load))
@@ -41,6 +42,38 @@ async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respons
     let models = state.registry.list(&state.config.models_dir).await;
     let pulls = state.pulls.lock().await.clone();
     Json(json!({ "models": models, "pulls": pulls })).into_response()
+}
+
+/// Settings and memory for the panel's status card.
+async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if let Err(response) = check_key(&state, &headers) {
+        return response;
+    }
+    let config = &state.config;
+    let loaded: Vec<_> = state
+        .registry
+        .loaded_detail()
+        .await
+        .into_iter()
+        .map(|(id, idle)| json!({ "id": id, "idle_seconds": idle }))
+        .collect();
+    Json(json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "loaded": loaded,
+        "memory": {
+            "total_bytes": meminfo("MemTotal:").unwrap_or(0),
+            "available_bytes": meminfo("MemAvailable:").unwrap_or(0),
+        },
+        "config": {
+            "default_model": config.default_model,
+            "ctx_size": config.ctx_size,
+            "max_tokens": config.max_tokens,
+            "threads": config.threads,
+            "max_loaded": config.max_loaded,
+            "idle_unload_secs": config.idle_unload.as_secs(),
+        },
+    }))
+    .into_response()
 }
 
 #[derive(Deserialize)]

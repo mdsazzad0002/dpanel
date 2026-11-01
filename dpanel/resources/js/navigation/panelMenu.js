@@ -232,6 +232,7 @@ export const buildPanelMenu = (userRoles = []) => [
             { label: 'Chat', hint: 'Test providers live', icon: 'CH', iconClass: 'bi bi-chat-dots', routeName: 'ai-gateway.chat', activeRouteNames: ['ai-gateway.chat'], roles: ['admin', 'reseller'] },
             { label: 'Providers', hint: 'Claude, Codex, OpenAI, Gemini, Local', icon: 'PV', iconClass: 'bi bi-hdd-network', routeName: 'ai-gateway.providers.index', activeRouteNames: ['ai-gateway.providers.index', 'ai-gateway.providers.create', 'ai-gateway.providers.edit'], roles: ['admin', 'reseller'] },
             { label: 'Models', hint: 'Model catalog and pricing', icon: 'MD', iconClass: 'bi bi-cpu', routeName: 'ai-gateway.models.index', activeRouteNames: ['ai-gateway.models.index'], roles: ['admin', 'reseller'] },
+            { label: 'Local Models', hint: 'Run GGUF models on this server', icon: 'LM', iconClass: 'bi bi-motherboard', routeName: 'ai-gateway.local.index', activeRouteNames: ['ai-gateway.local.index'], roles: ['admin'] },
             { label: 'API Keys', hint: 'External OpenAI/OpenRouter-compatible access', icon: 'AK', iconClass: 'bi bi-key', routeName: 'ai-gateway.api-keys.index', activeRouteNames: ['ai-gateway.api-keys.index'], roles: ['admin', 'reseller'] },
             { label: 'API Docs', hint: 'How to call the gateway from outside', icon: 'DC', iconClass: 'bi bi-file-earmark-code', routeName: 'ai-gateway.docs', activeRouteNames: ['ai-gateway.docs'], roles: ['admin', 'reseller'] },
         ],

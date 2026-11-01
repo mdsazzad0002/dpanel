@@ -105,4 +105,27 @@ return [
             ['name' => 'kilo-auto/frontier', 'display_name' => 'Kilo Auto Frontier', 'context_window' => 128000, 'max_output_tokens' => 8192, 'capabilities' => ['chat', 'code'], 'input_price' => 0, 'output_price' => 0],
         ],
     ],
+
+    /*
+    | Local LLM runner (drust-llm): GGUF models served on this server. The
+    | installer writes the key here when it installs the runner.
+    */
+    'local_llm' => [
+        'url' => rtrim((string) env('AIGATEWAY_LOCAL_LLM_URL', 'http://127.0.0.1:9510'), '/'),
+        'key' => (string) env('AIGATEWAY_LOCAL_LLM_KEY', ''),
+        // Loading a model on first use can take a minute.
+        'timeout' => (int) env('AIGATEWAY_LOCAL_LLM_TIMEOUT', 120),
+        // One-click downloads on the Local Models page. Sizes are the file
+        // sizes; a model needs about that much free RAM to load.
+        'catalog' => [
+            ['id' => 'qwen2.5-0.5b-instruct-q4_k_m', 'name' => 'Qwen2.5 0.5B Instruct', 'size_bytes' => 491400032, 'note' => 'Tiny and fast; fine for short, simple answers.', 'url' => 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf'],
+            ['id' => 'qwen2.5-1.5b-instruct-q4_k_m', 'name' => 'Qwen2.5 1.5B Instruct', 'size_bytes' => 1117320736, 'note' => 'Good balance for 4 GB servers.', 'url' => 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf'],
+            ['id' => 'qwen2.5-coder-1.5b-instruct-q4_k_m', 'name' => 'Qwen2.5 Coder 1.5B Instruct', 'size_bytes' => 1117320768, 'note' => 'Tuned for code.', 'url' => 'https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf'],
+            ['id' => 'gemma-2-2b-it-Q4_K_M', 'name' => 'Gemma 2 2B Instruct', 'size_bytes' => 1708582752, 'note' => 'Google; strong for its size.', 'url' => 'https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf'],
+            ['id' => 'Llama-3.2-3B-Instruct-Q4_K_M', 'name' => 'Llama 3.2 3B Instruct', 'size_bytes' => 2019377696, 'note' => 'Meta; general chat.', 'url' => 'https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf'],
+            ['id' => 'qwen2.5-3b-instruct-q4_k_m', 'name' => 'Qwen2.5 3B Instruct', 'size_bytes' => 2104932768, 'note' => 'Recommended for 8 GB servers; handles Bengali best of the small ones.', 'url' => 'https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf'],
+            ['id' => 'Qwen2.5-7B-Instruct-Q4_K_M', 'name' => 'Qwen2.5 7B Instruct', 'size_bytes' => 4683074240, 'note' => 'Much better answers; needs 8 GB free RAM and is slow on CPU.', 'url' => 'https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf'],
+            ['id' => 'Meta-Llama-3.1-8B-Instruct-Q4_K_M', 'name' => 'Llama 3.1 8B Instruct', 'size_bytes' => 4920739232, 'note' => 'Meta; needs 8 GB free RAM and is slow on CPU.', 'url' => 'https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf'],
+        ],
+    ],
 ];
