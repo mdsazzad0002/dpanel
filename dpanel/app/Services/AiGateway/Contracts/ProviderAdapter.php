@@ -86,4 +86,14 @@ interface ProviderAdapter
      * @throws \App\Services\AiGateway\Exceptions\AiGatewayException when the provider cannot.
      */
     public function generateImage(AiGatewayProvider $provider, string $model, string $prompt, array $options = []): array;
+
+    /**
+     * Turn a voice recording into text.
+     *
+     * @param  array{language?: ?string, prompt?: ?string}  $options
+     * @return array{text: string, language: ?string, model: string}
+     *
+     * @throws \App\Services\AiGateway\Exceptions\AiGatewayException when the provider cannot.
+     */
+    public function transcribe(AiGatewayProvider $provider, string $model, string $audio, string $filename, string $mime, array $options = []): array;
 }

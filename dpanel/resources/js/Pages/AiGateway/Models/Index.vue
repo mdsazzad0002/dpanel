@@ -22,13 +22,14 @@ const filteredProvider = props.providers.find((p) => p.id === props.providerFilt
 
 const addForm = useForm({ provider_id: props.providerFilter || '', name: '', display_name: '', context_window: 0, max_output_tokens: 0, capabilities: [], is_active: true });
 
-// What each capability changes; vision and image_generation steer routing.
+// What each capability changes; vision, image_generation and transcription steer routing.
 const CAPABILITIES = [
     { value: 'chat', label: 'chat', hint: 'Answers chat messages' },
     { value: 'vision', label: 'vision', hint: 'Sees images itself; without it, images are read by OCR first' },
     { value: 'tools', label: 'tools', hint: 'Function calling (server tools)' },
     { value: 'code', label: 'code', hint: 'Good at code' },
     { value: 'image_generation', label: 'image generation', hint: 'Makes images; without "chat" it gets no chat requests' },
+    { value: 'transcription', label: 'transcription', hint: 'Turns voice into text (/audio/transcriptions); without "chat" it gets no chat requests' },
 ];
 const statusForm = useForm({});
 const delForm = useForm({});

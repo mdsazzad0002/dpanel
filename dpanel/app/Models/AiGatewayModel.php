@@ -23,10 +23,11 @@ class AiGatewayModel extends Model
 
     /**
      * Tags an admin can set. Routing uses "tools", "vision" (images go to
-     * the model instead of through OCR) and "image_generation" (an image
-     * model; without "chat" it never gets chat requests).
+     * the model instead of through OCR), "image_generation" (an image
+     * model) and "transcription" (turns speech into text); a model with
+     * either of the last two but without "chat" never gets chat requests.
      */
-    public const CAPABILITIES = ['chat', 'vision', 'code', 'tools', 'image_generation'];
+    public const CAPABILITIES = ['chat', 'vision', 'code', 'tools', 'image_generation', 'transcription'];
 
     protected $fillable = [
         'provider_id',

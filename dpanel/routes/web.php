@@ -179,6 +179,7 @@ Route::middleware(['ai_gateway.key', 'throttle:60,1'])->group(function (): void 
     Route::get('/api/v1/models', [AiGatewayApiController::class, 'models'])->name('api.ai-gateway.models');
     Route::post('/api/v1/chat/completions', [AiGatewayApiController::class, 'chatCompletions'])->name('api.ai-gateway.chat.completions');
     Route::post('/api/v1/images/generations', [AiGatewayApiController::class, 'imageGenerations'])->name('api.ai-gateway.images.generations');
+    Route::post('/api/v1/audio/transcriptions', [AiGatewayApiController::class, 'audioTranscriptions'])->name('api.ai-gateway.audio.transcriptions');
 });
 // Remote MCP (Model Context Protocol) endpoint, so AI clients such as Claude
 // or Cursor can diagnose and fix this server from anywhere. Authenticated via

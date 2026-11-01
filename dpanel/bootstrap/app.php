@@ -39,6 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/v1/alias',
             'api/v1/chat/completions',
             'api/v1/images/generations',
+            'api/v1/audio/transcriptions',
             'api/v1/models',
             'api/mcp',
             'oauth/register',

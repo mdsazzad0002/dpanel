@@ -76,16 +76,21 @@ class Router
             ->with('provider')
             ->get()
             ->filter(fn (AiGatewayModel $m) => ! $m->isInCooldown())
-            // "image_generation" is a hard filter, unlike the soft preference
-            // below: an image request can only go to an image model, and a
-            // chat never to a model that only makes images.
-            ->filter(fn (AiGatewayModel $m) => in_array('image_generation', $requireCapabilities, true)
-                ? in_array('image_generation', $m->capabilities ?? [], true)
-                : ! self::isImageOnly($m))
+            // "image_generation" and "transcription" are hard filters, unlike
+            // the soft preference below: an image or audio request can only go
+            // to a model that does it, and a chat never to a model that only
+            // makes images or transcribes.
+            ->filter(function (AiGatewayModel $m) use ($requireCapabilities) {
+                $special = array_intersect($requireCapabilities, self::SPECIAL_CAPABILITIES);
+
+                return $special !== []
+                    ? array_diff($special, $m->capabilities ?? []) === []
+                    : ! self::isSpecialOnly($m);
+            })
             ->sortByDesc(fn (AiGatewayModel $m) => $m->provider->weight * 1000 + random_int(0, 999))
             ->values();
 
-        $requireCapabilities = array_values(array_diff($requireCapabilities, ['image_generation']));
+        $requireCapabilities = array_values(array_diff($requireCapabilities, self::SPECIAL_CAPABILITIES));
 
         $fallbackTail = collect();
 
@@ -119,11 +124,15 @@ class Router
         return $base->slice($cursor)->concat($base->slice(0, $cursor))->concat($fallbackTail)->values();
     }
 
-    public static function isImageOnly(AiGatewayModel $model): bool
+    /** Capabilities that pick a different kind of request, not just a better chat model. */
+    public const SPECIAL_CAPABILITIES = ['image_generation', 'transcription'];
+
+    /** A model that only makes images or only transcribes, so never gets chat requests. */
+    public static function isSpecialOnly(AiGatewayModel $model): bool
     {
         $caps = $model->capabilities ?? [];
 
-        return in_array('image_generation', $caps, true) && ! in_array('chat', $caps, true);
+        return array_intersect(self::SPECIAL_CAPABILITIES, $caps) !== [] && ! in_array('chat', $caps, true);
     }
 
     private function finalise(AiGatewayProvider $provider, ?AiGatewayModel $model, ?string $requestedModel): array

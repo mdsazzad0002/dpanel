@@ -100,6 +100,34 @@ class OpenAiAdapter implements ProviderAdapter
     }
 
     /**
+     * OpenAI's /audio/transcriptions (whisper-1, gpt-4o-transcribe, …), which
+     * Groq also serves with its Whisper models.
+     */
+    public function transcribe(AiGatewayProvider $provider, string $model, string $audio, string $filename, string $mime, array $options = []): array
+    {
+        $apiKey = $provider->getApiKey();
+
+        if (! $apiKey) {
+            throw AiGatewayException::missingCredentials($provider->name);
+        }
+
+        $response = $this->requestFor($provider, $apiKey, (int) config('aigateway.transcription_timeout', 180))
+            ->attach('file', $audio, $filename, ['Content-Type' => $mime])
+            ->post(rtrim($this->baseUrlFor($provider), '/').'/audio/transcriptions', array_filter([
+                'model' => $model,
+                'response_format' => 'json',
+                'language' => $options['language'] ?? null,
+                'prompt' => $options['prompt'] ?? null,
+            ], fn ($value) => $value !== null && $value !== ''));
+
+        if ($response->failed()) {
+            throw AiGatewayException::upstream($provider->name, $this->extractErrorMessage($response), $response->status());
+        }
+
+        return ['text' => trim((string) $response->json('text')), 'language' => $response->json('language'), 'model' => $model];
+    }
+
+    /**
      * OpenAI's own API rejects max_tokens on its newer models (gpt-5.x, o-series)
      * and takes max_completion_tokens on every chat model; the compatible
      * providers (OpenRouter, Groq, Kilo, ...) still expect max_tokens.
@@ -472,8 +500,8 @@ class OpenAiAdapter implements ProviderAdapter
     }
 
     /**
-     * What a listed model can do, or null when it can't serve chat or image
-     * requests at all (embeddings, speech, moderation, ...). Uses the
+     * What a listed model can do, or null when it can't serve chat, image or
+     * transcription requests at all (embeddings, speech, moderation, ...). Uses the
      * provider's own metadata where it reports any — OpenRouter/Kilo
      * modalities and parameters, Mistral's capability flags — and falls back
      * to the model id for providers that only return ids.
@@ -483,6 +511,11 @@ class OpenAiAdapter implements ProviderAdapter
     private function capabilitiesFor(string $driver, string $name, array $m): ?array
     {
         $id = strtolower($name);
+
+        // Speech-to-text models, served by /audio/transcriptions.
+        if (in_array($driver, ['openai', 'groq'], true) && preg_match('/whisper|transcribe/', $id) && ! preg_match('/tts|realtime|diarize|translat/', $id)) {
+            return ['transcription'];
+        }
 
         if (preg_match('/embed|whisper|tts|transcribe|moderation|guard|audio|realtime|speech|ocr|rerank|sora|veo/', $id)) {
             return null;

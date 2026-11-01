@@ -237,6 +237,68 @@ class AiGatewayApiController extends Controller
     }
 
     /**
+     * POST /api/v1/audio/transcriptions — OpenAI-compatible speech to text
+     * (multipart `file`), routed automatically to a model with the
+     * "transcription" capability: Whisper on OpenAI/Groq, or a Gemini model
+     * listening to the audio.
+     */
+    public function audioTranscriptions(Request $request): JsonResponse|\Illuminate\Http\Response
+    {
+        $data = $request->validate([
+            'file' => ['required', 'file', 'max:'.(25 * 1024)],
+            'model' => ['nullable', 'string', 'max:255'],
+            'language' => ['nullable', 'string', 'max:10'],
+            'prompt' => ['nullable', 'string', 'max:1000'],
+            'response_format' => ['nullable', 'in:json,text'],
+        ]);
+
+        if (! empty($data['model']) && strtolower($data['model']) !== 'auto') {
+            return response()->json([
+                'error' => [
+                    'message' => 'This gateway only supports automatic routing — omit "model" or set it to "auto".',
+                    'type' => 'invalid_request_error',
+                    'code' => 'unsupported_model',
+                ],
+            ], 400);
+        }
+
+        $file = $request->file('file');
+        $mime = (string) ($file->getMimeType() ?: $file->getClientMimeType());
+        // Voice notes often come as .webm/.mp4 "video" containers that hold only audio.
+        if (! preg_match('#^(audio|video)/#', $mime) && $mime !== 'application/ogg') {
+            return response()->json([
+                'error' => [
+                    'message' => "The file is not audio ({$mime}).",
+                    'type' => 'invalid_request_error',
+                    'code' => 'invalid_file',
+                ],
+            ], 400);
+        }
+
+        try {
+            $result = $this->gateway->transcribe(
+                (string) file_get_contents($file->getRealPath()),
+                $file->getClientOriginalName() ?: 'audio',
+                $mime,
+                ['language' => $data['language'] ?? null, 'prompt' => $data['prompt'] ?? null, 'channel' => 'api', 'created_by' => null],
+            );
+        } catch (\Throwable $e) {
+            return $this->errorResponse($e);
+        }
+
+        if (($data['response_format'] ?? 'json') === 'text') {
+            return response($result['text'], 200, ['Content-Type' => 'text/plain; charset=UTF-8']);
+        }
+
+        return response()->json(array_filter([
+            'text' => $result['text'],
+            'language' => $result['language'],
+            'model' => $result['model'],
+            'provider' => $result['provider']->name,
+        ], fn ($value) => $value !== null));
+    }
+
+    /**
      * OpenAI content parts to the gateway's message shape: text parts are
      * joined, image_url parts become `images`. Only data: URLs are taken —
      * the gateway does not fetch URLs on a caller's behalf.

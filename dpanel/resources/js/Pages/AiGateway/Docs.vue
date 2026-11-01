@@ -93,6 +93,18 @@ const curlImages = computed(() => `curl ${props.apiBaseUrl}/images/generations \
 # => { "created": 1730000000, "model": "gpt-image-1", "provider": "OpenAI",
 #      "data": [{ "b64_json": "iVBORw0KG...", "mime_type": "image/png" }] }`);
 
+const curlTranscribe = computed(() => `curl ${props.apiBaseUrl}/audio/transcriptions \\
+  -H "Authorization: Bearer sk-ag-..." \\
+  -F file=@voice-note.ogg \\
+  -F language=bn
+
+# => { "text": "আসসালামু আলাইকুম, POS এর দাম কত?", "language": "bn",
+#      "model": "whisper-large-v3-turbo", "provider": "Groq" }`);
+
+const pythonTranscribe = computed(() => `with open("voice-note.ogg", "rb") as audio:
+    transcript = client.audio.transcriptions.create(model="auto", file=audio)
+print(transcript.text)`);
+
 const pythonSdk = computed(() => `from openai import OpenAI
 
 client = OpenAI(
@@ -222,6 +234,26 @@ Authorization: Bearer sk-ag-...</code></pre>
                     ignored by models that pick their own). Images come back as base64 in <code>b64_json</code>.
                 </p>
                 <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlImages }}</code></pre>
+            </section>
+
+            <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+                <h2 class="text-sm font-semibold">POST /audio/transcriptions</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    OpenAI-compatible speech to text (voice notes, calls, recordings), routed automatically to a model tagged
+                    <code>transcription</code> (e.g. <code>whisper-large-v3-turbo</code> on Groq, <code>whisper-1</code> or
+                    <code>gpt-4o-mini-transcribe</code> on OpenAI, <code>gemini-2.5-flash</code>) with failover between them.
+                    Send the recording as multipart form data: <code>file</code> (required; mp3, mp4/m4a, wav, ogg/opus, webm,
+                    flac…, up to 25 MB), <code>language</code> (optional ISO code such as <code>bn</code> or <code>en</code>,
+                    helps accuracy), <code>prompt</code> (optional words or names to spell right), and
+                    <code>response_format</code> (<code>json</code>, the default, or <code>text</code> for the bare transcript).
+                    The text stays in the language spoken; it is not translated.
+                </p>
+                <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlTranscribe }}</code></pre>
+                <p class="mt-2 text-xs text-slate-400">
+                    <code>model</code> is optional and, as everywhere, only <code>"auto"</code> is accepted. With the OpenAI SDK
+                    (client set up as below):
+                </p>
+                <pre class="mt-2 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ pythonTranscribe }}</code></pre>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">

@@ -47,6 +47,7 @@ class AiGatewayListModelsTest extends TestCase
         $this->assertSame([
             'gpt-4o' => ['chat', 'vision', 'code', 'tools'],
             'gpt-image-1' => ['image_generation'],
+            'whisper-1' => ['transcription'],
         ], $this->listFor('openai'));
     }
 
@@ -71,7 +72,7 @@ class AiGatewayListModelsTest extends TestCase
         ]])]);
 
         $this->assertSame([
-            'gemini-2.5-flash' => ['chat', 'vision', 'code', 'tools'],
+            'gemini-2.5-flash' => ['chat', 'vision', 'code', 'tools', 'transcription'],
             'gemini-2.5-flash-image' => ['vision', 'image_generation'],
         ], $this->listFor('gemini'));
     }

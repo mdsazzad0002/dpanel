@@ -241,6 +241,11 @@ class AnthropicAdapter implements ProviderAdapter
         throw new \App\Services\AiGateway\Exceptions\AiGatewayException("Anthropic models cannot generate images; [{$provider->name}] / {$model} should not have the image_generation capability.");
     }
 
+    public function transcribe(AiGatewayProvider $provider, string $model, string $audio, string $filename, string $mime, array $options = []): array
+    {
+        throw new \App\Services\AiGateway\Exceptions\AiGatewayException("Anthropic models cannot take audio; [{$provider->name}] / {$model} should not have the transcription capability.");
+    }
+
     private function convertMessages(array $messages, ?string $system): array
     {
         $converted = [];

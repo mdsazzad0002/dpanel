@@ -270,6 +270,46 @@ class GeminiAdapter implements ProviderAdapter
         return ['images' => $images, 'text' => implode("\n", $texts), 'model' => $model];
     }
 
+    /**
+     * Gemini has no transcription endpoint, but its chat models listen to
+     * audio sent inline to generateContent, so they are asked for the
+     * words only.
+     */
+    public function transcribe(AiGatewayProvider $provider, string $model, string $audio, string $filename, string $mime, array $options = []): array
+    {
+        $apiKey = $provider->getApiKey();
+
+        if (! $apiKey) {
+            throw AiGatewayException::missingCredentials($provider->name);
+        }
+
+        $instruction = 'Transcribe this audio word for word, in the language and script it is spoken in'
+            .(! empty($options['language']) ? " (language: {$options['language']})" : '')
+            .'. Reply with the transcript only: no translation, notes, labels or timestamps. If nothing is said, reply with nothing.'
+            .(! empty($options['prompt']) ? "\nContext that may help with names and spelling: {$options['prompt']}" : '');
+
+        $response = Http::timeout((int) config('aigateway.transcription_timeout', 180))
+            ->acceptJson()
+            ->post(rtrim($provider->base_url ?: self::BASE_URL, '/').'/v1beta/models/'.$model.':generateContent?key='.urlencode($apiKey), [
+                'contents' => [['role' => 'user', 'parts' => [
+                    ['inline_data' => ['mime_type' => $mime, 'data' => base64_encode($audio)]],
+                    ['text' => $instruction],
+                ]]],
+                'generationConfig' => ['temperature' => 0],
+            ]);
+
+        if ($response->failed()) {
+            $error = $response->json('error.message') ?: (string) $response->body();
+            throw AiGatewayException::upstream($provider->name, $error !== '' ? $error : 'HTTP '.$response->status(), $response->status());
+        }
+
+        $text = collect((array) $response->json('candidates.0.content.parts', []))
+            ->map(fn ($part) => (string) ($part['text'] ?? ''))
+            ->implode('');
+
+        return ['text' => trim($text), 'language' => $options['language'] ?? null, 'model' => $model];
+    }
+
     private function convertMessages(array $messages, ?string $system): array
     {
         $contents = [];
@@ -530,6 +570,6 @@ class GeminiAdapter implements ProviderAdapter
             return ModelCatalog::withCodeHint($name, $capabilities);
         }
 
-        return ModelCatalog::withCodeHint($name, ['chat', 'vision', 'tools']);
+        return ModelCatalog::withCodeHint($name, ['chat', 'vision', 'tools', 'transcription']);
     }
 }

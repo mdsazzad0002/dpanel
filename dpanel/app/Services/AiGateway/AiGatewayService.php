@@ -410,6 +410,72 @@ class AiGatewayService
     }
 
     /**
+     * Turn a voice recording into text with a model tagged "transcription",
+     * failing over between such models like generateImage().
+     *
+     * @param  array{language?: ?string, prompt?: ?string, channel?: string, created_by?: int|null}  $options
+     * @return array{text: string, language: ?string, model: string, provider: AiGatewayProvider, trace_id: string}
+     */
+    public function transcribe(string $audio, string $filename, string $mime, array $options = []): array
+    {
+        $candidates = $this->router->candidates(null, null, ['transcription']);
+
+        if ($candidates->isEmpty()) {
+            throw new Exceptions\AiGatewayException('No active transcription model. Add one (e.g. whisper-large-v3-turbo on Groq, whisper-1 on OpenAI or gemini-2.5-flash) under AI Gateway → Models and give it the "transcription" capability.');
+        }
+
+        $lastException = null;
+        $options['operation'] = 'transcription';
+
+        foreach ($candidates as $modelRecord) {
+            $provider = $modelRecord->provider;
+            $traceId = (string) Str::uuid();
+            $start = microtime(true);
+
+            try {
+                $result = $this->adapterFor($provider->driver)->transcribe($provider, $modelRecord->name, $audio, $filename, $mime, [
+                    'language' => $options['language'] ?? null,
+                    'prompt' => $options['prompt'] ?? null,
+                ]);
+            } catch (\Throwable $e) {
+                $lastException = $e;
+                $this->recordFailure($provider, $modelRecord, $modelRecord->name, $traceId, $options, $e);
+
+                if ($e instanceof Exceptions\AiGatewayException) {
+                    $modelRecord->recordFailure($e->suggestedRetrySeconds());
+
+                    continue;
+                }
+
+                throw $e;
+            }
+
+            $modelRecord->recordSuccess();
+            AiGatewayUsageRecord::record($provider->id, $modelRecord->id, 0, 0, 0);
+            AiGatewayRequestLog::create([
+                'trace_id' => $traceId,
+                'channel' => $options['channel'] ?? 'gateway',
+                'provider_id' => $provider->id,
+                'model_id' => $modelRecord->id,
+                'operation' => 'transcription',
+                'model' => $modelRecord->name,
+                'status' => 'success',
+                'request_payload' => config('aigateway.log_payloads', true) ? $filename.' ('.$mime.', '.strlen($audio).' bytes)' : null,
+                'response_snippet' => Str::limit($result['text'], 500),
+                'input_tokens' => 0,
+                'output_tokens' => 0,
+                'cost' => 0,
+                'latency_ms' => (int) round((microtime(true) - $start) * 1000),
+                'created_by' => $options['created_by'] ?? auth()->id() ?? null,
+            ]);
+
+            return [...$result, 'provider' => $provider, 'trace_id' => $traceId];
+        }
+
+        throw $lastException;
+    }
+
+    /**
      * Capabilities auto-routing should prefer for a request.
      *
      * @return array<int, string>

@@ -99,13 +99,14 @@ const provider = computed(() => (isAuto.value ? null : props.providers.find((p) 
 const canAuto = computed(() => props.providers.length > 1);
 
 const hasCap = (m, cap) => (m?.capabilities || []).includes(cap);
-const isImageOnly = (m) => hasCap(m, 'image_generation') && !hasCap(m, 'chat');
+// Image and transcription models without "chat" can't answer messages.
+const isSpecialOnly = (m) => (hasCap(m, 'image_generation') || hasCap(m, 'transcription')) && !hasCap(m, 'chat');
 
 // Chat mode answers messages; image mode sends the prompt to an image model.
 const mode = ref('chat');
 
 const availableModels = computed(() => {
-    const fits = (m) => (mode.value === 'image' ? hasCap(m, 'image_generation') : !isImageOnly(m));
+    const fits = (m) => (mode.value === 'image' ? hasCap(m, 'image_generation') : !isSpecialOnly(m));
     if (!isAuto.value) return (provider.value?.models || []).filter(fits);
 
     const seen = new Map();
