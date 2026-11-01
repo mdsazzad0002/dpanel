@@ -92,11 +92,11 @@ const act = (action, extra = {}, confirmText = '') => {
                         <p class="text-xs text-slate-500">Locking disables password login only; SSH keys still work while the shell allows login.</p>
                         <div class="flex gap-2">
                             <div class="relative min-w-0 flex-1">
-                                <input v-model="password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" placeholder="New password (min 8)" class="w-full rounded-lg border border-slate-300 px-3 py-2 pr-9 dark:border-slate-700 dark:bg-slate-800" />
+                                <input v-model="password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" placeholder="New password (min 6)" class="w-full rounded-lg border border-slate-300 px-3 py-2 pr-9 dark:border-slate-700 dark:bg-slate-800" />
                                 <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" :aria-label="showPassword ? 'Hide password' : 'Show password'" @click="showPassword = !showPassword"><i :class="showPassword ? 'bi bi-eye-slash' : 'bi bi-eye'"></i></button>
                             </div>
                             <button type="button" class="rounded-lg border border-slate-300 px-3 py-2 text-xs dark:border-slate-700" title="Generate a strong password" @click="generatePassword"><i class="bi bi-magic"></i></button>
-                            <button type="button" :disabled="busy || password.length < 8" class="rounded-lg bg-blue-600 px-3 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50" @click="act('set_password', { password })"><i v-if="pending === 'set_password'" class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>{{ pending === 'set_password' ? 'Saving…' : 'Set' }}</button>
+                            <button type="button" :disabled="busy || password.length < 6" class="rounded-lg bg-blue-600 px-3 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50" @click="act('set_password', { password })"><i v-if="pending === 'set_password'" class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>{{ pending === 'set_password' ? 'Saving…' : 'Set' }}</button>
                         </div>
                         <button v-if="!user.password_locked" type="button" :disabled="busy" class="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300" @click="act('lock', {}, `Lock password login for ${user.name}?`)">
                             <i :class="pending === 'lock' ? 'bi bi-arrow-repeat inline-block animate-spin' : 'bi bi-lock'" class="mr-1"></i>{{ pending === 'lock' ? 'Locking…' : 'Lock password' }}

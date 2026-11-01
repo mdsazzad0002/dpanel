@@ -205,8 +205,8 @@ pub fn set_password_lock(name: &str, locked: bool) -> Result<String, String> {
 
 pub fn set_password(name: &str, password: &str) -> Result<String, String> {
     find_user(name)?;
-    if password.chars().count() < 8 || password.chars().count() > 128 {
-        return Err("Password must be 8 to 128 characters.".into());
+    if password.chars().count() < 6 || password.chars().count() > 128 {
+        return Err("Password must be 6 to 128 characters.".into());
     }
     if password.contains(['\n', '\r', ':']) {
         return Err("Password cannot contain new lines or ':'.".into());

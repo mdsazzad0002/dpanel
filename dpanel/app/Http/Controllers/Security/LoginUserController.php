@@ -45,7 +45,7 @@ class LoginUserController extends Controller
             'action' => ['required', 'in:set_shell,lock,unlock,set_password,end_sessions'],
             'user' => ['required', 'string', 'max:32', 'regex:/^[a-z_][a-z0-9_.-]*\$?$/i'],
             'shell' => ['required_if:action,set_shell', 'nullable', 'string', 'max:128', 'regex:#^/[A-Za-z0-9/_.-]+$#'],
-            'password' => ['required_if:action,set_password', 'nullable', 'string', 'min:8', 'max:128'],
+            'password' => ['required_if:action,set_password', 'nullable', 'string', 'min:6', 'max:128'],
         ]);
 
         $payload = array_filter([
