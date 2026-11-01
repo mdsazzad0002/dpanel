@@ -35,6 +35,10 @@ pub struct TerminalTicket {
     pub host: String,
     #[serde(default)]
     pub php_version: Option<String>,
+    /// Folder the shell starts in; must sit inside project_root, otherwise
+    /// the session starts in project_root.
+    #[serde(default)]
+    pub working_directory: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -45,7 +49,7 @@ struct TicketResponse {
 pub async fn register_ticket(
     State(state): State<Arc<DemoServerState>>,
     headers: HeaderMap,
-    Json(ticket): Json<TerminalTicket>,
+    Json(mut ticket): Json<TerminalTicket>,
 ) -> Response {
     let configured = std::env::var("DRUST_API_TOKEN").unwrap_or_default();
     let supplied = headers
@@ -59,6 +63,7 @@ pub async fn register_ticket(
     if validate_ticket(&ticket).is_err() {
         return StatusCode::UNPROCESSABLE_ENTITY.into_response();
     }
+    ticket.working_directory = start_directory(&ticket);
     state
         .terminal_tickets
         .lock()
@@ -137,6 +142,16 @@ fn validate_ticket(ticket: &TerminalTicket) -> Result<(), ()> {
         return Err(());
     }
     Ok(())
+}
+
+fn start_directory(ticket: &TerminalTicket) -> Option<String> {
+    let requested = ticket.working_directory.as_deref()?;
+    let root = Path::new(&ticket.project_root).canonicalize().ok()?;
+    let dir = Path::new(requested).canonicalize().ok()?;
+    if !dir.starts_with(&root) || !dir.is_dir() {
+        return None;
+    }
+    dir.to_str().map(str::to_owned)
 }
 
 fn now() -> u64 {
@@ -310,7 +325,7 @@ fn spawn_pty(
         .into_owned();
     let protected_ssh_target = format!("{}/.ssh", ticket.project_root);
     let protected_dpanel_target = format!("{}/.dpanel", ticket.project_root);
-    let prompt = format!("[{}@dpanel \\W]\\$ ", ticket.site_owner);
+    let prompt = format!("[{}@dpanel ${{PWD}}]\\$ ", ticket.site_owner);
     let (php_pin, path) = crate::php::cli::sandbox_pin(ticket.php_version.as_deref());
     let pty = native_pty_system()
         .openpty(PtySize {
@@ -405,7 +420,10 @@ fn spawn_pty(
         &protected_dpanel,
         &protected_dpanel_target,
         "--chdir",
-        &ticket.project_root,
+        ticket
+            .working_directory
+            .as_deref()
+            .unwrap_or(&ticket.project_root),
     ];
     let sandbox_env = [
         "--clearenv",

@@ -4,6 +4,7 @@ defineOptions({
 });
 
 import { Head } from '@inertiajs/vue3';
+import { ref } from 'vue';
 import { useFileManager } from './composables/useFileManager';
 import TopBar from './components/TopBar.vue';
 import SidebarTree from './components/SidebarTree.vue';
@@ -22,6 +23,7 @@ import UnzipModal from './components/UnzipModal.vue';
 import TrashModal from './components/TrashModal.vue';
 import CreateFolderModal from './components/CreateFolderModal.vue';
 import CreateFileModal from './components/CreateFileModal.vue';
+import WebsiteTerminal from '@/Components/WebsiteTerminal.vue';
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -37,9 +39,19 @@ const props = defineProps({
     directoryTree: { type: Array, default: () => [] },
     items: { type: Array, default: () => [] },
     selectedFile: { type: Object, default: null },
+    canUseTerminal: { type: Boolean, default: false },
 });
 
 const fm = useFileManager(props);
+
+// Mounted on first open and kept alive afterwards so closing the drawer
+// doesn't drop the shell session.
+const terminalMounted = ref(false);
+const terminalOpen = ref(false);
+const openTerminal = () => {
+    terminalMounted.value = true;
+    terminalOpen.value = true;
+};
 </script>
 
 <template>
@@ -100,6 +112,35 @@ const fm = useFileManager(props);
 
         <ContextMenu :fm="fm" />
         <ToastStack :fm="fm" />
+
+        <button
+            v-if="props.canUseTerminal"
+            v-show="!terminalOpen"
+            type="button"
+            class="fixed right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-2 rounded-l-lg bg-slate-900 px-1.5 py-3 text-xs font-semibold tracking-wide text-slate-100 shadow-lg transition hover:bg-slate-800 hover:pr-2.5 dark:bg-slate-800 dark:hover:bg-slate-700"
+            title="Open terminal"
+            @click="openTerminal"
+        >
+            <i class="bi bi-chevron-left text-[10px]"></i>
+            <span class="rotate-180 [writing-mode:vertical-rl]">Terminal</span>
+        </button>
+
+        <template v-if="props.canUseTerminal && terminalMounted">
+            <Transition enter-from-class="opacity-0" leave-to-class="opacity-0" enter-active-class="transition-opacity duration-200" leave-active-class="transition-opacity duration-200">
+                <div v-show="terminalOpen" class="fixed inset-0 z-40 bg-black/40" @click="terminalOpen = false"></div>
+            </Transition>
+            <Transition enter-from-class="translate-x-full" leave-to-class="translate-x-full" enter-active-class="transition-transform duration-300 ease-out" leave-active-class="transition-transform duration-200 ease-in">
+                <aside v-show="terminalOpen" class="fixed inset-y-0 right-0 z-40 w-full border-l border-slate-800 shadow-2xl md:w-[70vw]">
+                    <WebsiteTerminal :website="props.website" fill>
+                        <template #actions>
+                            <button type="button" class="text-slate-400 hover:text-white" title="Close terminal" @click="terminalOpen = false">
+                                <i class="bi bi-x-lg text-sm"></i>
+                            </button>
+                        </template>
+                    </WebsiteTerminal>
+                </aside>
+            </Transition>
+        </template>
 
         <div v-if="fm.modalType" class="fixed inset-0 z-50 flex bg-black/40 p-2 sm:p-4" :class="fm.modalType === 'editor' ? 'items-stretch justify-stretch p-0 sm:p-0' : 'items-center justify-center'">
             <div

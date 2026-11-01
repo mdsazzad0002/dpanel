@@ -60,6 +60,8 @@ class WebsiteTerminalController extends Controller
             'ticket' => $ticket,
             'site_owner' => (string) $website->site_owner,
             'project_root' => $this->terminalPath($website),
+            // drust falls back to project_root when this is outside it or missing.
+            'working_directory' => (string) $website->root_path,
             'expires_at' => now()->addSeconds(60)->timestamp,
             'host' => $request->getHost(),
             'php_version' => $this->phpVersion($website),

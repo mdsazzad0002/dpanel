@@ -19,6 +19,7 @@ const props = defineProps({
     directoryTree: { type: Array, default: () => [] },
     items: { type: Array, default: () => [] },
     selectedFile: { type: Object, default: null },
+    canUseTerminal: { type: Boolean, default: false },
 });
 </script>
 
