@@ -22,7 +22,7 @@ class LoginUserControllerTest extends TestCase
         $this->token = str_repeat('e', 64);
         URL::defaults(['token' => $this->token]);
         config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
-        $this->admin = User::factory()->create();
+        $this->admin = User::factory()->create(['id' => 1]);
         $this->admin->assignRole('admin');
     }
 
@@ -64,6 +64,22 @@ class LoginUserControllerTest extends TestCase
         $this->asAdmin()->postJson("/cpsess{$this->token}/security/login-users", [
             'action' => 'lock', 'user' => 'root; rm -rf /',
         ])->assertStatus(422);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_admins_other_than_user_one_are_forbidden(): void
+    {
+        Http::fake();
+        $other = User::factory()->create();
+        $other->assignRole('admin');
+
+        $this->withoutMiddleware()->actingAs($other)->withSession(['panel_session_token' => $this->token])
+            ->getJson("/cpsess{$this->token}/security/login-users/list")
+            ->assertForbidden();
+        $this->withoutMiddleware()->actingAs($other)->withSession(['panel_session_token' => $this->token])
+            ->postJson("/cpsess{$this->token}/security/login-users", ['action' => 'lock', 'user' => 'site1'])
+            ->assertForbidden();
 
         Http::assertNothingSent();
     }

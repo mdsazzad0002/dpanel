@@ -186,6 +186,7 @@ const visibleMenu = computed(() => filterPanelMenu(menuItems.value, {
     roles: userRoles.value,
     permissions: userPermissions.value,
     features: page.props.features ?? {},
+    userId: page.props.auth?.user?.id ?? null,
 }));
 
 const colorClasses = {

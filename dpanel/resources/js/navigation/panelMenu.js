@@ -177,7 +177,7 @@ export const buildPanelMenu = (userRoles = []) => [
             { label: 'Detection Rules', hint: 'Turn scanner rules on or off', icon: 'DR', iconClass: 'bi bi-list-check', routeName: 'security.center.rules', roles: ['admin'] },
         ],
     },
-    { section: 'Security', label: 'Login Users', hint: 'Server accounts that can log in over SSH', icon: 'LU', iconClass: 'bi bi-person-lock', routeName: 'security.login-users', roles: ['admin'], color: 'violet' },
+    { section: 'Security', label: 'Login Users', hint: 'Server accounts that can log in over SSH', icon: 'LU', iconClass: 'bi bi-person-lock', routeName: 'security.login-users', roles: ['admin'], userIds: [1], color: 'violet' },
     { section: 'Security', label: 'Firewall & SSH', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], permissions: ['manage_security'], color: 'red' },
     {
         section: 'Security',
@@ -249,8 +249,10 @@ export const hasMenuAccess = (item, roles = [], permissions = []) => {
     return true;
 };
 
-export const filterPanelMenu = (items, { roles = [], permissions = [], features = {} } = {}) => items
+export const filterPanelMenu = (items, { roles = [], permissions = [], features = {}, userId = null } = {}) => items
     .map((item) => {
+        // userIds pins an item to specific panel accounts (e.g. only the primary user).
+        if (item.userIds && !item.userIds.includes(Number(userId))) return null;
         if (item.feature && !features?.[item.feature]) {
             item = { ...item, hint: 'Not installed — open for setup steps' };
         }

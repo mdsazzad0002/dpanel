@@ -78,26 +78,18 @@ const poll = async () => {
 const start = async () => {
     starting.value = true; error.value = '';
     try {
-        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-        const response = await fetch(props.panelRoute('websites.bulk-export'), {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest' },
-            body: JSON.stringify({
-                website_ids: props.websites.map((site) => String(site.id)),
-                files: includeFiles.value,
-                databases: includeDatabases.value,
-            }),
+        // axios sends the fresh XSRF-TOKEN cookie; the <meta> token can be stale after login.
+        const { data } = await window.axios.post(props.panelRoute('websites.bulk-export'), {
+            website_ids: props.websites.map((site) => String(site.id)),
+            files: includeFiles.value,
+            databases: includeDatabases.value,
         });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) {
-            throw new Error(data.message || Object.values(data.errors || {}).flat().join(' ') || 'Bulk export failed to start.');
-        }
         items.value = data.items.map((item) => ({ ...item, key: item.export_id, stage: 'queued', downloadUrl: null, message: '' }));
         stopPolling();
         pollTimer = window.setInterval(poll, 5000);
     } catch (e) {
-        error.value = e.message;
+        const data = e?.response?.data || {};
+        error.value = data.message || Object.values(data.errors || {}).flat().join(' ') || e.message || 'Bulk export failed to start.';
     } finally {
         starting.value = false;
     }

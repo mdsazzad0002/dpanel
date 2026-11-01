@@ -13,18 +13,23 @@ use Inertia\Response;
 /**
  * Linux accounts that can log in to the server (root and uid >= 1000), read
  * and changed through drust: login shell, password lock, password, sessions.
+ * Root-level account control, so only the first panel user (id 1) may use it.
  */
 class LoginUserController extends Controller
 {
     public function __construct(private readonly ActivityLogService $activity) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $this->authorizeOwner($request);
+
         return Inertia::render('Security/LoginUsers/Index');
     }
 
-    public function list(): JsonResponse
+    public function list(Request $request): JsonResponse
     {
+        $this->authorizeOwner($request);
+
         try {
             return response()->json(['ok' => true, ...$this->drust()]);
         } catch (\RuntimeException $e) {
@@ -34,6 +39,8 @@ class LoginUserController extends Controller
 
     public function control(Request $request): JsonResponse
     {
+        $this->authorizeOwner($request);
+
         $validated = $request->validate([
             'action' => ['required', 'in:set_shell,lock,unlock,set_password,end_sessions'],
             'user' => ['required', 'string', 'max:32', 'regex:/^[a-z_][a-z0-9_.-]*\$?$/i'],
@@ -60,6 +67,11 @@ class LoginUserController extends Controller
         ]), $request);
 
         return response()->json(['ok' => true, 'message' => $result['message']]);
+    }
+
+    private function authorizeOwner(Request $request): void
+    {
+        abort_unless((int) $request->user()?->id === 1, 403, 'Only the primary panel user can manage server login users.');
     }
 
     /**

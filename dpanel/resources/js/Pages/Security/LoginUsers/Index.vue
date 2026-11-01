@@ -11,7 +11,8 @@ const panelRoute = (name, params = {}) => token.value ? route(name, { token: tok
 const users = ref([]);
 const shells = ref([]);
 const loading = ref(false);
-const busy = ref(false);
+// Name of the action in flight ('' when idle), so only its button spins.
+const pendingAction = ref('');
 const error = ref('');
 const notice = ref('');
 const search = ref('');
@@ -31,33 +32,30 @@ const stats = computed(() => ({
     online: users.value.filter((user) => user.sessions > 0).length,
 }));
 
-const load = async () => {
-    loading.value = true; error.value = '';
-    try {
-        const response = await fetch(panelRoute('security.login-users.list'), {
-            credentials: 'same-origin', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) throw new Error(data.message || 'Unable to load login users.');
-        users.value = data.users || [];
-        shells.value = data.shells || [];
-    } catch (e) { error.value = e.message; } finally { loading.value = false; }
+const errorMessage = (e, fallback) => {
+    const data = e?.response?.data || {};
+    if (e?.response?.status === 419) return 'Your session expired — reload the page and try again.';
+    return data.message || Object.values(data.errors || {}).flat().join(' ') || e?.message || fallback;
 };
 
-const runAction = async (payload) => {
-    busy.value = true; error.value = ''; notice.value = '';
+const load = async () => {
+    loading.value = true;
     try {
-        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-        const response = await fetch(panelRoute('security.login-users.control'), {
-            method: 'POST', credentials: 'same-origin',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest' },
-            body: JSON.stringify(payload),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) throw new Error(data.message || Object.values(data.errors || {}).flat().join(' ') || 'Action failed.');
+        const { data } = await window.axios.get(panelRoute('security.login-users.list'));
+        users.value = data.users || [];
+        shells.value = data.shells || [];
+    } catch (e) { error.value = errorMessage(e, 'Unable to load login users.'); } finally { loading.value = false; }
+};
+
+// axios sends the always-fresh XSRF-TOKEN cookie; the <meta> CSRF token goes
+// stale after login (Inertia never reloads it), which made every action 419.
+const runAction = async (payload) => {
+    pendingAction.value = payload.action; error.value = ''; notice.value = '';
+    try {
+        const { data } = await window.axios.post(panelRoute('security.login-users.control'), payload);
         notice.value = data.message;
         await load();
-    } catch (e) { error.value = e.message; } finally { busy.value = false; }
+    } catch (e) { error.value = errorMessage(e, 'Action failed.'); } finally { pendingAction.value = ''; }
 };
 
 onMounted(load);
@@ -104,7 +102,13 @@ onMounted(load);
                     </button>
                 </div>
 
-                <div v-if="loading && !users.length" class="py-12 text-center text-sm text-slate-500">Loading users…</div>
+                <div v-if="loading && users.length" class="h-0.5 w-full overflow-hidden bg-blue-100 dark:bg-blue-950"><div class="h-full w-1/3 animate-pulse bg-blue-500"></div></div>
+                <ul v-if="loading && !users.length" class="divide-y divide-slate-100 dark:divide-slate-800" aria-label="Loading users">
+                    <li v-for="n in 4" :key="n" class="flex animate-pulse items-center gap-3 p-4">
+                        <div class="h-10 w-10 rounded-xl bg-slate-200 dark:bg-slate-800"></div>
+                        <div class="flex-1 space-y-2"><div class="h-3 w-40 rounded bg-slate-200 dark:bg-slate-800"></div><div class="h-2.5 w-64 rounded bg-slate-100 dark:bg-slate-800/60"></div></div>
+                    </li>
+                </ul>
                 <div v-else-if="!filteredUsers.length" class="py-12 text-center text-sm text-slate-500">No users match.</div>
                 <ul v-else class="divide-y divide-slate-100 dark:divide-slate-800">
                     <li v-for="user in filteredUsers" :key="user.name" class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -131,6 +135,6 @@ onMounted(load);
             </section>
         </div>
 
-        <LoginUserPanel :user="selectedUser" :shells="shells" :busy="busy" :error="error" :notice="notice" @close="selectedName = ''; notice = ''" @action="runAction" />
+        <LoginUserPanel :user="selectedUser" :shells="shells" :busy="pendingAction !== ''" :pending="pendingAction" :error="error" :notice="notice" @close="selectedName = ''; notice = ''" @action="runAction" />
     </AuthenticatedLayout>
 </template>
