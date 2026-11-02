@@ -62,7 +62,8 @@ class AiGatewayUsageRecord extends Model
             $row = self::query()
                 ->where('provider_id', $providerId)
                 ->where('model_id', $modelId)
-                ->where('usage_date', now()->toDateString())
+                // whereDate: SQLite keeps the date cast as "Y-m-d 00:00:00".
+                ->whereDate('usage_date', now()->toDateString())
                 ->lockForUpdate()
                 ->first();
 

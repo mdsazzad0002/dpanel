@@ -119,6 +119,8 @@ const testModel = async (m) => {
     try {
         const { data } = await axios.post(panelRoute('ai-gateway.models.test', { model: m.id }));
         m.last_test = data;
+        // The server already saved what the probes found.
+        if (data.capabilities) m.capabilities = data.capabilities;
     } catch (e) {
         m.last_test = { ok: false, message: e.response?.data?.message || 'The test request failed.', latency_ms: 0, tested_at: new Date().toISOString() };
     } finally {
@@ -137,6 +139,9 @@ const testedSummary = computed(() => {
     const tested = props.models.filter((m) => m.last_test);
     return { ok: tested.filter((m) => m.last_test.ok).length, failed: tested.filter((m) => !m.last_test.ok).length };
 });
+const PROBE_LABELS = { chat: 'chat', code: 'code', tools: 'tools', vision: 'vision' };
+const capsChanged = (t) => t?.capabilities
+    && [...t.capabilities].sort().join() !== [...(t.previous_capabilities || [])].sort().join();
 const fmtSeconds = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`);
 const ago = (iso) => {
     const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
@@ -299,7 +304,7 @@ const saveEdit = (m) => {
                 class="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
                     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-2 dark:border-slate-700">
                         <div class="text-xs text-slate-500">
-                            Test sends one short chat directly to the model (no failover) and checks it answers.
+                            Test asks the model directly (no failover): a reply, a code question, a tool call and a picture. What it passes becomes its capabilities.
                             <span v-if="testedSummary.ok || testedSummary.failed" class="ml-1">
                                 <span class="text-emerald-600">{{ testedSummary.ok }} working</span><template v-if="testedSummary.failed"> · <span class="text-red-600">{{ testedSummary.failed }} failing</span></template>
                             </span>
@@ -396,6 +401,14 @@ const saveEdit = (m) => {
                                                 {{ m.last_test.ok ? 'Working' : 'Failed' }}
                                                 <span class="text-slate-400">· {{ fmtSeconds(m.last_test.latency_ms) }}<template v-if="m.last_test.ok && m.last_test.tokens_per_second"> · {{ m.last_test.tokens_per_second }} tok/s</template> · {{ ago(m.last_test.tested_at) }}</span>
                                             </div>
+                                            <div v-if="m.last_test.probes && Object.keys(m.last_test.probes).length" class="mt-0.5 flex flex-wrap gap-1">
+                                                <span v-for="(p, key) in m.last_test.probes" :key="key" :title="p.note"
+                                                    class="rounded px-1.5 py-0.5 text-[11px]"
+                                                    :class="p.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-400 line-through dark:bg-slate-800'">
+                                                    {{ PROBE_LABELS[key] || key }}
+                                                </span>
+                                            </div>
+                                            <div v-if="capsChanged(m.last_test)" class="mt-0.5 text-indigo-600">Capabilities updated from the test</div>
                                             <div class="truncate text-slate-500" :title="m.last_test.message">{{ m.last_test.message }}</div>
                                         </template>
                                         <span v-else-if="!m.testable" class="text-slate-400">Not a chat model</span>
@@ -409,7 +422,7 @@ const saveEdit = (m) => {
                                     </td>
                                     <td class="space-x-1 px-4 py-3 text-right">
                                         <button v-if="m.testable" @click="testModel(m)" :disabled="!!testing[m.id]"
-                                            title="Send one short chat to this model and check it answers"
+                                            title="Probe chat, code, tools and vision, and update the capabilities"
                                             class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600"><i class="bi bi-play"></i> Test</button>
                                         <button @click="startEdit(m)"
                                             class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600">Edit</button>

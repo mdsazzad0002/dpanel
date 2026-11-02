@@ -9,6 +9,7 @@ use App\Services\AiGateway\ModelCatalog;
 use App\Services\LocalLlmServiceManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -141,15 +142,18 @@ class AiGatewayLocalLlmController extends Controller
             foreach ($installed as $model) {
                 $detected = $model['profile']['detected'] ?? [];
                 $trained = (int) ($detected['n_ctx_train'] ?? 0);
-                $provider->models()->updateOrCreate(['name' => $model['id']], [
+                $row = $provider->models()->firstOrNew(['name' => $model['id']]);
+                // A model test on the Models page beats guessing from metadata.
+                $tested = $row->exists ? Cache::get(AiGatewayModelController::testCacheKey($row))['capabilities'] ?? null : null;
+                $row->fill([
                     'display_name' => ($detected['name'] ?? $model['id']).' (local)',
                     'context_window' => $trained > 0 ? min($trained, $ctxSize) : $ctxSize,
                     'max_output_tokens' => (int) ($config['max_tokens'] ?? 2048),
-                    'capabilities' => $this->capabilitiesFor($model),
+                    'capabilities' => $tested ?? $this->capabilitiesFor($model),
                     'input_price' => 0,
                     'output_price' => 0,
                     'is_active' => true,
-                ]);
+                ])->save();
             }
             // The fastest measured model answers chats that name no model.
             $default = $this->fastest($installed);

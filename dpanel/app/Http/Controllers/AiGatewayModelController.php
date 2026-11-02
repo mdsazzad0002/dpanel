@@ -6,9 +6,9 @@ use App\Models\AiGatewayModel;
 use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\AiGatewayService;
 use App\Services\AiGateway\Exceptions\AiGatewayException;
+use App\Services\AiGateway\ModelProber;
 use App\Services\AiGateway\Router;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -64,46 +64,25 @@ class AiGatewayModelController extends Controller
     }
 
     /**
-     * Sends one short chat straight to this model on its own provider (no
-     * routing, no failover), so a broken key, a retired model name or a slow
-     * local model shows up here instead of in a user's chat. The result is
-     * kept for the page; the call is also in the request log like any chat.
+     * Tests the model straight on its own provider (no routing, no
+     * failover): a plain reply, then code, tool-calling and image probes.
+     * What it passes becomes the model's capabilities, so routing sends
+     * tool and image requests only where they work. The result is kept for
+     * the page; each call is also in the request log.
      */
-    public function test(Request $request, $token, AiGatewayModel $model): JsonResponse
+    public function test(Request $request, $token, AiGatewayModel $model, ModelProber $prober): JsonResponse
     {
         $model->loadMissing('provider');
         if (! $model->provider || Router::isSpecialOnly($model)) {
             return response()->json(['message' => 'Only chat models can be tested here.'], 422);
         }
+        // Four calls; a local model on a CPU can take a while.
+        set_time_limit(600);
 
-        $started = microtime(true);
-        try {
-            $result = $this->gateway->chatWithProvider($model->provider, $model, $model->name, [
-                ['role' => 'user', 'content' => 'Say hello and name one thing you can help with, in one short sentence.'],
-            ], [
-                'temperature' => 0,
-                'max_tokens' => 48,
-                'channel' => 'model_test',
-                'created_by' => $request->user()?->id,
-            ]);
-            $seconds = max(microtime(true) - $started, 0.001);
-            $reply = trim((string) $result['content']);
-            $test = [
-                'ok' => $reply !== '',
-                'message' => $reply !== '' ? Str::limit($reply, 160) : 'The model answered with an empty reply.',
-                'latency_ms' => (int) round($seconds * 1000),
-                'output_tokens' => (int) $result['output_tokens'],
-                // Whole request, so it includes the wait for the first token.
-                'tokens_per_second' => round($result['output_tokens'] / $seconds, 1),
-            ];
-        } catch (\Throwable $e) {
-            $test = [
-                'ok' => false,
-                'message' => Str::limit($e->getMessage(), 300),
-                'latency_ms' => (int) round((microtime(true) - $started) * 1000),
-                'output_tokens' => 0,
-                'tokens_per_second' => 0,
-            ];
+        $test = $prober->probe($model, $request->user()?->id);
+        $test['previous_capabilities'] = $model->capabilities ?? [];
+        if ($test['capabilities'] !== null) {
+            $model->update(['capabilities' => $test['capabilities']]);
         }
         $test['tested_at'] = now()->toIso8601String();
         Cache::put(self::testCacheKey($model), $test, now()->addDays(30));
@@ -111,7 +90,8 @@ class AiGatewayModelController extends Controller
         return response()->json($test);
     }
 
-    private static function testCacheKey(AiGatewayModel $model): string
+    /** Where the last test result is kept (also read by Local Models' sync). */
+    public static function testCacheKey(AiGatewayModel $model): string
     {
         return 'aigateway:model-test:'.$model->id;
     }
