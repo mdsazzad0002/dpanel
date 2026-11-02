@@ -111,6 +111,41 @@ const toggle = async (m) => {
         alert(e.response?.data?.message || 'Could not update the model.');
     }
 };
+// Model tester: one short chat straight to the model (no failover).
+const testing = reactive({});
+const testAllRunning = ref(false);
+const testModel = async (m) => {
+    testing[m.id] = true;
+    try {
+        const { data } = await axios.post(panelRoute('ai-gateway.models.test', { model: m.id }));
+        m.last_test = data;
+    } catch (e) {
+        m.last_test = { ok: false, message: e.response?.data?.message || 'The test request failed.', latency_ms: 0, tested_at: new Date().toISOString() };
+    } finally {
+        delete testing[m.id];
+    }
+};
+// One at a time: local models share one machine and providers rate-limit.
+const testAll = async () => {
+    testAllRunning.value = true;
+    for (const m of props.models.filter((x) => x.is_active && x.testable)) {
+        await testModel(m);
+    }
+    testAllRunning.value = false;
+};
+const testedSummary = computed(() => {
+    const tested = props.models.filter((m) => m.last_test);
+    return { ok: tested.filter((m) => m.last_test.ok).length, failed: tested.filter((m) => !m.last_test.ok).length };
+});
+const fmtSeconds = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`);
+const ago = (iso) => {
+    const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+};
+
 const remove = (m) => { if (confirm(`Remove model "${m.name}"?`)) delForm.delete(panelRoute('ai-gateway.models.destroy', { model: m.id })); };
 
 const editingId = ref(null);
@@ -262,6 +297,19 @@ const saveEdit = (m) => {
 
             <div
                 class="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-2 dark:border-slate-700">
+                        <div class="text-xs text-slate-500">
+                            Test sends one short chat directly to the model (no failover) and checks it answers.
+                            <span v-if="testedSummary.ok || testedSummary.failed" class="ml-1">
+                                <span class="text-emerald-600">{{ testedSummary.ok }} working</span><template v-if="testedSummary.failed"> · <span class="text-red-600">{{ testedSummary.failed }} failing</span></template>
+                            </span>
+                        </div>
+                        <button @click="testAll" :disabled="testAllRunning"
+                            class="rounded-md border border-slate-300 px-3 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">
+                            <i class="bi bi-play-circle"></i> {{ testAllRunning ? 'Testing…' : 'Test all active' }}
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
                         <thead class="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800">
                             <tr>
@@ -270,6 +318,7 @@ const saveEdit = (m) => {
                                 <th class="px-4 py-3 font-medium">Context</th>
                                 <th class="px-4 py-3 font-medium">Max Output</th>
                                 <th class="px-4 py-3 font-medium">Capabilities</th>
+                                <th class="px-4 py-3 font-medium">Last test</th>
                                 <th class="px-4 py-3 font-medium">Default</th>
                                 <th class="px-4 py-3 text-right font-medium">Actions</th>
                             </tr>
@@ -316,6 +365,7 @@ const saveEdit = (m) => {
                                             {{ c.label }}
                                         </label>
                                     </td>
+                                    <td class="px-4 py-3"></td>
                                     <td class="px-4 py-3">
                                         <button v-if="m.is_default"
                                             class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">Default</button>
@@ -338,6 +388,19 @@ const saveEdit = (m) => {
                                         '—' }}</td>
                                     <td class="px-4 py-3 text-slate-500">{{ m.max_output_tokens || '—' }}</td>
                                     <td class="px-4 py-3 text-slate-500">{{ (m.capabilities || []).join(', ') || '—' }}</td>
+                                    <td class="max-w-xs px-4 py-3 text-xs">
+                                        <span v-if="testing[m.id]" class="text-amber-600"><i class="bi bi-hourglass-split"></i> Testing…</span>
+                                        <template v-else-if="m.last_test">
+                                            <div :class="m.last_test.ok ? 'text-emerald-600' : 'text-red-600'">
+                                                <i class="bi" :class="m.last_test.ok ? 'bi-check-circle' : 'bi-x-circle'"></i>
+                                                {{ m.last_test.ok ? 'Working' : 'Failed' }}
+                                                <span class="text-slate-400">· {{ fmtSeconds(m.last_test.latency_ms) }}<template v-if="m.last_test.ok && m.last_test.tokens_per_second"> · {{ m.last_test.tokens_per_second }} tok/s</template> · {{ ago(m.last_test.tested_at) }}</span>
+                                            </div>
+                                            <div class="truncate text-slate-500" :title="m.last_test.message">{{ m.last_test.message }}</div>
+                                        </template>
+                                        <span v-else-if="!m.testable" class="text-slate-400">Not a chat model</span>
+                                        <span v-else class="text-slate-400">Not tested</span>
+                                    </td>
                                     <td class="px-4 py-3">
                                         <button v-if="m.is_default"
                                             class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">Default</button>
@@ -345,6 +408,9 @@ const saveEdit = (m) => {
                                             class="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-600">Set</button>
                                     </td>
                                     <td class="space-x-1 px-4 py-3 text-right">
+                                        <button v-if="m.testable" @click="testModel(m)" :disabled="!!testing[m.id]"
+                                            title="Send one short chat to this model and check it answers"
+                                            class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600"><i class="bi bi-play"></i> Test</button>
                                         <button @click="startEdit(m)"
                                             class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600">Edit</button>
                                         <button @click="toggle(m)"
@@ -359,6 +425,7 @@ const saveEdit = (m) => {
                             </template>
                         </tbody>
                     </table>
+                    </div>
                 </div>
         </div>
 

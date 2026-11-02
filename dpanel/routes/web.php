@@ -690,6 +690,7 @@ Route::prefix('cpsess{token}')
                     Route::post('models', [AiGatewayModelController::class, 'store'])->name('ai-gateway.models.store');
                     Route::patch('models/{model}', [AiGatewayModelController::class, 'update'])->name('ai-gateway.models.update');
                     Route::post('models/{model}/default', [AiGatewayModelController::class, 'setDefault'])->name('ai-gateway.models.default');
+                    Route::post('models/{model}/test', [AiGatewayModelController::class, 'test'])->name('ai-gateway.models.test');
                     Route::delete('models/{model}', [AiGatewayModelController::class, 'destroy'])->name('ai-gateway.models.destroy');
 
                     // Logs (usage stats are on the merged Dashboard page)
