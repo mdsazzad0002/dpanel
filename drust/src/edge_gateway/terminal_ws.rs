@@ -348,8 +348,10 @@ fn spawn_pty(
         "-u",
         &ticket.site_owner,
         "--",
+        // No --as: V8 and Go (esbuild) reserve far more virtual address
+        // space than they ever touch, so an RLIMIT_AS cap kills `npm run
+        // build` / `vite build` at a ~20 MB heap without bounding real RAM.
         "prlimit",
-        "--as=1073741824",
         "--nproc=128",
         "--nofile=256",
         "--",
