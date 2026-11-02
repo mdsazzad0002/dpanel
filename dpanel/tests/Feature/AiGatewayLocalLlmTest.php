@@ -42,6 +42,7 @@ class AiGatewayLocalLlmTest extends TestCase
             'llm.test/admin/models' => Http::response(['models' => $models, 'pulls' => []]),
             'llm.test/admin/models/pull' => Http::response(['error' => ['message' => 'url must be https']], 400),
             'llm.test/admin/models/*' => Http::response(['deleted' => true]),
+            'llm.test/admin/pulls/*' => Http::response(['id' => 'qwen', 'cancelled' => true]),
         ]);
     }
 
@@ -203,5 +204,84 @@ class AiGatewayLocalLlmTest extends TestCase
             ->assertJsonPath('online', false);
 
         Http::assertNothingSent();
+    }
+
+    public function test_admin_cancels_a_download(): void
+    {
+        $this->fakeRunner([]);
+
+        $this->actingAs(User::factory()->create(['role' => 'reseller']))
+            ->deleteJson($this->url('ai-gateway.local.cancel', ['model' => 'qwen']))
+            ->assertForbidden();
+
+        $this->actingAs(User::factory()->create(['role' => 'admin']))
+            ->deleteJson($this->url('ai-gateway.local.cancel', ['model' => 'qwen']))
+            ->assertOk()
+            ->assertJsonPath('cancelled', true);
+
+        Http::assertSent(fn (HttpRequest $request) => $request->method() === 'DELETE'
+            && $request->url() === 'http://llm.test/admin/pulls/qwen');
+    }
+
+    public function test_every_catalog_model_has_a_known_category(): void
+    {
+        $categories = config('aigateway.local_llm.catalog_categories');
+        $catalog = config('aigateway.local_llm.catalog');
+
+        $this->assertSame(count($catalog), count(array_unique(array_column($catalog, 'id'))));
+        foreach ($catalog as $model) {
+            $this->assertArrayHasKey($model['category'], $categories, $model['id']);
+            $this->assertStringStartsWith('https://', $model['url']);
+            $this->assertSame($model['id'].'.gguf', basename($model['url']), $model['id']);
+        }
+    }
+
+    public function test_connect_uses_detected_capabilities_and_the_fastest_model(): void
+    {
+        $this->fakeRunner([
+            // Slow writer: ~600/100 + 200/2 = 106s for a typical chat.
+            ['id' => 'big-coder', 'size_bytes' => 100, 'created' => 0, 'loaded' => false, 'profile' => [
+                'detected' => ['name' => 'Big Coder', 'capabilities' => ['chat', 'code'], 'n_ctx_train' => 32768, 'thinks' => false],
+                'speed' => ['prompt_tps' => 100, 'gen_tps' => 2, 'samples' => 3, 'updated' => 0],
+            ]],
+            // ~600/50 + 200/10 = 32s: the default.
+            ['id' => 'small', 'size_bytes' => 100, 'created' => 0, 'loaded' => false, 'profile' => [
+                'detected' => ['name' => 'Small', 'capabilities' => ['chat'], 'n_ctx_train' => 2048, 'thinks' => true],
+                'speed' => ['prompt_tps' => 50, 'gen_tps' => 10, 'samples' => 0, 'updated' => 0],
+            ]],
+            // Never loaded: falls back to the catalog's category.
+            ['id' => 'qwen2.5-coder-3b-instruct-q4_k_m', 'size_bytes' => 100, 'created' => 0, 'loaded' => false, 'profile' => []],
+        ]);
+
+        $this->actingAs(User::factory()->create(['role' => 'admin']))
+            ->postJson($this->url('ai-gateway.local.connect'))
+            ->assertOk();
+
+        $provider = AiGatewayProvider::where('slug', 'local-llm')->sole();
+        $big = $provider->models()->where('name', 'big-coder')->sole();
+        $this->assertSame(['chat', 'code'], $big->capabilities);
+        $this->assertSame('Big Coder (local)', $big->display_name);
+        // Capped by the runner's context size (8192), not the model's 32768.
+        $this->assertSame(8192, $big->context_window);
+        // A model trained on less than the runner's context keeps its own limit.
+        $this->assertSame(2048, $provider->models()->where('name', 'small')->value('context_window'));
+        $this->assertSame(['chat', 'code'], $provider->models()->where('name', 'qwen2.5-coder-3b-instruct-q4_k_m')->first()->capabilities);
+        $this->assertSame('small', $provider->default_model);
+    }
+
+    public function test_admin_starts_a_speed_test(): void
+    {
+        $this->fakeRunner([]);
+
+        $this->actingAs(User::factory()->create(['role' => 'reseller']))
+            ->postJson($this->url('ai-gateway.local.tune', ['model' => 'qwen']))
+            ->assertForbidden();
+
+        $this->actingAs(User::factory()->create(['role' => 'admin']))
+            ->postJson($this->url('ai-gateway.local.tune', ['model' => 'qwen']))
+            ->assertOk();
+
+        Http::assertSent(fn (HttpRequest $request) => $request->method() === 'POST'
+            && $request->url() === 'http://llm.test/admin/models/qwen/tune');
     }
 }

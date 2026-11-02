@@ -39,7 +39,7 @@ class LocalLlmClient
         }
     }
 
-    /** @return array{models: array, pulls: array} */
+    /** @return array{models: array, pulls: object, tunes: object} */
     public function models(): array
     {
         $data = $this->call('get', '/admin/models');
@@ -47,12 +47,25 @@ class LocalLlmClient
         return [
             'models' => $data['models'] ?? [],
             'pulls' => (object) ($data['pulls'] ?? []),
+            'tunes' => (object) ($data['tunes'] ?? []),
         ];
     }
 
     public function pull(string $url, ?string $id = null): array
     {
         return $this->call('post', '/admin/models/pull', array_filter(['url' => $url, 'id' => $id]));
+    }
+
+    /** Stops a running download, or clears a finished/failed one from the list. */
+    public function cancelPull(string $id): array
+    {
+        return $this->call('delete', '/admin/pulls/'.rawurlencode($id));
+    }
+
+    /** Starts the self-test (GPU settings and speed) in the background. */
+    public function tune(string $id): array
+    {
+        return $this->call('post', '/admin/models/'.rawurlencode($id).'/tune');
     }
 
     public function load(string $id): array
@@ -91,6 +104,10 @@ class LocalLlmClient
         }
 
         if ($response->failed()) {
+            // A route-level 404 has no JSON body: drust-llm predates this panel.
+            if ($response->status() === 404 && ! $response->json('error.message')) {
+                throw new RuntimeException('This drust-llm version does not support that action; update it by running drust/deploy/install-service.sh.');
+            }
             throw new RuntimeException($response->json('error.message') ?: 'drust-llm returned HTTP '.$response->status().'.');
         }
 

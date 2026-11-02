@@ -22,6 +22,12 @@ const usedPercent = computed(() => {
     return total ? Math.round(((total - available) / total) * 100) : 0;
 });
 const config = computed(() => props.status?.config || {});
+const gpus = computed(() => props.status?.gpus || []);
+// Tells apart "no GPU here" from "drust-llm was built without GPU support".
+const gpuNote = computed(() => {
+    if (gpus.value.length) return '';
+    return config.value.gpu_backend ? 'No GPU found; running on the CPU.' : 'CPU-only build; reinstall drust-llm to add GPU support.';
+});
 </script>
 
 <template>
@@ -74,11 +80,19 @@ const config = computed(() => props.status?.config || {});
                     <span class="font-medium">{{ m.id }}</span>
                     <span v-if="m.active || m.queued" class="text-xs text-amber-600"> · {{ m.active }} running<template v-if="m.queued">, {{ m.queued }} waiting</template></span>
                     <span v-else class="text-xs text-slate-400"> · idle {{ fmtIdle(m.idle_seconds) }}</span>
+                    <span class="text-xs text-slate-400"> · {{ m.gpu_layers ? 'GPU' : 'CPU' }}</span>
                 </div>
+                <div class="mt-3 text-xs text-slate-500">GPU</div>
+                <div v-for="g in gpus" :key="g.name" class="mt-1 text-sm">
+                    <i class="bi bi-gpu-card text-emerald-600"></i> {{ g.description }}
+                    <span class="text-xs text-slate-400">· {{ g.integrated ? 'built-in, shares RAM' : fmtBytes(g.memory_total) }} · {{ g.backend }}</span>
+                </div>
+                <div v-if="gpuNote" class="mt-1 text-sm text-slate-400">{{ gpuNote }}</div>
             </div>
             <div class="text-xs text-slate-500">
                 <div>Context <span class="font-medium text-slate-700 dark:text-slate-200">{{ config.ctx_size }}</span> tokens · max output <span class="font-medium text-slate-700 dark:text-slate-200">{{ config.max_tokens }}</span></div>
                 <div class="mt-1">{{ config.parallel }} requests at once · {{ config.threads }} CPU threads · up to {{ config.max_loaded }} loaded</div>
+                <div class="mt-1">GPU layers: {{ config.gpu_layers ?? 'auto (per model, from its speed test)' }}</div>
                 <div class="mt-1">Unload after {{ config.idle_unload_secs ? fmtIdle(config.idle_unload_secs) + ' idle' : 'never' }}</div>
                 <div class="mt-1 text-slate-400">Change these in <code>/etc/drust/llm.env</code></div>
             </div>

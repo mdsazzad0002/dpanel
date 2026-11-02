@@ -19,6 +19,7 @@ const props = defineProps({
     configured: { type: Boolean, default: false },
     baseUrl: { type: String, default: '' },
     catalog: { type: Array, default: () => [] },
+    categories: { type: Object, default: () => ({}) },
     initialState: { type: Object, required: true },
 });
 
@@ -32,19 +33,22 @@ const switching = ref(false);
 
 const installedIds = computed(() => state.value.models.map((m) => m.id));
 const downloading = computed(() => Object.values(state.value.pulls || {}).some((p) => p.state === 'downloading'));
+const tuning = computed(() => Object.values(state.value.tunes || {}).some((t) => ['queued', 'running'].includes(t.state)));
+const working = computed(() => downloading.value || tuning.value);
 
 const failure = (e, fallback) => e.response?.data?.message || fallback;
 
 const refresh = async () => {
-    const wasDownloading = downloading.value;
+    const wasWorking = working.value;
     try {
         const { data } = await axios.get(panelRoute('ai-gateway.local.state'));
         state.value = data;
     } catch (e) {
         return;
     }
-    // A finished download should show up in the gateway without another click.
-    if (wasDownloading && !downloading.value && state.value.provider) {
+    // A finished download or speed test should reach the gateway (new model,
+    // detected capabilities, fastest default) without another click.
+    if (wasWorking && !working.value && state.value.provider) {
         await connect(true);
     }
 };
@@ -55,7 +59,7 @@ const schedule = () => {
     timer = setTimeout(async () => {
         await refresh();
         schedule();
-    }, downloading.value ? 2000 : 15000);
+    }, working.value ? 2000 : 15000);
 };
 onMounted(schedule);
 onBeforeUnmount(() => clearTimeout(timer));
@@ -95,6 +99,19 @@ const pull = async (payload, done) => {
     }
 };
 
+// Also clears finished or failed entries from the downloads list.
+const cancelPull = async (id) => {
+    const running = state.value.pulls?.[id]?.state === 'downloading';
+    if (running && !confirm(`Cancel downloading ${id}? The partial file is deleted.`)) return;
+    error.value = '';
+    try {
+        await axios.delete(panelRoute('ai-gateway.local.cancel', { model: id }));
+        await refresh();
+    } catch (e) {
+        error.value = failure(e, `Could not cancel ${id}.`);
+    }
+};
+
 const modelAction = async (m, action, label) => {
     modelBusy[m.id] = label;
     error.value = '';
@@ -106,6 +123,18 @@ const modelAction = async (m, action, label) => {
         error.value = failure(e, `Could not ${action} ${m.id}.`);
     } finally {
         delete modelBusy[m.id];
+    }
+};
+
+const tune = async (m) => {
+    error.value = '';
+    try {
+        await axios.post(panelRoute('ai-gateway.local.tune', { model: m.id }));
+        await refresh();
+        clearTimeout(timer);
+        schedule();
+    } catch (e) {
+        error.value = failure(e, `Could not start the speed test for ${m.id}.`);
     }
 };
 
@@ -156,15 +185,15 @@ const connect = async (quiet = false) => {
             <template v-if="state.online">
                 <ConnectCard :provider="state.provider" :has-models="state.models.length > 0" :busy="connecting" @connect="connect()" />
 
-                <InstalledModels :models="state.models" :busy="modelBusy"
+                <InstalledModels :models="state.models" :busy="modelBusy" :tunes="state.tunes || {}" @tune="tune"
                     @load="(m) => modelAction(m, 'load', 'Loading')"
                     @unload="(m) => modelAction(m, 'unload', 'Unloading')"
                     @remove="remove" />
 
-                <ModelCatalog :catalog="catalog" :installed="installedIds" :pulls="state.pulls"
-                    :total-memory="state.status?.memory?.total_bytes || 0" :busy="pulling" @pull="pull" />
+                <ModelCatalog :catalog="catalog" :categories="categories" :installed="installedIds" :pulls="state.pulls"
+                    :total-memory="state.status?.memory?.total_bytes || 0" :busy="pulling" @pull="pull" @cancel="cancelPull" />
 
-                <Downloads :pulls="state.pulls" :busy="pulling" @pull="pull" />
+                <Downloads :pulls="state.pulls" :busy="pulling" @pull="pull" @cancel="cancelPull" />
             </template>
         </div>
     </AuthenticatedLayout>

@@ -6,8 +6,15 @@ edition = "2024"
 # Separate crate (not part of drust's own build) so the llama.cpp compile and
 # the memory a loaded model takes stay out of the main drust service.
 
+[features]
+# GPU offload through Vulkan (AMD/Intel/NVIDIA, integrated GPUs included).
+# Needs libvulkan-dev and glslc at build time.
+vulkan = ["dep:llama-cpp-sys-2", "llama-cpp-sys-2/vulkan"]
+
 [dependencies]
 llama-cpp-2 = "0.1.160"
+# Only named to switch on its GPU backend; built with `--features vulkan`.
+llama-cpp-sys-2 = { version = "0.1.160", optional = true }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

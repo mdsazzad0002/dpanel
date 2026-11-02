@@ -1,8 +1,11 @@
-use crate::registry::{LoadedModel, backend};
+use crate::{
+    profile::Speed,
+    registry::{LoadedModel, backend},
+};
 use llama_cpp_2::{
     context::{LlamaContext, params::LlamaContextParams},
     llama_batch::LlamaBatch,
-    model::{LlamaChatMessage, LlamaChatTemplate, LlamaModel},
+    model::{LlamaChatMessage, LlamaChatTemplate, LlamaModel, params::LlamaModelParams},
     sampling::LlamaSampler,
     token::LlamaToken,
 };
@@ -11,9 +14,11 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        Mutex as StdMutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc as std_mpsc,
     },
+    time::Instant,
 };
 use tokio::sync::mpsc;
 
@@ -47,12 +52,29 @@ pub struct EngineConfig {
     /// Requests decoded together in one batch.
     pub parallel: u32,
     pub threads: i32,
+    /// Layers placed on the GPU; 0 keeps everything on the CPU.
+    pub gpu_layers: u32,
 }
 
 #[derive(Default)]
 pub struct Stats {
     pub active: AtomicUsize,
     pub queued: AtomicUsize,
+    /// Learned from finished requests; `speed_dirty` until saved to the profile.
+    pub speed: StdMutex<Option<Speed>>,
+    pub speed_dirty: AtomicBool,
+}
+
+impl Stats {
+    fn record_speed(&self, prompt_tps: Option<f64>, gen_tps: Option<f64>) {
+        if prompt_tps.is_none() && gen_tps.is_none() {
+            return;
+        }
+        if let Ok(mut speed) = self.speed.lock() {
+            Speed::record(&mut speed, prompt_tps, gen_tps);
+            self.speed_dirty.store(true, Ordering::Relaxed);
+        }
+    }
 }
 
 /// The model's own chat template turns the messages into its prompt format.
@@ -91,7 +113,7 @@ pub struct Engine {
 /// one after another. The worker ends when the last Sender is dropped.
 pub fn start(path: PathBuf, config: EngineConfig) -> Result<Engine, String> {
     let model = Arc::new(
-        LlamaModel::load_from_file(backend(), &path, &Default::default())
+        LlamaModel::load_from_file(backend(), &path, &LlamaModelParams::default().with_n_gpu_layers(config.gpu_layers))
             .map_err(|error| format!("failed to load model: {error}"))?,
     );
     let ctx_per_request = config.ctx_size.min(model.n_ctx_train()).max(256);
@@ -148,6 +170,8 @@ struct Slot {
     next: Option<LlamaToken>,
     /// Where this slot's logits sit in the batch just decoded.
     logits_at: Option<i32>,
+    admitted: Instant,
+    first_token: Option<Instant>,
 }
 
 struct Worker<'m> {
@@ -191,6 +215,9 @@ impl<'m> Worker<'m> {
             if let Err(error) = self.step(&mut batch) {
                 self.fail_all(&error);
             }
+            // Again after the step, or the status page keeps showing the last
+            // request as running while the worker waits idle in recv().
+            self.stats.active.store(self.active(), Ordering::Relaxed);
         }
     }
 
@@ -222,6 +249,8 @@ impl<'m> Worker<'m> {
             max_tokens,
             next: None,
             logits_at: None,
+            admitted: Instant::now(),
+            first_token: None,
         });
     }
 
@@ -267,6 +296,7 @@ impl<'m> Worker<'m> {
             let Some(at) = slot.logits_at else { continue };
             let token = slot.sampler.sample(&self.ctx, at);
             let prompt_tokens = slot.prompt.len();
+            slot.first_token.get_or_insert_with(Instant::now);
 
             let finish = if vocab.is_eog(token) {
                 Some("stop")
@@ -297,6 +327,8 @@ impl<'m> Worker<'m> {
                 }
                 let completion_tokens = slot.completion_tokens;
                 let _ = slot.tx.send(GenEvent::Done { finish_reason, prompt_tokens, completion_tokens });
+                let (prompt_tps, gen_tps) = measure(slot);
+                self.stats.record_speed(prompt_tps, gen_tps);
                 self.release(index);
             }
         }
@@ -317,6 +349,18 @@ impl<'m> Worker<'m> {
             self.release(index);
         }
     }
+}
+
+/// Prompt reading speed (admitted → first token) and writing speed (first
+/// → last token). Tiny prompts and replies say little, so they're skipped.
+fn measure(slot: &Slot) -> (Option<f64>, Option<f64>) {
+    let Some(first) = slot.first_token else { return (None, None) };
+    let reading = first.duration_since(slot.admitted).as_secs_f64();
+    let writing = first.elapsed().as_secs_f64();
+    let prompt_tps = (slot.prompt.len() >= 32 && reading > 0.0).then(|| slot.prompt.len() as f64 / reading);
+    let gen_tps =
+        (slot.completion_tokens >= 8 && writing > 0.0).then(|| (slot.completion_tokens - 1) as f64 / writing);
+    (prompt_tps, gen_tps)
 }
 
 fn sampler(model: &LlamaModel, params: &GenParams) -> LlamaSampler {

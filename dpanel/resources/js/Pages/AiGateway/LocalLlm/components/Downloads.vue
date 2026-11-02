@@ -1,12 +1,12 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { fmtBytes } from './format';
+import { fmtBytes, fmtProgress, percent } from './format';
 
 const props = defineProps({
     pulls: { type: Object, default: () => ({}) },
     busy: { type: Boolean, default: false },
 });
-const emit = defineEmits(['pull']);
+const emit = defineEmits(['pull', 'cancel']);
 
 const url = ref('');
 const id = ref('');
@@ -14,8 +14,6 @@ const id = ref('');
 const entries = computed(() => Object.entries(props.pulls)
     .map(([name, pull]) => ({ name, ...pull }))
     .sort((a, b) => (a.state === 'downloading' ? -1 : 1) - (b.state === 'downloading' ? -1 : 1)));
-
-const percent = (p) => (p.total_bytes ? Math.floor((p.downloaded_bytes / p.total_bytes) * 100) : null);
 
 const submit = () => {
     if (!url.value.trim()) return;
@@ -42,17 +40,28 @@ const submit = () => {
             <div v-for="p in entries" :key="p.name" class="text-sm">
                 <div class="flex items-center justify-between gap-2">
                     <span class="truncate font-mono text-xs">{{ p.name }}</span>
-                    <span class="shrink-0 text-xs" :class="{ 'text-red-600': p.state === 'failed', 'text-emerald-600': p.state === 'done', 'text-slate-500': p.state === 'downloading' }">
-                        <template v-if="p.state === 'downloading'">
-                            {{ fmtBytes(p.downloaded_bytes) }}<template v-if="p.total_bytes"> / {{ fmtBytes(p.total_bytes) }} ({{ percent(p) }}%)</template>
-                        </template>
-                        <template v-else-if="p.state === 'done'">Done</template>
-                        <template v-else>Failed</template>
+                    <span class="flex shrink-0 items-center gap-2 text-xs">
+                        <span :class="{ 'text-red-600': p.state === 'failed', 'text-emerald-600': p.state === 'done', 'text-slate-500': p.state === 'downloading' }">
+                            <template v-if="p.state === 'downloading'">
+                                {{ fmtBytes(p.downloaded_bytes) }}<template v-if="p.total_bytes"> / {{ fmtBytes(p.total_bytes) }} ({{ percent(p) }}%)</template>
+                            </template>
+                            <template v-else-if="p.state === 'done'">Done</template>
+                            <template v-else>Failed</template>
+                        </span>
+                        <button v-if="p.state === 'downloading'" @click="$emit('cancel', p.name)" class="text-red-500 hover:text-red-700" title="Cancel download">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </button>
+                        <button v-else @click="$emit('cancel', p.name)" class="text-slate-400 hover:text-slate-600" title="Remove from list">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
                     </span>
                 </div>
                 <div v-if="p.state === 'downloading'" class="mt-1 h-1.5 overflow-hidden rounded bg-slate-200 dark:bg-slate-700">
                     <div class="h-full rounded bg-indigo-500 transition-all" :class="{ 'animate-pulse': !p.total_bytes }"
                         :style="{ width: (percent(p) ?? 100) + '%' }"></div>
+                </div>
+                <div v-if="p.state === 'downloading' && fmtProgress(p)" class="mt-0.5 text-xs text-slate-400">
+                    {{ fmtProgress(p) }}<template v-if="p.connections > 1"> · {{ p.connections }} connections</template>
                 </div>
                 <div v-if="p.error" class="mt-0.5 text-xs text-red-600">{{ p.error }}</div>
             </div>

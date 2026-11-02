@@ -11,6 +11,10 @@ RestartSec=5
 # Runs as its own unprivileged user: it only needs its models directory.
 User=drust-llm
 Group=drust-llm
+# GPU access comes from the render/video groups the installer adds.
+# Mesa keeps compiled GPU shaders here, so later loads skip compiling them.
+CacheDirectory=drust-llm
+Environment=XDG_CACHE_HOME=/var/cache/drust-llm
 NoNewPrivileges=yes
 PrivateTmp=true
 ProtectSystem=strict

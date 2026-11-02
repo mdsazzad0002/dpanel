@@ -1,11 +1,12 @@
 use crate::{
     AppState,
     infer::{self, EngineConfig, Job, Stats},
+    profile::{self, Profile},
 };
 use llama_cpp_2::{llama_backend::LlamaBackend, model::LlamaModel};
 use serde::Serialize;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, OnceLock, atomic::Ordering, mpsc as std_mpsc},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -27,6 +28,8 @@ pub struct LoadedModel {
     jobs: std_mpsc::Sender<Job>,
     pub stats: Arc<Stats>,
     pub ctx_per_request: u32,
+    /// Layers this load actually put on the GPU.
+    pub gpu_layers: u32,
 }
 
 impl LoadedModel {
@@ -50,12 +53,26 @@ pub struct ModelInfo {
     pub size_bytes: u64,
     pub created: u64,
     pub loaded: bool,
+    /// Detected purpose, learned speed and self-test result.
+    pub profile: Profile,
 }
 
 pub struct Registry {
     // A tokio lock held across a load, so two requests for the same cold
     // model load it once instead of twice.
     slots: Mutex<HashMap<String, Slot>>,
+    /// Models the self-test is running; they aren't loaded for chats meanwhile.
+    tuning: std::sync::Mutex<HashSet<String>>,
+}
+
+/// GPU layers for a load: DRUST_LLM_GPU_LAYERS when set, else what the
+/// self-test chose for this model, else everything on a GPU if there is one.
+pub fn gpu_layers_for(state: &AppState, profile: &Profile) -> u32 {
+    state
+        .config
+        .gpu_layers
+        .or(profile.gpu_layers)
+        .unwrap_or(if profile::gpus().is_empty() { 0 } else { 999 })
 }
 
 /// Model ids are file names under the models dir; anything that could step
@@ -77,7 +94,16 @@ impl Registry {
             LlamaBackend::init().map_err(|error| format!("llama.cpp init failed: {error}"))?;
         backend.void_logs();
         let _ = BACKEND.set(backend);
-        Ok(Self { slots: Mutex::new(HashMap::new()) })
+        Ok(Self { slots: Mutex::new(HashMap::new()), tuning: Default::default() })
+    }
+
+    pub fn set_tuning(&self, id: &str, on: bool) -> bool {
+        let mut tuning = self.tuning.lock().unwrap_or_else(|e| e.into_inner());
+        if on { tuning.insert(id.to_string()) } else { tuning.remove(id) }
+    }
+
+    fn is_tuning(&self, id: &str) -> bool {
+        self.tuning.lock().unwrap_or_else(|e| e.into_inner()).contains(id)
     }
 
     pub async fn loaded_ids(&self) -> Vec<String> {
@@ -87,7 +113,13 @@ impl Registry {
     }
 
     pub async fn list(&self, dir: &Path) -> Vec<ModelInfo> {
-        let loaded = self.loaded_ids().await;
+        let live: HashMap<String, Option<profile::Speed>> = self
+            .slots
+            .lock()
+            .await
+            .iter()
+            .map(|(id, slot)| (id.clone(), *slot.model.stats.speed.lock().unwrap_or_else(|e| e.into_inner())))
+            .collect();
         let mut models = Vec::new();
         let Ok(entries) = std::fs::read_dir(dir) else { return models };
         for entry in entries.flatten() {
@@ -100,6 +132,11 @@ impl Registry {
                 continue;
             }
             let meta = entry.metadata().ok();
+            let mut profile = profile::load(dir, id);
+            // A loaded model's speed may be newer than the saved one.
+            if let Some(Some(speed)) = live.get(id) {
+                profile.speed = Some(*speed);
+            }
             models.push(ModelInfo {
                 id: id.to_string(),
                 size_bytes: meta.as_ref().map_or(0, |m| m.len()),
@@ -107,7 +144,8 @@ impl Registry {
                     .and_then(|m| m.modified().ok())
                     .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                     .map_or(0, |d| d.as_secs()),
-                loaded: loaded.iter().any(|l| l == id),
+                loaded: live.contains_key(id),
+                profile,
             });
         }
         models.sort_by(|a, b| a.id.cmp(&b.id));
@@ -123,6 +161,9 @@ impl Registry {
             return Ok(slot.model.clone());
         }
 
+        if self.is_tuning(id) {
+            return Err(format!("'{id}' is being speed-tested; try again in a minute"));
+        }
         let path = model_path(&state.config.models_dir, id);
         let size = std::fs::metadata(&path)
             .map_err(|_| format!("model '{id}' not found"))?
@@ -153,17 +194,25 @@ impl Registry {
             }
         }
 
-        let config = EngineConfig {
-            ctx_size: state.config.ctx_size,
-            parallel: state.config.parallel,
-            threads: state.config.threads,
-        };
+        let dir = &state.config.models_dir;
+        let saved = profile::load(dir, id);
+        let gpu_layers = gpu_layers_for(state, &saved);
         let started = Instant::now();
-        let engine = tokio::task::spawn_blocking(move || infer::start(path, config))
-            .await
-            .map_err(|error| format!("model loader crashed: {error}"))?
-            .map_err(|error| format!("'{id}': {error}"))?;
-        tracing::info!(model = %id, ms = started.elapsed().as_millis() as u64, "loaded");
+        let (engine, gpu_layers) = match start_engine(state, path.clone(), gpu_layers).await {
+            Ok(engine) => (engine, gpu_layers),
+            // A GPU without enough memory, or a driver problem: run on the CPU.
+            Err(error) if gpu_layers > 0 => {
+                tracing::warn!(model = %id, "GPU load failed, using the CPU: {error}");
+                (start_engine(state, path, 0).await.map_err(|error| format!("'{id}': {error}"))?, 0)
+            }
+            Err(error) => return Err(format!("'{id}': {error}")),
+        };
+        tracing::info!(model = %id, gpu_layers, ms = started.elapsed().as_millis() as u64, "loaded");
+
+        // First load (or a replaced file): read what the model is for.
+        let detected = profile::detect(&engine.model, id);
+        profile::update(dir, id, |p| p.detected = Some(detected));
+        *engine.stats.speed.lock().unwrap_or_else(|e| e.into_inner()) = saved.speed;
 
         let loaded = Arc::new(LoadedModel {
             id: id.to_string(),
@@ -171,6 +220,7 @@ impl Registry {
             jobs: engine.jobs,
             stats: engine.stats,
             ctx_per_request: engine.ctx_per_request,
+            gpu_layers,
         });
         slots.insert(id.to_string(), Slot { model: loaded.clone(), last_used: Instant::now() });
         Ok(loaded)
@@ -191,6 +241,7 @@ impl Registry {
                     "active": stats.active.load(Ordering::Relaxed),
                     "queued": stats.queued.load(Ordering::Relaxed),
                     "ctx_per_request": slot.model.ctx_per_request,
+                    "gpu_layers": slot.model.gpu_layers,
                 })
             })
             .collect()
@@ -202,17 +253,29 @@ impl Registry {
         }
     }
 
-    pub async fn unload(&self, id: &str) -> bool {
-        self.slots.lock().await.remove(id).is_some()
+    pub async fn unload(&self, dir: &Path, id: &str) -> bool {
+        let removed = self.slots.lock().await.remove(id);
+        if let Some(slot) = &removed {
+            save_speed(dir, id, slot);
+        }
+        removed.is_some()
     }
 
-    async fn unload_idle(&self, idle: Duration) {
+    /// Writes newly learned speeds into the profiles.
+    pub async fn save_speeds(&self, dir: &Path) {
+        for (id, slot) in self.slots.lock().await.iter() {
+            save_speed(dir, id, slot);
+        }
+    }
+
+    async fn unload_idle(&self, dir: &Path, idle: Duration) {
         let mut slots = self.slots.lock().await;
         slots.retain(|id, slot| {
             let stats = &slot.model.stats;
             let busy = stats.active.load(Ordering::Relaxed) + stats.queued.load(Ordering::Relaxed) > 0;
             let keep = busy || slot.last_used.elapsed() < idle;
             if !keep {
+                save_speed(dir, id, slot);
                 tracing::info!(model = %id, "unloaded after idle timeout");
             }
             keep
@@ -220,16 +283,38 @@ impl Registry {
     }
 }
 
+fn save_speed(dir: &Path, id: &str, slot: &Slot) {
+    let stats = &slot.model.stats;
+    if stats.speed_dirty.swap(false, Ordering::Relaxed) {
+        let speed = *stats.speed.lock().unwrap_or_else(|e| e.into_inner());
+        profile::update(dir, id, |p| p.speed = speed);
+    }
+}
+
+pub async fn start_engine(state: &AppState, path: PathBuf, gpu_layers: u32) -> Result<infer::Engine, String> {
+    let config = EngineConfig {
+        ctx_size: state.config.ctx_size,
+        parallel: state.config.parallel,
+        threads: state.config.threads,
+        gpu_layers,
+    };
+    tokio::task::spawn_blocking(move || infer::start(path, config))
+        .await
+        .map_err(|error| format!("model loader crashed: {error}"))?
+}
+
+/// Every 30s: unload idle models and save learned speeds.
 pub fn spawn_idle_reaper(state: Arc<AppState>) {
     let idle = state.config.idle_unload;
-    if idle.is_zero() {
-        return;
-    }
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(30));
         loop {
             tick.tick().await;
-            state.registry.unload_idle(idle).await;
+            let dir = &state.config.models_dir;
+            if !idle.is_zero() {
+                state.registry.unload_idle(dir, idle).await;
+            }
+            state.registry.save_speeds(dir).await;
         }
     });
 }

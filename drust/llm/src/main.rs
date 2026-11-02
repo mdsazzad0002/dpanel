@@ -1,7 +1,9 @@
 mod admin;
 mod infer;
 mod openai;
+mod profile;
 mod registry;
+mod tune;
 
 use axum::{
     Json, Router,
@@ -23,6 +25,9 @@ pub struct Config {
     pub max_loaded: usize,
     pub idle_unload: Duration,
     pub max_tokens: u32,
+    pub pull_connections: usize,
+    /// DRUST_LLM_GPU_LAYERS; None = per model (self-test, else all on a GPU).
+    pub gpu_layers: Option<u32>,
 }
 
 impl Config {
@@ -61,6 +66,11 @@ impl Config {
             max_loaded: num("DRUST_LLM_MAX_LOADED", 1usize)?.max(1),
             idle_unload: Duration::from_secs(num("DRUST_LLM_IDLE_UNLOAD_SECS", 900)?),
             max_tokens: num("DRUST_LLM_MAX_TOKENS", 2048)?,
+            pull_connections: num("DRUST_LLM_PULL_CONNECTIONS", 8usize)?.clamp(1, 32),
+            gpu_layers: match var("DRUST_LLM_GPU_LAYERS") {
+                Some(value) => Some(value.trim().parse().map_err(|_| "DRUST_LLM_GPU_LAYERS must be a number")?),
+                None => None,
+            },
         })
     }
 }
@@ -89,6 +99,8 @@ pub struct AppState {
     pub config: Config,
     pub registry: Arc<registry::Registry>,
     pub pulls: admin::Pulls,
+    pub tunes: tune::Tunes,
+    pub tune_lock: tokio::sync::Mutex<()>,
 }
 
 /// Every route, admin ones included, takes the same bearer key: the AI
@@ -152,8 +164,11 @@ async fn main() -> std::process::ExitCode {
         config,
         registry: Arc::new(registry),
         pulls: Default::default(),
+        tunes: Default::default(),
+        tune_lock: Default::default(),
     });
     registry::spawn_idle_reaper(state.clone());
+    tune::spawn_first_runs(state.clone());
 
     let app = Router::new()
         .route("/health", get(health))

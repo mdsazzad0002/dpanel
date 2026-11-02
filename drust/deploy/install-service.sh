@@ -499,11 +499,36 @@ trap - INT TERM
 # Once installed (llm.env exists) it is rebuilt on every update.
 if [[ "${DRUST_INSTALL_LLM:-0}" == "1" || -f /etc/drust/llm.env ]]; then
   echo "[drust] Building drust-llm (llama.cpp)..."
-  cargo build --release --manifest-path "${DRUST_ROOT}/llm/Cargo.toml" || {
+  # GPU offload through Vulkan, which covers AMD, Intel and NVIDIA (built-in
+  # graphics too). With a GPU present, the build tools are installed here;
+  # DRUST_LLM_GPU=0 forces a CPU-only build. drust-llm then tests each model
+  # itself and keeps whatever is faster on this machine.
+  LLM_FEATURES=()
+  if [[ "${DRUST_LLM_GPU:-auto}" != "0" ]] && { compgen -G '/dev/dri/renderD*' >/dev/null || [[ -e /dev/nvidia0 ]]; }; then
+    if ! command -v glslc >/dev/null 2>&1 || [[ ! -f /usr/include/vulkan/vulkan.h ]]; then
+      echo "[drust] GPU found: installing Vulkan build tools..."
+      if command -v apt-get >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y libvulkan-dev glslc mesa-vulkan-drivers >/dev/null \
+          || echo "[drust] Could not install Vulkan tools; drust-llm stays CPU only." >&2
+      elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y vulkan-loader-devel glslc mesa-vulkan-drivers >/dev/null \
+          || echo "[drust] Could not install Vulkan tools; drust-llm stays CPU only." >&2
+      fi
+    fi
+    if command -v glslc >/dev/null 2>&1 && [[ -f /usr/include/vulkan/vulkan.h ]]; then
+      echo "[drust] Building drust-llm with GPU (Vulkan) support."
+      LLM_FEATURES=(--features vulkan)
+    fi
+  fi
+  cargo build --release "${LLM_FEATURES[@]}" --manifest-path "${DRUST_ROOT}/llm/Cargo.toml" || {
     echo "[drust] drust-llm build failed; the rest of drust is unaffected." >&2
   }
   if [[ -x "${DRUST_ROOT}/llm/target/release/drust-llm" ]]; then
     id drust-llm >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin drust-llm
+    # GPU device access (/dev/dri, NVIDIA); only groups this system has.
+    for group in render video; do
+      getent group "$group" >/dev/null && usermod -aG "$group" drust-llm
+    done
     install -d -m 0750 -o drust-llm -g drust-llm /var/lib/drust/llm
     if [[ ! -f /etc/drust/llm.env ]]; then
       install -m 0640 -g drust-llm "${DRUST_ROOT}/deploy/drust-llm.env.example" /etc/drust/llm.env

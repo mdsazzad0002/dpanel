@@ -210,6 +210,7 @@ dependencies = [
  "axum",
  "futures-util",
  "llama-cpp-2",
+ "llama-cpp-sys-2",
  "reqwest",
  "serde",
  "serde_json",

@@ -67,7 +67,9 @@ sudo grep DRUST_LLM_API_KEY /etc/drust/llm.env
 terminal:
 
 - shows whether drust-llm is running, free memory, and the loaded models
-- downloads a recommended model in one click, or any GGUF link, with progress
+- a model catalog grouped by use (general chat, Bengali & multilingual,
+  coding, reasoning, tiny & fast) with one-click downloads, or any GGUF link
+- downloads show speed and time left, and can be cancelled
 - loads, unloads and deletes models
 - **Connect to AI Gateway** creates the "Local models (this server)"
   provider and adds a model row per installed model. After a download
@@ -128,9 +130,43 @@ Every route needs `Authorization: Bearer <DRUST_LLM_API_KEY>`.
 | `POST` | `/v1/chat/completions` | Chat, with `"stream": true` for SSE |
 | `GET` | `/admin/models` | Installed models with size and loaded state, plus running downloads |
 | `POST` | `/admin/models/pull` | Download a GGUF: `{"url": "https://...", "id": "optional-name"}` |
+| `POST` | `/admin/models/{id}/tune` | Self-test: time GPU/CPU settings and keep the fastest |
+| `DELETE` | `/admin/pulls/{id}` | Cancel a running download (deletes the partial file), or clear a finished/failed one |
 | `POST` | `/admin/models/{id}/load` | Load a model now |
 | `POST` | `/admin/models/{id}/unload` | Free a model's memory |
 | `DELETE` | `/admin/models/{id}` | Unload a model and delete its file |
+
+## GPU, self-test and learned speed
+
+- **GPU detection.** When the server has a GPU (`/dev/dri/renderD*` or
+  NVIDIA), `install-service.sh` installs the Vulkan build tools and builds
+  drust-llm with `--features vulkan`. Vulkan covers AMD, Intel and NVIDIA,
+  built-in graphics included. `DRUST_LLM_GPU=0` forces a CPU-only build.
+  `GET /admin/status` lists the GPUs it found under `gpus`.
+- **Self-test.** The first time drust-llm sees a model (after a download, or
+  on startup for one never tested) it loads it with all layers on the GPU,
+  half, and none, times a ~500-token prompt plus a 64-token reply, and keeps
+  the setting with the lowest time for a typical chat (600 tokens read, 200
+  written). The Test button on the Local Models page runs it again. If a GPU
+  load fails, the model falls back to the CPU. Setting
+  `DRUST_LLM_GPU_LAYERS` overrides all of this.
+- **Detected purpose.** On every load drust-llm reads the model's own GGUF
+  metadata and chat template: `chat`, plus `code` for code models, and
+  whether it thinks before answering (`<think>`). Connect passes these
+  capabilities and the model's real context length to the AI Gateway.
+- **Learned speed.** Every chat updates the model's reading and writing
+  speed (smoothed). Connect makes the fastest model the local provider's
+  default, and the page re-syncs after each download or test.
+
+All of it is kept in `<id>.profile.json` next to the model file.
+On a built-in GPU (shared RAM) the GPU mainly cuts the wait before the first
+word; writing speed is limited by RAM either way.
+
+Downloads use `DRUST_LLM_PULL_CONNECTIONS` (default 8) parallel range
+requests in 16 MB pieces; a failed piece is retried up to 5 times from where
+it stopped. Servers without range support get a single stream. This helps
+when the CDN limits each connection; it can't go faster than the server's
+own internet line.
 
 `/v1/chat/completions` accepts `model` (or `"auto"`: the configured default,
 otherwise the only installed model), `messages`, `stream`, `max_tokens` /

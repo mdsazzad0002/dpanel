@@ -719,9 +719,11 @@ Route::prefix('cpsess{token}')
                     Route::get('state', [AiGatewayLocalLlmController::class, 'state'])->name('ai-gateway.local.state');
                     Route::post('service', [AiGatewayLocalLlmController::class, 'toggle'])->name('ai-gateway.local.service');
                     Route::post('pull', [AiGatewayLocalLlmController::class, 'pull'])->name('ai-gateway.local.pull');
+                    Route::delete('pulls/{model}', [AiGatewayLocalLlmController::class, 'cancel'])->name('ai-gateway.local.cancel');
                     Route::post('connect', [AiGatewayLocalLlmController::class, 'connect'])->name('ai-gateway.local.connect');
                     Route::post('models/{model}/load', [AiGatewayLocalLlmController::class, 'load'])->name('ai-gateway.local.load');
                     Route::post('models/{model}/unload', [AiGatewayLocalLlmController::class, 'unload'])->name('ai-gateway.local.unload');
+                    Route::post('models/{model}/tune', [AiGatewayLocalLlmController::class, 'tune'])->name('ai-gateway.local.tune');
                     Route::delete('models/{model}', [AiGatewayLocalLlmController::class, 'destroy'])->name('ai-gateway.local.destroy');
                 });
 
