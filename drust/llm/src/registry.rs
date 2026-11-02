@@ -1,25 +1,42 @@
-use crate::AppState;
-use llama_cpp_2::{
-    llama_backend::LlamaBackend,
-    model::{LlamaModel, params::LlamaModelParams},
+use crate::{
+    AppState,
+    infer::{self, EngineConfig, Job, Stats},
 };
+use llama_cpp_2::{llama_backend::LlamaBackend, model::LlamaModel};
 use serde::Serialize;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, OnceLock, atomic::Ordering, mpsc as std_mpsc},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex;
 
+static BACKEND: OnceLock<LlamaBackend> = OnceLock::new();
+
+/// llama.cpp's process-wide backend, set up once in `Registry::new`.
+pub fn backend() -> &'static LlamaBackend {
+    BACKEND.get().expect("llama backend not initialised")
+}
+
 pub struct LoadedModel {
     pub id: String,
-    pub model: LlamaModel,
-    /// llama.cpp can't build two contexts from one model at the same time
-    /// (it mutates the model while doing so), and on a CPU box parallel
-    /// generations only slow each other down, so a model runs one request
-    /// at a time and the rest queue here.
-    pub busy: Arc<Mutex<()>>,
+    pub model: Arc<LlamaModel>,
+    /// Dropping the last LoadedModel closes this and stops the worker,
+    /// which frees the model's memory.
+    jobs: std_mpsc::Sender<Job>,
+    pub stats: Arc<Stats>,
+    pub ctx_per_request: u32,
+}
+
+impl LoadedModel {
+    pub fn submit(&self, job: Job) -> Result<(), String> {
+        self.stats.queued.fetch_add(1, Ordering::Relaxed);
+        self.jobs.send(job).map_err(|_| {
+            self.stats.queued.fetch_sub(1, Ordering::Relaxed);
+            "model worker has stopped".to_string()
+        })
+    }
 }
 
 struct Slot {
@@ -36,7 +53,6 @@ pub struct ModelInfo {
 }
 
 pub struct Registry {
-    backend: LlamaBackend,
     // A tokio lock held across a load, so two requests for the same cold
     // model load it once instead of twice.
     slots: Mutex<HashMap<String, Slot>>,
@@ -60,7 +76,8 @@ impl Registry {
         let mut backend =
             LlamaBackend::init().map_err(|error| format!("llama.cpp init failed: {error}"))?;
         backend.void_logs();
-        Ok(Self { backend, slots: Mutex::new(HashMap::new()) })
+        let _ = BACKEND.set(backend);
+        Ok(Self { slots: Mutex::new(HashMap::new()) })
     }
 
     pub async fn loaded_ids(&self) -> Vec<String> {
@@ -136,33 +153,47 @@ impl Registry {
             }
         }
 
-        let registry = self.clone();
-        let owned_id = id.to_string();
+        let config = EngineConfig {
+            ctx_size: state.config.ctx_size,
+            parallel: state.config.parallel,
+            threads: state.config.threads,
+        };
         let started = Instant::now();
-        let model = tokio::task::spawn_blocking(move || {
-            LlamaModel::load_from_file(&registry.backend, &path, &LlamaModelParams::default())
-                .map_err(|error| format!("failed to load '{owned_id}': {error}"))
-        })
-        .await
-        .map_err(|error| format!("model loader crashed: {error}"))??;
+        let engine = tokio::task::spawn_blocking(move || infer::start(path, config))
+            .await
+            .map_err(|error| format!("model loader crashed: {error}"))?
+            .map_err(|error| format!("'{id}': {error}"))?;
         tracing::info!(model = %id, ms = started.elapsed().as_millis() as u64, "loaded");
 
-        let loaded = Arc::new(LoadedModel { id: id.to_string(), model, busy: Arc::new(Mutex::new(())) });
+        let loaded = Arc::new(LoadedModel {
+            id: id.to_string(),
+            model: engine.model,
+            jobs: engine.jobs,
+            stats: engine.stats,
+            ctx_per_request: engine.ctx_per_request,
+        });
         slots.insert(id.to_string(), Slot { model: loaded.clone(), last_used: Instant::now() });
         Ok(loaded)
     }
 
-    pub fn backend(&self) -> &LlamaBackend {
-        &self.backend
-    }
-
-    /// (id, seconds since last use) for every loaded model.
-    pub async fn loaded_detail(&self) -> Vec<(String, u64)> {
+    /// Every loaded model with its idle time and running/waiting requests.
+    pub async fn loaded_detail(&self) -> Vec<serde_json::Value> {
         let slots = self.slots.lock().await;
-        let mut detail: Vec<_> =
-            slots.iter().map(|(id, slot)| (id.clone(), slot.last_used.elapsed().as_secs())).collect();
-        detail.sort();
-        detail
+        let mut ids: Vec<_> = slots.keys().collect();
+        ids.sort();
+        ids.into_iter()
+            .map(|id| {
+                let slot = &slots[id];
+                let stats = &slot.model.stats;
+                serde_json::json!({
+                    "id": id,
+                    "idle_seconds": slot.last_used.elapsed().as_secs(),
+                    "active": stats.active.load(Ordering::Relaxed),
+                    "queued": stats.queued.load(Ordering::Relaxed),
+                    "ctx_per_request": slot.model.ctx_per_request,
+                })
+            })
+            .collect()
     }
 
     pub async fn touch(&self, id: &str) {
@@ -178,7 +209,9 @@ impl Registry {
     async fn unload_idle(&self, idle: Duration) {
         let mut slots = self.slots.lock().await;
         slots.retain(|id, slot| {
-            let keep = slot.last_used.elapsed() < idle;
+            let stats = &slot.model.stats;
+            let busy = stats.active.load(Ordering::Relaxed) + stats.queued.load(Ordering::Relaxed) > 0;
+            let keep = busy || slot.last_used.elapsed() < idle;
             if !keep {
                 tracing::info!(model = %id, "unloaded after idle timeout");
             }

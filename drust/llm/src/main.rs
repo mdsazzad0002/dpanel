@@ -19,6 +19,7 @@ pub struct Config {
     pub default_model: Option<String>,
     pub ctx_size: u32,
     pub threads: i32,
+    pub parallel: u32,
     pub max_loaded: usize,
     pub idle_unload: Duration,
     pub max_tokens: u32,
@@ -41,10 +42,11 @@ impl Config {
             .unwrap_or_else(|| "127.0.0.1:9510".into())
             .parse()
             .map_err(|_| "DRUST_LLM_BIND must be host:port")?;
-        // Leave one core for the panel and the sites; llama.cpp otherwise
-        // takes every core and the box stops answering while it generates.
-        let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
-        let threads = num("DRUST_LLM_THREADS", cores.saturating_sub(1).max(1) as i32)?;
+        // One thread per physical core. Hyperthreads share a core's vector
+        // units, and llama.cpp's spinning threads then fight each other:
+        // on a 2-core/4-thread i5, 2 threads gave 15 tok/s, 3 gave 11 and
+        // 4 dropped to 1.
+        let threads = num("DRUST_LLM_THREADS", physical_cores() as i32)?.max(1);
 
         Ok(Self {
             bind,
@@ -55,11 +57,32 @@ impl Config {
             default_model: var("DRUST_LLM_DEFAULT_MODEL"),
             ctx_size: num("DRUST_LLM_CTX_SIZE", 4096)?,
             threads,
+            parallel: num("DRUST_LLM_PARALLEL", 4u32)?.clamp(1, 64),
             max_loaded: num("DRUST_LLM_MAX_LOADED", 1usize)?.max(1),
             idle_unload: Duration::from_secs(num("DRUST_LLM_IDLE_UNLOAD_SECS", 900)?),
             max_tokens: num("DRUST_LLM_MAX_TOKENS", 2048)?,
         })
     }
+}
+
+/// Distinct (physical id, core id) pairs in /proc/cpuinfo; falls back to
+/// the logical CPU count where that isn't available.
+fn physical_cores() -> usize {
+    let logical = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let Ok(cpuinfo) = std::fs::read_to_string("/proc/cpuinfo") else { return logical };
+    let mut cores = std::collections::HashSet::new();
+    let mut physical = "";
+    for line in cpuinfo.lines() {
+        let Some((key, value)) = line.split_once(':') else { continue };
+        match key.trim() {
+            "physical id" => physical = value.trim(),
+            "core id" => {
+                cores.insert((physical.to_string(), value.trim().to_string()));
+            }
+            _ => {}
+        }
+    }
+    if cores.is_empty() { logical } else { cores.len().min(logical) }
 }
 
 pub struct AppState {

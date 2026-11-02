@@ -17,8 +17,27 @@ It runs on the CPU only. Pick a small, quantized model:
 | 8 GB | up to 3–4B, Q4 | `qwen2.5-3b-instruct-q4_k_m.gguf` (~2 GB) |
 | 16 GB | up to 7–8B, Q4 | `llama-3.1-8b-instruct-q4_k_m.gguf` (~5 GB) |
 
-Expect a few tokens per second from a 3B model on a 4-core VPS. A model
-handles one request at a time; further requests wait in a queue.
+Expect a few tokens per second from a 3B model on a 4-core VPS.
+
+A model serves up to `DRUST_LLM_PARALLEL` requests at once (default 4).
+They are decoded together in one batch per step, so the weights are read
+from RAM once for all of them; more requests wait in a queue. Each request
+reserves `DRUST_LLM_CTX_SIZE` tokens of KV cache, so memory grows with
+`parallel × ctx_size`.
+
+### Speed checklist
+
+Generation speed on a CPU depends on these, roughly in order:
+
+1. **Physical cores and RAM speed.** Hyperthreads don't help.
+2. **Threads.** Leave `DRUST_LLM_THREADS` unset (one per physical core).
+   On a 2-core/4-thread i5, a 0.5B model gave 15 tok/s with 2 threads,
+   11 with 3 and 1 with 4.
+3. **Other load.** Anything else using the CPU (an editor indexing the
+   project, a build, busy sites) takes the same cores.
+4. **Heat.** If `dmesg` shows `intel_powerclamp: Start idle injection`,
+   the CPU is overheating and the kernel is pausing it. No setting fixes
+   that; the machine needs better cooling.
 
 Local models get text only. They cannot read images, generate images or
 call tools, so leave the `vision`, `image_generation` and `tools` tags off.
@@ -139,7 +158,8 @@ curl -N http://127.0.0.1:9510/v1/chat/completions \
 | `DRUST_LLM_DEFAULT_MODEL` | — | Model used for `"auto"` |
 | `DRUST_LLM_CTX_SIZE` | `4096` | Context window per request, capped at the model's own |
 | `DRUST_LLM_MAX_TOKENS` | `2048` | Upper limit for `max_tokens` |
-| `DRUST_LLM_THREADS` | cores − 1 | CPU threads per generation |
+| `DRUST_LLM_THREADS` | physical cores | CPU threads for the model |
+| `DRUST_LLM_PARALLEL` | `4` | Requests generated at once; more wait in a queue |
 | `DRUST_LLM_MAX_LOADED` | `1` | Models kept in memory at once |
 | `DRUST_LLM_IDLE_UNLOAD_SECS` | `900` | Unload after this many idle seconds; `0` = never |
 

@@ -50,13 +50,7 @@ async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respo
         return response;
     }
     let config = &state.config;
-    let loaded: Vec<_> = state
-        .registry
-        .loaded_detail()
-        .await
-        .into_iter()
-        .map(|(id, idle)| json!({ "id": id, "idle_seconds": idle }))
-        .collect();
+    let loaded = state.registry.loaded_detail().await;
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "loaded": loaded,
@@ -69,6 +63,7 @@ async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respo
             "ctx_size": config.ctx_size,
             "max_tokens": config.max_tokens,
             "threads": config.threads,
+            "parallel": config.parallel,
             "max_loaded": config.max_loaded,
             "idle_unload_secs": config.idle_unload.as_secs(),
         },

@@ -52,12 +52,13 @@ const config = computed(() => props.status?.config || {});
                 <div v-if="!status.loaded.length" class="mt-1 text-sm text-slate-400">No model loaded</div>
                 <div v-for="m in status.loaded" :key="m.id" class="mt-1 text-sm">
                     <span class="font-medium">{{ m.id }}</span>
-                    <span class="text-xs text-slate-400"> · idle {{ fmtIdle(m.idle_seconds) }}</span>
+                    <span v-if="m.active || m.queued" class="text-xs text-amber-600"> · {{ m.active }} running<template v-if="m.queued">, {{ m.queued }} waiting</template></span>
+                    <span v-else class="text-xs text-slate-400"> · idle {{ fmtIdle(m.idle_seconds) }}</span>
                 </div>
             </div>
             <div class="text-xs text-slate-500">
                 <div>Context <span class="font-medium text-slate-700 dark:text-slate-200">{{ config.ctx_size }}</span> tokens · max output <span class="font-medium text-slate-700 dark:text-slate-200">{{ config.max_tokens }}</span></div>
-                <div class="mt-1">{{ config.threads }} CPU threads · up to {{ config.max_loaded }} loaded</div>
+                <div class="mt-1">{{ config.parallel }} requests at once · {{ config.threads }} CPU threads · up to {{ config.max_loaded }} loaded</div>
                 <div class="mt-1">Unload after {{ config.idle_unload_secs ? fmtIdle(config.idle_unload_secs) + ' idle' : 'never' }}</div>
                 <div class="mt-1 text-slate-400">Change these in <code>/etc/drust/llm.env</code></div>
             </div>

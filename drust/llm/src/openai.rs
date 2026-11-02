@@ -1,6 +1,6 @@
 use crate::{
     AppState, api_error, check_key,
-    infer::{self, GenEvent, GenParams},
+    infer::{self, GenEvent, GenParams, Job},
     registry::{unix_now, valid_id},
 };
 use axum::{
@@ -185,12 +185,13 @@ async fn chat_completions(
         presence_penalty: req.presence_penalty.unwrap_or(0.0).clamp(-2.0, 2.0),
         seed: req.seed.unwrap_or_else(|| unix_now() as u32),
         stop,
-        ctx_size: state.config.ctx_size,
-        threads: state.config.threads,
     };
 
-    let (tx, rx) = mpsc::channel(64);
-    infer::spawn(state.registry.clone(), model, prompt, params, tx);
+    let (tx, rx) = mpsc::unbounded_channel();
+    if let Err(error) = model.submit(Job { prompt, params, tx }) {
+        return api_error(StatusCode::SERVICE_UNAVAILABLE, "model_unavailable", &error);
+    }
+    state.registry.touch(&model_id).await;
 
     let id = format!("chatcmpl-{:x}{:x}", unix_now(), rand_suffix());
     let include_usage = req
@@ -221,7 +222,7 @@ fn usage(prompt_tokens: usize, completion_tokens: usize) -> Value {
     })
 }
 
-async fn collect_response(mut rx: mpsc::Receiver<GenEvent>, id: String, model: String) -> Response {
+async fn collect_response(mut rx: mpsc::UnboundedReceiver<GenEvent>, id: String, model: String) -> Response {
     let mut content = String::new();
     while let Some(event) = rx.recv().await {
         match event {
@@ -250,7 +251,7 @@ async fn collect_response(mut rx: mpsc::Receiver<GenEvent>, id: String, model: S
 }
 
 fn stream_response(
-    rx: mpsc::Receiver<GenEvent>,
+    rx: mpsc::UnboundedReceiver<GenEvent>,
     id: String,
     model: String,
     include_usage: bool,
