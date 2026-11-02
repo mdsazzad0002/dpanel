@@ -115,6 +115,13 @@ return [
         'key' => (string) env('AIGATEWAY_LOCAL_LLM_KEY', ''),
         // Loading a model on first use can take a minute.
         'timeout' => (int) env('AIGATEWAY_LOCAL_LLM_TIMEOUT', 120),
+        // Turned on and off from the Local Models page, through drust.
+        'services' => [
+            'drust-llm' => [
+                'label' => 'drust-llm',
+                'unit' => env('AIGATEWAY_LOCAL_LLM_SERVICE', 'drust-llm'),
+            ],
+        ],
         // One-click downloads on the Local Models page. Sizes are the file
         // sizes; a model needs about that much free RAM to load.
         'catalog' => [

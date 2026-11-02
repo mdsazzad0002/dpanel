@@ -11,6 +11,7 @@ mod filemanager;
 mod health;
 mod installer;
 mod laravel_queue;
+mod local_llm;
 mod php;
 mod pgadmin_sso;
 mod php_config;

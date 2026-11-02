@@ -5,9 +5,11 @@ namespace Tests\Feature;
 use App\Http\Middleware\EnsurePanelSessionIsValid;
 use App\Models\AiGatewayProvider;
 use App\Models\User;
+use App\Services\LocalLlmServiceManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Http;
+use Mockery\MockInterface;
 use Tests\TestCase;
 
 class AiGatewayLocalLlmTest extends TestCase
@@ -91,6 +93,83 @@ class AiGatewayLocalLlmTest extends TestCase
             ->deleteJson($this->url('ai-gateway.local.destroy', ['model' => 'qwen']))
             ->assertOk();
         $this->assertSame(['llama'], $provider->models()->pluck('name')->all());
+    }
+
+    public function test_turning_the_runner_off_and_on_moves_the_provider_with_it(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->fakeRunner([['id' => 'qwen', 'size_bytes' => 100, 'created' => 0, 'loaded' => false]]);
+        $this->actingAs($admin)->postJson($this->url('ai-gateway.local.connect'))->assertOk();
+        $provider = AiGatewayProvider::where('slug', 'local-llm')->sole();
+
+        $this->mock(LocalLlmServiceManager::class, function (MockInterface $mock) {
+            $mock->shouldReceive('setRunning')->once()->with('drust-llm', false)->andReturn(['success' => true]);
+            $mock->shouldReceive('setRunning')->once()->with('drust-llm', true)->andReturn(['success' => true]);
+            $mock->shouldReceive('statuses')->andReturn([]);
+        });
+
+        $this->actingAs($admin)
+            ->postJson($this->url('ai-gateway.local.service'), ['running' => false])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+        $this->assertFalse($provider->fresh()->is_active);
+
+        $this->actingAs($admin)
+            ->postJson($this->url('ai-gateway.local.service'), ['running' => true])
+            ->assertOk();
+        $this->assertTrue($provider->fresh()->is_active);
+    }
+
+    public function test_a_failed_toggle_leaves_the_provider_alone(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->fakeRunner([['id' => 'qwen', 'size_bytes' => 100, 'created' => 0, 'loaded' => false]]);
+        $this->actingAs($admin)->postJson($this->url('ai-gateway.local.connect'))->assertOk();
+
+        $this->mock(LocalLlmServiceManager::class, function (MockInterface $mock) {
+            $mock->shouldReceive('setRunning')->once()->andReturn(['success' => false, 'error' => 'drust API failed.']);
+            $mock->shouldReceive('statuses')->andReturn([]);
+        });
+
+        $this->actingAs($admin)
+            ->postJson($this->url('ai-gateway.local.service'), ['running' => false])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'drust API failed.');
+        $this->assertTrue(AiGatewayProvider::where('slug', 'local-llm')->sole()->is_active);
+    }
+
+    public function test_service_toggle_is_admin_only_and_needs_a_boolean(): void
+    {
+        $this->mock(LocalLlmServiceManager::class, function (MockInterface $mock) {
+            $mock->shouldNotReceive('setRunning');
+        });
+
+        $this->actingAs(User::factory()->create(['role' => 'reseller']))
+            ->postJson($this->url('ai-gateway.local.service'), ['running' => false])
+            ->assertForbidden();
+
+        $this->actingAs(User::factory()->create(['role' => 'admin']))
+            ->postJson($this->url('ai-gateway.local.service'), ['running' => 'maybe'])
+            ->assertJsonValidationErrors('running');
+    }
+
+    public function test_manager_toggles_drust_llm_through_drust(): void
+    {
+        config([
+            'serverpanel.execution_api_base_url' => 'http://drust.test',
+            'serverpanel.execution_api_token' => 'secret',
+        ]);
+        Http::fake([
+            'drust.test/api/v1/llm/service' => Http::response(['success' => true, 'message' => 'ok']),
+        ]);
+        $manager = new LocalLlmServiceManager;
+
+        $this->assertFalse($manager->isKnownService('postgresql'));
+        $this->assertSame(['success' => true], $manager->setRunning('drust-llm', false));
+
+        Http::assertSent(fn (HttpRequest $request) => $request->url() === 'http://drust.test/api/v1/llm/service'
+            && $request['service'] === 'drust-llm'
+            && $request['enabled'] === false);
     }
 
     public function test_runner_errors_are_shown_and_bad_input_is_refused(): void

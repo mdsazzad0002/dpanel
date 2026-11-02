@@ -28,6 +28,7 @@ const notice = ref('');
 const modelBusy = reactive({});
 const pulling = ref(false);
 const connecting = ref(false);
+const switching = ref(false);
 
 const installedIds = computed(() => state.value.models.map((m) => m.id));
 const downloading = computed(() => Object.values(state.value.pulls || {}).some((p) => p.state === 'downloading'));
@@ -58,6 +59,25 @@ const schedule = () => {
 };
 onMounted(schedule);
 onBeforeUnmount(() => clearTimeout(timer));
+
+const toggleService = async () => {
+    const turningOn = !state.value.service?.active;
+    if (!turningOn && !confirm('Turn off drust-llm? Loaded models are freed, chats stop using local models, and it stays off after a reboot.')) return;
+
+    switching.value = true;
+    error.value = '';
+    notice.value = '';
+    try {
+        const { data } = await axios.post(panelRoute('ai-gateway.local.service'), { running: turningOn });
+        state.value = data;
+        notice.value = `drust-llm turned ${turningOn ? 'on' : 'off'}.`;
+    } catch (e) {
+        if (e.response?.data?.models) state.value = e.response.data;
+        error.value = failure(e, `Could not turn drust-llm ${turningOn ? 'on' : 'off'}.`);
+    } finally {
+        switching.value = false;
+    }
+};
 
 const pull = async (payload, done) => {
     pulling.value = true;
@@ -130,7 +150,8 @@ const connect = async (quiet = false) => {
                 <button @click="notice = ''" class="shrink-0 text-emerald-400 hover:text-emerald-600"><i class="bi bi-x-lg"></i></button>
             </div>
 
-            <StatusCard :configured="configured" :online="state.online" :status="state.status" :base-url="baseUrl" />
+            <StatusCard :configured="configured" :online="state.online" :status="state.status" :base-url="baseUrl"
+                :service="state.service" :busy="switching" @toggle="toggleService" />
 
             <template v-if="state.online">
                 <ConnectCard :provider="state.provider" :has-models="state.models.length > 0" :busy="connecting" @connect="connect()" />

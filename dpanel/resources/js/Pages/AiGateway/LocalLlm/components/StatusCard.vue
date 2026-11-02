@@ -7,7 +7,14 @@ const props = defineProps({
     online: { type: Boolean, default: false },
     status: { type: Object, default: null },
     baseUrl: { type: String, default: '' },
+    service: { type: Object, default: null },
+    busy: { type: Boolean, default: false },
 });
+
+defineEmits(['toggle']);
+
+// Stopped on purpose (systemd says inactive), as opposed to unreachable.
+const turnedOff = computed(() => props.service?.installed && !props.service.active);
 
 const memory = computed(() => props.status?.memory || { total_bytes: 0, available_bytes: 0 });
 const usedPercent = computed(() => {
@@ -25,14 +32,27 @@ const config = computed(() => props.status?.config || {});
                 <h2 class="text-sm font-semibold">drust-llm</h2>
                 <span v-if="online" class="text-xs text-slate-400">v{{ status.version }} · {{ baseUrl }}</span>
             </div>
-            <span class="rounded px-2 py-0.5 text-xs" :class="online ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'">
-                {{ online ? 'Running' : (configured ? 'Not running' : 'Not installed') }}
-            </span>
+            <div class="flex items-center gap-2">
+                <span class="rounded px-2 py-0.5 text-xs" :class="online ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'">
+                    {{ online ? 'Running' : (turnedOff ? 'Off' : (configured ? 'Not running' : 'Not installed')) }}
+                </span>
+                <button v-if="service?.installed" type="button" :disabled="busy"
+                    :class="service.active
+                        ? 'border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'"
+                    class="rounded-md px-3 py-1 text-xs font-medium disabled:opacity-50"
+                    @click="$emit('toggle')">
+                    {{ busy ? 'Working…' : service.active ? 'Turn Off' : 'Turn On' }}
+                </button>
+            </div>
         </div>
 
         <div v-if="!configured" class="mt-3 text-sm text-slate-600 dark:text-slate-300">
             The local model runner isn't installed. Install it on the server (building llama.cpp takes several minutes):
             <code class="mt-2 block rounded-md bg-slate-100 px-3 py-2 text-xs dark:bg-slate-900">sudo DRUST_INSTALL_LLM=1 bash /var/www/drust/deploy/install-service.sh</code>
+        </div>
+        <div v-else-if="turnedOff" class="mt-3 text-sm text-slate-600 dark:text-slate-300">
+            drust-llm is off and stays off after a reboot. Its CPU and memory are free for the rest of the server, and the AI Gateway doesn't route chats to it. Turn it on to use local models again.
         </div>
         <div v-else-if="!online" class="mt-3 text-sm text-slate-600 dark:text-slate-300">
             The panel can't reach drust-llm. Check the service on the server:

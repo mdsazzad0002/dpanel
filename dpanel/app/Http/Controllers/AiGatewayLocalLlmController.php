@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AiGatewayModel;
 use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\LocalLlmClient;
+use App\Services\LocalLlmServiceManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -20,8 +21,13 @@ class AiGatewayLocalLlmController extends Controller
     /** The provider row that points at drust-llm. */
     private const PROVIDER_SLUG = 'local-llm';
 
-    public function __construct(private readonly LocalLlmClient $llm)
-    {
+    /** Service key in config('aigateway.local_llm.services'). */
+    private const SERVICE = 'drust-llm';
+
+    public function __construct(
+        private readonly LocalLlmClient $llm,
+        private readonly LocalLlmServiceManager $service,
+    ) {
     }
 
     public function index(): Response
@@ -38,6 +44,28 @@ class AiGatewayLocalLlmController extends Controller
     public function state(): JsonResponse
     {
         return response()->json($this->snapshot());
+    }
+
+    /**
+     * Turns drust-llm on or off (also at boot). The provider follows it, so
+     * the gateway stops routing chats to a runner that is off.
+     */
+    public function toggle(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'running' => ['required', 'boolean'],
+        ]);
+        $running = (bool) $data['running'];
+
+        $result = $this->service->setRunning(self::SERVICE, $running);
+        if ($result['success']) {
+            $this->provider()?->update(['is_active' => $running]);
+        }
+
+        return response()->json(array_merge([
+            'success' => $result['success'],
+            'message' => $result['error'] ?? null,
+        ], $this->snapshot()), $result['success'] ? 200 : 422);
     }
 
     public function pull(Request $request): JsonResponse
@@ -133,6 +161,7 @@ class AiGatewayLocalLlmController extends Controller
 
         return [
             'online' => $status !== null,
+            'service' => $this->service->statuses()[self::SERVICE] ?? null,
             'status' => $status,
             'models' => $models['models'],
             'pulls' => $models['pulls'],

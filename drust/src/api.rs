@@ -19,6 +19,7 @@ mod filemanager;
 mod ftp;
 mod git_deploy;
 mod laravel_queue;
+mod local_llm;
 mod login_users;
 mod health;
 mod mailbox_storage;
@@ -105,6 +106,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(git_deploy::routes())
         .merge(php::routes())
         .merge(mongo_admin::routes())
+        .merge(local_llm::routes())
         .merge(mongodb::routes())
         .merge(postgresql::routes())
         .merge(redis_config::routes())

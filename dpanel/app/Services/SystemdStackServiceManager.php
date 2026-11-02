@@ -21,7 +21,7 @@ abstract class SystemdStackServiceManager
     {
         $statuses = [];
 
-        foreach ((array) config($this->stack.'.services') as $key => $service) {
+        foreach ($this->services() as $key => $service) {
             $statuses[$key] = $this->status((string) $key, (string) $service['label'], (string) $service['unit']);
         }
 
@@ -30,7 +30,13 @@ abstract class SystemdStackServiceManager
 
     public function isKnownService(string $service): bool
     {
-        return array_key_exists($service, (array) config($this->stack.'.services'));
+        return array_key_exists($service, $this->services());
+    }
+
+    /** The stack's services, keyed by the name the panel and drust use. */
+    protected function services(): array
+    {
+        return (array) config($this->stack.'.services');
     }
 
     /**

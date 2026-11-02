@@ -717,6 +717,7 @@ Route::prefix('cpsess{token}')
                 ->group(function (): void {
                     Route::get('/', [AiGatewayLocalLlmController::class, 'index'])->name('ai-gateway.local.index');
                     Route::get('state', [AiGatewayLocalLlmController::class, 'state'])->name('ai-gateway.local.state');
+                    Route::post('service', [AiGatewayLocalLlmController::class, 'toggle'])->name('ai-gateway.local.service');
                     Route::post('pull', [AiGatewayLocalLlmController::class, 'pull'])->name('ai-gateway.local.pull');
                     Route::post('connect', [AiGatewayLocalLlmController::class, 'connect'])->name('ai-gateway.local.connect');
                     Route::post('models/{model}/load', [AiGatewayLocalLlmController::class, 'load'])->name('ai-gateway.local.load');
