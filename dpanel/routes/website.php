@@ -21,6 +21,7 @@ use App\Http\Controllers\Website\WebsiteDockerController;
 use App\Http\Controllers\Website\WebsiteEdgeCacheController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteGitController;
+use App\Http\Controllers\Website\WebsiteHtaccessController;
 use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
 use App\Http\Controllers\Website\WebsiteBulkExportController;
@@ -188,6 +189,14 @@ Route::get('/websites/{id}/php-info', [WebsitePhpInfoController::class, 'index']
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.php-info.index');
 Route::get('/websites/{id}/php-info/render', [WebsitePhpInfoController::class, 'render'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])->name('websites.php-info.render');
+Route::get('/websites/{id}/htaccess', [WebsiteHtaccessController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.htaccess.index');
+Route::post('/websites/{id}/htaccess/check', [WebsiteHtaccessController::class, 'check'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:60,1'])->name('websites.htaccess.check');
+Route::post('/websites/{id}/htaccess/save', [WebsiteHtaccessController::class, 'save'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])->name('websites.htaccess.save');
+Route::post('/websites/{id}/htaccess/apply', [WebsiteHtaccessController::class, 'apply'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])->name('websites.htaccess.apply');
 Route::get('/websites/{id}/ssh-key', [WebsiteSshKeyController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')->name('websites.ssh-key.index');
 Route::post('/websites/{id}/ssh-key', [WebsiteSshKeyController::class, 'generate'])

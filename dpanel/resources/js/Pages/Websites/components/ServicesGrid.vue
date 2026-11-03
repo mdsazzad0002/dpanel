@@ -33,6 +33,7 @@ const serviceLinks = computed(() => [
     { label: 'DNS Zones', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.zones'), description: 'DNS entries' },
     { label: 'PHP Info', icon: 'bi-filetype-php', color: 'blue', href: panelRoute('websites.php-info.index', { id: props.website.id }), description: 'Private phpinfo() — see which PHP version this site runs' },
     { label: 'PHP Manager', icon: 'bi-braces', color: 'indigo', href: panelRoute('php.manager'), description: 'PHP versions & modules' },
+    { label: '.htaccess Resolver', icon: 'bi-filetype-txt', color: 'teal', href: panelRoute('websites.htaccess.index', { id: props.website.id }), description: 'Check, convert and edit .htaccess for root and public' },
     { label: 'IP Ban / Whitelist', icon: 'bi-shield-lock', color: 'red', href: panelRoute('websites.ip-rules.index', { id: props.website.id }), description: 'Control website IP access' },
     // App installers are shown last, in their own "Installers" section.
     { installer: true, label: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress' },
@@ -46,7 +47,7 @@ const serviceLinks = computed(() => [
 // apply to it and would risk breaking the panel itself, so hide them here.
 ].filter((item) => !isSystemWebsite.value || ![
     'WordPress Installer', 'Laravel Installer', 'Joomla Installer', 'Drupal Installer', 'CodeIgniter Installer', 'WHMCS Installer', 'File Manager', 'Import & Clone', 'FTP Accounts',
-    'Cron Jobs', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Export & Share', 'Push to Live',
+    'Cron Jobs', '.htaccess Resolver', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Export & Share', 'Push to Live',
 ].includes(item.label)));
 
 const sections = computed(() => [
