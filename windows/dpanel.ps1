@@ -340,6 +340,9 @@ function Install-Wsl {
 
   if (-not (Test-Admin)) {
     $code = Invoke-Elevated @('install-wsl')
+    if ($code -ne 0 -and $code -ne 3010) {
+      Fail "Installing WSL failed (exit code $code). Turn on virtualization (VT-x/AMD-V) in the BIOS, or run 'wsl --install --no-distribution' as administrator to see the error."
+    }
     if ((Test-WslAvailable) -and $code -ne 3010) { return }
     Write-Warn 'WSL was installed. Restart Windows, then run this command again: .\dpanel.ps1 install'
     exit 3010
