@@ -6,6 +6,7 @@
 | --- | --- |
 | Install dPanel on a new server | [Installation](installation.md#install-dpanel) |
 | Check whether my Linux distribution is supported | [Supported distributions](supported-distributions.md) |
+| Run dPanel on my Windows PC, like XAMPP | [dPanel on Windows](windows.md) |
 | Update a server, or get a fix from `main` | [Versions and updates](installation.md#versions-and-updates) |
 | Find a command quickly | [Quick Reference](quick-reference.md) |
 | Fix an error message | [Troubleshooting](troubleshooting.md) |
@@ -21,6 +22,7 @@
 | --- | --- |
 | [Installation](installation.md) | First install, configuration files, and website permissions |
 | [Supported distributions](supported-distributions.md) | Native OS support, package stacks, and support boundaries |
+| [Windows](windows.md) | Local development on Windows 10/11 through WSL2 |
 | [Architecture](architecture.md) | Components, request flow, PHP execution, and the edge gateway |
 | [Quick Reference](quick-reference.md) | The most-used commands, by task |
 | [Troubleshooting](troubleshooting.md) | Error messages and how to fix them |

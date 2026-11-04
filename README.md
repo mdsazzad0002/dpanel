@@ -12,6 +12,7 @@
 
 [Installation](docs/installation.md) ·
 [Supported distributions](docs/supported-distributions.md) ·
+[Windows](docs/windows.md) ·
 [Documentation](docs/README.md) ·
 [Screenshots](docs/screenshots.md) ·
 [Contributing](CONTRIBUTING.md) ·
@@ -130,11 +131,16 @@ sudo dpanel doctor
 Full steps, configuration, and permission setup are in the
 [Installation Guide](docs/installation.md).
 
+**On a Windows PC** (local development, like XAMPP): `windows\dpanel.cmd install`
+runs dPanel in its own WSL2 distro at `http://localhost`, with a start/stop
+menu. See [dPanel on Windows](docs/windows.md).
+
 ## Documentation
 
 | Guide | Description |
 | --- | --- |
 | [Installation](docs/installation.md) | First install, configuration files, and website permissions |
+| [Windows](docs/windows.md) | Run dPanel on a Windows PC through WSL2, like XAMPP |
 | [Architecture](docs/architecture.md) | Components, request flow, PHP execution, and the edge gateway |
 | [Quick Reference](docs/quick-reference.md) | The most-used commands, by task |
 | [Troubleshooting](docs/troubleshooting.md) | Error messages and how to fix them |
