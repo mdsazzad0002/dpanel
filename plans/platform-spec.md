@@ -1,0 +1,415 @@
+# Platform Technical Spec
+
+Linux, Windows ও macOS-এ dPanel চালানোর technical contract। Backlog-এর প্রতিটা task এই spec মেনে চলবে। [backlog.md](backlog.md)-এর task ID গুলো এখানকার section-এর দিকে নির্দেশ করে।
+
+এই document-এর signature গুলো contract, চূড়ান্ত code নয়। Implementation-এর সময় নাম বদলালে এই file-ও একই commit-এ বদলাতে হবে।
+
+## 1. নিয়ম
+
+1. Platform layer-এর ওপরের কোনো code OS-এর নাম জানবে না।
+2. `#[cfg(windows)]`, `#[cfg(target_os = "macos")]` ও `#[cfg(unix)]` শুধু `drust/src/platform/`-এর ভেতরে থাকবে।
+3. কোনো OS-এ কিছু না থাকলে `PlatformError::Unsupported` ফেরত দেবে, আর capability flag সেটা জানাবে। Silent no-op চলবে না, শুধু যেখানে এই spec বলেছে সেখানে ছাড়া।
+4. Linux-এর বর্তমান আচরণ বদলাবে না। Linux implementation-এ কোনো command বা path বদলালে সেটা আলাদা task।
+5. Shell string বানানো চলবে না। User input সবসময় আলাদা argument হিসেবে যাবে।
+
+## 2. Profile ও build
+
+| জিনিস | মান |
+| --- | --- |
+| Profile env | `DPANEL_PROFILE=server` (default) বা `local` |
+| Cargo features | `speech` (`whisper-rs`), `ocr` (বিদ্যমান) |
+| Linux default | `speech`, `ocr` চালু; বর্তমান আচরণ অপরিবর্তিত |
+| Windows, macOS default | দুটোই বন্ধ |
+| Release target | `x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`, `x86_64-apple-darwin` |
+
+`speech` বন্ধ থাকলে `drust/src/api/media.rs`-এর transcribe `ocr` feature-এর মতোই পরিষ্কার error দেবে।
+
+## 3. Module layout
+
+```text
+drust/src/platform/
+  mod.rs          Platform struct, current(), PlatformError
+  capabilities.rs Capability enum ও report
+  paths.rs        Paths trait ও OS map
+  fs.rs           FileAccess
+  service.rs      ServiceManager
+  account.rs      AccountManager
+  runner.rs       IsolatedRunner
+  limits.rs       ResourceLimiter
+  firewall.rs     FirewallBackend
+  dns.rs          DnsBackend
+  acme.rs         AcmeClient
+  scheduler.rs    Scheduler
+  supervisor.rs   Local ও macOS/Windows-এর child process supervisor
+  linux/  macos/  windows/
+```
+
+Laravel-এর দিকে:
+
+```text
+dpanel/app/Support/Platform/
+  PlatformCapabilities.php   drust থেকে capability পড়ে, cache করে
+  ProcessIdentity.php        posix_* এর বদলে
+  LocalCommand.php           OS-নিরপেক্ষ command চালানো
+dpanel/app/Http/Middleware/RequireCapability.php
+dpanel/app/Services/Mail/Backends/{MailBackend,PostfixDovecotBackend,StalwartBackend}.php
+```
+
+## 4. Error contract
+
+```rust
+pub enum PlatformError {
+    Unsupported { capability: Capability },
+    NotFound { what: String },
+    PermissionDenied { what: String },
+    Conflict { what: String },
+    Failed { action: String, detail: String },
+}
+```
+
+drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupported","capability":"<name>"}`।
+
+## 5. Capability
+
+`GET /capabilities` (token দরকার):
+
+```json
+{
+  "os": "windows",
+  "profile": "server",
+  "version": "1.0.0",
+  "capabilities": {
+    "websites": true, "php_multi": true, "isolation": "hard",
+    "resource_limits": "hard", "disk_quota": "hard",
+    "mail": "stalwart", "dns": "windows_dns", "ssl": "acme",
+    "firewall": true, "ftp": true, "terminal": false, "docker": false,
+    "redis": false, "reseller": true
+  }
+}
+```
+
+| Capability | Linux server | Windows server | macOS server | Local (দুই OS) |
+| --- | --- | --- | --- | --- |
+| `isolation` | `hard` | `hard` | `hard` | `none` |
+| `resource_limits` | `hard` | `hard` | `soft` | `none` |
+| `disk_quota` | `hard` | `hard` | `hard` | `none` |
+| `mail` | `postfix` | `stalwart` | `stalwart` | `catcher` |
+| `dns` | `powerdns` | `windows_dns` | `external` | `hosts` |
+| `ssl` | `certbot`, পরে `acme` | `acme` | `acme` | `local_ca` |
+| `firewall` | হ্যাঁ | হ্যাঁ | হ্যাঁ | না |
+| `ftp` | হ্যাঁ | হ্যাঁ | হ্যাঁ | না |
+| `terminal` | হ্যাঁ | না | না | হ্যাঁ |
+| `docker` | হ্যাঁ | না | না | Docker Desktop থাকলে |
+| `reseller` | হ্যাঁ | হ্যাঁ | হ্যাঁ | না |
+
+Laravel-এ route গুলো `capability:<name>` middleware দিয়ে আটকাবে। Sidebar ও search একই তথ্য Inertia shared prop থেকে নেবে। Capability বন্ধ থাকলে route `404` দেবে।
+
+## 6. Interface
+
+### 6.1 Paths
+
+```rust
+pub trait Paths {
+    fn panel_root(&self) -> PathBuf;
+    fn data_dir(&self) -> PathBuf;
+    fn config_dir(&self) -> PathBuf;
+    fn log_dir(&self) -> PathBuf;
+    fn run_dir(&self) -> PathBuf;
+    fn sites_root(&self) -> PathBuf;
+    fn site_home(&self, owner: &str) -> PathBuf;
+    fn tls_dir(&self) -> PathBuf;
+    fn binary(&self, tool: Tool) -> Result<PathBuf, PlatformError>;
+}
+```
+
+| Path | Linux | Windows server | Windows local | macOS server | macOS local |
+| --- | --- | --- | --- | --- | --- |
+| `panel_root` | `/var/www/dpanel` | `%ProgramFiles%\dPanel\panel` | `%LOCALAPPDATA%\dPanel\panel` | `/Library/dPanel/panel` | `~/Library/Application Support/dPanel/panel` |
+| `config_dir` | `/etc/drust` | `%ProgramData%\dPanel\config` | `%LOCALAPPDATA%\dPanel\config` | `/Library/dPanel/config` | `.../dPanel/config` |
+| `data_dir` | `/var/lib/dpanel` | `%ProgramData%\dPanel\data` | `%LOCALAPPDATA%\dPanel\data` | `/Library/dPanel/data` | `.../dPanel/data` |
+| `log_dir` | `/var/log/dpanel` | `%ProgramData%\dPanel\logs` | `%LOCALAPPDATA%\dPanel\logs` | `/Library/Logs/dPanel` | `~/Library/Logs/dPanel` |
+| `sites_root` | `/home` | `%ProgramData%\dPanel\sites` | `%USERPROFILE%\dPanel\sites` | `/Users/Shared/dPanelSites` | `~/dPanel/sites` |
+
+Linux column-এর `data_dir` ও `log_dir` বর্তমান code-এর সঙ্গে মিলিয়ে নিতে হবে। মিল না থাকলে বর্তমান path-ই থাকবে।
+
+### 6.2 FileAccess
+
+এই interface Windows-এর 60টা compile error-এর বেশিরভাগ দূর করে।
+
+```rust
+pub enum FileMode { Private, PrivateDir, Shared, Executable, Raw(u32) }
+
+pub trait FileAccess {
+    fn set_mode(&self, path: &Path, mode: FileMode) -> Result<(), PlatformError>;
+    fn mode_string(&self, path: &Path) -> Result<String, PlatformError>;
+    fn owner(&self, path: &Path) -> Result<OwnerId, PlatformError>;
+    fn set_owner(&self, path: &Path, owner: &OwnerId) -> Result<(), PlatformError>;
+    fn create_private(&self, path: &Path) -> Result<File, PlatformError>;
+    fn create_dir_private(&self, path: &Path) -> Result<(), PlatformError>;
+}
+```
+
+| `FileMode` | Unix | Windows |
+| --- | --- | --- |
+| `Private` | `0600` | শুধু owner ও SYSTEM-এর ACL |
+| `PrivateDir` | `0700` | একই, inherit সহ |
+| `Shared` | `0644` | Owner full, site group read |
+| `Executable` | `0755` | Owner full, group read ও execute |
+| `Raw(n)` | `n` | File manager-এর chmod; Windows-এ `Unsupported` |
+
+### 6.3 ServiceManager
+
+```rust
+pub struct ServiceStatus { pub installed: bool, pub active: bool, pub enabled: bool, pub state: String }
+
+pub trait ServiceManager {
+    fn status(&self, unit: &ServiceId) -> Result<ServiceStatus, PlatformError>;
+    fn start(&self, unit: &ServiceId) -> Result<(), PlatformError>;
+    fn stop(&self, unit: &ServiceId) -> Result<(), PlatformError>;
+    fn restart(&self, unit: &ServiceId) -> Result<(), PlatformError>;
+    fn reload(&self, unit: &ServiceId) -> Result<(), PlatformError>;
+    fn enable(&self, unit: &ServiceId, on: bool) -> Result<(), PlatformError>;
+    fn logs(&self, unit: &ServiceId, lines: u32) -> Result<String, PlatformError>;
+}
+```
+
+Linux-এ `systemctl` ও `journalctl`। Windows ও macOS-এ `supervisor.rs`। OS service শুধু supervisor-কে চালায়।
+
+### 6.4 AccountManager
+
+```rust
+pub trait AccountManager {
+    fn create(&self, spec: &AccountSpec) -> Result<OwnerId, PlatformError>;
+    fn delete(&self, name: &str, keep_files: bool) -> Result<(), PlatformError>;
+    fn exists(&self, name: &str) -> Result<bool, PlatformError>;
+    fn lookup(&self, name: &str) -> Result<OwnerId, PlatformError>;
+    fn set_password(&self, name: &str, secret: &Secret) -> Result<(), PlatformError>;
+    fn lock(&self, name: &str, locked: bool) -> Result<(), PlatformError>;
+}
+```
+
+| OS | Implementation |
+| --- | --- |
+| Linux | `useradd`, `userdel`, `usermod`, `getent`, `chpasswd` |
+| Windows server | Local user API, প্রতি account-এ একটা user ও group |
+| macOS server | `dscl`, `sysadminctl` |
+| Local | Logged-in user; `create` শুধু folder বানায়, `lock` no-op |
+
+### 6.5 IsolatedRunner
+
+```rust
+pub struct RunSpec {
+    pub program: PathBuf, pub args: Vec<OsString>, pub env: Vec<(OsString, OsString)>,
+    pub cwd: PathBuf, pub owner: Option<OwnerId>, pub limits: Option<ResourceProfile>,
+    pub timeout: Option<Duration>,
+}
+
+pub trait IsolatedRunner {
+    fn spawn(&self, spec: RunSpec) -> Result<ManagedChild, PlatformError>;
+    fn run(&self, spec: RunSpec) -> Result<RunOutput, PlatformError>;
+}
+```
+
+- Linux: বর্তমান `runuser` ও `timeout` আচরণ।
+- Windows: `CreateProcessAsUser`-ধরনের API, process শুরু থেকেই Job Object-এ।
+- macOS: root থেকে site user-এ `setuid` ও `setgid`, process group সহ।
+- Environment সবসময় allowlist থেকে বানাতে হবে। `DRUST_API_TOKEN` কখনো child-এ যাবে না।
+
+### 6.6 ResourceLimiter
+
+```rust
+pub struct ResourceProfile { pub cpu_percent: u32, pub memory_mb: u32, pub max_processes: u32 }
+pub struct UsageSample { pub cpu_percent: f32, pub memory_mb: u64, pub processes: u32 }
+
+pub trait ResourceLimiter {
+    fn level(&self) -> LimitLevel; // Hard, Soft, None
+    fn apply(&self, owner: &OwnerId, profile: &ResourceProfile) -> Result<(), PlatformError>;
+    fn usage(&self, owner: &OwnerId) -> Result<UsageSample, PlatformError>;
+    fn clear(&self, owner: &OwnerId) -> Result<(), PlatformError>;
+}
+```
+
+| OS | Implementation |
+| --- | --- |
+| Linux | প্রতি account-এ systemd slice: `CPUQuota`, `MemoryMax`, `TasksMax` |
+| Windows | Job Object: job-wide memory limit, CPU rate hard cap, active process limit |
+| macOS | Section 10-এর supervisor loop |
+
+### 6.7 DiskQuota
+
+```rust
+pub trait DiskQuota {
+    fn level(&self) -> LimitLevel;
+    fn set(&self, owner: &OwnerId, limit_mb: u64) -> Result<(), PlatformError>;
+    fn usage_mb(&self, owner: &OwnerId) -> Result<u64, PlatformError>;
+    fn clear(&self, owner: &OwnerId) -> Result<(), PlatformError>;
+}
+```
+
+Linux: ext4/XFS quota, না থাকলে scan। Windows: NTFS per-user quota। macOS: প্রতি account-এ APFS volume।
+
+### 6.8 FastCGI endpoint
+
+```rust
+pub enum FastCgiEndpoint { Unix(PathBuf), Tcp(SocketAddr) }
+```
+
+`connect_fpm` ([php.rs:306](../drust/src/edge_gateway/php.rs#L306)) এই enum নেবে, আর একটা `AsyncRead + AsyncWrite` stream ফেরত দেবে। Linux ও macOS: `Unix`। Windows: `Tcp`, শুধু `127.0.0.1`-এ।
+
+### 6.9 FirewallBackend
+
+```rust
+pub struct FirewallRule { pub id: String, pub action: Allow|Deny, pub port: Option<PortSpec>, pub source: Option<IpNet>, pub comment: String }
+
+pub trait FirewallBackend {
+    fn status(&self) -> Result<FirewallStatus, PlatformError>;
+    fn list(&self) -> Result<Vec<FirewallRule>, PlatformError>;
+    fn add(&self, rule: &FirewallRule) -> Result<(), PlatformError>;
+    fn remove(&self, id: &str) -> Result<(), PlatformError>;
+    fn ban(&self, ip: IpAddr, ttl: Option<Duration>) -> Result<(), PlatformError>;
+    fn unban(&self, ip: IpAddr) -> Result<(), PlatformError>;
+}
+```
+
+Linux: UFW ও firewalld। Windows: `NetSecurity` PowerShell module, সব rule-এর নাম `dPanel:` দিয়ে শুরু। macOS: নিজের `pf` anchor।
+
+**Lock-out রক্ষা:** Rule প্রয়োগের পর 60 সেকেন্ডের মধ্যে panel থেকে confirm না এলে আগের অবস্থায় ফিরবে।
+
+### 6.10 DnsBackend
+
+```rust
+pub trait DnsBackend {
+    fn upsert_zone(&self, zone: &ZoneSpec) -> Result<(), PlatformError>;
+    fn delete_zone(&self, name: &str) -> Result<(), PlatformError>;
+    fn replace_records(&self, zone: &str, records: &[DnsRecord]) -> Result<(), PlatformError>;
+    fn enable_dnssec(&self, zone: &str, on: bool) -> Result<DnssecInfo, PlatformError>;
+}
+```
+
+Database-এর `DnsZone` ও `DnsRecord` সবসময় source of truth থাকবে। Backend শুধু সেটা প্রয়োগ করবে।
+
+Implementation: PowerDNS, Windows `DnsServer` module, Cloudflare API, Local hosts file।
+
+### 6.11 MailBackend (Laravel)
+
+```php
+interface MailBackend {
+    public function ensureDomain(MailDomain $domain): void;
+    public function removeDomain(MailDomain $domain): void;
+    public function ensureMailbox(Mailbox $mailbox, ?string $password): void;
+    public function removeMailbox(Mailbox $mailbox): void;
+    public function setForwarding(Mailbox $mailbox, ?string $target): void;
+    public function setAutoresponder(Mailbox $mailbox, ?AutoresponderData $data): void;
+    public function dkimRecord(MailDomain $domain): DkimRecord;
+    public function health(): MailHealth;
+    public function queue(): MailQueueView;
+}
+```
+
+`PostfixDovecotBackend`-এ বর্তমান code সরবে, আচরণ অপরিবর্তিত রেখে। IMAP-এ পড়া (`MailboxImapService`) দুই backend-এ একই থাকবে। Stalwart management API-র ঠিক কোন endpoint লাগবে, সেটা H3 spike থেকে এই section-এ যোগ হবে।
+
+### 6.12 AcmeClient
+
+```rust
+pub trait AcmeClient {
+    fn issue(&self, request: &CertRequest) -> Result<IssuedCert, PlatformError>;
+    fn renew_due(&self) -> Result<Vec<RenewResult>, PlatformError>;
+    fn revoke(&self, domain: &str) -> Result<(), PlatformError>;
+}
+```
+
+- `CertRequest`: domains, challenge (`Http01`, `Dns01`), ACME directory URL।
+- Certificate `Paths::tls_dir()`-এ `<domain>.crt` ও `<domain>.key` নামে থাকবে, যেটা gateway আগে থেকেই চেনে।
+- HTTP-01 token gateway-এর memory থেকে সরাসরি দেওয়া হবে, site folder-এ file লিখে নয়।
+- Renew: মেয়াদ শেষের 30 দিন আগে, দিনে একবার।
+- Local profile `rcgen` দিয়ে local CA ব্যবহার করবে।
+
+### 6.13 Scheduler
+
+Windows ও macOS-এ crontab-এর বদলে drust-এর timer। Cron expression ও job record বর্তমান database-এই থাকবে। Job `IsolatedRunner` দিয়ে site owner হিসেবে চলবে। একই job আগের run চলাকালীন আবার শুরু হবে না। Linux-এ crontab অপরিবর্তিত।
+
+## 7. Data model
+
+সব migration additive। পুরোনো server-এ data হারাবে না।
+
+| Table | নতুন column | Default |
+| --- | --- | --- |
+| `users` | `suspension_reason` (nullable string) | `null` |
+| `websites` | `serving_state` (`active`, `suspended`, `over_limit`) | `active` |
+| `package_plans` | `max_cpu_percent` (int) | `0` = সীমাহীন |
+| `package_plans` | `max_memory_mb` (int) | `0` = সীমাহীন |
+| `package_plans` | `max_processes` (int) | `0` = সীমাহীন |
+| `package_plans` | `mail_per_hour` (int) | `0` = সীমাহীন |
+| `package_plans` | `over_bandwidth_action` (`notify`, `throttle`, `block`) | `notify` |
+| `package_plans` | `enforcement_mode` (`report`, `enforce`) | `report` |
+
+নতুন table:
+
+| Table | কাজ |
+| --- | --- |
+| `account_usage_samples` | `user_id`, `sampled_at`, `disk_mb`, `bandwidth_mb`, `cpu_percent`, `memory_mb` |
+| `firewall_rules` | Panel-এর rule, backend-এর সঙ্গে reconcile হবে |
+| `acme_orders` | Domain, challenge, status, error, `expires_at` |
+
+`enforcement_mode=report` মানে limit ছাড়ালে শুধু report ও notification। পুরোনো server-এ upgrade-এর পর এটাই থাকবে, যাতে কেউ হঠাৎ বন্ধ না হয়।
+
+`websites.status` provisioning-এর অবস্থা জানায়, তাই সেটা অপরিবর্তিত থাকবে। `serving_state` আলাদা: site visitor-কে দেখানো হবে কিনা।
+
+`SiteConfig`-এ ([config.rs:21](../drust/src/edge_gateway/config.rs#L21)) নতুন field: `serving_state: SiteState`। Gateway `Suspended` ও `OverLimit` state-এ PHP না চালিয়ে `503` ও নির্দিষ্ট page দেবে। ACME challenge তখনও কাজ করবে।
+
+## 8. drust API-র নতুন endpoint
+
+সব endpoint-এ বর্তমান token auth।
+
+| Method, path | কাজ |
+| --- | --- |
+| `GET /capabilities` | Section 5 |
+| `POST /accounts/{name}/suspend`, `/unsuspend` | Mail, FTP, cron, worker, SSH বন্ধ ও চালু |
+| `PUT /accounts/{name}/limits` | Resource ও disk limit |
+| `GET /accounts/{name}/usage` | এখনকার usage |
+| `GET`, `POST`, `DELETE /firewall/rules` | Rule |
+| `POST /firewall/confirm` | Lock-out timer থামানো |
+| `POST /acme/issue`, `/acme/renew` | Certificate |
+
+Suspend idempotent: দুবার চালালেও ফল একই। Partial failure হলে কোন ধাপ ব্যর্থ হয়েছে সেটা response-এ থাকবে।
+
+## 9. Windows php-cgi pool
+
+প্রস্তাবিত default। H1 spike-এর পর মান ঠিক হবে।
+
+| Setting | Default |
+| --- | --- |
+| Port range | `127.0.0.1:9100-9999`, প্রতি pool-এ dynamic |
+| প্রতি site-এ process | কম 1, বেশি plan অনুযায়ী (default 4) |
+| Process শুরু | প্রথম request-এ; 10 মিনিট idle-এ বন্ধ |
+| Recycle | 500 request পরে (`PHP_FCGI_MAX_REQUESTS`) |
+| Queue | সব process ব্যস্ত হলে 30 সেকেন্ড অপেক্ষা, তারপর `503` |
+| Crash | Exponential backoff; 1 মিনিটে 5 বার হলে site `503` ও alert |
+| Build | NTS x64 |
+
+প্রতিটা process site user হিসেবে, সেই account-এর Job Object-এ চলবে।
+
+## 10. macOS supervisor limit
+
+প্রস্তাবিত default। H5 spike-এর পর মান ঠিক হবে।
+
+1. প্রতি 2 সেকেন্ডে প্রতি account-এর process-এর CPU ও memory মাপা।
+2. CPU limit টানা 10 সেকেন্ড ছাড়ালে সেই account-এর process-এর priority কমানো।
+3. টানা 60 সেকেন্ড ছাড়ালে PHP pool restart, আর `account_usage_samples`-এ event।
+4. Memory limit ছাড়ালে সবচেয়ে বড় worker বন্ধ করা।
+5. Process limit ছাড়ালে নতুন process আটকানো।
+
+Package page-এ macOS-এ "soft limit" লেখা থাকবে।
+
+## 11. Security invariant
+
+প্রতিটা OS-এ automated test দিয়ে প্রমাণ করতে হবে:
+
+1. Site A-র PHP site B-র file পড়তে বা লিখতে পারে না।
+2. Site-এর process `drust.env`, `.env` বা `DRUST_API_TOKEN` পড়তে পারে না।
+3. drust API শুধু loopback-এ, আর token ছাড়া `401`।
+4. Website process admin, SYSTEM বা root হিসেবে চলে না।
+5. Local profile-এর সব port শুধু `127.0.0.1`-এ।
+6. Path traversal, symlink ও Windows junction দিয়ে site folder-এর বাইরে যাওয়া যায় না।
+7. Windows-এ `C:\`, UNC, 8.3 নাম, `::$DATA` ও trailing dot path filter পার হতে পারে না।
+8. Log ও error message-এ password বা token থাকে না।

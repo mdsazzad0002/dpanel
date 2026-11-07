@@ -2,7 +2,7 @@
 
 WSL বা কোনো Linux VM ছাড়া dPanel সরাসরি Windows ও macOS-এ চালানোর plan।
 
-তারিখ: 2026-11-07। Feature-এর plan আলাদা: [feature-gap-plan.md](feature-gap-plan.md)।
+তারিখ: 2026-11-07। Feature-এর plan আলাদা: [feature-gap-plan.md](feature-gap-plan.md)। Technical contract: [platform-spec.md](platform-spec.md)। Task তালিকা: [backlog.md](backlog.md)।
 
 ## সংক্ষেপে
 

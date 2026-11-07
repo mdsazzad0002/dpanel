@@ -2,7 +2,7 @@
 
 অন্য hosting panel-এর সঙ্গে dPanel মিলিয়ে কী কী নেই বা অসম্পূর্ণ, আর কোন ক্রমে বানানো উচিত।
 
-তারিখ: 2026-11-07। Windows/macOS-এ চালানোর plan আলাদা: [windows-macos-native-plan.md](windows-macos-native-plan.md)।
+তারিখ: 2026-11-07। Windows/macOS-এ চালানোর plan আলাদা: [windows-macos-native-plan.md](windows-macos-native-plan.md)। Task তালিকা: [backlog.md](backlog.md)।
 
 ## সংক্ষেপে
 
