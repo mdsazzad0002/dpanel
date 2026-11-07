@@ -69,7 +69,7 @@ fn run(
     args: &[&str],
     stdin: Option<&[u8]>,
 ) -> Result<Output, String> {
-    let mut cmd = command(request, auth);
+    let mut cmd = command(request, auth)?;
     cmd.arg("-C").arg(target).args([
         "-c",
         "user.name=dPanel Deployment",

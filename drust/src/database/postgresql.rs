@@ -1,6 +1,6 @@
 use std::{
     io::Write,
-    process::{Command, Stdio},
+    process::Stdio,
 };
 
 /// Creates (or updates) a PostgreSQL role and a database it owns. Mirrors the
@@ -69,9 +69,7 @@ fn psql(sql: &str) -> Result<(), String> {
 
     // Peer auth as the postgres OS user over the local socket; the SQL (and the
     // password in it) goes through stdin so it never appears in the process list.
-    let mut child = Command::new("runuser")
-        .args(["-u", "postgres", "--"])
-        .arg(&psql)
+    let mut child = crate::platform::run_as("postgres", &psql)?
         .args(["-X", "-q", "-v", "ON_ERROR_STOP=1", "-d", "postgres", "-f", "-"])
         .current_dir("/")
         .stdin(Stdio::piped())

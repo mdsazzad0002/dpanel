@@ -1,4 +1,3 @@
-use std::process::Command;
 use std::sync::Arc;
 
 use crate::api::{ApiResponse, ApiState, check_token};
@@ -59,13 +58,11 @@ fn execute(request: &Request) -> Result<serde_json::Value, String> {
                 .map(|path| path.to_string_lossy().into_owned())
         })
         .ok_or("PHP CLI is unavailable.")?;
-    let output = Command::new("/usr/sbin/runuser")
-        .args(["-u", &request.username, "--", "/usr/bin/env", "-i"])
-        .arg(format!("HOME={}", user_home.display()))
-        .arg(format!("USER={}", request.username))
-        .arg(format!("LOGNAME={}", request.username))
-        .arg("PATH=/usr/local/bin:/usr/bin:/bin")
-        .arg(&php)
+    let output = crate::platform::run_as(&request.username, &php)?
+        .env("HOME", &user_home)
+        .env("USER", &request.username)
+        .env("LOGNAME", &request.username)
+        .env("PATH", "/usr/local/bin:/usr/bin:/bin")
         .arg("artisan")
         .arg(base_command)
         .args(flags)

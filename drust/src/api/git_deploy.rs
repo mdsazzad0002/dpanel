@@ -83,8 +83,8 @@ fn local_dev(request: &LocalDevRequest) -> Result<(String, serde_json::Value), S
     };
     // Read-only git as the owner, who owns the checkout.
     let owner_git = |path: &Path, args: &[&str]| -> Result<String, String> {
-        let output = Command::new("runuser")
-            .args(["-u", &request.site_owner, "--", "git", "-C"])
+        let output = crate::platform::run_as(&request.site_owner, "git")?
+            .arg("-C")
             .arg(path)
             .args(args)
             .env("HOME", crate::platform::paths().site_home(&request.site_owner))
@@ -340,20 +340,12 @@ fn validate_target(site_owner: &str, target: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn command(request: &Request, auth: &Auth) -> Command {
+fn command(request: &Request, auth: &Auth) -> Result<Command, String> {
     // Tests run git directly against temporary repositories.
     let mut command = if cfg!(test) {
         Command::new("git")
     } else {
-        let mut runuser = Command::new("runuser");
-        runuser.args([
-            "--preserve-environment",
-            "-u",
-            &request.site_owner,
-            "--",
-            "git",
-        ]);
-        runuser
+        crate::platform::run_as(&request.site_owner, "git")?
     };
     if !cfg!(test) {
         command.env("HOME", crate::platform::paths().site_home(&request.site_owner));
@@ -365,7 +357,7 @@ fn command(request: &Request, auth: &Auth) -> Command {
             .env("GIT_CONFIG_KEY_0", "http.extraHeader")
             .env("GIT_CONFIG_VALUE_0", header);
     }
-    command
+    Ok(command)
 }
 
 fn finish(output: Output, auth: &Auth) -> Result<String, String> {
@@ -420,7 +412,7 @@ fn git(request: &Request, target: &Path, auth: &Auth, args: &[&str]) -> Result<S
     if !target.join(".git").is_dir() {
         return Err("Repository is not connected yet.".into());
     }
-    let output = command(request, auth)
+    let output = command(request, auth)?
         .arg("-C")
         .arg(target)
         .args([
@@ -465,7 +457,7 @@ fn clone_repository(request: &Request, target: &Path, auth: &Auth) -> Result<Str
             "Target folder is not empty. Move or back up existing files before deploying.".into(),
         );
     }
-    let output = command(request, auth)
+    let output = command(request, auth)?
         .args([
             "clone",
             "--branch",
@@ -486,7 +478,7 @@ fn clone_repository(request: &Request, target: &Path, auth: &Auth) -> Result<Str
 /// a remote with commits is deployed (clone), an empty remote is fed from
 /// the website's files (init). Returned as JSON for the panel.
 fn probe(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
-    let remote = command(request, auth)
+    let remote = command(request, auth)?
         .args(["ls-remote", "--heads", "--", &request.repository])
         .output()
         .map_err(|error| format!("Unable to start Git: {error}"))?;
@@ -528,7 +520,7 @@ fn init_push(request: &Request, target: &Path, auth: &Auth) -> Result<String, St
         return Err("The website root is empty; there is nothing to push.".into());
     }
 
-    let remote = command(request, auth)
+    let remote = command(request, auth)?
         .args(["ls-remote", "--heads", "--", &request.repository])
         .output()
         .map_err(|error| format!("Unable to start Git: {error}"))?;
@@ -550,7 +542,7 @@ fn init_push(request: &Request, target: &Path, auth: &Auth) -> Result<String, St
 }
 
 fn init_commit_push(request: &Request, target: &Path, auth: &Auth) -> Result<String, String> {
-    let output = command(request, auth)
+    let output = command(request, auth)?
         .arg("-C")
         .arg(target)
         .args(["init", "-b", &request.branch])
@@ -561,7 +553,7 @@ fn init_commit_push(request: &Request, target: &Path, auth: &Auth) -> Result<Str
     // Never publish credentials: without a .gitignore covering .env (every
     // Laravel skeleton has one) the push stops here.
     if target.join(".env").exists() {
-        let ignored = command(request, auth)
+        let ignored = command(request, auth)?
             .arg("-C")
             .arg(target)
             .args(["check-ignore", "-q", ".env"])
@@ -615,7 +607,7 @@ fn clean(request: &Request, target: &Path, auth: &Auth) -> Result<bool, String> 
     if !target.join(".git").is_dir() {
         return Err("Repository is not connected yet.".into());
     }
-    let output = command(request, auth)
+    let output = command(request, auth)?
         .arg("-C")
         .arg(target)
         .args(["status", "--porcelain"])
@@ -627,7 +619,10 @@ fn clean(request: &Request, target: &Path, auth: &Auth) -> Result<bool, String> 
     Ok(output.stdout.iter().all(u8::is_ascii_whitespace))
 }
 fn ancestor(request: &Request, target: &Path, auth: &Auth, older: &str, newer: &str) -> bool {
-    command(request, auth)
+    let Ok(mut command) = command(request, auth) else {
+        return false;
+    };
+    command
         .arg("-C")
         .arg(target)
         .args(["merge-base", "--is-ancestor", older, newer])

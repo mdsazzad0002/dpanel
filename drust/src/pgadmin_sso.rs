@@ -19,7 +19,6 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::Command,
     time::{Duration, SystemTime},
 };
 
@@ -203,9 +202,7 @@ fn pgadmin_package_dir() -> Result<PathBuf, String> {
 
 fn setup_py(package_dir: &Path, args: &[&str]) -> Result<String, String> {
     let python = pgadmin_home().join("venv/bin/python");
-    let output = Command::new("runuser")
-        .args(["-u", PGADMIN_OS_USER, "--"])
-        .arg(&python)
+    let output = crate::platform::run_as(PGADMIN_OS_USER, &python)?
         .arg("setup.py")
         .args(args)
         .current_dir(package_dir)

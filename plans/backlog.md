@@ -2,7 +2,7 @@
 
 পুরো কাজের task তালিকা। প্রতিটা task ছোট, আলাদা commit-যোগ্য, আর তার শেষের শর্ত আছে। Technical contract: [platform-spec.md](platform-spec.md)।
 
-**Status:** A1-A6, B1-B8, D1, D2 শেষ; `5448f8b`-এ CI-র চারটা job সবুজ (Rust Linux 300, Windows 304, macOS 301 passed; Laravel Linux 647 passed, 13 skipped)। C1, C2, C4, C7 ও I6-এর code শেষ, C3 আংশিক, P0 শেষ, তবে commit push হয়নি, তাই CI-তে যাচাই বাকি। F1-এর unit test পাস, F2 চলছে, H1-এর সিদ্ধান্ত হয়নি (নিচে দেখুন)। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
+**Status:** A1-A6, B1-B8, D1, D2 শেষ; `5448f8b`-এ CI-র চারটা job সবুজ (Rust Linux 300, Windows 304, macOS 301 passed; Laravel Linux 647 passed, 13 skipped)। C1, C2, C4, C5, C7, I1 ও I6-এর code শেষ, C3 ও P1 আংশিক, P0 শেষ, তবে commit push হয়নি, তাই CI-তে যাচাই বাকি। F1-এর unit test পাস, F2 চলছে, H1-এর সিদ্ধান্ত হয়নি (নিচে দেখুন)। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
 
 **খোলা বিষয়:**
 
@@ -15,6 +15,7 @@
 - P0 শেষ। `dpanel/tests/Feature/EnforcementGapTest.php`-এ এখন একটা লাল test: `max_storage_mb` সব mailbox মিলিয়ে গোনে না। এটা `gap` group-এ, তাই সাধারণ run ও CI-তে বাদ; দেখতে `php artisan test --group=gap`। P2 gap বন্ধ করে test-কে group থেকে সরাবে। Bandwidth ও CPU/RAM-এর test নেই।
 - P1 শেষ নয়। হয়েছে: `AccountSuspensionService` (panel ও WHMCS একই পথে), session revoke, `EndSuspendedSessions` middleware, website-এ `503`, unsuspend-এ শুধু suspension-এর বন্ধ করা site খোলে। বাকি: mail, FTP, cron, queue worker ও SSH বন্ধ করা (আগের অবস্থা মনে রাখতে হবে), reseller suspend হলে তার customer, আর `terminate`-এর 30 দিনের delete flow।
 - I1: code-এর কাজ শেষ, CI বাকি। `platform/limits.rs`-এ `ResourceLimiter`, `DiskQuota`, আর সব OS-এর জন্য `NoLimits` stub। কেউ এখনও এগুলো ডাকে না; P2 ও P4 Linux backend আনবে।
+- C5: code-এর কাজ শেষ, CI বাকি। `platform/runner.rs`-এ `IsolatedRunner` ও environment allowlist। আগে `dependencies`, `rust_process`, `git_deploy`-র `runuser` drust-এর পুরো environment child-এ দিত, তাই customer-এর script `DRUST_API_TOKEN` পড়তে পারত। আসল `runuser` root ছাড়া চালিয়ে দেখা হয়নি। `git_deploy`-র `--preserve-environment` গেছে, তাই `HOME` এখন passwd থেকে। Terminal-এর PTY `runuser` থাকল (`bwrap --clearenv`)।
 - C3 শেষ নয়। `node_process.rs`, `python_process.rs`, `rust_process.rs`, `php.rs`-এর `systemctl` ও `journalctl` এখন `ServiceManager`-এ। বাকি: এই file-গুলোতে ও `laravel_queue.rs`-এ systemd unit file লেখা ও `/etc/systemd` path, আর `Done`-এর শর্ত, কারণ supervisor (E2, F4) এখনও নেই।
 - `chown` ও `chmod`-এর অন্য call এখনও `platform/`-এর বাইরে: `filemanager/` (`common`, `unzip`, `fix_permissions`), `api/` (`ssh_key`, `git_deploy`, `mailbox_storage`), `edge_gateway/` (`dispatcher`, `terminal_ws`), `installer/service.rs`, আর `try_chown`-এর caller। C9 শুধু কয়েকটা ঢাকে; বাকিগুলোর কোনো task নেই, C11-এর আগে একটা দরকার।
 - F1: Windows `Paths`, `FileAccess` ও local `AccountManager`-এর unit test পাস। `filemanager/e2e_local.rs` ignored, হাতে চালাতে হয়; suite সেটা প্রমাণ করে না। F1-এর `Depends`-এর C1 ও C4 CI-র অপেক্ষায়।

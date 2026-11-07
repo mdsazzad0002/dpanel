@@ -1,4 +1,4 @@
-use std::{fs, net::SocketAddr, path::{Path, PathBuf}, process::Command, time::Duration};
+use std::{fs, net::SocketAddr, path::{Path, PathBuf}, time::Duration};
 use tokio::{net::TcpStream, time::timeout};
 
 use crate::platform::{self, service::LogStyle};
@@ -121,7 +121,7 @@ fn cargo_binary_name(owner: &str, root: &Path) -> Result<String, String> {
 fn cargo(owner: &str, root: &Path, args: &[&str]) -> Result<std::process::Output, String> { run_as(owner, root, "cargo", args) }
 
 fn run_as(owner: &str, root: &Path, program: &str, args: &[&str]) -> Result<std::process::Output, String> {
-    Command::new("/usr/sbin/runuser").args(["-u", owner, "--", program]).args(args)
+    platform::run_as(owner, program)?.args(args)
         .current_dir(root)
         .env("HOME", crate::platform::paths().site_home(owner))
         .env("PATH", "/usr/local/bin:/usr/bin:/bin")

@@ -10,6 +10,7 @@ pub mod fs;
 pub mod limits;
 pub mod paths;
 pub mod process;
+pub mod runner;
 pub mod service;
 #[cfg(unix)]
 mod unix;
@@ -20,6 +21,7 @@ use account::{AccountManager, LinuxAccounts, LocalAccounts, NoAccounts};
 use capabilities::Capability;
 use fs::FileAccess;
 use paths::Paths;
+use runner::{IsolatedRunner, NoRunner, RunuserRunner, SameUserRunner};
 use service::{NoServices, ServiceManager, SystemdServices};
 use std::{env, fmt, io, sync::OnceLock};
 
@@ -86,6 +88,7 @@ pub struct Platform {
     paths: Paths,
     accounts: Box<dyn AccountManager>,
     services: Box<dyn ServiceManager>,
+    runner: Box<dyn IsolatedRunner>,
 }
 
 impl Platform {
@@ -111,6 +114,10 @@ impl Platform {
 
     pub fn services(&self) -> &dyn ServiceManager {
         self.services.as_ref()
+    }
+
+    pub fn runner(&self) -> &dyn IsolatedRunner {
+        self.runner.as_ref()
     }
 
     /// A local profile on a PC runs every site as the logged-in user, so a site
@@ -165,12 +172,14 @@ pub fn current() -> &'static Platform {
         let paths = Paths::for_system(os, profile, |name| env::var(name).ok());
         let accounts = accounts_for(os, profile, &paths);
         let services = services_for(os);
+        let runner = runner_for(os, profile);
         Platform {
             os,
             profile,
             paths,
             accounts,
             services,
+            runner,
         }
     })
 }
@@ -192,6 +201,14 @@ fn services_for(os: Os) -> Box<dyn ServiceManager> {
     }
 }
 
+fn runner_for(os: Os, profile: Profile) -> Box<dyn IsolatedRunner> {
+    match (os, profile) {
+        (Os::Linux, _) => Box::new(RunuserRunner),
+        (_, Profile::Local) => Box::new(SameUserRunner),
+        (_, Profile::Server) => Box::new(NoRunner),
+    }
+}
+
 /// Shorthand for `current().paths()`.
 pub fn paths() -> &'static Paths {
     current().paths()
@@ -210,6 +227,11 @@ pub fn accounts() -> &'static dyn AccountManager {
 /// Shorthand for `current().services()`.
 pub fn services() -> &'static dyn ServiceManager {
     current().services()
+}
+
+/// `program` as `owner`, with nothing of this process's environment but the allowlist.
+pub fn run_as(owner: &str, program: impl AsRef<std::ffi::OsStr>) -> Result<std::process::Command, String> {
+    current().runner().command(owner, program.as_ref()).map_err(|error| error.to_string())
 }
 
 /// Fills the buffer from the OS random source.

@@ -296,22 +296,24 @@ pub enum AccountList { Passwd, Shadow, Group }
 ### 6.5 IsolatedRunner
 
 ```rust
-pub struct RunSpec {
-    pub program: PathBuf, pub args: Vec<OsString>, pub env: Vec<(OsString, OsString)>,
-    pub cwd: PathBuf, pub owner: Option<OwnerId>, pub limits: Option<ResourceProfile>,
-    pub timeout: Option<Duration>,
-}
-
 pub trait IsolatedRunner {
-    fn spawn(&self, spec: RunSpec) -> Result<ManagedChild, PlatformError>;
-    fn run(&self, spec: RunSpec) -> Result<RunOutput, PlatformError>;
+    fn command(&self, owner: &str, program: &OsStr) -> Result<Command, PlatformError>;
 }
 ```
 
-- Linux: বর্তমান `runuser` ও `timeout` আচরণ।
-- Windows: `CreateProcessAsUser`-ধরনের API, process শুরু থেকেই Job Object-এ।
-- macOS: root থেকে site user-এ `setuid` ও `setgid`, process group সহ।
-- Environment সবসময় allowlist থেকে বানাতে হবে। `DRUST_API_TOKEN` কখনো child-এ যাবে না।
+`platform::run_as(owner, program)` দিয়ে পাওয়া যায়। Caller `Command`-এ argument, env, cwd ও stdin যোগ করে নিজে চালায়, তাই sync ও tokio দুটোই চলে।
+
+| Backend | কোথায় | Implementation |
+| --- | --- | --- |
+| `RunuserRunner` | Linux | `runuser -u owner -- program` |
+| `SameUserRunner` | macOS ও Windows local | সরাসরি চালায়, কারণ সব site একই user |
+| `NoRunner` | macOS ও Windows server, যতদিন J ও K হয়নি | `Unsupported`: site-এর code panel-এর user হিসেবে চলবে না |
+| পরে | Windows server | `CreateProcessAsUser`-ধরনের API, process শুরু থেকেই Job Object-এ |
+| পরে | macOS server | root থেকে site user-এ `setuid` ও `setgid`, process group সহ |
+
+- Environment সবসময় `INHERITED_ENV` allowlist থেকে বানানো হয়। `DRUST_API_TOKEN` কখনো child-এ যাবে না। Allowlist-এ কিছু যোগ করার আগে ভাবুন: site owner npm, composer, build script ও git hook-এ সব পড়তে পারে।
+- Web terminal `runuser` সরাসরি চালায়, কারণ সেটা PTY-তে চলে; তার environment `bwrap --clearenv` পরিষ্কার করে।
+- Time limit ও resource limit এখনও এখানে নেই। J2 ও P4 যোগ করবে।
 
 ### 6.6 ResourceLimiter
 

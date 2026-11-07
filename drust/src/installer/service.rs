@@ -326,22 +326,17 @@ async fn run_as_owner(
     input: Option<&[u8]>,
 ) -> Result<String, String> {
     let home = runtime.home.display();
-    let mut command = tokio::process::Command::new("/usr/sbin/runuser");
+    let mut command = tokio::process::Command::from(crate::platform::run_as(username, program)?);
     command
-        .args(["-u", username, "--", "/usr/bin/env", "-i"])
-        .arg(format!("HOME={home}"))
-        .arg(format!("USER={username}"))
-        .arg(format!("LOGNAME={username}"))
-        .arg(format!(
-            "PATH={}:/usr/local/bin:/usr/bin:/bin",
-            runtime.bin.display()
-        ))
-        .arg(format!("COMPOSER_HOME={home}/composer"))
-        .arg(format!("COMPOSER_CACHE_DIR={home}/composer-cache"))
-        .arg("COMPOSER_NO_INTERACTION=1")
-        .arg(format!("npm_config_cache={home}/npm-cache"))
-        .arg("CI=1")
-        .arg(program)
+        .env("HOME", &runtime.home)
+        .env("USER", username)
+        .env("LOGNAME", username)
+        .env("PATH", format!("{}:/usr/local/bin:/usr/bin:/bin", runtime.bin.display()))
+        .env("COMPOSER_HOME", format!("{home}/composer"))
+        .env("COMPOSER_CACHE_DIR", format!("{home}/composer-cache"))
+        .env("COMPOSER_NO_INTERACTION", "1")
+        .env("npm_config_cache", format!("{home}/npm-cache"))
+        .env("CI", "1")
         .args(args)
         .current_dir(cwd)
         .stdin(if input.is_some() {

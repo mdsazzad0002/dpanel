@@ -1,4 +1,4 @@
-use std::{path::Path, process::Command, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use axum::{
     Router,
@@ -89,8 +89,7 @@ fn run_as_site_owner(
     args: &[&str],
 ) -> Result<String, String> {
     let request = context.request;
-    let output = Command::new("/usr/sbin/runuser")
-        .args(["-u", &request.site_owner, "--", program])
+    let output = crate::platform::run_as(&request.site_owner, program)?
         .args(args)
         .current_dir(root)
         .env("HOME", crate::platform::paths().site_home(&request.site_owner))
