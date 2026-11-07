@@ -60,6 +60,7 @@ class PanelSessionMiddlewareTest extends TestCase
         config()->set('serverpanel.panel_inactivity_timeout', 10);
         config()->set('serverpanel.panel_token_lifetime', 60);
         config()->set('serverpanel.panel_token_refresh_threshold', 4);
+        config()->set('serverpanel.panel_token_refresh_extension', 10);
 
         $session = new PanelSession(['expires_at' => now()->addMinutes(8)]);
         $session->created_at = now()->subMinutes(20);

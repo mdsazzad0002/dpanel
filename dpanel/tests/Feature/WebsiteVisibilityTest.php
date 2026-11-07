@@ -37,7 +37,7 @@ class WebsiteVisibilityTest extends TestCase
             'assigned_reseller_id' => $resellerTwo->id,
         ]);
 
-        $this->actingAs($admin)
+        $this->actingAsPanelUser($admin)
             ->get(route('websites.list'))
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
@@ -69,7 +69,7 @@ class WebsiteVisibilityTest extends TestCase
             'assigned_reseller_id' => $otherReseller->id,
         ]);
 
-        $this->actingAs($reseller)
+        $this->actingAsPanelUser($reseller)
             ->get(route('websites.list'))
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
@@ -79,9 +79,14 @@ class WebsiteVisibilityTest extends TestCase
                 ->where('websiteRequests.0.domain', $ownedWebsite->domain)
                 ->where('websiteRequests.0.created_by_label', $reseller->name));
 
-        $this->actingAs($reseller)
+        $this->actingAsPanelUser($reseller)
+            ->get(route('websites.manage', $ownedWebsite->id))
+            ->assertOk();
+
+        // A foreign site is not even admitted to exist.
+        $this->actingAsPanelUser($reseller)
             ->get(route('websites.manage', $foreignWebsite->id))
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     public function test_website_list_includes_ssl_validity(): void
@@ -96,14 +101,14 @@ class WebsiteVisibilityTest extends TestCase
         ]);
         $expiresAt = now()->startOfDay()->addDays(45);
 
-        SslCertificate::query()->create([
+        SslCertificate::query()->forceCreate([
             'id' => (string) Str::uuid(),
             'domain' => $website->domain,
             'status' => 'valid',
             'expires_at' => $expiresAt,
         ]);
 
-        $this->actingAs($admin)
+        $this->actingAsPanelUser($admin)
             ->get(route('websites.list'))
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page

@@ -36,7 +36,7 @@ class EdgeGatewayReloaderTest extends TestCase
         $this->assertFalse(app(EdgeGatewayReloader::class)->reload());
     }
 
-    private function expectPublish(): \Mockery\Expectation
+    private function expectPublish(): \Mockery\CompositeExpectation
     {
         $connection = Mockery::mock();
         Redis::shouldReceive('connection')->once()->with('website_cache')->andReturn($connection);

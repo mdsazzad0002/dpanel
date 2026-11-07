@@ -23,7 +23,7 @@ class MailHostnameDetector
 
     public function current(): string
     {
-        return strtolower(trim((string) @shell_exec('postconf -h myhostname 2>/dev/null')));
+        return app(PostfixHostname::class)->current();
     }
 
     /** The machine's own name; the hostname script keeps it equal to the mail hostname. */

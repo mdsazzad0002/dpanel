@@ -6,9 +6,7 @@
 
 **খোলা বিষয়:**
 
-- CI এখনো একবারও চলেনি, কারণ commit push হয়নি। তাই A1-এর `Done` এখনো প্রমাণিত নয়।
-- `php artisan test`-এ 550টার মধ্যে 34টা test ব্যর্থ, এই কাজের আগে থেকেই। কারণ পুরোনো test: সরানো Spatie package, Mockery-র return type, বদলে যাওয়া route। এগুলো ঠিক না হলে CI-র Laravel job লাল থাকবে।
-- `php artisan test` PHP-র default 128MB memory-তে `FilemanagerChunkUploadsTest`-এ থেমে যায়। CI-তে limit 1G; local-এ `php -d memory_limit=2G vendor/bin/phpunit` চালান।
+- CI-র প্রথম run-এর ফল দেখে A1-এর `Done` নিশ্চিত করতে হবে। Local-এ `cargo test` ও `php artisan test` সবুজ।
 - Windows-এর result শুধু type-check, MSVC C compiler stub করে। Link হয়নি, চালানো হয়নি। আসল build B8-এ।
 
 ## সব task-এর শেষের শর্ত
@@ -16,7 +14,7 @@
 একটা task তখনই শেষ, যখন:
 
 1. Task-এর `Done` শর্ত পূরণ হয়েছে, আর সেটা test দিয়ে প্রমাণিত।
-2. Linux-এর বিদ্যমান test পাস: `cargo test` (এখন 235টা Rust test, 4টা ignored) ও `php artisan test`।
+2. Linux-এর বিদ্যমান test পাস: `cargo test` (এখন 235টা Rust test, 4টা ignored) ও `php artisan test` (এখন 551টা test, 1টা skipped)।
 3. CI তিন OS-এ সবুজ (A1-এর পর)।
 4. নতুন Vue অংশ আলাদা component-এ। `Manage.vue`-এর মতো বড় page আর বাড়ে না।
 5. `#[cfg]` শুধু `drust/src/platform/`-এ।

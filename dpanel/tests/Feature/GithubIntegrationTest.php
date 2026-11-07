@@ -46,7 +46,7 @@ class GithubIntegrationTest extends TestCase
         parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
         $this->assertSame('Ov23liTEST', $query['client_id']);
         $this->assertSame('select_account', $query['prompt']);
-        $this->assertSame('repo admin:repo_hook read:user', $query['scope']);
+        $this->assertSame('repo workflow admin:repo_hook read:user', $query['scope']);
         $this->assertSame('state123', $query['state']);
     }
 

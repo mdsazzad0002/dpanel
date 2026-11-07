@@ -141,7 +141,7 @@ class WebsiteEdgeCacheTest extends TestCase
             ->withSession(['panel_session_token' => $this->token]);
     }
 
-    private function expectPublish(): \Mockery\Expectation
+    private function expectPublish(): \Mockery\CompositeExpectation
     {
         $connection = Mockery::mock();
         Redis::shouldReceive('connection')->once()->with('website_cache')->andReturn($connection);

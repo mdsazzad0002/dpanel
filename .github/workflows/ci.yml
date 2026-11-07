@@ -58,8 +58,6 @@ jobs:
         with:
           php-version: '8.3'
           extensions: pdo_sqlite, redis, imap, intl, gd, zip
-          # FilemanagerChunkUploadsTest needs more than PHP's default 128M.
-          ini-values: memory_limit=1G
           coverage: none
       - uses: actions/setup-node@v4
         with:

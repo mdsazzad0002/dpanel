@@ -2,8 +2,12 @@
 
 namespace Tests;
 
+use App\Models\PanelSession;
+use App\Models\User;
+use App\Services\Mail\PostfixHostname;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\URL;
 use LogicException;
 
 abstract class TestCase extends BaseTestCase
@@ -27,6 +31,38 @@ abstract class TestCase extends BaseTestCase
             ));
         }
 
+        // A machine with Postfix must behave like one without it.
+        $app->instance(PostfixHostname::class, new class extends PostfixHostname
+        {
+            public function current(): string
+            {
+                return '';
+            }
+        });
+
         return $app;
+    }
+
+    /**
+     * Signs in the way a real login does. Panel routes need a live PanelSession
+     * as well as an authenticated user; `actingAs()` alone is logged out by the
+     * `panel.session` middleware, and the test only sees a redirect to /login.
+     */
+    protected function actingAsPanelUser(User $user): static
+    {
+        $token = bin2hex(random_bytes(32));
+
+        PanelSession::create([
+            'user_id' => $user->id,
+            'token_hash' => hash('sha256', $token),
+            'cookie_hash' => hash('sha256', 'test-cookie'),
+            'ip_address' => '127.0.0.1',
+            'user_agent_hash' => hash('sha256', 'phpunit'),
+            'expires_at' => now()->addHour(),
+            'last_seen_at' => now(),
+        ]);
+        URL::defaults(['token' => $token]);
+
+        return $this->actingAs($user)->withSession(['panel_session_token' => $token]);
     }
 }

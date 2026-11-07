@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CommandJob;
+use App\Models\Role;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\ServerPanel\ReportService;
@@ -10,7 +11,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class ServerPanelModuleTest extends TestCase
@@ -21,7 +21,7 @@ class ServerPanelModuleTest extends TestCase
     {
         $admin = $this->adminUser();
 
-        $this->actingAs($admin)->post(route('servers.store'), [
+        $this->actingAsPanelUser($admin)->post(route('servers.store'), [
             'name' => 'Production',
             'host' => '192.168.0.10',
             'port' => 22,
@@ -51,7 +51,7 @@ class ServerPanelModuleTest extends TestCase
             'mode' => 'setup',
         ]);
 
-        $response = $this->actingAs($admin)->get(route('servers.show', $server));
+        $response = $this->actingAsPanelUser($admin)->get(route('servers.show', $server));
 
         $response->assertOk();
         $response->assertDontSee('TopSecret!1');

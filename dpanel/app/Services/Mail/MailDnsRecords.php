@@ -49,7 +49,7 @@ class MailDnsRecords
             return $this->assignedHost;
         }
         $candidates = array_values(array_filter([
-            strtolower(trim((string) @shell_exec('postconf -h myhostname 2>/dev/null'))),
+            app(PostfixHostname::class)->current(),
             strtolower(trim((string) config('serverpanel.mail.hostname', ''))),
             strtolower((string) parse_url((string) config('app.url', ''), PHP_URL_HOST)),
         ], fn ($host) => MailDomainProvisioner::isValidFqdn($host)));
