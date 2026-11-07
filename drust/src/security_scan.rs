@@ -1394,11 +1394,14 @@ mod tests {
 
     #[test]
     fn scans_a_site_tree() {
-        let base = Path::new("/srv");
-        if fs::create_dir_all(base).is_err() {
-            return;
-        }
-        let dir = tempfile::tempdir_in(base).unwrap();
+        // Scans only accept roots under ALLOWED_ROOT_PREFIXES, so /tmp will not
+        // do. A normal user, as in CI, cannot write to /srv but owns $HOME.
+        let home = std::env::var("HOME").unwrap_or_default();
+        let dir = ["/srv", home.as_str()]
+            .into_iter()
+            .filter(|base| ALLOWED_ROOT_PREFIXES.iter().any(|p| format!("{base}/").starts_with(p)))
+            .find_map(|base| tempfile::tempdir_in(base).ok())
+            .expect("no writable directory under the allowed scan roots");
         let root = dir.path();
         fs::create_dir_all(root.join("wp-content/uploads/2024")).unwrap();
         fs::write(

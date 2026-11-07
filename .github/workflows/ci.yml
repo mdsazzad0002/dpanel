@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust-linux:
+    name: Rust (Linux)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: drust
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config cmake clang libclang-dev libleptonica-dev libtesseract-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: drust
+      - run: cargo check --all-targets
+      - run: cargo test
+
+  # Reports only until task B8 makes these two jobs required.
+  rust-portable:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-14]
+    defaults:
+      run:
+        working-directory: drust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: drust
+      - run: cargo check --all-targets --no-default-features
+      - run: cargo test --no-default-features
+
+  php-linux:
+    name: Laravel (Linux)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: dpanel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, redis, imap, intl, gd, zip
+          # FilemanagerChunkUploadsTest needs more than PHP's default 128M.
+          ini-values: memory_limit=1G
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dpanel/package-lock.json
+      - run: composer install --no-interaction --prefer-dist
+      - run: npm ci
+      - run: npm run build
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - run: php artisan test
