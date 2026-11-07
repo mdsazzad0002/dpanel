@@ -315,7 +315,7 @@ fn dump_database_to_file(database: &DatabaseArchive, target: &Path) -> Result<()
     }
     let output_file =
         fs::File::create(target).map_err(|e| format!("cannot create database dump file: {e}"))?;
-    let output = Command::new("mysqldump")
+    let output = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysqldump))
         .env("MYSQL_PWD", &database.password)
         .args([
             "--single-transaction",
@@ -657,7 +657,7 @@ fn archive_cpmove(
                     }
                 })
                 .collect();
-            let output = Command::new("mysqldump")
+            let output = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysqldump))
                 .env("MYSQL_PWD", &database.password)
                 .args([
                     "--single-transaction",
@@ -1140,7 +1140,7 @@ fn restore_archive(value: &str, progress: &RestoreProgress) -> Result<serde_json
             let provision_sql = format!(
                 "CREATE DATABASE IF NOT EXISTS `{name}` CHARACTER SET utf8mb4; CREATE USER IF NOT EXISTS '{user}'@'%' IDENTIFIED BY '{sql_password}'; ALTER USER '{user}'@'%' IDENTIFIED BY '{sql_password}'; GRANT ALL PRIVILEGES ON `{name}`.* TO '{user}'@'%'; FLUSH PRIVILEGES;"
             );
-            let provision = Command::new("mysql")
+            let provision = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysql))
                 .args(["--protocol=socket", "--execute", &provision_sql])
                 .output()
                 .map_err(|e| format!("cannot provision database {name}: {e}"))?;
@@ -1166,7 +1166,7 @@ fn restore_archive(value: &str, progress: &RestoreProgress) -> Result<serde_json
                 .map_err(|_| format!("database dump missing for {name}"))?
                 .read_to_end(&mut dump)
                 .map_err(|e| format!("cannot read database dump: {e}"))?;
-            let mut child = Command::new("mysql")
+            let mut child = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysql))
                 .env("MYSQL_PWD", password)
                 .args(["--host", host, "--user", user, name])
                 .stdin(Stdio::piped())
@@ -1371,7 +1371,7 @@ fn restore_cpmove_staged(
             let sql = format!(
                 "CREATE DATABASE IF NOT EXISTS `{name}` CHARACTER SET utf8mb4; CREATE USER IF NOT EXISTS '{user}'@'%' IDENTIFIED BY '{escaped}'; ALTER USER '{user}'@'%' IDENTIFIED BY '{escaped}'; GRANT ALL PRIVILEGES ON `{name}`.* TO '{user}'@'%'; FLUSH PRIVILEGES;"
             );
-            let provision = Command::new("mysql")
+            let provision = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysql))
                 .args(["--protocol=socket", "--execute", &sql])
                 .output()
                 .map_err(|e| format!("cannot provision database: {e}"))?;
@@ -1397,7 +1397,7 @@ fn restore_cpmove_staged(
             if !dump.is_file() {
                 return Err(format!("database dump missing for {name}"));
             }
-            let mut import = Command::new("mysql");
+            let mut import = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysql));
             import
                 .env("MYSQL_PWD", password)
                 .args(["--host", host, "--user", user, name]);
@@ -1430,7 +1430,7 @@ fn add_database_dump(
     if database.name.is_empty() || database.user.is_empty() {
         return Err("database name and user are required".into());
     }
-    let output = Command::new("mysqldump")
+    let output = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysqldump))
         .env("MYSQL_PWD", &database.password)
         .args([
             "--single-transaction",

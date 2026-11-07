@@ -926,7 +926,7 @@ fn grant(db: &str, login: &Credential) -> Result<(), String> {
          ALTER USER '{user}'@'localhost' IDENTIFIED BY '{password}'; \
          GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'localhost'; FLUSH PRIVILEGES;"
     );
-    let out = Command::new("mysql")
+    let out = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysql))
         .args(["--protocol=socket", "--execute", &statement])
         .output()
         .map_err(|e| e.to_string())?;
@@ -1141,7 +1141,7 @@ fn plain_sql(dump: &Path, work: &Path) -> Result<PathBuf, String> {
 }
 
 fn import_database(db: &str, dump: &Path) -> Result<(), String> {
-    let create = Command::new("mysql")
+    let create = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysql))
         .args([
             "--protocol=socket",
             "--execute",
@@ -1154,7 +1154,7 @@ fn import_database(db: &str, dump: &Path) -> Result<(), String> {
     }
     let bytes = fs::read(dump).map_err(|e| e.to_string())?;
     let bytes = strip_privileged_statements(remap_unsupported_collations(bytes))?;
-    let mut child = Command::new("mysql")
+    let mut child = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysql))
         .args(["--protocol=socket", db])
         .stdin(Stdio::piped())
         .stderr(Stdio::piped())

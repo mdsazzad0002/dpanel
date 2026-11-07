@@ -1,3 +1,4 @@
+use crate::platform::paths::Tool;
 use std::process::Command;
 
 pub(crate) struct Options {
@@ -69,18 +70,12 @@ pub(crate) fn run(opts: Options) -> Result<String, String> {
 }
 
 fn find_cli() -> Result<String, String> {
-    for name in ["mariadb", "mysql"] {
-        let output = Command::new("bash")
-            .arg("-c")
-            .arg(format!("command -v {name}"))
-            .output();
-        if let Ok(o) = output {
-            if o.status.success() {
-                return Ok(name.to_string());
-            }
-        }
-    }
-    Err("No database CLI found (mariadb/mysql).".into())
+    let paths = crate::platform::paths();
+    [Tool::Mariadb, Tool::Mysql]
+        .into_iter()
+        .find_map(|tool| paths.binary(tool).ok())
+        .map(|path| path.to_string_lossy().into_owned())
+        .ok_or_else(|| "No database CLI found (mariadb/mysql).".into())
 }
 
 fn normalize_host(host: &str) -> String {

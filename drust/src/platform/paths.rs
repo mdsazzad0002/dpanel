@@ -17,6 +17,8 @@ pub enum Tool {
     Freshclam,
     Journalctl,
     Mariadb,
+    Mysql,
+    Mysqldump,
     Node,
     Npm,
     Psql,
@@ -40,6 +42,8 @@ impl Tool {
             Self::Freshclam => "freshclam",
             Self::Journalctl => "journalctl",
             Self::Mariadb => "mariadb",
+            Self::Mysql => "mysql",
+            Self::Mysqldump => "mysqldump",
             Self::Node => "node",
             Self::Npm => "npm",
             Self::Psql => "psql",
@@ -65,6 +69,8 @@ impl Tool {
             Self::Freshclam => &["/usr/bin/freshclam", "/usr/local/bin/freshclam"],
             Self::Journalctl => &["/usr/bin/journalctl", "/bin/journalctl"],
             Self::Mariadb => &["/usr/bin/mariadb", "/usr/local/bin/mariadb"],
+            Self::Mysql => &["/usr/bin/mysql", "/usr/local/bin/mysql"],
+            Self::Mysqldump => &["/usr/bin/mysqldump", "/usr/local/bin/mysqldump"],
             Self::Node => &["/usr/bin/node", "/usr/local/bin/node"],
             Self::Npm => &["/usr/local/bin/npm", "/usr/bin/npm"],
             Self::Psql => &["/usr/bin/psql", "/usr/local/bin/psql"],
@@ -365,6 +371,12 @@ impl Paths {
         })
     }
 
+    /// The tool, or just its name when it is not in a known place, so that
+    /// running it reports the usual "not found".
+    pub fn binary_or_name(&self, tool: Tool) -> PathBuf {
+        self.binary(tool).unwrap_or_else(|_| PathBuf::from(tool.name()))
+    }
+
     pub fn tls_dir(&self) -> PathBuf {
         self.config_dir.join("tls")
     }
@@ -451,6 +463,13 @@ mod tests {
             paths.data_dir.to_str().unwrap(),
             paths.sites_root.to_str().unwrap(),
         ]
+    }
+
+    #[test]
+    fn a_missing_tool_falls_back_to_its_name() {
+        let paths = paths(Os::Linux, Profile::Server);
+        let tool = paths.binary_or_name(Tool::Mysqldump);
+        assert!(tool == Path::new("mysqldump") || tool.is_absolute());
     }
 
     #[test]

@@ -310,7 +310,7 @@ fn backup_generic_database(
     let output_file = fs::File::create(&destination)
         .map_err(|error| format!("cannot create database backup: {error}"))?;
     let local = matches!(req.database_host.as_str(), "127.0.0.1" | "localhost");
-    let mut command = Command::new("mysqldump");
+    let mut command = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysqldump));
     if local {
         command.args(["--protocol=socket"]);
     } else {
@@ -548,7 +548,7 @@ fn restore_generic_database(req: &GenericRestoreRequest, sql: &Path) -> Result<(
             req.database_name,
             req.database_user
         );
-        if !Command::new("mysql")
+        if !Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysql))
             .args(["--protocol=socket", "--execute", &statement])
             .status()
             .map_err(|e| e.to_string())?
@@ -560,7 +560,7 @@ fn restore_generic_database(req: &GenericRestoreRequest, sql: &Path) -> Result<(
     let bytes = fs::read(sql).map_err(|e| e.to_string())?;
     let bytes = remap_unsupported_collations(bytes);
     let bytes = strip_privileged_statements(bytes)?;
-    let mut child = Command::new("mysql")
+    let mut child = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysql))
         .env("MYSQL_PWD", &req.database_password)
         .args([
             "--host",
@@ -621,7 +621,7 @@ fn rewrite_wordpress_urls(req: &GenericRestoreRequest, root: &Path) -> serde_jso
     };
     let prefix = wordpress_table_prefix(&config);
     let query = |sql: &str| -> Result<String, String> {
-        let out = Command::new("mysql")
+        let out = Command::new(crate::platform::paths().binary_or_name(crate::platform::paths::Tool::Mysql))
             .env("MYSQL_PWD", &req.database_password)
             .args([
                 "--host",

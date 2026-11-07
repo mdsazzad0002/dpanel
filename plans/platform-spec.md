@@ -132,6 +132,7 @@ impl Paths {
     fn sites_root(&self) -> &Path;
     fn site_home(&self, owner: &str) -> PathBuf;
     fn binary(&self, tool: Tool) -> Result<PathBuf, PlatformError>;
+    fn binary_or_name(&self, tool: Tool) -> PathBuf; // না পেলে নাম, যাতে error আগের মতো থাকে
     fn php_candidates(&self, version: Option<&str>) -> Vec<PathBuf>; // সেরাটা আগে
     fn php_cli(&self, version: Option<&str>) -> PathBuf;             // যেটা চালানো হবে
     fn php_cgi(&self, version: &str) -> Result<PathBuf, PlatformError>; // শুধু Windows
