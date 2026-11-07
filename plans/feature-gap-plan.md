@@ -57,6 +57,8 @@ dPanel-এর দিকে যা "নেই" লেখা হয়েছে, �
 
 এই ফাঁকগুলোর কারণে একজন customer তার plan-এর বাইরে যেতে পারে, অথবা suspend হওয়ার পরও সেবা পেতে পারে।
 
+dPanel Windows ও macOS production-এও চলবে, তাই এই phase-এর enforcement Linux command-এ সরাসরি না বেঁধে platform interface-এর পেছনে বানান। দেখুন [Production profile](windows-macos-native-plan.md#production-profile)।
+
 ### 1.1 Suspend সত্যিই কার্যকর করা
 
 **এখনকার অবস্থা:**

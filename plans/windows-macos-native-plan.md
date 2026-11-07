@@ -6,17 +6,23 @@ WSL বা কোনো Linux VM ছাড়া dPanel সরাসরি Windo
 
 ## সংক্ষেপে
 
-**হ্যাঁ, করা সম্ভব, তবে local development tool হিসেবে** (XAMPP, Laragon বা Laravel Herd-এর মতো)। Windows বা Mac-এ public hosting server হিসেবে নয়।
+দুটো লক্ষ্য, একই code base থেকে দুটো profile:
 
-কারণ dPanel-এর hosting অংশ Linux-এর ওপর দাঁড়ানো: প্রতি site-এ আলাদা Linux user, systemd, Postfix/Dovecot, PowerDNS, UFW, Fail2ban। এগুলোর Windows/macOS সংস্করণ বানানো মানে আলাদা একটা পণ্য বানানো। Plesk Windows-এ চলে, কিন্তু সেখানে IIS-এর ওপর আলাদা hosting stack লাগে।
+| Profile | কাজ | কীভাবে চলে |
+| --- | --- | --- |
+| **Local** | Development, XAMPP বা Laravel Herd-এর মতো | একজন user, শুধু localhost, mail ও DNS নকল |
+| **Production** | Live deployment, public website | বহু site, আলাদা user, আসল SSL, mail, DNS ও firewall |
+
+Local সহজ। Production অনেক বড় কাজ, কারণ dPanel-এর hosting অংশ Linux-এর ওপর দাঁড়ানো: প্রতি site-এ আলাদা Linux user, systemd, Postfix/Dovecot, PowerDNS, UFW, Fail2ban। এগুলোর প্রতিটার জন্য Windows ও macOS-এ বিকল্প লাগবে, যা [Production profile](#production-profile) অংশে আছে।
 
 | বিষয় | সিদ্ধান্ত |
 | --- | --- |
-| লক্ষ্য | একটা installer: panel, PHP, MariaDB ও gateway সব নিজে থেকে চলবে |
-| ক্রম | আগে macOS, তারপর Windows |
+| ক্রম | macOS local → Windows local → Windows production → macOS production |
+| Windows production | Windows Server 2022 ও 2025; Windows 10/11 শুধু local |
+| macOS production | ছোট পরিসর: একজন মালিকের কয়েকটা site, shared hosting বিক্রির জন্য নয় |
 | মূল কৌশল | drust-এ platform layer, আর drust নিজেই সব service চালাবে |
-| WSL সংস্করণ | Native স্থিতিশীল না হওয়া পর্যন্ত থাকবে, তারপর বন্ধ |
-| সময় | ১ জন dev: মোটামুটি 5-6 মাস (অনুমান) |
+| WSL সংস্করণ | Native local স্থিতিশীল না হওয়া পর্যন্ত থাকবে, তারপর বন্ধ |
+| সময় (১ জন dev, অনুমান) | Local 5-6 মাস, Windows production আরও 8-10 মাস, macOS production আরও 3-4 মাস: মোট 16-20 মাস |
 
 ## মাপা হয়েছে: drust compile হয় কিনা
 
@@ -90,11 +96,13 @@ Linux-এর আচরণ যেন না বদলায়, তাই code �
 
 **3. Capability flag।** drust একটা `/capabilities` endpoint দেবে, আর Laravel-এ `PlatformCapabilities` service থাকবে। Mail, DNS, firewall-এর মতো page desktop-এ menu ও route থেকেই লুকানো থাকবে। আলাদা Vue build লাগবে না।
 
-**4. কম অধিকার।** Service যতটা সম্ভব সাধারণ user হিসেবে চলবে, SYSTEM বা root হিসেবে নয়। সব port শুধু `127.0.0.1`-এ bind হবে। Admin অধিকার লাগবে শুধু install, hosts file আর local CA trust-এর জন্য।
+**4. Local profile-এ কম অধিকার।** Service যতটা সম্ভব সাধারণ user হিসেবে চলবে, SYSTEM বা root হিসেবে নয়। সব port শুধু `127.0.0.1`-এ bind হবে। Admin অধিকার লাগবে শুধু install, hosts file আর local CA trust-এর জন্য।
 
-এটা জরুরি, কারণ Linux-এ drust root হিসেবে চলে। সেই নকশা Windows-এ SYSTEM হিসেবে হুবহু চালালে একটা local privilege escalation-এর পথ তৈরি হবে।
+এটা জরুরি, কারণ Linux-এ drust root হিসেবে চলে। সেই নকশা PC-তে হুবহু চালালে একটা local privilege escalation-এর পথ তৈরি হবে।
 
-## Feature: desktop-এ কী থাকবে
+Production profile-এ drust-কে SYSTEM বা root হিসেবে চলতেই হবে, কারণ user ও firewall বানাতে হয়। সেখানে নিয়মটা Linux-এর মতোই: API শুধু localhost-এ ও token দিয়ে, আর panel ও website কম অধিকারের account-এ।
+
+## Local profile: কী থাকবে
 
 | Feature | Desktop | মন্তব্য |
 | --- | --- | --- |
@@ -149,7 +157,56 @@ Linux-এর আচরণ যেন না বদলায়, তাই code �
 | `git`, `ssh`, `ssh-keygen` | User-এর system-এ থাকা বা সঙ্গে দেওয়া |
 | `sh`, `bash` script | Rust-এ লেখা; `dscript` desktop-এ ব্যবহার হবে না |
 
+## Production profile
+
+একই gateway, panel ও platform layer থাকবে, শুধু backend বদলাবে। IIS লাগবে না: Rust edge gateway-ই public 80/443 সামলাবে।
+
+| কাজ | Linux (এখন) | Windows Server | macOS |
+| --- | --- | --- | --- |
+| Service | systemd | Windows Service | LaunchDaemon |
+| PHP | প্রতি site-এ FPM pool | প্রতি site-এ php-cgi pool | প্রতি site-এ FPM pool |
+| Site isolation | Linux user, ACL | Local Windows user, NTFS ACL | `dscl` user, POSIX permission |
+| CPU/RAM limit | cgroup (feature plan 1.4) | Job Object | কোনো hard limit নেই; শুধু process limit |
+| Disk quota | Filesystem quota (feature plan 1.2) | NTFS per-user quota (যাচাই দরকার) | `du` scan ও soft limit |
+| SSL | certbot | Rust ACME client | Rust ACME client |
+| DNS | PowerDNS | Windows DNS Server role | External DNS (Cloudflare API) |
+| Mail | Postfix, Dovecot, Rspamd | Stalwart | Stalwart |
+| Webmail | Roundcube | Roundcube | Roundcube |
+| FTP/SFTP | বিদ্যমান | libunftp, Windows OpenSSH | libunftp, macOS SSH |
+| Firewall | UFW | Windows Defender Firewall | `pf` |
+| Brute-force রক্ষা | Fail2ban | drust watcher + firewall | drust watcher + firewall |
+| Malware scan | ClamAV | ClamAV | ClamAV |
+| Web terminal | bwrap sandbox | প্রথম সংস্করণে বন্ধ | প্রথম সংস্করণে বন্ধ |
+| Docker | বিদ্যমান | প্রথম সংস্করণে বন্ধ | প্রথম সংস্করণে বন্ধ |
+| Reseller, WHMCS, package | বিদ্যমান | চালু | বন্ধ |
+
+### বড় সিদ্ধান্তগুলোর কারণ
+
+**Mail: Stalwart।** Postfix ও Dovecot Windows-এ চলে না। Stalwart-এর সর্বশেষ release (v1.0.3, 2026-11-04)-এ Windows ও macOS দুটোরই build আছে, এবং spam filter ভেতরেই আছে। jabali-panel-ও Stalwart ব্যবহার করে।
+
+- License AGPL-3.0 ও commercial, দুই ধরনের। dPanel থেকে আলাদা process হিসেবে অপরিবর্তিত চালান, আর bundle করার আগে আইনি পরামর্শ নিন।
+- Laravel-এর mail অংশ Dovecot-এর সঙ্গে বাঁধা (`/etc/dovecot`-এর 11টা reference)। তাই আগে একটা `MailBackend` interface লাগবে, যার দুটো implementation থাকবে।
+- Windows-এ mail সবচেয়ে বড় অজানা অংশ। আগে একটা spike করুন।
+
+**DNS: Windows DNS role।** Hickory DNS Rust-এ হওয়ায় লোভনীয়, কিন্তু তার নিজের docs এখনো production-এ চালাতে নিষেধ করে। PowerDNS-এর আধুনিক Windows build-এর কোনো প্রমাণ পাওয়া যায়নি। Windows-এ তাই `DnsServer` PowerShell module। macOS-এ external DNS, কারণ local DNS server সেখানে দরকার নেই।
+
+**SSL: Rust ACME।** `certbot` বাদ দিয়ে drust-এর ভেতরে ACME client (`instant-acme` একটা বিকল্প)। এটা Linux-এও লাভজনক, আর DNS-01 দিয়ে feature plan-এর wildcard SSL-ও পাওয়া যাবে। `instant-acme`-এর README শুধু DNS challenge পরীক্ষার কথা বলে, তাই HTTP-01 নিজে পরীক্ষা করুন।
+
+**Isolation: প্রতি site-এ আলাদা Windows user।** drust প্রতিটা site-এর `php-cgi.exe` সেই user হিসেবে চালাবে, একটা Job Object-এর ভেতরে। এতে একই সঙ্গে isolation ও CPU/RAM limit পাওয়া যাবে। Job Object-এ memory ও CPU-র hard limit আছে (Microsoft docs)। এটাই Windows production-এর সবচেয়ে সংবেদনশীল code, তাই আলাদা security review লাগবে।
+
+### macOS production-এর সীমা
+
+macOS-এ cgroup বা Job Object-এর মতো hard limit নেই, আর per-user disk quota-র ভালো ব্যবস্থাও নেই। তাই একটা site পুরো machine-এর resource খেয়ে ফেলতে পারে। নিজের কয়েকটা site চালানোর জন্য ঠিক আছে, অপরিচিত customer-দের জন্য নয়। এই কারণে reseller ও WHMCS এখানে বন্ধ থাকবে।
+
+### নতুন interface
+
+Platform layer-এ এগুলোও লাগবে: `IsolatedRunner`, `ResourceLimiter`, `FirewallBackend`, `DnsBackend`, `MailBackend`, `AcmeClient`।
+
+[Feature plan](feature-gap-plan.md)-এর Phase 1 (suspend, quota, limit) এই interface-এর ওপর বানান। Linux-only করে বানালে পরে আবার লিখতে হবে। তাই Phase 1 শুরুর আগে অন্তত interface-এর নকশা ঠিক করে নিন।
+
 ## Phase
+
+### Local
 
 | Phase | কাজ | শেষের শর্ত | সময় |
 | --- | --- | --- | --- |
@@ -160,7 +217,24 @@ Linux-এর আচরণ যেন না বদলায়, তাই code �
 | 4. Installer ও tray | Tauri tray, MSI/PKG, signing, auto-update | পরিষ্কার machine-এ এক click-এ install | 3-4 সপ্তাহ |
 | 5. Beta | Migration, docs, WSL বন্ধের ঘোষণা | বাস্তব ব্যবহারকারীর feedback | 2-3 সপ্তাহ |
 
-সময়গুলো অনুমান। Phase 0-এর spike-এর পর আবার হিসাব করুন।
+### Production
+
+| Phase | কাজ | শেষের শর্ত | সময় |
+| --- | --- | --- | --- |
+| 6. Production spike | php-cgi load test, Stalwart, Windows site isolation | Go/no-go সিদ্ধান্ত | 3-4 সপ্তাহ |
+| 7. Backend interface | `MailBackend`, `DnsBackend`, `FirewallBackend`, Rust ACME | Linux-এ নতুন interface দিয়ে সব test পাস | 6-8 সপ্তাহ |
+| 8. Windows isolation | Per-site user, ACL, Job Object, quota | এক site অন্য site-এর file পড়তে পারে না, test দিয়ে প্রমাণিত | 6-8 সপ্তাহ |
+| 9. Windows services | SSL, DNS, Stalwart, Roundcube, FTP, firewall, brute-force রক্ষা | আসল domain-এ site ও mail চলে | 8-10 সপ্তাহ |
+| 10. Windows hardening | Security review, penetration test, update, backup restore | Review-এর গুরুতর সমস্যা শূন্য | 4-6 সপ্তাহ |
+| 11. macOS production | LaunchDaemon, `dscl`, `pf`, Stalwart | আসল domain-এ site ও mail চলে | 3-4 মাস |
+
+Phase 6 সবচেয়ে গুরুত্বপূর্ণ। এই তিনটা উত্তর না পেলে Phase 7-এ যাবেন না:
+
+1. Windows-এ php-cgi বাস্তব load-এ Linux-এর PHP-FPM-এর তুলনায় কত ধীর?
+2. একটা Windows server-এ কতগুলো আলাদা-user site চালানো যায়?
+3. Stalwart-এ mailbox ও DKIM তৈরি কি dPanel-এর বর্তমান mail flow-এর সব কাজ করতে পারে?
+
+সময়গুলো অনুমান। Phase 0 ও Phase 6-এর spike-এর পর আবার হিসাব করুন।
 
 ### Phase 0-এর প্রথম কাজ
 
@@ -188,25 +262,37 @@ Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আট�
 | Platform layer Linux server ভাঙে | খুব বেশি | ছোট ধাপ, প্রতি ধাপে test, Linux path অপরিবর্তিত |
 | Windows-এ php-cgi ধীর বা অস্থির | বেশি | Phase 0 spike; খারাপ হলে Windows plan আবার ভাবতে হবে |
 | Local panel থেকে privilege escalation | বেশি | কম অধিকার, শুধু localhost, token বাধ্যতামূলক |
+| Windows site isolation-এ ফাঁক: এক customer অন্যের data পড়ে | খুব বেশি | Automated isolation test, আলাদা security review, Phase 10 পাস না করলে release নয় |
+| Windows-এ production mail-এর deliverability ও maintenance | বেশি | Phase 6 spike; দরকার হলে প্রথম সংস্করণ mail ছাড়া ছাড়ুন |
+| দুই mail stack (Postfix ও Stalwart) maintain করা | বেশি | `MailBackend` interface, দুই stack-এই একই test |
+| Windows Server license-এর খরচ customer-এর ওপর পড়ে | মাঝারি | Docs-এ পরিষ্কার লিখুন; Linux সস্তা বিকল্প হিসেবে থাকবে |
 | তিন platform maintain করার খরচ | বেশি | Capability flag, CI, desktop-এ feature সীমিত রাখা |
 | Windows-এ কিছু PHP extension না পাওয়া | মাঝারি | সমর্থিত PHP extension-এর তালিকা প্রকাশ করুন |
 | Code signing-এর খরচ | কম | Beta-র আগেই ব্যবস্থা করুন |
 
 ## যা এই plan-এ নেই
 
-- Windows Server বা Mac-এ production hosting।
-- Windows-এ IIS, per-site Windows user, Exchange বা অন্য mail server।
-- Desktop থেকে সরাসরি public internet-এ site দেখানো। পরে tunnel feature ভাবা যেতে পারে।
+- Windows 10/11-এ production। ওগুলো শুধু local profile-এর জন্য।
+- IIS বা ASP.NET hosting। Windows-এও Rust gateway-ই web server।
+- Windows-এ Exchange বা Active Directory integration।
+- Local profile থেকে সরাসরি public internet-এ site দেখানো। পরে tunnel feature ভাবা যেতে পারে।
 
 ## সিদ্ধান্ত দরকার
 
-1. **লক্ষ্য কি শুধু local development?** এই plan তাই ধরে নিয়েছে। Windows-এ production hosting চাইলে plan পুরো বদলাবে, আর কাজ কয়েক গুণ বাড়বে।
-2. **Mac-এ প্রথম সংস্করণে Homebrew চলবে, নাকি প্রথম থেকেই সব bundle?** প্রস্তাব: Homebrew দিয়ে শুরু।
-3. **Apple Developer ও Windows code signing-এর খরচ দেবেন?** Public release-এর জন্য দরকার।
-4. **WSL version কবে বন্ধ হবে?** প্রস্তাব: Native Windows beta স্থিতিশীল হওয়ার অন্তত এক release পরে।
+**নেওয়া হয়েছে:** Local development ও live production, দুটোই লক্ষ্য।
+
+1. **macOS production কি সত্যিই ছোট পরিসরেই থাকবে?** এই plan তাই ধরেছে, কারণ hard limit নেই। এটা বাদ দিলে 3-4 মাস বাঁচে।
+2. **Windows production-এ প্রথম সংস্করণে mail লাগবে?** প্রস্তাব: Phase 6-এর ফল দেখে ঠিক করুন।
+3. **Mac-এ local প্রথম সংস্করণে Homebrew চলবে, নাকি প্রথম থেকেই সব bundle?** প্রস্তাব: Homebrew দিয়ে শুরু।
+4. **Apple Developer ও Windows code signing-এর খরচ দেবেন?** Public release-এর জন্য দরকার।
+5. **WSL version কবে বন্ধ হবে?** প্রস্তাব: Native Windows local স্থিতিশীল হওয়ার অন্তত এক release পরে।
 
 ## সূত্র
 
 - [PHP on Windows: IIS/FastCGI](https://www.php.net/manual/en/install.windows.iis.php), [PHP Windows downloads](https://www.php.net/downloads.php)
 - [Laravel Herd for Windows](https://herd.laravel.com/docs/windows/getting-started/installation)
+- [Stalwart releases](https://github.com/stalwartlabs/stalwart/releases), [Stalwart README](https://github.com/stalwartlabs/mail-server)
+- [Hickory DNS server](https://docs.rs/crate/hickory-server/latest), [Windows DnsServer module](https://learn.microsoft.com/powershell/module/dnsserver)
+- [Job Object limits](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information), [Job Object CPU rate](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_cpu_rate_control_information)
+- [instant-acme](https://docs.rs/crate/instant-acme/latest/source/README.md), [libunftp](https://docs.rs/crate/libunftp/latest), [ClamAV on Windows](https://docs.clamav.net/faq/faq-win32.html)
 - Compile result: `cargo check` (2026-11-07), repo-র একটা scratch copy-তে চালানো
