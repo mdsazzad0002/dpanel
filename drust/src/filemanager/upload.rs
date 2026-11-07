@@ -1,12 +1,12 @@
 use std::fs;
 use std::io;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::api::{ApiResponse, ApiState, check_token, operation_response};
 use crate::app::info;
+use crate::platform;
 use axum::{
     extract::{Multipart, State},
     http::HeaderMap,
@@ -62,11 +62,8 @@ pub fn install_uploaded_file(username: &str, target: &str, staged: &Path) -> Res
     let install_result = (|| -> Result<(), String> {
         let mut source =
             fs::File::open(staged).map_err(|e| format!("failed to open staged upload: {e}"))?;
-        let mut destination = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)
+        let mut destination = platform::files()
+            .create_private(&temporary)
             .map_err(|e| format!("failed to create {}: {e}", temporary.display()))?;
         io::copy(&mut source, &mut destination)
             .map_err(|e| format!("failed to copy upload to {}: {e}", temporary.display()))?;
@@ -143,14 +140,8 @@ pub(crate) async fn handle(
                         .unwrap_or_default()
                         .as_nanos()
                 ));
-                let mut staged_file = match tokio::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o600)
-                    .open(&staged_path)
-                    .await
-                {
-                    Ok(file) => file,
+                let mut staged_file = match platform::files().create_private(&staged_path) {
+                    Ok(file) => tokio::fs::File::from_std(file),
                     Err(error) => {
                         return ApiResponse::error(&format!(
                             "Failed to prepare upload staging file: {error}"

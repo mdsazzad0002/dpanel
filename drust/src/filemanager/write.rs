@@ -1,9 +1,9 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
 use crate::api::{ApiState, check_token, operation_response};
 use crate::app::info;
+use crate::platform::{self, fs::mode_string};
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -31,7 +31,7 @@ pub fn write_user_file(
     let mode = fs::symlink_metadata(&path)
         .ok()
         .filter(|metadata| metadata.is_file())
-        .map(|metadata| format!("{:04o}", metadata.permissions().mode() & 0o7777))
+        .and_then(|metadata| mode_string(platform::files(), &metadata))
         .unwrap_or_else(|| "0644".to_string());
 
     let parent = path

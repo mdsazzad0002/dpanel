@@ -1,9 +1,9 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use crate::api::{ApiResponse, ApiState, check_token};
+use crate::platform::{self, fs::mode_string};
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -136,7 +136,7 @@ fn browse(request: &Request) -> Result<serde_json::Value, String> {
             kind: if is_dir { "dir".into() } else { "file".into() },
             size: if is_dir { None } else { Some(metadata.len()) },
             modified_at,
-            permissions: format!("{:04o}", metadata.permissions().mode() & 0o7777),
+            permissions: mode_string(platform::files(), &metadata).unwrap_or_default(),
         });
     }
     items.sort_by(|a, b| match (a.kind.as_str(), b.kind.as_str()) {

@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 use std::fs;
 use std::io::{self, Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use crate::api::{ApiResponse, ApiState, check_token, operation_response};
 use crate::app::info;
+use crate::platform;
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -169,11 +169,8 @@ pub fn unzip_user_archive(
                 .as_nanos()
         ));
         let extract_result = (|| -> Result<(), String> {
-            let mut output = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&temporary)
+            let mut output = platform::files()
+                .create_private(&temporary)
                 .map_err(|e| format!("failed to create {}: {e}", temporary.display()))?;
             let copied = io::copy(&mut entry, &mut output)
                 .map_err(|e| format!("failed to extract {}: {e}", relative.display()))?;
@@ -295,11 +292,8 @@ fn extract_tar<R: Read>(
         replace_existing_target(&target, false)?;
         let temporary = extraction_temp_path(&parent, entry_count);
         let extract_result = (|| -> Result<(), String> {
-            let mut output = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&temporary)
+            let mut output = platform::files()
+                .create_private(&temporary)
                 .map_err(|e| format!("failed to create {}: {e}", temporary.display()))?;
             let copied = io::copy(&mut entry, &mut output)
                 .map_err(|e| format!("failed to extract {}: {e}", relative.display()))?;
@@ -351,11 +345,8 @@ fn extract_gzip(
         let file = fs::File::open(archive_path)
             .map_err(|e| format!("failed to open gzip archive: {e}"))?;
         let decoder = flate2::read::MultiGzDecoder::new(file);
-        let mut output = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)
+        let mut output = platform::files()
+            .create_private(&temporary)
             .map_err(|e| format!("failed to create {}: {e}", temporary.display()))?;
         let copied = io::copy(
             &mut decoder.take(max_expanded_bytes.saturating_add(1)),
