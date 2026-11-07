@@ -19,6 +19,8 @@ pub struct ServiceStatus {
 pub enum LogStyle {
     /// Each line with its time.
     Timestamped,
+    /// Only the messages.
+    Messages,
     /// Only the messages of the last minute.
     RecentMessages,
 }
@@ -28,6 +30,9 @@ pub trait ServiceManager: Send + Sync + std::fmt::Debug {
     fn start(&self, unit: &str) -> Result<(), PlatformError>;
     fn restart(&self, unit: &str) -> Result<(), PlatformError>;
     fn reload(&self, unit: &str) -> Result<(), PlatformError>;
+    fn reload_or_restart(&self, unit: &str) -> Result<(), PlatformError>;
+    /// How many times the OS restarted it after it stopped by itself.
+    fn restart_count(&self, unit: &str) -> Result<u64, PlatformError>;
     /// Whether it starts at boot; leaves it running or stopped as it is.
     fn enable(&self, unit: &str) -> Result<(), PlatformError>;
     /// Starts and enables every unit, or stops and disables them.
@@ -95,6 +100,7 @@ fn log_args(unit: &str, lines: u32, style: LogStyle) -> Vec<String> {
     args.extend(["-u".to_string(), unit.to_string(), "-o".to_string()]);
     match style {
         LogStyle::Timestamped => args.push("short-iso".to_string()),
+        LogStyle::Messages => args.push("cat".to_string()),
         LogStyle::RecentMessages => args.extend(["cat", "--since", "-1min"].map(String::from)),
     }
     args
@@ -129,6 +135,15 @@ impl ServiceManager for SystemdServices {
 
     fn reload(&self, unit: &str) -> Result<(), PlatformError> {
         systemctl(&["reload", unit])
+    }
+
+    fn reload_or_restart(&self, unit: &str) -> Result<(), PlatformError> {
+        systemctl(&["reload-or-restart", unit])
+    }
+
+    fn restart_count(&self, unit: &str) -> Result<u64, PlatformError> {
+        let text = systemctl_text(&["show", "-p", "NRestarts", "--value", unit])?;
+        text.parse().map_err(|_| failed("systemctl", format!("unexpected NRestarts: {text}")))
     }
 
     fn enable(&self, unit: &str) -> Result<(), PlatformError> {
@@ -185,6 +200,14 @@ impl ServiceManager for NoServices {
     }
 
     fn reload(&self, _unit: &str) -> Result<(), PlatformError> {
+        unsupported()
+    }
+
+    fn reload_or_restart(&self, _unit: &str) -> Result<(), PlatformError> {
+        unsupported()
+    }
+
+    fn restart_count(&self, _unit: &str) -> Result<u64, PlatformError> {
         unsupported()
     }
 

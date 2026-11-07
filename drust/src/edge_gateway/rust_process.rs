@@ -1,7 +1,7 @@
 use std::{fs, net::SocketAddr, path::{Path, PathBuf}, process::Command, time::Duration};
 use tokio::{net::TcpStream, time::timeout};
 
-use crate::platform;
+use crate::platform::{self, service::LogStyle};
 
 fn valid_site_id(site: &str) -> bool { !site.is_empty() && site.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_'|'-')) }
 fn unit(site: &str) -> String { format!("dpanel-rust-{site}") }
@@ -10,13 +10,13 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
     if !valid_site_id(site) { return Err("invalid Rust app id".into()); }
     let name = unit(site);
     match action {
-        "stop" => systemctl(&["disable", "--now", &name]),
+        "stop" => platform::services().switch(&[&name], false).map_err(|e| e.to_string()),
         "remove" => {
-            let _ = systemctl(&["disable", "--now", &name]);
+            let _ = platform::services().switch(&[&name], false);
             let path = format!("/etc/systemd/system/{name}.service");
             if !Path::new(&path).is_file() { return Ok(()); }
             fs::remove_file(path).map_err(|e| format!("cannot remove Rust unit: {e}"))?;
-            let _ = systemctl(&["reset-failed", &name]); systemctl(&["daemon-reload"])
+            let _ = platform::services().reset_failed(&name); platform::services().reload_definitions().map_err(|e| e.to_string())
         }
         "restart" | "start" => {
             let owner = owner.ok_or("site_owner is required")?.trim();
@@ -52,13 +52,12 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
             let path = format!("/etc/systemd/system/{name}.service");
             if fs::read_to_string(&path).ok().as_deref() != Some(content.as_str()) {
                 fs::write(&path, content).map_err(|e| format!("cannot write systemd unit: {e}"))?;
-                systemctl(&["daemon-reload"])?;
+                platform::services().reload_definitions().map_err(|e| e.to_string())?;
             }
-            if action == "restart" { systemctl(&["restart", &name])?; } else { systemctl(&["enable", "--now", &name])?; }
+            if action == "restart" { platform::services().restart(&name).map_err(|e| e.to_string())?; } else { platform::services().switch(&[&name], true).map_err(|e| e.to_string())?; }
             for _ in 0..120 { if listening(port).await { return Ok(()); } tokio::time::sleep(Duration::from_millis(250)).await; }
             // Show why: the app's own output usually names the problem.
-            let log = Command::new("journalctl").args(["-u", &name, "-n", "25", "--no-pager", "-o", "cat"]).output()
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+            let log = platform::services().logs(&name, 25, LogStyle::Messages).map(|text| text.trim().to_string()).unwrap_or_default();
             Err(format!("Rust app did not listen on port {port} (it must read the PORT environment variable). Last output:\n{log}"))
         }
         _ => Err(format!("unknown Rust process action: {action}")),
@@ -69,7 +68,7 @@ pub async fn rust_status(site: &str, port: u16) -> (bool, String, bool) {
     if !valid_site_id(site) { return (false, "invalid-id".into(), false); }
     let name = unit(site);
     let exists = Path::new(&format!("/etc/systemd/system/{name}.service")).is_file();
-    let active = Command::new("systemctl").args(["is-active", &name]).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_else(|| "unknown".into());
+    let active = platform::services().status(&name).map_or_else(|_| "unknown".to_string(), |status| status.state);
     (exists, active, listening(port).await)
 }
 
@@ -132,8 +131,4 @@ fn run_as(owner: &str, root: &Path, program: &str, args: &[&str]) -> Result<std:
 
 async fn listening(port: u16) -> bool {
     timeout(Duration::from_millis(300), TcpStream::connect(SocketAddr::from(([127,0,0,1], port)))).await.is_ok_and(|r| r.is_ok())
-}
-fn systemctl(args: &[&str]) -> Result<(), String> {
-    let out = Command::new("systemctl").args(args).output().map_err(|e| e.to_string())?;
-    if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
 }

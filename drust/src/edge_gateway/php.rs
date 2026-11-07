@@ -919,18 +919,9 @@ fn test_fpm_configuration(version: &str) -> Result<(), String> {
 fn reload_fpm_service(version: &str) -> Result<(), String> {
     crate::php_config::ensure_graceful_reload(version);
     let service = format!("php{version}-fpm");
-    let output = std::process::Command::new("systemctl")
-        .args(["reload-or-restart", &service])
-        .output()
-        .map_err(|error| format!("cannot reload {service}: {error}"))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "cannot reload {service}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-    }
+    crate::platform::services()
+        .reload_or_restart(&service)
+        .map_err(|error| format!("cannot reload {service}: {error}"))
 }
 
 /// Where the CGI header block ends, and how long the blank line after it is.

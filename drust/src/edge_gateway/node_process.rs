@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use crate::platform;
 use tokio::{net::TcpStream, time::timeout};
 
 use super::python_process::{mark_live, recently_live};
@@ -88,7 +89,7 @@ pub fn stop_node_process(site_id: &str) -> Result<(), String> {
     }
     // Disabled too, so a stopped app stays stopped across a reboot; the
     // next start re-enables it.
-    run_systemctl(&["disable", "--now", &unit])
+    platform::services().switch(&[&unit], false).map_err(|e| e.to_string())
 }
 
 /// Stops the app and deletes its unit, for a deleted project.
@@ -97,11 +98,11 @@ pub fn remove_node_process(site_id: &str) -> Result<(), String> {
     if !unit_file_exists(&unit) {
         return Ok(());
     }
-    let _ = run_systemctl(&["disable", "--now", &unit]);
+    let _ = platform::services().switch(&[&unit], false);
     fs::remove_file(format!("/etc/systemd/system/{unit}.service"))
         .map_err(|error| format!("cannot remove systemd unit {unit}: {error}"))?;
-    let _ = run_systemctl(&["reset-failed", &unit]);
-    run_systemctl(&["daemon-reload"])
+    let _ = platform::services().reset_failed(&unit);
+    platform::services().reload_definitions().map_err(|e| e.to_string())
 }
 
 /// Rewrites the unit from the current settings, then restarts it, so an
@@ -133,7 +134,7 @@ pub async fn reprovision_and_restart_node_process(
             node_version.as_deref(),
             port,
         )?;
-        run_systemctl(&["restart", &unit])
+        platform::services().restart(&unit).map_err(|e| e.to_string())
     })
     .await
     .map_err(|error| format!("node process provision worker failed: {error}"))?
@@ -144,7 +145,7 @@ pub fn restart_node_process(site_id: &str) -> Result<(), String> {
     if !unit_file_exists(&unit) {
         return Err(format!("node process {unit} has not been provisioned yet"));
     }
-    run_systemctl(&["restart", &unit])
+    platform::services().restart(&unit).map_err(|e| e.to_string())
 }
 
 pub struct NodeProcessStatus {
@@ -162,11 +163,9 @@ pub async fn node_process_status(site_id: &str, port: u16) -> NodeProcessStatus 
             listening: false,
         };
     }
-    let active_state = std::process::Command::new("systemctl")
-        .args(["is-active", &unit])
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+    let active_state = platform::services()
+        .status(&unit)
+        .map_or_else(|_| "unknown".to_string(), |status| status.state);
     NodeProcessStatus {
         unit_exists: true,
         active_state,
@@ -250,10 +249,10 @@ fn ensure_unit_provisioned(
     if needs_write {
         fs::write(&unit_path, &content)
             .map_err(|error| format!("cannot write systemd unit {}: {error}", unit_path.display()))?;
-        run_systemctl(&["daemon-reload"])?;
+        platform::services().reload_definitions().map_err(|e| e.to_string())?;
     }
 
-    run_systemctl(&["enable", "--now", &unit_name])
+    platform::services().switch(&[&unit_name], true).map_err(|e| e.to_string())
 }
 
 fn resolve_node_binary(version: Option<&str>) -> Result<PathBuf, String> {
@@ -294,21 +293,6 @@ fn validate_system_user(owner: &str) -> Result<String, String> {
         Ok(owner)
     } else {
         Err(format!("site owner does not exist: {owner}"))
-    }
-}
-
-fn run_systemctl(args: &[&str]) -> Result<(), String> {
-    let output = std::process::Command::new("systemctl")
-        .args(args)
-        .output()
-        .map_err(|error| format!("cannot run systemctl {args:?}: {error}"))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "systemctl {args:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
     }
 }
 

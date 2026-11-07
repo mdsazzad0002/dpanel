@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::platform::{self, service::LogStyle};
 use tokio::{net::TcpStream, time::timeout};
 
 /// Gunicorn's own default is one sync worker, which handles a single request
@@ -235,22 +236,16 @@ async fn wait_until_listening(site_id: &str, port: u16) -> Result<(), String> {
 }
 
 fn unit_restart_count(unit: &str) -> u64 {
-    std::process::Command::new("systemctl")
-        .args(["show", "-p", "NRestarts", "--value", unit])
-        .output()
-        .ok()
-        .and_then(|output| String::from_utf8_lossy(&output.stdout).trim().parse().ok())
-        .unwrap_or(0)
+    platform::services().restart_count(unit).unwrap_or(0)
 }
 
 /// The error plus the app's last log lines, so the panel shows why (an
 /// import error, a wrong entry module, a hard-coded port) instead of only
 /// that the port stayed closed.
 fn start_failure(unit: &str, port: u16, what: &str) -> String {
-    let logs = std::process::Command::new("journalctl")
-        .args(["-u", unit, "-n", "25", "--no-pager", "-o", "cat"])
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let logs = platform::services()
+        .logs(unit, 25, LogStyle::Messages)
+        .map(|text| text.trim().to_string())
         .unwrap_or_default();
     let mut message = format!(
         "python process {unit} {what} on port {port}. The app must listen on 127.0.0.1:$PORT."
@@ -284,7 +279,7 @@ pub fn stop_python_process(site_id: &str) -> Result<(), String> {
     }
     // Disabled too, so a stopped app stays stopped across a reboot; the
     // next start re-enables it.
-    run_systemctl(&["disable", "--now", &unit])
+    platform::services().switch(&[&unit], false).map_err(|e| e.to_string())
 }
 
 /// Stops the app and deletes its unit, for a deleted project.
@@ -293,11 +288,11 @@ pub fn remove_python_process(site_id: &str) -> Result<(), String> {
     if !unit_file_exists(&unit) {
         return Ok(());
     }
-    let _ = run_systemctl(&["disable", "--now", &unit]);
+    let _ = platform::services().switch(&[&unit], false);
     fs::remove_file(format!("/etc/systemd/system/{unit}.service"))
         .map_err(|error| format!("cannot remove systemd unit {unit}: {error}"))?;
-    let _ = run_systemctl(&["reset-failed", &unit]);
-    run_systemctl(&["daemon-reload"])
+    let _ = platform::services().reset_failed(&unit);
+    platform::services().reload_definitions().map_err(|e| e.to_string())
 }
 
 pub fn restart_python_process(site_id: &str) -> Result<(), String> {
@@ -305,7 +300,7 @@ pub fn restart_python_process(site_id: &str) -> Result<(), String> {
     if !unit_file_exists(&unit) {
         return Err(format!("python process {unit} has not been provisioned yet"));
     }
-    run_systemctl(&["restart", &unit])
+    platform::services().restart(&unit).map_err(|e| e.to_string())
 }
 
 pub struct PythonProcessStatus {
@@ -323,11 +318,9 @@ pub async fn python_process_status(site_id: &str, port: u16) -> PythonProcessSta
             listening: false,
         };
     }
-    let active_state = std::process::Command::new("systemctl")
-        .args(["is-active", &unit])
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+    let active_state = platform::services()
+        .status(&unit)
+        .map_or_else(|_| "unknown".to_string(), |status| status.state);
     PythonProcessStatus {
         unit_exists: true,
         active_state,
@@ -466,13 +459,13 @@ fn ensure_unit_provisioned(
     if needs_write {
         fs::write(&unit_path, &content)
             .map_err(|error| format!("cannot write systemd unit {}: {error}", unit_path.display()))?;
-        run_systemctl(&["daemon-reload"])?;
+        platform::services().reload_definitions().map_err(|e| e.to_string())?;
     }
 
     // A unit that crashed (e.g. before the code was fixed) sits in "failed";
     // clear that so this start is not refused.
-    let _ = run_systemctl(&["reset-failed", &unit_name]);
-    run_systemctl(&["enable", "--now", &unit_name])
+    let _ = platform::services().reset_failed(&unit_name);
+    platform::services().switch(&[&unit_name], true).map_err(|e| e.to_string())
 }
 
 fn port_is_listening_blocking(port: u16) -> bool {
@@ -803,21 +796,6 @@ fn validate_system_user(owner: &str) -> Result<String, String> {
         Ok(owner)
     } else {
         Err(format!("site owner does not exist: {owner}"))
-    }
-}
-
-fn run_systemctl(args: &[&str]) -> Result<(), String> {
-    let output = std::process::Command::new("systemctl")
-        .args(args)
-        .output()
-        .map_err(|error| format!("cannot run systemctl {args:?}: {error}"))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "systemctl {args:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
     }
 }
 

@@ -228,13 +228,15 @@ Per-site user আসার আগে (task J) Windows-এ site group মান�
 
 ```rust
 pub struct ServiceStatus { pub installed: bool, pub active: bool, pub enabled: bool, pub state: String }
-pub enum LogStyle { Timestamped, RecentMessages }
+pub enum LogStyle { Timestamped, Messages, RecentMessages }
 
 pub trait ServiceManager {
     fn status(&self, unit: &str) -> Result<ServiceStatus, PlatformError>;
     fn start(&self, unit: &str) -> Result<(), PlatformError>;
     fn restart(&self, unit: &str) -> Result<(), PlatformError>;
     fn reload(&self, unit: &str) -> Result<(), PlatformError>;
+    fn reload_or_restart(&self, unit: &str) -> Result<(), PlatformError>;
+    fn restart_count(&self, unit: &str) -> Result<u64, PlatformError>;
     fn enable(&self, unit: &str) -> Result<(), PlatformError>;
     fn switch(&self, units: &[&str], on: bool) -> Result<(), PlatformError>; // start+enable বা stop+disable
     fn reset_failed(&self, unit: &str) -> Result<(), PlatformError>;
