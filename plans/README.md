@@ -1,6 +1,6 @@
 # dPanel Plans
 
-dPanel-এর feature gap, আর Windows ও macOS-এ native চালানোর পুরো plan। এখনো কোনো implementation শুরু হয়নি।
+dPanel-এর feature gap, আর Windows ও macOS-এ native চালানোর পুরো plan। Implementation চলছে; অবস্থা [backlog.md](backlog.md)-এর Status-এ।
 
 dPanel সবার জন্য free। লক্ষ্য তিন OS: Linux, Windows ও macOS, প্রতিটায় local development ও live production।
 
@@ -23,7 +23,7 @@ dPanel সবার জন্য free। লক্ষ্য তিন OS: Linux,
 
 ## জানা সীমা
 
-- Compile result শুধু type-check: link করা বা চালানো হয়নি।
+- Windows ও macOS-এর compile result শুধু type-check: link করা বা চালানো হয়নি।
 - Feature gap code পড়ে পাওয়া, feature চালিয়ে পরীক্ষা করা নয়। তাই P0 আগে।
 - Stalwart, php-cgi, APFS quota ও NTFS quota এখনো পরীক্ষা হয়নি। H spike-এর ফল spec বদলাতে পারে।
 - সময়গুলো অনুমান।

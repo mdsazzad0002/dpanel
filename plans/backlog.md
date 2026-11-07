@@ -2,14 +2,21 @@
 
 পুরো কাজের task তালিকা। প্রতিটা task ছোট, আলাদা commit-যোগ্য, আর তার শেষের শর্ত আছে। Technical contract: [platform-spec.md](platform-spec.md)।
 
-**Status:** কোনো task শুরু হয়নি। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
+**Status:** A1, A2, A3, B1-B7-এর code `main`-এ আছে। পরের task: A4, A6, তারপর B8। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
+
+**খোলা বিষয়:**
+
+- CI এখনো একবারও চলেনি, কারণ commit push হয়নি। তাই A1-এর `Done` এখনো প্রমাণিত নয়।
+- `php artisan test`-এ 550টার মধ্যে 34টা test ব্যর্থ, এই কাজের আগে থেকেই। কারণ পুরোনো test: সরানো Spatie package, Mockery-র return type, বদলে যাওয়া route। এগুলো ঠিক না হলে CI-র Laravel job লাল থাকবে।
+- `php artisan test` PHP-র default 128MB memory-তে `FilemanagerChunkUploadsTest`-এ থেমে যায়। CI-তে limit 1G; local-এ `php -d memory_limit=2G vendor/bin/phpunit` চালান।
+- Windows-এর result শুধু type-check, MSVC C compiler stub করে। Link হয়নি, চালানো হয়নি। আসল build B8-এ।
 
 ## সব task-এর শেষের শর্ত
 
 একটা task তখনই শেষ, যখন:
 
 1. Task-এর `Done` শর্ত পূরণ হয়েছে, আর সেটা test দিয়ে প্রমাণিত।
-2. Linux-এর বিদ্যমান test পাস: `cargo test` (এখন 218টা Rust test) ও `php artisan test`।
+2. Linux-এর বিদ্যমান test পাস: `cargo test` (এখন 235টা Rust test, 4টা ignored) ও `php artisan test`।
 3. CI তিন OS-এ সবুজ (A1-এর পর)।
 4. নতুন Vue অংশ আলাদা component-এ। `Manage.vue`-এর মতো বড় page আর বাড়ে না।
 5. `#[cfg]` শুধু `drust/src/platform/`-এ।
@@ -72,6 +79,8 @@ P, S, M, W, U (feature gap): I-এর interface ঠিক হলে সমান
 | B6 | `FastCgiEndpoint` | A3 | `edge_gateway/php.rs` (18, 306); Spec §6.8 | Unix ও TCP দুটোরই FastCGI test |
 | B7 | বাকি | B1 | `cron.rs` (2, 52), `docker/stack.rs` (10, 296, 305), `security_scan.rs` (14, 525, 976), `php/cli.rs` (31, 42), `installer/service.rs` (10, 295, 310, 354) | Windows `cargo check` পাস |
 | B8 | আসল Windows ও macOS-এ C dependency build | B7 | `ring`, `aws-lc-sys`, CI | CI-তে MSVC ও macOS build সবুজ; A1-এর job বাধ্যতামূলক করা |
+
+B7-এর পর MSVC-তে `cargo check`-এ 0 error (শুরুতে 58), test code সহ। `platform/`-এর বাইরে `cfg(unix)` বা `std::os::unix` নেই। F1-এর আগে Windows-এ FileAccess-এর সব call `Unsupported` দেয়, আর security scan-এর permission check কিছু report করে না।
 
 B7-এর পর নতুন error বেরোলে একই নিয়মে ঠিক করুন। Compile result-এর শর্ত: [native plan](windows-macos-native-plan.md#মাপা-হয়েছে-drust-compile-হয়-কিনা)।
 
