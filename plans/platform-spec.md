@@ -453,7 +453,7 @@ Windows ও macOS-এ crontab-এর বদলে drust-এর timer। Cron exp
 
 `websites.status` provisioning-এর অবস্থা জানায়, তাই সেটা অপরিবর্তিত থাকবে। `serving_state` আলাদা: site visitor-কে দেখানো হবে কিনা।
 
-`SiteConfig`-এ ([config.rs:21](../drust/src/edge_gateway/config.rs#L21)) নতুন field: `serving_state: SiteState`। Gateway `Suspended` ও `OverLimit` state-এ PHP না চালিয়ে `503` ও নির্দিষ্ট page দেবে। ACME challenge তখনও কাজ করবে।
+`SiteConfig`-এ ([config.rs:21](../drust/src/edge_gateway/config.rs#L21)) নতুন field: `serving_state: SiteState`। Gateway `Suspended` ও `OverLimit` state-এ PHP না চালিয়ে `503` ও নির্দিষ্ট page দেবে। ACME challenge তখনও কাজ করবে। Redirect ও edge cache-ও `dispatch`-এর আগে চলে, তাই সেগুলো বন্ধ site-এর জন্য বাদ যায়।
 
 ## 8. drust API-র নতুন endpoint
 

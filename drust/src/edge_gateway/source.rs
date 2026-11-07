@@ -114,6 +114,15 @@ fn load_sites(
         }
     };
 
+    // Same again: before the column's migration runs, every site serves.
+    let serving_states = match run_mysql(env, &format!("{SERVING_STATE_SQL}{}", site_filter("AND"))) {
+        Ok(rows) => parse_serving_states(&rows),
+        Err(error) => {
+            tracing::warn!(%error, "site serving states unavailable; all sites stay active");
+            HashMap::new()
+        }
+    };
+
     // Same again for Docker sites: before their migration runs, none exist.
     let docker_ports = match run_mysql(env, &format!("{DOCKER_PORT_SQL}{}", site_filter("AND"))) {
         Ok(rows) => parse_docker_ports(&rows),
@@ -245,6 +254,7 @@ fn load_sites(
             python_start_command,
             python_version,
             python_run: python_run.get(cols[0].trim()).copied().unwrap_or_default(),
+            serving_state: serving_states.get(cols[0].trim()).copied().unwrap_or_default(),
             enable_ssl,
             spa_fallback: true,
             routes,
@@ -305,6 +315,7 @@ fn panel_site(domain: String, panel_root: &Path) -> SiteConfig {
         python_start_command: None,
         python_version: None,
         python_run: Default::default(),
+        serving_state: Default::default(),
         enable_ssl: false,
         spa_fallback: true,
         routes: std::sync::Arc::from([RouteConfig {
@@ -444,6 +455,17 @@ fn parse_docker_ports(rows: &str) -> HashMap<String, u16> {
 }
 
 const PYTHON_RUN_SQL: &str = "SELECT w.id,COALESCE(w.python_workers,0),COALESCE(w.python_mode,''),COALESCE(w.python_timeout,0) FROM websites w WHERE w.runtime='python'";
+
+const SERVING_STATE_SQL: &str = "SELECT w.id,w.serving_state FROM websites w WHERE w.serving_state<>'active'";
+
+fn parse_serving_states(rows: &str) -> HashMap<String, super::SiteState> {
+    rows.lines()
+        .filter_map(|line| {
+            let (id, state) = line.split_once('\t')?;
+            Some((id.trim().to_string(), super::SiteState::parse(state)))
+        })
+        .collect()
+}
 
 fn parse_python_run(rows: &str) -> HashMap<String, super::PythonRunOptions> {
     rows.lines()
@@ -742,6 +764,14 @@ mod tests {
         assert!(sites.is_empty());
         add_panel_site(&mut sites, Some(&["p.localhost".to_string()]), "p.localhost", root);
         assert_eq!(sites.len(), 1);
+    }
+
+    #[test]
+    fn parses_only_the_states_it_knows() {
+        let states = parse_serving_states("a\tsuspended\nb\tover_limit\nc\tnonsense\n");
+        assert_eq!(states["a"], crate::edge_gateway::SiteState::Suspended);
+        assert_eq!(states["b"], crate::edge_gateway::SiteState::OverLimit);
+        assert_eq!(states["c"], crate::edge_gateway::SiteState::Active);
     }
 
     #[test]

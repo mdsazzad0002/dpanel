@@ -22,7 +22,7 @@ mod tls;
 
 pub use bandwidth::BandwidthTracker;
 pub use config::{
-    CachePolicy, RouteAction, RouteConfig, RuntimeSnapshot, SiteConfig, SnapshotCacheConfig,
+    CachePolicy, RouteAction, RouteConfig, RuntimeSnapshot, SiteConfig, SiteState, SnapshotCacheConfig,
     TlsConfig, UpstreamConfig,
 };
 pub use dispatcher::{DispatchContext, dispatch};

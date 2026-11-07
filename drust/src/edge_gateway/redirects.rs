@@ -154,6 +154,7 @@ mod tests {
             python_start_command: None,
             python_version: None,
             python_run: Default::default(),
+            serving_state: Default::default(),
             enable_ssl,
             spa_fallback: false,
             routes: Arc::from([RouteConfig { path_prefix: "/".to_string(), action: RouteAction::Static }]),

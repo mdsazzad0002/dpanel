@@ -373,14 +373,16 @@ pub async fn handle_request(
             upload: true,
         }));
     }
-    if let Some(response) = site.and_then(|site| super::redirect_for(site, &request)) {
+    // A closed site must not keep answering from its redirects or the cache.
+    let open_site = site.filter(|site| site.serving_state.serves());
+    if let Some(response) = open_site.and_then(|site| super::redirect_for(site, &request)) {
         return if let Some(counter) = &bandwidth_counter {
             account_response(counter, response)
         } else {
             response
         };
     }
-    let decision = site.map_or(edge_cache::Decision::Off, |site| {
+    let decision = open_site.map_or(edge_cache::Decision::Off, |site| {
         edge_cache::decide(site, &request, edge_cache::unix_now())
     });
     let head = request.method() == axum::http::Method::HEAD;
@@ -1317,6 +1319,7 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
             python_start_command: None,
             python_version: None,
             python_run: Default::default(),
+            serving_state: Default::default(),
             enable_ssl: false,
             spa_fallback: true,
             routes: Arc::from([
@@ -1407,6 +1410,14 @@ mod edge_cache_tests {
     }
 
     fn gateway(upstream: std::net::SocketAddr, edge_ttl: Duration) -> Router {
+        gateway_in_state(upstream, edge_ttl, Default::default())
+    }
+
+    fn gateway_in_state(
+        upstream: std::net::SocketAddr,
+        edge_ttl: Duration,
+        serving_state: crate::edge_gateway::SiteState,
+    ) -> Router {
         let site = SiteConfig {
             id: "1".into(),
             scope: "user".into(),
@@ -1423,6 +1434,7 @@ mod edge_cache_tests {
             python_start_command: None,
             python_version: None,
             python_run: Default::default(),
+            serving_state,
             enable_ssl: false,
             spa_fallback: false,
             routes: Arc::from([RouteConfig {
@@ -1456,6 +1468,22 @@ mod edge_cache_tests {
         let label = response.headers().get(edge_cache::CACHE_STATUS_HEADER).map(|v| v.to_str().unwrap().to_string()).unwrap_or_default();
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         (status, label, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    #[tokio::test]
+    async fn a_closed_site_never_reaches_its_origin_or_the_cache() {
+        let status = Arc::new(AtomicU16::new(200));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let addr = origin(status, hits.clone()).await;
+
+        for state in [crate::edge_gateway::SiteState::Suspended, crate::edge_gateway::SiteState::OverLimit] {
+            let router = gateway_in_state(addr, Duration::from_secs(60), state);
+            let (code, label, body) = get(&router, "/").await;
+            assert_eq!(code, StatusCode::SERVICE_UNAVAILABLE);
+            assert_ne!(label, "HIT");
+            assert!(body.contains("HTTP 503"));
+        }
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

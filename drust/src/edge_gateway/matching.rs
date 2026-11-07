@@ -75,6 +75,7 @@ mod tests {
                 python_start_command: None,
                 python_version: None,
                 python_run: Default::default(),
+                serving_state: Default::default(),
                 enable_ssl: false,
                 spa_fallback: true,
                 routes: Arc::from([RouteConfig {
@@ -117,6 +118,7 @@ mod tests {
             python_start_command: None,
             python_version: None,
             python_run: Default::default(),
+            serving_state: Default::default(),
             enable_ssl: false,
             spa_fallback: false,
             routes: Arc::from([

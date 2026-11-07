@@ -17,6 +17,31 @@ pub struct RuntimeSnapshot {
     pub hostname_index: Arc<HashMap<String, usize>>,
 }
 
+/// Whether a site serves its visitors. `websites.status` is about provisioning,
+/// so this is separate from it; see section 7 of `plans/platform-spec.md`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SiteState {
+    #[default]
+    Active,
+    Suspended,
+    OverLimit,
+}
+
+impl SiteState {
+    /// Anything unknown stays active, so a bad value never takes a site down.
+    pub fn parse(value: &str) -> Self {
+        match value.trim() {
+            "suspended" => Self::Suspended,
+            "over_limit" => Self::OverLimit,
+            _ => Self::Active,
+        }
+    }
+
+    pub fn serves(self) -> bool {
+        self == Self::Active
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SiteConfig {
     pub id: String,
@@ -36,6 +61,7 @@ pub struct SiteConfig {
     pub python_start_command: Option<String>,
     pub python_version: Option<String>,
     pub python_run: super::PythonRunOptions,
+    pub serving_state: SiteState,
     pub enable_ssl: bool,
     pub spa_fallback: bool,
     pub routes: Arc<[RouteConfig]>,

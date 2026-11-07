@@ -66,6 +66,7 @@ class Website extends Model
         'site_owner',
         'php_version',
         'runtime',
+        'serving_state',
         'node_entry_file',
         'node_port',
         'node_version',

@@ -143,7 +143,9 @@ pub async fn dispatch(
     // path regardless of runtime. Node/Python/Docker sites route "/" through a
     // reverse proxy, so serve this one path straight off disk or SSL
     // issuance breaks.
-    if (site.runtime == "node"
+    let closed = !site.serving_state.serves();
+    if (closed
+        || site.runtime == "node"
         || site.runtime == "python"
         || site.runtime == "docker"
         || site.routes.iter().any(|route| matches!(route.action, RouteAction::PortShare { .. })))
@@ -162,6 +164,13 @@ pub async fn dispatch(
                 }
             }
         }
+    }
+    if closed {
+        return annotated_response(
+            closed_site_response(site.serving_state, host, &path),
+            site.hostnames.first().map(String::as_str).unwrap_or(""),
+            "",
+        );
     }
     let Some(route) = resolve_route(site, &path) else {
         return annotated_response(
@@ -975,6 +984,10 @@ fn is_blocked_htaccess_path(path: &str) -> bool {
 }
 
 fn not_found_response(title: &str, message: &str, host: &str, path: &str) -> Response {
+    notice_page(StatusCode::NOT_FOUND, "HTTP 404 · Not Found", title, message, host, path)
+}
+
+fn notice_page(status: StatusCode, badge: &str, title: &str, message: &str, host: &str, path: &str) -> Response {
     let body = format!(
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><link rel=\"icon\" type=\"image/x-icon\" href=\"/__dpanel/favicon.ico\"><link rel=\"shortcut icon\" href=\"/__dpanel/favicon.ico\"><title>{title} · dPanel</title><style>\
         :root{{color-scheme:dark;--text:#f8fafc;--muted:#cbd5e1;--accent:#fca5a5;--accent-strong:#fb7185;--border:rgba(255,255,255,.10)}}\
@@ -992,18 +1005,37 @@ fn not_found_response(title: &str, message: &str, host: &str, path: &str) -> Res
         .primary:hover{{filter:brightness(1.06)}} .secondary:hover{{background:rgba(248,113,113,.08)}} .footer{{margin-top:22px;font-size:13px;color:#94a3b8}} code{{padding:.18rem .42rem;border-radius:8px;background:rgba(255,255,255,.06);color:#fecaca}}\
         @media (min-width:1024px){{.brand-logo{{display:block;position:absolute;right:46px;width:270px;height:auto;object-fit:contain;opacity:.92}} .card{{padding-top:72px}}}}\
         @media (max-width:640px){{.card{{padding:24px}} .meta{{grid-template-columns:1fr}} h1{{font-size:34px}} p{{font-size:16px}}}}\
-        </style></head><body><main class=\"wrap\"><div class=\"glow\"></div><section class=\"card\"><img class=\"brand-logo\" src=\"/__dpanel/brand-logo.png\" alt=\"dPanel\"><div class=\"badge\">HTTP 404 · Not Found</div><h1>{title}</h1><p>{message}</p><div class=\"meta\"><div class=\"item\"><span class=\"label\">Host</span><span class=\"value\">{host_value}</span></div><div class=\"item\"><span class=\"label\">Path</span><span class=\"value\">{path_value}</span></div></div><div class=\"actions\"><a class=\"primary\" href=\"/\">Go to home</a><a class=\"secondary\" href=\"javascript:history.back()\">Go back</a></div><div class=\"footer\">If this should exist, check the site entry, route rules, and whether the gateway snapshot has been reloaded.</div></section></main></body></html>",
+        </style></head><body><main class=\"wrap\"><div class=\"glow\"></div><section class=\"card\"><img class=\"brand-logo\" src=\"/__dpanel/brand-logo.png\" alt=\"dPanel\"><div class=\"badge\">{badge}</div><h1>{title}</h1><p>{message}</p><div class=\"meta\"><div class=\"item\"><span class=\"label\">Host</span><span class=\"value\">{host_value}</span></div><div class=\"item\"><span class=\"label\">Path</span><span class=\"value\">{path_value}</span></div></div><div class=\"actions\"><a class=\"primary\" href=\"/\">Go to home</a><a class=\"secondary\" href=\"javascript:history.back()\">Go back</a></div><div class=\"footer\">If this should exist, check the site entry, route rules, and whether the gateway snapshot has been reloaded.</div></section></main></body></html>",
+        badge = escape_html(badge),
         title = escape_html(title),
         message = escape_html(message),
         host_value = escape_html(if host.is_empty() { "-" } else { host }),
         path_value = escape_html(if path.is_empty() { "/" } else { path }),
     );
     let mut response = Response::new(Body::from(body));
-    *response.status_mut() = StatusCode::NOT_FOUND;
+    *response.status_mut() = status;
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/html; charset=utf-8"),
     );
+    response
+}
+
+/// Never runs the site's code. `no-store` so that nothing keeps the page after
+/// the site is back.
+fn closed_site_response(state: super::SiteState, host: &str, path: &str) -> Response {
+    let (title, message) = match state {
+        super::SiteState::OverLimit => (
+            "Website over its limit",
+            "This website has used up its plan's limit. Its owner can contact the host.",
+        ),
+        _ => (
+            "Website suspended",
+            "This website is suspended. Its owner can contact the host.",
+        ),
+    };
+    let mut response = notice_page(StatusCode::SERVICE_UNAVAILABLE, "HTTP 503 · Unavailable", title, message, host, path);
+    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
 }
 
@@ -1064,6 +1096,13 @@ mod tests {
             user_pool_owner("user", Some("account_user")),
             Some("account_user")
         );
+    }
+
+    #[test]
+    fn a_closed_site_gets_a_503_page_nothing_keeps() {
+        let response = closed_site_response(crate::edge_gateway::SiteState::Suspended, "shop.test", "/");
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
     }
 
     #[test]
