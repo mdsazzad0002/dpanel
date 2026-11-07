@@ -45,16 +45,13 @@ pub(crate) fn run() -> Result<(), String> {
         return Err("SSH config validation failed. Original file restored.".into());
     }
 
-    let service = if Command::new("systemctl")
-        .args(["list-unit-files", "ssh.service"])
-        .status()
-        .is_ok_and(|status| status.success())
-    {
+    let services = crate::platform::services();
+    let service = if services.status("ssh").is_ok_and(|status| status.installed) {
         "ssh"
     } else {
         "sshd"
     };
-    let _ = run_status("systemctl", &["restart", service]);
+    let _ = services.restart(service);
     println!("Root SSH login disabled.");
     info("Root SSH login disabled.");
     Ok(())

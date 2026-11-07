@@ -87,7 +87,7 @@ drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupporte
     "resource_limits": "hard", "disk_quota": "hard",
     "mail": "stalwart", "dns": "windows_dns", "ssl": "acme",
     "firewall": true, "ftp": true, "terminal": false, "docker": false,
-    "redis": false, "reseller": true, "file_permissions": false, "clamav": false
+    "redis": false, "reseller": true, "file_permissions": false, "clamav": false, "services": false
   }
 }
 ```
@@ -108,6 +108,7 @@ drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupporte
 | `reseller` | হ্যাঁ | হ্যাঁ | হ্যাঁ | না |
 | `file_permissions` | হ্যাঁ | না (F1 পর্যন্ত) | হ্যাঁ | Windows-এ না, বাকিতে হ্যাঁ |
 | `clamav` | হ্যাঁ | না (J10 পর্যন্ত) | না (K7 পর্যন্ত) | Linux-এ হ্যাঁ, বাকিতে না |
+| `services` | হ্যাঁ | না (F4 পর্যন্ত) | না (E2 পর্যন্ত) | Linux-এ হ্যাঁ, বাকিতে না |
 
 Laravel-এ route গুলো `capability:<name>` middleware দিয়ে আটকাবে। Sidebar ও search একই তথ্য Inertia shared prop থেকে নেবে। Capability বন্ধ থাকলে route `404` দেবে। যে feature কোনো OS-এ চলে না, সেখানে তার UI থাকে না, আর backend error না দিয়ে চুপচাপ ফিরে আসে।
 
@@ -227,19 +228,23 @@ Per-site user আসার আগে (task J) Windows-এ site group মান�
 
 ```rust
 pub struct ServiceStatus { pub installed: bool, pub active: bool, pub enabled: bool, pub state: String }
+pub enum LogStyle { Timestamped, RecentMessages }
 
 pub trait ServiceManager {
-    fn status(&self, unit: &ServiceId) -> Result<ServiceStatus, PlatformError>;
-    fn start(&self, unit: &ServiceId) -> Result<(), PlatformError>;
-    fn stop(&self, unit: &ServiceId) -> Result<(), PlatformError>;
-    fn restart(&self, unit: &ServiceId) -> Result<(), PlatformError>;
-    fn reload(&self, unit: &ServiceId) -> Result<(), PlatformError>;
-    fn enable(&self, unit: &ServiceId, on: bool) -> Result<(), PlatformError>;
-    fn logs(&self, unit: &ServiceId, lines: u32) -> Result<String, PlatformError>;
+    fn status(&self, unit: &str) -> Result<ServiceStatus, PlatformError>;
+    fn start(&self, unit: &str) -> Result<(), PlatformError>;
+    fn restart(&self, unit: &str) -> Result<(), PlatformError>;
+    fn reload(&self, unit: &str) -> Result<(), PlatformError>;
+    fn enable(&self, unit: &str) -> Result<(), PlatformError>;
+    fn switch(&self, units: &[&str], on: bool) -> Result<(), PlatformError>; // start+enable বা stop+disable
+    fn reset_failed(&self, unit: &str) -> Result<(), PlatformError>;
+    fn reload_definitions(&self) -> Result<(), PlatformError>;
+    fn unit_names(&self, pattern: &str) -> Result<Vec<String>, PlatformError>;
+    fn logs(&self, unit: &str, lines: u32, style: LogStyle) -> Result<String, PlatformError>;
 }
 ```
 
-Linux-এ `systemctl` ও `journalctl`। Windows ও macOS-এ `supervisor.rs`। OS service শুধু supervisor-কে চালায়।
+`platform::services()` দিয়ে পাওয়া যায়। Linux-এ `SystemdServices` (`systemctl` ও `journalctl`)। Windows ও macOS-এ এখন `NoServices`, সব call `Unsupported`, আর `services` capability বন্ধ; E2 ও F4-এ `supervisor.rs` আসবে। OS service শুধু supervisor-কে চালাবে।
 
 ### 6.4 AccountManager
 

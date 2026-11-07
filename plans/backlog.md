@@ -2,13 +2,14 @@
 
 পুরো কাজের task তালিকা। প্রতিটা task ছোট, আলাদা commit-যোগ্য, আর তার শেষের শর্ত আছে। Technical contract: [platform-spec.md](platform-spec.md)।
 
-**Status:** A1-A6, B1-B8, D1, D2 শেষ; `5448f8b`-এ CI-র চারটা job সবুজ (Rust Linux 300, Windows 304, macOS 301 passed; Laravel Linux 647 passed, 13 skipped)। C1 ও C4-এর code শেষ, তবে commit push হয়নি, তাই CI-তে যাচাই বাকি। F1-এর unit test পাস, F2 চলছে, H1-এর সিদ্ধান্ত হয়নি (নিচে দেখুন)। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
+**Status:** A1-A6, B1-B8, D1, D2 শেষ; `5448f8b`-এ CI-র চারটা job সবুজ (Rust Linux 300, Windows 304, macOS 301 passed; Laravel Linux 647 passed, 13 skipped)। C1, C2 ও C4-এর code শেষ, তবে commit push হয়নি, তাই CI-তে যাচাই বাকি। F1-এর unit test পাস, F2 চলছে, H1-এর সিদ্ধান্ত হয়নি (নিচে দেখুন)। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
 
 **খোলা বিষয়:**
 
 - `skip_until_windows_has` আর code-এ নেই; কোনো test সেটা দিয়ে skip হয় না।
 - C1: code-এর কাজ শেষ, CI বাকি। `platform/`-এর বাইরে test ছাড়া যা থাকল: `/usr/bin/env` ও `PATH=` string (C5), `ALLOWED_ROOT_PREFIXES` (নিচে), আর `migration_ssh.rs`-এর remote server-এর path। Comment ও error message-এ `/etc/drust` লেখা আছে, সেগুলো code নয়। ClamAV এখন শুধু Linux-এ: `clamav` capability বন্ধ থাকলে scan চুপচাপ বাদ যায়, UI-তে কিছু দেখায় না। J10 ও K7-এ `timeout`-এর অন্য পথ বানিয়ে capability খুলতে হবে।
 - C4: code-এর কাজ শেষ, CI বাকি। `loginctl`, `pkill` এখন `AccountManager::end_sessions`-এ, আর `create_user.rs`-এর `chown`, `chmod`, `install` এখন `FileAccess` দিয়ে। Linux-এ আসল user-এর ওপর `end_sessions` চালিয়ে দেখা হয়নি।
+- C2: code-এর কাজ শেষ, CI বাকি। `platform/service.rs`-এ `ServiceManager`; C2-এর সব file-এ `systemctl` command আর নেই। থাকল: `api/terminal.rs`-এর blocklist (user-এর command আটকায়), দুটো comment, আর `node_process.rs`, `python_process.rs`, `rust_process.rs`, `php.rs` (C3)। `laravel_queue.rs`-এর unit file লেখা ও `/etc/systemd` path-ও C3-এর সঙ্গে যাবে। Windows ও macOS-এ PostgreSQL, MongoDB, Local LLM service toggle-এর UI এখনও capability দিয়ে লুকানো হয়নি।
 - `chown` ও `chmod`-এর অন্য call এখনও `platform/`-এর বাইরে: `filemanager/` (`common`, `unzip`, `fix_permissions`), `api/` (`ssh_key`, `git_deploy`, `mailbox_storage`), `edge_gateway/` (`dispatcher`, `terminal_ws`), `installer/service.rs`, আর `try_chown`-এর caller। C9 শুধু কয়েকটা ঢাকে; বাকিগুলোর কোনো task নেই, C11-এর আগে একটা দরকার।
 - F1: Windows `Paths`, `FileAccess` ও local `AccountManager`-এর unit test পাস। `filemanager/e2e_local.rs` ignored, হাতে চালাতে হয়; suite সেটা প্রমাণ করে না। F1-এর `Depends`-এর C1 ও C4 CI-র অপেক্ষায়।
 - F2 চলছে, আর **H1 পাস করার আগেই** শুরু হয়েছে, আর H1-এর সিদ্ধান্ত এখনও হয়নি ([spikes/H1.md](spikes/H1.md))। H1 pool-এর নকশা বদলাতে পারে। হয়েছে: `edge_gateway/php_cgi_pool.rs`, spec §9-এর default, প্রতি site-এ pool, TCP-তে `FastCgiEndpoint`। Crash, recycle, idle, queue ও 503-এর test একটা stand-in process দিয়ে পাস। আসল php-cgi দিয়ে শুধু একবার হাতে দেখা: `mysite.test` render হয়, worker মেরে দিলে পরের request-এ নতুন worker আসে। আসল php-cgi-র 500 request recycle চালানো হয়নি।

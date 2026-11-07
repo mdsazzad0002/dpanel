@@ -9,6 +9,7 @@ pub mod fastcgi;
 pub mod fs;
 pub mod paths;
 pub mod process;
+pub mod service;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
@@ -18,6 +19,7 @@ use account::{AccountManager, LinuxAccounts, LocalAccounts, NoAccounts};
 use capabilities::Capability;
 use fs::FileAccess;
 use paths::Paths;
+use service::{NoServices, ServiceManager, SystemdServices};
 use std::{env, fmt, io, sync::OnceLock};
 
 #[cfg(unix)]
@@ -82,6 +84,7 @@ pub struct Platform {
     profile: Profile,
     paths: Paths,
     accounts: Box<dyn AccountManager>,
+    services: Box<dyn ServiceManager>,
 }
 
 impl Platform {
@@ -103,6 +106,10 @@ impl Platform {
 
     pub fn accounts(&self) -> &dyn AccountManager {
         self.accounts.as_ref()
+    }
+
+    pub fn services(&self) -> &dyn ServiceManager {
+        self.services.as_ref()
     }
 
     /// A local profile on a PC runs every site as the logged-in user, so a site
@@ -156,11 +163,13 @@ pub fn current() -> &'static Platform {
         let profile = Profile::parse(env::var("DPANEL_PROFILE").ok().as_deref());
         let paths = Paths::for_system(os, profile, |name| env::var(name).ok());
         let accounts = accounts_for(os, profile, &paths);
+        let services = services_for(os);
         Platform {
             os,
             profile,
             paths,
             accounts,
+            services,
         }
     })
 }
@@ -172,6 +181,13 @@ fn accounts_for(os: Os, profile: Profile, paths: &Paths) -> Box<dyn AccountManag
             sites_root: paths.sites_root().to_path_buf(),
         }),
         (_, Profile::Server) => Box::new(NoAccounts),
+    }
+}
+
+fn services_for(os: Os) -> Box<dyn ServiceManager> {
+    match os {
+        Os::Linux => Box::new(SystemdServices),
+        _ => Box::new(NoServices),
     }
 }
 
@@ -188,6 +204,11 @@ pub fn files() -> &'static dyn FileAccess {
 /// Shorthand for `current().accounts()`.
 pub fn accounts() -> &'static dyn AccountManager {
     current().accounts()
+}
+
+/// Shorthand for `current().services()`.
+pub fn services() -> &'static dyn ServiceManager {
+    current().services()
 }
 
 /// Fills the buffer from the OS random source.

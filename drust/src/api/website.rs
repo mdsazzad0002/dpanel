@@ -1206,16 +1206,9 @@ fn restore_archive(value: &str, progress: &RestoreProgress) -> Result<serde_json
             let service = format!("php{version}-fpm");
             // The archived numeric identity is reused, so a graceful reload is
             // sufficient and avoids interrupting other sites on this runtime.
-            let restart = Command::new("systemctl")
-                .args(["reload", service.as_str()])
-                .output()
-                .map_err(|error| format!("cannot reload {service}: {error}"))?;
-            if !restart.status.success() {
-                return Err(format!(
-                    "files restored but {service} could not be reloaded: {}",
-                    String::from_utf8_lossy(&restart.stderr).trim()
-                ));
-            }
+            crate::platform::services().reload(&service).map_err(|error| {
+                format!("files restored but {service} could not be reloaded: {error}")
+            })?;
         }
     }
     Ok(website)

@@ -24,6 +24,8 @@ pub enum Capability {
     FilePermissions,
     /// Virus scans. They need `systemd` units and a real `timeout`.
     Clamav,
+    /// Starting and stopping system services; the supervisor brings it to the others.
+    Services,
 }
 
 impl Capability {
@@ -45,6 +47,7 @@ impl Capability {
             Self::Reseller => "reseller",
             Self::FilePermissions => "file_permissions",
             Self::Clamav => "clamav",
+            Self::Services => "services",
         }
     }
 }
@@ -76,6 +79,7 @@ pub struct Capabilities {
     pub reseller: bool,
     pub file_permissions: bool,
     pub clamav: bool,
+    pub services: bool,
 }
 
 /// What this machine reports, with Docker looked up on `PATH`.
@@ -122,6 +126,7 @@ fn report_for(os: Os, profile: Profile, docker_installed: bool) -> Report {
         reseller: server,
         file_permissions: os != Os::Windows,
         clamav: linux,
+        services: linux,
     };
     Report {
         os: os.as_str(),
@@ -159,7 +164,7 @@ mod tests {
                 "resource_limits": "hard", "disk_quota": "hard",
                 "mail": "postfix", "dns": "powerdns", "ssl": "certbot",
                 "firewall": true, "ftp": true, "terminal": true, "docker": true,
-                "redis": true, "reseller": true, "file_permissions": true, "clamav": true,
+                "redis": true, "reseller": true, "file_permissions": true, "clamav": true, "services": true,
             })
         );
     }
@@ -174,6 +179,7 @@ mod tests {
                 "mail": "stalwart", "dns": "windows_dns", "ssl": "acme",
                 "firewall": true, "ftp": true, "terminal": false, "docker": false,
                 "redis": false, "reseller": true, "file_permissions": false, "clamav": false,
+                "services": false,
             })
         );
     }
@@ -188,6 +194,7 @@ mod tests {
                 "mail": "stalwart", "dns": "external", "ssl": "acme",
                 "firewall": true, "ftp": true, "terminal": false, "docker": false,
                 "redis": true, "reseller": true, "file_permissions": true, "clamav": false,
+                "services": false,
             })
         );
     }

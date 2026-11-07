@@ -12,7 +12,6 @@ fn executable(program: &str) -> Option<std::path::PathBuf> {
         "sshd" => Tool::Sshd,
         "ufw" => Tool::Ufw,
         "ss" => Tool::Ss,
-        "systemctl" => Tool::Systemctl,
         _ => return None,
     };
     crate::platform::paths().binary(tool).ok()
@@ -52,12 +51,9 @@ pub fn status() -> Result<Value, String> {
     let port: u16 = effective_value(&effective, "port", "22")
         .parse()
         .unwrap_or(22);
-    let service_active = command("systemctl", &["is-active", "ssh"])
-        .map(|v| v == "active")
-        .unwrap_or(false);
-    let service_enabled = command("systemctl", &["is-enabled", "ssh"])
-        .map(|v| v == "enabled")
-        .unwrap_or(false);
+    let service = crate::platform::services().status("ssh").ok();
+    let service_active = service.as_ref().is_some_and(|status| status.active);
+    let service_enabled = service.as_ref().is_some_and(|status| status.enabled);
     let sockets = command("ss", &["-ltnH"]).unwrap_or_default();
     let suffix = format!(":{port}");
     let listen_addresses: Vec<String> = sockets
@@ -227,7 +223,7 @@ pub fn apply_ssh_config(
         }
         return Err(format!("SSH config validation failed: {error}"));
     }
-    command("systemctl", &["reload", "ssh"])?;
+    crate::platform::services().reload("ssh").map_err(|e| e.to_string())?;
     Ok("SSH settings applied through drust.".to_string())
 }
 
@@ -235,11 +231,7 @@ pub fn set_ssh_service(enabled: bool) -> Result<String, String> {
     if executable("sshd").is_none() {
         return Err("OpenSSH server is not installed. Install openssh-server first.".to_string());
     }
-    if enabled {
-        command("systemctl", &["enable", "--now", "ssh"])?;
-    } else {
-        command("systemctl", &["disable", "--now", "ssh"])?;
-    }
+    crate::platform::services().switch(&["ssh"], enabled).map_err(|e| e.to_string())?;
     Ok(format!(
         "SSH service {}.",
         if enabled { "enabled" } else { "disabled" }

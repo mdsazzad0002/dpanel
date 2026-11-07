@@ -7,12 +7,12 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use serde::{Deserialize, Serialize};
 
 use crate::filemanager::common::{validate_account, validate_user_path};
+use crate::platform::{service::LogStyle, services};
 
 const UNIT_DIR: &str = "/etc/systemd/system";
 const WANTS_DIR: &str = "/etc/systemd/system/multi-user.target.wants";
@@ -117,22 +117,23 @@ pub fn apply(site: &QueueSite, workers: &[WorkerSpec]) -> Result<(), String> {
             remove_template(&template)?;
         }
     }
-    systemctl(&["daemon-reload"])?;
+    services().reload_definitions().map_err(|e| e.to_string())?;
 
     for (template, processes) in &wanted {
         // Instances beyond the new count.
         for instance in known_instances(template) {
             if instance > *processes {
                 let unit = instance_name(template, instance);
-                let _ = systemctl(&["disable", "--now", &unit]);
+                let _ = services().switch(&[&unit], false);
             }
         }
         let restart = changed_templates.contains(template);
         for instance in 1..=*processes {
             let unit = instance_name(template, instance);
-            let _ = systemctl(&["reset-failed", &unit]);
-            systemctl(&["enable", &unit])?;
-            systemctl(&[if restart { "restart" } else { "start" }, &unit])?;
+            let _ = services().reset_failed(&unit);
+            services().enable(&unit).map_err(|e| e.to_string())?;
+            let started = if restart { services().restart(&unit) } else { services().start(&unit) };
+            started.map_err(|e| e.to_string())?;
         }
     }
 
@@ -145,8 +146,8 @@ pub fn restart(site_id: &str) -> Result<(), String> {
     for template in site_templates(&site_id) {
         for instance in known_instances(&template) {
             let unit = instance_name(&template, instance);
-            let _ = systemctl(&["reset-failed", &unit]);
-            systemctl(&["restart", &unit])?;
+            let _ = services().reset_failed(&unit);
+            services().restart(&unit).map_err(|e| e.to_string())?;
         }
     }
     Ok(())
@@ -160,7 +161,7 @@ pub fn remove_all(site_id: &str) -> Result<(), String> {
         remove_template(template)?;
     }
     if !templates.is_empty() {
-        systemctl(&["daemon-reload"])?;
+        services().reload_definitions().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -182,7 +183,9 @@ pub fn status(site_id: &str) -> Result<Vec<WorkerStatus>, String> {
                     let unit = instance_name(&template, instance);
                     InstanceStatus {
                         instance,
-                        active_state: systemctl_output(&["is-active", &unit]),
+                        active_state: services()
+                            .status(&unit)
+                            .map_or_else(|_| "unknown".to_string(), |status| status.state),
                         enabled: Path::new(WANTS_DIR).join(&unit).exists(),
                     }
                 })
@@ -197,11 +200,9 @@ pub fn logs(site_id: &str, worker_id: &str, lines: u16) -> Result<String, String
     let site_id = valid_id(site_id, "site id")?;
     let worker_id = valid_worker_id(worker_id)?;
     let template = template_name(&site_id, &worker_id);
-    let output = Command::new("journalctl")
-        .args(["--no-pager", "-o", "short-iso", "-n", &lines.clamp(10, 500).to_string(), "-u", &format!("{template}*")])
-        .output()
-        .map_err(|error| format!("cannot run journalctl: {error}"))?;
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    services()
+        .logs(&format!("{template}*"), u32::from(lines.clamp(10, 500)), LogStyle::Timestamped)
+        .map_err(|e| e.to_string())
 }
 
 fn unit_content(site: &QueueSite, worker: &WorkerSpec) -> Result<String, String> {
@@ -295,9 +296,7 @@ fn known_instances(template: &str) -> Vec<u16> {
         .flatten()
         .filter_map(|entry| entry.file_name().into_string().ok())
         .chain(
-            systemctl_output(&["list-units", "--all", "--plain", "--no-legend", &format!("{template}*")])
-                .lines()
-                .filter_map(|line| line.split_whitespace().next().map(str::to_string)),
+            services().unit_names(&format!("{template}*")).unwrap_or_default(),
         )
         .filter_map(|unit| {
             unit.strip_prefix(template)?
@@ -313,7 +312,7 @@ fn known_instances(template: &str) -> Vec<u16> {
 
 fn remove_template(template: &str) -> Result<(), String> {
     for instance in known_instances(template) {
-        let _ = systemctl(&["disable", "--now", &instance_name(template, instance)]);
+        let _ = services().switch(&[&instance_name(template, instance)], false);
     }
     let path = Path::new(UNIT_DIR).join(format!("{template}.service"));
     match fs::remove_file(&path) {
@@ -358,26 +357,6 @@ fn php_binary(version: &str) -> Result<String, String> {
         return Err(format!("PHP CLI {} is not installed on this server.", binary.display()));
     }
     Ok(binary.to_string_lossy().into_owned())
-}
-
-fn systemctl(args: &[&str]) -> Result<(), String> {
-    let output = Command::new("systemctl")
-        .args(args)
-        .output()
-        .map_err(|error| format!("cannot run systemctl {args:?}: {error}"))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!("systemctl {args:?} failed: {}", String::from_utf8_lossy(&output.stderr).trim()))
-    }
-}
-
-fn systemctl_output(args: &[&str]) -> String {
-    Command::new("systemctl")
-        .args(args)
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string())
 }
 
 #[cfg(test)]

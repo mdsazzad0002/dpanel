@@ -1,41 +1,21 @@
 //! Turns a systemd unit on (start + enable at boot) or off (stop + disable at
 //! boot). Shared by the PostgreSQL and MongoDB modules.
 
-use crate::platform::{self, paths::Tool};
-use std::process::Command;
+use crate::platform::{self, service::LogStyle};
 
-/// `systemctl enable|disable --now <unit>`. Callers must pass a unit from
-/// their own fixed allow-list (see postgresql.rs, mongodb.rs).
+/// Starts and enables `unit`, or stops and disables it. Callers must pass a
+/// unit from their own fixed allow-list (see postgresql.rs, mongodb.rs).
 pub(crate) fn switch_unit(unit: &str, enabled: bool) -> Result<String, String> {
-    let systemctl = platform::paths()
-        .binary(Tool::Systemctl)
-        .map_err(|_| "systemctl is not available.".to_string())?;
-    let action = if enabled { "enable" } else { "disable" };
+    let services = platform::services();
+    services.switch(&[unit], enabled).map_err(|e| e.to_string())?;
 
-    let output = Command::new(&systemctl)
-        .args([action, "--now", unit])
-        .output()
-        .map_err(|e| format!("cannot run systemctl: {e}"))?;
-    if !output.status.success() {
-        let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if error.is_empty() {
-            format!("systemctl {action} --now {unit} exited unsuccessfully")
-        } else {
-            error
-        });
-    }
-
-    // `enable --now` succeeds as soon as the process is spawned, even when it
-    // exits a moment later. Check it stayed up; if not, switch it back off so
-    // it doesn't crash-loop at boot, and report why it died.
+    // A start succeeds as soon as the process is spawned, even when it exits a
+    // moment later. Check it stayed up; if not, switch it back off so it
+    // doesn't crash-loop at boot, and report why it died.
     if enabled {
         std::thread::sleep(std::time::Duration::from_secs(3));
-        let active = Command::new(&systemctl)
-            .args(["is-active", "--quiet", unit])
-            .status()
-            .is_ok_and(|status| status.success());
-        if !active {
-            let _ = Command::new(&systemctl).args(["disable", "--now", unit]).output();
+        if !services.status(unit).is_ok_and(|status| status.active) {
+            let _ = services.switch(&[unit], false);
             let reason = last_log_message(unit);
             return Err(match reason {
                 Some(reason) => format!("{unit} stopped right after starting: {reason}"),
@@ -53,11 +33,7 @@ pub(crate) fn switch_unit(unit: &str, enabled: bool) -> Result<String, String> {
 /// The last line the unit logged, with MongoDB's JSON log lines reduced to
 /// their "msg" field.
 fn last_log_message(unit: &str) -> Option<String> {
-    let output = Command::new("journalctl")
-        .args(["-u", unit, "-n", "20", "-o", "cat", "--no-pager", "--since", "-1min"])
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
+    let text = platform::services().logs(unit, 20, LogStyle::RecentMessages).ok()?;
     let line = text
         .lines()
         .rev()

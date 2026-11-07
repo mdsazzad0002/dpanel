@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::app::{ensure_root, info, run_status};
+use crate::app::{ensure_root, info};
 
 pub struct PhpConfigValues<'a> {
     pub version: &'a str,
@@ -68,7 +68,7 @@ pub fn reload_fpm(version: &str) -> Result<(), String> {
     validate_version(version)?;
     ensure_graceful_reload(version);
     let service = format!("php{version}-fpm");
-    run_status("systemctl", &["reload", &service])
+    crate::platform::services().reload(&service).map_err(|e| e.to_string())
 }
 
 /// How long a reload lets running PHP requests finish.

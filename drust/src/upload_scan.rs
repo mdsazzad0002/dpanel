@@ -8,7 +8,7 @@
 //! As with the website scanner, the caller only names a file; which programs
 //! run and with what arguments is fixed in code.
 
-use crate::platform::paths::Tool;
+use crate::platform::{paths::Tool, services};
 use serde::Serialize;
 use std::{
     fs,
@@ -49,33 +49,12 @@ pub struct FileReport {
     pub signature_age_hours: Option<u64>,
 }
 
-fn systemctl(args: &[&str]) -> Result<String, String> {
-    let program = find_binary(Tool::Systemctl)
-        .ok_or("systemctl is not available on this server")?;
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .map_err(|e| e.to_string())?;
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() { stdout } else { stderr });
-    }
-    Ok(stdout)
-}
-
 fn clamdscan() -> Option<String> {
     find_binary(Tool::Clamdscan)
 }
 
 fn unit_installed(unit: &str) -> bool {
-    [
-        "/lib/systemd/system",
-        "/usr/lib/systemd/system",
-        "/etc/systemd/system",
-    ]
-    .iter()
-    .any(|dir| Path::new(dir).join(format!("{unit}.service")).is_file())
+    services().status(unit).is_ok_and(|status| status.installed)
 }
 
 fn socket_path() -> PathBuf {
@@ -92,7 +71,7 @@ pub fn status() -> Status {
     Status {
         clamav_installed: find_binary(Tool::Clamscan).is_some(),
         daemon_installed: clamdscan().is_some() && unit_installed(DAEMON_UNIT),
-        daemon_active: systemctl(&["is-active", DAEMON_UNIT]).is_ok_and(|s| s == "active"),
+        daemon_active: services().status(DAEMON_UNIT).is_ok_and(|status| status.active),
         socket_ready: socket_path().exists(),
         signature_age_hours: signature_age_hours(),
     }
@@ -125,8 +104,8 @@ fn set_conf(text: &str, key: &str, value: &str) -> String {
 pub fn set_enabled(enabled: bool) -> Result<Status, String> {
     if !enabled {
         // The socket unit would start the daemon again on the next connection.
-        let _ = systemctl(&["disable", "--now", &format!("{DAEMON_UNIT}.socket")]);
-        systemctl(&["disable", "--now", DAEMON_UNIT, FRESHCLAM_UNIT])?;
+        let _ = services().switch(&[&format!("{DAEMON_UNIT}.socket")], false);
+        services().switch(&[DAEMON_UNIT, FRESHCLAM_UNIT], false).map_err(|e| e.to_string())?;
         return Ok(status());
     }
 
@@ -161,7 +140,7 @@ pub fn set_enabled(enabled: bool) -> Result<Status, String> {
         }
     }
 
-    systemctl(&["enable", "--now", FRESHCLAM_UNIT, DAEMON_UNIT])?;
+    services().switch(&[FRESHCLAM_UNIT, DAEMON_UNIT], true).map_err(|e| e.to_string())?;
 
     let socket = socket_path();
     let started = Instant::now();
@@ -169,7 +148,7 @@ pub fn set_enabled(enabled: bool) -> Result<Status, String> {
         if started.elapsed() > DAEMON_START_TIMEOUT {
             return Err("The ClamAV daemon started but its socket did not appear. Check: journalctl -u clamav-daemon".into());
         }
-        if systemctl(&["is-failed", DAEMON_UNIT]).is_ok_and(|s| s == "failed") {
+        if services().status(DAEMON_UNIT).is_ok_and(|status| status.state == "failed") {
             return Err(
                 "The ClamAV daemon failed to start. Check: journalctl -u clamav-daemon".into(),
             );
