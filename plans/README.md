@@ -23,7 +23,7 @@ dPanel সবার জন্য free। লক্ষ্য তিন OS: Linux,
 
 ## জানা সীমা
 
-- Windows ও macOS-এ drust CI-তে build হয় ও test চলে, কিন্তু সব test এখনো পাস করে না। অবস্থা [backlog.md](backlog.md)-এর Status-এ।
+- Windows ও macOS-এ drust CI-তে build হয় ও test পাস করে, তবে Windows-এর 9টা test F1 ও C1 পর্যন্ত skip করা। অবস্থা [backlog.md](backlog.md)-এর Status-এ।
 - Feature gap code পড়ে পাওয়া, feature চালিয়ে পরীক্ষা করা নয়। তাই P0 আগে।
 - Stalwart, php-cgi, APFS quota ও NTFS quota এখনো পরীক্ষা হয়নি। H spike-এর ফল spec বদলাতে পারে।
 - সময়গুলো অনুমান।

@@ -128,9 +128,17 @@ impl Paths {
     fn tls_dir(&self) -> PathBuf;     // config_dir/tls
     fn sites_root(&self) -> &Path;
     fn site_home(&self, owner: &str) -> PathBuf;
-    // C1-এর পরের ধাপে: log_dir, run_dir, binary(Tool)
+    fn binary(&self, tool: Tool) -> Result<PathBuf, PlatformError>;
+    fn run_dir(&self) -> &Path;
+    fn temp_dir(&self) -> &Path;
+    fn runtime_dir(&self) -> &Path;   // dPanel-এর নিজের software, Linux-এ /opt/dpanel
+    fn state_dir(&self) -> &Path;     // Linux-এ /var/lib/drust, data_dir থেকে আলাদা
+    fn install_root(&self) -> &Path;  // panel_root-এর parent
+    // log_dir: কোনো code ব্যবহার করলে তখন
 }
 ```
+
+`binary` Linux-এ শুধু নির্দিষ্ট candidate path দেখে, `PATH` নয়, কারণ drust root হিসেবে চলে। macOS-এ সঙ্গে `/opt/homebrew/bin`, Windows-এ `PATH`।
 
 `site_home` owner-কে `join` করে না, জুড়ে দেয়: `join` absolute নাম পেলে base ফেলে দেয়, তাই `/etc` নামের owner ownership check ভেঙে দিত।
 

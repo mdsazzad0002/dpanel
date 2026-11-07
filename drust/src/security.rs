@@ -3,22 +3,19 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     net::IpAddr,
-    path::Path,
     process::Command,
 };
 
-fn executable(program: &str) -> Option<&str> {
-    let candidates: &[&str] = match program {
-        "sshd" => &["/usr/sbin/sshd", "/usr/local/sbin/sshd"],
-        "ufw" => &["/usr/sbin/ufw", "/usr/bin/ufw"],
-        "ss" => &["/usr/bin/ss", "/usr/sbin/ss"],
-        "systemctl" => &["/usr/bin/systemctl", "/bin/systemctl"],
-        _ => &[],
+fn executable(program: &str) -> Option<std::path::PathBuf> {
+    use crate::platform::paths::Tool;
+    let tool = match program {
+        "sshd" => Tool::Sshd,
+        "ufw" => Tool::Ufw,
+        "ss" => Tool::Ss,
+        "systemctl" => Tool::Systemctl,
+        _ => return None,
     };
-    candidates
-        .iter()
-        .copied()
-        .find(|candidate| Path::new(candidate).is_file())
+    crate::platform::paths().binary(tool).ok()
 }
 
 fn command(program: &str, args: &[&str]) -> Result<String, String> {

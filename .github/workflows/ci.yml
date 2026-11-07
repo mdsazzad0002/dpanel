@@ -25,11 +25,9 @@ jobs:
       - run: cargo check --all-targets
       - run: cargo test
 
-  # Reports only until task B8 makes these two jobs required.
   rust-portable:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:

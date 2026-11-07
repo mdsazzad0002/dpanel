@@ -5,6 +5,7 @@
 //! shell out to `php`), and output is capped so a noisy build can't flood the
 //! panel.
 
+use crate::platform::paths::Tool;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -24,15 +25,12 @@ const MAX_OUTPUT_CHARS: usize = 20_000;
 // dscript installs the official composer and Node.js 20+ into /usr/local/bin.
 // Distro packages in /usr/bin are only the fallback: Ubuntu 22.04 ships
 // composer 2.2 and Node.js 12, which modern Laravel/Vite projects reject.
-pub(crate) const COMPOSER_CANDIDATES: &[&str] = &["/usr/local/bin/composer", "/usr/bin/composer"];
-pub(crate) const NPM_CANDIDATES: &[&str] = &["/usr/local/bin/npm", "/usr/bin/npm"];
 
-pub(crate) fn find_tool(name: &str, candidates: &[&'static str]) -> Result<&'static str, String> {
-    candidates
-        .iter()
-        .copied()
-        .find(|path| Path::new(path).is_file())
-        .ok_or_else(|| {
+pub(crate) fn find_tool(name: &str, tool: Tool) -> Result<String, String> {
+    crate::platform::paths()
+        .binary(tool)
+        .map(|path| path.display().to_string())
+        .map_err(|_| {
             format!("{name} is not installed on this server. Run `sudo dpanel chain update` to install it.")
         })
 }
@@ -109,7 +107,8 @@ impl Site {
     }
 
     pub async fn composer(&self, args: &[&str], timeout: Duration) -> Result<String, String> {
-        let mut full = vec![find_tool("composer", COMPOSER_CANDIDATES)?];
+        let composer = find_tool("composer", Tool::Composer)?;
+        let mut full = vec![composer.as_str()];
         full.extend_from_slice(args);
         self.php(&full, timeout).await
     }
@@ -161,17 +160,17 @@ impl Site {
         if !self.has_file("package.json") {
             return Ok("No package.json found; asset build skipped.".into());
         }
-        let npm = find_tool("npm", NPM_CANDIDATES)?;
+        let npm = find_tool("npm", Tool::Npm)?;
         let install = if self.has_file("package-lock.json") {
             "ci"
         } else {
             "install"
         };
         let install_output = self
-            .run(&self.target, npm, &[install, "--no-audit", "--no-fund"], LONG_TIMEOUT, None)
+            .run(&self.target, &npm, &[install, "--no-audit", "--no-fund"], LONG_TIMEOUT, None)
             .await?;
         let build_output = self
-            .run(&self.target, npm, &["run", "build"], LONG_TIMEOUT, None)
+            .run(&self.target, &npm, &["run", "build"], LONG_TIMEOUT, None)
             .await?;
         Ok(format!("{install_output}\n\n{build_output}"))
     }
@@ -304,7 +303,7 @@ fn prepare_runtime(
         &composer,
         format!(
             "#!/bin/sh\nexec {php} {} \"$@\"\n",
-            find_tool("composer", COMPOSER_CANDIDATES)?
+            find_tool("composer", Tool::Composer)?
         ),
     )
     .map_err(|e| format!("Cannot create composer shim: {e}"))?;

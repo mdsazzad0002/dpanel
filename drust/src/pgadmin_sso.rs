@@ -33,9 +33,13 @@ pub const SECRET_HEADER: &str = "x-pgadmin-webserver-secret";
 pub const SSO_PATH: &str = "/pgadmin4/dpanel-sso";
 
 const SECRET_FILE: &str = "/etc/pgadmin/dpanel-sso.secret";
-const TICKET_DIR: &str = "/run/dpanel-pgadmin-sso";
+fn ticket_dir() -> std::path::PathBuf {
+    crate::platform::paths().run_dir().join("dpanel-pgadmin-sso")
+}
 const TICKET_TTL: Duration = Duration::from_secs(60);
-const PGADMIN_HOME: &str = "/opt/dpanel/pgadmin4";
+fn pgadmin_home() -> std::path::PathBuf {
+    crate::platform::paths().runtime_dir().join("pgadmin4")
+}
 const PGADMIN_OS_USER: &str = "pgadmin";
 const PGADMIN_STORAGE_DIR: &str = "/var/lib/pgadmin/storage";
 const ADMIN_IDENTITY: &str = "dpanel-admin";
@@ -123,7 +127,7 @@ pub fn issue(target: &Target, port: u16) -> Result<String, String> {
 /// Returns the pgAdmin identity for a valid, unexpired ticket and makes sure
 /// it can never be used again.
 pub fn consume(ticket: &str) -> Option<String> {
-    crate::sso_ticket::consume(Path::new(TICKET_DIR), ticket, SystemTime::now(), TICKET_TTL)
+    crate::sso_ticket::consume(&ticket_dir(), ticket, SystemTime::now(), TICKET_TTL)
 }
 
 pub fn shared_secret() -> Option<String> {
@@ -134,7 +138,7 @@ pub fn shared_secret() -> Option<String> {
 }
 
 fn write_ticket(identity: &str) -> Result<String, String> {
-    crate::sso_ticket::write(Path::new(TICKET_DIR), identity, SystemTime::now(), TICKET_TTL)
+    crate::sso_ticket::write(&ticket_dir(), identity, SystemTime::now(), TICKET_TTL)
 }
 
 /// pgpass fields escape `\` and `:` with a backslash.
@@ -188,7 +192,7 @@ fn servers_json(target: &Target, port: u16) -> String {
 }
 
 fn pgadmin_package_dir() -> Result<PathBuf, String> {
-    let lib = Path::new(PGADMIN_HOME).join("venv/lib");
+    let lib = pgadmin_home().join("venv/lib");
     fs::read_dir(&lib)
         .map_err(|_| "pgAdmin is not installed. Run: dpanel postgresql install".to_string())?
         .flatten()
@@ -198,7 +202,7 @@ fn pgadmin_package_dir() -> Result<PathBuf, String> {
 }
 
 fn setup_py(package_dir: &Path, args: &[&str]) -> Result<String, String> {
-    let python = Path::new(PGADMIN_HOME).join("venv/bin/python");
+    let python = pgadmin_home().join("venv/bin/python");
     let output = Command::new("runuser")
         .args(["-u", PGADMIN_OS_USER, "--"])
         .arg(&python)

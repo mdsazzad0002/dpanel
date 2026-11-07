@@ -222,7 +222,7 @@ pub(crate) async fn render_phpinfo(
 
 fn ensure_phpinfo_script() -> Result<PathBuf, String> {
     const CONTENT: &str = "<?php phpinfo();\n";
-    let directory = PathBuf::from("/run/drust-phpinfo");
+    let directory = crate::platform::paths().run_dir().join("drust-phpinfo");
     let script = directory.join("phpinfo.php");
     if fs::read_to_string(&script).is_ok_and(|current| current == CONTENT) {
         return Ok(script);
@@ -580,7 +580,7 @@ async fn resolve_fpm_socket(
     if site_pools_enabled {
         if let Some(raw_owner) = site_owner {
             if let Some(owner) = normalize_site_owner(raw_owner) {
-                let socket = PathBuf::from(format!("/run/php/dpanel-{owner}-php{version}.sock"));
+                let socket = fpm_socket(&format!("dpanel-{owner}-php{version}.sock"));
                 if socket.exists() {
                     return Ok(socket);
                 }
@@ -633,7 +633,7 @@ pub fn prewarm_site_pool(scope: &str, site_owner: Option<&str>, php_version: Opt
         return;
     };
     let version = php_version.filter(|v| !v.trim().is_empty()).unwrap_or("8.3").to_string();
-    let socket = PathBuf::from(format!("/run/php/dpanel-{owner}-php{version}.sock"));
+    let socket = fpm_socket(&format!("dpanel-{owner}-php{version}.sock"));
     if socket.exists() {
         return;
     }
@@ -645,11 +645,15 @@ pub fn prewarm_site_pool(scope: &str, site_owner: Option<&str>, php_version: Opt
     });
 }
 
+fn fpm_socket(name: &str) -> PathBuf {
+    crate::platform::paths().run_dir().join("php").join(name)
+}
+
 fn resolve_shared_fpm_socket(version: &str) -> Result<PathBuf, String> {
     let candidates = [
-        PathBuf::from(format!("/run/php/php{version}-fpm.sock")),
-        PathBuf::from("/run/php/php8.3-fpm.sock"),
-        PathBuf::from("/run/php/php8.2-fpm.sock"),
+        fpm_socket(&format!("php{version}-fpm.sock")),
+        fpm_socket("php8.3-fpm.sock"),
+        fpm_socket("php8.2-fpm.sock"),
     ];
     candidates
         .into_iter()

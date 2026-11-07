@@ -129,7 +129,7 @@ impl BandwidthTracker {
     pub fn from_env() -> Self {
         let directory = std::env::var("DRUST_BANDWIDTH_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/var/lib/drust/bandwidth"));
+            .unwrap_or_else(|_| crate::platform::paths().state_dir().join("bandwidth"));
         Self::new(directory)
     }
 

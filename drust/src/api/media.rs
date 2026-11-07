@@ -16,11 +16,17 @@ use std::{sync::Arc, time::Duration};
 /// CPU-bound libraries with no async API.
 const MAX_MEDIA_BYTES: usize = 25 * 1024 * 1024;
 #[cfg(feature = "speech")]
-const DEFAULT_WHISPER_MODEL_PATH: &str = "/var/lib/drust/models/ggml-base-q5_1.bin";
 
 #[cfg(feature = "speech")]
 fn whisper_model_path() -> String {
-    std::env::var("DRUST_WHISPER_MODEL").unwrap_or_else(|_| DEFAULT_WHISPER_MODEL_PATH.into())
+    std::env::var("DRUST_WHISPER_MODEL").unwrap_or_else(|_| {
+        crate::platform::paths()
+            .state_dir()
+            .join("models")
+            .join("ggml-base-q5_1.bin")
+            .display()
+            .to_string()
+    })
 }
 
 pub fn routes() -> Router<Arc<ApiState>> {

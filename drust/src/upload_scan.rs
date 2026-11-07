@@ -8,6 +8,7 @@
 //! As with the website scanner, the caller only names a file; which programs
 //! run and with what arguments is fixed in code.
 
+use crate::platform::paths::Tool;
 use serde::Serialize;
 use std::{
     fs,
@@ -49,7 +50,7 @@ pub struct FileReport {
 }
 
 fn systemctl(args: &[&str]) -> Result<String, String> {
-    let program = find_binary(&["/usr/bin/systemctl", "/bin/systemctl"])
+    let program = find_binary(Tool::Systemctl)
         .ok_or("systemctl is not available on this server")?;
     let output = Command::new(program)
         .args(args)
@@ -64,7 +65,7 @@ fn systemctl(args: &[&str]) -> Result<String, String> {
 }
 
 fn clamdscan() -> Option<String> {
-    find_binary(&["/usr/bin/clamdscan", "/usr/local/bin/clamdscan"])
+    find_binary(Tool::Clamdscan)
 }
 
 fn unit_installed(unit: &str) -> bool {
@@ -89,7 +90,7 @@ fn socket_path() -> PathBuf {
 
 pub fn status() -> Status {
     Status {
-        clamav_installed: find_binary(&["/usr/bin/clamscan", "/usr/local/bin/clamscan"]).is_some(),
+        clamav_installed: find_binary(Tool::Clamscan).is_some(),
         daemon_installed: clamdscan().is_some() && unit_installed(DAEMON_UNIT),
         daemon_active: systemctl(&["is-active", DAEMON_UNIT]).is_ok_and(|s| s == "active"),
         socket_ready: socket_path().exists(),
@@ -148,7 +149,7 @@ pub fn set_enabled(enabled: bool) -> Result<Status, String> {
 
     // clamd refuses to start without a signature database.
     if signature_age_hours().is_none() {
-        if let Some(freshclam) = find_binary(&["/usr/bin/freshclam", "/usr/local/bin/freshclam"]) {
+        if let Some(freshclam) = find_binary(Tool::Freshclam) {
             let _ = Command::new("/usr/bin/timeout")
                 .args(["300", &freshclam, "--quiet"])
                 .status();

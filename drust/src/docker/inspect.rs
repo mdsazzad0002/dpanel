@@ -263,7 +263,7 @@ pub fn exec(id: &str, command: &str, user: &str, workdir: &str) -> Result<Value,
         return Err("Enter a command of at most 8 KB.".into());
     }
     let client = client().ok_or("Docker is not installed on this server.")?;
-    let mut list = vec!["--signal=KILL".to_string(), format!("{EXEC_TIMEOUT_SECS}s"), client.to_string(), "exec".into()];
+    let mut list = vec!["--signal=KILL".to_string(), format!("{EXEC_TIMEOUT_SECS}s"), client.display().to_string(), "exec".into()];
     let user = user.trim();
     if !user.is_empty() {
         let valid = user.len() <= 64 && user.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':'));

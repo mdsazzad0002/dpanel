@@ -67,7 +67,7 @@ fn create_and_install(request: &Request) -> Result<(String, String, String), Str
 
     let suffix = app::random_hex(12)
         .map_err(|error| format!("Unable to create temporary key path: {error}"))?;
-    let directory = PathBuf::from(format!("/tmp/dpanel-ssh-key-{suffix}"));
+    let directory = crate::platform::paths().temp_dir().join(format!("dpanel-ssh-key-{suffix}"));
     fs::create_dir(&directory)
         .map_err(|error| format!("Unable to create temporary key directory: {error}"))?;
     let _temporary = TemporaryDirectory(directory.clone());

@@ -636,9 +636,9 @@ fn ssh_command(
     elevate: bool,
 ) -> Result<(Command, Option<PathBuf>), String> {
     let askpass = if Path::new("/usr/local/libexec/drust-ssh-askpass").is_file() {
-        "/usr/local/libexec/drust-ssh-askpass"
+        PathBuf::from("/usr/local/libexec/drust-ssh-askpass")
     } else {
-        "/var/www/drust/deploy/drust-ssh-askpass"
+        platform::paths().install_root().join("drust/deploy/drust-ssh-askpass")
     };
     let mut command = Command::new("ssh");
     command.args([
@@ -756,7 +756,11 @@ impl Drop for ControlSession {
 }
 
 fn control_path(credentials: &Credentials) -> String {
-    format!("/tmp/drust-ssh-control-{}", credentials.transport_id)
+    platform::paths()
+        .temp_dir()
+        .join(format!("drust-ssh-control-{}", credentials.transport_id))
+        .display()
+        .to_string()
 }
 
 fn safe_destination(value: &str) -> Result<PathBuf, String> {
@@ -786,8 +790,8 @@ fn temp_file(kind: &str) -> Result<PathBuf, String> {
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_nanos();
-    let path = PathBuf::from(format!(
-        "/tmp/drust-ssh-{kind}-{}-{nonce}",
+    let path = platform::paths().temp_dir().join(format!(
+        "drust-ssh-{kind}-{}-{nonce}",
         std::process::id()
     ));
     platform::files()

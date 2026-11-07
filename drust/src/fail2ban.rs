@@ -5,10 +5,10 @@
 //! Only fixed fail2ban-client commands run here; IPs and jail names are
 //! validated before they reach a command line.
 
+use crate::platform::paths::Tool;
 use serde_json::{Value, json};
 use std::{fs, net::IpAddr, path::Path, process::Command};
 
-const CLIENT_CANDIDATES: &[&str] = &["/usr/bin/fail2ban-client", "/usr/local/bin/fail2ban-client"];
 /// jail.d/*.local is read after jail.local, so this [DEFAULT] ignoreip wins.
 const WHITELIST_FILE: &str = "/etc/fail2ban/jail.d/dpanel-whitelist.local";
 /// Always ignored; fail2ban's own default.
@@ -19,14 +19,10 @@ const POLICY_FILE: &str = "/etc/fail2ban/jail.d/zz-dpanel-sshd.local";
 /// Failed SSH logins allowed before an IP is blocked for good.
 pub const DEFAULT_MAX_RETRY: u32 = 3;
 const MAX_RETRY_LIMIT: u32 = 10;
-const SSHD_CANDIDATES: &[&str] = &["/usr/sbin/sshd", "/usr/local/sbin/sshd"];
 const HISTORY_LIMIT: usize = 500;
 
-fn client() -> Option<&'static str> {
-    CLIENT_CANDIDATES
-        .iter()
-        .copied()
-        .find(|path| Path::new(path).is_file())
+fn client() -> Option<std::path::PathBuf> {
+    crate::platform::paths().binary(Tool::Fail2banClient).ok()
 }
 
 fn run(args: &[&str]) -> Result<String, String> {
@@ -161,9 +157,9 @@ pub(crate) fn parse_sshd_ports(config: &str) -> Vec<String> {
 }
 
 fn sshd_ports() -> Vec<String> {
-    let ports = SSHD_CANDIDATES
-        .iter()
-        .find(|path| Path::new(path).is_file())
+    let ports = crate::platform::paths()
+        .binary(Tool::Sshd)
+        .ok()
         .and_then(|sshd| Command::new(sshd).arg("-T").output().ok())
         .filter(|output| output.status.success())
         .map(|output| parse_sshd_ports(&String::from_utf8_lossy(&output.stdout)))

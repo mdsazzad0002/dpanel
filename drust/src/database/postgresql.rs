@@ -63,15 +63,16 @@ fn provision_sql(db_name: &str, db_user: &str, db_password: &str) -> String {
 }
 
 fn psql(sql: &str) -> Result<(), String> {
-    let psql = ["/usr/bin/psql", "/usr/local/bin/psql"]
-        .into_iter()
-        .find(|path| std::path::Path::new(path).is_file())
-        .ok_or("psql is not installed. Install PostgreSQL first: dpanel postgresql install")?;
+    let psql = crate::platform::paths()
+        .binary(crate::platform::paths::Tool::Psql)
+        .map_err(|_| "psql is not installed. Install PostgreSQL first: dpanel postgresql install")?;
 
     // Peer auth as the postgres OS user over the local socket; the SQL (and the
     // password in it) goes through stdin so it never appears in the process list.
     let mut child = Command::new("runuser")
-        .args(["-u", "postgres", "--", psql, "-X", "-q", "-v", "ON_ERROR_STOP=1", "-d", "postgres", "-f", "-"])
+        .args(["-u", "postgres", "--"])
+        .arg(&psql)
+        .args(["-X", "-q", "-v", "ON_ERROR_STOP=1", "-d", "postgres", "-f", "-"])
         .current_dir("/")
         .stdin(Stdio::piped())
         .stdout(Stdio::null())

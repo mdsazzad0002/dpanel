@@ -9,7 +9,8 @@ use axum::{
 use serde::Deserialize;
 
 use crate::api::{ApiResponse, ApiState, check_token};
-use crate::installer::{COMPOSER_CANDIDATES, NPM_CANDIDATES, find_tool};
+use crate::installer::find_tool;
+use crate::platform::paths::Tool;
 
 pub fn routes() -> Router<Arc<ApiState>> {
     Router::new().route("/api/v1/project-dependencies", post(handle))
@@ -55,14 +56,14 @@ fn execute(request: &Request) -> Result<String, String> {
         } else {
             vec!["install"]
         };
-        let npm = find_tool("npm", NPM_CANDIDATES)?;
-        let install_output = run_as_site_owner(context, root, npm, &install_args)?;
-        let build_output = run_as_site_owner(context, root, npm, &["run", "build"])?;
+        let npm = find_tool("npm", Tool::Npm)?;
+        let install_output = run_as_site_owner(context, root, &npm, &install_args)?;
+        let build_output = run_as_site_owner(context, root, &npm, &["run", "build"])?;
         return Ok(format!("{install_output}\n\n{build_output}"));
     }
-    let (program, args): (&str, Vec<&str>) = match request.action.as_str() {
+    let (program, args): (String, Vec<&str>) = match request.action.as_str() {
         "composer_install" => (
-            find_tool("composer", COMPOSER_CANDIDATES)?,
+            find_tool("composer", Tool::Composer)?,
             vec![
                 "install",
                 "--no-interaction",
@@ -70,10 +71,10 @@ fn execute(request: &Request) -> Result<String, String> {
                 "--optimize-autoloader",
             ],
         ),
-        "npm_build" => (find_tool("npm", NPM_CANDIDATES)?, vec!["run", "build"]),
+        "npm_build" => (find_tool("npm", Tool::Npm)?, vec!["run", "build"]),
         _ => return Err("Unsupported dependency action.".into()),
     };
-    run_as_site_owner(context, root, program, &args)
+    run_as_site_owner(context, root, &program, &args)
 }
 
 struct RunContext<'a> {

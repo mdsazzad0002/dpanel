@@ -17,7 +17,7 @@ mod service;
 mod whmcs;
 pub(crate) mod wordpress;
 
-pub(crate) use service::{COMPOSER_CANDIDATES, NPM_CANDIDATES, find_tool};
+pub(crate) use service::find_tool;
 
 use std::sync::Arc;
 

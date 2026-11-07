@@ -2,13 +2,13 @@
 
 পুরো কাজের task তালিকা। প্রতিটা task ছোট, আলাদা commit-যোগ্য, আর তার শেষের শর্ত আছে। Technical contract: [platform-spec.md](platform-spec.md)।
 
-**Status:** A1-A6, B1-B7 শেষ, CI-তে Linux ও Laravel সবুজ। পরের task: B8। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
+**Status:** A1-A6, B1-B8 শেষ; CI-তে Linux, Laravel, Windows ও macOS সবুজ (`aaa922fa`)। C1 চলছে। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
 
 **খোলা বিষয়:**
 
-- B8 চলছে। শেষ CI run-এ (`3f25033f`) Windows-এ 13টা ও macOS-এ 1টা test ব্যর্থ ছিল; সবগুলোর কারণ জানা ও fix লেখা হয়েছে, তবে আসল Windows ও macOS-এ যাচাই বাকি। সবুজ হলে `ci.yml`-এর `continue-on-error` সরাতে হবে।
 - Windows-এর 9টা test `skip_until_windows_has` দিয়ে skip করা: 8টা F1-এর, 1টা C1-এর। এই test-গুলো ওই task-এর আগে Windows-এ কিছু প্রমাণ করে না।
-- C1 চলছে। হয়েছে: `Paths`, আর `panel_root`, `config_dir`/TLS, `data_dir`, `sites_root` ও `site_home`-এর migration। বাকি: `/usr/bin` সহ binary path (`binary(Tool)`), `/run`, `/etc/php`, `/etc/systemd`, `/etc/letsencrypt`, `/opt/dpanel`।
+- C1 চলছে। হয়েছে: `Paths`-এর সব dPanel path ও `binary(Tool)`। C1-এ বাকি: versioned PHP ও Python, `uv`, `/var/www/{domain}/public` fallback।
+- বাকি system path অন্য task-এর: `/etc/systemd` C2/C3, `/etc/passwd` ও `/etc/shadow` C4, sandbox-এর ভেতরের path ও `runuser` C5, `/etc/cron.d` C10, `/etc/letsencrypt` I5, `/etc/fail2ban` J7, ClamAV J10, `/etc/php` ও PHP-FPM pool F2/J4।
 - `/home` ইচ্ছা করে থেকে গেছে: `migration_ssh.rs` (remote server-এর path), sandbox-এর ভেতরের path ও terminal blocklist (C5), `ALLOWED_ROOT_PREFIXES` (Windows ও macOS-এ scan root-এর নকশা দরকার; এখন সেখানে scan চলবে না)।
 - Git for Windows-এ `core.autocrlf` চালু থাকে। Deploy-এর clone-এ সেটা site file-এ CRLF আনবে; F8-এর আগে সিদ্ধান্ত দরকার।
 
@@ -17,7 +17,7 @@
 একটা task তখনই শেষ, যখন:
 
 1. Task-এর `Done` শর্ত পূরণ হয়েছে, আর সেটা test দিয়ে প্রমাণিত।
-2. Linux-এর বিদ্যমান test পাস: `cargo test` (এখন 246টা Rust test, 4টা ignored) ও `php artisan test` (এখন 566টা test, 1টা skipped)।
+2. Linux-এর বিদ্যমান test পাস: `cargo test` (এখন 251টা Rust test, 4টা ignored) ও `php artisan test` (এখন 566টা test, 1টা skipped)।
 3. CI তিন OS-এ সবুজ (A1-এর পর)।
 4. নতুন Vue অংশ আলাদা component-এ। `Manage.vue`-এর মতো বড় page আর বাড়ে না।
 5. `#[cfg]` শুধু `drust/src/platform/`-এ।

@@ -270,13 +270,9 @@ fn resolve_node_binary(version: Option<&str>) -> Result<PathBuf, String> {
             return Ok(nvm_style);
         }
     }
-    for candidate in ["/usr/bin/node", "/usr/local/bin/node"] {
-        let path = PathBuf::from(candidate);
-        if path.is_file() {
-            return Ok(path);
-        }
-    }
-    Err("no node binary found on this server; install Node.js or configure DRUST_NODE_BIN".to_string())
+    crate::platform::paths()
+        .binary(crate::platform::paths::Tool::Node)
+        .map_err(|_| "no node binary found on this server; install Node.js or configure DRUST_NODE_BIN".to_string())
 }
 
 fn shell_quote(value: &str) -> String {

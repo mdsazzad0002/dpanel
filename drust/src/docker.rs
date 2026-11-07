@@ -14,9 +14,8 @@ pub mod volume;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{path::Path, process::Command};
+use std::process::Command;
 
-const CLIENT_CANDIDATES: &[&str] = &["/usr/bin/docker", "/usr/local/bin/docker"];
 const RESTART_POLICIES: &[&str] = &["no", "always", "unless-stopped", "on-failure"];
 pub const DEFAULT_LOG_LINES: u32 = 200;
 const MAX_LOG_LINES: u32 = 5000;
@@ -89,11 +88,8 @@ pub struct RunSpec {
     pub pull: bool,
 }
 
-pub(crate) fn client() -> Option<&'static str> {
-    CLIENT_CANDIDATES
-        .iter()
-        .copied()
-        .find(|path| Path::new(path).is_file())
+pub(crate) fn client() -> Option<std::path::PathBuf> {
+    crate::platform::paths().binary(crate::platform::paths::Tool::Docker).ok()
 }
 
 pub(crate) fn run(args: &[String]) -> Result<String, String> {

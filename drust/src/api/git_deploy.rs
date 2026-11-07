@@ -225,7 +225,7 @@ fn execute(request: &Request) -> Result<String, String> {
     validate(request)?;
     let target = PathBuf::from(&request.target);
     let lock_name = format!("{:x}", Sha1::digest(request.target.as_bytes()));
-    let lock_path = PathBuf::from(format!("/run/lock/dpanel-git-{lock_name}.lock"));
+    let lock_path = crate::platform::paths().run_dir().join("lock").join(format!("dpanel-git-{lock_name}.lock"));
     OpenOptions::new()
         .write(true)
         .create_new(true)

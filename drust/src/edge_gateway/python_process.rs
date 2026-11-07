@@ -710,10 +710,7 @@ fn resolve_python_binary(version: Option<&str>) -> Result<PathBuf, String> {
 }
 
 fn system_python() -> Option<PathBuf> {
-    ["/usr/bin/python3", "/usr/local/bin/python3"]
-        .into_iter()
-        .map(PathBuf::from)
-        .find(|path| path.is_file())
+    crate::platform::paths().binary(crate::platform::paths::Tool::Python3).ok()
 }
 
 /// Accepts "3", "3.12" or "3.12.4": it ends up as a command argument.

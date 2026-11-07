@@ -5,7 +5,7 @@
 //! execution. Findings carry stable rule ids (DP-*) that the panel maps to its
 //! rule catalog, severities and score categories.
 
-use crate::platform::{self, fs::FileMode};
+use crate::platform::{self, fs::FileMode, paths::Tool};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -1101,11 +1101,8 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-pub(crate) fn find_binary(candidates: &[&str]) -> Option<String> {
-    candidates
-        .iter()
-        .find(|candidate| Path::new(candidate).is_file())
-        .map(|candidate| candidate.to_string())
+pub(crate) fn find_binary(tool: Tool) -> Option<String> {
+    platform::paths().binary(tool).ok().map(|path| path.display().to_string())
 }
 
 pub(crate) fn signature_age_hours() -> Option<u64> {
@@ -1125,7 +1122,7 @@ pub(crate) fn signature_age_hours() -> Option<u64> {
 
 fn run_clamav(root: &Path, collector: &mut Collector, tracker: &Tracker, total: u64) -> ClamavReport {
     let mut report = ClamavReport::default();
-    let Some(clamscan) = find_binary(&["/usr/bin/clamscan", "/usr/local/bin/clamscan"]) else {
+    let Some(clamscan) = find_binary(Tool::Clamscan) else {
         report.error =
             Some("ClamAV is not installed. Install it with: dpanel clamav install".into());
         return report;
@@ -1137,7 +1134,7 @@ fn run_clamav(root: &Path, collector: &mut Collector, tracker: &Tracker, total: 
     let stale = signature_age_hours().is_none_or(|hours| hours >= 24);
     if stale {
         tracker.set("signatures", 0, 1);
-        if let Some(freshclam) = find_binary(&["/usr/bin/freshclam", "/usr/local/bin/freshclam"]) {
+        if let Some(freshclam) = find_binary(Tool::Freshclam) {
             let _ = Command::new("/usr/bin/timeout")
                 .args(["300", &freshclam, "--quiet"])
                 .status();

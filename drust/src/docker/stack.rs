@@ -14,7 +14,6 @@ use std::{
 use super::{args, client, parse_json_lines, run, text};
 use crate::platform::{self, fs::LinkPolicy};
 
-const STACKS_DIR: &str = "/opt/dpanel/docker/stacks";
 const COMPOSE_FILE: &str = "compose.yaml";
 const ENV_FILE: &str = ".env";
 const MAX_COMPOSE_BYTES: usize = 256 * 1024;
@@ -24,7 +23,7 @@ const MAX_LOG_LINES: u32 = 5000;
 pub(crate) fn stacks_dir() -> PathBuf {
     std::env::var("DPANEL_DOCKER_STACKS_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(STACKS_DIR))
+        .unwrap_or_else(|_| crate::platform::paths().runtime_dir().join("docker").join("stacks"))
 }
 
 /// Whether the compose plugin is installed next to the docker CLI.

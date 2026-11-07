@@ -442,7 +442,8 @@ async fn handle_system_phpmyadmin(
 ) -> Response {
     // System paths are intentionally fixed. The hostname is database-driven,
     // while the service path remains stable across panel domain migrations.
-    let root = Path::new("/var/www/phpmyadmin");
+    let root = platform::paths().install_root().join("phpmyadmin");
+    let root = root.as_path();
     if let Err(error) = repair_phpmyadmin_sensitive_permissions(root) {
         return simple_response(
             StatusCode::INTERNAL_SERVER_ERROR,

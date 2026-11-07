@@ -69,8 +69,8 @@ fn scripts_dir() -> Result<PathBuf, String> {
     }
 
     for path in [
-        PathBuf::from("/opt/dpanel/runtime/scripts"),
-        PathBuf::from("/var/www/dscript/scripts"),
+        crate::platform::paths().runtime_dir().join("runtime").join("scripts"),
+        crate::platform::paths().install_root().join("dscript").join("scripts"),
     ] {
         if path.is_dir() {
             return Ok(path);
