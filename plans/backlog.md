@@ -2,12 +2,13 @@
 
 পুরো কাজের task তালিকা। প্রতিটা task ছোট, আলাদা commit-যোগ্য, আর তার শেষের শর্ত আছে। Technical contract: [platform-spec.md](platform-spec.md)।
 
-**Status:** A1, A2, A3, B1-B7-এর code `main`-এ আছে। পরের task: A4, A6, তারপর B8। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
+**Status:** A1, A2, A3, B1-B7 শেষ, CI-তে Linux ও Laravel সবুজ। পরের task: A4, A6, তারপর B8। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
 
 **খোলা বিষয়:**
 
-- CI-র প্রথম run-এর ফল দেখে A1-এর `Done` নিশ্চিত করতে হবে। Local-এ `cargo test` ও `php artisan test` সবুজ।
-- Windows-এর result শুধু type-check, MSVC C compiler stub করে। Link হয়নি, চালানো হয়নি। আসল build B8-এ।
+- CI-তে Windows ও macOS job এখনো report-only, আর দুটোতেই `cargo test` ব্যর্থ। B8-এ এগুলো ঠিক করে job বাধ্যতামূলক করতে হবে।
+- Windows-এ আসল MSVC-তে build ও link হয়েছে; 210 পাস, 13 ব্যর্থ। ব্যর্থ test-গুলোর কারণ এক এক করে দেখা হয়নি।
+- macOS-এ `scans_a_site_tree` ব্যর্থ, কারণ `$HOME` `/Users`-এ, যেটা scan-এর allowed root নয়।
 
 ## সব task-এর শেষের শর্ত
 

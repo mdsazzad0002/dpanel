@@ -128,7 +128,8 @@ mod tests {
         files().set_mode(&target, FileMode::Private).unwrap();
         files().symlink(&target, &link).unwrap();
         let metadata = fs::symlink_metadata(&link).unwrap();
-        assert_eq!(files().mode_bits(&metadata).unwrap() & 0o777, 0o777);
+        // The link's own mode differs by OS, but it is never the target's.
+        assert_ne!(files().mode_bits(&metadata).unwrap() & 0o777, 0o600);
     }
 
     #[test]
