@@ -7,6 +7,7 @@ pub mod account;
 pub mod capabilities;
 pub mod fastcgi;
 pub mod fs;
+pub mod limits;
 pub mod paths;
 pub mod process;
 pub mod service;
