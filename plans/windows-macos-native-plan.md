@@ -13,16 +13,16 @@ WSL বা কোনো Linux VM ছাড়া dPanel সরাসরি Windo
 | **Local** | Development, XAMPP বা Laravel Herd-এর মতো | একজন user, শুধু localhost, mail ও DNS নকল |
 | **Production** | Live deployment, public website | বহু site, আলাদা user, আসল SSL, mail, DNS ও firewall |
 
-Local সহজ। Production অনেক বড় কাজ, কারণ dPanel-এর hosting অংশ Linux-এর ওপর দাঁড়ানো: প্রতি site-এ আলাদা Linux user, systemd, Postfix/Dovecot, PowerDNS, UFW, Fail2ban। এগুলোর প্রতিটার জন্য Windows ও macOS-এ বিকল্প লাগবে, যা [Production profile](#production-profile) অংশে আছে।
+Local সহজ। Production অনেক বড় কাজ, কারণ dPanel-এর hosting অংশ Linux-এর ওপর দাঁড়ানো: প্রতি site-এ আলাদা Linux user, systemd, Postfix/Dovecot, PowerDNS, UFW, Fail2ban। এগুলোর প্রতিটার জন্য Windows ও macOS-এ বিকল্প লাগবে, যা [Production profile](#production-profile) অংশে আছে। macOS সবচেয়ে কঠিন, কারণ সেখানে CPU/RAM-এর hard limit নেই এবং hosting-এ license-এর প্রশ্ন আছে।
 
 | বিষয় | সিদ্ধান্ত |
 | --- | --- |
 | ক্রম | macOS local → Windows local → Windows production → macOS production |
 | Windows production | Windows Server 2022 ও 2025; Windows 10/11 শুধু local |
-| macOS production | ছোট পরিসর: একজন মালিকের কয়েকটা site, shared hosting বিক্রির জন্য নয় |
+| macOS production | Windows-এর সমান পূর্ণ platform: বহু customer, reseller, WHMCS |
 | মূল কৌশল | drust-এ platform layer, আর drust নিজেই সব service চালাবে |
 | WSL সংস্করণ | Native local স্থিতিশীল না হওয়া পর্যন্ত থাকবে, তারপর বন্ধ |
-| সময় (১ জন dev, অনুমান) | Local 5-6 মাস, Windows production আরও 8-10 মাস, macOS production আরও 3-4 মাস: মোট 16-20 মাস |
+| সময় (১ জন dev, অনুমান) | Local 5-6 মাস, Windows production আরও 8-10 মাস, macOS production আরও 5-6 মাস: মোট 18-22 মাস |
 
 ## মাপা হয়েছে: drust compile হয় কিনা
 
@@ -159,15 +159,37 @@ Production profile-এ drust-কে SYSTEM বা root হিসেবে চল
 
 ## Production profile
 
-একই gateway, panel ও platform layer থাকবে, শুধু backend বদলাবে। IIS লাগবে না: Rust edge gateway-ই public 80/443 সামলাবে।
+Windows ও macOS দুটোই পূর্ণ production platform, Linux-এর সমান মর্যাদায়। একই gateway, panel ও platform layer থাকবে, শুধু নিচের backend বদলাবে। IIS লাগবে না: Rust edge gateway-ই public 80/443 সামলাবে।
+
+```text
+                         Browser / Mail client / DNS client
+                                        │
+  ┌─────────────────────────────────────┴──────────────────────────────────┐
+  │ Public edge      Rust edge gateway · mail ports · DNS · FTP/SFTP       │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │ Control plane    dPanel (Laravel + Vue)  ◄── token ──►  drust API      │
+  │                  একই code: UI, auth, billing, reseller, queue           │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │ Platform layer   Service · Account · IsolatedRunner · ResourceLimiter  │
+  │ (একই interface)   Firewall · Dns · Mail · Acme · Paths · Capabilities   │
+  ├───────────────────────┬────────────────────────┬───────────────────────┤
+  │ Linux                 │ Windows Server         │ macOS                 │
+  │ systemd, cgroup       │ Service, Job Object    │ launchd, supervisor   │
+  │ ext4/XFS quota        │ NTFS quota             │ APFS volume quota     │
+  │ UFW, PowerDNS         │ Defender FW, DNS role  │ pf, external DNS      │
+  │ Postfix, Dovecot      │ Stalwart               │ Stalwart              │
+  └───────────────────────┴────────────────────────┴───────────────────────┘
+```
+
+**নিয়ম:** Platform layer-এর ওপরের কোনো code OS-এর নাম জানবে না। নতুন feature মানে আগে interface, তারপর তিন OS-এর implementation। কোনো OS-এ কিছু না থাকলে সেটা capability flag দিয়ে জানানো হবে, `if windows` দিয়ে নয়।
 
 | কাজ | Linux (এখন) | Windows Server | macOS |
 | --- | --- | --- | --- |
 | Service | systemd | Windows Service | LaunchDaemon |
 | PHP | প্রতি site-এ FPM pool | প্রতি site-এ php-cgi pool | প্রতি site-এ FPM pool |
 | Site isolation | Linux user, ACL | Local Windows user, NTFS ACL | `dscl` user, POSIX permission |
-| CPU/RAM limit | cgroup (feature plan 1.4) | Job Object | কোনো hard limit নেই; শুধু process limit |
-| Disk quota | Filesystem quota (feature plan 1.2) | NTFS per-user quota (যাচাই দরকার) | `du` scan ও soft limit |
+| CPU/RAM limit | cgroup (feature plan 1.4) | Job Object (hard limit) | drust supervisor (soft limit); hard limit চাইলে tenant VM |
+| Disk quota | Filesystem quota (feature plan 1.2) | NTFS per-user quota (যাচাই দরকার) | প্রতি account-এ APFS volume ও quota |
 | SSL | certbot | Rust ACME client | Rust ACME client |
 | DNS | PowerDNS | Windows DNS Server role | External DNS (Cloudflare API) |
 | Mail | Postfix, Dovecot, Rspamd | Stalwart | Stalwart |
@@ -178,7 +200,7 @@ Production profile-এ drust-কে SYSTEM বা root হিসেবে চল
 | Malware scan | ClamAV | ClamAV | ClamAV |
 | Web terminal | bwrap sandbox | প্রথম সংস্করণে বন্ধ | প্রথম সংস্করণে বন্ধ |
 | Docker | বিদ্যমান | প্রথম সংস্করণে বন্ধ | প্রথম সংস্করণে বন্ধ |
-| Reseller, WHMCS, package | বিদ্যমান | চালু | বন্ধ |
+| Reseller, WHMCS, package | বিদ্যমান | চালু | চালু |
 
 ### বড় সিদ্ধান্তগুলোর কারণ
 
@@ -194,9 +216,25 @@ Production profile-এ drust-কে SYSTEM বা root হিসেবে চল
 
 **Isolation: প্রতি site-এ আলাদা Windows user।** drust প্রতিটা site-এর `php-cgi.exe` সেই user হিসেবে চালাবে, একটা Job Object-এর ভেতরে। এতে একই সঙ্গে isolation ও CPU/RAM limit পাওয়া যাবে। Job Object-এ memory ও CPU-র hard limit আছে (Microsoft docs)। এটাই Windows production-এর সবচেয়ে সংবেদনশীল code, তাই আলাদা security review লাগবে।
 
-### macOS production-এর সীমা
+### macOS-এ পূর্ণ production কীভাবে
 
-macOS-এ cgroup বা Job Object-এর মতো hard limit নেই, আর per-user disk quota-র ভালো ব্যবস্থাও নেই। তাই একটা site পুরো machine-এর resource খেয়ে ফেলতে পারে। নিজের কয়েকটা site চালানোর জন্য ঠিক আছে, অপরিচিত customer-দের জন্য নয়। এই কারণে reseller ও WHMCS এখানে বন্ধ থাকবে।
+macOS-এ Linux-এর cgroup বা Windows-এর Job Object-এর মতো জিনিস নেই, আর Apple 2022-এ macOS Server বন্ধ করে দিয়েছে। তাই এই অংশটাই সবচেয়ে কঠিন, আর বাকি অংশের চেয়ে বেশি নিজে বানাতে হবে।
+
+**Disk: প্রতি account-এ APFS volume।** `diskutil apfs addVolume ... -quota` দিয়ে hard limit পাওয়া যায়। তবে তিনটা অজানা আছে, তাই Phase 6-এ পরীক্ষা করুন:
+
+- তৈরির পর quota বদলানোর নথিভুক্ত উপায় পাওয়া যায়নি, তাই plan বদলাতে volume নতুন করে বানাতে হতে পারে।
+- একটা report বলছে macOS 13-এ একটা Time Machine volume-এর quota নিজে থেকে উঠে গিয়েছিল।
+- একটা machine-এ কয়েকশো volume কেমন চলে, সেটাও মাপতে হবে।
+
+**CPU/RAM: drust supervisor।** `setrlimit` macOS-এ নির্ভরযোগ্য নয়: `RLIMIT_AS` ও `RLIMIT_DATA` enforce হয় না বলে একাধিক report আছে (কিছু পুরোনো)। তাই drust প্রতি account-এর CPU ও memory নিয়মিত মেপে আগে process-এর priority কমাবে, তারপর limit ছাড়ালে process restart করবে।
+
+এটা **soft limit**: হঠাৎ বেড়ে যাওয়া load কয়েক সেকেন্ড অন্যদের ওপর প্রভাব ফেলতে পারে। Package-এ এটা পরিষ্কার লিখতে হবে।
+
+**Hard limit চাইলে: tenant VM।** `ResourceLimiter`-এর দ্বিতীয় implementation হিসেবে customer-এর site একটা হালকা VM-এ চলবে। এতে hard limit পাওয়া যায়, কিন্তু প্রতি site-এ বেশি RAM লাগে, আর site-এর ভেতরের অংশ তখন আর native থাকে না। এটা পরে, দরকার হলে।
+
+**License: আগে আইনি পরামর্শ।** Apple-এর macOS license-এ leasing-এর শর্ত আছে: Big Sur-এর সময়ের terms অনুযায়ী lease অন্তত 24 ঘণ্টার, আর শুধু "permitted developer services"-এর জন্য। Shared web hosting এতে পড়ে কিনা নিশ্চিত নয়, আর বর্তমান license text যাচাই করা হয়নি। **macOS-এ hosting বিক্রির আগে এটা আইনজীবী দিয়ে দেখিয়ে নিন।** dPanel নিজে বিতরণ করাতে নয়, ব্যবহারকারীর ব্যবসাতেই এই ঝুঁকি, তাই docs-এও সতর্কতা দিন।
+
+**Hardware:** Apple hardware ছাড়া চলবে না। Data center-এ Mac mini/Studio, আর OS update-এর reboot সামলানোর ব্যবস্থা লাগবে।
 
 ### নতুন interface
 
@@ -221,18 +259,21 @@ Platform layer-এ এগুলোও লাগবে: `IsolatedRunner`, `Resour
 
 | Phase | কাজ | শেষের শর্ত | সময় |
 | --- | --- | --- | --- |
-| 6. Production spike | php-cgi load test, Stalwart, Windows site isolation | Go/no-go সিদ্ধান্ত | 3-4 সপ্তাহ |
+| 6. Production spike | php-cgi load test, Stalwart, Windows isolation, APFS quota, macOS limit | Go/no-go সিদ্ধান্ত | 4-5 সপ্তাহ |
 | 7. Backend interface | `MailBackend`, `DnsBackend`, `FirewallBackend`, Rust ACME | Linux-এ নতুন interface দিয়ে সব test পাস | 6-8 সপ্তাহ |
 | 8. Windows isolation | Per-site user, ACL, Job Object, quota | এক site অন্য site-এর file পড়তে পারে না, test দিয়ে প্রমাণিত | 6-8 সপ্তাহ |
 | 9. Windows services | SSL, DNS, Stalwart, Roundcube, FTP, firewall, brute-force রক্ষা | আসল domain-এ site ও mail চলে | 8-10 সপ্তাহ |
 | 10. Windows hardening | Security review, penetration test, update, backup restore | Review-এর গুরুতর সমস্যা শূন্য | 4-6 সপ্তাহ |
-| 11. macOS production | LaunchDaemon, `dscl`, `pf`, Stalwart | আসল domain-এ site ও mail চলে | 3-4 মাস |
+| 11. macOS isolation ও limit | `dscl` user, APFS volume, supervisor limit | এক site অন্যের file পড়তে পারে না; limit test পাস | 8-10 সপ্তাহ |
+| 12. macOS services | LaunchDaemon, `pf`, Stalwart, external DNS, reseller, WHMCS | আসল domain-এ site ও mail চলে | 6-8 সপ্তাহ |
+| 13. macOS hardening | Security review, penetration test, reboot ও update flow | Review-এর গুরুতর সমস্যা শূন্য | 4-6 সপ্তাহ |
 
-Phase 6 সবচেয়ে গুরুত্বপূর্ণ। এই তিনটা উত্তর না পেলে Phase 7-এ যাবেন না:
+Phase 6 সবচেয়ে গুরুত্বপূর্ণ। এই চারটা উত্তর না পেলে Phase 7-এ যাবেন না:
 
 1. Windows-এ php-cgi বাস্তব load-এ Linux-এর PHP-FPM-এর তুলনায় কত ধীর?
 2. একটা Windows server-এ কতগুলো আলাদা-user site চালানো যায়?
 3. Stalwart-এ mailbox ও DKIM তৈরি কি dPanel-এর বর্তমান mail flow-এর সব কাজ করতে পারে?
+4. macOS-এ APFS quota ও supervisor limit বাস্তবে টেকে কি?
 
 সময়গুলো অনুমান। Phase 0 ও Phase 6-এর spike-এর পর আবার হিসাব করুন।
 
@@ -265,6 +306,8 @@ Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আট�
 | Windows site isolation-এ ফাঁক: এক customer অন্যের data পড়ে | খুব বেশি | Automated isolation test, আলাদা security review, Phase 10 পাস না করলে release নয় |
 | Windows-এ production mail-এর deliverability ও maintenance | বেশি | Phase 6 spike; দরকার হলে প্রথম সংস্করণ mail ছাড়া ছাড়ুন |
 | দুই mail stack (Postfix ও Stalwart) maintain করা | বেশি | `MailBackend` interface, দুই stack-এই একই test |
+| macOS license shared hosting-এর অনুমতি না দেয় | খুব বেশি | Phase 11-এর আগে আইনি মত; না হলে macOS শুধু নিজের site-এর জন্য |
+| macOS-এ soft limit-এর কারণে এক customer অন্যদের ধীর করে | বেশি | Supervisor test, কম density, দরকারে tenant VM |
 | Windows Server license-এর খরচ customer-এর ওপর পড়ে | মাঝারি | Docs-এ পরিষ্কার লিখুন; Linux সস্তা বিকল্প হিসেবে থাকবে |
 | তিন platform maintain করার খরচ | বেশি | Capability flag, CI, desktop-এ feature সীমিত রাখা |
 | Windows-এ কিছু PHP extension না পাওয়া | মাঝারি | সমর্থিত PHP extension-এর তালিকা প্রকাশ করুন |
@@ -279,10 +322,10 @@ Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আট�
 
 ## সিদ্ধান্ত দরকার
 
-**নেওয়া হয়েছে:** Local development ও live production, দুটোই লক্ষ্য।
+**নেওয়া হয়েছে:** Local development ও live production দুটোই লক্ষ্য, আর Windows ও macOS দুটোই পূর্ণ production platform।
 
-1. **macOS production কি সত্যিই ছোট পরিসরেই থাকবে?** এই plan তাই ধরেছে, কারণ hard limit নেই। এটা বাদ দিলে 3-4 মাস বাঁচে।
-2. **Windows production-এ প্রথম সংস্করণে mail লাগবে?** প্রস্তাব: Phase 6-এর ফল দেখে ঠিক করুন।
+1. **macOS license-এর আইনি মত কে নেবেন?** Phase 11-এর আগে দরকার।
+2. **Production-এর প্রথম সংস্করণে mail লাগবে?** প্রস্তাব: Phase 6-এর ফল দেখে ঠিক করুন।
 3. **Mac-এ local প্রথম সংস্করণে Homebrew চলবে, নাকি প্রথম থেকেই সব bundle?** প্রস্তাব: Homebrew দিয়ে শুরু।
 4. **Apple Developer ও Windows code signing-এর খরচ দেবেন?** Public release-এর জন্য দরকার।
 5. **WSL version কবে বন্ধ হবে?** প্রস্তাব: Native Windows local স্থিতিশীল হওয়ার অন্তত এক release পরে।
@@ -294,5 +337,8 @@ Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আট�
 - [Stalwart releases](https://github.com/stalwartlabs/stalwart/releases), [Stalwart README](https://github.com/stalwartlabs/mail-server)
 - [Hickory DNS server](https://docs.rs/crate/hickory-server/latest), [Windows DnsServer module](https://learn.microsoft.com/powershell/module/dnsserver)
 - [Job Object limits](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information), [Job Object CPU rate](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_cpu_rate_control_information)
+- [APFS quota: `addVolume`](https://eclecticlight.co/2017/04/08/how-to-make-your-own-apfs-volume/), [quota বদলানোর সীমা](https://openradar.appspot.com/34096467), [macOS 13 quota report](https://mjtsai.com/blog/2021/01/19/how-to-reserve-time-machine-space-on-an-apfs-drive/)
+- [macOS rlimit report](https://ai-fast-downward.dmi.unibas.ch/issue825), [Darwin limit code](https://docs.rs/crate/vetto/latest/source/src/sandbox/macos/limits.rs)
+- [macOS leasing terms](https://9to5mac.com/2020/11/11/macos-big-sur-adds-leasing-terms-that-pull-hosting-services-like-macstadium-out-of-a-legal-gray-area/), [macOS Server বন্ধ](https://www.macworld.com/article/634243/apple-discontinues-macos-server-after-23-years.html)
 - [instant-acme](https://docs.rs/crate/instant-acme/latest/source/README.md), [libunftp](https://docs.rs/crate/libunftp/latest), [ClamAV on Windows](https://docs.clamav.net/faq/faq-win32.html)
 - Compile result: `cargo check` (2026-11-07), repo-র একটা scratch copy-তে চালানো
