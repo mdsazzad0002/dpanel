@@ -4,9 +4,20 @@
 //! `plans/platform-spec.md`.
 
 pub mod capabilities;
+pub mod fs;
+#[cfg(unix)]
+mod unix;
+#[cfg(windows)]
+mod windows;
 
 use capabilities::Capability;
+use fs::FileAccess;
 use std::{fmt, io, sync::OnceLock};
+
+#[cfg(unix)]
+use unix::fs::NativeFileAccess;
+#[cfg(windows)]
+use windows::fs::NativeFileAccess;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Os {
@@ -44,11 +55,20 @@ impl Platform {
     pub fn os(&self) -> Os {
         self.os
     }
+
+    pub fn files(&self) -> &'static dyn FileAccess {
+        &NativeFileAccess
+    }
 }
 
 pub fn current() -> &'static Platform {
     static CURRENT: OnceLock<Platform> = OnceLock::new();
     CURRENT.get_or_init(|| Platform { os: Os::detect() })
+}
+
+/// Shorthand for `current().files()`.
+pub fn files() -> &'static dyn FileAccess {
+    current().files()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

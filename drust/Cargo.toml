@@ -46,6 +46,9 @@ http-body = "1"
 hickory-resolver = { version = "0.24", default-features = false, features = ["tokio-runtime"] }
 mongodb = "3"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [features]
 # Linux keeps both. Windows and macOS builds pass --no-default-features: Cargo
 # defaults cannot differ by target, and neither library is proven there yet.

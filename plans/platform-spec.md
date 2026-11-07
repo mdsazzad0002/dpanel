@@ -141,16 +141,25 @@ Linux column-এর `data_dir` ও `log_dir` বর্তমান code-এর �
 
 ```rust
 pub enum FileMode { Private, PrivateDir, Shared, Executable, Raw(u32) }
+pub enum LinkPolicy { Follow, Refuse }
 
 pub trait FileAccess {
     fn set_mode(&self, path: &Path, mode: FileMode) -> Result<(), PlatformError>;
-    fn mode_string(&self, path: &Path) -> Result<String, PlatformError>;
-    fn owner(&self, path: &Path) -> Result<OwnerId, PlatformError>;
+    fn mode_bits(&self, metadata: &Metadata) -> Option<u32>;
+    fn owner(&self, metadata: &Metadata) -> Result<OwnerId, PlatformError>;
     fn set_owner(&self, path: &Path, owner: &OwnerId) -> Result<(), PlatformError>;
+    fn set_link_owner(&self, path: &Path, owner: &OwnerId) -> Result<(), PlatformError>;
     fn create_private(&self, path: &Path) -> Result<File, PlatformError>;
+    fn replace_private(&self, path: &Path, links: LinkPolicy) -> Result<File, PlatformError>;
     fn create_dir_private(&self, path: &Path) -> Result<(), PlatformError>;
+    fn symlink(&self, target: &Path, link: &Path) -> Result<(), PlatformError>;
 }
 ```
+
+- `mode_bits` ও `owner` caller-এর হাতে থাকা `Metadata` নেয়, path নয়। তাই caller যে symlink follow করেনি, সেটা এখানেও follow হয় না। Panel-এর লেখা `mode_string()` helper থেকে আসে।
+- `set_owner` symlink follow করে (`chown`), `set_link_owner` করে না (`lchown`)। Site-এর folder-এ link থাকতে পারে, তাই দুটো আলাদা।
+- `create_private` নতুন file বানায়, আগে থাকলে ব্যর্থ। `replace_private` truncate করে, পুরোনো file-এর mode রেখে। `LinkPolicy::Refuse` মানে `O_NOFOLLOW`।
+- F1-এর আগে Windows-এ এই সব call `Unsupported` দেয়। ACL ছাড়া বানানো file folder-এর ACL পায়, তাই secret সেখানে আসলে private থাকত না।
 
 | `FileMode` | Unix | Windows |
 | --- | --- | --- |
