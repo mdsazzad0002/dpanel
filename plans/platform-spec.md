@@ -87,7 +87,7 @@ drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupporte
     "resource_limits": "hard", "disk_quota": "hard",
     "mail": "stalwart", "dns": "windows_dns", "ssl": "acme",
     "firewall": true, "ftp": true, "terminal": false, "docker": false,
-    "redis": false, "reseller": true, "file_permissions": false
+    "redis": false, "reseller": true, "file_permissions": false, "clamav": false
   }
 }
 ```
@@ -107,8 +107,9 @@ drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupporte
 | `redis` | হ্যাঁ | না | হ্যাঁ | Windows-এ না, বাকিতে হ্যাঁ |
 | `reseller` | হ্যাঁ | হ্যাঁ | হ্যাঁ | না |
 | `file_permissions` | হ্যাঁ | না (F1 পর্যন্ত) | হ্যাঁ | Windows-এ না, বাকিতে হ্যাঁ |
+| `clamav` | হ্যাঁ | না (J10 পর্যন্ত) | না (K7 পর্যন্ত) | Linux-এ হ্যাঁ, বাকিতে না |
 
-Laravel-এ route গুলো `capability:<name>` middleware দিয়ে আটকাবে। Sidebar ও search একই তথ্য Inertia shared prop থেকে নেবে। Capability বন্ধ থাকলে route `404` দেবে।
+Laravel-এ route গুলো `capability:<name>` middleware দিয়ে আটকাবে। Sidebar ও search একই তথ্য Inertia shared prop থেকে নেবে। Capability বন্ধ থাকলে route `404` দেবে। যে feature কোনো OS-এ চলে না, সেখানে তার UI থাকে না, আর backend error না দিয়ে চুপচাপ ফিরে আসে।
 
 কোন route কোন capability চায়, সেটা `PlatformCapabilities::ROUTE_CAPABILITIES`-এর route-name prefix table-এ থাকে; `routes/web.php`-এর শেষে সেখান থেকে middleware বসে। `false` ও `"none"` মানে বন্ধ, বাকি সব মান খোলা।
 
@@ -147,7 +148,7 @@ impl Paths {
 
 `binary` Linux-এ শুধু নির্দিষ্ট candidate path দেখে, `PATH` নয়, কারণ drust root হিসেবে চলে। macOS-এ সঙ্গে `/opt/homebrew/bin`, Windows-এ `PATH`।
 
-`binary(Tool::Timeout)` Windows-এ সবসময় `NotFound`, কারণ সেখানকার `timeout.exe` শুধু console থামায়। Caller তখন time limit ছাড়া চালায় না, কাজটা বন্ধ রাখে।
+`binary(Tool::Timeout)` Windows-এ সবসময় `NotFound`, কারণ সেখানকার `timeout.exe` শুধু console থামায়। Caller তখন time limit ছাড়া চালায় না; ClamAV `clamav` capability দিয়ে বন্ধ থাকে।
 
 `site_home` owner-কে `join` করে না, জুড়ে দেয়: `join` absolute নাম পেলে base ফেলে দেয়, তাই `/etc` নামের owner ownership check ভেঙে দিত। `default_document_root`-ও একই কারণে domain জুড়ে দেয়।
 

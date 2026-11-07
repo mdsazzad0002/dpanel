@@ -23,6 +23,7 @@ class PlatformCapabilities
         'websites.redis-cache.' => 'redis',
         'websites.redis-explorer.' => 'redis',
         'reseller.' => 'reseller',
+        'security.center.upload-scan' => 'clamav',
     ];
 
     private const CACHE_KEY = 'platform.capabilities';

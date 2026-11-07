@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { isClosedRoute } from '@/navigation/panelMenu';
 
 const props = defineProps({
     rules: { type: Array, default: () => [] },
@@ -41,6 +42,7 @@ const rows = computed(() => {
     ));
 });
 
+const uploadScanOpen = computed(() => !isClosedRoute('security.center.upload-scan', usePage().props.platform?.closedRoutes ?? []));
 const uploadScan = ref({ ...props.uploadScan });
 const uploadScanSaving = ref(false);
 const uploadScanError = ref(null);
@@ -100,7 +102,7 @@ const toggleRule = async (rule) => {
                 {{ message }}
             </div>
 
-            <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+            <section v-if="uploadScanOpen" class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-start justify-between gap-4">
                     <div class="min-w-0 max-w-2xl">
                         <h2 class="flex items-center gap-2 text-sm font-semibold">

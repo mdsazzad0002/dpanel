@@ -3,6 +3,7 @@
 namespace App\Services\Security;
 
 use App\Models\SecurityScan;
+use App\Support\Platform\PlatformCapabilities;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -148,7 +149,7 @@ class ScanProgress
         if (in_array($scanType, ['quick', 'full', 'integrity'], true)) {
             $keys[] = 'integrity';
         }
-        if (in_array($scanType, ['full', 'malware'], true)) {
+        if (in_array($scanType, ['full', 'malware'], true) && app(PlatformCapabilities::class)->allows('clamav')) {
             $keys[] = 'clamav';
         }
         $keys[] = 'saving';

@@ -22,6 +22,8 @@ pub enum Capability {
     Reseller,
     /// Exact Unix modes and owners, as the file manager shows and sets them.
     FilePermissions,
+    /// Virus scans. They need `systemd` units and a real `timeout`.
+    Clamav,
 }
 
 impl Capability {
@@ -42,6 +44,7 @@ impl Capability {
             Self::Redis => "redis",
             Self::Reseller => "reseller",
             Self::FilePermissions => "file_permissions",
+            Self::Clamav => "clamav",
         }
     }
 }
@@ -72,6 +75,7 @@ pub struct Capabilities {
     pub redis: bool,
     pub reseller: bool,
     pub file_permissions: bool,
+    pub clamav: bool,
 }
 
 /// What this machine reports, with Docker looked up on `PATH`.
@@ -117,6 +121,7 @@ fn report_for(os: Os, profile: Profile, docker_installed: bool) -> Report {
         redis: os != Os::Windows,
         reseller: server,
         file_permissions: os != Os::Windows,
+        clamav: linux,
     };
     Report {
         os: os.as_str(),
@@ -154,7 +159,7 @@ mod tests {
                 "resource_limits": "hard", "disk_quota": "hard",
                 "mail": "postfix", "dns": "powerdns", "ssl": "certbot",
                 "firewall": true, "ftp": true, "terminal": true, "docker": true,
-                "redis": true, "reseller": true, "file_permissions": true,
+                "redis": true, "reseller": true, "file_permissions": true, "clamav": true,
             })
         );
     }
@@ -168,7 +173,7 @@ mod tests {
                 "resource_limits": "hard", "disk_quota": "hard",
                 "mail": "stalwart", "dns": "windows_dns", "ssl": "acme",
                 "firewall": true, "ftp": true, "terminal": false, "docker": false,
-                "redis": false, "reseller": true, "file_permissions": false,
+                "redis": false, "reseller": true, "file_permissions": false, "clamav": false,
             })
         );
     }
@@ -182,7 +187,7 @@ mod tests {
                 "resource_limits": "soft", "disk_quota": "hard",
                 "mail": "stalwart", "dns": "external", "ssl": "acme",
                 "firewall": true, "ftp": true, "terminal": false, "docker": false,
-                "redis": true, "reseller": true, "file_permissions": true,
+                "redis": true, "reseller": true, "file_permissions": true, "clamav": false,
             })
         );
     }

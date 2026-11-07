@@ -4,11 +4,13 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\PanelSearchController;
 use App\Models\User;
+use App\Services\Security\UploadScanner;
 use App\Support\Platform\PlatformCapabilities;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
@@ -141,6 +143,19 @@ class PlatformCapabilitiesTest extends TestCase
         $this->assertFalse($this->fresh()->allows('ftp'));
 
         Http::assertSentCount(1);
+    }
+
+    public function test_a_closed_clamav_hides_upload_scanning_and_ignores_a_saved_setting(): void
+    {
+        $this->drustReports(['clamav' => false]);
+        DB::table('security_settings')->updateOrInsert(['setting_key' => 'upload_scan'], ['setting_value' => json_encode(['enabled' => true])]);
+        $scanner = app(UploadScanner::class);
+
+        $this->assertContains('security.center.upload-scan', $this->fresh()->closedRoutes());
+        $this->assertFalse($scanner->enabled());
+        $this->assertNull($scanner->setEnabled(true));
+        $scanner->assertClean('/no/such/file', 'shop.zip');
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'upload-scan'));
     }
 
     public function test_the_shared_prop_lists_closed_routes(): void

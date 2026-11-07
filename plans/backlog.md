@@ -7,7 +7,7 @@
 **খোলা বিষয়:**
 
 - `skip_until_windows_has` আর code-এ নেই; কোনো test সেটা দিয়ে skip হয় না।
-- C1: code-এর কাজ শেষ, CI বাকি। `platform/`-এর বাইরে test ছাড়া যা থাকল: `/usr/bin/env` ও `PATH=` string (C5), `ALLOWED_ROOT_PREFIXES` (নিচে), আর `migration_ssh.rs`-এর remote server-এর path। Comment ও error message-এ `/etc/drust` লেখা আছে, সেগুলো code নয়। ClamAV-এর `timeout` Windows-এ নেই, তাই সেখানে scan চলবে না; J10-এ time limit-এর অন্য পথ লাগবে।
+- C1: code-এর কাজ শেষ, CI বাকি। `platform/`-এর বাইরে test ছাড়া যা থাকল: `/usr/bin/env` ও `PATH=` string (C5), `ALLOWED_ROOT_PREFIXES` (নিচে), আর `migration_ssh.rs`-এর remote server-এর path। Comment ও error message-এ `/etc/drust` লেখা আছে, সেগুলো code নয়। ClamAV এখন শুধু Linux-এ: `clamav` capability বন্ধ থাকলে scan চুপচাপ বাদ যায়, UI-তে কিছু দেখায় না। J10 ও K7-এ `timeout`-এর অন্য পথ বানিয়ে capability খুলতে হবে।
 - C4: code-এর কাজ শেষ, CI বাকি। `loginctl`, `pkill` এখন `AccountManager::end_sessions`-এ, আর `create_user.rs`-এর `chown`, `chmod`, `install` এখন `FileAccess` দিয়ে। Linux-এ আসল user-এর ওপর `end_sessions` চালিয়ে দেখা হয়নি।
 - `chown` ও `chmod`-এর অন্য call এখনও `platform/`-এর বাইরে: `filemanager/` (`common`, `unzip`, `fix_permissions`), `api/` (`ssh_key`, `git_deploy`, `mailbox_storage`), `edge_gateway/` (`dispatcher`, `terminal_ws`), `installer/service.rs`, আর `try_chown`-এর caller। C9 শুধু কয়েকটা ঢাকে; বাকিগুলোর কোনো task নেই, C11-এর আগে একটা দরকার।
 - F1: Windows `Paths`, `FileAccess` ও local `AccountManager`-এর unit test পাস। `filemanager/e2e_local.rs` ignored, হাতে চালাতে হয়; suite সেটা প্রমাণ করে না। F1-এর `Depends`-এর C1 ও C4 CI-র অপেক্ষায়।

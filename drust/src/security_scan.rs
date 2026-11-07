@@ -1122,6 +1122,9 @@ pub(crate) fn signature_age_hours() -> Option<u64> {
 
 fn run_clamav(root: &Path, collector: &mut Collector, tracker: &Tracker, total: u64) -> ClamavReport {
     let mut report = ClamavReport::default();
+    if !platform::capabilities::report().capabilities.clamav {
+        return report;
+    }
     let Some(clamscan) = find_binary(Tool::Clamscan) else {
         report.error =
             Some("ClamAV is not installed. Install it with: dpanel clamav install".into());

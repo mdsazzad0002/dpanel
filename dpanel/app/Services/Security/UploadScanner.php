@@ -3,6 +3,7 @@
 namespace App\Services\Security;
 
 use App\Models\SecurityRule;
+use App\Support\Platform\PlatformCapabilities;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -30,7 +31,7 @@ class UploadScanner
             $raw = DB::table(self::TABLE)->where('setting_key', self::KEY)->value('setting_value');
             $decoded = is_string($raw) ? json_decode($raw, true) : null;
 
-            return (bool) ($decoded['enabled'] ?? false);
+            return ($decoded['enabled'] ?? false) && $this->available();
         } catch (\Throwable) {
             return false;
         }
@@ -46,6 +47,10 @@ class UploadScanner
      */
     public function setEnabled(bool $enabled): ?string
     {
+        if (! $this->available()) {
+            return null;
+        }
+
         if ($enabled) {
             $this->drust->setUploadScan(true);
             $this->store(true);
@@ -63,6 +68,12 @@ class UploadScanner
         }
 
         return null;
+    }
+
+    /** A setting saved on another system must not refuse every upload here. */
+    private function available(): bool
+    {
+        return app(PlatformCapabilities::class)->allows('clamav');
     }
 
     private function store(bool $enabled): void
