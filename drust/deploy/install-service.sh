@@ -130,7 +130,8 @@ ensure_native_build_deps() {
   # instead of breaking the whole build.
   if ! pkg-config --atleast-version=5 tesseract 2>/dev/null; then
     echo "[drust] Tesseract $(pkg-config --modversion tesseract 2>/dev/null || echo missing) is older than 5; building without image OCR."
-    DRUST_CARGO_FEATURE_ARGS=(--no-default-features)
+    # Only OCR goes: --no-default-features alone would drop speech as well.
+    DRUST_CARGO_FEATURE_ARGS=(--no-default-features --features speech)
     return 0
   fi
 

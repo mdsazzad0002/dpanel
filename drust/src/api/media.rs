@@ -7,7 +7,7 @@ use axum::{
     routing::post,
 };
 use serde::Deserialize;
-use std::{process::Command, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 /// Callers hand us either a URL to a voice note or an image, which we
 /// download, or the file itself as base64 `data` (the AI Gateway chat's
@@ -15,8 +15,10 @@ use std::{process::Command, sync::Arc, time::Duration};
 /// blocking worker thread since whisper.cpp/tesseract are synchronous
 /// CPU-bound libraries with no async API.
 const MAX_MEDIA_BYTES: usize = 25 * 1024 * 1024;
+#[cfg(feature = "speech")]
 const DEFAULT_WHISPER_MODEL_PATH: &str = "/var/lib/drust/models/ggml-base-q5_1.bin";
 
+#[cfg(feature = "speech")]
 fn whisper_model_path() -> String {
     std::env::var("DRUST_WHISPER_MODEL").unwrap_or_else(|_| DEFAULT_WHISPER_MODEL_PATH.into())
 }
@@ -158,10 +160,18 @@ async fn download(
     Ok(bytes.to_vec())
 }
 
+#[cfg(not(feature = "speech"))]
+fn transcribe(_bytes: &[u8], _language: Option<&str>) -> Result<String, String> {
+    Err("Voice transcription is not available on this server: drust was built without \
+         speech support."
+        .into())
+}
+
 /// Decodes whatever container/codec ffmpeg recognizes (ogg/opus voice
 /// notes, mp3, m4a, webm, ...) down to 16kHz mono PCM — the exact format
 /// whisper.cpp expects — rather than trying to support every audio codec
 /// natively in Rust.
+#[cfg(feature = "speech")]
 fn transcribe(bytes: &[u8], language: Option<&str>) -> Result<String, String> {
     let input = tempfile::Builder::new()
         .suffix(".input")
@@ -174,7 +184,7 @@ fn transcribe(bytes: &[u8], language: Option<&str>) -> Result<String, String> {
         .tempfile()
         .map_err(|error| error.to_string())?;
 
-    let status = Command::new("ffmpeg")
+    let status = std::process::Command::new("ffmpeg")
         .args([
             "-y",
             "-loglevel",
@@ -279,9 +289,11 @@ fn ocr(bytes: &[u8]) -> Result<String, String> {
 /// transcription slow regardless of audio length. It's loaded once here and
 /// reused for the life of the process; only `create_state()` (cheap) runs
 /// per request.
+#[cfg(feature = "speech")]
 static WHISPER_CONTEXT: std::sync::OnceLock<whisper_rs::WhisperContext> =
     std::sync::OnceLock::new();
 
+#[cfg(feature = "speech")]
 fn whisper_context() -> Result<&'static whisper_rs::WhisperContext, String> {
     if let Some(ctx) = WHISPER_CONTEXT.get() {
         return Ok(ctx);
@@ -296,8 +308,18 @@ fn whisper_context() -> Result<&'static whisper_rs::WhisperContext, String> {
     Ok(WHISPER_CONTEXT.get_or_init(|| ctx))
 }
 
+#[cfg(feature = "speech")]
 fn num_cpus() -> i32 {
     std::thread::available_parallelism()
         .map(|value| value.get() as i32)
         .unwrap_or(4)
+}
+
+#[cfg(all(test, not(feature = "speech")))]
+mod tests {
+    #[test]
+    fn transcribe_reports_that_speech_is_not_built_in() {
+        let error = super::transcribe(b"audio", None).unwrap_err();
+        assert!(error.contains("without speech support"), "{error}");
+    }
 }

@@ -19,7 +19,7 @@ Linux, Windows ও macOS-এ dPanel চালানোর technical contract। 
 | Profile env | `DPANEL_PROFILE=server` (default) বা `local` |
 | Cargo features | `speech` (`whisper-rs`), `ocr` (বিদ্যমান) |
 | Linux default | `speech`, `ocr` চালু; বর্তমান আচরণ অপরিবর্তিত |
-| Windows, macOS default | দুটোই বন্ধ |
+| Windows, macOS default | দুটোই বন্ধ; Cargo-র default target-ভেদে আলাদা হয় না, তাই build-এ `--no-default-features` |
 | Release target | `x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`, `x86_64-apple-darwin` |
 
 `speech` বন্ধ থাকলে `drust/src/api/media.rs`-এর transcribe `ocr` feature-এর মতোই পরিষ্কার error দেবে।

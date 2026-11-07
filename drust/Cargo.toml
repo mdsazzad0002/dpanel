@@ -31,9 +31,9 @@ flate2 = "1"
 tar = "0.4"
 tokio-util = { version = "0.7", features = ["io"] }
 redis = { version = "0.32", features = ["tokio-comp"] }
-whisper-rs = "0.14"
+whisper-rs = { version = "0.14", optional = true }
 tesseract = { version = "0.15", optional = true }
-hound = "3"
+hound = { version = "3", optional = true }
 tempfile = "3"
 h3 = "0.0.8"
 h3-quinn = "0.0.10"
@@ -47,10 +47,14 @@ hickory-resolver = { version = "0.24", default-features = false, features = ["to
 mongodb = "3"
 
 [features]
-default = ["ocr"]
+# Linux keeps both. Windows and macOS builds pass --no-default-features: Cargo
+# defaults cannot differ by target, and neither library is proven there yet.
+default = ["ocr", "speech"]
 # Image OCR for chat channels. Needs the system Tesseract 5+; install-service.sh
 # turns it off on distros that ship an older one (Ubuntu 22.04 has 4.1).
 ocr = ["dep:tesseract"]
+# Voice note transcription. Builds the bundled whisper.cpp (cmake, clang).
+speech = ["dep:whisper-rs", "dep:hound"]
 
 [dev-dependencies]
 webpki-roots = "1.0.9"
