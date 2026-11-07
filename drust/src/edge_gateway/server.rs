@@ -1340,8 +1340,8 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
         }]),
         Arc::from([TlsConfig {
             hostnames: Arc::from([primary_domain, www_domain]),
-            cert_path: PathBuf::from(format!("/etc/drust/tls/{panel_domain}.crt")),
-            key_path: PathBuf::from(format!("/etc/drust/tls/{panel_domain}.key")),
+            cert_path: crate::platform::paths().tls_dir().join(format!("{panel_domain}.crt")),
+            key_path: crate::platform::paths().tls_dir().join(format!("{panel_domain}.key")),
         }]),
         CachePolicy {
             enabled: true,

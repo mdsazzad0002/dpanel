@@ -69,7 +69,7 @@ fn valid(owner: &str, path: &str) -> bool {
         && owner.chars().enumerate().all(|(i, c)| {
             c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || (c == '-' && i > 0)
         })
-        && path.starts_with(&format!("/home/{owner}/mail/"))
+        && path.starts_with(&format!("{}/mail/", crate::platform::paths().site_home(owner).display()))
         && path.ends_with("/Maildir")
 }
 

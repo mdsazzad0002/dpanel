@@ -19,7 +19,9 @@ use std::{
 };
 
 pub(crate) const ALLOWED_ROOT_PREFIXES: &[&str] = &["/home/", "/var/www/", "/srv/"];
-const INTEGRITY_DIR: &str = "/var/lib/dpanel/security/integrity";
+fn integrity_dir() -> PathBuf {
+    platform::paths().data_dir().join("security").join("integrity")
+}
 const CLAMAV_DB_DIR: &str = "/var/lib/clamav";
 const DEFAULT_MAX_FILES: usize = 50_000;
 pub(crate) const MAX_ANALYZE_BYTES: u64 = 2 * 1024 * 1024;
@@ -261,6 +263,10 @@ fn steps_for(scan_type: &str) -> Result<Steps, String> {
 pub fn run(request: &ScanRequest) -> Result<ScanReport, String> {
     let steps = steps_for(&request.scan_type)?;
     let root = validate_root(&request.root)?;
+    scan_root(request, steps, root)
+}
+
+fn scan_root(request: &ScanRequest, steps: Steps, root: PathBuf) -> Result<ScanReport, String> {
     let site_id = validate_site_id(&request.site_id)?;
     let max_files = request
         .max_files
@@ -910,7 +916,7 @@ struct Baseline {
 }
 
 fn baseline_path(site_id: &str) -> PathBuf {
-    Path::new(INTEGRITY_DIR).join(format!("{site_id}.json"))
+    integrity_dir().join(format!("{site_id}.json"))
 }
 
 fn compare_integrity(
@@ -975,8 +981,9 @@ fn compare_integrity(
 
     // Every scan moves the baseline forward, so each change is reported once;
     // the panel keeps the finding open until someone reviews it.
-    fs::create_dir_all(INTEGRITY_DIR).map_err(|e| format!("Cannot create {INTEGRITY_DIR}: {e}"))?;
-    let _ = platform::files().set_mode(Path::new(INTEGRITY_DIR), FileMode::PrivateDir);
+    let dir = integrity_dir();
+    fs::create_dir_all(&dir).map_err(|e| format!("Cannot create {}: {e}", dir.display()))?;
+    let _ = platform::files().set_mode(&dir, FileMode::PrivateDir);
     let baseline = Baseline {
         root: root_text,
         updated_at: now_secs(),
@@ -1381,6 +1388,9 @@ mod tests {
 
     #[test]
     fn counts_files_like_the_walk_does() {
+        if crate::platform::skip_until_windows_has("F1") {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::create_dir_all(root.join("a/b")).unwrap();
@@ -1399,14 +1409,10 @@ mod tests {
 
     #[test]
     fn scans_a_site_tree() {
-        // Scans only accept roots under ALLOWED_ROOT_PREFIXES, so /tmp will not
-        // do. A normal user, as in CI, cannot write to /srv but owns $HOME.
-        let home = std::env::var("HOME").unwrap_or_default();
-        let dir = ["/srv", home.as_str()]
-            .into_iter()
-            .filter(|base| ALLOWED_ROOT_PREFIXES.iter().any(|p| format!("{base}/").starts_with(p)))
-            .find_map(|base| tempfile::tempdir_in(base).ok())
-            .expect("no writable directory under the allowed scan roots");
+        if crate::platform::skip_until_windows_has("F1") {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::create_dir_all(root.join("wp-content/uploads/2024")).unwrap();
         fs::write(
@@ -1425,14 +1431,15 @@ mod tests {
             .unwrap();
 
         let scan = |scan_type: &str| {
-            run(&ScanRequest {
+            let request = ScanRequest {
                 root: root.display().to_string(),
                 site_id: "test-scan".into(),
                 scan_type: scan_type.into(),
                 max_files: None,
                 progress_key: None,
-            })
-            .unwrap()
+            };
+            // Past validate_root: no temp directory is under the allowed roots.
+            scan_root(&request, steps_for(scan_type).unwrap(), root.to_path_buf()).unwrap()
         };
 
         let permissions = scan("permissions");

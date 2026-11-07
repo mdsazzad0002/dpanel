@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
-import { Link } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
+import { isClosedRoute } from '@/navigation/panelMenu';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
 
 const props = defineProps({
@@ -11,6 +12,7 @@ const props = defineProps({
 });
 
 const { panelRoute } = usePanelApi();
+const page = usePage();
 
 const isSystemWebsite = computed(() => String(props.website.id) === '1');
 
@@ -19,14 +21,14 @@ const serviceLinks = computed(() => [
     { label: 'Import & Clone', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and database — upload directly, clone from another site on this server, or pull a share link' },
     { label: 'Push to Live', icon: 'bi-rocket-takeoff', color: 'indigo', href: panelRoute('websites.push-to-live.index', { id: props.website.id }), description: 'Push a local site to a live panel by host URL + token, or issue tokens so another panel can push here' },
     { label: 'Edge Cache', icon: 'bi-speedometer2', color: 'emerald', href: panelRoute('websites.edge-cache.index', { id: props.website.id }), description: 'Page caching, purge and development mode' },
-    { label: 'Redis Cache', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
-    { label: 'Redis Explorer', icon: 'bi-hdd-stack', color: 'red', href: panelRoute('websites.redis-explorer.index', { id: props.website.id }), description: 'Browse, inspect and delete this website\'s Redis keys' },
+    { label: 'Redis Cache', routeName: 'websites.redis-cache.index', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
+    { label: 'Redis Explorer', routeName: 'websites.redis-explorer.index', icon: 'bi-hdd-stack', color: 'red', href: panelRoute('websites.redis-explorer.index', { id: props.website.id }), description: 'Browse, inspect and delete this website\'s Redis keys' },
     { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
-    { label: 'FTP Accounts', icon: 'bi-hdd-network', color: 'cyan', href: panelRoute('ftp.index', { website: props.website.id }), description: 'Create client FTP access' },
+    { label: 'FTP Accounts', routeName: 'ftp.index', icon: 'bi-hdd-network', color: 'cyan', href: panelRoute('ftp.index', { website: props.website.id }), description: 'Create client FTP access' },
     { label: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Scheduled tasks' },
     { label: 'Git Deployment', icon: 'bi-github', color: 'emerald', href: panelRoute('websites.git.index', { id: props.website.id }), description: 'Clone, pull, push & auto sync' },
     { label: 'SSH Key Generator', icon: 'bi-key', color: 'amber', href: panelRoute('websites.ssh-key.index', { id: props.website.id }), description: 'Create a GitHub deployment key' },
-    { label: 'Website Terminal', icon: 'bi-terminal', color: 'emerald', href: panelRoute('websites.terminal.index', { id: props.website.id }), description: 'Open the isolated project shell' },
+    { label: 'Website Terminal', routeName: 'websites.terminal.index', icon: 'bi-terminal', color: 'emerald', href: panelRoute('websites.terminal.index', { id: props.website.id }), description: 'Open the isolated project shell' },
     { label: 'Alis API', icon: 'bi-code-slash', color: 'violet', href: panelRoute('websites.alias-api.index', { id: props.website.id }), description: 'Manage aliases and scoped API access' },
     { label: 'Email Accounts', icon: 'bi-envelope', color: 'pink', href: panelRoute('emails.list'), description: 'Mailbox services' },
     { label: 'Databases', icon: 'bi-database', color: 'orange', href: panelRoute('databases.list', { website: props.website.domain }), description: `Databases for ${props.website.domain}` },
@@ -48,7 +50,7 @@ const serviceLinks = computed(() => [
 ].filter((item) => !isSystemWebsite.value || ![
     'WordPress Installer', 'Laravel Installer', 'Joomla Installer', 'Drupal Installer', 'CodeIgniter Installer', 'WHMCS Installer', 'File Manager', 'Import & Clone', 'FTP Accounts',
     'Cron Jobs', '.htaccess Resolver', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Export & Share', 'Push to Live',
-].includes(item.label)));
+].includes(item.label)).filter((item) => !isClosedRoute(item.routeName, page.props.platform?.closedRoutes)));
 
 const sections = computed(() => [
     { title: 'Services', items: serviceLinks.value.filter((item) => !item.installer), unit: 'tools' },

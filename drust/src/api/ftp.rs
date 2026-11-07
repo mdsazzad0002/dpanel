@@ -62,7 +62,7 @@ fn create(request: &Request) -> Result<String, String> {
         return Err("Website system user does not exist.".into());
     }
     let directory = request.directory.as_deref().unwrap_or("");
-    let owner_root = format!("/home/{owner}");
+    let owner_root = crate::platform::paths().site_home(owner).display().to_string();
     if directory.is_empty() || (!directory.starts_with(&(owner_root.clone() + "/")) && directory != owner_root) || !Path::new(directory).is_dir() {
         return Err("FTP directory must exist inside the website owner's home.".into());
     }

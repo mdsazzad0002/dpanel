@@ -2,20 +2,22 @@
 
 পুরো কাজের task তালিকা। প্রতিটা task ছোট, আলাদা commit-যোগ্য, আর তার শেষের শর্ত আছে। Technical contract: [platform-spec.md](platform-spec.md)।
 
-**Status:** A1, A2, A3, A4, A6, B1-B7 শেষ, CI-তে Linux ও Laravel সবুজ। পরের task: A5, তারপর B8। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
+**Status:** A1-A6, B1-B7 শেষ, CI-তে Linux ও Laravel সবুজ। পরের task: B8। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
 
 **খোলা বিষয়:**
 
-- CI-তে Windows ও macOS job এখনো report-only, আর দুটোতেই `cargo test` ব্যর্থ। B8-এ এগুলো ঠিক করে job বাধ্যতামূলক করতে হবে।
-- Windows-এ আসল MSVC-তে build ও link হয়েছে; 210 পাস, 13 ব্যর্থ। ব্যর্থ test-গুলোর কারণ এক এক করে দেখা হয়নি।
-- macOS-এ `scans_a_site_tree` ব্যর্থ, কারণ `$HOME` `/Users`-এ, যেটা scan-এর allowed root নয়।
+- B8 চলছে। শেষ CI run-এ (`3f25033f`) Windows-এ 13টা ও macOS-এ 1টা test ব্যর্থ ছিল; সবগুলোর কারণ জানা ও fix লেখা হয়েছে, তবে আসল Windows ও macOS-এ যাচাই বাকি। সবুজ হলে `ci.yml`-এর `continue-on-error` সরাতে হবে।
+- Windows-এর 9টা test `skip_until_windows_has` দিয়ে skip করা: 8টা F1-এর, 1টা C1-এর। এই test-গুলো ওই task-এর আগে Windows-এ কিছু প্রমাণ করে না।
+- C1 চলছে। হয়েছে: `Paths`, আর `panel_root`, `config_dir`/TLS, `data_dir`, `sites_root` ও `site_home`-এর migration। বাকি: `/usr/bin` সহ binary path (`binary(Tool)`), `/run`, `/etc/php`, `/etc/systemd`, `/etc/letsencrypt`, `/opt/dpanel`।
+- `/home` ইচ্ছা করে থেকে গেছে: `migration_ssh.rs` (remote server-এর path), sandbox-এর ভেতরের path ও terminal blocklist (C5), `ALLOWED_ROOT_PREFIXES` (Windows ও macOS-এ scan root-এর নকশা দরকার; এখন সেখানে scan চলবে না)।
+- Git for Windows-এ `core.autocrlf` চালু থাকে। Deploy-এর clone-এ সেটা site file-এ CRLF আনবে; F8-এর আগে সিদ্ধান্ত দরকার।
 
 ## সব task-এর শেষের শর্ত
 
 একটা task তখনই শেষ, যখন:
 
 1. Task-এর `Done` শর্ত পূরণ হয়েছে, আর সেটা test দিয়ে প্রমাণিত।
-2. Linux-এর বিদ্যমান test পাস: `cargo test` (এখন 239টা Rust test, 4টা ignored) ও `php artisan test` (এখন 556টা test, 1টা skipped)।
+2. Linux-এর বিদ্যমান test পাস: `cargo test` (এখন 246টা Rust test, 4টা ignored) ও `php artisan test` (এখন 566টা test, 1টা skipped)।
 3. CI তিন OS-এ সবুজ (A1-এর পর)।
 4. নতুন Vue অংশ আলাদা component-এ। `Manage.vue`-এর মতো বড় page আর বাড়ে না।
 5. `#[cfg]` শুধু `drust/src/platform/`-এ।
@@ -89,7 +91,7 @@ B7-এর পর নতুন error বেরোলে একই নিয়ম
 
 | ID | কাজ | Depends | Files | Done |
 | --- | --- | --- | --- | --- |
-| C1 | `Paths` | A3 | Spec §6.1; `/var/www`, `/etc/drust`, `/usr/bin`, `/run/php`-এর প্রায় 257টা reference | `platform/`-এর বাইরে এসব path নেই (test ছাড়া) |
+| C1 | `Paths` | A3 | Spec §6.1; `/var/www`, `/etc/drust`, `/usr/bin`, `/run/php`-এর প্রায় 257টা reference | `platform/`-এর বাইরে এসব path নেই (test ছাড়া); `skip_until_windows_has("C1")` সরানো |
 | C2 | `ServiceManager` ও supervisor | A3 | Spec §6.3; `service_toggle.rs`, `postgresql.rs`, `security.rs`, `upload_scan.rs`, `php_config.rs`, `laravel_queue.rs`, `api/laravel_queue.rs`, `api/terminal.rs`, `api/website.rs`, `ssl/certificate.rs`, `app/admin/disable_root.rs` | `platform/`-এর বাইরে `systemctl` নেই |
 | C3 | App process-এর systemd unit | C2 | `edge_gateway/python_process.rs`, `node_process.rs`, `rust_process.rs`, `php.rs` | Node, Python, Rust app সব OS-এ supervisor দিয়ে চলে |
 | C4 | `AccountManager` | B1 | Spec §6.4; `app/admin/create_user.rs`, `filemanager/user.rs`, `login_users.rs`, `api/website.rs` | `platform/`-এর বাইরে `useradd` ইত্যাদি নেই |
@@ -127,7 +129,7 @@ B7-এর পর নতুন error বেরোলে একই নিয়ম
 
 | ID | কাজ | Depends | Done |
 | --- | --- | --- | --- |
-| F1 | Windows `Paths`, `FileAccess`, `AccountManager` (local) | B8, C1, C4 | Unit test পাস |
+| F1 | Windows `Paths`, `FileAccess`, `AccountManager` (local) | B8, C1, C4 | Unit test পাস; `skip_until_windows_has("F1")` সরানো |
 | F2 | php-cgi pool | B6, H1 | Spec §9; Crash ও recycle test পাস |
 | F3 | PHP, MariaDB ডাউনলোড ও SHA-256 যাচাই | F1 | Manifest থেকে install; hash না মিললে থামে |
 | F4 | Windows Service ও supervisor | C2 | Reboot-এর পর চালু হয় |

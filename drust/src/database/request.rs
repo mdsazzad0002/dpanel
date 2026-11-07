@@ -198,8 +198,9 @@ fn env_first(names: &[&str]) -> Option<String> {
 }
 
 fn panel_env_value(key: &str) -> Option<String> {
-    let path =
-        std::env::var("DRUST_PANEL_ENV_PATH").unwrap_or_else(|_| "/var/www/dpanel/.env".into());
+    let path = std::env::var_os("DRUST_PANEL_ENV_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| crate::platform::paths().panel_root().join(".env"));
     let content = std::fs::read_to_string(path).ok()?;
     content
         .lines()

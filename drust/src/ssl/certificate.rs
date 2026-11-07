@@ -17,11 +17,9 @@ const RESERVED_SSL_SUFFIXES: [&str; 5] = [".localhost", ".local", ".test", ".exa
 /// The panel's own application directory. Website roots must otherwise live
 /// under `/home/<owner>/...`, but the panel's own reserved website (id 1)
 /// is deployed here instead, so it needs an explicit, fixed exception.
-const PANEL_APP_ROOT: &str = "/var/www/dpanel";
 
 /// Where self-signed IP certificates live. The gateway falls back to
 /// `/etc/drust/tls/<domain>.{crt,key}` when there is no certbot lineage.
-const SELF_SIGNED_DIR: &str = "/etc/drust/tls";
 
 /// Every IP, public or private, gets an 825-day self-signed certificate.
 fn is_ip_address(domain: &str) -> bool {
@@ -149,15 +147,16 @@ fn ensure_self_signed(
     force: bool,
     note: Option<&str>,
 ) -> Result<Value, String> {
-    let certificate_path = format!("{SELF_SIGNED_DIR}/{ip}.crt");
-    let private_key_path = format!("{SELF_SIGNED_DIR}/{ip}.key");
+    let tls_dir = platform::paths().tls_dir();
+    let certificate_path = tls_dir.join(format!("{ip}.crt")).display().to_string();
+    let private_key_path = tls_dir.join(format!("{ip}.key")).display().to_string();
     let existed = Path::new(&certificate_path).is_file() && Path::new(&private_key_path).is_file();
     let needs_issue =
         force || !existed || !ip_certificate_valid(&certificate_path, ip, renew_before_days);
 
     if needs_issue {
-        std::fs::create_dir_all(SELF_SIGNED_DIR)
-            .map_err(|error| format!("failed to create {SELF_SIGNED_DIR}: {error}"))?;
+        std::fs::create_dir_all(&tls_dir)
+            .map_err(|error| format!("failed to create {}: {error}", tls_dir.display()))?;
         let subject = format!("/CN={ip}");
         let san = format!("subjectAltName=IP:{ip}");
         let output = Command::new("openssl")
@@ -254,11 +253,14 @@ pub(super) fn ensure(
     let has_parent_dir_component = root_path_buf
         .components()
         .any(|part| matches!(part, std::path::Component::ParentDir));
-    let is_panel_app_root = root_path_buf == Path::new(PANEL_APP_ROOT)
-        || root_path_buf.starts_with(format!("{PANEL_APP_ROOT}/"));
-    if has_parent_dir_component || (!root_path_buf.starts_with("/home/") && !is_panel_app_root) {
+    let panel_root = platform::paths().panel_root();
+    let sites_root = platform::paths().sites_root();
+    let is_panel_app_root = root_path_buf.starts_with(panel_root);
+    if has_parent_dir_component || (!root_path_buf.starts_with(sites_root) && !is_panel_app_root) {
         return Err(format!(
-            "Website root path must be inside /home/<owner> (or {PANEL_APP_ROOT} for the panel itself)."
+            "Website root path must be inside {}/<owner> (or {} for the panel itself).",
+            sites_root.display(),
+            panel_root.display()
         ));
     }
     if !root_path_buf.is_dir() {
@@ -384,9 +386,10 @@ pub(super) fn remove(domain: &str) -> Result<Value, String> {
     let mut removed = delete_certbot_lineage(&domain)?;
     // Only IPs: /etc/drust/tls also holds the panel's own domain certificate.
     if is_ip_address(&domain) {
+        let tls_dir = platform::paths().tls_dir();
         for path in [
-            format!("{SELF_SIGNED_DIR}/{domain}.crt"),
-            format!("{SELF_SIGNED_DIR}/{domain}.key"),
+            tls_dir.join(format!("{domain}.crt")).display().to_string(),
+            tls_dir.join(format!("{domain}.key")).display().to_string(),
         ] {
             if Path::new(&path).is_file() {
                 std::fs::remove_file(&path).map_err(|error| format!("failed to remove {path}: {error}"))?;

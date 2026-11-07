@@ -74,7 +74,7 @@ fn create(
     }
     let home = home
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(format!("/home/{username}")));
+        .unwrap_or_else(|| crate::platform::paths().site_home(username));
     if let Some(home_str) = home.to_str() {
         validate_absolute_path(home_str)?;
     }

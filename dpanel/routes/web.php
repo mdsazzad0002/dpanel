@@ -65,6 +65,7 @@ use App\Http\Controllers\SystemMailController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WebsiteTrashBackupController;
 use Illuminate\Support\Facades\Auth;
+use App\Support\Platform\PlatformCapabilities;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -1232,3 +1233,10 @@ Route::any('/cpsess{token}/{path?}', function (string $token, ?string $path = nu
 ])->name('panel.invalid-token');
 
 require __DIR__.'/auth.php';
+
+// Last, so a route added anywhere above is covered by its name alone.
+foreach (Route::getRoutes() as $route) {
+    if ($capability = PlatformCapabilities::forRoute($route->getName())) {
+        $route->middleware("capability:{$capability}");
+    }
+}

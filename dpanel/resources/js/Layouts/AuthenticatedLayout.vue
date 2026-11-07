@@ -186,6 +186,7 @@ const visibleMenu = computed(() => filterPanelMenu(menuItems.value, {
     roles: userRoles.value,
     permissions: userPermissions.value,
     features: page.props.features ?? {},
+    closedRoutes: page.props.platform?.closedRoutes ?? [],
     userId: page.props.auth?.user?.id ?? null,
 }));
 

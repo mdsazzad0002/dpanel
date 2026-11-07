@@ -55,7 +55,7 @@ fn execute(request: &Request) -> Result<(String, i32, String), String> {
         return Err("Working directory must stay inside the website home.".into());
     }
     let working_directory_value = working_directory.to_string_lossy().to_string();
-    let owner_home = Path::new("/home").join(&request.site_owner);
+    let owner_home = crate::platform::paths().site_home(&request.site_owner);
     let owner_home_value = owner_home.to_string_lossy().to_string();
     let owner_uid = account_id("-u", &request.site_owner)?;
     let owner_gid = account_id("-g", &request.site_owner)?;
@@ -213,8 +213,8 @@ fn validate(request: &Request) -> Result<(), String> {
     let canonical = root
         .canonicalize()
         .map_err(|_| "Invalid project root.".to_string())?;
-    let owner_home = Path::new("/home")
-        .join(&request.site_owner)
+    let owner_home = crate::platform::paths()
+        .site_home(&request.site_owner)
         .canonicalize()
         .map_err(|_| "Invalid website owner home.".to_string())?;
     let inside_owner_home = canonical == owner_home || canonical.starts_with(&owner_home);

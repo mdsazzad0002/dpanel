@@ -850,7 +850,7 @@ mod tests {
         let status = std::process::Command::new("git")
             .arg("-C")
             .arg(dir)
-            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false"])
             .args(args)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -895,6 +895,9 @@ mod tests {
                 "live",
             ],
         );
+        // Git for Windows turns this on for every repo, and the code under test
+        // runs its own git, so `sh`'s flag does not reach it.
+        sh(&live, &["config", "core.autocrlf", "false"]);
         fs::write(seed.join("index.php"), dev_text).unwrap();
         fs::write(seed.join("about.txt"), "about from dev\n").unwrap();
         sh(&seed, &["commit", "-q", "-am", "dev change"]);

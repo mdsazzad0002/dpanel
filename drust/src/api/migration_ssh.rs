@@ -17,7 +17,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const MIGRATION_ROOT: &str = "/var/www/dpanel/storage/app/migrations";
 
 pub fn routes() -> Router<Arc<ApiState>> {
     Router::new()
@@ -767,7 +766,7 @@ fn safe_destination(value: &str) -> Result<PathBuf, String> {
         .ok_or("Invalid migration destination")?
         .canonicalize()
         .map_err(|_| "Migration destination is unavailable")?;
-    let root = Path::new(MIGRATION_ROOT)
+    let root = super::migration::root()
         .canonicalize()
         .map_err(|_| "Migration storage is unavailable")?;
     if !parent.starts_with(root)

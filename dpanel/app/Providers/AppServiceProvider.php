@@ -19,6 +19,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->scoped(\App\Support\Platform\PlatformCapabilities::class);
         $this->app->singleton(DnsRegistryService::class);
         // Panel mail goes out from the admin's chosen system mailbox. Applied
         // when the mailer is first needed, so other requests skip the lookup.

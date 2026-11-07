@@ -14,7 +14,7 @@ pub struct DbSnapshotConfig {
 impl DbSnapshotConfig {
     pub fn new() -> Self {
         Self {
-            env_path: PathBuf::from("/var/www/dpanel/.env"),
+            env_path: crate::platform::paths().panel_root().join(".env"),
             ttl: Duration::from_secs(2),
         }
     }
@@ -473,21 +473,21 @@ fn certbot_lineage(domain: &str) -> Option<String> {
     }
     domain
         .strip_prefix("www.")
-        .filter(|main| has(main) && !Path::new(&format!("/etc/drust/tls/{domain}.crt")).is_file())
+        .filter(|main| has(main) && !crate::platform::paths().tls_dir().join(format!("{domain}.crt")).is_file())
         .map(str::to_string)
 }
 
 fn default_cert_path(domain: &str) -> PathBuf {
     match certbot_lineage(domain) {
         Some(lineage) => PathBuf::from(format!("/etc/letsencrypt/live/{lineage}/fullchain.pem")),
-        None => PathBuf::from(format!("/etc/drust/tls/{domain}.crt")),
+        None => crate::platform::paths().tls_dir().join(format!("{domain}.crt")),
     }
 }
 
 fn default_key_path(domain: &str) -> PathBuf {
     match certbot_lineage(domain) {
         Some(lineage) => PathBuf::from(format!("/etc/letsencrypt/live/{lineage}/privkey.pem")),
-        None => PathBuf::from(format!("/etc/drust/tls/{domain}.key")),
+        None => crate::platform::paths().tls_dir().join(format!("{domain}.key")),
     }
 }
 
@@ -516,7 +516,7 @@ fn resolve_document_root(
         .map(|owner| {
             project
                 .as_ref()
-                .is_some_and(|path| path.starts_with(format!("/home/{owner}")))
+                .is_some_and(|path| path.starts_with(crate::platform::paths().site_home(owner)))
         })
         .unwrap_or(false);
     if is_system_site || project_is_owned {

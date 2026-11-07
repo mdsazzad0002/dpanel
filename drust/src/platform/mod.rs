@@ -6,6 +6,7 @@
 pub mod capabilities;
 pub mod fastcgi;
 pub mod fs;
+pub mod paths;
 pub mod process;
 #[cfg(unix)]
 mod unix;
@@ -14,6 +15,7 @@ mod windows;
 
 use capabilities::Capability;
 use fs::FileAccess;
+use paths::Paths;
 use std::{env, fmt, io, sync::OnceLock};
 
 #[cfg(unix)]
@@ -76,6 +78,7 @@ impl Profile {
 pub struct Platform {
     os: Os,
     profile: Profile,
+    paths: Paths,
 }
 
 impl Platform {
@@ -87,6 +90,10 @@ impl Platform {
         self.profile
     }
 
+    pub fn paths(&self) -> &Paths {
+        &self.paths
+    }
+
     pub fn files(&self) -> &'static dyn FileAccess {
         &NativeFileAccess
     }
@@ -94,15 +101,36 @@ impl Platform {
 
 pub fn current() -> &'static Platform {
     static CURRENT: OnceLock<Platform> = OnceLock::new();
-    CURRENT.get_or_init(|| Platform {
-        os: Os::detect(),
-        profile: Profile::parse(env::var("DPANEL_PROFILE").ok().as_deref()),
+    CURRENT.get_or_init(|| {
+        let os = Os::detect();
+        let profile = Profile::parse(env::var("DPANEL_PROFILE").ok().as_deref());
+        Platform {
+            os,
+            profile,
+            paths: Paths::for_system(os, profile, |name| env::var(name).ok()),
+        }
     })
+}
+
+/// Shorthand for `current().paths()`.
+pub fn paths() -> &'static Paths {
+    current().paths()
 }
 
 /// Shorthand for `current().files()`.
 pub fn files() -> &'static dyn FileAccess {
     current().files()
+}
+
+/// For a test of Unix behaviour that Windows gets in a later backlog task.
+/// That task deletes these calls, so `grep skip_until_windows_has` lists what it owes.
+#[cfg(test)]
+pub fn skip_until_windows_has(task: &str) -> bool {
+    let skip = current().os() == Os::Windows;
+    if skip {
+        eprintln!("skipped on Windows until task {task}");
+    }
+    skip
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

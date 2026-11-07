@@ -16,7 +16,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-pub(super) const ROOT: &str = "/var/www/dpanel/storage/app/migrations";
+pub(super) fn root() -> PathBuf {
+    crate::platform::paths().storage_dir().join("migrations")
+}
 
 pub fn routes() -> Router<Arc<ApiState>> {
     Router::new().route(
@@ -119,7 +121,7 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
             }
         }
     }
-    let home = PathBuf::from(format!("/home/{}", req.site_owner));
+    let home = crate::platform::paths().site_home(&req.site_owner);
     if !home.exists() {
         let _ = Command::new("groupadd")
             .args(["--force", &req.site_owner])
@@ -168,8 +170,8 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
         }));
     }
     let source = archive_under_root(archive_path.unwrap(), &[".zip", ".tar.gz", ".tgz"])?;
-    let stage = PathBuf::from(format!(
-        "{ROOT}/.generic-{}-{}",
+    let stage = root().join(format!(
+        ".generic-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -461,7 +463,7 @@ mod generic_upload_tests {
 }
 
 fn archive_under_root(value: &str, extensions: &[&str]) -> Result<PathBuf, String> {
-    let root = Path::new(ROOT)
+    let root = root()
         .canonicalize()
         .map_err(|_| "migration storage is unavailable")?;
     let path = Path::new(value)

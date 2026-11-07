@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Http\Controllers\PanelSearchController;
 use App\Services\Mcp\GatewayChatTools;
 use App\Services\Docker\DrustDockerClient;
+use App\Support\Platform\PlatformCapabilities;
 use App\Support\UserAccessCache;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -59,6 +60,12 @@ class HandleInertiaRequests extends Middleware
             'features' => [
                 'docker' => fn () => app(DrustDockerClient::class)->installed(),
             ],
+            // What this OS and profile can do; the menu leaves out closedRoutes.
+            'platform' => function (): array {
+                $capabilities = app(PlatformCapabilities::class);
+
+                return $capabilities->report() + ['closedRoutes' => $capabilities->closedRoutes()];
+            },
             'panelSearch' => fn () => app(PanelSearchController::class)->buildItems($request),
             'flash' => [
                 'success' => $flashSuccess,

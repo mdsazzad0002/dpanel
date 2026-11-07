@@ -135,8 +135,8 @@ fn validate_ticket(ticket: &TerminalTicket) -> Result<(), ()> {
     let root = Path::new(&ticket.project_root)
         .canonicalize()
         .map_err(|_| ())?;
-    let home = Path::new("/home")
-        .join(&ticket.site_owner)
+    let home = crate::platform::paths()
+        .site_home(&ticket.site_owner)
         .canonicalize()
         .map_err(|_| ())?;
     if root != home || !root.is_dir() {

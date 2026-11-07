@@ -55,7 +55,7 @@ pub(crate) async fn delete_archive_handle(
 
 fn delete_archive(value: &str) -> Result<(), String> {
     let path = normalize_path(value);
-    let root = Path::new("/var/www/dpanel/storage/app/website-trash");
+    let root = platform::paths().storage_dir().join("website-trash");
     if path.extension().and_then(|value| value.to_str()) != Some("zip")
         || !path.starts_with(root)
         || path
@@ -104,7 +104,7 @@ fn delete_website(request: &DeleteRequest) -> Result<(), String> {
         return Err("invalid website owner".into());
     }
 
-    let home = PathBuf::from(format!("/home/{user}"));
+    let home = crate::platform::paths().site_home(user);
     for value in &request.paths {
         let path = normalize_path(value);
         if path != home && !path.starts_with(&home) {
@@ -237,8 +237,8 @@ fn build_clone_package(
     mut website: WebsiteArchive,
 ) -> Result<serde_json::Value, String> {
     let package = normalize_path(package_path);
-    let root = Path::new("/var/www/dpanel/storage/app/backups/clone-share");
-    if !package.starts_with(root)
+    let root = platform::paths().storage_dir().join("backups").join("clone-share");
+    if !package.starts_with(&root)
         || package.extension().and_then(|v| v.to_str()) != Some("zip")
         || package
             .components()
@@ -382,8 +382,8 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     // website-trash holds the pre-delete archive written when a website is
     // removed; restore_archive and the trash delete endpoint already use it.
     let allowed_roots = [
-        Path::new("/var/www/dpanel/storage/app/backups"),
-        Path::new("/var/www/dpanel/storage/app/website-trash"),
+        platform::paths().storage_dir().join("backups"),
+        platform::paths().storage_dir().join("website-trash"),
     ];
     if !allowed_roots.iter().any(|root| zip_path.starts_with(root))
         || zip_path
@@ -401,7 +401,7 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     {
         return Err("invalid website owner".into());
     }
-    let owner_home = PathBuf::from(format!("/home/{owner}"));
+    let owner_home = crate::platform::paths().site_home(owner);
     for candidate in [&website.root_path, &website.project_root] {
         if candidate.trim().is_empty() {
             continue;
@@ -630,7 +630,7 @@ fn archive_cpmove(
             .map_err(|e| format!("cannot create cpmove layout: {e}"))?;
     }
 
-    let owner_home = PathBuf::from(format!("/home/{owner}"));
+    let owner_home = crate::platform::paths().site_home(owner);
     if matches!(website.content.as_str(), "all" | "files") && !owner_home.is_dir() {
         fs::remove_dir_all(&stage).ok();
         return Err(format!(
@@ -856,7 +856,7 @@ pub(crate) struct RestoreProgress {
 
 impl RestoreProgress {
     fn new(value: Option<&str>) -> Self {
-        let root = Path::new("/var/www/dpanel/storage/app/restore-progress");
+        let root = platform::paths().storage_dir().join("restore-progress");
         let path = value.map(normalize_path).filter(|path| {
             path.starts_with(root)
                 && path.extension().and_then(|v| v.to_str()) == Some("json")
@@ -1036,8 +1036,8 @@ fn restore_archive(value: &str, progress: &RestoreProgress) -> Result<serde_json
     progress.update("validating", 1, "Checking backup archive");
     let path = normalize_path(value);
     let allowed_roots = [
-        Path::new("/var/www/dpanel/storage/app/backups"),
-        Path::new("/var/www/dpanel/storage/app/website-trash"),
+        platform::paths().storage_dir().join("backups"),
+        platform::paths().storage_dir().join("website-trash"),
     ];
     if !allowed_roots.iter().any(|root| path.starts_with(root))
         || path
@@ -1085,7 +1085,7 @@ fn restore_archive(value: &str, progress: &RestoreProgress) -> Result<serde_json
             .and_then(|v| v.as_str())
             .unwrap_or(""),
     );
-    let owner_home = PathBuf::from(format!("/home/{owner}"));
+    let owner_home = crate::platform::paths().site_home(owner);
     if project_root.as_os_str().is_empty() || !project_root.starts_with(&owner_home) {
         return Err("archive project path is outside the website owner home".into());
     }
@@ -1288,10 +1288,10 @@ fn numeric_account_id(flag: &str, owner: &str) -> Option<u64> {
 }
 
 fn restore_cpmove(path: &Path, progress: &RestoreProgress) -> Result<serde_json::Value, String> {
-    let staging = PathBuf::from(format!(
-        "/var/www/dpanel/storage/app/restore-staging/{}",
-        std::process::id()
-    ));
+    let staging = platform::paths()
+        .storage_dir()
+        .join("restore-staging")
+        .join(std::process::id().to_string());
     if staging.exists() {
         fs::remove_dir_all(&staging).ok();
     }
@@ -1332,7 +1332,7 @@ fn restore_cpmove_staged(
     progress.update("disk_check", 15, "Checking free disk space");
     fs::create_dir_all(staging).map_err(|e| format!("cannot create restore staging: {e}"))?;
     ensure_free_space(staging, archive_size.saturating_mul(2), "extracting the archive")?;
-    ensure_free_space(Path::new("/home"), archive_size.saturating_mul(2), "restoring the home directory")?;
+    ensure_free_space(platform::paths().sites_root(), archive_size.saturating_mul(2), "restoring the home directory")?;
 
     let mut extract = Command::new("tar");
     extract.args([
@@ -1410,7 +1410,7 @@ fn restore_cpmove_staged(
     }
 
     progress.update("files", 60, "Copying website files into the home directory");
-    let home = PathBuf::from(format!("/home/{owner}"));
+    let home = crate::platform::paths().site_home(owner);
     fs::create_dir_all(&home).map_err(|e| format!("cannot create account home: {e}"))?;
     let homedir_source = format!("{}/.", package.join("homedir").display());
     let copy = Command::new("cp")

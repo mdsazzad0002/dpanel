@@ -12,7 +12,12 @@ use std::fs;
 
 use crate::api::{ApiResponse, ApiState, check_token};
 
-const DEFAULT_PANEL_ROOT: &str = "/var/www/dpanel";
+/// `DRUST_PANEL_ROOT` only ever moved the backup paths, not the rest of drust.
+fn panel_root() -> std::path::PathBuf {
+    std::env::var_os("DRUST_PANEL_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| crate::platform::paths().panel_root().to_path_buf())
+}
 
 pub fn routes() -> Router<Arc<ApiState>> {
     Router::new()
@@ -33,9 +38,7 @@ pub(crate) async fn delete_handle(
     if let Err(error) = check_token(&state, &headers) {
         return error.into_response();
     }
-    let panel_root =
-        std::env::var("DRUST_PANEL_ROOT").unwrap_or_else(|_| DEFAULT_PANEL_ROOT.into());
-    match delete_backup_run(&request.run_path, Path::new(&panel_root)) {
+    match delete_backup_run(&request.run_path, &panel_root()) {
         Ok(()) => ApiResponse::ok("Backup run deleted").into_response(),
         Err(error) => ApiResponse::error(&format!("Backup delete failed: {error}")).into_response(),
     }
@@ -112,9 +115,8 @@ fn run_backup(only: &str) -> Result<String, String> {
         return Err("invalid backup type; use all, db, or files".into());
     }
 
-    let panel_root =
-        std::env::var("DRUST_PANEL_ROOT").unwrap_or_else(|_| DEFAULT_PANEL_ROOT.into());
-    let artisan = Path::new(&panel_root).join("artisan");
+    let panel_root = panel_root();
+    let artisan = panel_root.join("artisan");
     if !artisan.is_file() {
         return Err(format!("artisan not found at {}", artisan.display()));
     }

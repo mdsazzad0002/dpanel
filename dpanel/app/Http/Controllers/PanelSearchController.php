@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Support\Platform\PlatformCapabilities;
 use App\Support\UserAccessCache;
 use App\Models\Website;
 use Illuminate\Http\JsonResponse;
@@ -337,7 +338,7 @@ class PanelSearchController extends Controller
         }
 
         $routeName = (string) ($definition['routeName'] ?? '');
-        if ($routeName === '' || ! Route::has($routeName)) {
+        if ($routeName === '' || ! Route::has($routeName) || ! app(PlatformCapabilities::class)->allowsRoute($routeName)) {
             return;
         }
 

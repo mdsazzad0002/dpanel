@@ -846,8 +846,6 @@ pub fn upstream_health_response(body: String) -> Response {
 
 /// Hostnames that are not websites (the mail hostname) still need HTTP-01
 /// certificates, so certbot writes their tokens to this one shared webroot.
-const SHARED_ACME_ROOT: &str = "/var/lib/dpanel/acme";
-
 fn shared_acme_challenge_response(path: &str) -> Option<Response> {
     let token = path.strip_prefix("/.well-known/acme-challenge/")?;
     if token.is_empty()
@@ -858,7 +856,9 @@ fn shared_acme_challenge_response(path: &str) -> Option<Response> {
         return None;
     }
     let body = fs::read(
-        Path::new(SHARED_ACME_ROOT)
+        platform::paths()
+            .data_dir()
+            .join("acme")
             .join(".well-known/acme-challenge")
             .join(token),
     )

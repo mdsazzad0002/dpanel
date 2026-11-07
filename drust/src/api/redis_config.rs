@@ -54,7 +54,7 @@ fn safe_path(value: &str, owner: &str) -> Result<PathBuf, String> {
         return Err("invalid site owner".into());
     }
     let path = PathBuf::from(value);
-    if !path.starts_with(format!("/home/{owner}/"))
+    if !path.starts_with(crate::platform::paths().site_home(owner))
         || path
             .components()
             .any(|c| matches!(c, std::path::Component::ParentDir))

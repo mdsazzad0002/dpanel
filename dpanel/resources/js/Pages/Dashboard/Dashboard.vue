@@ -47,6 +47,7 @@ const sections = computed(() => {
         roles: roles.value,
         permissions: page.props.auth?.permissions ?? [],
         features: page.props.features ?? {},
+        closedRoutes: page.props.platform?.closedRoutes ?? [],
     });
     const result = [];
     const loose = new Map();

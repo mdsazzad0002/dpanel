@@ -11,7 +11,7 @@
 
 use crate::api::database_config::{connect_restored, referenced_database};
 use crate::api::migration::{
-    ROOT, detect_generic_application, remap_unsupported_collations, sql_escape,
+    detect_generic_application, remap_unsupported_collations, root as migration_root, sql_escape,
     strip_privileged_statements,
 };
 use crate::api::{ApiResponse, ApiState, check_token};
@@ -208,7 +208,7 @@ struct Layout {
 
 impl Layout {
     fn home(&self) -> PathBuf {
-        PathBuf::from(format!("/home/{}", self.account))
+        crate::platform::paths().site_home(&self.account)
     }
 
     fn inventory(&self) -> serde_json::Value {
@@ -255,7 +255,7 @@ fn read_layout(kind: Kind, archive_path: &str, options: &Options) -> Result<Layo
 }
 
 fn upload_path(value: &str) -> Result<PathBuf, String> {
-    let root = Path::new(ROOT)
+    let root = migration_root()
         .canonicalize()
         .map_err(|_| "migration storage is unavailable")?;
     let real = Path::new(value)
@@ -833,7 +833,7 @@ fn restore(
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
         .as_nanos();
-    let stage = PathBuf::from(format!("{ROOT}/.restore-{}-{nonce}", std::process::id()));
+    let stage = migration_root().join(format!(".restore-{}-{nonce}", std::process::id()));
     fs::create_dir(&stage).map_err(|e| e.to_string())?;
     let result = restore_into(layout, &stage, &files, &databases, credentials);
     fs::remove_dir_all(&stage).ok();

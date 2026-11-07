@@ -56,6 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\CheckRole::class,
             'permission' => \App\Http\Middleware\CheckPermission::class,
             'role_or_permission' => \App\Http\Middleware\CheckRoleOrPermission::class,
+            'capability' => \App\Http\Middleware\RequireCapability::class,
             'ai_gateway.key' => \App\Http\Middleware\AuthenticateAiGatewayApiKey::class,
             'mcp.token' => \App\Http\Middleware\AuthenticateMcpToken::class,
             'whmcs.auth' => \App\Http\Middleware\AuthenticateWhmcsRequest::class,

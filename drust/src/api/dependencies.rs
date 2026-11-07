@@ -92,7 +92,7 @@ fn run_as_site_owner(
         .args(["-u", &request.site_owner, "--", program])
         .args(args)
         .current_dir(root)
-        .env("HOME", format!("/home/{}", request.site_owner))
+        .env("HOME", crate::platform::paths().site_home(&request.site_owner))
         // npm's `#!/usr/bin/env node` must find the Node.js 20 dscript links
         // into /usr/local/bin, not the distro one or none at all; the pinned
         // PHP directory comes before it.
@@ -148,7 +148,7 @@ fn validate(request: &Request) -> Result<(), String> {
         return Err("Invalid website owner.".into());
     }
     let root = Path::new(&request.project_root);
-    if !root.starts_with(format!("/home/{}/", request.site_owner))
+    if !root.starts_with(crate::platform::paths().site_home(&request.site_owner))
         || root
             .components()
             .any(|part| matches!(part, std::path::Component::ParentDir))

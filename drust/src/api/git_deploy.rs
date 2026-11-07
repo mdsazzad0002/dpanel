@@ -87,7 +87,7 @@ fn local_dev(request: &LocalDevRequest) -> Result<(String, serde_json::Value), S
             .args(["-u", &request.site_owner, "--", "git", "-C"])
             .arg(path)
             .args(args)
-            .env("HOME", format!("/home/{}", request.site_owner))
+            .env("HOME", crate::platform::paths().site_home(&request.site_owner))
             .output()
             .map_err(|error| format!("Unable to run git: {error}"))?;
         if !output.status.success() {
@@ -330,7 +330,7 @@ fn validate_target(site_owner: &str, target: &str) -> Result<(), String> {
         return Err("Invalid website owner.".into());
     }
     let target = Path::new(target);
-    if !target.starts_with(format!("/home/{site_owner}/"))
+    if !target.starts_with(crate::platform::paths().site_home(site_owner))
         || target
             .components()
             .any(|part| matches!(part, std::path::Component::ParentDir))
@@ -356,7 +356,7 @@ fn command(request: &Request, auth: &Auth) -> Command {
         runuser
     };
     if !cfg!(test) {
-        command.env("HOME", format!("/home/{}", request.site_owner));
+        command.env("HOME", crate::platform::paths().site_home(&request.site_owner));
     }
     command.env("GIT_TERMINAL_PROMPT", "0");
     if let Some(header) = &auth.header {

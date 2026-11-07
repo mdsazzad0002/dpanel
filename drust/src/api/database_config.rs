@@ -107,7 +107,7 @@ fn apply(request: &Request) -> Result<PathBuf, String> {
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_secs();
-    let backup_dir = PathBuf::from(format!("/home/{}/.dpanel/backups", request.site_owner));
+    let backup_dir = crate::platform::paths().site_home(&request.site_owner).join(".dpanel").join("backups");
     fs::create_dir_all(&backup_dir)
         .map_err(|error| format!("Unable to create protected backup directory: {error}"))?;
     platform::files().set_mode(&backup_dir, FileMode::PrivateDir)
@@ -239,7 +239,7 @@ fn validate(request: &Request) -> Result<(), String> {
         return Err("Invalid website owner.".into());
     }
     let path = Path::new(&request.config_path);
-    if !path.starts_with(format!("/home/{}/", request.site_owner))
+    if !path.starts_with(crate::platform::paths().site_home(&request.site_owner))
         || path
             .components()
             .any(|part| matches!(part, std::path::Component::ParentDir))

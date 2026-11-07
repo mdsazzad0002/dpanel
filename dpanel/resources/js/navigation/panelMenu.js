@@ -250,8 +250,12 @@ export const hasMenuAccess = (item, roles = [], permissions = []) => {
     return true;
 };
 
-export const filterPanelMenu = (items, { roles = [], permissions = [], features = {}, userId = null } = {}) => items
+// A route this OS or profile does not have (see PlatformCapabilities).
+export const isClosedRoute = (routeName, closedRoutes = []) => closedRoutes.some((prefix) => routeName?.startsWith(prefix));
+
+export const filterPanelMenu = (items, { roles = [], permissions = [], features = {}, userId = null, closedRoutes = [] } = {}) => items
     .map((item) => {
+        if (isClosedRoute(item.routeName, closedRoutes)) return null;
         // userIds pins an item to specific panel accounts (e.g. only the primary user).
         if (item.userIds && !item.userIds.includes(Number(userId))) return null;
         if (item.feature && !features?.[item.feature]) {
@@ -261,7 +265,7 @@ export const filterPanelMenu = (items, { roles = [], permissions = [], features 
             return hasMenuAccess(item, roles, permissions) ? item : null;
         }
 
-        const allowedChildren = item.children.filter((child) => hasMenuAccess(child, roles, permissions));
+        const allowedChildren = item.children.filter((child) => hasMenuAccess(child, roles, permissions) && !isClosedRoute(child.routeName, closedRoutes));
         if (!allowedChildren.length) return null;
 
         return {

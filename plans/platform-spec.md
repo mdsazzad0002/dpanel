@@ -110,23 +110,31 @@ drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupporte
 
 Laravel-এ route গুলো `capability:<name>` middleware দিয়ে আটকাবে। Sidebar ও search একই তথ্য Inertia shared prop থেকে নেবে। Capability বন্ধ থাকলে route `404` দেবে।
 
+কোন route কোন capability চায়, সেটা `PlatformCapabilities::ROUTE_CAPABILITIES`-এর route-name prefix table-এ থাকে; `routes/web.php`-এর শেষে সেখান থেকে middleware বসে। `false` ও `"none"` মানে বন্ধ, বাকি সব মান খোলা।
+
+drust উত্তর না দিলে (বন্ধ, পুরোনো version, ভুল token) সব capability খোলা ধরা হয়, নইলে drust-এর সঙ্গে পুরো panel পড়ে যেত। এটা security boundary নয়: যে feature নেই, drust নিজেই `501` দেয়। ফল 5 মিনিট cache হয়, ব্যর্থ হলে 1 মিনিট।
+
 ## 6. Interface
 
 ### 6.1 Paths
 
 ```rust
-pub trait Paths {
-    fn panel_root(&self) -> PathBuf;
-    fn data_dir(&self) -> PathBuf;
-    fn config_dir(&self) -> PathBuf;
-    fn log_dir(&self) -> PathBuf;
-    fn run_dir(&self) -> PathBuf;
-    fn sites_root(&self) -> PathBuf;
+pub struct Paths { /* OS ও profile থেকে হিসাব করা, cfg ছাড়া */ }
+
+impl Paths {
+    fn panel_root(&self) -> &Path;
+    fn data_dir(&self) -> &Path;
+    fn storage_dir(&self) -> PathBuf; // panel_root/storage/app
+    fn tls_dir(&self) -> PathBuf;     // config_dir/tls
+    fn sites_root(&self) -> &Path;
     fn site_home(&self, owner: &str) -> PathBuf;
-    fn tls_dir(&self) -> PathBuf;
-    fn binary(&self, tool: Tool) -> Result<PathBuf, PlatformError>;
+    // C1-এর পরের ধাপে: log_dir, run_dir, binary(Tool)
 }
 ```
+
+`site_home` owner-কে `join` করে না, জুড়ে দেয়: `join` absolute নাম পেলে base ফেলে দেয়, তাই `/etc` নামের owner ownership check ভেঙে দিত।
+
+`platform::paths()` দিয়ে পাওয়া যায়। Trait নয়, কারণ OS-ভেদে শুধু মান আলাদা, আচরণ নয়; তাই পুরো table সব OS-এ test করা যায়। Linux profile দেখে না।
 
 | Path | Linux | Windows server | Windows local | macOS server | macOS local |
 | --- | --- | --- | --- | --- | --- |

@@ -16,7 +16,7 @@ pub(crate) fn validate_account(username: &str) -> Result<(PathBuf, PathBuf, Stri
         return Err(format!("Invalid username: {username}"));
     }
 
-    let home = PathBuf::from(format!("/home/{username}"));
+    let home = crate::platform::paths().site_home(username);
     let canonical_home =
         fs::canonicalize(&home).map_err(|e| format!("account home is unavailable: {e}"))?;
     let group = user_group(username).unwrap_or_else(|_| username.to_string());
@@ -33,7 +33,7 @@ pub(crate) fn validate_user_path(username: &str, target: &str) -> Result<PathBuf
         return Err("Parent path traversal is not allowed.".into());
     }
 
-    let user_home = PathBuf::from(format!("/home/{username}"));
+    let user_home = crate::platform::paths().site_home(username);
     if path != user_home && !path.starts_with(&user_home) {
         return Err(format!(
             "Path is outside the account home: {}",

@@ -154,7 +154,7 @@ fn has_parent_dir(path: &Path) -> bool {
 fn validate_root(site_owner: &str, root: &str) -> Result<PathBuf, String> {
     validate_owner(site_owner)?;
     let root = PathBuf::from(root.trim_end_matches('/'));
-    if !root.starts_with(format!("/home/{site_owner}/")) || has_parent_dir(&root) {
+    if !root.starts_with(crate::platform::paths().site_home(site_owner)) || has_parent_dir(&root) {
         return Err("Website directory is outside the website owner's home.".into());
     }
     Ok(root)
@@ -165,7 +165,7 @@ fn validate_archive(archive: &str) -> Result<PathBuf, String> {
     if !path.is_absolute()
         || has_parent_dir(&path)
         || !archive.ends_with(".tar.gz")
-        || path.starts_with("/home")
+        || path.starts_with(crate::platform::paths().sites_root())
     {
         return Err("Invalid sync archive path.".into());
     }
@@ -174,7 +174,7 @@ fn validate_archive(archive: &str) -> Result<PathBuf, String> {
 
 fn validate_backup_dir(site_owner: &str, backup_dir: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(backup_dir.trim_end_matches('/'));
-    if !path.starts_with(format!("/home/{site_owner}/.trash/")) || has_parent_dir(&path) {
+    if !path.starts_with(crate::platform::paths().site_home(site_owner).join(".trash")) || has_parent_dir(&path) {
         return Err("Backup directory must be inside the owner's .trash.".into());
     }
     Ok(path)
@@ -655,6 +655,9 @@ mod tests {
 
     #[test]
     fn apply_keeps_a_packed_files_mode_and_sets_the_site_owner() {
+        if crate::platform::skip_until_windows_has("F1") {
+            return;
+        }
         let source = tempfile::tempdir().unwrap();
         write(source.path(), "bin/run.sh", "#!/bin/sh");
         let script = source.path().join("bin/run.sh");
@@ -699,6 +702,9 @@ mod tests {
 
     #[test]
     fn writes_through_a_symlinked_directory_are_refused() {
+        if crate::platform::skip_until_windows_has("F1") {
+            return;
+        }
         let live = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         platform::files()
@@ -711,11 +717,15 @@ mod tests {
 
     #[test]
     fn archive_and_backup_paths_are_validated() {
+        if crate::platform::skip_until_windows_has("C1") {
+            return;
+        }
         assert!(validate_archive("/var/www/dpanel/storage/app/x.tar.gz").is_ok());
-        assert!(validate_archive("/home/u/x.tar.gz").is_err());
+        let home = crate::platform::paths().site_home("u").display().to_string();
+        assert!(validate_archive(&format!("{home}/x.tar.gz")).is_err());
         assert!(validate_archive("relative.tar.gz").is_err());
-        assert!(validate_backup_dir("u", "/home/u/.trash/sync/_root/site").is_ok());
-        assert!(validate_backup_dir("u", "/home/u/public_html").is_err());
-        assert!(validate_root("u", "/home/u/../v/site").is_err());
+        assert!(validate_backup_dir("u", &format!("{home}/.trash/sync/_root/site")).is_ok());
+        assert!(validate_backup_dir("u", &format!("{home}/public_html")).is_err());
+        assert!(validate_root("u", &format!("{home}/../v/site")).is_err());
     }
 }

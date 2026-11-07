@@ -55,8 +55,8 @@ impl TlsStore {
 
 pub fn default_tls_runtime() -> TlsRuntimeConfig {
     TlsRuntimeConfig {
-        cert_dir: PathBuf::from("/etc/drust/tls"),
-        key_dir: PathBuf::from("/etc/drust/tls"),
+        cert_dir: crate::platform::paths().tls_dir(),
+        key_dir: crate::platform::paths().tls_dir(),
         preferred_chain: None,
     }
 }

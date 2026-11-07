@@ -22,7 +22,7 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
             let owner = owner.ok_or("site_owner is required")?.trim();
             if owner.is_empty() || !owner.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_'|'-')) { return Err("invalid site owner".into()); }
             let root = PathBuf::from(root.ok_or("project_root is required")?).canonicalize().map_err(|e| format!("project directory is unavailable: {e}"))?;
-            if !root.is_dir() || !root.starts_with(format!("/home/{owner}")) { return Err("Rust project must be inside the owner's home directory".into()); }
+            if !root.is_dir() || !root.starts_with(crate::platform::paths().site_home(owner)) { return Err("Rust project must be inside the owner's home directory".into()); }
             let id = Command::new("id").args(["-u", owner]).output().map_err(|e| e.to_string())?;
             if !id.status.success() { return Err("site owner does not exist".into()); }
             let uid: u32 = String::from_utf8_lossy(&id.stdout).trim().parse().map_err(|_| "cannot read the site owner's uid")?;
@@ -126,7 +126,7 @@ fn cargo(owner: &str, root: &Path, args: &[&str]) -> Result<std::process::Output
 fn run_as(owner: &str, root: &Path, program: &str, args: &[&str]) -> Result<std::process::Output, String> {
     Command::new("/usr/sbin/runuser").args(["-u", owner, "--", program]).args(args)
         .current_dir(root)
-        .env("HOME", format!("/home/{owner}"))
+        .env("HOME", crate::platform::paths().site_home(owner))
         .env("PATH", "/usr/local/bin:/usr/bin:/bin")
         .env("CARGO_TERM_COLOR", "never")
         .output().map_err(|e| format!("unable to run {program}: {e}"))

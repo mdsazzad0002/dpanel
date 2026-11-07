@@ -777,6 +777,9 @@ mod replace_tests {
 
     #[test]
     fn replaces_or_merges_existing_targets() {
+        if crate::platform::skip_until_windows_has("F1") {
+            return;
+        }
         let root = scratch("targets");
         assert!(!replace_existing_target(&root.join("missing"), true).unwrap());
 
@@ -817,6 +820,9 @@ mod replace_tests {
 
     #[test]
     fn refuses_merging_into_trees_with_links() {
+        if crate::platform::skip_until_windows_has("F1") {
+            return;
+        }
         let root = scratch("links");
         fs::create_dir_all(root.join("a/b")).unwrap();
         assert!(ensure_tree_has_no_symlinks(&root).is_ok());

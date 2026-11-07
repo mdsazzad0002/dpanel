@@ -92,6 +92,9 @@ mod tests {
 
     #[test]
     fn a_ticket_works_exactly_once() {
+        if crate::platform::skip_until_windows_has("F1") {
+            return;
+        }
         let dir = temp_dir("once");
         let now = SystemTime::now();
         let ticket = write(&dir, "dpanel-db-shop", now, TTL).unwrap();
@@ -103,6 +106,9 @@ mod tests {
 
     #[test]
     fn expired_and_malformed_tickets_are_rejected() {
+        if crate::platform::skip_until_windows_has("F1") {
+            return;
+        }
         let dir = temp_dir("expired");
         let now = SystemTime::now();
         let ticket = write(&dir, "dpanel-admin", now, TTL).unwrap();

@@ -118,10 +118,11 @@ fn infer_username_from_home_path(path: &str) -> Option<&str> {
 
 fn discover_public_html_targets() -> Result<Vec<Target>, String> {
     let mut targets = Vec::new();
-    let homes = fs::read_dir("/home").map_err(|e| format!("failed to read /home: {e}"))?;
+    let sites_root = crate::platform::paths().sites_root();
+    let homes = fs::read_dir(sites_root).map_err(|e| format!("failed to read {}: {e}", sites_root.display()))?;
 
     for entry in homes {
-        let entry = entry.map_err(|e| format!("failed to read /home entry: {e}"))?;
+        let entry = entry.map_err(|e| format!("failed to read {} entry: {e}", sites_root.display()))?;
         let username = entry.file_name().to_string_lossy().to_string();
         if !valid_username(&username) || user_group(&username).is_err() {
             continue;
@@ -133,7 +134,7 @@ fn discover_public_html_targets() -> Result<Vec<Target>, String> {
     }
 
     if targets.is_empty() {
-        return Err("No website roots found under /home.".into());
+        return Err(format!("No website roots found under {}.", sites_root.display()));
     }
 
     Ok(targets)

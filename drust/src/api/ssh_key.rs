@@ -123,7 +123,7 @@ fn validate_owner(owner: &str) -> Result<(), String> {
 }
 
 fn install_public_key(owner: &str, public_key: &str) -> Result<(), String> {
-    let home = PathBuf::from(format!("/home/{owner}"));
+    let home = crate::platform::paths().site_home(owner);
     if !home.is_dir() {
         return Err("Website user home directory does not exist.".into());
     }
