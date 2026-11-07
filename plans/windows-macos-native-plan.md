@@ -13,7 +13,7 @@ WSL বা কোনো Linux VM ছাড়া dPanel সরাসরি Windo
 | **Local** | Development, XAMPP বা Laravel Herd-এর মতো | একজন user, শুধু localhost, mail ও DNS নকল |
 | **Production** | Live deployment, public website | বহু site, আলাদা user, আসল SSL, mail, DNS ও firewall |
 
-Local সহজ। Production অনেক বড় কাজ, কারণ dPanel-এর hosting অংশ Linux-এর ওপর দাঁড়ানো: প্রতি site-এ আলাদা Linux user, systemd, Postfix/Dovecot, PowerDNS, UFW, Fail2ban। এগুলোর প্রতিটার জন্য Windows ও macOS-এ বিকল্প লাগবে, যা [Production profile](#production-profile) অংশে আছে। macOS সবচেয়ে কঠিন, কারণ সেখানে CPU/RAM-এর hard limit নেই এবং hosting-এ license-এর প্রশ্ন আছে।
+Local সহজ। Production অনেক বড় কাজ, কারণ dPanel-এর hosting অংশ Linux-এর ওপর দাঁড়ানো: প্রতি site-এ আলাদা Linux user, systemd, Postfix/Dovecot, PowerDNS, UFW, Fail2ban। এগুলোর প্রতিটার জন্য Windows ও macOS-এ বিকল্প লাগবে, যা [Production profile](#production-profile) অংশে আছে। macOS সবচেয়ে কঠিন, কারণ সেখানে CPU/RAM-এর hard limit নেই।
 
 | বিষয় | সিদ্ধান্ত |
 | --- | --- |
@@ -206,7 +206,7 @@ Windows ও macOS দুটোই পূর্ণ production platform, Linux-এ
 
 **Mail: Stalwart।** Postfix ও Dovecot Windows-এ চলে না। Stalwart-এর সর্বশেষ release (v1.0.3, 2026-11-04)-এ Windows ও macOS দুটোরই build আছে, এবং spam filter ভেতরেই আছে। jabali-panel-ও Stalwart ব্যবহার করে।
 
-- License AGPL-3.0 ও commercial, দুই ধরনের। dPanel থেকে আলাদা process হিসেবে অপরিবর্তিত চালান, আর bundle করার আগে আইনি পরামর্শ নিন।
+- License AGPL-3.0 ও commercial, দুই ধরনের। dPanel free হলেও AGPL-এর শর্ত প্রযোজ্য, কারণ dPanel-এর license open-source নয়। তাই আলাদা process হিসেবে অপরিবর্তিত চালান, আর bundle করার আগে শর্ত দেখে নিন।
 - Laravel-এর mail অংশ Dovecot-এর সঙ্গে বাঁধা (`/etc/dovecot`-এর 11টা reference)। তাই আগে একটা `MailBackend` interface লাগবে, যার দুটো implementation থাকবে।
 - Windows-এ mail সবচেয়ে বড় অজানা অংশ। আগে একটা spike করুন।
 
@@ -232,7 +232,9 @@ macOS-এ Linux-এর cgroup বা Windows-এর Job Object-এর মতো 
 
 **Hard limit চাইলে: tenant VM।** `ResourceLimiter`-এর দ্বিতীয় implementation হিসেবে customer-এর site একটা হালকা VM-এ চলবে। এতে hard limit পাওয়া যায়, কিন্তু প্রতি site-এ বেশি RAM লাগে, আর site-এর ভেতরের অংশ তখন আর native থাকে না। এটা পরে, দরকার হলে।
 
-**License: আগে আইনি পরামর্শ।** Apple-এর macOS license-এ leasing-এর শর্ত আছে: Big Sur-এর সময়ের terms অনুযায়ী lease অন্তত 24 ঘণ্টার, আর শুধু "permitted developer services"-এর জন্য। Shared web hosting এতে পড়ে কিনা নিশ্চিত নয়, আর বর্তমান license text যাচাই করা হয়নি। **macOS-এ hosting বিক্রির আগে এটা আইনজীবী দিয়ে দেখিয়ে নিন।** dPanel নিজে বিতরণ করাতে নয়, ব্যবহারকারীর ব্যবসাতেই এই ঝুঁকি, তাই docs-এও সতর্কতা দিন।
+**License: dPanel-এর জন্য বাধা নয়।** dPanel সবার জন্য free, তাই dPanel বিতরণ করায় macOS-এর leasing শর্তের প্রশ্ন আসে না। Apple-এর license-এ Mac lease দেওয়ার শর্ত আছে (Big Sur-এর সময়ের terms; বর্তমান text যাচাই করা হয়নি), কিন্তু সেটা Mac ভাড়া দেওয়ার ব্যাপার।
+
+তবে dPanel-এর license ব্যবহারকারীদের hosting বিক্রির অনুমতি দেয়। তাই কেউ Mac-এ বাণিজ্যিক hosting চালাতে চাইলে তার নিজের Apple license দেখে নেওয়া উচিত, এই এক লাইনের সতর্কতা docs-এ দিন।
 
 **Hardware:** Apple hardware ছাড়া চলবে না। Data center-এ Mac mini/Studio, আর OS update-এর reboot সামলানোর ব্যবস্থা লাগবে।
 
@@ -294,7 +296,7 @@ Phase 6 সবচেয়ে গুরুত্বপূর্ণ। এই চ
 | Signing | Code signing certificate | Apple Developer ID ও notarization |
 | Tray | Tauri | Tauri |
 
-Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আটকাবে বা ভয়ের সতর্কতা দেখাবে, তাই এতে টাকা লাগবে। Bundle করা PHP, MariaDB ইত্যাদির license ও notice-ও সঙ্গে দিতে হবে।
+Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আটকাবে বা ভয়ের সতর্কতা দেখাবে। dPanel free হলেও এই খরচটা project-কে দিতে হবে। Bundle করা PHP, MariaDB ইত্যাদির license ও notice-ও সঙ্গে দিতে হবে।
 
 ## ঝুঁকি
 
@@ -306,9 +308,9 @@ Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আট�
 | Windows site isolation-এ ফাঁক: এক customer অন্যের data পড়ে | খুব বেশি | Automated isolation test, আলাদা security review, Phase 10 পাস না করলে release নয় |
 | Windows-এ production mail-এর deliverability ও maintenance | বেশি | Phase 6 spike; দরকার হলে প্রথম সংস্করণ mail ছাড়া ছাড়ুন |
 | দুই mail stack (Postfix ও Stalwart) maintain করা | বেশি | `MailBackend` interface, দুই stack-এই একই test |
-| macOS license shared hosting-এর অনুমতি না দেয় | খুব বেশি | Phase 11-এর আগে আইনি মত; না হলে macOS শুধু নিজের site-এর জন্য |
 | macOS-এ soft limit-এর কারণে এক customer অন্যদের ধীর করে | বেশি | Supervisor test, কম density, দরকারে tenant VM |
-| Windows Server license-এর খরচ customer-এর ওপর পড়ে | মাঝারি | Docs-এ পরিষ্কার লিখুন; Linux সস্তা বিকল্প হিসেবে থাকবে |
+| dPanel free, কিন্তু Windows Server-এর license ব্যবহারকারীকে কিনতে হয় | মাঝারি | Docs-এ পরিষ্কার লিখুন; Linux free বিকল্প হিসেবে থাকবে |
+| Free project-এ signing ও test hardware-এর খরচ আয় ছাড়াই আসে | মাঝারি | Donation বা sponsor; খরচ কম রাখতে GitHub-hosted runner |
 | তিন platform maintain করার খরচ | বেশি | Capability flag, CI, desktop-এ feature সীমিত রাখা |
 | Windows-এ কিছু PHP extension না পাওয়া | মাঝারি | সমর্থিত PHP extension-এর তালিকা প্রকাশ করুন |
 | Code signing-এর খরচ | কম | Beta-র আগেই ব্যবস্থা করুন |
@@ -324,11 +326,10 @@ Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আট�
 
 **নেওয়া হয়েছে:** Local development ও live production দুটোই লক্ষ্য, আর Windows ও macOS দুটোই পূর্ণ production platform।
 
-1. **macOS license-এর আইনি মত কে নেবেন?** Phase 11-এর আগে দরকার।
-2. **Production-এর প্রথম সংস্করণে mail লাগবে?** প্রস্তাব: Phase 6-এর ফল দেখে ঠিক করুন।
-3. **Mac-এ local প্রথম সংস্করণে Homebrew চলবে, নাকি প্রথম থেকেই সব bundle?** প্রস্তাব: Homebrew দিয়ে শুরু।
-4. **Apple Developer ও Windows code signing-এর খরচ দেবেন?** Public release-এর জন্য দরকার।
-5. **WSL version কবে বন্ধ হবে?** প্রস্তাব: Native Windows local স্থিতিশীল হওয়ার অন্তত এক release পরে।
+1. **Production-এর প্রথম সংস্করণে mail লাগবে?** প্রস্তাব: Phase 6-এর ফল দেখে ঠিক করুন।
+2. **Mac-এ local প্রথম সংস্করণে Homebrew চলবে, নাকি প্রথম থেকেই সব bundle?** প্রস্তাব: Homebrew দিয়ে শুরু।
+3. **Apple Developer ও Windows code signing-এর খরচ কোথা থেকে আসবে?** dPanel free হলেও এটা লাগবে, নইলে install-এ সতর্কতা আসবে। Apple-এর জন্য বছরে একটা fee দিতে হয়।
+4. **WSL version কবে বন্ধ হবে?** প্রস্তাব: Native Windows local স্থিতিশীল হওয়ার অন্তত এক release পরে।
 
 ## সূত্র
 

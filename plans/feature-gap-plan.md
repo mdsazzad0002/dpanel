@@ -6,7 +6,7 @@
 
 ## সংক্ষেপে
 
-dPanel-এর feature তালিকা বড়, কিন্তু সবচেয়ে বড় ফাঁকটা নতুন feature-এ নয়। **Hosting বিক্রির মূল নিয়ম গুলো এখনো enforce হয় না:** suspend করলে website চলতেই থাকে, আর storage, bandwidth ও CPU/RAM limit কার্যত নেই। তাই প্রথম কাজ এগুলো ঠিক করা, তারপর WAF ও firewall, তারপর বাকি feature।
+dPanel-এর feature তালিকা বড়, কিন্তু সবচেয়ে বড় ফাঁকটা নতুন feature-এ নয়। **একাধিক user-এর hosting চালানোর মূল নিয়ম গুলো এখনো enforce হয় না:** suspend করলে website চলতেই থাকে, আর storage, bandwidth ও CPU/RAM limit কার্যত নেই। তাই প্রথম কাজ এগুলো ঠিক করা, তারপর WAF ও firewall, তারপর বাকি feature।
 
 | Phase | বিষয় | আনুমানিক সময় (১ জন dev) |
 | --- | --- | --- |
@@ -187,7 +187,7 @@ dPanel Windows ও macOS production-এও চলবে, তাই এই phase-
 4. Security check ও hardening।
 5. Safe update: clone-এ update করে HTTP status ও PHP error দেখে তবেই production-এ লাগানো।
 
-**রেফারেন্স:** CyberPanel (`CreateStagingNow`, `DeploytoProduction`, `UpdatePlugins`), Plesk WP Toolkit। Plesk-এ Smart Updates paid, dPanel-এ free দিলে এটা বড় পার্থক্য হবে।
+**রেফারেন্স:** CyberPanel (`CreateStagingNow`, `DeploytoProduction`, `UpdatePlugins`), Plesk WP Toolkit। Plesk-এ Smart Updates paid। dPanel-এ সবই free, তাই এটা বড় পার্থক্য হবে।
 
 ### 4.2 Backup
 
@@ -238,8 +238,7 @@ dPanel Windows ও macOS production-এও চলবে, তাই এই phase-
 ## সিদ্ধান্ত দরকার
 
 1. Bandwidth limit পেরোলে default কী হবে: শুধু notification, throttle, নাকি site বন্ধ?
-2. WordPress-এর safe update কি সবার জন্য free থাকবে? (প্রস্তাব: হ্যাঁ)
-3. `terminate` করলে data কতদিন রেখে তারপর মুছবে?
+2. `terminate` করলে data কতদিন রেখে তারপর মুছবে?
 
 ## সূত্র
 
