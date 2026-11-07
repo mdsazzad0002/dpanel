@@ -15,11 +15,16 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader},
-    net::UnixStream,
     sync::mpsc,
     time::{Instant, timeout_at},
 };
 use tracing::{info, warn};
+
+use crate::platform::{
+    self,
+    fastcgi::{FastCgiEndpoint, FastCgiStream},
+    fs::FileMode,
+};
 
 /// PHP output up to this size is read whole and returned with an exact
 /// length, so the edge cache can store it. Anything larger (downloads,
@@ -44,7 +49,7 @@ pub async fn execute_php_front_controller(
     php_version: Option<&str>,
     site_owner: Option<&str>,
 ) -> Result<Response<Body>, String> {
-    let socket = resolve_fpm_socket(php_version, site_owner).await?;
+    let endpoint = FastCgiEndpoint::Unix(resolve_fpm_socket(php_version, site_owner).await?);
     let (parts, body) = request.into_parts();
     let declared_length = parts
         .headers
@@ -167,7 +172,7 @@ pub async fn execute_php_front_controller(
     // is disabled, so this deadline is the only hard cap — keep it well above those.
     // It covers the whole exchange, including a streamed response body.
     let deadline = Instant::now() + Duration::from_secs(3600);
-    timeout_at(deadline, fastcgi_request(&socket, &params, input, deadline))
+    timeout_at(deadline, fastcgi_request(&endpoint, &params, input, deadline))
         .await
         .map_err(|_| "PHP-FPM request timed out".to_string())?
 }
@@ -183,7 +188,7 @@ pub(crate) async fn render_phpinfo(
     if let Some(version) = php_version {
         validate_php_version(version)?;
     }
-    let socket = resolve_fpm_socket(php_version, site_owner).await?;
+    let endpoint = FastCgiEndpoint::Unix(resolve_fpm_socket(php_version, site_owner).await?);
     let script = tokio::task::spawn_blocking(ensure_phpinfo_script)
         .await
         .map_err(|error| format!("phpinfo script worker failed: {error}"))??;
@@ -205,7 +210,7 @@ pub(crate) async fn render_phpinfo(
     let deadline = Instant::now() + Duration::from_secs(30);
     let response = timeout_at(
         deadline,
-        fastcgi_request(&socket, &params, RequestInput::Buffered(Bytes::new()), deadline),
+        fastcgi_request(&endpoint, &params, RequestInput::Buffered(Bytes::new()), deadline),
     )
     .await
     .map_err(|_| "PHP-FPM request timed out".to_string())??;
@@ -226,22 +231,18 @@ fn ensure_phpinfo_script() -> Result<PathBuf, String> {
         .map_err(|error| format!("cannot create {}: {error}", directory.display()))?;
     fs::write(&script, CONTENT)
         .map_err(|error| format!("cannot write {}: {error}", script.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&directory, fs::Permissions::from_mode(0o755));
-        let _ = fs::set_permissions(&script, fs::Permissions::from_mode(0o644));
-    }
+    let _ = platform::files().set_mode(&directory, FileMode::Executable);
+    let _ = platform::files().set_mode(&script, FileMode::Shared);
     Ok(script)
 }
 
 async fn fastcgi_request(
-    socket: &Path,
+    endpoint: &FastCgiEndpoint,
     params: &[(String, String)],
     input: RequestInput,
     deadline: Instant,
 ) -> Result<Response<Body>, String> {
-    let mut stream = connect_fpm(socket, deadline).await?;
+    let mut stream = connect_fpm(endpoint, deadline).await?;
     send_fastcgi_request(&mut stream, params, input).await?;
     let mut stream = BufReader::new(stream);
     let mut stdout = Vec::new();
@@ -303,10 +304,10 @@ async fn fastcgi_request(
 /// A PHP-FPM reload (a new site's pool being added) recreates every socket
 /// of that PHP version; for a moment they are missing or refuse connections.
 /// Nothing has been sent yet, so retrying for a few seconds is safe.
-async fn connect_fpm(socket: &Path, deadline: Instant) -> Result<UnixStream, String> {
+async fn connect_fpm(endpoint: &FastCgiEndpoint, deadline: Instant) -> Result<FastCgiStream, String> {
     let give_up = (Instant::now() + Duration::from_secs(10)).min(deadline);
     loop {
-        match UnixStream::connect(socket).await {
+        match endpoint.connect().await {
             Ok(stream) => return Ok(stream),
             Err(error)
                 if matches!(
@@ -955,16 +956,15 @@ fn parse_cgi_head(header_block: &str) -> Result<Response<Body>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::fastcgi::testing::{Listener, listeners};
     use http_body::Body as _;
 
     /// A PHP-FPM stand-in: counts the stdin bytes it gets, then answers with
     /// `body_len` bytes of output split into many records.
-    async fn fake_fpm(name: &str, body_len: usize) -> (PathBuf, tokio::task::JoinHandle<usize>) {
-        let socket = std::env::temp_dir().join(format!("drust-fpm-{name}-{}.sock", std::process::id()));
-        let _ = fs::remove_file(&socket);
-        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+    async fn fake_fpm(listener: Listener, body_len: usize) -> (FastCgiEndpoint, tokio::task::JoinHandle<usize>) {
+        let endpoint = listener.endpoint();
         let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
+            let stream = listener.accept().await;
             let mut stream = BufReader::new(stream);
             let mut stdin = 0;
             loop {
@@ -996,7 +996,7 @@ mod tests {
             let _ = write_fcgi_record(stream, 3, &[0; 8]).await;
             stdin
         });
-        (socket, server)
+        (endpoint, server)
     }
 
     fn deadline() -> Instant {
@@ -1005,98 +1005,100 @@ mod tests {
 
     #[tokio::test]
     async fn small_php_output_is_returned_whole() {
-        let (socket, server) = fake_fpm("small", 1000).await;
-        let input = RequestInput::Buffered(Bytes::from_static(b"name=value"));
-        let response = fastcgi_request(&socket, &[], input, deadline()).await.unwrap();
-        // An exact size is what lets the edge cache store the page.
-        assert_eq!(response.body().size_hint().exact(), Some(1000));
-        assert_eq!(server.await.unwrap(), 10);
-        let _ = fs::remove_file(&socket);
+        for listener in listeners().await {
+            let (endpoint, server) = fake_fpm(listener, 1000).await;
+            let input = RequestInput::Buffered(Bytes::from_static(b"name=value"));
+            let response = fastcgi_request(&endpoint, &[], input, deadline()).await.unwrap();
+            // An exact size is what lets the edge cache store the page.
+            assert_eq!(response.body().size_hint().exact(), Some(1000));
+            assert_eq!(server.await.unwrap(), 10);
+        }
     }
 
     #[tokio::test]
     async fn large_uploads_and_output_are_streamed() {
-        let output_len = 3 * BUFFERED_RESPONSE_BYTES;
-        let (socket, server) = fake_fpm("large", output_len).await;
-        let upload = vec![b'u'; 2 * 1024 * 1024 + 1];
-        let input = RequestInput::Streamed { length: upload.len() as u64, body: Body::from(upload) };
-        let response = fastcgi_request(&socket, &[], input, deadline()).await.unwrap();
-        assert_eq!(response.headers().get(header::CONTENT_TYPE).unwrap(), "text/plain");
-        assert_eq!(response.body().size_hint().exact(), None);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        assert_eq!(body.len(), output_len);
-        assert!(body.iter().all(|byte| *byte == b'x'));
-        assert_eq!(server.await.unwrap(), 2 * 1024 * 1024 + 1);
-        let _ = fs::remove_file(&socket);
+        for listener in listeners().await {
+            let output_len = 3 * BUFFERED_RESPONSE_BYTES;
+            let (endpoint, server) = fake_fpm(listener, output_len).await;
+            let upload = vec![b'u'; 2 * 1024 * 1024 + 1];
+            let input = RequestInput::Streamed { length: upload.len() as u64, body: Body::from(upload) };
+            let response = fastcgi_request(&endpoint, &[], input, deadline()).await.unwrap();
+            assert_eq!(response.headers().get(header::CONTENT_TYPE).unwrap(), "text/plain");
+            assert_eq!(response.body().size_hint().exact(), None);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            assert_eq!(body.len(), output_len);
+            assert!(body.iter().all(|byte| *byte == b'x'));
+            assert_eq!(server.await.unwrap(), 2 * 1024 * 1024 + 1);
+        }
     }
 
     #[tokio::test]
     async fn large_output_survives_gzip_compression() {
-        use std::io::Read;
-        use tower::{ServiceBuilder, ServiceExt};
+        for listener in listeners().await {
+            use std::io::Read;
+            use tower::{ServiceBuilder, ServiceExt};
 
-        let output_len = 3 * BUFFERED_RESPONSE_BYTES;
-        let (socket, _server) = fake_fpm("gzip", output_len).await;
-        let response = fastcgi_request(&socket, &[], RequestInput::Buffered(Bytes::new()), deadline()).await.unwrap();
-        let mut response = Some(response);
-        let service = ServiceBuilder::new()
-            .layer(super::super::compression::layer())
-            .service_fn(move |_: axum::http::Request<Body>| {
-                let response = response.take().unwrap();
-                async move { Ok::<_, std::convert::Infallible>(response) }
-            });
-        let request = axum::http::Request::builder()
-            .header(header::ACCEPT_ENCODING, "gzip")
-            .body(Body::empty())
-            .unwrap();
-        let compressed = service.oneshot(request).await.unwrap();
-        assert_eq!(compressed.headers().get(header::CONTENT_ENCODING).unwrap(), "gzip");
-        let gz = axum::body::to_bytes(Body::new(compressed.into_body()), usize::MAX).await.unwrap();
-        let mut body = Vec::new();
-        flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut body).unwrap();
-        assert_eq!(body.len(), output_len);
-        let _ = fs::remove_file(&socket);
+            let output_len = 3 * BUFFERED_RESPONSE_BYTES;
+            let (endpoint, _server) = fake_fpm(listener, output_len).await;
+            let response = fastcgi_request(&endpoint, &[], RequestInput::Buffered(Bytes::new()), deadline()).await.unwrap();
+            let mut response = Some(response);
+            let service = ServiceBuilder::new()
+                .layer(super::super::compression::layer())
+                .service_fn(move |_: axum::http::Request<Body>| {
+                    let response = response.take().unwrap();
+                    async move { Ok::<_, std::convert::Infallible>(response) }
+                });
+            let request = axum::http::Request::builder()
+                .header(header::ACCEPT_ENCODING, "gzip")
+                .body(Body::empty())
+                .unwrap();
+            let compressed = service.oneshot(request).await.unwrap();
+            assert_eq!(compressed.headers().get(header::CONTENT_ENCODING).unwrap(), "gzip");
+            let gz = axum::body::to_bytes(Body::new(compressed.into_body()), usize::MAX).await.unwrap();
+            let mut body = Vec::new();
+            flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut body).unwrap();
+            assert_eq!(body.len(), output_len);
+        }
     }
 
     #[tokio::test]
     async fn event_streams_reach_the_client_before_php_finishes() {
-        let socket = std::env::temp_dir().join(format!("drust-fpm-sse-{}.sock", std::process::id()));
-        let _ = fs::remove_file(&socket);
-        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-        let (release, released) = tokio::sync::oneshot::channel::<()>();
-        tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            let mut stream = BufReader::new(stream);
-            loop {
-                let mut header = [0u8; 8];
-                stream.read_exact(&mut header).await.unwrap();
-                let length = u16::from_be_bytes([header[4], header[5]]) as usize;
-                let mut content = vec![0; length + header[6] as usize];
-                stream.read_exact(&mut content).await.unwrap();
-                if header[1] == 5 && length == 0 {
-                    break;
+        for listener in listeners().await {
+            let endpoint = listener.endpoint();
+            let (release, released) = tokio::sync::oneshot::channel::<()>();
+            tokio::spawn(async move {
+                let stream = listener.accept().await;
+                let mut stream = BufReader::new(stream);
+                loop {
+                    let mut header = [0u8; 8];
+                    stream.read_exact(&mut header).await.unwrap();
+                    let length = u16::from_be_bytes([header[4], header[5]]) as usize;
+                    let mut content = vec![0; length + header[6] as usize];
+                    stream.read_exact(&mut content).await.unwrap();
+                    if header[1] == 5 && length == 0 {
+                        break;
+                    }
                 }
-            }
-            let stream = stream.get_mut();
-            write_fcgi_record(stream, 6, b"Content-Type: text/event-stream\r\n\r\nevent: tool\ndata: {}\n\n").await.unwrap();
-            // PHP is still working: the rest only comes once the test has seen the first event.
-            released.await.unwrap();
-            write_fcgi_record(stream, 6, b"event: done\ndata: {}\n\n").await.unwrap();
-            write_fcgi_record(stream, 3, &[0; 8]).await.unwrap();
-        });
+                let stream = stream.get_mut();
+                write_fcgi_record(stream, 6, b"Content-Type: text/event-stream\r\n\r\nevent: tool\ndata: {}\n\n").await.unwrap();
+                // PHP is still working: the rest only comes once the test has seen the first event.
+                released.await.unwrap();
+                write_fcgi_record(stream, 6, b"event: done\ndata: {}\n\n").await.unwrap();
+                write_fcgi_record(stream, 3, &[0; 8]).await.unwrap();
+            });
 
-        let response = tokio::time::timeout(
-            Duration::from_secs(5),
-            fastcgi_request(&socket, &[], RequestInput::Buffered(Bytes::new()), deadline()),
-        )
-        .await
-        .expect("an event stream must not wait for PHP to finish")
-        .unwrap();
-        let mut body = response.into_body().into_data_stream();
-        assert_eq!(body.next().await.unwrap().unwrap(), Bytes::from_static(b"event: tool\ndata: {}\n\n"));
-        release.send(()).unwrap();
-        assert_eq!(body.next().await.unwrap().unwrap(), Bytes::from_static(b"event: done\ndata: {}\n\n"));
-        let _ = fs::remove_file(&socket);
+            let response = tokio::time::timeout(
+                Duration::from_secs(5),
+                fastcgi_request(&endpoint, &[], RequestInput::Buffered(Bytes::new()), deadline()),
+            )
+            .await
+            .expect("an event stream must not wait for PHP to finish")
+            .unwrap();
+            let mut body = response.into_body().into_data_stream();
+            assert_eq!(body.next().await.unwrap().unwrap(), Bytes::from_static(b"event: tool\ndata: {}\n\n"));
+            release.send(()).unwrap();
+            assert_eq!(body.next().await.unwrap().unwrap(), Bytes::from_static(b"event: done\ndata: {}\n\n"));
+        }
     }
 
     #[test]
@@ -1110,11 +1112,12 @@ mod tests {
 
     #[tokio::test]
     async fn an_upload_shorter_than_its_length_fails() {
-        let (socket, _server) = fake_fpm("short", 10).await;
-        let input = RequestInput::Streamed { length: 5000, body: Body::from(vec![0u8; 100]) };
-        let error = fastcgi_request(&socket, &[], input, deadline()).await.unwrap_err();
-        assert!(error.contains("Content-Length"), "{error}");
-        let _ = fs::remove_file(&socket);
+        for listener in listeners().await {
+            let (endpoint, _server) = fake_fpm(listener, 10).await;
+            let input = RequestInput::Streamed { length: 5000, body: Body::from(vec![0u8; 100]) };
+            let error = fastcgi_request(&endpoint, &[], input, deadline()).await.unwrap_err();
+            assert!(error.contains("Content-Length"), "{error}");
+        }
     }
 
     #[test]

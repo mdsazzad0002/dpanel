@@ -4,6 +4,7 @@
 //! `plans/platform-spec.md`.
 
 pub mod capabilities;
+pub mod fastcgi;
 pub mod fs;
 #[cfg(unix)]
 mod unix;

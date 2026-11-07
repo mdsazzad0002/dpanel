@@ -32,6 +32,7 @@ drust/src/platform/
   capabilities.rs Capability enum ও report
   paths.rs        Paths trait ও OS map
   fs.rs           FileAccess
+  fastcgi.rs      FastCgiEndpoint
   service.rs      ServiceManager
   account.rs      AccountManager
   runner.rs       IsolatedRunner
@@ -266,7 +267,7 @@ Linux: ext4/XFS quota, না থাকলে scan। Windows: NTFS per-user quo
 pub enum FastCgiEndpoint { Unix(PathBuf), Tcp(SocketAddr) }
 ```
 
-`connect_fpm` ([php.rs:306](../drust/src/edge_gateway/php.rs#L306)) এই enum নেবে, আর একটা `AsyncRead + AsyncWrite` stream ফেরত দেবে। Linux ও macOS: `Unix`। Windows: `Tcp`, শুধু `127.0.0.1`-এ।
+`connect_fpm` এই enum নেয়, আর `FastCgiStream` (একটা `AsyncRead + AsyncWrite` stream) ফেরত দেয়। Linux ও macOS: `Unix`। Windows: `Tcp`, শুধু loopback-এ। অন্য address-এ `connect` নিজেই `PermissionDenied` দেয়, কারণ PHP-র port-এ যে পৌঁছায় PHP তাকেই বিশ্বাস করে।
 
 ### 6.9 FirewallBackend
 
