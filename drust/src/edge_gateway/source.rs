@@ -527,7 +527,7 @@ fn read_env_file(path: &Path) -> Result<HashMap<String, String>, String> {
 }
 
 fn find_mysql_client() -> &'static str {
-    if Path::new("/usr/bin/mariadb").exists() {
+    if crate::platform::paths().binary(crate::platform::paths::Tool::Mariadb).is_ok() {
         "mariadb"
     } else {
         "mysql"

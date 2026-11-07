@@ -123,6 +123,7 @@ pub struct Paths { /* OS ও profile থেকে হিসাব করা, cfg
 
 impl Paths {
     fn panel_root(&self) -> &Path;
+    fn panel_root_candidates(&self) -> Vec<PathBuf>; // Linux-এ পুরোনো install-এর জায়গাও
     fn data_dir(&self) -> &Path;
     fn storage_dir(&self) -> PathBuf; // panel_root/storage/app
     fn tls_dir(&self) -> PathBuf;     // config_dir/tls
@@ -145,6 +146,8 @@ impl Paths {
 ```
 
 `binary` Linux-এ শুধু নির্দিষ্ট candidate path দেখে, `PATH` নয়, কারণ drust root হিসেবে চলে। macOS-এ সঙ্গে `/opt/homebrew/bin`, Windows-এ `PATH`।
+
+`binary(Tool::Timeout)` Windows-এ সবসময় `NotFound`, কারণ সেখানকার `timeout.exe` শুধু console থামায়। Caller তখন time limit ছাড়া চালায় না, কাজটা বন্ধ রাখে।
 
 `site_home` owner-কে `join` করে না, জুড়ে দেয়: `join` absolute নাম পেলে base ফেলে দেয়, তাই `/etc` নামের owner ownership check ভেঙে দিত। `default_document_root`-ও একই কারণে domain জুড়ে দেয়।
 

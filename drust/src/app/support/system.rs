@@ -65,12 +65,7 @@ pub fn detect_app_root(explicit: Option<&str>) -> Result<PathBuf, String> {
         }
     }
 
-    for path in [
-        crate::platform::paths().panel_root().to_path_buf(),
-        PathBuf::from("/home/dpanel/dengrweb_com/dpanel"),
-        PathBuf::from("/var/www/ServerPanel"),
-        PathBuf::from("/opt/dengrweb/dpanel"),
-    ] {
+    for path in crate::platform::paths().panel_root_candidates() {
         if path.join("public/index.php").exists() {
             return Ok(path);
         }

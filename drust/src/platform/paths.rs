@@ -15,6 +15,7 @@ pub enum Tool {
     Docker,
     Fail2banClient,
     Freshclam,
+    Mariadb,
     Node,
     Npm,
     Psql,
@@ -22,6 +23,7 @@ pub enum Tool {
     Ss,
     Sshd,
     Systemctl,
+    Timeout,
     Ufw,
     Uv,
 }
@@ -35,6 +37,7 @@ impl Tool {
             Self::Docker => "docker",
             Self::Fail2banClient => "fail2ban-client",
             Self::Freshclam => "freshclam",
+            Self::Mariadb => "mariadb",
             Self::Node => "node",
             Self::Npm => "npm",
             Self::Psql => "psql",
@@ -42,6 +45,7 @@ impl Tool {
             Self::Ss => "ss",
             Self::Sshd => "sshd",
             Self::Systemctl => "systemctl",
+            Self::Timeout => "timeout",
             Self::Ufw => "ufw",
             Self::Uv => "uv",
         }
@@ -57,6 +61,7 @@ impl Tool {
             Self::Docker => &["/usr/bin/docker", "/usr/local/bin/docker"],
             Self::Fail2banClient => &["/usr/bin/fail2ban-client", "/usr/local/bin/fail2ban-client"],
             Self::Freshclam => &["/usr/bin/freshclam", "/usr/local/bin/freshclam"],
+            Self::Mariadb => &["/usr/bin/mariadb", "/usr/local/bin/mariadb"],
             Self::Node => &["/usr/bin/node", "/usr/local/bin/node"],
             Self::Npm => &["/usr/local/bin/npm", "/usr/bin/npm"],
             Self::Psql => &["/usr/bin/psql", "/usr/local/bin/psql"],
@@ -64,6 +69,7 @@ impl Tool {
             Self::Ss => &["/usr/bin/ss", "/usr/sbin/ss"],
             Self::Sshd => &["/usr/sbin/sshd", "/usr/local/sbin/sshd"],
             Self::Systemctl => &["/usr/bin/systemctl", "/bin/systemctl"],
+            Self::Timeout => &["/usr/bin/timeout", "/bin/timeout"],
             Self::Ufw => &["/usr/sbin/ufw", "/usr/bin/ufw"],
             Self::Uv => &["/usr/local/bin/uv", "/usr/bin/uv", "/root/.local/bin/uv"],
         }
@@ -174,6 +180,8 @@ fn locate(
         Os::Macos => fixed
             .chain([Path::new("/opt/homebrew/bin").join(tool.name())])
             .find(|path| is_file(path)),
+        // Windows has its own timeout.exe, which only pauses a console.
+        Os::Windows if tool == Tool::Timeout => None,
         // npm and composer are batch files there.
         Os::Windows => on_windows_path(tool.name(), path_dirs, is_file),
     }
@@ -283,6 +291,19 @@ impl Paths {
 
     pub fn panel_root(&self) -> &Path {
         &self.panel_root
+    }
+
+    /// Where a panel can be, best first. Linux servers from older installs
+    /// keep theirs in one of the other places.
+    pub fn panel_root_candidates(&self) -> Vec<PathBuf> {
+        let mut places = vec![self.panel_root.clone()];
+        if self.os == Os::Linux {
+            places.extend(
+                ["/home/dpanel/dengrweb_com/dpanel", "/var/www/ServerPanel", "/opt/dengrweb/dpanel"]
+                    .map(PathBuf::from),
+            );
+        }
+        places
     }
 
     pub fn data_dir(&self) -> &Path {
@@ -427,6 +448,29 @@ mod tests {
             paths.data_dir.to_str().unwrap(),
             paths.sites_root.to_str().unwrap(),
         ]
+    }
+
+    #[test]
+    fn windows_never_takes_its_own_timeout_for_the_unix_one() {
+        let dirs = || [PathBuf::from("D:/System32")].into_iter();
+        let there = |path: &Path| path == Path::new("D:/System32").join("timeout.exe");
+        assert_eq!(locate(Os::Windows, Tool::Timeout, dirs(), there), None);
+    }
+
+    #[test]
+    fn linux_finds_timeout_and_mariadb_in_their_fixed_places() {
+        let found = |tool| locate(Os::Linux, tool, std::iter::empty(), |path: &Path| path.starts_with("/usr/bin"));
+        assert_eq!(found(Tool::Timeout), Some(PathBuf::from("/usr/bin/timeout")));
+        assert_eq!(found(Tool::Mariadb), Some(PathBuf::from("/usr/bin/mariadb")));
+    }
+
+    #[test]
+    fn only_linux_looks_for_a_panel_in_the_old_places() {
+        let linux = paths(Os::Linux, Profile::Server).panel_root_candidates();
+        assert_eq!(linux[0], Path::new("/var/www/dpanel"));
+        assert!(linux.contains(&PathBuf::from("/var/www/ServerPanel")));
+        assert_eq!(paths(Os::Macos, Profile::Local).panel_root_candidates().len(), 1);
+        assert_eq!(paths(Os::Windows, Profile::Local).panel_root_candidates().len(), 1);
     }
 
     #[test]

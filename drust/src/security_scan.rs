@@ -1134,8 +1134,8 @@ fn run_clamav(root: &Path, collector: &mut Collector, tracker: &Tracker, total: 
     let stale = signature_age_hours().is_none_or(|hours| hours >= 24);
     if stale {
         tracker.set("signatures", 0, 1);
-        if let Some(freshclam) = find_binary(Tool::Freshclam) {
-            let _ = Command::new("/usr/bin/timeout")
+        if let (Some(timeout), Some(freshclam)) = (find_binary(Tool::Timeout), find_binary(Tool::Freshclam)) {
+            let _ = Command::new(timeout)
                 .args(["300", &freshclam, "--quiet"])
                 .status();
         }
@@ -1144,7 +1144,11 @@ fn run_clamav(root: &Path, collector: &mut Collector, tracker: &Tracker, total: 
 
     // Without --infected clamscan prints one line per file, which is what
     // lets the panel show how far it has got.
-    let child = Command::new("/usr/bin/timeout")
+    let Some(timeout) = find_binary(Tool::Timeout) else {
+        report.error = Some("Could not run clamscan: timeout is not installed.".into());
+        return report;
+    };
+    let child = Command::new(timeout)
         .args([
             "3600",
             &clamscan,

@@ -149,8 +149,8 @@ pub fn set_enabled(enabled: bool) -> Result<Status, String> {
 
     // clamd refuses to start without a signature database.
     if signature_age_hours().is_none() {
-        if let Some(freshclam) = find_binary(Tool::Freshclam) {
-            let _ = Command::new("/usr/bin/timeout")
+        if let (Some(timeout), Some(freshclam)) = (find_binary(Tool::Timeout), find_binary(Tool::Freshclam)) {
+            let _ = Command::new(timeout)
                 .args(["300", &freshclam, "--quiet"])
                 .status();
         }
@@ -227,7 +227,8 @@ pub fn scan_file(path: &str, name: &str) -> Result<FileReport, String> {
         return Err("The ClamAV daemon is not running.".into());
     }
     // --fdpass lets clamd (which runs as clamav) read a file only root can open.
-    let output = Command::new("/usr/bin/timeout")
+    let timeout = find_binary(Tool::Timeout).ok_or("timeout is not installed.")?;
+    let output = Command::new(timeout)
         .args(["900", &clamdscan, "--fdpass", "--no-summary", "--stdout"])
         .arg(&file)
         .output()

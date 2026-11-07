@@ -7,7 +7,7 @@
 **খোলা বিষয়:**
 
 - `skip_until_windows_has` আর code-এ নেই; কোনো test সেটা দিয়ে skip হয় না।
-- C1 শেষ নয়। হয়েছে: `Paths`, `binary(Tool)`, versioned PHP ও Python, `uv`, `default_document_root`। `platform/`-এর বাইরে বাকি: `app/support/system.rs` (`/var/www/ServerPanel`), `edge_gateway/source.rs` (`/usr/bin/mariadb`), `security_scan.rs` ও `upload_scan.rs` (`/usr/bin/timeout`), আর `/usr/bin/env` ও `PATH=` string (C5-এর সঙ্গে যাবে)।
+- C1: code-এর কাজ শেষ, CI বাকি। `platform/`-এর বাইরে test ছাড়া যা থাকল: `/usr/bin/env` ও `PATH=` string (C5), `ALLOWED_ROOT_PREFIXES` (নিচে), আর `migration_ssh.rs`-এর remote server-এর path। Comment ও error message-এ `/etc/drust` লেখা আছে, সেগুলো code নয়। ClamAV-এর `timeout` Windows-এ নেই, তাই সেখানে scan চলবে না; J10-এ time limit-এর অন্য পথ লাগবে।
 - C4 শেষ নয়। `useradd` পরিবারের command `platform/`-এর বাইরে নেই। বাকি: `login_users.rs`-এর `loginctl` ও `pkill`, `app/admin/create_user.rs`-এর `chown` ও `chmod`।
 - F1: Windows `Paths`, `FileAccess` ও local `AccountManager`-এর unit test পাস। `filemanager/e2e_local.rs` ignored, হাতে চালাতে হয়; suite সেটা প্রমাণ করে না। F1-এর `Depends`-এ C1 ও C4 এখনও খোলা।
 - F2 চলছে, আর **H1 পাস করার আগেই** শুরু হয়েছে: H1-এর সিদ্ধান্ত হয়নি, `plans/spikes/H1.md`-ও ছিল না। H1 pool-এর নকশা বদলাতে পারে। হয়েছে: `edge_gateway/php_cgi_pool.rs`, spec §9-এর default, প্রতি site-এ pool, TCP-তে `FastCgiEndpoint`। Crash, recycle, idle, queue ও 503-এর test একটা stand-in process দিয়ে পাস। আসল php-cgi দিয়ে শুধু একবার হাতে দেখা: `mysite.test` render হয়, worker মেরে দিলে পরের request-এ নতুন worker আসে। আসল php-cgi-র 500 request recycle চালানো হয়নি।

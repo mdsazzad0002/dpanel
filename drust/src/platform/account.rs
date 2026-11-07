@@ -92,6 +92,21 @@ impl<'a> AccountSpec<'a> {
 }
 
 /// The account lists a Unix system keeps as text.
+const NO_LOGIN_SHELLS: &[&str] = &[
+    "/usr/sbin/nologin",
+    "/sbin/nologin",
+    "/bin/false",
+    "/usr/bin/false",
+    "/bin/sync",
+    "/sbin/halt",
+    "/sbin/shutdown",
+];
+
+/// Whether a shell from the account list lets its user log in.
+pub fn can_login_shell(shell: &str) -> bool {
+    !shell.is_empty() && !NO_LOGIN_SHELLS.contains(&shell)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountList {
     Passwd,

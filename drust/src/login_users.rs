@@ -3,7 +3,7 @@
 //! change that — login shell, password lock, password, live sessions.
 
 use serde_json::{Value, json};
-use crate::platform::{account::AccountList, accounts};
+use crate::platform::{account::{AccountList, can_login_shell}, accounts};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -11,15 +11,6 @@ use std::{
     process::Command,
 };
 
-const NO_LOGIN_SHELLS: &[&str] = &[
-    "/usr/sbin/nologin",
-    "/sbin/nologin",
-    "/bin/false",
-    "/usr/bin/false",
-    "/bin/sync",
-    "/sbin/halt",
-    "/sbin/shutdown",
-];
 const NOBODY_UID: u32 = 65534;
 const ADMIN_GROUPS: &[&str] = &["sudo", "admin", "wheel"];
 
@@ -127,10 +118,6 @@ pub fn allowed_shells() -> Vec<String> {
     shells.sort();
     shells.dedup();
     shells
-}
-
-fn can_login_shell(shell: &str) -> bool {
-    !shell.is_empty() && !NO_LOGIN_SHELLS.contains(&shell)
 }
 
 pub fn list() -> Result<Value, String> {

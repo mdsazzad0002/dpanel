@@ -1,21 +1,18 @@
 //! Turns a systemd unit on (start + enable at boot) or off (stop + disable at
 //! boot). Shared by the PostgreSQL and MongoDB modules.
 
-use std::{path::Path, process::Command};
-
-fn systemctl() -> Option<&'static str> {
-    ["/usr/bin/systemctl", "/bin/systemctl"]
-        .into_iter()
-        .find(|candidate| Path::new(candidate).is_file())
-}
+use crate::platform::{self, paths::Tool};
+use std::process::Command;
 
 /// `systemctl enable|disable --now <unit>`. Callers must pass a unit from
 /// their own fixed allow-list (see postgresql.rs, mongodb.rs).
 pub(crate) fn switch_unit(unit: &str, enabled: bool) -> Result<String, String> {
-    let systemctl = systemctl().ok_or_else(|| "systemctl is not available.".to_string())?;
+    let systemctl = platform::paths()
+        .binary(Tool::Systemctl)
+        .map_err(|_| "systemctl is not available.".to_string())?;
     let action = if enabled { "enable" } else { "disable" };
 
-    let output = Command::new(systemctl)
+    let output = Command::new(&systemctl)
         .args([action, "--now", unit])
         .output()
         .map_err(|e| format!("cannot run systemctl: {e}"))?;
@@ -33,12 +30,12 @@ pub(crate) fn switch_unit(unit: &str, enabled: bool) -> Result<String, String> {
     // it doesn't crash-loop at boot, and report why it died.
     if enabled {
         std::thread::sleep(std::time::Duration::from_secs(3));
-        let active = Command::new(systemctl)
+        let active = Command::new(&systemctl)
             .args(["is-active", "--quiet", unit])
             .status()
             .is_ok_and(|status| status.success());
         if !active {
-            let _ = Command::new(systemctl).args(["disable", "--now", unit]).output();
+            let _ = Command::new(&systemctl).args(["disable", "--now", unit]).output();
             let reason = last_log_message(unit);
             return Err(match reason {
                 Some(reason) => format!("{unit} stopped right after starting: {reason}"),
