@@ -1,12 +1,8 @@
-use std::{
-    fs,
-    io::Write,
-    path::Path,
-    process::{Command, Stdio},
-};
+use std::{fs, path::Path};
 
 use super::{disable_root, options::Options};
 use crate::app::support::{user_home, valid_email};
+use crate::platform::account::AccountSpec;
 use crate::app::{
     ensure_root, info, random_hex, read_to_string, run_status, user_group, valid_username, warn,
 };
@@ -26,31 +22,28 @@ pub(super) fn create(options: Options) -> Result<(), String> {
         }
     }
 
-    if Command::new("getent")
-        .args(["passwd", &options.username])
-        .status()
-        .is_ok_and(|status| status.success())
-    {
-        run_status("usermod", &["-s", &options.shell_path, &options.username])?;
+    let accounts = crate::platform::accounts();
+    if accounts.exists(&options.username).unwrap_or(false) {
+        accounts
+            .set_shell(&options.username, &options.shell_path)
+            .map_err(|error| error.to_string())?;
         info(&format!(
             "Updated shell for existing user {}.",
             options.username
         ));
     } else {
-        run_status(
-            "useradd",
-            &["-m", "-s", &options.shell_path, &options.username],
-        )?;
+        accounts
+            .create(&AccountSpec::login(&options.username, &options.shell_path))
+            .map_err(|error| error.to_string())?;
         info(&format!("Created user {}.", options.username));
     }
 
     add_admin_groups(&options.username);
 
     if let Some(email) = &options.email {
-        run_status(
-            "usermod",
-            &["-c", &format!("panel-email={email}"), &options.username],
-        )?;
+        accounts
+            .set_comment(&options.username, &format!("panel-email={email}"))
+            .map_err(|error| error.to_string())?;
         info(&format!("Panel email recorded for {}.", options.username));
     }
 
@@ -71,14 +64,14 @@ pub(super) fn create(options: Options) -> Result<(), String> {
     if let Some(password) = password {
         set_password(&options.username, &password)?;
     } else {
-        let _ = run_status("passwd", &["-l", &options.username]);
+        let _ = accounts.lock(&options.username, true);
     }
 
     if let Some(ssh_key) = &options.ssh_key {
         install_ssh_key(&options.username, ssh_key)?;
     }
     if options.password.is_some() || options.ssh_key.is_some() {
-        let _ = run_status("passwd", &["-u", &options.username]);
+        let _ = accounts.lock(&options.username, false);
     }
     if options.disable_root {
         match disable_root::run() {
@@ -102,32 +95,14 @@ pub(super) fn create(options: Options) -> Result<(), String> {
 
 fn add_admin_groups(username: &str) {
     for group in ["sudo", "wheel"] {
-        if Command::new("getent")
-            .args(["group", group])
-            .status()
-            .is_ok_and(|status| status.success())
-        {
-            let _ = run_status("usermod", &["-aG", group, username]);
-        }
+        let _ = crate::platform::accounts().add_to_group(username, group);
     }
 }
 
 fn set_password(username: &str, password: &str) -> Result<(), String> {
-    let mut child = Command::new("chpasswd")
-        .stdin(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("failed to start chpasswd: {error}"))?;
-    if let Some(stdin) = child.stdin.as_mut() {
-        writeln!(stdin, "{username}:{password}")
-            .map_err(|error| format!("failed to write password: {error}"))?;
-    }
-    if !child
-        .wait()
-        .map_err(|error| format!("failed waiting for chpasswd: {error}"))?
-        .success()
-    {
-        return Err("Password configuration failed.".into());
-    }
+    crate::platform::accounts()
+        .set_password(username, password)
+        .map_err(|_| "Password configuration failed.".to_string())?;
     info(&format!("Password configured for {username}."));
     Ok(())
 }

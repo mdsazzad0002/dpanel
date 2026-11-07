@@ -1,14 +1,10 @@
 use std::process::Command;
 
 pub fn ensure_root() -> Result<(), String> {
-    let output = Command::new("id")
-        .arg("-u")
-        .output()
-        .map_err(|error| format!("failed to check uid: {error}"))?;
-    if !output.status.success() {
-        return Err("failed to determine effective uid".into());
+    if !crate::platform::current().needs_root() {
+        return Ok(());
     }
-    if String::from_utf8_lossy(&output.stdout).trim() != "0" {
+    if !crate::platform::process::is_root()? {
         return Err("This command must run as root.".into());
     }
     Ok(())
@@ -38,10 +34,12 @@ pub fn run_output(program: &str, args: &[&str]) -> Result<String, String> {
 }
 
 pub(crate) fn program_exists(program: &str) -> bool {
-    Command::new("sh")
-        .arg("-c")
-        .arg(format!("command -v {program} >/dev/null 2>&1"))
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    crate::platform::process::program_exists(program)
+}
+
+/// Best effort `chown`. A local profile has no other owner to give a file to.
+pub(crate) fn try_chown(args: &[&str]) {
+    if !crate::platform::current().one_user() {
+        let _ = Command::new("chown").args(args).status();
+    }
 }

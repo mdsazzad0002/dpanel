@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Website;
 use App\Services\Filemanager\FilemanagerService;
+use App\Services\PathService;
 use Illuminate\Console\Command;
 
 class PruneFilemanagerTrashCommand extends Command
@@ -26,7 +27,7 @@ class PruneFilemanagerTrashCommand extends Command
 
         Website::query()->whereNotNull('site_owner')->where('site_owner', '!=', '')->chunkById(50, function ($websites) use ($cutoff, &$removed, &$failed): void {
             foreach ($websites as $website) {
-                $trashRoot = '/home/'.$website->site_owner.'/.trash';
+                $trashRoot = PathService::siteHome((string) $website->site_owner).'/.trash';
                 if (! is_dir($trashRoot)) {
                     continue;
                 }

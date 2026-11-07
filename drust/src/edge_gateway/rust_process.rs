@@ -23,9 +23,7 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
             if owner.is_empty() || !owner.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_'|'-')) { return Err("invalid site owner".into()); }
             let root = PathBuf::from(root.ok_or("project_root is required")?).canonicalize().map_err(|e| format!("project directory is unavailable: {e}"))?;
             if !root.is_dir() || !root.starts_with(crate::platform::paths().site_home(owner)) { return Err("Rust project must be inside the owner's home directory".into()); }
-            let id = Command::new("id").args(["-u", owner]).output().map_err(|e| e.to_string())?;
-            if !id.status.success() { return Err("site owner does not exist".into()); }
-            let uid: u32 = String::from_utf8_lossy(&id.stdout).trim().parse().map_err(|_| "cannot read the site owner's uid")?;
+            let uid = crate::platform::accounts().lookup(owner).map_err(|_| "site owner does not exist")?.uid;
             // Empty command or plain arguments ("serve") run the Cargo binary;
             // a first word containing a slash is an explicit binary path.
             let mut parts = command.unwrap_or("").split_whitespace().peekable();

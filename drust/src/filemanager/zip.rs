@@ -111,7 +111,12 @@ pub fn create_user_archive(
             return Err("Nothing to archive: the selected item(s) contain no files.".into());
         }
         fs::rename(&temporary, &destination).map_err(|e| format!("failed to save archive: {e}"))?;
-        apply_owner_and_mode(username, &group, &destination, "0640")?;
+        apply_owner_and_mode(
+            username,
+            &group,
+            &destination,
+            crate::platform::fs::FileMode::SiteFile,
+        )?;
         Ok(())
     })();
 

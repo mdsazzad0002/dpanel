@@ -12,6 +12,7 @@ use App\Models\Website;
 use App\Models\WebsiteIpRule;
 use App\Services\EdgeGatewayReloader;
 use App\Services\Filemanager\FilemanagerService;
+use App\Services\PathService;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
 use App\Services\Ssl\SslLifecycleService;
@@ -20,6 +21,7 @@ use App\Services\Website\WebsiteCreateEditService;
 use App\Services\Website\WebsiteResolverService;
 use App\Services\Website\WebsiteTemplateCatalogService;
 use App\Services\Website\WordpressInstallService;
+use App\Support\Platform\ProcessIdentity;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -56,8 +58,6 @@ class WebsiteController extends Controller
         protected FilemanagerService $filemanagerService,
         protected WordpressInstallService $wordpressInstallService,
     ) {}
-
-    private const HOME_BASE = '/home';
 
     private const WEBSITE_METRICS_TABLE = 'website_metrics';
 
@@ -933,7 +933,7 @@ class WebsiteController extends Controller
     {
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath((string) ($website['project_root'] ?? '')));
-        $accountHome = $siteOwner !== '' ? '/home/'.$siteOwner : '';
+        $accountHome = $siteOwner !== '' ? PathService::siteHome($siteOwner) : '';
 
         if ($siteOwner === '' || $accountHome === '') {
             return response()->json(['success' => false, 'message' => 'Website owner is unavailable.'], 422);
@@ -2144,7 +2144,7 @@ class WebsiteController extends Controller
      */
     protected function applyWebsiteFilesystemIsolation(string $siteOwner, string $projectRoot, string $rootPath): void
     {
-        if (! function_exists('posix_geteuid') || posix_geteuid() !== 0) {
+        if (! app(ProcessIdentity::class)->isRoot()) {
             return;
         }
 
@@ -3614,10 +3614,7 @@ class WebsiteController extends Controller
             return null;
         }
 
-        $command = ['du', '-sb', '--', $path];
-        if (! function_exists('posix_geteuid') || posix_geteuid() !== 0) {
-            $command = array_merge(['sudo', '-n'], $command);
-        }
+        $command = app(ProcessIdentity::class)->privilegedCommand(['du', '-sb', '--', $path]);
 
         try {
             $result = Process::timeout(30)->run($command);
@@ -3832,7 +3829,7 @@ class WebsiteController extends Controller
     protected function resolveFileManagerBasePath(array $website, string $scopeRoot = ''): string
     {
         $siteOwner = (string) ($website['site_owner'] ?? '');
-        $configured = $siteOwner !== '' ? '/home/'.$siteOwner : (string) ($website['project_root'] ?? '');
+        $configured = $siteOwner !== '' ? PathService::siteHome($siteOwner) : (string) ($website['project_root'] ?? '');
         $domain = (string) ($website['domain'] ?? 'site');
         $resolvedRoot = $configured !== ''
             ? $this->normalizeAbsolutePath($configured)
@@ -3857,16 +3854,10 @@ class WebsiteController extends Controller
         $destination = str_replace('\\', '/', trim($destination));
         $base = rtrim(str_replace('\\', '/', trim($basePath)), '/');
 
-        if (str_starts_with($destination, '/')) {
-            $destination = rtrim($destination, '/');
-            if ($destination === $base) {
-                return '';
-            }
-            if (! str_starts_with($destination, $base.'/')) {
-                return null;
-            }
+        if (PathService::isAbsolutePath($destination)) {
+            $relative = PathService::relativeTo($destination, $base);
 
-            return $this->sanitizeRelativePath(substr($destination, strlen($base) + 1));
+            return $relative === null ? null : $this->sanitizeRelativePath($relative);
         }
 
         if ($destination === '.' || $destination === '..' || str_starts_with($destination, './') || str_starts_with($destination, '../')) {
@@ -3885,15 +3876,7 @@ class WebsiteController extends Controller
             return '';
         }
 
-        if ($target === $base) {
-            return '';
-        }
-
-        if (! str_starts_with($target, $base.'/')) {
-            return '';
-        }
-
-        return $this->sanitizeRelativePath(substr($target, strlen($base) + 1));
+        return $this->sanitizeRelativePath((string) PathService::relativeTo($target, $base));
     }
 
     /**

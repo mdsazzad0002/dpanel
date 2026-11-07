@@ -6,6 +6,7 @@ use App\Models\DatabaseRequest;
 use App\Models\MigrationImport;
 use App\Models\Website;
 use App\Services\Migration\AccountArchiveMigrationProvider;
+use App\Services\PathService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
@@ -43,7 +44,7 @@ class RestoreMigrationImportJob implements ShouldQueue
                     if (Website::where('domain', $domain)->exists()) {
                         continue;
                     }
-                    $root = (string) ($inventory->get($domain)['document_root'] ?? '/home/'.($import->inventory['account'] ?? '').'/public_html');
+                    $root = (string) ($inventory->get($domain)['document_root'] ?? PathService::siteHome((string) ($import->inventory['account'] ?? '')).'/public_html');
                     Website::create([
                         'id' => (string) Str::uuid(), 'domain' => $domain, 'hostname' => $domain,
                         'scope' => 'local', 'project_root' => dirname($root), 'root_path' => $root,

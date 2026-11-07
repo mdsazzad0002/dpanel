@@ -353,11 +353,11 @@ fn php_binary(version: &str) -> Result<String, String> {
         && version.as_bytes()[1] == b'.'
         && version.as_bytes()[0].is_ascii_digit()
         && version.as_bytes()[2].is_ascii_digit();
-    let binary = if valid { format!("/usr/bin/php{version}") } else { "/usr/bin/php".to_string() };
-    if !Path::new(&binary).is_file() {
-        return Err(format!("PHP CLI {binary} is not installed on this server."));
+    let binary = crate::platform::paths().php_cli(valid.then_some(version));
+    if !binary.is_file() {
+        return Err(format!("PHP CLI {} is not installed on this server.", binary.display()));
     }
-    Ok(binary)
+    Ok(binary.to_string_lossy().into_owned())
 }
 
 fn systemctl(args: &[&str]) -> Result<(), String> {

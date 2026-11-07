@@ -17,3 +17,5 @@ pub(crate) mod upload;
 pub(crate) mod user;
 pub(crate) mod write;
 pub(crate) mod zip;
+#[cfg(test)]
+mod e2e_tmp;

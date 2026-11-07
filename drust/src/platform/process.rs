@@ -2,6 +2,49 @@
 
 use tokio::process::Command;
 
+/// Whether this process is root. A Windows server has no such thing until
+/// task J, and a local profile never asks.
+pub fn is_root() -> Result<bool, String> {
+    #[cfg(unix)]
+    {
+        let output = std::process::Command::new("id")
+            .arg("-u")
+            .output()
+            .map_err(|error| format!("failed to check uid: {error}"))?;
+        if !output.status.success() {
+            return Err("failed to determine effective uid".into());
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim() == "0")
+    }
+    #[cfg(windows)]
+    {
+        Ok(false)
+    }
+}
+
+/// Whether `program` can be run by name.
+pub fn program_exists(program: &str) -> bool {
+    #[cfg(unix)]
+    {
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("command -v {program} >/dev/null 2>&1"))
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        let path_var = std::env::var_os("PATH").unwrap_or_default();
+        super::paths::on_windows_path(
+            program,
+            std::env::split_paths(&path_var),
+            std::path::Path::is_file,
+        )
+        .is_some()
+    }
+}
+
 /// Starts the child in its own process group, so that it and everything it
 /// spawns can be stopped together.
 pub fn new_process_group(command: &mut Command) -> &mut Command {
@@ -13,5 +56,17 @@ pub fn new_process_group(command: &mut Command) -> &mut Command {
     {
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NEW_PROCESS_GROUP)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_a_program_that_is_there_and_not_one_that_is_not() {
+        let present = if cfg!(windows) { "cmd" } else { "sh" };
+        assert!(program_exists(present));
+        assert!(!program_exists("dpanel-no-such-program"));
     }
 }

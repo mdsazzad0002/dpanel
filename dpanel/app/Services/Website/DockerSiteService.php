@@ -5,6 +5,7 @@ namespace App\Services\Website;
 use App\Models\Website;
 use App\Services\Docker\DrustDockerClient;
 use App\Services\EdgeGatewayReloader;
+use App\Services\PathService;
 
 /**
  * Runs a website as a Docker container, the way Python sites run under
@@ -128,8 +129,8 @@ class DockerSiteService
         if ($target !== '') {
             $source = rtrim((string) $website->root_path, '/');
             // Only a site's own folder is mounted, never an arbitrary host path.
-            if (! str_starts_with($source, '/home/') || str_contains($source, '..')) {
-                throw new \RuntimeException('This website has no folder under /home to mount.');
+            if (! PathService::isInsideSiteBase($source) || str_contains($source, '..')) {
+                throw new \RuntimeException('This website has no folder under '.PathService::websiteBaseDirectory().' to mount.');
             }
             $volumes[] = ['source' => $source, 'target' => $target, 'read_only' => false];
         }

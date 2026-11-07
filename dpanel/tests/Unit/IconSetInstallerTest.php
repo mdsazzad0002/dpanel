@@ -18,7 +18,7 @@ class IconSetInstallerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->root = sys_get_temp_dir().'/icons-test-'.uniqid();
+        $this->root = str_replace('\\', '/', sys_get_temp_dir()).'/icons-test-'.uniqid();
         $this->tmp = sys_get_temp_dir().'/icons-src-'.uniqid();
         mkdir($this->root.'/public', 0777, true);
         mkdir($this->tmp);

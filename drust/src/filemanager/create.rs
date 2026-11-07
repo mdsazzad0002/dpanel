@@ -3,7 +3,8 @@ use std::fs;
 use std::sync::Arc;
 
 use crate::api::{ApiState, check_token, operation_response};
-use crate::app::{info, run_status};
+use crate::app::{info, try_chown};
+use crate::platform::fs::FileMode;
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -31,10 +32,7 @@ pub fn run(paths: &[String]) -> Result<(), String> {
             info(&format!("folder created: {}", path.display()));
         }
         if let (Ok(uid), Ok(gid)) = (env::var("SUDO_UID"), env::var("SUDO_GID")) {
-            let _ = run_status(
-                "chown",
-                &[&format!("{uid}:{gid}"), path.to_string_lossy().as_ref()],
-            );
+            try_chown(&[&format!("{uid}:{gid}"), path.to_string_lossy().as_ref()]);
         }
     }
     Ok(())
@@ -56,7 +54,7 @@ pub fn run_for_user(username: &str, paths: &[String]) -> Result<(), String> {
             &path,
             "Folder",
         )?;
-        apply_owner_and_mode(username, &group, &canonical, "0755")?;
+        apply_owner_and_mode(username, &group, &canonical, FileMode::Executable)?;
         info(&format!("folder ensured: {}", path.display()));
     }
 

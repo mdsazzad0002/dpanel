@@ -129,6 +129,11 @@ impl Paths {
     fn sites_root(&self) -> &Path;
     fn site_home(&self, owner: &str) -> PathBuf;
     fn binary(&self, tool: Tool) -> Result<PathBuf, PlatformError>;
+    fn php_candidates(&self, version: Option<&str>) -> Vec<PathBuf>; // সেরাটা আগে
+    fn php_cli(&self, version: Option<&str>) -> PathBuf;             // যেটা চালানো হবে
+    fn python_candidates(&self, version: &str) -> Vec<PathBuf>;
+    fn managed_python_dir(&self) -> PathBuf;  // drust-এর বসানো Python ও uv
+    fn default_document_root(&self, domain: &str) -> PathBuf;
     fn run_dir(&self) -> &Path;
     fn temp_dir(&self) -> &Path;
     fn runtime_dir(&self) -> &Path;   // dPanel-এর নিজের software, Linux-এ /opt/dpanel
@@ -140,7 +145,19 @@ impl Paths {
 
 `binary` Linux-এ শুধু নির্দিষ্ট candidate path দেখে, `PATH` নয়, কারণ drust root হিসেবে চলে। macOS-এ সঙ্গে `/opt/homebrew/bin`, Windows-এ `PATH`।
 
-`site_home` owner-কে `join` করে না, জুড়ে দেয়: `join` absolute নাম পেলে base ফেলে দেয়, তাই `/etc` নামের owner ownership check ভেঙে দিত।
+`site_home` owner-কে `join` করে না, জুড়ে দেয়: `join` absolute নাম পেলে base ফেলে দেয়, তাই `/etc` নামের owner ownership check ভেঙে দিত। `default_document_root`-ও একই কারণে domain জুড়ে দেয়।
+
+`php_cli` Linux-এ সবসময় প্রথম জায়গাটাই দেয় (`/usr/bin/php`, `/usr/bin/php8.3`), না থাকলেও; অন্য জায়গার copy ভুলে চলবে না, আর না থাকলে caller জানায়। macOS ও Windows-এ প্রথম যেটা আছে সেটা। `version` caller আগেই যাচাই করে।
+
+| জিনিস | Linux | macOS | Windows |
+| --- | --- | --- | --- |
+| PHP, version সহ | `/usr/bin/php{v}`, `/usr/local/bin/php{v}` | `/opt/homebrew/opt/php@{v}/bin/php`, `/usr/local/opt/php@{v}/bin/php` | `runtime_dir\php\{v}\php.exe` |
+| PHP, version ছাড়া | `/usr/bin/php`, `/usr/local/bin/php`, `/usr/bin/php8.3`, `/usr/bin/php8.2` | `/opt/homebrew/bin/php`, `/usr/local/bin/php` | `runtime_dir\php\php.exe`, তারপর `PATH` |
+| Python | `/usr/local/pyenv/versions/{v}/bin/python3`, `/usr/bin/python{v}`, `/usr/local/bin/python{v}` | `/opt/homebrew/bin/python{v}`, `/usr/local/bin/python{v}` | `runtime_dir\python\{v}\python.exe` |
+| `managed_python_dir` | `/usr/local/dpanel-python` | `runtime_dir/python` | `runtime_dir\python` |
+| `default_document_root` | `/var/www/{domain}/public` | `site_home(domain)/public` | `site_home(domain)\public` |
+
+`uv` অন্য tool-এর মতো `binary(Tool::Uv)` দিয়ে পাওয়া যায়। Windows-এর `runtime_dir\php` ও `runtime_dir\python` এখন শুধু নাম; F3 সেখানে install করলে এই table মিলিয়ে নিতে হবে।
 
 `platform::paths()` দিয়ে পাওয়া যায়। Trait নয়, কারণ OS-ভেদে শুধু মান আলাদা, আচরণ নয়; তাই পুরো table সব OS-এ test করা যায়। Linux profile দেখে না।
 
@@ -159,7 +176,8 @@ Linux column-এর `data_dir` ও `log_dir` বর্তমান code-এর �
 এই interface Windows-এর 60টা compile error-এর বেশিরভাগ দূর করে।
 
 ```rust
-pub enum FileMode { Private, PrivateDir, Shared, Executable, Raw(u32) }
+pub enum FileMode { Private, PrivateDir, SiteDir, SiteFile, Shared, Executable, Raw(u32) }
+impl FileMode { fn bits(self) -> u32; }
 pub enum LinkPolicy { Follow, Refuse }
 
 pub trait FileAccess {
@@ -172,21 +190,29 @@ pub trait FileAccess {
     fn replace_private(&self, path: &Path, links: LinkPolicy) -> Result<File, PlatformError>;
     fn create_dir_private(&self, path: &Path) -> Result<(), PlatformError>;
     fn symlink(&self, target: &Path, link: &Path) -> Result<(), PlatformError>;
+    fn remove_file(&self, path: &Path) -> Result<(), PlatformError>;
 }
 ```
 
-- `mode_bits` ও `owner` caller-এর হাতে থাকা `Metadata` নেয়, path নয়। তাই caller যে symlink follow করেনি, সেটা এখানেও follow হয় না। Panel-এর লেখা `mode_string()` helper থেকে আসে।
+- `mode_bits` ও `owner` caller-এর হাতে থাকা `Metadata` নেয়, path নয়। তাই caller যে symlink follow করেনি, সেটা এখানেও follow হয় না। Panel-এর লেখা `mode_string()` helper থেকে আসে। Windows-এ `mode_bits` সবসময় `None`।
 - `set_owner` symlink follow করে (`chown`), `set_link_owner` করে না (`lchown`)। Site-এর folder-এ link থাকতে পারে, তাই দুটো আলাদা।
 - `create_private` নতুন file বানায়, আগে থাকলে ব্যর্থ। `replace_private` truncate করে, পুরোনো file-এর mode রেখে। `LinkPolicy::Refuse` মানে `O_NOFOLLOW`।
-- F1-এর আগে Windows-এ এই সব call `Unsupported` দেয়। ACL ছাড়া বানানো file folder-এর ACL পায়, তাই secret সেখানে আসলে private থাকত না।
+- `remove_file` file বা symlink মোছে, link যেখানে দেখায় সেটা নয়। Windows-এ folder-এর link folder হিসেবে মুছতে হয়, তাই `fs::remove_file` সেখানে ব্যর্থ হয়; symlink মুছতে পারে এমন code এটাই ব্যবহার করবে।
+- Windows-এ ACL SDDL হিসেবে লেখা আর native API দিয়ে বসানো। `create_private` ও `create_dir_private` প্রথম মুহূর্ত থেকেই নিজের ACL নিয়ে তৈরি হয়, folder-এর ACL কখনো পায় না; নইলে secret সেখানে আসলে private থাকত না।
+- Windows-এ `owner`, `set_owner` ও `set_link_owner` local profile-এ logged-in user ধরে নেয়, server-এ `Unsupported` (per-site user task J-তে)।
+- Linux-এর `chown`, `chmod`, `setfacl`, `find`, `cp` command `filemanager`-এ আগের মতোই আছে; rule 4 অনুযায়ী এগুলো বদলানো আলাদা task। `Platform::one_user()` সত্য হলে (Linux ছাড়া অন্য OS-এর local profile) `filemanager` এই command-এর বদলে `platform::files()` ব্যবহার করে।
 
 | `FileMode` | Unix | Windows |
 | --- | --- | --- |
 | `Private` | `0600` | শুধু owner ও SYSTEM-এর ACL |
 | `PrivateDir` | `0700` | একই, inherit সহ |
+| `SiteDir` | `0750` | Owner full, site group read ও execute, inherit সহ |
+| `SiteFile` | `0640` | Owner full, site group read |
 | `Shared` | `0644` | Owner full, site group read |
 | `Executable` | `0755` | Owner full, group read ও execute |
 | `Raw(n)` | `n` | File manager-এর chmod; Windows-এ `Unsupported` |
+
+Per-site user আসার আগে (task J) Windows-এ site group মানে local `Users` group।
 
 ### 6.3 ServiceManager
 
@@ -214,17 +240,40 @@ pub trait AccountManager {
     fn delete(&self, name: &str, keep_files: bool) -> Result<(), PlatformError>;
     fn exists(&self, name: &str) -> Result<bool, PlatformError>;
     fn lookup(&self, name: &str) -> Result<OwnerId, PlatformError>;
-    fn set_password(&self, name: &str, secret: &Secret) -> Result<(), PlatformError>;
+    fn set_password(&self, name: &str, secret: &str) -> Result<(), PlatformError>;
     fn lock(&self, name: &str, locked: bool) -> Result<(), PlatformError>;
+    fn set_shell(&self, name: &str, shell: &str) -> Result<(), PlatformError>;
+    fn set_comment(&self, name: &str, comment: &str) -> Result<(), PlatformError>;
+    fn add_to_group(&self, name: &str, group: &str) -> Result<(), PlatformError>;
+    fn primary_group(&self, name: &str) -> Result<String, PlatformError>;
+    fn home(&self, name: &str) -> Result<PathBuf, PlatformError>;
+    fn shell(&self, name: &str) -> Option<String>;
+    fn password_hash(&self, name: &str) -> Option<String>;
+    fn list(&self, list: AccountList) -> Result<String, PlatformError>;
 }
+
+pub enum AccountList { Passwd, Shadow, Group }
 ```
 
-| OS | Implementation |
-| --- | --- |
-| Linux | `useradd`, `userdel`, `usermod`, `getent`, `chpasswd` |
-| Windows server | Local user API, প্রতি account-এ একটা user ও group |
-| macOS server | `dscl`, `sysadminctl` |
-| Local | Logged-in user; `create` শুধু folder বানায়, `lock` no-op |
+- `AccountSpec` নতুন account-এর সব তথ্য রাখে; `site`, `login`, `restored` ও `sharing` চারটা ব্যবহার। `AccountGroup` বলে group কোনটা। Argument বানানো pure function, তাই সব OS-এ test হয়।
+- `add_to_group` group না থাকলে কিছু করে না। `shell` ও `password_hash` না থাকলে `None`; `password_hash` শুধু cPanel format-এর backup-এ যায়, কখনো log হবে না।
+- `list` `/etc/passwd` format-এর raw text দেয়। যেখানে account মানে user নয়, সেখানে খালি।
+- `platform::accounts()` দিয়ে পাওয়া যায়। Backend ঠিক হয় OS ও profile দেখে।
+
+| Backend | কোথায় | Implementation |
+| --- | --- | --- |
+| `LinuxAccounts` | Linux, সব profile | `useradd`, `userdel`, `usermod`, `groupadd`, `getent`, `id`, `chpasswd` |
+| `LocalAccounts` | macOS ও Windows local | Logged-in user; account মানে `sites_root`-এর একটা folder |
+| `NoAccounts` | macOS ও Windows server, যতদিন J ও K হয়নি | সব call `Unsupported`, `shell` ও `password_hash` `None` |
+| পরে | Windows server | Local user API, প্রতি account-এ একটা user ও group |
+| পরে | macOS server | `dscl`, `sysadminctl` |
+
+`LocalAccounts`:
+
+- `create` শুধু folder বানায়। `delete` folder মোছে, তাই নাম আগে যাচাই হয়: খালি, `.`, `..`, `/`, `\`, `:` ও শেষে `.` বা space থাকলে `Failed`। এই যাচাই সরানো যাবে না।
+- `lookup` ও `create` `OwnerId::LOGGED_IN_USER` দেয়। এটা আসল uid নয়, তাই backup-এর manifest-এ যায় না: সেখানে `0` গেলে Linux server-এ root-এর id হয়ে যেত।
+- `set_password`, `lock`, `set_shell`, `set_comment` ও `add_to_group` no-op; Spec rule 3 এখানে এই silent no-op-এর অনুমতি দেয়, কারণ local-এ সব site একই user।
+- `Platform::needs_root()` হলো `!one_user()`: local PC-তে drust ইচ্ছা করেই root নয়।
 
 ### 6.5 IsolatedRunner
 

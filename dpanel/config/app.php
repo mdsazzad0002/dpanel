@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\Platform\LocalProfile;
+
 return [
 
     /*
@@ -40,7 +42,7 @@ return [
     |
     */
 
-    'profile' => strtolower(trim((string) env('DPANEL_PROFILE'))) === 'local' ? 'local' : 'server',
+    'profile' => LocalProfile::isActive() ? 'local' : 'server',
 
     /*
     |--------------------------------------------------------------------------
@@ -75,8 +77,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | Base directory used for website root-path generation and terminal cwd
-    | fallback. If empty, it is auto-detected by OS (/home on Linux, project
-    | parent directory on Windows).
+    | fallback. If empty, it is /home. On a Windows local profile set it to
+    | the drust sites root, for example C:/Users/you/dPanel/sites.
     |
     */
 

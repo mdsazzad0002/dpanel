@@ -6,6 +6,14 @@ use RuntimeException;
 
 class ScriptPathResolver
 {
+    private const SERVER_SEARCH_PATHS = [
+        '/var/www/dscript',
+        '/var/www/panel/dscript',
+        '/usr/local/panel/scripts',
+        '/root/ServerPanel/dscript',
+        '/home/ubuntu/ServerPanel/dscript',
+    ];
+
     /**
      * @return array<int, string>
      */
@@ -16,23 +24,24 @@ class ScriptPathResolver
             $configured = [];
         }
 
-        $fallbacks = array_filter([
+        $fallbacks = [
             dirname(base_path()).'/dscript',
             base_path('dscript'),
-            '/var/www/dscript',
-            '/var/www/panel/dscript',
-            '/usr/local/panel/scripts',
-            '/root/ServerPanel/dscript',
-            '/home/ubuntu/ServerPanel/dscript',
-        ]);
+        ];
+        // On a drive, these would be read as folders of the current drive.
+        if (! PathService::isDrivePath(base_path())) {
+            $fallbacks = array_merge($fallbacks, self::SERVER_SEARCH_PATHS);
+        }
 
-        return array_values(array_unique(array_filter(array_merge($configured, $fallbacks), static fn ($path) => is_string($path) && trim($path) !== '')));
+        $paths = array_filter(array_merge($configured, $fallbacks), static fn ($path) => is_string($path) && trim($path) !== '');
+
+        return array_values(array_unique(array_map(static fn (string $path): string => str_replace('\\', '/', $path), $paths)));
     }
 
     public static function resolveRepositoryRoot(): string
     {
         foreach (self::repositorySearchPaths() as $candidate) {
-            $candidate = rtrim(str_replace('\\', '/', $candidate), '/');
+            $candidate = rtrim($candidate, '/');
             if ($candidate !== '' && is_dir($candidate)) {
                 return $candidate;
             }
@@ -62,12 +71,12 @@ class ScriptPathResolver
 
         $scriptPath = '';
         foreach (self::repositorySearchPaths() as $candidate) {
-            $candidate = rtrim(str_replace('\\', '/', (string) $candidate), '/');
+            $candidate = rtrim((string) $candidate, '/');
             if ($candidate === '') {
                 continue;
             }
 
-            $path = $candidate.DIRECTORY_SEPARATOR.$scriptName;
+            $path = $candidate.'/'.$scriptName;
             if (file_exists($path)) {
                 $scriptPath = $path;
                 break;
@@ -129,79 +138,6 @@ class ScriptPathResolver
         return app(ScriptExecutionGateway::class)->execute($scriptPath, $args, $env, false);
     }
 
-    /**
-     * @param array<string, string|int|float|bool|null> $env
-     * @return array{success: bool, output: string, exit_code: int, path: string}
-     */
-    private static function runCommandWithOutput(string $command, string $scriptPath, array $env = []): array
-    {
-        try {
-            $descriptors = [
-                0 => ['pipe', 'r'],
-                1 => ['pipe', 'w'],
-                2 => ['pipe', 'w'],
-            ];
-
-            $environment = $_ENV;
-            if (! is_array($environment)) {
-                $environment = [];
-            }
-            foreach ($env as $key => $value) {
-                if (! is_string($key) || $key === '') {
-                    continue;
-                }
-                $environment[$key] = (string) $value;
-            }
-
-            $process = proc_open($command, $descriptors, $pipes, null, $environment);
-            if (! is_resource($process)) {
-                throw new RuntimeException('Unable to start script process.');
-            }
-
-            fclose($pipes[0]);
-            $stdout = stream_get_contents($pipes[1]);
-            fclose($pipes[1]);
-            $stderr = stream_get_contents($pipes[2]);
-            fclose($pipes[2]);
-
-            $status = proc_close($process);
-            $output = trim((string) $stdout);
-            $errorOutput = trim((string) $stderr);
-            $combined = trim($output."\n".$errorOutput);
-
-            if ($status !== 0) {
-                logger()->error('Script execution failed', [
-                    'path' => $scriptPath,
-                    'status' => $status,
-                    'output' => $combined,
-                ]);
-            }
-
-            return [
-                'success' => $status === 0,
-                'output' => $combined,
-                'exit_code' => $status,
-                'path' => $scriptPath,
-            ];
-        } catch (\Throwable $e) {
-            logger()->error($e->getMessage());
-
-            return [
-                'success' => false,
-                'output' => $e->getMessage(),
-                'exit_code' => 1,
-                'path' => self::normalizePath($scriptPath ?? $path ?? ''),
-            ];
-        }
-    }
-
-    private static function commandExists(string $command): bool
-    {
-        $result = trim((string) shell_exec('command -v '.escapeshellarg($command).' 2>/dev/null'));
-
-        return $result !== '';
-    }
-
     private static function normalizePath(string $path): string
     {
         $path = trim(str_replace('\\', '/', $path));
@@ -214,6 +150,6 @@ class ScriptPathResolver
         }
 
         $realpath = realpath($path);
-        return $realpath !== false ? $realpath : $path;
+        return $realpath !== false ? str_replace('\\', '/', $realpath) : $path;
     }
 }

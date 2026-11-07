@@ -2,7 +2,7 @@ use std::fs;
 use std::sync::Arc;
 
 use crate::api::{ApiState, check_token, operation_response};
-use crate::app::{info, run_status};
+use crate::app::info;
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -11,8 +11,8 @@ use axum::{
 use serde::Deserialize;
 
 use super::common::{
-    ensure_canonical_inside_home, ensure_directory_inside_home, validate_account,
-    validate_user_path,
+    apply_owner_to_tree, copy_tree, ensure_canonical_inside_home, ensure_directory_inside_home,
+    validate_account, validate_user_path,
 };
 use super::unzip::{ensure_tree_has_no_symlinks, replace_existing_target};
 
@@ -61,22 +61,7 @@ pub fn copy_user_path(username: &str, source: &str, destination: &str) -> Result
         ensure_tree_has_no_symlinks(&destination_path)?;
     }
 
-    // Shell out to `cp -a` rather than hand-rolling a recursive walk: it
-    // preserves directory structure atomically for large trees, the same
-    // way the rest of this module relies on system tools (chown/chmod)
-    // instead of reimplementing them. `--remove-destination` unlinks an
-    // existing file before writing, so a merge never writes through it.
-    run_status(
-        "cp",
-        &[
-            "-a",
-            "--remove-destination",
-            "--no-target-directory",
-            source_path.to_string_lossy().as_ref(),
-            destination_path.to_string_lossy().as_ref(),
-        ],
-    )
-    .map_err(|e| {
+    copy_tree(&source_path, &destination_path).map_err(|e| {
         format!(
             "failed to copy {} to {}: {e}",
             source_path.display(),
@@ -86,14 +71,7 @@ pub fn copy_user_path(username: &str, source: &str, destination: &str) -> Result
 
     // `cp -a` preserves the source's owner; re-stamp the copy as the
     // account's own user/group the same way newly created paths are.
-    run_status(
-        "chown",
-        &[
-            "-R",
-            &format!("{username}:{group}"),
-            destination_path.to_string_lossy().as_ref(),
-        ],
-    )?;
+    apply_owner_to_tree(username, &group, &destination_path)?;
 
     info(&format!(
         "path copied: {} -> {}",

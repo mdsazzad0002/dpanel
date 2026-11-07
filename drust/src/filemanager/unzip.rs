@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::api::{ApiResponse, ApiState, check_token, operation_response};
 use crate::app::info;
-use crate::platform;
+use crate::platform::{self, fs::FileMode};
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -465,7 +465,8 @@ pub(crate) fn ensure_directory_tree(
             && fs::symlink_metadata(&current)
                 .is_ok_and(|metadata| metadata.file_type().is_symlink() || !metadata.is_dir())
         {
-            fs::remove_file(&current)
+            platform::files()
+                .remove_file(&current)
                 .map_err(|e| format!("failed to replace {}: {e}", current.display()))?;
         }
         match fs::symlink_metadata(&current) {
@@ -503,6 +504,9 @@ pub(crate) fn fix_touched_permissions(
     touched_dirs: &HashSet<PathBuf>,
     touched_files: &[PathBuf],
 ) -> Result<(), String> {
+    if platform::current().one_user() {
+        return set_local_modes(touched_dirs, touched_files);
+    }
     let owner = format!("{username}:{group}");
     let dir_paths: Vec<String> = touched_dirs
         .iter()
@@ -541,7 +545,27 @@ pub(crate) fn fix_touched_permissions(
     Ok(())
 }
 
+/// One user owns everything on a local profile, so only the modes are left.
+fn set_local_modes(touched_dirs: &HashSet<PathBuf>, touched_files: &[PathBuf]) -> Result<(), String> {
+    let files = platform::files();
+    for dir in touched_dirs {
+        files
+            .set_mode(dir, FileMode::Executable)
+            .map_err(|e| format!("failed to set mode of {}: {e}", dir.display()))?;
+    }
+    for file in touched_files {
+        files
+            .set_mode(file, FileMode::Shared)
+            .map_err(|e| format!("failed to set mode of {}: {e}", file.display()))?;
+    }
+    Ok(())
+}
+
 fn fix_laravel_writable_dirs(root: &str) -> Result<(), String> {
+    // PHP runs as the file's owner on a local profile, so it can already write.
+    if platform::current().one_user() {
+        return Ok(());
+    }
     let _ = run_status(
         "find",
         &[
@@ -600,9 +624,9 @@ pub(crate) fn replace_existing_target(target: &Path, source_is_dir: bool) -> Res
         if source_is_dir {
             return Ok(true);
         }
-        fs::remove_dir_all(target)
+        fs::remove_dir_all(target).map_err(|e| e.to_string())
     } else if source_is_dir || metadata.file_type().is_symlink() {
-        fs::remove_file(target)
+        platform::files().remove_file(target).map_err(|e| e.to_string())
     } else {
         return Ok(false);
     }
@@ -763,7 +787,7 @@ pub(crate) async fn handle(
 mod replace_tests {
     use super::{
         ArchiveKind, archive_kind, ensure_directory_tree, ensure_tree_has_no_symlinks,
-        replace_existing_target, safe_tar_entry_path,
+        replace_existing_target, safe_tar_entry_path, set_local_modes,
     };
     use std::{collections::HashSet, fs, path::Path};
 
@@ -777,9 +801,6 @@ mod replace_tests {
 
     #[test]
     fn replaces_or_merges_existing_targets() {
-        if crate::platform::skip_until_windows_has("F1") {
-            return;
-        }
         let root = scratch("targets");
         assert!(!replace_existing_target(&root.join("missing"), true).unwrap());
 
@@ -806,6 +827,21 @@ mod replace_tests {
     }
 
     #[test]
+    fn local_modes_reach_every_touched_path() {
+        let root = scratch("modes");
+        let dir = root.join("assets");
+        let file = dir.join("app.css");
+        fs::create_dir(&dir).unwrap();
+        fs::write(&file, "x").unwrap();
+
+        set_local_modes(&HashSet::from([dir.clone()]), std::slice::from_ref(&file)).unwrap();
+
+        assert_eq!(fs::read(&file).unwrap(), b"x");
+        assert!(set_local_modes(&HashSet::new(), &[root.join("missing")]).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn extraction_replaces_files_and_links_in_the_way() {
         let root = scratch("tree");
         fs::write(root.join("assets"), "file").unwrap();
@@ -820,9 +856,6 @@ mod replace_tests {
 
     #[test]
     fn refuses_merging_into_trees_with_links() {
-        if crate::platform::skip_until_windows_has("F1") {
-            return;
-        }
         let root = scratch("links");
         fs::create_dir_all(root.join("a/b")).unwrap();
         assert!(ensure_tree_has_no_symlinks(&root).is_ok());

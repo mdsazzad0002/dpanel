@@ -74,12 +74,7 @@ fn valid(owner: &str, path: &str) -> bool {
 }
 
 fn owner_exists(owner: &str) -> Result<(), String> {
-    if Command::new("id")
-        .args(["-u", owner])
-        .status()
-        .map_err(|e| e.to_string())?
-        .success()
-    {
+    if platform::accounts().exists(owner).map_err(|e| e.to_string())? {
         Ok(())
     } else {
         Err("Website system user does not exist.".into())
@@ -87,6 +82,9 @@ fn owner_exists(owner: &str) -> Result<(), String> {
 }
 
 fn own(path: &str, owner: &str) -> Result<(), String> {
+    if platform::current().one_user() {
+        return Ok(());
+    }
     let output = Command::new("chown")
         .args(["-R", &format!("{owner}:{owner}"), path])
         .output()

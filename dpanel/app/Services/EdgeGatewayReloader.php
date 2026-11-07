@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\Platform\PlatformCapabilities;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
@@ -30,20 +31,8 @@ class EdgeGatewayReloader
     /** @param array<string, mixed> $payload */
     private function dispatchReload(array $payload): bool
     {
-        try {
-            // Unprefixed connection: phpredis prefixes PUBLISH channels too, so
-            // the default one sends to "dpanel_database_edge:reload" and the
-            // gateway, subscribed to the bare name, never hears it.
-            $listeners = (int) Redis::connection('website_cache')->publish(
-                (string) config('serverpanel.edge_gateway_reload_channel', 'edge:reload'),
-                json_encode($payload, JSON_THROW_ON_ERROR),
-            );
-            if ($listeners > 0) {
-                return true;
-            }
-            Log::notice('No Redis gateway reload listener found; using HTTP fallback.');
-        } catch (\Throwable $error) {
-            Log::warning('Redis gateway reload publish failed; using HTTP fallback.', ['error' => $error->getMessage()]);
+        if (app(PlatformCapabilities::class)->allows('redis') && $this->publishReload($payload)) {
+            return true;
         }
 
         try {
@@ -62,5 +51,27 @@ class EdgeGatewayReloader
 
             return false;
         }
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function publishReload(array $payload): bool
+    {
+        try {
+            // Unprefixed connection: phpredis prefixes PUBLISH channels too, so
+            // the default one sends to "dpanel_database_edge:reload" and the
+            // gateway, subscribed to the bare name, never hears it.
+            $listeners = (int) Redis::connection('website_cache')->publish(
+                (string) config('serverpanel.edge_gateway_reload_channel', 'edge:reload'),
+                json_encode($payload, JSON_THROW_ON_ERROR),
+            );
+            if ($listeners > 0) {
+                return true;
+            }
+            Log::notice('No Redis gateway reload listener found; using HTTP fallback.');
+        } catch (\Throwable $error) {
+            Log::warning('Redis gateway reload publish failed; using HTTP fallback.', ['error' => $error->getMessage()]);
+        }
+
+        return false;
     }
 }

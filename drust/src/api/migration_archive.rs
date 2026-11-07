@@ -840,10 +840,7 @@ fn restore(
     let restored_db = result?;
     let (connected, warnings) = connect_sites(layout, &domains, &restored_db, credentials);
     let home = layout.home();
-    let _ = Command::new("chown")
-        .args(["-R", &format!("{0}:{0}", layout.account)])
-        .arg(&home)
-        .status();
+    crate::app::try_chown(&["-R", &format!("{0}:{0}", layout.account), home.to_string_lossy().as_ref()]);
 
     Ok(serde_json::json!({
         "account": layout.account,
@@ -916,10 +913,7 @@ fn restore_into(
         restored.push(db.clone());
     }
 
-    let _ = Command::new("chown")
-        .args(["-R", &format!("{0}:{0}", layout.account)])
-        .arg(&home)
-        .status();
+    crate::app::try_chown(&["-R", &format!("{0}:{0}", layout.account), home.to_string_lossy().as_ref()]);
     crate::filemanager::fix_permissions::run(Some(&layout.account), home.to_str(), false)?;
     Ok(restored)
 }
@@ -1014,22 +1008,10 @@ fn ensure_account(account: &str, home: &Path) -> Result<(), String> {
     if home.exists() {
         return Ok(());
     }
-    let _ = Command::new("groupadd").args(["--force", account]).status();
-    let created = Command::new("useradd")
-        .args([
-            "--create-home",
-            "--gid",
-            account,
-            "--shell",
-            "/usr/sbin/nologin",
-            account,
-        ])
-        .status()
-        .map_err(|e| e.to_string())?;
-    if !created.success() {
-        return Err(format!("cannot create the system user {account}"));
-    }
-    Ok(())
+    crate::platform::accounts()
+        .create(&crate::platform::account::AccountSpec::restored(account, None, None))
+        .map(|_| ())
+        .map_err(|_| format!("cannot create the system user {account}"))
 }
 
 fn extract(archive: &Path, member: &str, into: &Path) -> Result<(), String> {

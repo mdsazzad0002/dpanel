@@ -3,6 +3,7 @@
 namespace App\Services\SitePush;
 
 use App\Models\Website;
+use App\Services\PathService;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -65,7 +66,7 @@ class FileSyncService
     {
         $batch = 'file_sync_'.now()->format('d_m_Y__H_i_s').'__'.random_int(100000, 999999);
         // Same layout as PreOverwriteBackupService, so the trash screen lists it.
-        $backupDir = '/home/'.$website->site_owner.'/.trash/'.$batch.'/_root/'.basename($this->root($website));
+        $backupDir = PathService::siteHome((string) $website->site_owner).'/.trash/'.$batch.'/_root/'.basename($this->root($website));
         $data = $this->call($website, ['action' => 'apply', 'archive' => $archive, 'delete' => array_values($delete), 'backup_dir' => $backupDir]);
 
         return ['written' => (int) ($data['written'] ?? 0), 'deleted' => (int) ($data['deleted'] ?? 0), 'backup_dir' => $backupDir];

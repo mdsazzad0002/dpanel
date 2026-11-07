@@ -9,6 +9,7 @@ use App\Services\Ftp\FtpClientConfig;
 use App\Services\Ftp\FtpConnectionTester;
 use App\Services\Ftp\FtpProvisioningService;
 use App\Services\Ftp\FtpServerInfo;
+use App\Services\PathService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -219,7 +220,7 @@ class FtpAccountController extends Controller
     private function directory(Website $website, string $requested): string
     {
         $root = rtrim((string) $website->root_path, '/');
-        abort_if($root === '' || ! str_starts_with($root, '/home/'), 422, 'Website root path is not available.');
+        abort_if($root === '' || ! PathService::isInsideSiteBase($root), 422, 'Website root path is not available.');
         $relative = trim(str_replace('\\', '/', $requested), '/');
         abort_if(in_array('..', explode('/', $relative), true), 422, 'Invalid FTP directory.');
 

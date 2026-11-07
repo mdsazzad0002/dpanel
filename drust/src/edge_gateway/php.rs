@@ -1,7 +1,6 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Stdio,
     sync::{Mutex, OnceLock},
     thread,
     time::Duration,
@@ -785,13 +784,10 @@ fn validate_php_version(version: &str) -> Result<(), String> {
 }
 
 fn validate_system_user(owner: &str) -> Result<(), String> {
-    let status = std::process::Command::new("id")
-        .args(["-u", owner])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+    let exists = crate::platform::accounts()
+        .exists(owner)
         .map_err(|error| format!("cannot validate site owner {owner}: {error}"))?;
-    if status.success() {
+    if exists {
         Ok(())
     } else {
         Err(format!("site owner does not exist: {owner}"))

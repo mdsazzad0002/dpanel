@@ -1,10 +1,10 @@
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::api::{ApiState, check_token, operation_response};
-use crate::app::{ensure_root, info, run_status, user_group, valid_username};
+use crate::app::{ensure_root, info, valid_username};
+use crate::platform::{account::AccountSpec, fs::FileMode};
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -78,31 +78,17 @@ fn create(
     if let Some(home_str) = home.to_str() {
         validate_absolute_path(home_str)?;
     }
-    if std::process::Command::new("id")
-        .args(["-u", username])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-    {
+    let accounts = crate::platform::accounts();
+    if accounts.exists(username).unwrap_or(false) {
         info(&format!("user exists: {username}"));
     } else {
-        run_status(
-            "useradd",
-            &[
-                "-m",
-                "-d",
-                home.to_string_lossy().as_ref(),
-                "-s",
-                shell,
-                "-U",
-                username,
-            ],
-        )?;
+        accounts
+            .create(&AccountSpec::site(username, &home, shell))
+            .map_err(|error| error.to_string())?;
         info(&format!("user created: {username}"));
     }
-    let group = user_group(username).unwrap_or_else(|_| username.to_string());
     fs::create_dir_all(&home).map_err(|e| format!("failed to create {}: {e}", home.display()))?;
-    apply_directory_owner(username, &group, &home, "0700")?;
+    apply_directory_owner(username, &home, FileMode::PrivateDir)?;
 
     let site_directory = site_directory.trim_matches('/');
     if site_directory.is_empty() || site_directory.contains("..") || site_directory.contains('/') {
@@ -111,25 +97,22 @@ fn create(
     let site_path = home.join(site_directory);
     fs::create_dir_all(&site_path)
         .map_err(|e| format!("failed to create {}: {e}", site_path.display()))?;
-    apply_directory_owner(username, &group, &site_path, "0750")?;
+    apply_directory_owner(username, &site_path, FileMode::SiteDir)?;
     info(&format!("home prepared: {}", home.display()));
     Ok(())
 }
 
 fn apply_directory_owner(
     username: &str,
-    group: &str,
     path: &std::path::Path,
-    mode: &str,
+    mode: FileMode,
 ) -> Result<(), String> {
-    run_status(
-        "chown",
-        &[
-            &format!("{username}:{group}"),
-            path.to_string_lossy().as_ref(),
-        ],
-    )?;
-    run_status("chmod", &[mode, path.to_string_lossy().as_ref()])
+    let owner = crate::platform::accounts()
+        .lookup(username)
+        .map_err(|error| error.to_string())?;
+    let files = crate::platform::files();
+    files.set_owner(path, &owner).map_err(|error| error.to_string())?;
+    files.set_mode(path, mode).map_err(|error| error.to_string())
 }
 
 fn set_password(username: &str, password: &str) -> Result<(), String> {
@@ -140,29 +123,13 @@ fn set_password(username: &str, password: &str) -> Result<(), String> {
     if password.is_empty() {
         return Err("Password cannot be empty.".into());
     }
-    if !std::process::Command::new("id")
-        .args(["-u", username])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-    {
+    let accounts = crate::platform::accounts();
+    if !accounts.exists(username).unwrap_or(false) {
         return Err(format!("User does not exist: {username}"));
     }
-
-    let mut child = std::process::Command::new("chpasswd")
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("failed to start chpasswd: {error}"))?;
-    if let Some(stdin) = child.stdin.as_mut() {
-        writeln!(stdin, "{username}:{password}")
-            .map_err(|error| format!("failed to write password: {error}"))?;
-    }
-    let status = child
-        .wait()
-        .map_err(|error| format!("failed waiting for chpasswd: {error}"))?;
-    if !status.success() {
-        return Err("Password configuration failed.".into());
-    }
+    accounts
+        .set_password(username, password)
+        .map_err(|_| "Password configuration failed.".to_string())?;
 
     info(&format!("password configured for {username}"));
     Ok(())

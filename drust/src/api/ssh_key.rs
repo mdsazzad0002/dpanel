@@ -112,11 +112,7 @@ fn validate_owner(owner: &str) -> Result<(), String> {
     if owner.is_empty() || !valid {
         return Err("Invalid website owner.".into());
     }
-    let status = Command::new("id")
-        .args(["-u", owner])
-        .status()
-        .map_err(|error| error.to_string())?;
-    if !status.success() {
+    if !crate::platform::accounts().exists(owner).map_err(|error| error.to_string())? {
         return Err("Website system user does not exist.".into());
     }
     Ok(())
@@ -141,11 +137,16 @@ fn install_public_key(owner: &str, public_key: &str) -> Result<(), String> {
         writeln!(file, "{public_key}")
             .map_err(|error| format!("Unable to install public key: {error}"))?;
     }
-    let group = Command::new("id")
-        .args(["-gn", owner])
-        .output()
+    if crate::platform::current().one_user() {
+        let files = crate::platform::files();
+        return files
+            .set_mode(&ssh_dir, crate::platform::fs::FileMode::PrivateDir)
+            .and_then(|_| files.set_mode(&authorized_keys, crate::platform::fs::FileMode::Private))
+            .map_err(|error| format!("Unable to apply SSH permissions: {error}"));
+    }
+    let group = crate::platform::accounts()
+        .primary_group(owner)
         .map_err(|error| error.to_string())?;
-    let group = String::from_utf8_lossy(&group.stdout).trim().to_string();
     for (program, args) in [
         (
             "chown",

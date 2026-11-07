@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Platform\ProcessIdentity;
 use App\Support\SecuritySettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -633,11 +634,7 @@ class SecurityController extends Controller
 
     private function runPrivileged(array $command)
     {
-        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
-            return Process::timeout(30)->run($command);
-        }
-
-        return Process::timeout(30)->run(array_merge(['sudo', '-n'], $command));
+        return Process::timeout(30)->run(app(ProcessIdentity::class)->privilegedCommand($command));
     }
 
     private function commandError($result, string $fallback): string

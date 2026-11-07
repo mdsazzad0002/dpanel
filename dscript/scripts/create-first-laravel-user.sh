@@ -46,13 +46,12 @@ cd "$APP_DIR"
 php artisan tinker --execute="
 use App\\Models\\User;
 use Illuminate\\Support\\Facades\\Hash;
-use Spatie\\Permission\\Models\\Role;
 
 \$name = ${name@Q};
 \$email = ${email@Q};
 \$password = ${password@Q};
 
-Role::findOrCreate('admin');
+App\Support\RolePermissions::ensureRole('admin');
 \$user = User::query()->where('email', \$email)->first();
 if (\$user) {
     \$user->forceFill([

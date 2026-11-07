@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\Platform\LocalProfile;
 use Illuminate\Support\Str;
 
 return [
@@ -15,7 +16,7 @@ return [
     |
     */
 
-    'default' => env('CACHE_STORE', 'database'),
+    'default' => LocalProfile::backend((string) env('CACHE_STORE', 'database')),
 
     /*
     |--------------------------------------------------------------------------

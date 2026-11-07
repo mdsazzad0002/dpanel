@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Website;
 
 use App\Http\Controllers\Controller;
 use App\Models\Website;
+use App\Services\PathService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -86,6 +87,6 @@ class WebsiteTerminalController extends Controller
 
     private function terminalPath(Website $website): string
     {
-        return '/home/'.trim((string) $website->site_owner, '/');
+        return PathService::siteHome((string) $website->site_owner);
     }
 }

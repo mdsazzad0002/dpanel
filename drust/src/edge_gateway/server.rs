@@ -1308,7 +1308,7 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
             scope: "system".to_string(),
             site_owner: None,
             hostnames: Arc::from([primary_domain.clone(), www_domain.clone()]),
-            document_root: Some(PathBuf::from(format!("/var/www/{primary_domain}/public"))),
+            document_root: Some(crate::platform::paths().default_document_root(&primary_domain)),
             php_version: None,
             runtime: "php".to_string(),
             project_root: None,
@@ -1354,7 +1354,7 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
 pub fn sample_dispatch_context() -> DispatchContext {
     DispatchContext {
         static_files: Some(StaticFileConfig {
-            document_root: PathBuf::from("/var/www/demo/public"),
+            document_root: crate::platform::paths().default_document_root("demo"),
             index_file: "index.html".to_string(),
             spa_fallback: true,
         }),

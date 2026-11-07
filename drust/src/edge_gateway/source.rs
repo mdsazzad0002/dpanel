@@ -459,10 +459,6 @@ fn normalize_domain(domain: &str) -> String {
     domain.trim().trim_end_matches('.').to_lowercase()
 }
 
-fn default_document_root(domain: &str) -> PathBuf {
-    PathBuf::from(format!("/var/www/{domain}/public"))
-}
-
 /// Certbot lineage serving `domain`. A www alias that has no certificate of
 /// its own yet falls back to its main domain's lineage, which used to cover
 /// www; the SNI resolver skips it if that certificate does not.
@@ -528,7 +524,7 @@ fn resolve_document_root(
             push_candidate(&mut candidates, project.clone());
         }
     }
-    push_candidate(&mut candidates, default_document_root(domain));
+    push_candidate(&mut candidates, crate::platform::paths().default_document_root(domain));
 
     candidates
         .iter()

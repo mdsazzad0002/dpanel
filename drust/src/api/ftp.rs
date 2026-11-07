@@ -1,9 +1,10 @@
-use std::{io::Write, path::Path, process::{Command, Stdio}, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use axum::{Router, extract::{Json, State}, response::{IntoResponse, Response}, routing::post};
 use serde::Deserialize;
 
 use crate::api::{ApiResponse, ApiState, check_token};
+use crate::platform::account::AccountSpec;
 
 pub fn routes() -> Router<Arc<ApiState>> {
     Router::new().route("/api/v1/ftp-account", post(handle))
@@ -55,10 +56,11 @@ fn create(request: &Request) -> Result<String, String> {
     if owner.is_empty() || !owner.chars().all(|value| value.is_ascii_lowercase() || value.is_ascii_digit() || value == '_' || value == '-') {
         return Err("Invalid website owner.".into());
     }
-    if Command::new("id").args(["-u", &request.username]).status().map_err(|error| error.to_string())?.success() {
+    let accounts = crate::platform::accounts();
+    if accounts.exists(&request.username).map_err(|error| error.to_string())? {
         return Err("That FTP system account already exists.".into());
     }
-    if !Command::new("id").args(["-u", owner]).status().map_err(|error| error.to_string())?.success() {
+    if !accounts.exists(owner).map_err(|error| error.to_string())? {
         return Err("Website system user does not exist.".into());
     }
     let directory = request.directory.as_deref().unwrap_or("");
@@ -66,19 +68,16 @@ fn create(request: &Request) -> Result<String, String> {
     if directory.is_empty() || (!directory.starts_with(&(owner_root.clone() + "/")) && directory != owner_root) || !Path::new(directory).is_dir() {
         return Err("FTP directory must exist inside the website owner's home.".into());
     }
-    let group_output = Command::new("id").args(["-gn", owner]).output().map_err(|error| error.to_string())?;
-    if !group_output.status.success() { return Err("Unable to resolve website group.".into()); }
-    let group = String::from_utf8_lossy(&group_output.stdout).trim().to_string();
+    let group = accounts.primary_group(owner).map_err(|_| "Unable to resolve website group.".to_string())?;
     // Website files are owner:www-data with no access for others, so the FTP
     // account shares the owner's UID; with its own UID vsftpd cannot even
     // chdir into public_html, and uploads would belong to the wrong user.
-    let uid_output = Command::new("id").args(["-u", owner]).output().map_err(|error| error.to_string())?;
-    if !uid_output.status.success() { return Err("Unable to resolve website user ID.".into()); }
-    let uid = String::from_utf8_lossy(&uid_output.stdout).trim().to_string();
-    let status = Command::new("useradd").args(["--non-unique", "--uid", &uid, "--no-create-home", "--home-dir", directory, "--shell", "/usr/sbin/nologin", "--gid", &group, &request.username]).status().map_err(|error| format!("Unable to start useradd: {error}"))?;
-    if !status.success() { return Err("Unable to create FTP system account.".into()); }
+    let uid = accounts.lookup(owner).map_err(|_| "Unable to resolve website user ID.".to_string())?.uid;
+    accounts
+        .create(&AccountSpec::sharing(&request.username, Path::new(directory), uid, &group))
+        .map_err(|_| "Unable to create FTP system account.".to_string())?;
     if let Err(error) = set_password(&request.username, password) {
-        let _ = Command::new("userdel").args(["--force", &request.username]).status();
+        let _ = accounts.delete(&request.username, true);
         return Err(error);
     }
     Ok(format!("FTP account {} created.", request.username))
@@ -86,25 +85,23 @@ fn create(request: &Request) -> Result<String, String> {
 
 fn change_password(username: &str, password: &str) -> Result<String, String> {
     validate_username(username)?; validate_password(password)?;
-    if !Command::new("id").args(["-u", username]).status().map_err(|error| error.to_string())?.success() { return Err("FTP system account does not exist.".into()); }
+    if !crate::platform::accounts().exists(username).map_err(|error| error.to_string())? { return Err("FTP system account does not exist.".into()); }
     set_password(username, password)?;
     Ok(format!("FTP password for {username} updated."))
 }
 
 fn set_password(username: &str, password: &str) -> Result<(), String> {
-    let mut child = Command::new("chpasswd").stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped()).spawn().map_err(|error| format!("Unable to start chpasswd: {error}"))?;
-    child.stdin.as_mut().ok_or("Unable to open chpasswd input.")?.write_all(format!("{username}:{password}\n").as_bytes()).map_err(|error| error.to_string())?;
-    let output = child.wait_with_output().map_err(|error| error.to_string())?;
-    if !output.status.success() { return Err(format!("Unable to set FTP password: {}", String::from_utf8_lossy(&output.stderr).trim())); }
-    Ok(())
+    crate::platform::accounts()
+        .set_password(username, password)
+        .map_err(|error| format!("Unable to set FTP password: {error}"))
 }
 
 fn delete(username: &str) -> Result<String, String> {
     validate_username(username)?;
-    if !Command::new("id").args(["-u", username]).status().map_err(|error| error.to_string())?.success() { return Ok("FTP account was already absent.".into()); }
+    let accounts = crate::platform::accounts();
+    if !accounts.exists(username).map_err(|error| error.to_string())? { return Ok("FTP account was already absent.".into()); }
     // --force: the account shares the site owner's UID, whose PHP-FPM workers
     // would otherwise make userdel refuse. Without --remove the home stays.
-    let status = Command::new("userdel").args(["--force", username]).status().map_err(|error| format!("Unable to start userdel: {error}"))?;
-    if !status.success() { return Err("Unable to delete FTP system account.".into()); }
+    accounts.delete(username, true).map_err(|_| "Unable to delete FTP system account.".to_string())?;
     Ok(format!("FTP account {username} deleted."))
 }

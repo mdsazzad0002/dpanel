@@ -3,12 +3,12 @@
 //! change that — login shell, password lock, password, live sessions.
 
 use serde_json::{Value, json};
+use crate::platform::{account::AccountList, accounts};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::Write,
     path::Path,
-    process::{Command, Stdio},
+    process::Command,
 };
 
 const NO_LOGIN_SHELLS: &[&str] = &[
@@ -33,7 +33,9 @@ struct PasswdEntry {
 }
 
 fn passwd_entries() -> Result<Vec<PasswdEntry>, String> {
-    let text = fs::read_to_string("/etc/passwd").map_err(|e| format!("read /etc/passwd: {e}"))?;
+    let text = accounts()
+        .list(AccountList::Passwd)
+        .map_err(|e| format!("read /etc/passwd: {e}"))?;
     Ok(text
         .lines()
         .filter_map(|line| {
@@ -56,7 +58,7 @@ fn passwd_entries() -> Result<Vec<PasswdEntry>, String> {
 
 /// name -> (password locked, has a usable password)
 fn shadow_states() -> BTreeMap<String, (bool, bool)> {
-    let Ok(text) = fs::read_to_string("/etc/shadow") else {
+    let Ok(text) = accounts().list(AccountList::Shadow) else {
         return BTreeMap::new();
     };
     text.lines()
@@ -73,7 +75,7 @@ fn shadow_states() -> BTreeMap<String, (bool, bool)> {
 }
 
 fn admin_members() -> BTreeSet<String> {
-    let Ok(text) = fs::read_to_string("/etc/group") else {
+    let Ok(text) = accounts().list(AccountList::Group) else {
         return BTreeSet::new();
     };
     text.lines()
@@ -186,7 +188,7 @@ pub fn set_shell(name: &str, shell: &str) -> Result<String, String> {
     if user.uid == 0 && !can_login_shell(shell) {
         return Err("root must keep a login shell, or the server can become unrecoverable.".into());
     }
-    run("usermod", &["--shell", shell, name])?;
+    accounts().set_shell(name, shell).map_err(|e| e.to_string())?;
     Ok(if can_login_shell(shell) {
         format!("{name} can now log in ({shell}).")
     } else {
@@ -196,7 +198,7 @@ pub fn set_shell(name: &str, shell: &str) -> Result<String, String> {
 
 pub fn set_password_lock(name: &str, locked: bool) -> Result<String, String> {
     find_user(name)?;
-    run("usermod", &[if locked { "--lock" } else { "--unlock" }, name])?;
+    accounts().lock(name, locked).map_err(|e| e.to_string())?;
     Ok(format!(
         "Password login {} for {name}.",
         if locked { "locked" } else { "unlocked" }
@@ -211,22 +213,7 @@ pub fn set_password(name: &str, password: &str) -> Result<String, String> {
     if password.contains(['\n', '\r', ':']) {
         return Err("Password cannot contain new lines or ':'.".into());
     }
-    let mut child = Command::new("chpasswd")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("chpasswd: {e}"))?;
-    child
-        .stdin
-        .take()
-        .ok_or("chpasswd stdin unavailable")?
-        .write_all(format!("{name}:{password}\n").as_bytes())
-        .map_err(|e| format!("chpasswd: {e}"))?;
-    let output = child.wait_with_output().map_err(|e| format!("chpasswd: {e}"))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-    }
+    accounts().set_password(name, password).map_err(|e| e.to_string())?;
     Ok(format!("Password updated for {name}."))
 }
 

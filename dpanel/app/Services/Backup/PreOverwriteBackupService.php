@@ -4,6 +4,7 @@ namespace App\Services\Backup;
 
 use App\Models\Website;
 use App\Services\Filemanager\FilemanagerService;
+use App\Services\PathService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -36,7 +37,7 @@ class PreOverwriteBackupService
             return ['root' => null, 'database' => null];
         }
 
-        $basePath = $this->normalizeAbsolutePath('/home/'.$siteOwner);
+        $basePath = $this->normalizeAbsolutePath(PathService::siteHome($siteOwner));
         $batch = $reason.'_'.now()->format('d_m_Y__H_i_s').'__'.random_int(100000, 999999);
         $trashContainer = rtrim($basePath, '/').'/.trash/'.$batch.'/_root';
 

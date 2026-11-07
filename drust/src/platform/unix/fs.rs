@@ -13,23 +13,13 @@ use std::{
 
 pub struct NativeFileAccess;
 
-fn bits(mode: FileMode) -> u32 {
-    match mode {
-        FileMode::Private => 0o600,
-        FileMode::PrivateDir => 0o700,
-        FileMode::Shared => 0o644,
-        FileMode::Executable => 0o755,
-        FileMode::Raw(mode) => mode,
-    }
-}
-
 fn failed(action: &str) -> impl Fn(io::Error) -> PlatformError {
     move |error| PlatformError::from_io(action, error)
 }
 
 impl FileAccess for NativeFileAccess {
     fn set_mode(&self, path: &Path, mode: FileMode) -> Result<(), PlatformError> {
-        fs::set_permissions(path, Permissions::from_mode(bits(mode))).map_err(failed("set mode"))
+        fs::set_permissions(path, Permissions::from_mode(mode.bits())).map_err(failed("set mode"))
     }
 
     fn mode_bits(&self, metadata: &Metadata) -> Option<u32> {
@@ -80,6 +70,10 @@ impl FileAccess for NativeFileAccess {
     fn symlink(&self, target: &Path, link: &Path) -> Result<(), PlatformError> {
         symlink(target, link).map_err(failed("create symlink"))
     }
+
+    fn remove_file(&self, path: &Path) -> Result<(), PlatformError> {
+        fs::remove_file(path).map_err(failed("remove file"))
+    }
 }
 
 #[cfg(test)]
@@ -99,6 +93,8 @@ mod tests {
         for (mode, expected) in [
             (FileMode::Private, 0o600),
             (FileMode::PrivateDir, 0o700),
+            (FileMode::SiteDir, 0o750),
+            (FileMode::SiteFile, 0o640),
             (FileMode::Shared, 0o644),
             (FileMode::Executable, 0o755),
             (FileMode::Raw(0o640), 0o640),

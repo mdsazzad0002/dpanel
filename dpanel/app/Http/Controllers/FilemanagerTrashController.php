@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\Filemanager\FilemanagerService;
+use App\Services\PathService;
 use App\Services\Website\WebsiteResolverService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -123,7 +124,7 @@ class FilemanagerTrashController extends Controller
     {
         $siteOwner = (string) ($website['site_owner'] ?? '');
 
-        return $siteOwner !== '' ? '/home/'.$siteOwner : rtrim((string) ($website['project_root'] ?? ''), '/');
+        return $siteOwner !== '' ? PathService::siteHome($siteOwner) : rtrim((string) ($website['project_root'] ?? ''), '/');
     }
 
     /**

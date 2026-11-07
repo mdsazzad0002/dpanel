@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\PathService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -65,7 +66,7 @@ class AppProject extends Model
 
     public function homeDirectory(): string
     {
-        return '/home/'.$this->site_owner;
+        return PathService::siteHome((string) $this->site_owner);
     }
 
     public function pythonWorkerCount(): int

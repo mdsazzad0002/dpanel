@@ -264,16 +264,9 @@ fn write_private_file(path: &Path, contents: &str) -> Result<(), String> {
 }
 
 fn pgadmin_owner() -> Result<OwnerId, String> {
-    let passwd = fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
-    passwd
-        .lines()
-        .find_map(|line| {
-            let fields: Vec<&str> = line.split(':').collect();
-            (fields.first() == Some(&PGADMIN_OS_USER) && fields.len() > 3)
-                .then(|| Some(OwnerId { uid: fields[2].parse().ok()?, gid: fields[3].parse().ok()? }))
-                .flatten()
-        })
-        .ok_or_else(|| format!("system user {PGADMIN_OS_USER} not found"))
+    platform::accounts()
+        .lookup(PGADMIN_OS_USER)
+        .map_err(|_| format!("system user {PGADMIN_OS_USER} not found"))
 }
 
 fn last_line(text: &str) -> String {

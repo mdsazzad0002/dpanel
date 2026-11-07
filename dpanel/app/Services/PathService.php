@@ -24,6 +24,18 @@ class PathService
         return self::websiteBaseDirectory();
     }
 
+    /** The home folder of a site owner: <base>/<owner>. */
+    public static function siteHome(string $owner): string
+    {
+        return self::websiteBaseDirectory().'/'.trim($owner, '/');
+    }
+
+    /** Whether a path lies below the website base directory. */
+    public static function isInsideSiteBase(string $path): bool
+    {
+        return self::pathStartsWith($path, self::websiteBaseDirectory().'/');
+    }
+
 
 
 
@@ -36,6 +48,35 @@ class PathService
     public function normalizeAbsolutePathValue(string $path): string
     {
         return self::normalizeAbsolutePath($path);
+    }
+
+    /** True for "/x" and for a Windows path that starts at a drive, such as "C:/x". */
+    public static function isAbsolutePath(string $path): bool
+    {
+        $path = self::normalizeAbsolutePath($path);
+
+        return str_starts_with($path, '/') || preg_match('#^[A-Za-z]:/#', $path) === 1;
+    }
+
+    /** A Windows path. The drive prefix never occurs on a POSIX absolute path. */
+    public static function isDrivePath(string $path): bool
+    {
+        return preg_match('#^[A-Za-z]:(/|$)#', self::normalizeAbsolutePath($path)) === 1;
+    }
+
+    /**
+     * $path below $base without a leading slash, '' for $base itself, or null
+     * when $path is outside $base.
+     */
+    public static function relativeTo(string $path, string $base): ?string
+    {
+        $path = rtrim(self::normalizeAbsolutePath($path), '/');
+        $base = rtrim(self::normalizeAbsolutePath($base), '/');
+        if ($base === '' || ! self::pathStartsWith($path.'/', $base.'/')) {
+            return null;
+        }
+
+        return ltrim(mb_substr($path, mb_strlen($base)), '/');
     }
 
 
@@ -53,14 +94,13 @@ class PathService
     public function normalizeRootPath(string $rootPath, string $domain): string
     {
         $layout = $this->deriveWebsiteLayout($domain);
-        $homeBase = $this->websiteBaseDirectory();
         $normalized = $this->normalizeAbsolutePath($rootPath);
 
         if ($normalized === '') {
             return $layout['root_path'];
         }
 
-        if (! $this->pathStartsWith($normalized, $homeBase.'/')) {
+        if (! self::isInsideSiteBase($normalized)) {
             return $layout['root_path'];
         }
 
@@ -100,15 +140,14 @@ class PathService
      */
     public function deriveWebsiteLayout(string $domain): array
     {
-        $homeBase = $this->websiteBaseDirectory();
         $normalizedDomain = $this->normalizeDomain($domain);
         $siteOwner = $this->normalizeSiteOwnerFromDomain($normalizedDomain);
 
         return [
             'site_owner' => $siteOwner,
             'site_dir' => self::DEFAULT_SITE_DIR,
-            'root_path' => $homeBase."/{$siteOwner}/".self::DEFAULT_SITE_DIR,
-            'project_root' => $homeBase."/{$siteOwner}",
+            'root_path' => self::siteHome($siteOwner).'/'.self::DEFAULT_SITE_DIR,
+            'project_root' => self::siteHome($siteOwner),
         ];
     }
 
@@ -189,25 +228,25 @@ class PathService
 
     public function extractSiteOwnerFromRootPath(string $rootPath): string
     {
-        $homeBase = $this->websiteBaseDirectory();
-        $path = $this->normalizeAbsolutePath($rootPath);
-        if (! $this->pathStartsWith($path, $homeBase.'/')) {
+        if (! self::isInsideSiteBase($rootPath)) {
             return 'site_default';
         }
 
-        $suffix = trim(substr($path, strlen($homeBase.'/')), '/');
-        $parts = explode('/', $suffix);
+        $parts = explode('/', (string) self::relativeTo($rootPath, self::websiteBaseDirectory()));
 
         return $this->normalizeSiteOwner((string) ($parts[0] ?? ''), 'site_default');
     }
 
 
 
-    public function pathStartsWith(string $path, string $prefix): bool
+    /** Windows paths compare without case, as the file system does; POSIX paths keep it. */
+    public static function pathStartsWith(string $path, string $prefix): bool
     {
-        $path = $this->normalizeAbsolutePath($path);
-        $prefix = $this->normalizeAbsolutePath($prefix);
+        $path = self::normalizeAbsolutePath($path);
+        $prefix = self::normalizeAbsolutePath($prefix);
 
-        return str_starts_with($path, $prefix);
+        return self::isDrivePath($prefix)
+            ? mb_stripos($path, $prefix) === 0
+            : str_starts_with($path, $prefix);
     }
 }

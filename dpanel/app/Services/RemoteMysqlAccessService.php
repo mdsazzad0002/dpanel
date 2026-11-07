@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\Platform\ProcessIdentity;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
@@ -194,11 +195,7 @@ class RemoteMysqlAccessService
 
     private function runPrivileged(array $command)
     {
-        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
-            return Process::timeout(30)->run($command);
-        }
-
-        return Process::timeout(30)->run(array_merge(['sudo', '-n'], $command));
+        return Process::timeout(30)->run(app(ProcessIdentity::class)->privilegedCommand($command));
     }
 
     private function tail($result): string

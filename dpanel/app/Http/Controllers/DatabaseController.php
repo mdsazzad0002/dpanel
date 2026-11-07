@@ -641,9 +641,6 @@ class DatabaseController extends Controller
      */
     private function syncDatabaseToServer(array $payload, string $engine = DatabaseRequestModel::ENGINE_MARIADB): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return ['ran' => false, 'success' => false, 'output' => 'Database sync skipped on Windows environment.'];
-        }
         if ($engine === DatabaseRequestModel::ENGINE_MONGODB) {
             return $this->syncMongodbUser($payload);
         }

@@ -26,7 +26,9 @@ pub fn delete_user_path(username: &str, target: &str) -> Result<(), String> {
         fs::remove_dir_all(&path)
             .map_err(|e| format!("failed to delete {}: {e}", path.display()))?;
     } else {
-        fs::remove_file(&path).map_err(|e| format!("failed to delete {}: {e}", path.display()))?;
+        crate::platform::files()
+            .remove_file(&path)
+            .map_err(|e| format!("failed to delete {}: {e}", path.display()))?;
     }
     info(&format!("path deleted: {}", path.display()));
     Ok(())

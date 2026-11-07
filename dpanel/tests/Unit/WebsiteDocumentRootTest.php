@@ -11,7 +11,7 @@ class WebsiteDocumentRootTest extends TestCase
 {
     public function test_it_falls_back_to_root_when_configured_public_directory_is_missing(): void
     {
-        $root = storage_path('framework/testing/document-root-'.uniqid());
+        $root = str_replace(DIRECTORY_SEPARATOR, '/', storage_path('framework/testing/document-root-'.uniqid()));
         File::ensureDirectoryExists($root);
         File::put($root.'/index.php', '<?php');
 
@@ -26,7 +26,7 @@ class WebsiteDocumentRootTest extends TestCase
 
     public function test_it_prefers_existing_configured_public_directory(): void
     {
-        $root = storage_path('framework/testing/document-root-'.uniqid());
+        $root = str_replace(DIRECTORY_SEPARATOR, '/', storage_path('framework/testing/document-root-'.uniqid()));
         File::ensureDirectoryExists($root.'/public');
         File::put($root.'/public/index.php', '<?php');
         File::put($root.'/index.php', '<?php');

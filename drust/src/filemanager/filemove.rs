@@ -2,7 +2,7 @@ use std::fs;
 use std::sync::Arc;
 
 use crate::api::{ApiState, check_token, operation_response};
-use crate::app::{info, run_status};
+use crate::app::info;
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -11,8 +11,8 @@ use axum::{
 use serde::Deserialize;
 
 use super::common::{
-    ensure_canonical_inside_home, ensure_directory_inside_home, validate_account,
-    validate_user_path,
+    apply_owner_to_tree, copy_tree, ensure_canonical_inside_home, ensure_directory_inside_home,
+    validate_account, validate_user_path,
 };
 use super::unzip::{ensure_tree_has_no_symlinks, replace_existing_target};
 
@@ -57,31 +57,14 @@ pub fn move_user_path(username: &str, source: &str, destination: &str) -> Result
     // drop the source.
     if replace_existing_target(&destination_path, source_is_dir)? {
         ensure_tree_has_no_symlinks(&destination_path)?;
-        run_status(
-            "cp",
-            &[
-                "-a",
-                "--remove-destination",
-                "--no-target-directory",
-                source_path.to_string_lossy().as_ref(),
-                destination_path.to_string_lossy().as_ref(),
-            ],
-        )
-        .map_err(|e| {
+        copy_tree(&source_path, &destination_path).map_err(|e| {
             format!(
                 "failed to move {} to {}: {e}",
                 source_path.display(),
                 destination_path.display()
             )
         })?;
-        run_status(
-            "chown",
-            &[
-                "-R",
-                &format!("{username}:{group}"),
-                destination_path.to_string_lossy().as_ref(),
-            ],
-        )?;
+        apply_owner_to_tree(username, &group, &destination_path)?;
         fs::remove_dir_all(&source_path)
             .map_err(|e| format!("failed to remove {}: {e}", source_path.display()))?;
     } else {

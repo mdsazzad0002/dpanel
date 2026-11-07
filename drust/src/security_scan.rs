@@ -1385,9 +1385,6 @@ mod tests {
 
     #[test]
     fn counts_files_like_the_walk_does() {
-        if crate::platform::skip_until_windows_has("F1") {
-            return;
-        }
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::create_dir_all(root.join("a/b")).unwrap();
@@ -1406,9 +1403,7 @@ mod tests {
 
     #[test]
     fn scans_a_site_tree() {
-        if crate::platform::skip_until_windows_has("F1") {
-            return;
-        }
+        let has_modes = !crate::platform::os_has_no_file_modes();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::create_dir_all(root.join("wp-content/uploads/2024")).unwrap();
@@ -1423,9 +1418,11 @@ mod tests {
         )
         .unwrap();
         fs::write(root.join("index.php"), "<?php require 'app.php';").unwrap();
-        platform::files()
-            .set_mode(&root.join("index.php"), FileMode::Raw(0o666))
-            .unwrap();
+        if has_modes {
+            platform::files()
+                .set_mode(&root.join("index.php"), FileMode::Raw(0o666))
+                .unwrap();
+        }
 
         let scan = |scan_type: &str| {
             let request = ScanRequest {
@@ -1439,8 +1436,10 @@ mod tests {
             scan_root(&request, steps_for(scan_type).unwrap(), root.to_path_buf()).unwrap()
         };
 
-        let permissions = scan("permissions");
-        assert_eq!(rules(&permissions.findings), vec!["DP-PERM-001"]);
+        if has_modes {
+            let permissions = scan("permissions");
+            assert_eq!(rules(&permissions.findings), vec!["DP-PERM-001"]);
+        }
 
         let malware = scan("malware");
         assert_eq!(malware.files_scanned, 3);

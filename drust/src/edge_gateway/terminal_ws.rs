@@ -229,18 +229,6 @@ struct Resize {
     cols: u16,
 }
 
-fn account_id(flag: &str, owner: &str) -> Result<String, String> {
-    let output = Command::new("id")
-        .args([flag, owner])
-        .output()
-        .map_err(|e| e.to_string())?;
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !output.status.success() || !value.chars().all(|c| c.is_ascii_digit()) {
-        return Err("invalid owner".into());
-    }
-    Ok(value)
-}
-
 fn create_identity_files(ticket: &TerminalTicket, uid: &str, gid: &str) -> Result<PathBuf, String> {
     let dir = std::env::temp_dir().join(format!("dpanel-terminal-{}", ticket.ticket));
     fs::create_dir(&dir).map_err(|e| e.to_string())?;
@@ -308,8 +296,10 @@ fn spawn_pty(
     ),
     String,
 > {
-    let uid = account_id("-u", &ticket.site_owner)?;
-    let gid = account_id("-g", &ticket.site_owner)?;
+    let owner = platform::accounts()
+        .lookup(&ticket.site_owner)
+        .map_err(|_| "invalid owner".to_string())?;
+    let (uid, gid) = (owner.uid.to_string(), owner.gid.to_string());
     let root = Path::new(&ticket.project_root);
     ensure_protected_mountpoint(&ticket.site_owner, root, ".ssh")?;
     ensure_protected_mountpoint(&ticket.site_owner, root, ".dpanel")?;

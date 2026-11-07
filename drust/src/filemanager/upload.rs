@@ -67,7 +67,7 @@ pub fn install_uploaded_file(username: &str, target: &str, staged: &Path) -> Res
             .map_err(|e| format!("failed to create {}: {e}", temporary.display()))?;
         io::copy(&mut source, &mut destination)
             .map_err(|e| format!("failed to copy upload to {}: {e}", temporary.display()))?;
-        apply_owner_and_mode(username, &group, &temporary, "0644")?;
+        apply_owner_and_mode(username, &group, &temporary, platform::fs::FileMode::Shared)?;
         fs::rename(&temporary, &path)
             .map_err(|e| format!("failed to install upload at {}: {e}", path.display()))?;
         Ok(())

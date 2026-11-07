@@ -7,6 +7,7 @@ use App\Models\RedisConfigRevision;
 use App\Models\AliasApiCredential;
 use App\Models\Domain;
 use App\Models\SslCertificate;
+use App\Services\PathService;
 use App\Services\Redis\WebsiteRedisExplorer;
 use App\Services\Ssl\SslLifecycleService;
 use Illuminate\Http\RedirectResponse;
@@ -298,7 +299,7 @@ class RedisCacheController extends Controller
 
         foreach ($roots as $root) {
             $normalized = rtrim(str_replace('\\', '/', $root), '/');
-            if ($normalized === '' || ! str_starts_with($normalized, '/home/')) {
+            if ($normalized === '' || ! PathService::isInsideSiteBase($normalized)) {
                 continue;
             }
 

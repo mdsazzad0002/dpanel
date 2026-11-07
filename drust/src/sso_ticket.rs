@@ -5,7 +5,7 @@
 
 use std::{
     fs,
-    io::{Read, Write},
+    io::Write,
     path::Path,
     time::{Duration, SystemTime},
 };
@@ -55,8 +55,7 @@ pub(crate) fn consume(dir: &Path, ticket: &str, now: SystemTime, ttl: Duration) 
 
 pub(crate) fn random_hex(bytes: usize) -> Result<String, String> {
     let mut buffer = vec![0u8; bytes];
-    fs::File::open("/dev/urandom")
-        .and_then(|mut file| file.read_exact(&mut buffer))
+    crate::platform::random_bytes(&mut buffer)
         .map_err(|e| format!("cannot read random bytes: {e}"))?;
     Ok(buffer.iter().map(|b| format!("{b:02x}")).collect())
 }
@@ -92,9 +91,6 @@ mod tests {
 
     #[test]
     fn a_ticket_works_exactly_once() {
-        if crate::platform::skip_until_windows_has("F1") {
-            return;
-        }
         let dir = temp_dir("once");
         let now = SystemTime::now();
         let ticket = write(&dir, "dpanel-db-shop", now, TTL).unwrap();
@@ -106,9 +102,6 @@ mod tests {
 
     #[test]
     fn expired_and_malformed_tickets_are_rejected() {
-        if crate::platform::skip_until_windows_has("F1") {
-            return;
-        }
         let dir = temp_dir("expired");
         let now = SystemTime::now();
         let ticket = write(&dir, "dpanel-admin", now, TTL).unwrap();

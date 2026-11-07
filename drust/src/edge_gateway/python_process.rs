@@ -3,7 +3,6 @@ use std::{
     fs,
     net::SocketAddr,
     path::{Path, PathBuf},
-    process::Stdio,
     sync::{Arc, Mutex, OnceLock, Weak},
     time::{Duration, Instant},
 };
@@ -662,10 +661,10 @@ fn install_dependencies(venv_path: &Path, project_root: &Path, asgi: bool) -> Re
     Ok(())
 }
 
-/// Where drust installs Python versions the system does not ship.
-const MANAGED_PYTHON_DIR: &str = "/usr/local/dpanel-python";
 /// A private venv holding `uv`, created on first use when no `uv` exists.
-const UV_TOOL_VENV: &str = "/usr/local/dpanel-python/uv-tool";
+fn uv_tool_venv() -> PathBuf {
+    crate::platform::paths().managed_python_dir().join("uv-tool")
+}
 
 /// Finds the interpreter for the site's Python version, installing that
 /// version when the server does not have it. A site that names a version
@@ -680,11 +679,7 @@ fn resolve_python_binary(version: Option<&str>) -> Result<PathBuf, String> {
         return Err(format!("invalid python version: {version}"));
     }
 
-    let installed = [
-        PathBuf::from(format!("/usr/local/pyenv/versions/{version}/bin/python3")),
-        PathBuf::from(format!("/usr/bin/python{version}")),
-        PathBuf::from(format!("/usr/local/bin/python{version}")),
-    ];
+    let installed = crate::platform::paths().python_candidates(version);
     if let Some(found) = installed.into_iter().find(|path| {
         python_full_version(path).is_some_and(|full| version_matches(&full, version))
     }) {
@@ -725,22 +720,20 @@ fn is_valid_python_version(version: &str) -> bool {
 /// Returns a `uv` binary, installing it from PyPI into a private venv with
 /// the system Python the first time a site needs a missing version.
 fn ensure_uv() -> Result<PathBuf, String> {
-    let tool_uv = PathBuf::from(UV_TOOL_VENV).join("bin").join("uv");
-    if let Some(found) = ["/usr/local/bin/uv", "/usr/bin/uv", "/root/.local/bin/uv"]
-        .into_iter()
-        .map(PathBuf::from)
-        .chain(std::iter::once(tool_uv.clone()))
-        .find(|path| path.is_file())
-    {
+    let venv = uv_tool_venv();
+    let tool_uv = venv.join("bin").join("uv");
+    if let Ok(found) = crate::platform::paths().binary(crate::platform::paths::Tool::Uv) {
         return Ok(found);
+    }
+    if tool_uv.is_file() {
+        return Ok(tool_uv);
     }
 
     let python = system_python()
         .ok_or_else(|| "no system python3 to bootstrap the Python installer (uv)".to_string())?;
-    let venv = Path::new(UV_TOOL_VENV);
     let output = std::process::Command::new(&python)
         .args(["-m", "venv", "--clear"])
-        .arg(venv)
+        .arg(&venv)
         .output()
         .map_err(|error| format!("cannot create the uv tool venv: {error}"))?;
     if !output.status.success() {
@@ -767,8 +760,8 @@ fn ensure_uv() -> Result<PathBuf, String> {
 fn uv_command(uv: &Path) -> std::process::Command {
     let mut command = std::process::Command::new(uv);
     command
-        .env("UV_PYTHON_INSTALL_DIR", MANAGED_PYTHON_DIR)
-        .env("UV_PYTHON_BIN_DIR", Path::new(MANAGED_PYTHON_DIR).join("bin"))
+        .env("UV_PYTHON_INSTALL_DIR", crate::platform::paths().managed_python_dir())
+        .env("UV_PYTHON_BIN_DIR", crate::platform::paths().managed_python_dir().join("bin"))
         .env("UV_PYTHON_PREFERENCE", "only-managed")
         .env("UV_PYTHON_DOWNLOADS", "automatic")
         .env("UV_NO_CONFIG", "1")
@@ -803,13 +796,10 @@ fn validate_system_user(owner: &str) -> Result<String, String> {
     {
         return Err(format!("invalid site owner: {owner}"));
     }
-    let status = std::process::Command::new("id")
-        .args(["-u", &owner])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+    let exists = crate::platform::accounts()
+        .exists(&owner)
         .map_err(|error| format!("cannot validate site owner {owner}: {error}"))?;
-    if status.success() {
+    if exists {
         Ok(owner)
     } else {
         Err(format!("site owner does not exist: {owner}"))

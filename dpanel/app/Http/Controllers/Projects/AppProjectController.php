@@ -8,6 +8,7 @@ use App\Models\AppProject;
 use App\Models\PortShare;
 use App\Models\Website;
 use App\Services\EdgeGatewayReloader;
+use App\Services\PathService;
 use App\Services\Projects\AppProjectProcessService;
 use App\Services\Projects\LocalPortScanner;
 use App\Services\Projects\ProjectPortAllocator;
@@ -203,14 +204,12 @@ class AppProjectController extends Controller
         ]);
     }
 
-    /** Accepts "apps/api", "/apps/api" or "/home/{owner}/apps/api"; always inside that home. */
+    /** Accepts "apps/api", "/apps/api" or "<base>/{owner}/apps/api"; always inside that home. */
     private function workingDirectory(string $owner, string $input): string
     {
-        $home = '/home/'.$owner;
+        $home = PathService::siteHome($owner);
         $path = str_replace('\\', '/', trim($input));
-        if ($path === $home || str_starts_with($path, $home.'/')) {
-            $path = substr($path, strlen($home));
-        }
+        $path = PathService::relativeTo($path, $home) ?? $path;
 
         $segments = [];
         foreach (explode('/', $path) as $segment) {

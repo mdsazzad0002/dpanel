@@ -2,6 +2,7 @@
 
 namespace App\Services\Filemanager;
 
+use App\Services\PathService;
 use App\Services\ScriptPathResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -51,7 +52,7 @@ class FilemanagerService
     public function createAccountHome(string $username, ?string $home = null, string $shell = '/bin/bash', string $siteDirectory = 'public_html'): array
     {
         $username = $this->normalizeUsername($username);
-        $home = $home !== null && trim($home) !== '' ? $this->normalizeAbsolutePath($home) : '/home/'.$username;
+        $home = $home !== null && trim($home) !== '' ? $this->normalizeAbsolutePath($home) : PathService::siteHome($username);
         $projectRoot = rtrim($home, '/');
         $siteDirectory = $this->normalizeRelativeDirectory($siteDirectory, 'public_html');
         $rootPath = $projectRoot.'/'.$siteDirectory;

@@ -2,7 +2,6 @@ use std::{
     fs,
     net::SocketAddr,
     path::{Path, PathBuf},
-    process::Stdio,
     sync::{Mutex, OnceLock},
     time::Duration,
 };
@@ -288,13 +287,10 @@ fn validate_system_user(owner: &str) -> Result<String, String> {
     {
         return Err(format!("invalid site owner: {owner}"));
     }
-    let status = std::process::Command::new("id")
-        .args(["-u", &owner])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+    let exists = crate::platform::accounts()
+        .exists(&owner)
         .map_err(|error| format!("cannot validate site owner {owner}: {error}"))?;
-    if status.success() {
+    if exists {
         Ok(owner)
     } else {
         Err(format!("site owner does not exist: {owner}"))

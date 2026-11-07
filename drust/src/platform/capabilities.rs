@@ -20,7 +20,7 @@ pub enum Capability {
     Docker,
     Redis,
     Reseller,
-    /// Unix modes, owners and links. Windows gets its ACLs in task F1.
+    /// Exact Unix modes and owners, as the file manager shows and sets them.
     FilePermissions,
 }
 

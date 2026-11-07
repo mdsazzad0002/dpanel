@@ -106,7 +106,7 @@ fn run(request: &Request) -> Result<(String, serde_json::Value), String> {
                 if let Ok(owner) = platform::files().owner(&parent) {
                     let _ = platform::files().set_owner(&archive, &owner);
                 }
-                let _ = platform::files().set_mode(&archive, FileMode::Raw(0o640));
+                let _ = platform::files().set_mode(&archive, FileMode::SiteFile);
             }
             Ok((
                 format!("{packed} files packed."),
@@ -345,35 +345,18 @@ fn pack(root: &Path, paths: &[String], archive: &Path) -> Result<usize, String> 
     Ok(packed)
 }
 
-struct Owner {
-    uid: u32,
-    gid: u32,
-}
+struct Owner(OwnerId);
 
 impl Owner {
     fn lookup(site_owner: &str) -> Result<Self, String> {
-        let id = |flag: &str| -> Result<u32, String> {
-            let output = Command::new("id")
-                .args([flag, site_owner])
-                .output()
-                .map_err(|error| format!("Unable to run id: {error}"))?;
-            String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .parse()
-                .map_err(|_| format!("Website owner {site_owner} does not exist."))
-        };
-        Ok(Self {
-            uid: id("-u")?,
-            gid: id("-g")?,
-        })
-    }
-
-    fn id(&self) -> OwnerId {
-        OwnerId { uid: self.uid, gid: self.gid }
+        platform::accounts()
+            .lookup(site_owner)
+            .map(Self)
+            .map_err(|_| format!("Website owner {site_owner} does not exist."))
     }
 
     fn chown(&self, path: &Path) {
-        let _ = platform::files().set_link_owner(path, &self.id());
+        let _ = platform::files().set_link_owner(path, &self.0);
     }
 }
 
@@ -491,7 +474,7 @@ fn apply(
                 .map_err(|error| format!("Unable to write {name}: {error}"))?;
             let _ = platform::files().set_mode(&partial, FileMode::Raw(mode | 0o600));
             if let Some(owner) = owner {
-                let _ = platform::files().set_owner(&partial, &owner.id());
+                let _ = platform::files().set_owner(&partial, &owner.0);
             }
             move_to_backup(root, backup, &relative, owner)?;
             fs::rename(&partial, &destination)
@@ -655,7 +638,7 @@ mod tests {
 
     #[test]
     fn apply_keeps_a_packed_files_mode_and_sets_the_site_owner() {
-        if crate::platform::skip_until_windows_has("F1") {
+        if crate::platform::os_has_no_file_modes() {
             return;
         }
         let source = tempfile::tempdir().unwrap();
@@ -670,7 +653,7 @@ mod tests {
         let live = tempfile::tempdir().unwrap();
         let backup = work.path().join("backup");
         let id = platform::files().owner(&fs::metadata(live.path()).unwrap()).unwrap();
-        let owner = Owner { uid: id.uid, gid: id.gid };
+        let owner = Owner(id);
         apply(live.path(), &archive, &[], &backup, Some(&owner)).unwrap();
 
         let placed = fs::metadata(live.path().join("bin/run.sh")).unwrap();
@@ -702,9 +685,6 @@ mod tests {
 
     #[test]
     fn writes_through_a_symlinked_directory_are_refused() {
-        if crate::platform::skip_until_windows_has("F1") {
-            return;
-        }
         let live = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         platform::files()
@@ -717,10 +697,8 @@ mod tests {
 
     #[test]
     fn archive_and_backup_paths_are_validated() {
-        if crate::platform::skip_until_windows_has("C1") {
-            return;
-        }
-        assert!(validate_archive("/var/www/dpanel/storage/app/x.tar.gz").is_ok());
+        let storage = crate::platform::paths().storage_dir();
+        assert!(validate_archive(&storage.join("x.tar.gz").display().to_string()).is_ok());
         let home = crate::platform::paths().site_home("u").display().to_string();
         assert!(validate_archive(&format!("{home}/x.tar.gz")).is_err());
         assert!(validate_archive("relative.tar.gz").is_err());

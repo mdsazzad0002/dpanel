@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::api::{ApiState, check_token, operation_response};
-use crate::app::{info, run_output, warn};
+use crate::app::{info, warn};
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -46,8 +46,8 @@ pub fn run(paths: &[String]) -> Result<(), String> {
 fn is_invoking_home(target: &Path) -> bool {
     env::var("SUDO_USER")
         .ok()
-        .and_then(|user| run_output("getent", &["passwd", &user]).ok())
-        .and_then(|line| line.split(':').nth(5).map(|value| value.to_string()))
+        .and_then(|user| crate::platform::accounts().home(&user).ok())
+        .map(|home| home.to_string_lossy().into_owned())
         .or_else(|| env::var("HOME").ok())
         .map(|home| Path::new(&home) == target)
         .unwrap_or(false)

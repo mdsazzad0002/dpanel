@@ -10,6 +10,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::api::{ApiState, check_token, operation_response};
+use crate::platform::fs::FileMode;
 
 use super::common::{
     apply_owner_and_mode, ensure_canonical_inside_home, validate_account, validate_user_path,
@@ -84,7 +85,7 @@ fn chmod_recursive(path: &Path, username: &str, group: &str, mode: u32) -> Resul
 }
 
 fn chmod_path(path: &Path, username: &str, group: &str, mode: u32) -> Result<(), String> {
-    apply_owner_and_mode(username, group, path, &format!("{mode:o}"))
+    apply_owner_and_mode(username, group, path, FileMode::Raw(mode))
 }
 
 fn reject_symlink(path: &Path) -> Result<(), String> {

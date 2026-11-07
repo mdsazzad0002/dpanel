@@ -12,6 +12,10 @@ pub enum FileMode {
     Private,
     /// Only the owner, for a directory: `0700`.
     PrivateDir,
+    /// The owner, and the web server reading through the group: `0750`.
+    SiteDir,
+    /// The same for a file: `0640`.
+    SiteFile,
     /// Everyone reads: `0644`.
     Shared,
     /// Everyone reads and runs: `0755`.
@@ -20,10 +24,31 @@ pub enum FileMode {
     Raw(u32),
 }
 
+impl FileMode {
+    /// The Unix mode this stands for.
+    pub fn bits(self) -> u32 {
+        match self {
+            Self::Private => 0o600,
+            Self::PrivateDir => 0o700,
+            Self::SiteDir => 0o750,
+            Self::SiteFile => 0o640,
+            Self::Shared => 0o644,
+            Self::Executable => 0o755,
+            Self::Raw(mode) => mode,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OwnerId {
     pub uid: u32,
     pub gid: u32,
+}
+
+impl OwnerId {
+    /// Stands for the user everything runs as on a local profile, where site
+    /// accounts are only folders. Never a real uid there, so never `chown`ed to.
+    pub const LOGGED_IN_USER: Self = Self { uid: 0, gid: 0 };
 }
 
 /// What to do when the path being opened is a symlink.
@@ -51,6 +76,9 @@ pub trait FileAccess: Send + Sync {
     /// Creates the directory and any missing parents, owner-only.
     fn create_dir_private(&self, path: &Path) -> Result<(), PlatformError>;
     fn symlink(&self, target: &Path, link: &Path) -> Result<(), PlatformError>;
+    /// Removes a file or a symlink, never what the link points at. Windows
+    /// removes a link to a folder as a folder, so `fs::remove_file` fails on it.
+    fn remove_file(&self, path: &Path) -> Result<(), PlatformError>;
 }
 
 /// `0644`-style text for the panel; `None` where the OS has no modes.

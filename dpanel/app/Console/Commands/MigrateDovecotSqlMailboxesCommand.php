@@ -4,7 +4,9 @@ namespace App\Console\Commands;
 
 use App\Models\Mailbox;
 use App\Models\Website;
+use App\Services\PathService;
 use App\Support\MailPasswordHash;
+use App\Support\Platform\ProcessIdentity;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -26,14 +28,14 @@ class MigrateDovecotSqlMailboxesCommand extends Command
         foreach (Mailbox::query()->orderBy('email')->cursor() as $mailbox) {
             $website = Website::query()->whereRaw('LOWER(domain) = ?', [strtolower((string) $mailbox->domain)])->first();
             $owner = trim((string) ($website?->site_owner ?? ''));
-            $account = $owner !== '' ? posix_getpwnam($owner) : false;
-            if ($account === false) {
+            $account = $owner !== '' ? app(ProcessIdentity::class)->account($owner) : null;
+            if ($account === null) {
                 $this->warn("Skipping {$mailbox->email}: website owner is missing or is not a system account.");
                 $skipped++;
                 continue;
             }
 
-            $target = "/home/{$owner}/mail/{$mailbox->domain}/{$mailbox->mailbox}/Maildir";
+            $target = PathService::siteHome($owner)."/mail/{$mailbox->domain}/{$mailbox->mailbox}/Maildir";
             $legacy = "/var/mail/vhosts/{$mailbox->domain}/{$mailbox->mailbox}";
             $this->line("{$mailbox->email}: {$legacy} -> {$target}");
             if ($dryRun) {

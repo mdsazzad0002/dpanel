@@ -2,6 +2,8 @@
 
 namespace App\Services\Projects;
 
+use App\Support\Platform\ProcessIdentity;
+
 /**
  * Lists TCP ports listening on this host and the Linux user owning each
  * socket, straight from /proc/net/tcp{,6} (readable without root).
@@ -41,8 +43,7 @@ class LocalPortScanner
     {
         static $names = [];
         if (! array_key_exists($uid, $names)) {
-            $info = function_exists('posix_getpwuid') ? @posix_getpwuid($uid) : false;
-            $names[$uid] = is_array($info) ? (string) $info['name'] : (string) $uid;
+            $names[$uid] = app(ProcessIdentity::class)->userName($uid) ?? (string) $uid;
         }
 
         return $names[$uid];

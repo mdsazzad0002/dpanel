@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::api::{ApiState, check_token, operation_response};
 use crate::app::info;
-use crate::platform::{self, fs::mode_string};
+use crate::platform::{self, fs::FileMode};
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -28,11 +28,16 @@ pub fn write_user_file(
     }
     // Keep the mode of an existing file: logs and caches are often group-writable
     // for PHP-FPM, and resetting them to 0644 breaks the application writing them.
-    let mode = fs::symlink_metadata(&path)
+    let existing = fs::symlink_metadata(&path)
         .ok()
-        .filter(|metadata| metadata.is_file())
-        .and_then(|metadata| mode_string(platform::files(), &metadata))
-        .unwrap_or_else(|| "0644".to_string());
+        .filter(|metadata| metadata.is_file());
+    let mode = existing
+        .as_ref()
+        .and_then(|metadata| platform::files().mode_bits(metadata))
+        .map(|bits| FileMode::Raw(bits & 0o7777));
+    // Where there are no bits to read back the ACL survives the write by
+    // itself, and resetting it would open a private file to everyone.
+    let keeps_its_acl = existing.is_some() && mode.is_none();
 
     let parent = path
         .parent()
@@ -47,8 +52,10 @@ pub fn write_user_file(
     )?;
     fs::write(&path, content).map_err(|e| format!("failed to write {}: {e}", path.display()))?;
 
-    apply_owner_and_mode(username, &group, &path, &mode)?;
-    let _ = apply_owner_and_mode(username, &group, &parent, "0755");
+    if !keeps_its_acl {
+        apply_owner_and_mode(username, &group, &path, mode.unwrap_or(FileMode::Shared))?;
+    }
+    let _ = apply_owner_and_mode(username, &group, &parent, FileMode::Executable);
     info(&format!("file written: {}", path.display()));
     Ok(())
 }

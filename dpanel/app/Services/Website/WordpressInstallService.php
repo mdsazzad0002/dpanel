@@ -10,6 +10,7 @@ use App\Services\Filemanager\FilemanagerService;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
 use App\Services\EdgeGatewayReloader;
+use App\Support\Platform\ProcessIdentity;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -916,7 +917,7 @@ class WordpressInstallService
 
     private function applyWebsiteFilesystemIsolation(string $siteOwner, string $projectRoot, string $rootPath): void
     {
-        if (! function_exists('posix_geteuid') || posix_geteuid() !== 0) {
+        if (! app(ProcessIdentity::class)->isRoot()) {
             return;
         }
 

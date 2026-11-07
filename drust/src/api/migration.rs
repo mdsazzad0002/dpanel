@@ -123,24 +123,9 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
     }
     let home = crate::platform::paths().site_home(&req.site_owner);
     if !home.exists() {
-        let _ = Command::new("groupadd")
-            .args(["--force", &req.site_owner])
-            .status();
-        if !Command::new("useradd")
-            .args([
-                "--create-home",
-                "--gid",
-                &req.site_owner,
-                "--shell",
-                "/usr/sbin/nologin",
-                &req.site_owner,
-            ])
-            .status()
-            .map_err(|e| e.to_string())?
-            .success()
-        {
-            return Err("cannot create target system user".into());
-        }
+        crate::platform::accounts()
+            .create(&crate::platform::account::AccountSpec::restored(&req.site_owner, None, None))
+            .map_err(|_| "cannot create target system user".to_string())?;
     }
 
     let archive_path = req.archive_path.as_deref().filter(|p| !p.is_empty());
@@ -285,13 +270,11 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
     };
     let saved_archive = keep_generic_upload(req, &source, &home)?;
     let (framework, config_path, document_root) = detect_generic_application(&project_root);
-    let _ = Command::new("chown")
-        .args([
-            "-R",
-            &format!("{}:{}", req.site_owner, req.site_owner),
-            home.to_string_lossy().as_ref(),
-        ])
-        .status();
+    crate::app::try_chown(&[
+        "-R",
+        &format!("{}:{}", req.site_owner, req.site_owner),
+        home.to_string_lossy().as_ref(),
+    ]);
     crate::filemanager::fix_permissions::run(Some(&req.site_owner), home.to_str(), false)?;
     fs::remove_dir_all(stage).ok();
     Ok(

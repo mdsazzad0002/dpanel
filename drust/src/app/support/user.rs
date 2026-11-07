@@ -1,4 +1,4 @@
-use std::{fs, io::Read, path::PathBuf};
+use std::path::PathBuf;
 
 use super::process::{program_exists, run_output};
 
@@ -28,9 +28,7 @@ pub fn random_hex(len: usize) -> Result<String, String> {
     }
 
     let mut bytes = vec![0_u8; len / 2 + 1];
-    let mut file = fs::File::open("/dev/urandom")
-        .map_err(|error| format!("failed to open /dev/urandom: {error}"))?;
-    file.read_exact(&mut bytes)
+    crate::platform::random_bytes(&mut bytes)
         .map_err(|error| format!("failed to read random bytes: {error}"))?;
     let output = bytes
         .into_iter()
@@ -40,15 +38,13 @@ pub fn random_hex(len: usize) -> Result<String, String> {
 }
 
 pub(crate) fn user_home(username: &str) -> Result<PathBuf, String> {
-    let output = run_output("getent", &["passwd", username])?;
-    let fields = output.split(':').collect::<Vec<_>>();
-    if fields.len() >= 6 {
-        Ok(PathBuf::from(fields[5]))
-    } else {
-        Err(format!("Unable to determine home directory for {username}"))
-    }
+    crate::platform::accounts()
+        .home(username)
+        .map_err(|_| format!("Unable to determine home directory for {username}"))
 }
 
 pub fn user_group(username: &str) -> Result<String, String> {
-    run_output("id", &["-gn", username])
+    crate::platform::accounts()
+        .primary_group(username)
+        .map_err(|error| error.to_string())
 }

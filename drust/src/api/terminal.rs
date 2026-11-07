@@ -57,8 +57,10 @@ fn execute(request: &Request) -> Result<(String, i32, String), String> {
     let working_directory_value = working_directory.to_string_lossy().to_string();
     let owner_home = crate::platform::paths().site_home(&request.site_owner);
     let owner_home_value = owner_home.to_string_lossy().to_string();
-    let owner_uid = account_id("-u", &request.site_owner)?;
-    let owner_gid = account_id("-g", &request.site_owner)?;
+    let owner = crate::platform::accounts()
+        .lookup(&request.site_owner)
+        .map_err(|_| "Unable to resolve website owner.".to_string())?;
+    let (owner_uid, owner_gid) = (owner.uid.to_string(), owner.gid.to_string());
     let mut command = Command::new("timeout");
     command.args([
         "--signal=KILL",
@@ -184,21 +186,6 @@ fn execute(request: &Request) -> Result<(String, i32, String), String> {
     );
     let safe = tail_chars(combined.trim(), 40_000);
     Ok((safe, output.status.code().unwrap_or(124), next_directory))
-}
-
-fn account_id(flag: &str, username: &str) -> Result<String, String> {
-    let output = Command::new("id")
-        .args([flag, username])
-        .output()
-        .map_err(|error| format!("Unable to resolve website owner: {error}"))?;
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !output.status.success()
-        || value.is_empty()
-        || !value.chars().all(|character| character.is_ascii_digit())
-    {
-        return Err("Unable to resolve website owner.".into());
-    }
-    Ok(value)
 }
 
 fn validate(request: &Request) -> Result<(), String> {

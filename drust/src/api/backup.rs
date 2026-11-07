@@ -123,7 +123,8 @@ fn run_backup(only: &str) -> Result<String, String> {
 
     // Never use PHP_BINARY from a web/FPM process. dRust selects an explicit
     // CLI SAPI, which prevents php-fpm from printing its usage text here.
-    let php_cli = std::env::var("DRUST_PHP_CLI").unwrap_or_else(|_| "/usr/bin/php".into());
+    let php_cli = std::env::var("DRUST_PHP_CLI")
+        .unwrap_or_else(|_| crate::platform::paths().php_cli(None).to_string_lossy().into_owned());
     let output = Command::new(&php_cli)
         .current_dir(&panel_root)
         .arg(&artisan)

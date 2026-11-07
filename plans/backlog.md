@@ -113,6 +113,12 @@ B7-এর পর নতুন error বেরোলে একই নিয়ম
 | D5 | MCP policy OS-সচেতন করা | D4 | `McpCommandPolicy`, `RunCommandTool`, `RestartServiceTool`, `ServiceStatusTool` | Windows command policy test |
 | D6 | Local-এ queue ও cache database-এ | A6 | `dpanel/.env.example`, `config/queue.php`, `config/cache.php` | Redis ছাড়া panel চলে |
 
+**অবস্থা (Windows, `ext-posix` ছাড়া; commit ও CI বাকি):**
+
+- D2: Done শর্ত test-এ প্রমাণিত (`PathServiceTest`, `ScriptPathResolverTest`, `SiteHomeRoutingTest`)। Windows local-এ `SERVER_BASE_DIR`-এ drust-এর sites root দিতে হয়।
+- D1: `posix_*` শুধু `ProcessIdentity`-তে। Done শর্ত এখনও পূরণ হয়নি: Windows-এ 12টা test fail করে। কোনোটা `posix`-এর কারণে নয়; এগুলো D4-এর (`tar`, `symlink`, `DatabaseController`-এর Windows skip)।
+- D6: Queue, cache ও gateway reload Redis ছাড়া চলে, test-এ প্রমাণিত (`LocalProfileBackendsTest`)। Redis বন্ধ করে পুরো panel চালিয়ে দেখা হয়নি।
+
 ## E. macOS local
 
 | ID | কাজ | Depends | Done |

@@ -13,7 +13,11 @@ use serde::Deserialize;
 use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 use crate::api::{ApiResponse, ApiState, check_token};
-use crate::platform::{self, fs::FileMode};
+use crate::platform::{
+    self,
+    account::{AccountSpec, NO_LOGIN_SHELL},
+    fs::FileMode,
+};
 
 use axum::Router;
 use axum::routing::post;
@@ -116,22 +120,10 @@ fn delete_website(request: &DeleteRequest) -> Result<(), String> {
     }
 
     if request.delete_user {
-        if Command::new("id")
-            .args(["-u", user])
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
-        {
-            let output = Command::new("userdel")
-                // Website PHP workers may still be winding down when the panel
-                // removes a site. Force account removal so that a short-lived
-                // worker cannot leave the website stuck in a half-deleted state.
-                .args(["--force", "--remove", user])
-                .output()
-                .map_err(|error| format!("cannot run userdel: {error}"))?;
-            if !output.status.success() {
-                return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-            }
+        if platform::accounts().exists(user).unwrap_or(false) {
+            platform::accounts()
+                .delete(user, false)
+                .map_err(|error| error.to_string())?;
         } else if home.exists() {
             fs::remove_dir_all(&home)
                 .map_err(|error| format!("cannot remove {}: {error}", home.display()))?;
@@ -296,11 +288,9 @@ fn build_clone_package(
 
         // The panel's PHP worker reads it back (to upload or serve it).
         platform::files()
-            .set_mode(&package, FileMode::Raw(0o640))
+            .set_mode(&package, FileMode::SiteFile)
             .map_err(|e| format!("cannot protect clone package: {e}"))?;
-        let _ = Command::new("chown")
-            .args(["root:www-data", package.to_string_lossy().as_ref()])
-            .status();
+        crate::app::try_chown(&["root:www-data", package.to_string_lossy().as_ref()]);
 
         Ok(serde_json::json!({
             "package_path": package.display().to_string(),
@@ -439,8 +429,9 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
     // file-only (0o644), so directories get their own mode.
     let dir_options = options.unix_permissions(0o755);
     let owner = website.site_owner.as_deref().unwrap_or("");
-    let system_uid = numeric_account_id("-u", owner);
-    let system_gid = numeric_account_id("-g", owner);
+    let system_ids = archived_account_ids(owner);
+    let system_uid = system_ids.map(|ids| ids.uid);
+    let system_gid = system_ids.map(|ids| ids.gid);
 
     let is_quick_files = website.content.as_str() == "quick_files";
     let includes_files = matches!(website.content.as_str(), "all" | "files" | "quick_files");
@@ -592,11 +583,9 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
         ));
     }
     platform::files()
-        .set_mode(&zip_path, FileMode::Raw(0o640))
+        .set_mode(&zip_path, FileMode::SiteFile)
         .map_err(|e| format!("failed to protect archive: {e}"))?;
-    let _ = Command::new("chown")
-        .args(["root:www-data", zip_path.to_string_lossy().as_ref()])
-        .status();
+    crate::app::try_chown(&["root:www-data", zip_path.to_string_lossy().as_ref()]);
     Ok(serde_json::json!({
         "zip_path": zip_path.display().to_string(),
         "files": stats.files,
@@ -746,22 +735,12 @@ fn archive_cpmove(
     fs::write(package.join("sds"), "").map_err(|e| format!("cannot write subdomains: {e}"))?;
     fs::write(package.join("sds2"), "{}\n")
         .map_err(|e| format!("cannot write subdomain map: {e}"))?;
-    let shell = Command::new("getent")
-        .args(["passwd", owner])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|v| v.trim().split(':').nth(6).map(str::to_string))
-        .unwrap_or_else(|| "/usr/sbin/nologin".into());
+    let shell = platform::accounts()
+        .shell(owner)
+        .unwrap_or_else(|| NO_LOGIN_SHELL.into());
     fs::write(package.join("shell"), format!("{shell}\n"))
         .map_err(|e| format!("cannot write shell: {e}"))?;
-    let shadow = Command::new("getent")
-        .args(["shadow", owner])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|v| v.trim().split(':').nth(1).map(str::to_string))
-        .unwrap_or_default();
+    let shadow = platform::accounts().password_hash(owner).unwrap_or_default();
     fs::write(package.join("shadow"), format!("{shadow}\n"))
         .map_err(|e| format!("cannot write shadow: {e}"))?;
 
@@ -789,19 +768,17 @@ fn archive_cpmove(
     fs::write(format!("{}.json", archive_path.display()), &manifest_bytes)
         .map_err(|e| format!("cannot write archive index metadata: {e}"))?;
     platform::files()
-        .set_mode(archive_path, FileMode::Raw(0o640))
+        .set_mode(archive_path, FileMode::SiteFile)
         .map_err(|e| format!("cannot protect archive: {e}"))?;
     let _ = platform::files().set_mode(
         Path::new(&format!("{}.json", archive_path.display())),
-        FileMode::Raw(0o640),
+        FileMode::SiteFile,
     );
-    let _ = Command::new("chown")
-        .args([
-            "root:www-data",
-            archive_path.to_string_lossy().as_ref(),
-            &format!("{}.json", archive_path.display()),
-        ])
-        .status();
+    crate::app::try_chown(&[
+        "root:www-data",
+        archive_path.to_string_lossy().as_ref(),
+        &format!("{}.json", archive_path.display()),
+    ]);
     Ok(
         serde_json::json!({ "archive_path": archive_path, "format": "cpanel-cpmove", "website": website_meta }),
     )
@@ -1090,47 +1067,17 @@ fn restore_archive(value: &str, progress: &RestoreProgress) -> Result<serde_json
         return Err("archive project path is outside the website owner home".into());
     }
 
-    if numeric_account_id("-u", owner).is_none() {
-        let archived_uid = website.get("system_uid").and_then(|value| value.as_u64());
-        let archived_gid = website.get("system_gid").and_then(|value| value.as_u64());
-
-        let mut group_args = vec!["--force".to_string()];
-        if let Some(gid) = archived_gid {
-            group_args.extend(["--gid".to_string(), gid.to_string()]);
-        }
-        group_args.push(owner.to_string());
-        let group_output = Command::new("groupadd")
-            .args(&group_args)
-            .output()
-            .map_err(|error| format!("cannot recreate website group: {error}"))?;
-        if !group_output.status.success() {
-            return Err(format!(
-                "cannot recreate website group: {}",
-                String::from_utf8_lossy(&group_output.stderr).trim()
-            ));
-        }
-
-        let mut user_args = vec!["--create-home".to_string()];
-        if let Some(uid) = archived_uid {
-            user_args.extend(["--uid".to_string(), uid.to_string()]);
-        }
-        user_args.extend([
-            "--gid".to_string(),
-            owner.to_string(),
-            "--shell".to_string(),
-            "/usr/sbin/nologin".to_string(),
-            owner.to_string(),
-        ]);
-        let user_output = Command::new("useradd")
-            .args(&user_args)
-            .output()
-            .map_err(|error| format!("cannot create website user: {error}"))?;
-        if !user_output.status.success() {
-            return Err(format!(
-                "cannot recreate website user: {}",
-                String::from_utf8_lossy(&user_output.stderr).trim()
-            ));
-        }
+    if !platform::accounts().exists(owner).unwrap_or(false) {
+        let archived_id = |key: &str| {
+            website
+                .get(key)
+                .and_then(|value| value.as_u64())
+                .and_then(|id| u32::try_from(id).ok())
+        };
+        let spec = AccountSpec::restored(owner, archived_id("system_uid"), archived_id("system_gid"));
+        platform::accounts()
+            .create(&spec)
+            .map_err(|error| format!("cannot recreate website user: {error}"))?;
     }
     fs::create_dir_all(&project_root).map_err(|e| format!("cannot create website root: {e}"))?;
 
@@ -1245,13 +1192,11 @@ fn restore_archive(value: &str, progress: &RestoreProgress) -> Result<serde_json
         }
     }
     progress.update("permissions", 90, "Fixing file ownership and permissions");
-    let _ = Command::new("chown")
-        .args([
-            "-R",
-            &format!("{owner}:{owner}"),
-            project_root.to_string_lossy().as_ref(),
-        ])
-        .status();
+    crate::app::try_chown(&[
+        "-R",
+        &format!("{owner}:{owner}"),
+        project_root.to_string_lossy().as_ref(),
+    ]);
     crate::filemanager::fix_permissions::run(Some(owner), owner_home.to_str(), false).map_err(
         |error| format!("files restored but permissions could not be repaired: {error}"),
     )?;
@@ -1276,15 +1221,13 @@ fn restore_archive(value: &str, progress: &RestoreProgress) -> Result<serde_json
     Ok(website)
 }
 
-fn numeric_account_id(flag: &str, owner: &str) -> Option<u64> {
-    if owner.is_empty() {
+/// The ids a backup records so a restore can bring the owner back with them.
+/// A local profile has none: its stand-in ids must not reach a server as root's.
+fn archived_account_ids(owner: &str) -> Option<platform::fs::OwnerId> {
+    if owner.is_empty() || platform::current().one_user() {
         return None;
     }
-    let output = Command::new("id").args([flag, owner]).output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    String::from_utf8(output.stdout).ok()?.trim().parse().ok()
+    platform::accounts().lookup(owner).ok()
 }
 
 fn restore_cpmove(path: &Path, progress: &RestoreProgress) -> Result<serde_json::Value, String> {
@@ -1383,30 +1326,10 @@ fn restore_cpmove_staged(
     }
 
     progress.update("account", 58, &format!("Preparing system user {owner}"));
-    if !Command::new("id")
-        .args(["-u", owner])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-    {
-        let _ = Command::new("groupadd").args(["--force", owner]).status();
-        let output = Command::new("useradd")
-            .args([
-                "--create-home",
-                "--gid",
-                owner,
-                "--shell",
-                "/usr/sbin/nologin",
-                owner,
-            ])
-            .output()
+    if !platform::accounts().exists(owner).unwrap_or(false) {
+        platform::accounts()
+            .create(&AccountSpec::restored(owner, None, None))
             .map_err(|e| format!("cannot recreate account user: {e}"))?;
-        if !output.status.success() {
-            return Err(format!(
-                "cannot recreate account user: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
-        }
     }
 
     progress.update("files", 60, "Copying website files into the home directory");
@@ -1497,13 +1420,11 @@ fn restore_cpmove_staged(
         }
     }
     progress.update("permissions", 96, "Fixing file ownership");
-    let _ = Command::new("chown")
-        .args([
-            "-R",
-            &format!("{owner}:{owner}"),
-            home.to_string_lossy().as_ref(),
-        ])
-        .status();
+    crate::app::try_chown(&[
+        "-R",
+        &format!("{owner}:{owner}"),
+        home.to_string_lossy().as_ref(),
+    ]);
     progress.update("finalizing", 98, "Saving panel records");
     Ok(website)
 }

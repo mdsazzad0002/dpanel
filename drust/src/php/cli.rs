@@ -64,9 +64,11 @@ fn binary(version: &str) -> Option<String> {
         return None;
     }
     // Only /usr is bound into the sandboxes, so only look there.
-    [format!("/usr/bin/php{version}"), format!("/usr/local/bin/php{version}")]
+    platform::paths()
+        .php_candidates(Some(version))
         .into_iter()
-        .find(|path| Path::new(path).is_file())
+        .find(|path| path.is_file())
+        .map(|path| path.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]

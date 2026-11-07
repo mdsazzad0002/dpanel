@@ -52,10 +52,11 @@ fn execute(request: &Request) -> Result<serde_json::Value, String> {
     // Use the website's PHP; the system default may be too old for its lock file.
     let php = crate::php::cli::binary_for(request.php_version.as_deref())
         .or_else(|| {
-            ["/usr/bin/php", "/usr/local/bin/php", "/usr/bin/php8.3", "/usr/bin/php8.2"]
+            crate::platform::paths()
+                .php_candidates(None)
                 .into_iter()
-                .find(|path| std::path::Path::new(path).is_file())
-                .map(String::from)
+                .find(|path| path.is_file())
+                .map(|path| path.to_string_lossy().into_owned())
         })
         .ok_or("PHP CLI is unavailable.")?;
     let output = Command::new("/usr/sbin/runuser")

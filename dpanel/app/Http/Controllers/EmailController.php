@@ -6,6 +6,7 @@ use App\Models\PackagePlan;
 use App\Models\MailDomain;
 use App\Models\Mailbox;
 use App\Services\Mail\MailboxDeliveryHealth;
+use App\Services\PathService;
 use App\Support\MailPasswordHash;
 use App\Models\Website;
 use App\Services\Mail\MailboxImapService;
@@ -1095,7 +1096,7 @@ class EmailController extends Controller
         $safeMailbox = strtolower($mailbox);
         return [
             'site_owner' => $owner,
-            'mail_home' => "/home/{$owner}/mail/{$safeDomain}/{$safeMailbox}/Maildir",
+            'mail_home' => PathService::siteHome($owner)."/mail/{$safeDomain}/{$safeMailbox}/Maildir",
             'mail_uid' => $uid,
             'mail_gid' => $gid,
         ];

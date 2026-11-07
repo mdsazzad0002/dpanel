@@ -3,6 +3,7 @@
 //! `#[cfg(unix)]`-style attribute stays inside this module. See
 //! `plans/platform-spec.md`.
 
+pub mod account;
 pub mod capabilities;
 pub mod fastcgi;
 pub mod fs;
@@ -13,15 +14,16 @@ mod unix;
 #[cfg(windows)]
 mod windows;
 
+use account::{AccountManager, LinuxAccounts, LocalAccounts, NoAccounts};
 use capabilities::Capability;
 use fs::FileAccess;
 use paths::Paths;
 use std::{env, fmt, io, sync::OnceLock};
 
 #[cfg(unix)]
-use unix::fs::NativeFileAccess;
+use unix::{fs::NativeFileAccess, random::fill};
 #[cfg(windows)]
-use windows::fs::NativeFileAccess;
+use windows::{fs::NativeFileAccess, random::fill};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Os {
@@ -79,6 +81,7 @@ pub struct Platform {
     os: Os,
     profile: Profile,
     paths: Paths,
+    accounts: Box<dyn AccountManager>,
 }
 
 impl Platform {
@@ -97,6 +100,26 @@ impl Platform {
     pub fn files(&self) -> &'static dyn FileAccess {
         &NativeFileAccess
     }
+
+    pub fn accounts(&self) -> &dyn AccountManager {
+        self.accounts.as_ref()
+    }
+
+    /// A local profile on a PC runs every site as the logged-in user, so a site
+    /// account is only a folder and there is no other owner to give a file to.
+    /// Linux keeps real accounts on every profile.
+    pub fn one_user(&self) -> bool {
+        one_user(self.os, self.profile)
+    }
+
+    /// Only a machine with real accounts has to be root.
+    pub fn needs_root(&self) -> bool {
+        !self.one_user()
+    }
+}
+
+fn one_user(os: Os, profile: Profile) -> bool {
+    os != Os::Linux && profile == Profile::Local
 }
 
 pub fn current() -> &'static Platform {
@@ -104,12 +127,25 @@ pub fn current() -> &'static Platform {
     CURRENT.get_or_init(|| {
         let os = Os::detect();
         let profile = Profile::parse(env::var("DPANEL_PROFILE").ok().as_deref());
+        let paths = Paths::for_system(os, profile, |name| env::var(name).ok());
+        let accounts = accounts_for(os, profile, &paths);
         Platform {
             os,
             profile,
-            paths: Paths::for_system(os, profile, |name| env::var(name).ok()),
+            paths,
+            accounts,
         }
     })
+}
+
+fn accounts_for(os: Os, profile: Profile, paths: &Paths) -> Box<dyn AccountManager> {
+    match (os, profile) {
+        (Os::Linux, _) => Box::new(LinuxAccounts),
+        (_, Profile::Local) => Box::new(LocalAccounts {
+            sites_root: paths.sites_root().to_path_buf(),
+        }),
+        (_, Profile::Server) => Box::new(NoAccounts),
+    }
 }
 
 /// Shorthand for `current().paths()`.
@@ -122,15 +158,20 @@ pub fn files() -> &'static dyn FileAccess {
     current().files()
 }
 
-/// For a test of Unix behaviour that Windows gets in a later backlog task.
-/// That task deletes these calls, so `grep skip_until_windows_has` lists what it owes.
+/// Shorthand for `current().accounts()`.
+pub fn accounts() -> &'static dyn AccountManager {
+    current().accounts()
+}
+
+/// Fills the buffer from the OS random source.
+pub fn random_bytes(buffer: &mut [u8]) -> Result<(), PlatformError> {
+    fill(buffer).map_err(|error| PlatformError::from_io("read random bytes", error))
+}
+
+/// For a test of exact Unix modes, which Windows ACLs have no form of.
 #[cfg(test)]
-pub fn skip_until_windows_has(task: &str) -> bool {
-    let skip = current().os() == Os::Windows;
-    if skip {
-        eprintln!("skipped on Windows until task {task}");
-    }
-    skip
+pub fn os_has_no_file_modes() -> bool {
+    current().os() == Os::Windows
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,6 +230,16 @@ mod tests {
             "linux"
         };
         assert_eq!(current().os().as_str(), expected);
+    }
+
+    #[test]
+    fn only_a_local_profile_off_linux_is_one_user() {
+        assert!(one_user(Os::Windows, Profile::Local));
+        assert!(one_user(Os::Macos, Profile::Local));
+        assert!(!one_user(Os::Linux, Profile::Local));
+        assert!(!one_user(Os::Linux, Profile::Server));
+        assert!(!one_user(Os::Windows, Profile::Server));
+        assert!(!one_user(Os::Macos, Profile::Server));
     }
 
     #[test]

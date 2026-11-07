@@ -16,7 +16,7 @@ class RobotsTxtFileTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->root = sys_get_temp_dir().'/robots-test-'.uniqid();
+        $this->root = str_replace('\\', '/', sys_get_temp_dir()).'/robots-test-'.uniqid();
         mkdir($this->root.'/public', 0777, true);
     }
 

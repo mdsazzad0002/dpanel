@@ -1,4 +1,5 @@
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -11,7 +12,11 @@ use serde::Deserialize;
 
 use crate::{
     api::{ApiResponse, ApiState, check_token},
-    app::{ensure_root, run_status, user_group, valid_username},
+    app::{ensure_root, program_exists, run_status, user_group, valid_username},
+    platform::{
+        self,
+        fs::{FileAccess, FileMode},
+    },
 };
 
 use super::common::{ensure_canonical_inside_home, validate_account, validate_user_path};
@@ -109,11 +114,17 @@ fn resolve_target(username: Option<&str>, root_path: Option<&str>) -> Result<Tar
 }
 
 fn infer_username_from_home_path(path: &str) -> Option<&str> {
-    let mut parts = path.trim_start_matches('/').split('/');
-    match (parts.next(), parts.next()) {
-        (Some("home"), Some(username)) if !username.is_empty() => Some(username),
-        _ => None,
-    }
+    username_under(platform::paths().sites_root(), path)
+}
+
+fn username_under<'a>(sites_root: &Path, path: &'a str) -> Option<&'a str> {
+    Path::new(path)
+        .strip_prefix(sites_root)
+        .ok()?
+        .components()
+        .next()?
+        .as_os_str()
+        .to_str()
 }
 
 fn discover_public_html_targets() -> Result<Vec<Target>, String> {
@@ -141,11 +152,14 @@ fn discover_public_html_targets() -> Result<Vec<Target>, String> {
 }
 
 fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
+    if platform::current().one_user() {
+        return fix_local_target(platform::files(), root_path);
+    }
     let path = root_path.to_string_lossy();
     let owner = format!("{username}:www-data");
 
     run_status("chown", &["-R", &owner, path.as_ref()])?;
-    if command_exists("setfacl") {
+    if program_exists("setfacl") {
         run_status("setfacl", &["-R", "-b", path.as_ref()])?;
         run_status("setfacl", &["-R", "-k", path.as_ref()])?;
     }
@@ -200,11 +214,108 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn command_exists(program: &str) -> bool {
-    std::process::Command::new("sh")
-        .arg("-c")
-        .arg(format!("command -v {program} >/dev/null 2>&1"))
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+/// The same repair where every site runs as the logged-in user: no owners to
+/// put right, and what must stay private stays so through `FileAccess`.
+fn fix_local_target(files: &dyn FileAccess, root_path: &Path) -> Result<(), String> {
+    let set_mode = |path: &Path, mode: FileMode| {
+        files
+            .set_mode(path, mode)
+            .map_err(|e| format!("failed to set mode of {}: {e}", path.display()))
+    };
+    set_mode(root_path, FileMode::SiteDir)?;
+
+    let mut keys = Vec::new();
+    find_oauth_keys(root_path, false, &mut keys)
+        .map_err(|e| format!("failed to read {}: {e}", root_path.display()))?;
+    for key in keys {
+        set_mode(&key, FileMode::Private)?;
+    }
+
+    let mail_path = root_path.join("mail");
+    if mail_path.is_dir() {
+        set_mode(&mail_path, FileMode::PrivateDir)?;
+    }
+
+    let ssh_path = root_path.join(".ssh");
+    files
+        .create_dir_private(&ssh_path)
+        .map_err(|e| format!("failed to create {}: {e}", ssh_path.display()))?;
+    set_mode(&ssh_path, FileMode::PrivateDir)
+}
+
+/// Passport keys under a `storage` folder. A link is not followed, as `find` would not.
+fn find_oauth_keys(dir: &Path, in_storage: bool, keys: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            find_oauth_keys(&entry.path(), in_storage || name == "storage", keys)?;
+        } else if kind.is_file()
+            && in_storage
+            && (name == "oauth-private.key" || name == "oauth-public.key")
+        {
+            keys.push(entry.path());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::{files, fs::mode_string, os_has_no_file_modes};
+    use std::process::Command;
+
+    /// Whether anyone but the owner can reach `path`.
+    fn open_to_others(path: &Path) -> bool {
+        if os_has_no_file_modes() {
+            let output = Command::new("icacls").arg(path).output().unwrap();
+            return String::from_utf8_lossy(&output.stdout).contains("BUILTIN\\Users");
+        }
+        let metadata = fs::metadata(path).unwrap();
+        !matches!(mode_string(files(), &metadata).as_deref(), Some("0600" | "0700"))
+    }
+
+    #[test]
+    fn the_username_is_the_first_folder_under_the_sites_root() {
+        let root = Path::new("/home");
+        assert_eq!(username_under(root, "/home/shop"), Some("shop"));
+        assert_eq!(username_under(root, "/home/shop/public_html"), Some("shop"));
+        assert_eq!(username_under(root, "/home"), None);
+        assert_eq!(username_under(root, "/var/www/shop"), None);
+        assert_eq!(username_under(root, "/homely/shop"), None);
+    }
+
+    #[test]
+    fn a_local_repair_keeps_keys_mail_and_ssh_private() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let keys = root.join("app/storage");
+        fs::create_dir_all(&keys).unwrap();
+        fs::create_dir_all(root.join("mail")).unwrap();
+        fs::create_dir_all(root.join("public_html")).unwrap();
+        for name in ["oauth-private.key", "oauth-public.key", "readme.txt"] {
+            fs::write(keys.join(name), "x").unwrap();
+        }
+        // Not under storage, so not one of Passport's keys.
+        fs::write(root.join("public_html/oauth-private.key"), "x").unwrap();
+        files().set_mode(&root.join("public_html/oauth-private.key"), FileMode::Shared).unwrap();
+
+        fix_local_target(files(), root).unwrap();
+
+        assert!(!open_to_others(&keys.join("oauth-private.key")));
+        assert!(!open_to_others(&keys.join("oauth-public.key")));
+        assert!(!open_to_others(&root.join("mail")));
+        assert!(!open_to_others(&root.join(".ssh")));
+        assert!(open_to_others(&root.join("public_html/oauth-private.key")));
+    }
+
+    #[test]
+    fn a_local_repair_can_run_twice() {
+        let dir = tempfile::tempdir().unwrap();
+        fix_local_target(files(), dir.path()).unwrap();
+        fix_local_target(files(), dir.path()).unwrap();
+        assert!(dir.path().join(".ssh").is_dir());
+    }
 }

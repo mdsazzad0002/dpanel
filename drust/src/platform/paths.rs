@@ -23,6 +23,7 @@ pub enum Tool {
     Sshd,
     Systemctl,
     Ufw,
+    Uv,
 }
 
 impl Tool {
@@ -42,6 +43,7 @@ impl Tool {
             Self::Sshd => "sshd",
             Self::Systemctl => "systemctl",
             Self::Ufw => "ufw",
+            Self::Uv => "uv",
         }
     }
 
@@ -63,7 +65,57 @@ impl Tool {
             Self::Sshd => &["/usr/sbin/sshd", "/usr/local/sbin/sshd"],
             Self::Systemctl => &["/usr/bin/systemctl", "/bin/systemctl"],
             Self::Ufw => &["/usr/sbin/ufw", "/usr/bin/ufw"],
+            Self::Uv => &["/usr/local/bin/uv", "/usr/bin/uv", "/root/.local/bin/uv"],
         }
+    }
+}
+
+/// Where a PHP CLI can be, best first. `version` is already validated, like `8.3`.
+fn php_places(
+    os: Os,
+    runtime_dir: &Path,
+    version: Option<&str>,
+    path_dirs: impl Iterator<Item = PathBuf>,
+) -> Vec<PathBuf> {
+    match (os, version) {
+        (Os::Linux, Some(version)) => vec![
+            format!("/usr/bin/php{version}").into(),
+            format!("/usr/local/bin/php{version}").into(),
+        ],
+        (Os::Linux, None) => ["/usr/bin/php", "/usr/local/bin/php", "/usr/bin/php8.3", "/usr/bin/php8.2"]
+            .map(PathBuf::from)
+            .to_vec(),
+        (Os::Macos, Some(version)) => vec![
+            format!("/opt/homebrew/opt/php@{version}/bin/php").into(),
+            format!("/usr/local/opt/php@{version}/bin/php").into(),
+        ],
+        (Os::Macos, None) => ["/opt/homebrew/bin/php", "/usr/local/bin/php"].map(PathBuf::from).to_vec(),
+        (Os::Windows, Some(version)) => vec![runtime_dir.join("php").join(version).join("php.exe")],
+        (Os::Windows, None) => std::iter::once(runtime_dir.join("php").join("php.exe"))
+            .chain(path_dirs.map(|dir| dir.join("php.exe")))
+            .collect(),
+    }
+}
+
+/// The one CLI to run. Linux always means its first place, so a copy elsewhere
+/// is never picked up by accident; the others take the first that is there.
+fn chosen_php(os: Os, mut places: Vec<PathBuf>, is_file: impl Fn(&Path) -> bool) -> PathBuf {
+    let found = places.iter().position(|path| os != Os::Linux && is_file(path));
+    places.swap_remove(found.unwrap_or(0))
+}
+
+fn python_places(os: Os, runtime_dir: &Path, version: &str) -> Vec<PathBuf> {
+    match os {
+        Os::Linux => vec![
+            format!("/usr/local/pyenv/versions/{version}/bin/python3").into(),
+            format!("/usr/bin/python{version}").into(),
+            format!("/usr/local/bin/python{version}").into(),
+        ],
+        Os::Macos => vec![
+            format!("/opt/homebrew/bin/python{version}").into(),
+            format!("/usr/local/bin/python{version}").into(),
+        ],
+        Os::Windows => vec![runtime_dir.join("python").join(version).join("python.exe")],
     }
 }
 
@@ -81,12 +133,19 @@ fn locate(
             .chain([Path::new("/opt/homebrew/bin").join(tool.name())])
             .find(|path| is_file(path)),
         // npm and composer are batch files there.
-        Os::Windows => path_dirs
-            .flat_map(|dir| {
-                ["exe", "cmd", "bat"].map(|extension| dir.join(format!("{}.{extension}", tool.name())))
-            })
-            .find(|path| is_file(path)),
+        Os::Windows => on_windows_path(tool.name(), path_dirs, is_file),
     }
+}
+
+/// The first `PATH` entry that can run `name`, which Windows needs an extension for.
+pub(super) fn on_windows_path(
+    name: &str,
+    path_dirs: impl Iterator<Item = PathBuf>,
+    is_file: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    path_dirs
+        .flat_map(|dir| ["exe", "cmd", "bat"].map(|extension| dir.join(format!("{name}.{extension}"))))
+        .find(|path| is_file(path))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -242,6 +301,39 @@ impl Paths {
     pub fn tls_dir(&self) -> PathBuf {
         self.config_dir.join("tls")
     }
+
+    /// Every place a PHP CLI can be, best first. `None` is the system's own PHP.
+    pub fn php_candidates(&self, version: Option<&str>) -> Vec<PathBuf> {
+        let path_var = env::var_os("PATH").unwrap_or_default();
+        php_places(self.os, &self.runtime_dir, version, env::split_paths(&path_var))
+    }
+
+    /// The PHP CLI to run. It may not exist, which the caller reports.
+    pub fn php_cli(&self, version: Option<&str>) -> PathBuf {
+        chosen_php(self.os, self.php_candidates(version), Path::is_file)
+    }
+
+    /// Every place an installed Python `version` can be, best first.
+    pub fn python_candidates(&self, version: &str) -> Vec<PathBuf> {
+        python_places(self.os, &self.runtime_dir, version)
+    }
+
+    /// Where drust installs Python versions the system does not ship.
+    pub fn managed_python_dir(&self) -> PathBuf {
+        match self.os {
+            Os::Linux => PathBuf::from("/usr/local/dpanel-python"),
+            Os::Macos | Os::Windows => self.runtime_dir.join("python"),
+        }
+    }
+
+    /// A domain with no document root of its own. `domain` is appended, like
+    /// an owner in `site_home`, so that it can never replace the base.
+    pub fn default_document_root(&self, domain: &str) -> PathBuf {
+        match self.os {
+            Os::Linux => PathBuf::from(format!("/var/www/{domain}/public")),
+            Os::Macos | Os::Windows => self.site_home(domain).join("public"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -366,6 +458,89 @@ mod tests {
         locate(os, tool, dirs.into_iter(), |path| {
             present.iter().any(|item| Path::new(item) == path)
         })
+    }
+
+    fn php(os: Os, version: Option<&str>) -> Vec<PathBuf> {
+        let dirs = [PathBuf::from("/first"), PathBuf::from("/second")];
+        php_places(os, Path::new("/runtime"), version, dirs.into_iter())
+    }
+
+    /// Linux callers relied on these exact paths before they moved here.
+    #[test]
+    fn linux_keeps_its_php_and_python_paths() {
+        assert_eq!(
+            php(Os::Linux, Some("8.3")),
+            [Path::new("/usr/bin/php8.3"), Path::new("/usr/local/bin/php8.3")]
+        );
+        assert_eq!(
+            php(Os::Linux, None),
+            ["/usr/bin/php", "/usr/local/bin/php", "/usr/bin/php8.3", "/usr/bin/php8.2"]
+                .map(Path::new)
+        );
+        assert_eq!(
+            python_places(Os::Linux, Path::new("/runtime"), "3.12"),
+            [
+                "/usr/local/pyenv/versions/3.12/bin/python3",
+                "/usr/bin/python3.12",
+                "/usr/local/bin/python3.12",
+            ]
+            .map(Path::new)
+        );
+        let linux = paths(Os::Linux, Profile::Server);
+        assert_eq!(linux.managed_python_dir(), Path::new("/usr/local/dpanel-python"));
+        assert_eq!(
+            linux.default_document_root("example.com"),
+            Path::new("/var/www/example.com/public")
+        );
+    }
+
+    #[test]
+    fn linux_never_runs_a_php_other_than_its_first_place() {
+        let chosen = chosen_php(Os::Linux, php(Os::Linux, None), |path| path == Path::new("/usr/local/bin/php"));
+        assert_eq!(chosen, Path::new("/usr/bin/php"));
+    }
+
+    #[test]
+    fn windows_finds_php_in_the_runtime_folder_or_on_path() {
+        assert_eq!(
+            php(Os::Windows, Some("8.3")),
+            [Path::new("/runtime").join("php").join("8.3").join("php.exe")]
+        );
+        let places = php(Os::Windows, None);
+        assert_eq!(places[0], Path::new("/runtime").join("php").join("php.exe"));
+        let on_path = Path::new("/second").join("php.exe");
+        assert_eq!(chosen_php(Os::Windows, places.clone(), |path| path == on_path), on_path);
+        assert_eq!(chosen_php(Os::Windows, places.clone(), |_| false), places[0]);
+    }
+
+    #[test]
+    fn macos_looks_in_homebrew_for_versions() {
+        assert_eq!(
+            php(Os::Macos, Some("8.3"))[0],
+            Path::new("/opt/homebrew/opt/php@8.3/bin/php")
+        );
+        assert_eq!(
+            python_places(Os::Macos, Path::new("/runtime"), "3.12")[0],
+            Path::new("/opt/homebrew/bin/python3.12")
+        );
+    }
+
+    #[test]
+    fn uv_is_found_like_every_other_tool() {
+        assert_eq!(
+            found(Os::Linux, Tool::Uv, &["/root/.local/bin/uv", "/usr/bin/uv"]),
+            Some("/usr/bin/uv".into())
+        );
+        assert_eq!(found(Os::Linux, Tool::Uv, &["/first/uv.exe"]), None);
+        assert_eq!(found(Os::Windows, Tool::Uv, &["/first/uv.exe"]), Some("/first/uv.exe".into()));
+    }
+
+    #[test]
+    fn a_domains_default_root_cannot_replace_the_sites_root() {
+        let windows = paths(Os::Windows, Profile::Local);
+        let root = windows.default_document_root(r"C:\Windows");
+        assert!(root.to_string_lossy().starts_with(r"D:\Users\me\dPanel\sites"));
+        assert!(root.ends_with("public"));
     }
 
     #[test]

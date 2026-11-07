@@ -247,13 +247,13 @@ fn php_binary(version: &str) -> Result<String, String> {
     if !valid {
         return Err("Invalid PHP version.".into());
     }
-    let binary = format!("/usr/bin/php{version}");
-    if !Path::new(&binary).is_file() {
+    let binary = platform::paths().php_cli(Some(version));
+    if !binary.is_file() {
         return Err(format!(
             "PHP {version} CLI is not installed on this server."
         ));
     }
-    Ok(binary)
+    Ok(binary.to_string_lossy().into_owned())
 }
 
 /// A per-account scratch HOME under ~/.dpanel (account homes are not always
