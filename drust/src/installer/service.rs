@@ -7,13 +7,13 @@
 
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Stdio,
     time::Duration,
 };
 
 use crate::app::run_status;
+use crate::platform::{self, fs::FileMode, process::new_process_group};
 use crate::filemanager::common::{ensure_directory_inside_home, validate_account, validate_user_path};
 
 /// composer create-project/require and npm install/build.
@@ -292,7 +292,8 @@ fn prepare_runtime(
     if fs::symlink_metadata(&php_link).is_ok() {
         fs::remove_file(&php_link).map_err(|e| format!("Cannot reset php shim: {e}"))?;
     }
-    std::os::unix::fs::symlink(php, &php_link)
+    platform::files()
+        .symlink(Path::new(php), &php_link)
         .map_err(|e| format!("Cannot create php shim: {e}"))?;
 
     let composer = bin.join("composer");
@@ -307,7 +308,7 @@ fn prepare_runtime(
         ),
     )
     .map_err(|e| format!("Cannot create composer shim: {e}"))?;
-    fs::set_permissions(&composer, fs::Permissions::from_mode(0o755))
+    platform::files().set_mode(&composer, FileMode::Executable)
         .map_err(|e| format!("Cannot chmod composer shim: {e}"))?;
 
     Ok(Runtime {
@@ -351,8 +352,8 @@ async fn run_as_owner(
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .process_group(0)
         .kill_on_drop(true);
+    new_process_group(&mut command);
 
     let mut child = command
         .spawn()

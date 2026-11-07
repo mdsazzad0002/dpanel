@@ -146,6 +146,7 @@ fn run_backup(only: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::{delete_backup_run, run_backup};
+    use crate::platform::{self, PlatformError};
     use std::{
         fs,
         path::Path,
@@ -206,11 +207,8 @@ mod tests {
         fs::remove_dir_all(outside_run).expect("temporary outside directory should be removed");
     }
 
-    #[cfg(unix)]
     #[test]
     fn refuses_to_follow_a_symlinked_backup_run() {
-        use std::os::unix::fs::symlink;
-
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock should be after the epoch")
@@ -221,7 +219,10 @@ mod tests {
         let linked_run = backup_root.join("20261021_023002");
         fs::create_dir_all(&actual_run).expect("backup run should be created");
         fs::write(actual_run.join("backup.zip"), b"backup").expect("backup file should be created");
-        symlink(&actual_run, &linked_run).expect("backup symlink should be created");
+        match platform::files().symlink(&actual_run, &linked_run) {
+            Err(PlatformError::Unsupported { .. }) => return,
+            result => result.expect("backup symlink should be created"),
+        }
 
         let result = delete_backup_run(
             linked_run

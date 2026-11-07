@@ -5,13 +5,13 @@
 //! execution. Findings carry stable rule ids (DP-*) that the panel maps to its
 //! rule catalog, severities and score categories.
 
+use crate::platform::{self, fs::FileMode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
     io::{BufRead, BufReader, Read},
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{Mutex, OnceLock},
@@ -522,7 +522,10 @@ where
 }
 
 fn check_permissions(relative: &Path, metadata: &fs::Metadata, collector: &mut Collector) {
-    let mode = metadata.permissions().mode();
+    // Without Unix modes there is nothing here to judge.
+    let Some(mode) = platform::files().mode_bits(metadata) else {
+        return;
+    };
     let is_dir = metadata.is_dir();
     // Sticky world-writable directories (like /tmp) are a deliberate setup.
     if mode & 0o002 != 0 && !(is_dir && mode & 0o1000 != 0) {
@@ -973,7 +976,7 @@ fn compare_integrity(
     // Every scan moves the baseline forward, so each change is reported once;
     // the panel keeps the finding open until someone reviews it.
     fs::create_dir_all(INTEGRITY_DIR).map_err(|e| format!("Cannot create {INTEGRITY_DIR}: {e}"))?;
-    let _ = fs::set_permissions(INTEGRITY_DIR, fs::Permissions::from_mode(0o700));
+    let _ = platform::files().set_mode(Path::new(INTEGRITY_DIR), FileMode::PrivateDir);
     let baseline = Baseline {
         root: root_text,
         updated_at: now_secs(),
@@ -1386,7 +1389,9 @@ mod tests {
         fs::write(root.join("a/one.js"), "x").unwrap();
         fs::write(root.join("a/b/two.php"), "x").unwrap();
         fs::write(root.join(".git/HEAD"), "x").unwrap();
-        std::os::unix::fs::symlink(root.join("index.php"), root.join("link.php")).unwrap();
+        platform::files()
+            .symlink(&root.join("index.php"), &root.join("link.php"))
+            .unwrap();
 
         assert_eq!(count_files(root, 50_000), 3);
         assert_eq!(count_files(root, 2), 2);
@@ -1415,7 +1420,9 @@ mod tests {
         )
         .unwrap();
         fs::write(root.join("index.php"), "<?php require 'app.php';").unwrap();
-        fs::set_permissions(root.join("index.php"), fs::Permissions::from_mode(0o666)).unwrap();
+        platform::files()
+            .set_mode(&root.join("index.php"), FileMode::Raw(0o666))
+            .unwrap();
 
         let scan = |scan_type: &str| {
             run(&ScanRequest {

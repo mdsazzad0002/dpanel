@@ -7,12 +7,12 @@
 use serde_json::{Value, json};
 use std::{
     fs,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
     process::Command,
 };
 
 use super::{args, client, parse_json_lines, run, text};
+use crate::platform::{self, fs::LinkPolicy};
 
 const STACKS_DIR: &str = "/opt/dpanel/docker/stacks";
 const COMPOSE_FILE: &str = "compose.yaml";
@@ -289,21 +289,15 @@ pub(crate) fn review(config: &Value) -> Value {
 
 fn write_private(path: &Path, content: &str) -> Result<(), String> {
     use std::io::Write;
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
+    let mut file = platform::files()
+        .replace_private(path, LinkPolicy::Follow)
         .map_err(|e| format!("Cannot write {}: {e}", path.display()))?;
     file.write_all(content.as_bytes()).map_err(|e| format!("Cannot write {}: {e}", path.display()))
 }
 
 fn make_dir(path: &Path) -> Result<(), String> {
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(path)
+    platform::files()
+        .create_dir_private(path)
         .map_err(|e| format!("Cannot create {}: {e}", path.display()))
 }
 

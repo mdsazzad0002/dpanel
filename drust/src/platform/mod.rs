@@ -6,6 +6,7 @@
 pub mod capabilities;
 pub mod fastcgi;
 pub mod fs;
+pub mod process;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]

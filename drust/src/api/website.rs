@@ -1,7 +1,5 @@
 use std::fs;
 use std::io::{Read, Write};
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -15,6 +13,7 @@ use serde::Deserialize;
 use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 use crate::api::{ApiResponse, ApiState, check_token};
+use crate::platform::{self, fs::FileMode};
 
 use axum::Router;
 use axum::routing::post;
@@ -296,8 +295,8 @@ fn build_clone_package(
             .map_err(|e| format!("cannot finalize clone package: {e}"))?;
 
         // The panel's PHP worker reads it back (to upload or serve it).
-        #[cfg(unix)]
-        fs::set_permissions(&package, fs::Permissions::from_mode(0o640))
+        platform::files()
+            .set_mode(&package, FileMode::Raw(0o640))
             .map_err(|e| format!("cannot protect clone package: {e}"))?;
         let _ = Command::new("chown")
             .args(["root:www-data", package.to_string_lossy().as_ref()])
@@ -592,8 +591,8 @@ fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Result<serde_jso
             stats.skipped_samples.join("; ")
         ));
     }
-    #[cfg(unix)]
-    fs::set_permissions(&zip_path, fs::Permissions::from_mode(0o640))
+    platform::files()
+        .set_mode(&zip_path, FileMode::Raw(0o640))
         .map_err(|e| format!("failed to protect archive: {e}"))?;
     let _ = Command::new("chown")
         .args(["root:www-data", zip_path.to_string_lossy().as_ref()])
@@ -789,16 +788,13 @@ fn archive_cpmove(
     }
     fs::write(format!("{}.json", archive_path.display()), &manifest_bytes)
         .map_err(|e| format!("cannot write archive index metadata: {e}"))?;
-    #[cfg(unix)]
-    {
-        fs::set_permissions(archive_path, fs::Permissions::from_mode(0o640))
-            .map_err(|e| format!("cannot protect archive: {e}"))?;
-        fs::set_permissions(
-            format!("{}.json", archive_path.display()),
-            fs::Permissions::from_mode(0o640),
-        )
-        .ok();
-    }
+    platform::files()
+        .set_mode(archive_path, FileMode::Raw(0o640))
+        .map_err(|e| format!("cannot protect archive: {e}"))?;
+    let _ = platform::files().set_mode(
+        Path::new(&format!("{}.json", archive_path.display())),
+        FileMode::Raw(0o640),
+    );
     let _ = Command::new("chown")
         .args([
             "root:www-data",
@@ -1707,18 +1703,10 @@ fn with_modified_time(path: &Path, options: SimpleFileOptions) -> SimpleFileOpti
 // (e.g. 600/400 owned by root or another account) can leave the extracting user
 // unable to read/write their own files. Normalize instead: keep the executable
 // bit for scripts/binaries, otherwise use a standard owner-writable mode.
-#[cfg(unix)]
 fn file_permissions(path: &Path) -> Option<u32> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::metadata(path).ok().map(|meta| {
-        let mode = meta.permissions().mode() & 0o777;
-        if mode & 0o100 != 0 { 0o755 } else { 0o644 }
-    })
-}
-
-#[cfg(not(unix))]
-fn file_permissions(_path: &Path) -> Option<u32> {
-    None
+    let metadata = fs::metadata(path).ok()?;
+    let mode = platform::files().mode_bits(&metadata)? & 0o777;
+    Some(if mode & 0o100 != 0 { 0o755 } else { 0o644 })
 }
 
 fn normalize_path(input: &str) -> PathBuf {

@@ -1,6 +1,7 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+
+use crate::platform::{self, fs::FileMode};
 
 fn cron_paths(id: &str) -> Result<(PathBuf, PathBuf), String> {
     if id.is_empty() || !id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-') {
@@ -49,7 +50,7 @@ pub(crate) fn upsert(
     );
     let temp = path.with_extension(format!("tmp-{}", std::process::id()));
     fs::write(&temp, content).map_err(|error| format!("Cannot write cron file: {error}"))?;
-    fs::set_permissions(&temp, fs::Permissions::from_mode(0o644))
+    platform::files().set_mode(&temp, FileMode::Shared)
         .map_err(|error| format!("Cannot set cron file permissions: {error}"))?;
     fs::rename(&temp, &path).map_err(|error| format!("Cannot activate cron file: {error}"))?;
     if legacy_path.exists() {

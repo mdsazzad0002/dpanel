@@ -795,7 +795,7 @@ mod replace_tests {
         let outside = root.join("outside");
         fs::create_dir(&outside).unwrap();
         fs::write(outside.join("secret"), "x").unwrap();
-        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+        crate::platform::files().symlink(&outside, &root.join("link")).unwrap();
         assert!(!replace_existing_target(&root.join("link"), true).unwrap());
         assert!(fs::symlink_metadata(root.join("link")).is_err());
         assert!(outside.join("secret").is_file());
@@ -820,7 +820,9 @@ mod replace_tests {
         let root = scratch("links");
         fs::create_dir_all(root.join("a/b")).unwrap();
         assert!(ensure_tree_has_no_symlinks(&root).is_ok());
-        std::os::unix::fs::symlink("/etc", root.join("a/b/etc")).unwrap();
+        crate::platform::files()
+            .symlink(Path::new("/etc"), &root.join("a/b/etc"))
+            .unwrap();
         assert!(ensure_tree_has_no_symlinks(&root).is_err());
         fs::remove_dir_all(&root).unwrap();
     }

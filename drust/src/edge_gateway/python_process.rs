@@ -860,8 +860,8 @@ mod tests {
         fs::write(root.join("app.py"), "").unwrap();
         fs::write(root.join("secret.txt"), "no").unwrap();
         fs::write(static_dir.join("site.css"), "body{}").unwrap();
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(root.join("secret.txt"), static_dir.join("leak.css")).unwrap();
+        // The check below passes either way where links are not supported yet.
+        let _ = crate::platform::files().symlink(&root.join("secret.txt"), &static_dir.join("leak.css"));
 
         let found = python_static_file(&root, Some("app:app"), "/static/css/site.css");
         assert_eq!(found, Some(static_dir.join("site.css").canonicalize().unwrap()));

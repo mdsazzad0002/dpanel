@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use crate::platform::{self, fs::FileMode};
+
 /// Directory, inside a bwrap sandbox, whose `php` points at the website's PHP
 /// CLI. It goes first on PATH, so `php` and composer (`#!/usr/bin/env php`)
 /// run the website's version instead of the system default.
@@ -28,8 +30,6 @@ pub(crate) fn sandbox_pin(version: Option<&str>) -> (Vec<String>, String) {
 /// website's PHP CLI, plus the PATH that puts it first. Keep the directory
 /// alive until the command exits. Unknown versions fall back to the default.
 pub(crate) fn host_pin(version: Option<&str>) -> (Option<tempfile::TempDir>, String) {
-    use std::os::unix::fs::{PermissionsExt, symlink};
-
     let Some(binary) = version.and_then(binary) else {
         return (None, BASE_PATH.into());
     };
@@ -39,8 +39,8 @@ pub(crate) fn host_pin(version: Option<&str>) -> (Option<tempfile::TempDir>, Str
         .ok()
         .filter(|dir| {
             // The command runs as the site owner, who must be able to enter it.
-            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).is_ok()
-                && symlink(&binary, dir.path().join("php")).is_ok()
+            platform::files().set_mode(dir.path(), FileMode::Executable).is_ok()
+                && platform::files().symlink(Path::new(&binary), &dir.path().join("php")).is_ok()
         });
     match pinned {
         Some(dir) => {
