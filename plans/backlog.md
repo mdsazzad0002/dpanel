@@ -2,7 +2,7 @@
 
 পুরো কাজের task তালিকা। প্রতিটা task ছোট, আলাদা commit-যোগ্য, আর তার শেষের শর্ত আছে। Technical contract: [platform-spec.md](platform-spec.md)।
 
-**Status:** A1-A6, B1-B8, D1, D2 শেষ; `5448f8b`-এ CI-র চারটা job সবুজ (Rust Linux 300, Windows 304, macOS 301 passed; Laravel Linux 647 passed, 13 skipped)। C1, C2 ও C4-এর code শেষ, তবে commit push হয়নি, তাই CI-তে যাচাই বাকি। F1-এর unit test পাস, F2 চলছে, H1-এর সিদ্ধান্ত হয়নি (নিচে দেখুন)। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
+**Status:** A1-A6, B1-B8, D1, D2 শেষ; `5448f8b`-এ CI-র চারটা job সবুজ (Rust Linux 300, Windows 304, macOS 301 passed; Laravel Linux 647 passed, 13 skipped)। C1, C2, C4, C7 ও I6-এর code শেষ, C3 আংশিক, P0 শেষ, তবে commit push হয়নি, তাই CI-তে যাচাই বাকি। F1-এর unit test পাস, F2 চলছে, H1-এর সিদ্ধান্ত হয়নি (নিচে দেখুন)। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
 
 **খোলা বিষয়:**
 
@@ -12,6 +12,7 @@
 - C2: code-এর কাজ শেষ, CI বাকি। `platform/service.rs`-এ `ServiceManager`; C2-এর সব file-এ `systemctl` command আর নেই। থাকল: `api/terminal.rs`-এর blocklist (user-এর command আটকায়), দুটো comment। যেখানে `services` বন্ধ, সেখানে PostgreSQL, MongoDB ও Local LLM-এর route `404`, আর menu ও database page থেকে সেগুলো লুকানো; supervisor এলে capability খুলবে।
 - C7: code-এর কাজ শেষ, CI বাকি। `mariadb`, `mysql`, `mysqldump` `Paths`-এ। `binary_or_name` tool না পেলে নাম দেয়, তাই Linux-এর error আগের মতো। `database/postgresql.rs`-এর `runuser` C5-এর।
 - I6: code-এর কাজ শেষ, CI বাকি। `websites.serving_state` ও gateway-র `SiteState`। বন্ধ site-এ `503`, origin ও PHP চলে না, redirect ও edge cache-ও উত্তর দেয় না; ACME চলে। ACME-র পথ শুধু code পড়ে দেখা, test নেই। এই column এখনও কেউ বদলায় না; P1 বদলাবে ও gateway reload করবে।
+- P0 শেষ। `dpanel/tests/Feature/EnforcementGapTest.php`-এর 4টা test লাল: suspended user-এর session চলে, panel থেকে suspend-এ session revoke হয় না, website বন্ধ হয় না, আর `max_storage_mb` সব mailbox মিলিয়ে গোনে না। এগুলো `gap` group-এ, তাই সাধারণ run ও CI-তে বাদ; দেখতে `php artisan test --group=gap`। P1 ও P2 gap বন্ধ করে test-কে group থেকে সরাবে। Bandwidth ও CPU/RAM-এর test নেই।
 - C3 শেষ নয়। `node_process.rs`, `python_process.rs`, `rust_process.rs`, `php.rs`-এর `systemctl` ও `journalctl` এখন `ServiceManager`-এ। বাকি: এই file-গুলোতে ও `laravel_queue.rs`-এ systemd unit file লেখা ও `/etc/systemd` path, আর `Done`-এর শর্ত, কারণ supervisor (E2, F4) এখনও নেই।
 - `chown` ও `chmod`-এর অন্য call এখনও `platform/`-এর বাইরে: `filemanager/` (`common`, `unzip`, `fix_permissions`), `api/` (`ssh_key`, `git_deploy`, `mailbox_storage`), `edge_gateway/` (`dispatcher`, `terminal_ws`), `installer/service.rs`, আর `try_chown`-এর caller। C9 শুধু কয়েকটা ঢাকে; বাকিগুলোর কোনো task নেই, C11-এর আগে একটা দরকার।
 - F1: Windows `Paths`, `FileAccess` ও local `AccountManager`-এর unit test পাস। `filemanager/e2e_local.rs` ignored, হাতে চালাতে হয়; suite সেটা প্রমাণ করে না। F1-এর `Depends`-এর C1 ও C4 CI-র অপেক্ষায়।
