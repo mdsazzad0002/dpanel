@@ -41,6 +41,7 @@ drust/src/platform/
   acme.rs         AcmeClient
   scheduler.rs    Scheduler
   supervisor.rs   Local ও macOS/Windows-এর child process supervisor
+  unix/           Linux ও macOS-এ একই code, যেমন FileAccess
   linux/  macos/  windows/
 ```
 
@@ -68,6 +69,8 @@ pub enum PlatformError {
 ```
 
 drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupported","capability":"<name>"}`।
+
+`Display` OS-এর দেওয়া লেখাই দেখায়, কারণ caller নিজেই বলে সে কী করছিল (`cannot write ticket: {e}`)। তাই Linux-এর error message বদলায় না।
 
 ## 5. Capability
 

@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use crate::app;
+use crate::platform::PlatformError;
 
 mod admin;
 mod backup;
@@ -90,6 +91,21 @@ impl IntoResponse for ApiResponse {
             StatusCode::BAD_REQUEST
         };
         (status, Json(serde_json::to_value(&self).unwrap())).into_response()
+    }
+}
+
+/// `501` tells the panel the feature does not exist on this OS, as opposed to a
+/// request that failed.
+impl IntoResponse for PlatformError {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            Self::Unsupported { capability } => (
+                StatusCode::NOT_IMPLEMENTED,
+                Json(serde_json::json!({"error": "unsupported", "capability": capability.as_str()})),
+            )
+                .into_response(),
+            other => ApiResponse::error(&other.to_string()).into_response(),
+        }
     }
 }
 
@@ -232,4 +248,25 @@ pub fn serve(args: Vec<String>) -> ExitCode {
         }
         ExitCode::from(0)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::capabilities::Capability;
+
+    #[tokio::test]
+    async fn unsupported_is_a_501_that_names_the_capability() {
+        let response = PlatformError::Unsupported { capability: Capability::Docker }.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body, serde_json::json!({"error": "unsupported", "capability": "docker"}));
+    }
+
+    #[test]
+    fn other_platform_errors_stay_ordinary_failures() {
+        let response = PlatformError::NotFound { what: "php".into() }.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
 }
