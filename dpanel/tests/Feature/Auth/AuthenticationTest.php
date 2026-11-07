@@ -89,7 +89,7 @@ class AuthenticationTest extends TestCase
 
         $this->actingAs($user)
             ->withSession(['panel_session_token' => $oldToken])
-            ->withHeader('referer', 'http://p.localhost/cpsess'.$oldToken.'/emails/create?secret=discarded')
+            ->withHeader('referer', url('/cpsess'.$oldToken.'/emails/create?secret=discarded'))
             ->post('/logout')
             ->assertSessionHas('panel.last_path', '/emails/create');
 

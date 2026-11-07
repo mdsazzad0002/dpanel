@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Services\EdgeGatewayReloader;
 use App\Models\User;
 use App\Models\WebsiteEdgeCache;
 use Illuminate\Database\Schema\Blueprint;
@@ -22,6 +23,9 @@ class WebsiteEdgeCacheTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // These tests watch the real reloader publish, which TestCase replaces.
+        $this->app->forgetInstance(EdgeGatewayReloader::class);
 
         $this->token = str_repeat('e', 64);
         URL::defaults(['token' => $this->token]);

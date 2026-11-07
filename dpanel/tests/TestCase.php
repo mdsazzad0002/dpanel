@@ -4,6 +4,7 @@ namespace Tests;
 
 use App\Models\PanelSession;
 use App\Models\User;
+use App\Services\EdgeGatewayReloader;
 use App\Services\Mail\PostfixHostname;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -37,6 +38,21 @@ abstract class TestCase extends BaseTestCase
             public function current(): string
             {
                 return '';
+            }
+        });
+
+        // Tests must not reload a real gateway through this machine's Redis, nor
+        // behave differently on a machine that has none.
+        $app->instance(EdgeGatewayReloader::class, new class extends EdgeGatewayReloader
+        {
+            public function reload(): bool
+            {
+                return true;
+            }
+
+            public function reloadDomains(array $domains): bool
+            {
+                return true;
             }
         });
 

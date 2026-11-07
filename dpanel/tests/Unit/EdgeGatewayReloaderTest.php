@@ -10,6 +10,14 @@ use Tests\TestCase;
 
 class EdgeGatewayReloaderTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // This test is about the real reloader, which TestCase replaces.
+        $this->app->forgetInstance(EdgeGatewayReloader::class);
+    }
+
     public function test_it_requests_an_authenticated_live_reload(): void
     {
         config(['serverpanel.edge_gateway_internal_url' => 'http://127.0.0.1', 'serverpanel.execution_api_token' => 'test-token']);

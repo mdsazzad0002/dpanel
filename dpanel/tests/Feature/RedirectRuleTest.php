@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Models\WebsiteRedirectRule;
+use App\Services\EdgeGatewayReloader;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
@@ -21,6 +22,9 @@ class RedirectRuleTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // These tests watch the real reloader publish, which TestCase replaces.
+        $this->app->forgetInstance(EdgeGatewayReloader::class);
 
         $this->token = str_repeat('a', 64);
         URL::defaults(['token' => $this->token]);
