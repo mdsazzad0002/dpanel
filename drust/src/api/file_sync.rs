@@ -2,12 +2,15 @@ use std::{
     collections::HashSet,
     fs::{self, File},
     io::{self, Read},
-    os::unix::fs::{MetadataExt, PermissionsExt, chown, lchown, symlink},
     path::{Component, Path, PathBuf},
     process::Command,
     sync::Arc,
 };
 
+use crate::platform::{
+    self,
+    fs::{FileMode, OwnerId},
+};
 use axum::{
     Router,
     extract::{Json, State},
@@ -100,8 +103,10 @@ fn run(request: &Request) -> Result<(String, serde_json::Value), String> {
             let packed = pack(&root, &request.paths, &archive)?;
             // Readable by the panel, which owns the directory it asked for.
             if let Ok(parent) = fs::metadata(archive.parent().unwrap_or(Path::new("/"))) {
-                let _ = chown(&archive, Some(parent.uid()), Some(parent.gid()));
-                let _ = fs::set_permissions(&archive, fs::Permissions::from_mode(0o640));
+                if let Ok(owner) = platform::files().owner(&parent) {
+                    let _ = platform::files().set_owner(&archive, &owner);
+                }
+                let _ = platform::files().set_mode(&archive, FileMode::Raw(0o640));
             }
             Ok((
                 format!("{packed} files packed."),
@@ -290,7 +295,7 @@ fn hash_entry(path: &Path) -> io::Result<Option<(u64, String)>> {
     } else if meta.is_file() {
         let mut file = File::open(path)?;
         io::copy(&mut file, &mut hasher)?;
-        if meta.permissions().mode() & 0o111 != 0 {
+        if platform::files().mode_bits(&meta).is_some_and(|mode| mode & 0o111 != 0) {
             hasher.update(b"\0exec");
         }
     } else {
@@ -363,8 +368,12 @@ impl Owner {
         })
     }
 
+    fn id(&self) -> OwnerId {
+        OwnerId { uid: self.uid, gid: self.gid }
+    }
+
     fn chown(&self, path: &Path) {
-        let _ = lchown(path, Some(self.uid), Some(self.gid));
+        let _ = platform::files().set_link_owner(path, &self.id());
     }
 }
 
@@ -460,7 +469,8 @@ fn apply(
                 .ok_or_else(|| format!("Link {name} has no target."))?
                 .into_owned();
             move_to_backup(root, backup, &relative, owner)?;
-            symlink(&target, &destination)
+            platform::files()
+                .symlink(&target, &destination)
                 .map_err(|error| format!("Unable to create link {name}: {error}"))?;
         } else if kind.is_file() {
             let mode = entry.header().mode().unwrap_or(0o644) & 0o777;
@@ -479,9 +489,9 @@ fn apply(
                 .map_err(|error| format!("Unable to read {name}: {error}"))?;
             fs::write(&partial, contents)
                 .map_err(|error| format!("Unable to write {name}: {error}"))?;
-            let _ = fs::set_permissions(&partial, fs::Permissions::from_mode(mode | 0o600));
+            let _ = platform::files().set_mode(&partial, FileMode::Raw(mode | 0o600));
             if let Some(owner) = owner {
-                let _ = chown(&partial, Some(owner.uid), Some(owner.gid));
+                let _ = platform::files().set_owner(&partial, &owner.id());
             }
             move_to_backup(root, backup, &relative, owner)?;
             fs::rename(&partial, &destination)
@@ -644,6 +654,28 @@ mod tests {
     }
 
     #[test]
+    fn apply_keeps_a_packed_files_mode_and_sets_the_site_owner() {
+        let source = tempfile::tempdir().unwrap();
+        write(source.path(), "bin/run.sh", "#!/bin/sh");
+        let script = source.path().join("bin/run.sh");
+        platform::files().set_mode(&script, FileMode::Raw(0o750)).unwrap();
+
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join("sync.tar.gz");
+        pack(source.path(), &["bin/run.sh".to_string()], &archive).unwrap();
+
+        let live = tempfile::tempdir().unwrap();
+        let backup = work.path().join("backup");
+        let id = platform::files().owner(&fs::metadata(live.path()).unwrap()).unwrap();
+        let owner = Owner { uid: id.uid, gid: id.gid };
+        apply(live.path(), &archive, &[], &backup, Some(&owner)).unwrap();
+
+        let placed = fs::metadata(live.path().join("bin/run.sh")).unwrap();
+        assert_eq!(platform::files().mode_bits(&placed).unwrap() & 0o777, 0o750);
+        assert_eq!(platform::files().owner(&placed).unwrap(), id);
+    }
+
+    #[test]
     fn paths_into_dot_git_or_above_root_are_refused() {
         for path in [".git/config", "a/.git/HEAD", "../x", "/etc/passwd", ""] {
             assert!(safe_relative(path).is_none(), "{path}");
@@ -669,7 +701,9 @@ mod tests {
     fn writes_through_a_symlinked_directory_are_refused() {
         let live = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
-        symlink(outside.path(), live.path().join("uploads")).unwrap();
+        platform::files()
+            .symlink(outside.path(), &live.path().join("uploads"))
+            .unwrap();
 
         assert!(!inside_root(live.path(), Path::new("uploads/x.php")));
         assert!(inside_root(live.path(), Path::new("uploads")));

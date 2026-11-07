@@ -6,11 +6,11 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
+use crate::platform::{self, fs::LinkPolicy};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
-    fs::{self, File, OpenOptions},
-    os::unix::fs::OpenOptionsExt,
+    fs::{self, File},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::Arc,
@@ -541,13 +541,8 @@ fn transfer(request: &TransferRequest) -> Result<Value, String> {
     } else {
         return Err("Unsupported transfer type.".into());
     };
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .mode(0o600)
-        .custom_flags(0o400000)
-        .open(&destination)
+    let file = platform::files()
+        .replace_private(&destination, LinkPolicy::Refuse)
         .map_err(|error| format!("Cannot create migration output: {error}"))?;
     if let Err(error) = run_to_file(&request.credentials, &command, file, elevate) {
         let _ = fs::remove_file(&destination);
@@ -796,11 +791,8 @@ fn temp_file(kind: &str) -> Result<PathBuf, String> {
         "/tmp/drust-ssh-{kind}-{}-{nonce}",
         std::process::id()
     ));
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&path)
+    platform::files()
+        .create_private(&path)
         .map_err(|error| format!("Cannot create SSH temporary file: {error}"))?;
     Ok(path)
 }
