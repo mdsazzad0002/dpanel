@@ -60,7 +60,7 @@ class ServerController extends Controller
         return redirect()->route('servers.show', $server)->with('success', 'Server added. Credentials are encrypted and never shown again.');
     }
 
-    public function show(Server $server): Response
+    public function show(string $token, Server $server): Response
     {
         $server->load([
             'connectionTests' => fn ($query) => $query->latest('tested_at')->limit(10),
@@ -76,7 +76,7 @@ class ServerController extends Controller
         ]);
     }
 
-    public function edit(Server $server): Response
+    public function edit(string $token, Server $server): Response
     {
         return Inertia::render('ServerPanel/Servers/Create', [
             'server' => $this->serverPayload($server),
@@ -84,7 +84,7 @@ class ServerController extends Controller
         ]);
     }
 
-    public function update(UpdateServerRequest $request, Server $server): RedirectResponse
+    public function update(UpdateServerRequest $request, string $token, Server $server): RedirectResponse
     {
         $validated = $request->validated();
 
@@ -115,14 +115,14 @@ class ServerController extends Controller
         return redirect()->route('servers.show', $server)->with('success', 'Server updated.');
     }
 
-    public function destroy(Server $server): RedirectResponse
+    public function destroy(string $token, Server $server): RedirectResponse
     {
         $server->delete();
 
         return redirect()->route('servers.index')->with('success', 'Server removed.');
     }
 
-    public function testConnection(Server $server, SshClientService $sshClient): RedirectResponse
+    public function testConnection(string $token, Server $server, SshClientService $sshClient): RedirectResponse
     {
         $result = $sshClient->testConnection($server);
         SshConnectionTest::query()->create([
@@ -150,7 +150,7 @@ class ServerController extends Controller
         );
     }
 
-    public function scanInventory(Server $server, ServerInventoryService $inventoryService): RedirectResponse
+    public function scanInventory(string $token, Server $server, ServerInventoryService $inventoryService): RedirectResponse
     {
         try {
             $inventoryService->scan($server);

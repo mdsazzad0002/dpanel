@@ -428,10 +428,10 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->name('mailbox.delete-message');
 
-            Route::get('/emails/{id}/login', function ($id) {
+            Route::get('/emails/{id}/login', function (string $token, string $id) {
                 return redirect()->route('mailbox.open', [
                     'id' => $id,
-                    'token' => request('token'),
+                    'token' => $token,
                 ]);
             })
                 ->middleware('role:admin|reseller')

@@ -66,7 +66,7 @@ class RemoteMysqlAccessController extends Controller
         return response()->json(array_merge(['success' => true], $this->state()));
     }
 
-    public function destroy(string $id): JsonResponse
+    public function destroy(string $token, string $id): JsonResponse
     {
         $rule = RemoteMysqlAccessRule::query()->findOrFail($id);
 

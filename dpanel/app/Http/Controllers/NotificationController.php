@@ -11,7 +11,7 @@ use Inertia\Response;
 
 class NotificationController extends Controller
 {
-    public function show(Request $request, string $id): Response|RedirectResponse
+    public function show(Request $request, string $token, string $id): Response|RedirectResponse
     {
         $notification = Notification::query()->visibleTo($request->user())->where('id', $id)->first();
         if (! $notification instanceof Notification) {
@@ -57,7 +57,7 @@ class NotificationController extends Controller
         ]);
     }
 
-    public function markRead(Request $request, string $id): JsonResponse
+    public function markRead(Request $request, string $token, string $id): JsonResponse
     {
         Notification::query()
             ->visibleTo($request->user())

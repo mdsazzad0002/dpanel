@@ -56,7 +56,7 @@ class AiGatewayLogController extends Controller
         ]);
     }
 
-    public function show(AiGatewayRequestLog $log): Response
+    public function show(string $token, AiGatewayRequestLog $log): Response
     {
         $log->load(['provider:id,name', 'model:id,name,display_name']);
 

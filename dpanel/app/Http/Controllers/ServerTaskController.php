@@ -57,7 +57,7 @@ class ServerTaskController extends Controller
         return redirect()->route('server-tasks.show', $task)->with('success', 'Task created.');
     }
 
-    public function show(ServerTask $task): Response
+    public function show(string $token, ServerTask $task): Response
     {
         $task->load(['server', 'steps.commandJob', 'commandJobs' => fn ($q) => $q->latest()->limit(50)]);
 
@@ -66,7 +66,7 @@ class ServerTaskController extends Controller
         ]);
     }
 
-    public function start(ServerTask $task): RedirectResponse
+    public function start(string $token, ServerTask $task): RedirectResponse
     {
         $task->forceFill([
             'status' => 'running',
@@ -76,7 +76,7 @@ class ServerTaskController extends Controller
         return back()->with('success', 'Task started.');
     }
 
-    public function cancel(ServerTask $task): RedirectResponse
+    public function cancel(string $token, ServerTask $task): RedirectResponse
     {
         $task->forceFill([
             'status' => 'cancelled',
