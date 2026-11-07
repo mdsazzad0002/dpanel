@@ -6,10 +6,10 @@ use axum::{
     response::Response,
 };
 use axum::{extract::ConnectInfo, http::Request};
+use crate::platform::{self, fs::FileMode};
 use std::{
     fs,
     net::{IpAddr, SocketAddr},
-    os::unix::fs::PermissionsExt,
     path::Path,
 };
 
@@ -724,13 +724,16 @@ fn repair_phpmyadmin_sensitive_permissions(root: &Path) -> Result<(), String> {
         let path = root.join(name);
         let metadata =
             fs::metadata(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-        let current_mode = metadata.permissions().mode() & 0o777;
+        let current_mode = platform::files()
+            .mode_bits(&metadata)
+            .ok_or_else(|| format!("{}: this system has no file modes", path.display()))?
+            & 0o777;
         if current_mode == mode {
             continue;
         }
 
         crate::app::run_status("chown", &["root:www-data", path.to_string_lossy().as_ref()])?;
-        fs::set_permissions(&path, fs::Permissions::from_mode(mode))
+        platform::files().set_mode(&path, FileMode::Raw(mode))
             .map_err(|error| format!("failed to chmod {}: {error}", path.display()))?;
         crate::app::info(&format!(
             "repaired phpMyAdmin permission: {} {:o} -> {:o}",

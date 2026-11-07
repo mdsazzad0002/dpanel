@@ -1,6 +1,8 @@
 use std::{fs, net::SocketAddr, path::{Path, PathBuf}, process::Command, time::Duration};
 use tokio::{net::TcpStream, time::timeout};
 
+use crate::platform;
+
 fn valid_site_id(site: &str) -> bool { !site.is_empty() && site.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_'|'-')) }
 fn unit(site: &str) -> String { format!("dpanel-rust-{site}") }
 
@@ -45,10 +47,8 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
             };
             let binary = binary.canonicalize().map_err(|e| format!("Rust binary {} is unavailable: {e}", binary.display()))?;
             if !binary.starts_with(&root) || !binary.is_file() { return Err("Rust binary must be a file inside the project directory".into()); }
-            #[cfg(unix)] {
-                use std::os::unix::fs::PermissionsExt;
-                if fs::metadata(&binary).map_err(|e| e.to_string())?.permissions().mode() & 0o111 == 0 { return Err("Rust binary is not executable".into()); }
-            }
+            let metadata = fs::metadata(&binary).map_err(|e| e.to_string())?;
+            if platform::files().mode_bits(&metadata).is_some_and(|mode| mode & 0o111 == 0) { return Err("Rust binary is not executable".into()); }
             let exec_start = std::iter::once(binary.display().to_string()).chain(args.into_iter().map(str::to_string)).collect::<Vec<_>>().join(" ");
             let content = format!("[Unit]\nDescription=dPanel Rust app {site}\nAfter=network.target\n[Service]\nType=simple\nUser={owner}\nGroup={owner}\nWorkingDirectory={}\nEnvironment=PORT={port}\nEnvironment=HOST=127.0.0.1\nExecStart={}\nRestart=always\nRestartSec=3\nStandardOutput=journal\nStandardError=journal\n[Install]\nWantedBy=multi-user.target\n", root.display(), exec_start);
             let path = format!("/etc/systemd/system/{name}.service");
@@ -78,10 +78,9 @@ pub async fn rust_status(site: &str, port: u16) -> (bool, String, bool) {
 /// target/ unless another user owns it (e.g. a manual build), then .dpanel-target/
 /// so the owner's cargo can write without touching that user's files.
 fn cargo_target_dir(root: &Path, uid: u32) -> PathBuf {
-    use std::os::unix::fs::MetadataExt;
     let target = root.join("target");
     match fs::symlink_metadata(&target) {
-        Ok(meta) if meta.uid() != uid => root.join(".dpanel-target"),
+        Ok(meta) if platform::files().owner(&meta).is_ok_and(|owner| owner.uid != uid) => root.join(".dpanel-target"),
         _ => target,
     }
 }

@@ -1,7 +1,6 @@
 use std::{
     fs,
     io::{Read, Write},
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
     sync::Arc,
@@ -21,6 +20,8 @@ use futures_util::{SinkExt, StreamExt};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+
+use crate::platform::{self, fs::FileMode};
 
 use crate::app::run_status;
 
@@ -243,7 +244,7 @@ fn account_id(flag: &str, owner: &str) -> Result<String, String> {
 fn create_identity_files(ticket: &TerminalTicket, uid: &str, gid: &str) -> Result<PathBuf, String> {
     let dir = std::env::temp_dir().join(format!("dpanel-terminal-{}", ticket.ticket));
     fs::create_dir(&dir).map_err(|e| e.to_string())?;
-    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    platform::files().set_mode(&dir, FileMode::PrivateDir).map_err(|e| e.to_string())?;
     let passwd = format!(
         "{}:x:{}:{}::{}:/bin/bash\n",
         ticket.site_owner, uid, gid, ticket.project_root
@@ -258,7 +259,7 @@ fn create_identity_files(ticket: &TerminalTicket, uid: &str, gid: &str) -> Resul
     for protected in ["empty-ssh", "empty-dpanel"] {
         let path = dir.join(protected);
         fs::create_dir(&path).map_err(|e| e.to_string())?;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o500)).map_err(|e| e.to_string())?;
+        platform::files().set_mode(&path, FileMode::Raw(0o500)).map_err(|e| e.to_string())?;
     }
     // bwrap now runs as the site owner (see spawn_pty), not root, so it needs
     // read/traverse access to these files itself in order to bind-mount them.
@@ -288,7 +289,7 @@ fn ensure_protected_mountpoint(owner: &str, root: &Path, name: &str) -> Result<(
         }
         Err(error) => return Err(error.to_string()),
     }
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    platform::files().set_mode(&path, FileMode::PrivateDir).map_err(|e| e.to_string())?;
     // bwrap binds onto this as the unprivileged site owner (see spawn_pty),
     // so it must own the mountpoint — re-assert this every call in case a
     // leftover mountpoint from before this fix is still root-owned.
