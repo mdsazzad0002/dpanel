@@ -16,7 +16,7 @@ Linux, Windows ও macOS-এ dPanel চালানোর technical contract। 
 
 | জিনিস | মান |
 | --- | --- |
-| Profile env | `DPANEL_PROFILE=server` (default) বা `local` |
+| Profile env | `DPANEL_PROFILE=server` (default) বা `local`; `local` ছাড়া বাকি সব মান `server` |
 | Cargo features | `speech` (`whisper-rs`), `ocr` (বিদ্যমান) |
 | Linux default | `speech`, `ocr` চালু; বর্তমান আচরণ অপরিবর্তিত |
 | Windows, macOS default | দুটোই বন্ধ; Cargo-র default target-ভেদে আলাদা হয় না, তাই build-এ `--no-default-features` |
@@ -87,7 +87,7 @@ drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupporte
     "resource_limits": "hard", "disk_quota": "hard",
     "mail": "stalwart", "dns": "windows_dns", "ssl": "acme",
     "firewall": true, "ftp": true, "terminal": false, "docker": false,
-    "redis": false, "reseller": true
+    "redis": false, "reseller": true, "file_permissions": false
   }
 }
 ```
@@ -104,7 +104,9 @@ drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupporte
 | `ftp` | হ্যাঁ | হ্যাঁ | হ্যাঁ | না |
 | `terminal` | হ্যাঁ | না | না | হ্যাঁ |
 | `docker` | হ্যাঁ | না | না | Docker Desktop থাকলে |
+| `redis` | হ্যাঁ | না | হ্যাঁ | Windows-এ না, বাকিতে হ্যাঁ |
 | `reseller` | হ্যাঁ | হ্যাঁ | হ্যাঁ | না |
+| `file_permissions` | হ্যাঁ | না (F1 পর্যন্ত) | হ্যাঁ | Windows-এ না, বাকিতে হ্যাঁ |
 
 Laravel-এ route গুলো `capability:<name>` middleware দিয়ে আটকাবে। Sidebar ও search একই তথ্য Inertia shared prop থেকে নেবে। Capability বন্ধ থাকলে route `404` দেবে।
 

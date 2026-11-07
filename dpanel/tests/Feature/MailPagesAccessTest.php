@@ -55,4 +55,22 @@ class MailPagesAccessTest extends TestCase
         $this->assertTrue($this->allowed($general->refresh(), 'emails.guide'));
         $this->assertTrue($this->allowed($general, 'mail-health.index'));
     }
+
+    public function test_mailbox_owners_can_reach_every_webmail_route(): void
+    {
+        $general = $this->user('general');
+        $routes = collect(Route::getRoutes()->getRoutesByName())->keys()
+            ->filter(fn (string $name) => str_starts_with($name, 'mailbox.'))
+            ->merge(['emails.login', 'emails.data', 'emails.send', 'emails.delete-message']);
+
+        $this->assertGreaterThan(15, $routes->count());
+        foreach ($routes as $route) {
+            $this->assertTrue($this->allowed($general, $route), $route);
+        }
+
+        $role = RolePermissions::ensureRole('general');
+        $role->permissions_csv = str_replace('manage_email', '', (string) $role->permissions_csv);
+        $role->save();
+        $this->assertFalse($this->allowed($general->refresh(), 'mailbox.open'));
+    }
 }

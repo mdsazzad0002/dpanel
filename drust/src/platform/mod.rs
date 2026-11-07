@@ -14,7 +14,7 @@ mod windows;
 
 use capabilities::Capability;
 use fs::FileAccess;
-use std::{fmt, io, sync::OnceLock};
+use std::{env, fmt, io, sync::OnceLock};
 
 #[cfg(unix)]
 use unix::fs::NativeFileAccess;
@@ -48,14 +48,43 @@ impl Os {
     }
 }
 
+/// `server` hosts real sites; `local` is a developer's own machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Profile {
+    Server,
+    Local,
+}
+
+impl Profile {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Server => "server",
+            Self::Local => "local",
+        }
+    }
+
+    /// Anything but `local` is a server, so a typo never drops hosting features.
+    fn parse(value: Option<&str>) -> Self {
+        match value.map(|value| value.trim().to_ascii_lowercase()).as_deref() {
+            Some("local") => Self::Local,
+            _ => Self::Server,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Platform {
     os: Os,
+    profile: Profile,
 }
 
 impl Platform {
     pub fn os(&self) -> Os {
         self.os
+    }
+
+    pub fn profile(&self) -> Profile {
+        self.profile
     }
 
     pub fn files(&self) -> &'static dyn FileAccess {
@@ -65,7 +94,10 @@ impl Platform {
 
 pub fn current() -> &'static Platform {
     static CURRENT: OnceLock<Platform> = OnceLock::new();
-    CURRENT.get_or_init(|| Platform { os: Os::detect() })
+    CURRENT.get_or_init(|| Platform {
+        os: Os::detect(),
+        profile: Profile::parse(env::var("DPANEL_PROFILE").ok().as_deref()),
+    })
 }
 
 /// Shorthand for `current().files()`.
@@ -129,6 +161,16 @@ mod tests {
             "linux"
         };
         assert_eq!(current().os().as_str(), expected);
+    }
+
+    #[test]
+    fn profile_defaults_to_server() {
+        assert_eq!(Profile::parse(None), Profile::Server);
+        assert_eq!(Profile::parse(Some("")), Profile::Server);
+        assert_eq!(Profile::parse(Some("server")), Profile::Server);
+        assert_eq!(Profile::parse(Some("lcoal")), Profile::Server);
+        assert_eq!(Profile::parse(Some("local")), Profile::Local);
+        assert_eq!(Profile::parse(Some(" Local\n")), Profile::Local);
     }
 
     #[test]

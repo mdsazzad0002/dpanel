@@ -30,6 +30,11 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    // Sent to admins and resellers: who a mailbox's owner can be changed to.
+    owners: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 // The mailbox the panel sends login codes, reset and verification links from.
@@ -65,11 +70,30 @@ const assignReseller = async (item, resellerId) => {
     try {
         const { data } = await window.axios.patch(panelRoute('emails.assign-reseller', { id: item.id }), { reseller_id: resellerId || null }, { headers: { Accept: 'application/json' } });
         item.reseller = data.reseller;
-        result.value = { ok: true, message: data.message };
+        result.value = { ok: true, title: 'Reseller updated', message: data.message, checks: [] };
     } catch (error) {
-        result.value = { ok: false, message: error?.response?.data?.message || 'Could not assign the reseller.' };
+        result.value = { ok: false, title: 'Could not assign the reseller', message: error?.response?.data?.message || 'Request failed.', checks: [] };
     } finally {
         assigningId.value = '';
+    }
+};
+
+// Admins and resellers change who owns a mailbox in place.
+const assigningOwnerId = ref('');
+const isListedOwner = (item) => props.owners.some((owner) => owner.id === item.created_by);
+const assignOwner = async (item, event) => {
+    assigningOwnerId.value = item.id;
+    try {
+        const { data } = await window.axios.patch(panelRoute('emails.assign-owner', { id: item.id }), { owner_id: Number(event.target.value) }, { headers: { Accept: 'application/json' } });
+        item.created_by = data.owner.id;
+        item.created_by_name = data.owner.name;
+        item.reseller = data.reseller;
+        result.value = { ok: true, title: 'Owner updated', message: data.message, checks: [] };
+    } catch (error) {
+        event.target.value = item.created_by ?? '';
+        result.value = { ok: false, title: 'Could not change the owner', message: error?.response?.data?.message || 'Request failed.', checks: [] };
+    } finally {
+        assigningOwnerId.value = '';
     }
 };
 
@@ -195,7 +219,19 @@ const deleteMailbox = (id) => {
                                 </Link>
                             </td>
                             <td class="px-4 py-3 text-xs">
-                                <p class="text-slate-700 dark:text-slate-200" title="Created by">{{ item.created_by_name || '—' }}</p>
+                                <select
+                                    v-if="owners.length"
+                                    :value="item.created_by ?? ''"
+                                    :disabled="assigningOwnerId === item.id"
+                                    class="w-40 rounded-md border-slate-300 py-1 text-xs dark:border-slate-700 dark:bg-slate-800"
+                                    title="Owner of this mailbox"
+                                    :aria-label="`Owner of ${item.email}`"
+                                    @change="assignOwner(item, $event)"
+                                >
+                                    <option v-if="!isListedOwner(item)" :value="item.created_by ?? ''" disabled>{{ item.created_by_name || 'No owner' }}</option>
+                                    <option v-for="owner in owners" :key="owner.id" :value="owner.id">{{ owner.name }}</option>
+                                </select>
+                                <p v-else class="text-slate-700 dark:text-slate-200" title="Owner">{{ item.created_by_name || '—' }}</p>
                                 <select
                                     v-if="resellers.length"
                                     :value="item.reseller?.id ?? ''"

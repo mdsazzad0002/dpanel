@@ -365,67 +365,71 @@ Route::prefix('cpsess{token}')
             Route::patch('/emails/{id}/reseller', [EmailController::class, 'assignReseller'])
                 ->middleware('role:admin')
                 ->name('emails.assign-reseller');
+            Route::patch('/emails/{id}/owner', [EmailController::class, 'assignOwner'])
+                ->middleware('role:admin|reseller')
+                ->name('emails.assign-owner');
             Route::post('/emails/{id}/disable', [EmailController::class, 'disable'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.disable');
 
+            // Who may open which mailbox is decided per mailbox by Mailbox::visibleTo().
             Route::get('/mail-image', [MailClientController::class, 'image'])
-                ->middleware(['role:admin|reseller', 'throttle:600,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:600,1'])
                 ->name('mailbox.image');
 
             Route::get('/mail/{id}', [MailClientController::class, 'show'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.open');
 
             Route::get('/mail/{id}/data', [MailClientController::class, 'data'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.data');
 
             Route::get('/mail/{id}/message', [MailClientController::class, 'message'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.message');
 
             Route::get('/mail/{id}/thread', [MailClientController::class, 'thread'])
-                ->middleware(['role:admin|reseller', 'throttle:120,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:120,1'])
                 ->name('mailbox.thread');
 
             Route::get('/mail-avatar', [MailClientController::class, 'avatar'])
-                ->middleware(['role:admin|reseller', 'throttle:600,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:600,1'])
                 ->name('mailbox.avatar');
 
             Route::post('/mail/{id}/photo', [MailClientController::class, 'uploadPhoto'])
-                ->middleware(['role:admin|reseller', 'throttle:20,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:20,1'])
                 ->name('mailbox.photo');
 
             Route::delete('/mail/{id}/photo', [MailClientController::class, 'deletePhoto'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.photo.destroy');
 
             Route::get('/mail/{id}/raw', [MailClientController::class, 'raw'])
-                ->middleware(['role:admin|reseller', 'throttle:60,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:60,1'])
                 ->name('mailbox.raw');
 
             Route::get('/mail/{id}/raw/download', [MailClientController::class, 'rawDownload'])
-                ->middleware(['role:admin|reseller', 'throttle:60,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:60,1'])
                 ->name('mailbox.raw-download');
 
             Route::post('/mail/{id}/send', [MailClientController::class, 'send'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.send');
 
             Route::get('/mail/{id}/contacts', [MailContactController::class, 'index'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.contacts');
             Route::post('/mail/{id}/contacts', [MailContactController::class, 'store'])
-                ->middleware(['role:admin|reseller', 'throttle:60,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:60,1'])
                 ->name('mailbox.contacts.store');
             Route::delete('/mail/{id}/contacts/{contact}', [MailContactController::class, 'destroy'])
                 ->where('contact', '[0-9]+')
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.contacts.destroy');
 
             Route::post('/mail/{id}/delete', [MailClientController::class, 'delete'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.delete-message');
 
             Route::get('/emails/{id}/login', function (string $token, string $id) {
@@ -434,19 +438,19 @@ Route::prefix('cpsess{token}')
                     'token' => $token,
                 ]);
             })
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.login');
 
             Route::get('/emails/{id}/login/data', [MailClientController::class, 'data'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.data');
 
             Route::post('/emails/{id}/login/send', [MailClientController::class, 'send'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.send');
 
             Route::post('/emails/{id}/login/delete', [MailClientController::class, 'delete'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.delete-message');
 
             Route::get('/emails/list', [EmailController::class, 'index'])
@@ -505,11 +509,11 @@ Route::prefix('cpsess{token}')
                 ->name('emails.guide.verify');
 
             Route::post('/mail/{id}/bulk', [MailClientController::class, 'bulk'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.bulk');
 
             Route::post('/mail/{id}/mark-read', [MailClientController::class, 'markRead'])
-                ->middleware('role:admin|reseller')
+                ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.mark-read');
 
             Route::redirect('/package-plans', '/packages');

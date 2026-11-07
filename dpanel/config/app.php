@@ -32,6 +32,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | dPanel Profile
+    |--------------------------------------------------------------------------
+    |
+    | "server" hosts real sites; "local" is a developer's own machine. Anything
+    | but "local" means server, the same rule drust applies.
+    |
+    */
+
+    'profile' => strtolower(trim((string) env('DPANEL_PROFILE'))) === 'local' ? 'local' : 'server',
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Debug Mode
     |--------------------------------------------------------------------------
     |

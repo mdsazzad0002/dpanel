@@ -2,7 +2,7 @@
 
 পুরো কাজের task তালিকা। প্রতিটা task ছোট, আলাদা commit-যোগ্য, আর তার শেষের শর্ত আছে। Technical contract: [platform-spec.md](platform-spec.md)।
 
-**Status:** A1, A2, A3, B1-B7 শেষ, CI-তে Linux ও Laravel সবুজ। পরের task: A4, A6, তারপর B8। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
+**Status:** A1, A2, A3, A4, A6, B1-B7 শেষ, CI-তে Linux ও Laravel সবুজ। পরের task: A5, তারপর B8। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
 
 **খোলা বিষয়:**
 
@@ -15,7 +15,7 @@
 একটা task তখনই শেষ, যখন:
 
 1. Task-এর `Done` শর্ত পূরণ হয়েছে, আর সেটা test দিয়ে প্রমাণিত।
-2. Linux-এর বিদ্যমান test পাস: `cargo test` (এখন 235টা Rust test, 4টা ignored) ও `php artisan test` (এখন 551টা test, 1টা skipped)।
+2. Linux-এর বিদ্যমান test পাস: `cargo test` (এখন 239টা Rust test, 4টা ignored) ও `php artisan test` (এখন 556টা test, 1টা skipped)।
 3. CI তিন OS-এ সবুজ (A1-এর পর)।
 4. নতুন Vue অংশ আলাদা component-এ। `Manage.vue`-এর মতো বড় page আর বাড়ে না।
 5. `#[cfg]` শুধু `drust/src/platform/`-এ।

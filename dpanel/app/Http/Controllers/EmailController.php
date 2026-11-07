@@ -17,6 +17,7 @@ use App\Services\Mail\MailDnsVerifier;
 use App\Services\Mail\MailDnsZoneWriter;
 use App\Services\Mail\MailDomainProvisioner;
 use App\Services\ResourceQuotaService;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -57,7 +58,8 @@ class EmailController extends Controller
     public function index(): Response
     {
         $setupCheck = $this->buildMailSetupCheck();
-        $isAdmin = (bool) request()->user()?->hasRole('admin');
+        $actor = request()->user();
+        $isAdmin = (bool) $actor?->hasRole('admin');
         $systemMailer = app(SystemMailer::class);
         $mailboxes = Mailbox::query()
             ->visibleTo(auth()->user())
@@ -82,7 +84,45 @@ class EmailController extends Controller
             'resellers' => $isAdmin
                 ? User::query()->where('role', 'reseller')->orderBy('name')->get(['id', 'name', 'email'])->all()
                 : [],
+            // Who this user may make a mailbox's owner; empty means they cannot change it.
+            'owners' => $actor?->hasAnyRole(['admin', 'reseller']) ? $this->mailboxOwnerChoices($actor)->all() : [],
         ]);
+    }
+
+    /** Admins and resellers: hand a mailbox to another user, who then sees and manages it. */
+    public function assignOwner(Request $request, string $token, string $id): JsonResponse
+    {
+        $actor = $request->user();
+        abort_unless((bool) $actor?->hasAnyRole(['admin', 'reseller']), 403, 'Only administrators and resellers can change a mailbox owner.');
+        $mailbox = Mailbox::query()->visibleTo($actor)->findOrFail($id);
+        $choices = $this->mailboxOwnerChoices($actor);
+        $validated = $request->validate([
+            'owner_id' => ['required', 'integer', Rule::in($choices->modelKeys())],
+        ]);
+        $owner = $choices->find($validated['owner_id']);
+        $mailbox->forceFill([
+            'created_by' => $owner->id,
+            // A reseller must keep access to a mailbox they hand to one of their users.
+            'assigned_reseller_id' => $actor->hasRole('reseller') ? $actor->id : $mailbox->assigned_reseller_id,
+        ])->save();
+
+        return response()->json([
+            'ok' => true,
+            'message' => "{$mailbox->email} now belongs to {$owner->name}.",
+            'owner' => ['id' => $owner->id, 'name' => $owner->name],
+            'reseller' => $mailbox->reseller()->first(['id', 'name'])?->only(['id', 'name']),
+        ]);
+    }
+
+    /** @return Collection<int, User> Admins may pick anyone; a reseller themselves or their own users. */
+    private function mailboxOwnerChoices(User $actor): Collection
+    {
+        return User::query()
+            ->when($actor->hasRole('reseller'), fn ($query) => $query->where(fn ($query) => $query
+                ->whereKey($actor->id)
+                ->orWhere(fn ($query) => $query->where('reseller_id', $actor->id)->whereIn('role', ['general', 'general_user']))))
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
     }
 
     /** Admin only: give a mailbox to a reseller (or take it back with null). */

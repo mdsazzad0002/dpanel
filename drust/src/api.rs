@@ -264,6 +264,30 @@ mod tests {
         assert_eq!(body, serde_json::json!({"error": "unsupported", "capability": "docker"}));
     }
 
+    #[tokio::test]
+    async fn capabilities_need_the_token_and_report_this_system() {
+        use tower::ServiceExt;
+
+        let request = |token: &str| {
+            axum::http::Request::builder()
+                .uri("/capabilities")
+                .header("authorization", format!("Bearer {token}"))
+                .body(axum::body::Body::empty())
+                .unwrap()
+        };
+        let router = build_router(ApiState { api_token: "secret".into() });
+
+        let refused = router.clone().oneshot(request("wrong")).await.unwrap();
+        assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+
+        let response = router.oneshot(request("secret")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 4096).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["os"], crate::platform::current().os().as_str());
+        assert_eq!(body["capabilities"]["websites"], true);
+    }
+
     #[test]
     fn other_platform_errors_stay_ordinary_failures() {
         let response = PlatformError::NotFound { what: "php".into() }.into_response();
