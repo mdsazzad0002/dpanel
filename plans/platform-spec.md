@@ -252,6 +252,7 @@ pub trait AccountManager {
     fn lock(&self, name: &str, locked: bool) -> Result<(), PlatformError>;
     fn set_shell(&self, name: &str, shell: &str) -> Result<(), PlatformError>;
     fn set_comment(&self, name: &str, comment: &str) -> Result<(), PlatformError>;
+    fn end_sessions(&self, name: &str) -> Result<(), PlatformError>;
     fn add_to_group(&self, name: &str, group: &str) -> Result<(), PlatformError>;
     fn primary_group(&self, name: &str) -> Result<String, PlatformError>;
     fn home(&self, name: &str) -> Result<PathBuf, PlatformError>;
@@ -264,13 +265,13 @@ pub enum AccountList { Passwd, Shadow, Group }
 ```
 
 - `AccountSpec` নতুন account-এর সব তথ্য রাখে; `site`, `login`, `restored` ও `sharing` চারটা ব্যবহার। `AccountGroup` বলে group কোনটা। Argument বানানো pure function, তাই সব OS-এ test হয়।
-- `add_to_group` group না থাকলে কিছু করে না। `shell` ও `password_hash` না থাকলে `None`; `password_hash` শুধু cPanel format-এর backup-এ যায়, কখনো log হবে না।
+- `end_sessions` শুধু interactive login শেষ করে; site worker ও cron চলতে থাকে। `add_to_group` group না থাকলে কিছু করে না। `shell` ও `password_hash` না থাকলে `None`; `password_hash` শুধু cPanel format-এর backup-এ যায়, কখনো log হবে না।
 - `list` `/etc/passwd` format-এর raw text দেয়। যেখানে account মানে user নয়, সেখানে খালি।
 - `platform::accounts()` দিয়ে পাওয়া যায়। Backend ঠিক হয় OS ও profile দেখে।
 
 | Backend | কোথায় | Implementation |
 | --- | --- | --- |
-| `LinuxAccounts` | Linux, সব profile | `useradd`, `userdel`, `usermod`, `groupadd`, `getent`, `id`, `chpasswd` |
+| `LinuxAccounts` | Linux, সব profile | `useradd`, `userdel`, `usermod`, `groupadd`, `getent`, `id`, `chpasswd`, `loginctl`, `pkill` |
 | `LocalAccounts` | macOS ও Windows local | Logged-in user; account মানে `sites_root`-এর একটা folder |
 | `NoAccounts` | macOS ও Windows server, যতদিন J ও K হয়নি | সব call `Unsupported`, `shell` ও `password_hash` `None` |
 | পরে | Windows server | Local user API, প্রতি account-এ একটা user ও group |
@@ -280,7 +281,7 @@ pub enum AccountList { Passwd, Shadow, Group }
 
 - `create` শুধু folder বানায়। `delete` folder মোছে, তাই নাম আগে যাচাই হয়: খালি, `.`, `..`, `/`, `\`, `:` ও শেষে `.` বা space থাকলে `Failed`। এই যাচাই সরানো যাবে না।
 - `lookup` ও `create` `OwnerId::LOGGED_IN_USER` দেয়। এটা আসল uid নয়, তাই backup-এর manifest-এ যায় না: সেখানে `0` গেলে Linux server-এ root-এর id হয়ে যেত।
-- `set_password`, `lock`, `set_shell`, `set_comment` ও `add_to_group` no-op; Spec rule 3 এখানে এই silent no-op-এর অনুমতি দেয়, কারণ local-এ সব site একই user।
+- `set_password`, `lock`, `set_shell`, `set_comment`, `end_sessions` ও `add_to_group` no-op; Spec rule 3 এখানে এই silent no-op-এর অনুমতি দেয়, কারণ local-এ সব site একই user।
 - `Platform::needs_root()` হলো `!one_user()`: local PC-তে drust ইচ্ছা করেই root নয়।
 
 ### 6.5 IsolatedRunner

@@ -124,6 +124,8 @@ pub trait AccountManager: Send + Sync + std::fmt::Debug {
     fn lock(&self, name: &str, locked: bool) -> Result<(), PlatformError>;
     fn set_shell(&self, name: &str, shell: &str) -> Result<(), PlatformError>;
     fn set_comment(&self, name: &str, comment: &str) -> Result<(), PlatformError>;
+    /// Ends interactive logins only; site workers and cron jobs keep running.
+    fn end_sessions(&self, name: &str) -> Result<(), PlatformError>;
     /// Does nothing when the group does not exist on this system.
     fn add_to_group(&self, name: &str, group: &str) -> Result<(), PlatformError>;
     fn primary_group(&self, name: &str) -> Result<String, PlatformError>;
@@ -285,6 +287,14 @@ impl AccountManager for LinuxAccounts {
         run("usermod", &[if locked { "--lock" } else { "--unlock" }, name]).map(|_| ())
     }
 
+    fn end_sessions(&self, name: &str) -> Result<(), PlatformError> {
+        if run("loginctl", &["terminate-user", name]).is_err() {
+            // No systemd-logind: end the user's sshd session processes directly.
+            let _ = run("pkill", &["-KILL", "-u", name, "-f", "^sshd:"]);
+        }
+        Ok(())
+    }
+
     fn set_shell(&self, name: &str, shell: &str) -> Result<(), PlatformError> {
         run("usermod", &["--shell", shell, name]).map(|_| ())
     }
@@ -391,6 +401,10 @@ impl AccountManager for LocalAccounts {
         Ok(())
     }
 
+    fn end_sessions(&self, _name: &str) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
     fn set_shell(&self, _name: &str, _shell: &str) -> Result<(), PlatformError> {
         Ok(())
     }
@@ -457,6 +471,10 @@ impl AccountManager for NoAccounts {
     }
 
     fn lock(&self, _name: &str, _locked: bool) -> Result<(), PlatformError> {
+        unsupported()
+    }
+
+    fn end_sessions(&self, _name: &str) -> Result<(), PlatformError> {
         unsupported()
     }
 
@@ -658,6 +676,10 @@ mod tests {
     fn a_server_without_a_backend_refuses() {
         assert!(matches!(
             NoAccounts.exists("shop"),
+            Err(PlatformError::Unsupported { capability: Capability::Isolation })
+        ));
+        assert!(matches!(
+            NoAccounts.end_sessions("shop"),
             Err(PlatformError::Unsupported { capability: Capability::Isolation })
         ));
     }

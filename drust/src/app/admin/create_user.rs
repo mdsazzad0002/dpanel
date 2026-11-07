@@ -2,9 +2,12 @@ use std::{fs, path::Path};
 
 use super::{disable_root, options::Options};
 use crate::app::support::{user_home, valid_email};
-use crate::platform::account::AccountSpec;
+use crate::platform::{
+    account::AccountSpec,
+    fs::{FileMode, OwnerId},
+};
 use crate::app::{
-    ensure_root, info, random_hex, read_to_string, run_status, user_group, valid_username, warn,
+    ensure_root, info, random_hex, read_to_string, valid_username, warn,
 };
 
 pub(crate) fn run(args: Vec<String>) -> Result<(), String> {
@@ -107,6 +110,16 @@ fn set_password(username: &str, password: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Best effort, like the rest of the key install: a key that was written is
+/// still reported, and sshd refuses it if the owner or mode came out wrong.
+fn secure_ssh_path(path: &Path, owner: Option<&OwnerId>, mode: FileMode) {
+    let files = crate::platform::files();
+    if let Some(owner) = owner {
+        let _ = files.set_owner(path, owner);
+    }
+    let _ = files.set_mode(path, mode);
+}
+
 fn install_ssh_key(username: &str, ssh_key: &str) -> Result<(), String> {
     let key_data = if Path::new(ssh_key).is_file() {
         read_to_string(Path::new(ssh_key))?
@@ -114,37 +127,38 @@ fn install_ssh_key(username: &str, ssh_key: &str) -> Result<(), String> {
         ssh_key.to_string()
     };
     let home = user_home(username)?;
-    let group = user_group(username).unwrap_or_else(|_| username.to_string());
     let ssh_directory = home.join(".ssh");
     let authorized_keys = ssh_directory.join("authorized_keys");
     fs::create_dir_all(&ssh_directory)
         .map_err(|error| format!("failed to create {}: {error}", ssh_directory.display()))?;
-    let _ = run_status(
-        "install",
-        &[
-            "-d",
-            "-m",
-            "0700",
-            "-o",
-            username,
-            "-g",
-            &group,
-            ssh_directory.to_string_lossy().as_ref(),
-        ],
-    );
+    let owner = crate::platform::accounts().lookup(username).ok();
+    secure_ssh_path(&ssh_directory, owner.as_ref(), FileMode::PrivateDir);
     fs::write(&authorized_keys, format!("{key_data}\n"))
         .map_err(|error| format!("failed to write {}: {error}", authorized_keys.display()))?;
-    let _ = run_status(
-        "chown",
-        &[
-            &format!("{username}:{group}"),
-            authorized_keys.to_string_lossy().as_ref(),
-        ],
-    );
-    let _ = run_status(
-        "chmod",
-        &["0600", authorized_keys.to_string_lossy().as_ref()],
-    );
+    secure_ssh_path(&authorized_keys, owner.as_ref(), FileMode::Private);
     info(&format!("SSH key installed for {username}."));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ssh_paths_end_up_private_and_owned_by_the_given_owner() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("authorized_keys");
+        fs::write(&file, "key\n").unwrap();
+        let files = crate::platform::files();
+        let owner = files.owner(&fs::metadata(&file).unwrap()).ok();
+
+        secure_ssh_path(&file, owner.as_ref(), FileMode::Private);
+        secure_ssh_path(dir.path(), None, FileMode::PrivateDir);
+
+        let mode = |path: &Path| files.mode_bits(&fs::metadata(path).unwrap()).map(|bits| bits & 0o777);
+        if let Some(bits) = mode(&file) {
+            assert_eq!(bits, 0o600);
+            assert_eq!(mode(dir.path()), Some(0o700));
+        }
+    }
 }

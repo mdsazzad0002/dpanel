@@ -155,18 +155,6 @@ fn find_user(name: &str) -> Result<PasswdEntry, String> {
         .ok_or_else(|| format!("{name} is not a manageable login user."))
 }
 
-fn run(program: &str, args: &[&str]) -> Result<(), String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .map_err(|e| format!("{program}: {e}"))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    Err(if error.is_empty() { format!("{program} exited unsuccessfully") } else { error })
-}
-
 pub fn set_shell(name: &str, shell: &str) -> Result<String, String> {
     let user = find_user(name)?;
     if !allowed_shells().iter().any(|allowed| allowed == shell) {
@@ -211,10 +199,7 @@ pub fn end_sessions(name: &str) -> Result<String, String> {
     if user.uid == 0 {
         return Err("Ending root sessions from the panel is not allowed.".into());
     }
-    if run("loginctl", &["terminate-user", name]).is_err() {
-        // No systemd-logind: end the user's sshd session processes directly.
-        let _ = run("pkill", &["-KILL", "-u", name, "-f", "^sshd:"]);
-    }
+    accounts().end_sessions(name).map_err(|e| e.to_string())?;
     Ok(format!("Login sessions ended for {name}."))
 }
 
