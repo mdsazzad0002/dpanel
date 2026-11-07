@@ -5,6 +5,7 @@ use std::process::Command;
 use serde_json::{Value, json};
 
 use crate::app::ensure_root;
+use crate::platform::{self, fs::FileMode};
 
 /// Suffixes that are never publicly resolvable, so a CA can never issue a
 /// certificate for them. Kept in sync with
@@ -188,8 +189,8 @@ fn ensure_self_signed(
                 stderr.trim().chars().take(4000).collect::<String>()
             ));
         }
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&private_key_path, std::fs::Permissions::from_mode(0o600))
+        platform::files()
+            .set_mode(Path::new(&private_key_path), FileMode::Private)
             .map_err(|error| format!("failed to restrict private key permissions: {error}"))?;
     }
 

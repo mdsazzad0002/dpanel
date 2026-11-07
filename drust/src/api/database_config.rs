@@ -1,6 +1,5 @@
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -13,6 +12,7 @@ use axum::{
     routing::post,
 };
 use serde::Deserialize;
+use crate::platform::{self, fs::FileMode};
 
 use crate::api::{ApiResponse, ApiState, check_token};
 
@@ -110,7 +110,7 @@ fn apply(request: &Request) -> Result<PathBuf, String> {
     let backup_dir = PathBuf::from(format!("/home/{}/.dpanel/backups", request.site_owner));
     fs::create_dir_all(&backup_dir)
         .map_err(|error| format!("Unable to create protected backup directory: {error}"))?;
-    fs::set_permissions(&backup_dir, fs::Permissions::from_mode(0o700))
+    platform::files().set_mode(&backup_dir, FileMode::PrivateDir)
         .map_err(|error| format!("Unable to protect backup directory: {error}"))?;
     let backup = backup_dir.join(format!(
         "{}-{}-{stamp}.bak",
@@ -121,7 +121,7 @@ fn apply(request: &Request) -> Result<PathBuf, String> {
     ));
     fs::write(&backup, &original)
         .map_err(|error| format!("Unable to back up project configuration: {error}"))?;
-    fs::set_permissions(&backup, fs::Permissions::from_mode(0o600))
+    platform::files().set_mode(&backup, FileMode::Private)
         .map_err(|error| format!("Unable to protect configuration backup: {error}"))?;
 
     let host = request

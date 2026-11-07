@@ -6,24 +6,22 @@
 use std::{
     fs,
     io::{Read, Write},
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::Path,
     time::{Duration, SystemTime},
 };
 
+use crate::platform::{self, fs::FileMode};
+
 /// Writes a ticket carrying `contents` and returns it.
 pub(crate) fn write(dir: &Path, contents: &str, now: SystemTime, ttl: Duration) -> Result<String, String> {
     fs::create_dir_all(dir).map_err(|e| format!("cannot create ticket dir: {e}"))?;
-    fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
+    platform::files().set_mode(dir, FileMode::PrivateDir)
         .map_err(|e| format!("cannot secure ticket dir: {e}"))?;
     purge_stale(dir, now, ttl);
 
     let ticket = random_hex(32)?;
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(dir.join(&ticket))
+    let mut file = platform::files()
+        .create_private(&dir.join(&ticket))
         .map_err(|e| format!("cannot write ticket: {e}"))?;
     file.write_all(contents.as_bytes())
         .map_err(|e| format!("cannot write ticket: {e}"))?;

@@ -1,4 +1,5 @@
-use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Command, sync::Arc};
+use crate::platform::{self, fs::FileMode};
+use std::{fs, path::Path, process::Command, sync::Arc};
 
 use axum::{
     Router,
@@ -105,7 +106,7 @@ fn create(path: &str, owner: &str) -> Result<(), String> {
     for folder in ["", "cur", "new", "tmp"] {
         let directory = Path::new(path).join(folder);
         fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700))
+        platform::files().set_mode(&directory, FileMode::PrivateDir)
             .map_err(|e| e.to_string())?;
     }
     own(path, owner)?;

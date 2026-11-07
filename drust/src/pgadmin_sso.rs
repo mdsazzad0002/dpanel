@@ -18,10 +18,14 @@
 use std::{
     fs,
     io::Write,
-    os::unix::fs::{PermissionsExt, chown},
     path::{Path, PathBuf},
     process::Command,
     time::{Duration, SystemTime},
+};
+
+use crate::platform::{
+    self,
+    fs::{FileMode, OwnerId},
 };
 
 pub const USER_HEADER: &str = "x-dpanel-pgadmin-user";
@@ -133,17 +137,6 @@ fn write_ticket(identity: &str) -> Result<String, String> {
     crate::sso_ticket::write(Path::new(TICKET_DIR), identity, SystemTime::now(), TICKET_TTL)
 }
 
-trait OpenOptionsMode {
-    fn mode_0600(&mut self) -> &mut Self;
-}
-
-impl OpenOptionsMode for fs::OpenOptions {
-    fn mode_0600(&mut self) -> &mut Self {
-        use std::os::unix::fs::OpenOptionsExt;
-        self.mode(0o600)
-    }
-}
-
 /// pgpass fields escape `\` and `:` with a backslash.
 fn pgpass_escape(value: &str) -> String {
     value.replace('\\', "\\\\").replace(':', "\\:")
@@ -242,37 +235,38 @@ fn ensure_pgadmin_user(package_dir: &Path, identity: &str) -> Result<(), String>
 fn user_storage_dir(identity: &str) -> Result<PathBuf, String> {
     let dir = Path::new(PGADMIN_STORAGE_DIR).join(identity);
     fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-    let (uid, gid) = pgadmin_ids()?;
-    chown(&dir, Some(uid), Some(gid)).map_err(|e| format!("cannot chown {}: {e}", dir.display()))?;
-    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))
+    let owner = pgadmin_owner()?;
+    platform::files()
+        .set_owner(&dir, &owner)
+        .map_err(|e| format!("cannot chown {}: {e}", dir.display()))?;
+    platform::files().set_mode(&dir, FileMode::PrivateDir)
         .map_err(|e| format!("cannot secure {}: {e}", dir.display()))?;
     Ok(dir)
 }
 
 fn write_private_file(path: &Path, contents: &str) -> Result<(), String> {
-    let (uid, gid) = pgadmin_ids()?;
+    let owner = pgadmin_owner()?;
     let tmp = path.with_extension("tmp");
     let _ = fs::remove_file(&tmp);
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode_0600()
-        .open(&tmp)
+    let mut file = platform::files()
+        .create_private(&tmp)
         .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     file.write_all(contents.as_bytes())
         .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-    chown(&tmp, Some(uid), Some(gid)).map_err(|e| format!("cannot chown {}: {e}", path.display()))?;
+    platform::files()
+        .set_owner(&tmp, &owner)
+        .map_err(|e| format!("cannot chown {}: {e}", path.display()))?;
     fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
-fn pgadmin_ids() -> Result<(u32, u32), String> {
+fn pgadmin_owner() -> Result<OwnerId, String> {
     let passwd = fs::read_to_string("/etc/passwd").map_err(|e| e.to_string())?;
     passwd
         .lines()
         .find_map(|line| {
             let fields: Vec<&str> = line.split(':').collect();
             (fields.first() == Some(&PGADMIN_OS_USER) && fields.len() > 3)
-                .then(|| Some((fields[2].parse().ok()?, fields[3].parse().ok()?)))
+                .then(|| Some(OwnerId { uid: fields[2].parse().ok()?, gid: fields[3].parse().ok()? }))
                 .flatten()
         })
         .ok_or_else(|| format!("system user {PGADMIN_OS_USER} not found"))
