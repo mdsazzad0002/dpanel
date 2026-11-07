@@ -4,6 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { isClosedRoute } from '@/navigation/panelMenu';
 
 const props = defineProps({
     websiteDomains: {
@@ -61,7 +62,7 @@ const engineOptions = computed(() => [
         hint: !props.mongodb.installed ? 'Not installed on this server' : 'Opens in Mongo Admin',
         disabled: !props.mongodb.installed,
     },
-]);
+].filter((option) => !isClosedRoute(`databases.${option.value}`, page.props.platform?.closedRoutes ?? [])));
 const useRemoteHost = ref(false);
 const suggestedDatabaseName = ref('');
 const suggestedDatabaseUser = ref('');

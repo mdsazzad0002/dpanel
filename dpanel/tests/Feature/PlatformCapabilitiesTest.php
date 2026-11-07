@@ -100,6 +100,10 @@ class PlatformCapabilitiesTest extends TestCase
             'websites.redis-cache.clear' => 'redis',
             'websites.redis-explorer.keys' => 'redis',
             'reseller.panel' => 'reseller',
+            'databases.postgresql.toggle' => 'services',
+            'databases.pgadmin.autologin' => 'services',
+            'databases.mongodb.admin' => 'services',
+            'ai-gateway.local.index' => 'services',
         ];
         foreach ($expected as $name => $capability) {
             $this->assertContains("capability:{$capability}", Route::getRoutes()->getByName($name)->gatherMiddleware(), $name);

@@ -24,6 +24,11 @@ class PlatformCapabilities
         'websites.redis-explorer.' => 'redis',
         'reseller.' => 'reseller',
         'security.center.upload-scan' => 'clamav',
+        // These run only as OS services, which the panel cannot start without a backend.
+        'databases.postgresql' => 'services',
+        'databases.pgadmin' => 'services',
+        'databases.mongodb' => 'services',
+        'ai-gateway.local.' => 'services',
     ];
 
     private const CACHE_KEY = 'platform.capabilities';

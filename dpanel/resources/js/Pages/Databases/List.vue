@@ -3,12 +3,14 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref } from 'vue';
+import { isClosedRoute } from '@/navigation/panelMenu';
 
 const page = usePage();
 const deleteForm = useForm({});
 const panelToken = computed(() => String(page.props.panel?.token || ''));
 const currentUserId = computed(() => Number(page.props.auth?.user?.id || 0));
 const canOpenAllDatabases = computed(() => currentUserId.value === 1);
+const engineOpen = (engine) => !isClosedRoute(`databases.${engine}`, page.props.platform?.closedRoutes ?? []);
 const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
@@ -275,7 +277,7 @@ onUnmounted(() => window.clearInterval(pollTimer));
                     phpMyAdmin
                 </button>
                 <button
-                    v-if="canOpenAllDatabases"
+                    v-if="canOpenAllDatabases && engineOpen('postgresql')"
                     type="button"
                     class="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-200 dark:hover:bg-indigo-950/50"
                     @click="openRootPgAdmin"
@@ -283,7 +285,7 @@ onUnmounted(() => window.clearInterval(pollTimer));
                     pgAdmin
                 </button>
                 <button
-                    v-if="canOpenAllDatabases"
+                    v-if="canOpenAllDatabases && engineOpen('mongodb')"
                     type="button"
                     class="rounded-md border border-teal-300 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-950/30 dark:text-teal-200 dark:hover:bg-teal-950/50"
                     @click="openRootMongoAdmin"
