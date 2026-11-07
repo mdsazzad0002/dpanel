@@ -21,7 +21,7 @@ Local সহজ। Production অনেক বড় কাজ, কারণ dPa
 | Windows production | Windows Server 2022 ও 2025; Windows 10/11 শুধু local |
 | macOS production | Windows-এর সমান পূর্ণ platform: বহু customer, reseller, WHMCS |
 | মূল কৌশল | drust-এ platform layer, আর drust নিজেই সব service চালাবে |
-| WSL সংস্করণ | Native local স্থিতিশীল না হওয়া পর্যন্ত থাকবে, তারপর বন্ধ |
+| WSL সংস্করণ | সরানো হয়েছে (2026-11-07); Windows-এ শুধু native পথ |
 | সময় (১ জন dev, অনুমান) | Local 5-6 মাস, Windows production আরও 8-10 মাস, macOS production আরও 5-6 মাস: মোট 18-22 মাস |
 
 ## মাপা হয়েছে: drust compile হয় কিনা
@@ -142,7 +142,7 @@ Production profile-এ drust-কে SYSTEM বা root হিসেবে চল
 - Laravel-এ `posix_*` call গুলো একটা wrapper-এ আনুন।
 - `pcntl` না থাকায় queue worker-এর timeout কম নির্ভরযোগ্য হবে। Supervisor দিয়ে সামলান।
 - Path: `PathService` ও drust ধরে নিয়েছে `/` separator। `C:\` path, space ও case-insensitive path-এর test লিখুন।
-- Port 80 অন্য কিছু (IIS, http.sys, XAMPP) দখল করে থাকলে পরিষ্কার message দিন। `dpanel.ps1`-এ এই check আগে থেকেই আছে, সেটা reuse করুন।
+- Port 80 অন্য কিছু (IIS, http.sys, XAMPP) দখল করে থাকলে পরিষ্কার message দিন। আগের `windows/dpanel.ps1`-এর `Test-PortsFree` (commit `4e360714`) reuse করুন।
 - Long path, file lock (চলন্ত process-এর file মোছা যায় না) ও antivirus-এর কারণে ধীরগতি আগে থেকে ধরে রাখুন।
 
 ### Shell command প্রতিস্থাপন
@@ -251,7 +251,7 @@ Platform layer-এ এগুলোও লাগবে: `IsolatedRunner`, `Resour
 | 2. macOS alpha | Supervisor, PHP, MariaDB, local CA | Mac-এ site বানিয়ে `https://mysite.test` খোলে | 4-6 সপ্তাহ |
 | 3. Windows alpha | 60 error, php-cgi pool, path, service | Windows-এ একই flow কাজ করে | 6-8 সপ্তাহ |
 | 4. Installer ও tray | Tauri tray, MSI/PKG, signing, auto-update | পরিষ্কার machine-এ এক click-এ install | 3-4 সপ্তাহ |
-| 5. Beta | Migration, docs, WSL বন্ধের ঘোষণা | বাস্তব ব্যবহারকারীর feedback | 2-3 সপ্তাহ |
+| 5. Beta | Docs | বাস্তব ব্যবহারকারীর feedback | 2-3 সপ্তাহ |
 
 ### Production
 
@@ -324,7 +324,6 @@ Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আট�
 1. **Production-এর প্রথম সংস্করণে mail লাগবে?** প্রস্তাব: Phase 6-এর ফল দেখে ঠিক করুন।
 2. **Mac-এ local প্রথম সংস্করণে Homebrew চলবে, নাকি প্রথম থেকেই সব bundle?** প্রস্তাব: Homebrew দিয়ে শুরু।
 3. **Apple Developer ও Windows code signing-এর খরচ কোথা থেকে আসবে?** dPanel free হলেও এটা লাগবে, নইলে install-এ সতর্কতা আসবে। Apple-এর জন্য বছরে একটা fee দিতে হয়।
-4. **WSL version কবে বন্ধ হবে?** প্রস্তাব: Native Windows local স্থিতিশীল হওয়ার অন্তত এক release পরে।
 
 ## সূত্র
 

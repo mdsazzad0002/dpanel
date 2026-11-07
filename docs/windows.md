@@ -1,164 +1,118 @@
 # dPanel on Windows
 
-Run dPanel on a Windows 10 or 11 PC for local development, the way you would
-use XAMPP or WampServer: start it, open `http://localhost`, create sites and
-databases from the panel, stop it when you are done.
+Native Windows support is in progress. The full hosting panel does not run on
+Windows yet: for a working panel, install it on a Linux server with
+`installer.sh`. Status and remaining work are in
+[plans/backlog.md](../plans/backlog.md).
 
-dPanel is a Linux control panel (systemd, PHP-FPM, MariaDB, the drust service),
-so it does not run on Windows directly. `windows/dpanel.ps1` puts it in its own
-WSL2 Linux distribution named **dPanel** (Ubuntu 24.04) and controls it from
-Windows. Your other WSL distributions are not touched.
+What does run on a Windows 10 or 11 PC today is a development setup: the Laravel
+panel and the drust API, built from this repository, on `127.0.0.1`.
 
-> This is for development and testing on your own PC. For a public website,
-> install dPanel on a Linux server with `installer.sh`.
+## What works
+
+| Part | State on Windows |
+| --- | --- |
+| `drust` build (`--no-default-features`, MSVC) | Works |
+| drust API, `/health`, `/capabilities` | Works |
+| Laravel migrations and seed (SQLite) | Works |
+| Login, and the websites, databases, PHP, backups, DNS, email, monitoring and security pages | Open without errors |
+| Panel reads `/capabilities` from drust with the shared token | Works |
+| Creating a website | Fails with `This command must run as root` (backlog C4, F1) |
+| Website hosting: php-cgi pool, service supervisor, local SSL, hosts file | Not built yet (backlog F) |
+| Laravel features that call `posix_*` or Linux commands | Not ported yet (backlog D); they can fail |
+| Edge gateway on port 80 | Not tested |
+
+The page checks only confirm that the pages open. Website creation is the only
+action that changes the system that was tried, and it fails. Expect others that
+call Linux commands to fail too.
 
 ## Requirements
 
-- Windows 10 version 2004 (build 19041) or newer, or Windows 11
-- Virtualization turned on in the BIOS/UEFI (Intel VT-x or AMD-V)
-- 8 GB RAM or more (WSL2 gets half by default; dPanel needs about 4 GB)
-- About 15 GB of free disk space
-- Ports 80 and 443 free on Windows. Stop IIS, XAMPP/WampServer Apache, or
-  anything else that listens on them first
+- PHP 8.2 or newer on `PATH`, with `pdo_sqlite`
+- Composer
+- Node.js 22 or newer
+- Rust (stable, `x86_64-pc-windows-msvc`) and Visual Studio Build Tools with the
+  C++ workload
 
-## Install
+## Build and configure
 
-1. Download [`windows/dpanel.ps1`](../windows/dpanel.ps1) and
-   [`windows/dpanel.cmd`](../windows/dpanel.cmd) into the same folder. In
-   PowerShell:
+Run these from the repository root in PowerShell.
 
-   ```powershell
-   $base = 'https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/windows'
-   mkdir $HOME\dpanel-setup -Force | Out-Null; cd $HOME\dpanel-setup
-   Invoke-WebRequest "$base/dpanel.ps1" -OutFile dpanel.ps1
-   Invoke-WebRequest "$base/dpanel.cmd" -OutFile dpanel.cmd
-   ```
-
-2. Run the installer:
+1. Build drust. The first build takes about 6 minutes.
 
    ```powershell
-   .\dpanel.cmd install
+   cd drust
+   cargo build --no-default-features
+   cd ..
    ```
 
-   It does the following:
+2. Install the panel and build its frontend.
 
-   - Installs or updates WSL2 if needed. Windows asks for administrator rights.
-     **If WSL was not installed before, restart Windows and run
-     `.\dpanel.cmd install` again.**
-   - Downloads Ubuntu 24.04 for WSL from `cloud-images.ubuntu.com`, checks its
-     SHA-256, and imports it as the `dPanel` distro in
-     `%LOCALAPPDATA%\dPanel`.
-   - Turns on systemd in that distro.
-   - Runs `installer.sh` inside it with local-PC settings: panel domain
-     `localhost`, no Let's Encrypt certificate (`SKIP_SSL=true`), and no
-     Linux firewall (`SKIP_FIREWALL=true`; Windows Firewall already protects
-     the PC, and a firewall inside WSL breaks port forwarding). The first run
-     takes 15-40 minutes.
-   - Asks for your panel admin login and whether dPanel should start when you
-     sign in to Windows.
-   - Adds **dPanel** to the Start menu.
+   ```powershell
+   cd dpanel
+   composer install
+   npm ci
+   npm run build
+   Copy-Item .env.example .env
+   ```
 
-3. Open <http://localhost> and sign in.
+3. Create a token for the panel and drust to share, and keep it for the next
+   steps.
 
-To install a specific version, add `-Version`:
+   ```powershell
+   [guid]::NewGuid().ToString('N')
+   ```
+
+4. Change these values in `dpanel\.env`. Add any that are missing. Redis is not
+   needed with these settings.
+
+   ```ini
+   DPANEL_PROFILE=local
+   APP_URL=http://127.0.0.1:8000
+   SESSION_SECURE_COOKIE=false
+   DB_CONNECTION=sqlite
+   DB_DATABASE=database/database.sqlite
+   QUEUE_CONNECTION=database
+   CACHE_STORE=database
+   SERVERPANEL_EXECUTION_API_TOKEN=<token>
+   ```
+
+5. Create the database.
+
+   ```powershell
+   New-Item -ItemType File database\database.sqlite
+   php artisan key:generate
+   php artisan migrate --seed
+   ```
+
+## Run
+
+Use two PowerShell windows, from the repository root.
 
 ```powershell
-.\dpanel.cmd install -Version v1.2.3
-.\dpanel.cmd install -Version main
+# Window 1: drust API on 127.0.0.1:9500
+$env:DPANEL_PROFILE = 'local'
+$env:DRUST_API_TOKEN = '<token>'
+.\drust\target\debug\drust.exe serve --port 9500
 ```
 
-If the installer stops with an error, fix the cause and run
-`.\dpanel.cmd install` again. It reuses the distro and continues.
-
-## Daily use
-
-Double-click `dpanel.cmd`, or open **Start menu > dPanel**, for the control
-menu:
-
-```text
-================ dPanel for Windows ================
-  Status: running  http://localhost
-  1) Start           2) Stop            3) Restart
-  4) Open panel      5) phpMyAdmin      6) Status
-  7) Linux shell     8) Add site domain 9) Create admin login
- 10) Update         11) Autostart on/off
- 12) Install/Repair 13) Uninstall       0) Exit
+```powershell
+# Window 2: the panel on 127.0.0.1:8000
+cd dpanel
+php artisan serve --host=127.0.0.1 --port=8000
 ```
 
-The same actions as commands:
+Open <http://127.0.0.1:8000/login> and sign in with the seeded admin,
+`test@example.com` and `password`. Change the password in your profile. Do not
+expose this setup to a network.
 
-| Command | What it does |
-| --- | --- |
-| `.\dpanel.cmd start` | Start the distro and its services, wait until `http://localhost` answers |
-| `.\dpanel.cmd stop` | Stop the distro; frees its RAM |
-| `.\dpanel.cmd restart` | Stop, then start |
-| `.\dpanel.cmd status` | Panel state, and each Linux service (drust, MariaDB, PHP-FPM, ...) |
-| `.\dpanel.cmd open` | Open the panel in the browser |
-| `.\dpanel.cmd phpmyadmin` | Open phpMyAdmin |
-| `.\dpanel.cmd shell` | Root shell in the distro, in `/var/www`; `dpanel doctor` etc. work there |
-| `.\dpanel.cmd admin` | Create a panel admin login, or reset the password of an existing one |
-| `.\dpanel.cmd hosts add mysite.test` | Point a site domain at dPanel in the Windows hosts file |
-| `.\dpanel.cmd hosts remove mysite.test` | Remove that entry |
-| `.\dpanel.cmd hosts list` | Show the entries this script added |
-| `.\dpanel.cmd autostart on` / `off` | Start dPanel when you sign in to Windows |
-| `.\dpanel.cmd update` | Update dPanel to the latest release (`-Version` works here too) |
-| `.\dpanel.cmd uninstall` | Delete the distro and everything in it |
-
-## Websites
-
-A site you create in the panel needs a domain that resolves to your PC:
-
-1. `.\dpanel.cmd hosts add mysite.test` (asks for administrator rights; it
-   adds `127.0.0.1 mysite.test` to `C:\Windows\System32\drivers\etc\hosts`).
-2. In the panel, create the website with the domain `mysite.test`.
-3. Open <http://mysite.test>.
-
-Use a reserved suffix such as `.test` or `.localhost`. A real domain in the
-hosts file hides the real site on this PC.
-
-Site files live inside the distro, for example `/home/<user>/public_html`.
-Edit them from Windows through `\\wsl$\dPanel\home\...` in Explorer, or open
-the folder in VS Code with the WSL extension. Keep files inside the distro: a
-site served from `/mnt/c/...` is much slower and has permission problems.
-
-## How it works
-
-- `wsl.exe` runs the `dPanel` distro. WSL forwards ports that Linux listens on
-  to `localhost` on Windows, so the edge gateway on port 80 answers at
-  `http://localhost`.
-- WSL stops a distro shortly after its last Windows process exits. `start`
-  runs a hidden `wsl.exe -d dPanel -e sleep infinity` that keeps it running;
-  `stop` ends it with `wsl --terminate dPanel`.
-- Autostart is a shortcut in your Startup folder that runs `dpanel.ps1 start`
-  hidden.
-- The script keeps its files in `%LOCALAPPDATA%\dPanel`: the distro disk
-  (`disk\ext4.vhdx`), a copy of `dpanel.ps1` used by the shortcuts, and
-  `wsl-helper.sh`, the Linux side of the commands.
-
-Options for all commands: `-Distro <name>` (default `dPanel`),
-`-InstallDir <path>`, `-Repo <owner/name>` for a fork, and `-RootfsUrl <url>`
-to import a different Ubuntu image.
+For frontend work, run `npm run dev` in a third window.
 
 ## Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
-| `running scripts is disabled on this system` | Use `dpanel.cmd`, which runs the script with `-ExecutionPolicy Bypass` for that run only |
-| `wsl --install failed` or `wsl --import failed` | Turn on virtualization in the BIOS. If WSL was just installed, restart Windows first |
-| `Port 80 on Windows is used by System` | IIS or another http.sys service: `net stop W3SVC` (or remove IIS) |
-| `Port 80 ... used by httpd` | XAMPP/WampServer Apache: stop it in its control panel |
-| `http://localhost does not answer` | `.\dpanel.cmd status`, then in `.\dpanel.cmd shell`: `systemctl --failed` and `dpanel doctor` |
-| `systemd: degraded` | A Linux service failed: `systemctl --failed` in the shell shows which |
-| The PC is slow while dPanel runs | Limit WSL in `%USERPROFILE%\.wslconfig` (`[wsl2]` then `memory=4GB`), or `stop` dPanel when not in use |
-| Login codes and reset emails never arrive | Expected on a PC: there is no public mail server. Create users and reset passwords with `.\dpanel.cmd admin` |
-
-## Limits
-
-- Let's Encrypt certificates, public DNS and outgoing mail need a public
-  server. On a PC the panel runs over `http://`.
-- Sites are reachable from this PC only. To reach them from your LAN, use WSL
-  mirrored networking (`networkingMode=mirrored` in `.wslconfig`) and allow
-  the ports in Windows Firewall.
-- `uninstall` deletes all websites, databases and mail in the distro. Export
-  what you need first, or back up the distro with
-  `wsl --export dPanel dpanel-backup.tar`.
+| Login returns to the login page | `SESSION_SECURE_COOKIE=false` is missing, or `.env` changed without `php artisan config:clear` |
+| A page shows a Redis connection error | Set `CACHE_STORE` and `QUEUE_CONNECTION` to `database`, then run `php artisan config:clear` |
+| `database.sqlite` cannot be deleted | `php artisan serve` still has it open; stop the server first |
+| `Call to undefined function posix_geteuid()` | That feature is not ported to Windows yet (backlog D1) |

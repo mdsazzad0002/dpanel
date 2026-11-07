@@ -35,7 +35,6 @@
 | Production-এ প্রথম সংস্করণে mail | H3 ভালো হলে আছে; না হলে পরের release | J5, K4 |
 | Mac local-এ PHP ও MariaDB | Homebrew দিয়ে শুরু | E2 |
 | Code signing | Public release-এর আগে; alpha unsigned | G4 |
-| WSL বন্ধ | Native Windows local স্থিতিশীল হওয়ার এক release পরে | G6 |
 
 ## প্রথম দশটা কাজ
 
@@ -134,7 +133,7 @@ B7-এর পর নতুন error বেরোলে একই নিয়ম
 | F3 | PHP, MariaDB ডাউনলোড ও SHA-256 যাচাই | F1 | Manifest থেকে install; hash না মিললে থামে |
 | F4 | Windows Service ও supervisor | C2 | Reboot-এর পর চালু হয় |
 | F5 | Terminal: ConPTY | F1 | Web terminal-এ PowerShell চলে |
-| F6 | hosts file ও local CA | F1 | `dpanel.ps1`-এর logic reuse; একই E6 flow |
+| F6 | hosts file ও local CA | F1 | Commit `4e360714`-এর `windows/dpanel.ps1`-এর logic reuse; একই E6 flow |
 | F7 | Path edge case | D2 | Space, Unicode, long path, file lock test পাস |
 | F8 | E2E test | F2-F7 | E6-এর সব flow Windows-এ পাস |
 
@@ -147,7 +146,7 @@ B7-এর পর নতুন error বেরোলে একই নিয়ম
 | G3 | Windows MSI | G1, F8 | পরিষ্কার Windows-এ install ও uninstall |
 | G4 | Signing, notarization, release pipeline | G2, G3 | Signed build CI থেকে আসে |
 | G5 | Auto-update ও rollback | G4 | ব্যর্থ update আগের version-এ ফেরে |
-| G6 | Docs, WSL migration ও বন্ধের নোটিস | G5 | `docs/windows.md`, নতুন `docs/macos.md`; WSL থেকে backup-restore পথ |
+| G6 | Docs | G5 | `docs/windows.md`, নতুন `docs/macos.md` |
 
 ## H. Spike (go/no-go)
 

@@ -19,8 +19,7 @@ recommended. Derivatives are not accepted merely because they provide `apt`
 or `dnf`; the installer checks `/etc/os-release` and stops before modifying an
 unsupported host.
 
-Windows is not a native target. For local development on a Windows PC,
-`windows/dpanel.ps1` runs dPanel inside a dedicated Ubuntu 24.04 WSL2 distro;
+Windows is not a supported install target yet. Native support is in progress;
 see [dPanel on Windows](windows.md).
 
 ## Support boundaries
