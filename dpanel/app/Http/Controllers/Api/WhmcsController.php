@@ -7,6 +7,7 @@ use App\Models\PackagePlan;
 use App\Models\PanelSession;
 use App\Models\User;
 use App\Models\WhmcsAccount;
+use App\Services\AccountSuspensionService;
 use App\Support\UserAccessCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -75,11 +76,10 @@ class WhmcsController extends Controller
             if (! $plan) return $this->error('Unknown plan slug.', 422);
             $this->applyPlan($user, $plan);
         } elseif ($action === 'suspend' || $action === 'terminate') {
-            $user->update(['is_suspended' => true, 'suspended_at' => now()]);
-            PanelSession::query()->where('user_id', $user->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
+            app(AccountSuspensionService::class)->suspend($user);
             $account->update(['status' => $action === 'terminate' ? 'terminated' : 'suspended']);
         } elseif ($action === 'unsuspend') {
-            $user->update(['is_suspended' => false, 'suspended_at' => null]);
+            app(AccountSuspensionService::class)->unsuspend($user);
             $account->update(['status' => 'active']);
         } else return $this->error('Unsupported action.', 404);
         $account->update(['last_request_id' => $request->attributes->get('whmcs_request_id')]);

@@ -28,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         );
 
         $middleware->web(append: [
+            \App\Http\Middleware\EndSuspendedSessions::class,
             \App\Http\Middleware\ApplyPanelRouteDefaults::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\AddPanelNoCacheHeaders::class,

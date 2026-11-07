@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\PackagePlan;
 use App\Models\PanelSession;
 use App\Models\User;
+use App\Services\AccountSuspensionService;
 use App\Support\UserAccessCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -222,9 +223,8 @@ class UserManagementController extends Controller
         ]);
 
         $suspend = (bool) $validated['suspend'];
-        $user->is_suspended = $suspend;
-        $user->suspended_at = $suspend ? now() : null;
-        $user->save();
+        $suspension = app(AccountSuspensionService::class);
+        $suspend ? $suspension->suspend($user) : $suspension->unsuspend($user);
 
         return back()->with('success', $suspend ? 'User suspended successfully.' : 'User unsuspended successfully.');
     }
