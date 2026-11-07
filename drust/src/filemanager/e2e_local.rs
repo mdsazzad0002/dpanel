@@ -1,7 +1,9 @@
 use crate::platform::{self, accounts, paths};
 use std::fs;
 
+/// Run alone with DPANEL_PROFILE=local, a throwaway USERPROFILE and no `chown` on PATH.
 #[test]
+#[ignore = "needs a local profile"]
 fn local_profile_end_to_end() {
     assert!(platform::current().one_user(), "run with DPANEL_PROFILE=local");
     assert!(!crate::app::program_exists("chown"), "chown must be off PATH for this to prove anything");

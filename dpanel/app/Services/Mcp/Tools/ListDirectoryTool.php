@@ -4,6 +4,7 @@ namespace App\Services\Mcp\Tools;
 
 use App\Models\McpAccessToken;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpFileAccess;
 
 class ListDirectoryTool implements McpTool
@@ -48,14 +49,14 @@ class ListDirectoryTool implements McpTool
 
     public function handle(array $arguments, McpAccessToken $token): array
     {
-        $path = $this->files->path($arguments['path'] ?? null);
+        $path = $this->files->path($arguments['path'] ?? null, serverId: $arguments['server_id'] ?? null);
         $depth = max(1, min(5, (int) ($arguments['depth'] ?? 1)));
         $showHidden = (bool) ($arguments['show_hidden'] ?? true);
         $server = $this->files->server($arguments['server_id'] ?? null);
         $this->files->guardRead($server, $path, $token);
 
-        $quoted = escapeshellarg($path);
-        $format = escapeshellarg('%p\t%y\t%m\t%u:%g\t%s\t%TY-%Tm-%Td %TH:%TM\t%l\n');
+        $quoted = McpCommandExecutor::quote($path);
+        $format = McpCommandExecutor::quote('%p\t%y\t%m\t%u:%g\t%s\t%TY-%Tm-%Td %TH:%TM\t%l\n');
         $limit = self::MAX_ENTRIES + 1;
 
         $output = $this->files->run($server, implode("\n", [

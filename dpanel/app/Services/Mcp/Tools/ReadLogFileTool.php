@@ -53,8 +53,8 @@ class ReadLogFileTool implements McpTool
 
         $grep = (string) ($arguments['grep'] ?? '');
         $command = $grep === ''
-            ? 'tail -n '.$lines.' '.escapeshellarg($path)
-            : 'grep -i -F -- '.escapeshellarg(mb_substr($grep, 0, 200)).' '.escapeshellarg($path).' | tail -n '.$lines;
+            ? 'tail -n '.$lines.' '.McpCommandExecutor::quote($path)
+            : 'grep -i -F -- '.McpCommandExecutor::quote(mb_substr($grep, 0, 200)).' '.McpCommandExecutor::quote($path).' | tail -n '.$lines;
 
         return $this->executor->run($server, $command.' 2>&1', $token, trusted: true);
     }

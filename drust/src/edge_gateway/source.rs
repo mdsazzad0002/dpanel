@@ -21,7 +21,7 @@ impl DbSnapshotConfig {
 }
 
 pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapshot, String> {
-    let env = read_env_file(&config.env_path)?;
+    let env = read_panel_env(&config.env_path)?;
     let database = env
         .get("DB_DATABASE")
         .cloned()
@@ -65,7 +65,7 @@ pub fn load_domain_sites(
     if domains.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
-    let env = read_env_file(&config.env_path)?;
+    let env = read_panel_env(&config.env_path)?;
     load_sites(&env, Some(&domains))
 }
 
@@ -80,7 +80,12 @@ fn load_sites(
             .map(|domain| format!("'{domain}'"))
             .collect::<Vec<_>>()
             .join(",");
-        format!("LOWER(TRIM(TRAILING '.' FROM TRIM(w.domain))) IN ({list})")
+        let domain = if uses_sqlite(env) {
+            "LOWER(RTRIM(TRIM(w.domain),'.'))"
+        } else {
+            "LOWER(TRIM(TRAILING '.' FROM TRIM(w.domain)))"
+        };
+        format!("{domain} IN ({list})")
     });
     let site_filter = |prefix: &str| {
         domain_filter.as_ref().map_or(String::new(), |filter| format!(" {prefix} {filter}"))
@@ -257,10 +262,89 @@ fn load_sites(
         }
     }
 
+    if crate::platform::current().uses_php_cgi_pool() {
+        add_panel_site(&mut sites, domains, &panel_domain(), crate::platform::paths().panel_root());
+    }
+
     Ok((sites, tls))
 }
 
+pub(super) fn panel_domain() -> String {
+    std::env::var("DRUST_PANEL_DOMAIN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "dpanel.localhost".to_string())
+}
+
+/// On Linux the panel is a row of `websites`. A local panel has no row, so it
+/// is added here, unless a row has the domain or a reload is for other domains.
+fn add_panel_site(sites: &mut Vec<SiteConfig>, wanted: Option<&[String]>, panel_domain: &str, panel_root: &Path) {
+    let domain = normalize_domain(panel_domain);
+    let is_wanted = wanted.map_or(true, |domains| domains.contains(&domain));
+    if is_wanted && !sites.iter().any(|site| site.hostnames.contains(&domain)) {
+        sites.push(panel_site(domain, panel_root));
+    }
+}
+
+/// The static route of any PHP site: files in `public`, the rest to its `index.php`.
+fn panel_site(domain: String, panel_root: &Path) -> SiteConfig {
+    SiteConfig {
+        id: "panel".to_string(),
+        scope: "system".to_string(),
+        site_owner: None,
+        hostnames: std::sync::Arc::from([domain]),
+        document_root: Some(panel_root.join("public")),
+        php_version: None,
+        runtime: "php".to_string(),
+        project_root: Some(panel_root.to_path_buf()),
+        node_entry_file: None,
+        node_start_command: None,
+        node_version: None,
+        python_entry_file: None,
+        python_start_command: None,
+        python_version: None,
+        python_run: Default::default(),
+        enable_ssl: false,
+        spa_fallback: true,
+        routes: std::sync::Arc::from([RouteConfig {
+            path_prefix: "/".to_string(),
+            action: RouteAction::Static,
+        }]),
+        banned_ips: std::sync::Arc::from([]),
+        allowed_ips: std::sync::Arc::from([]),
+        cache: Default::default(),
+        redirects: std::sync::Arc::from([]),
+    }
+}
+
+fn uses_sqlite(env: &HashMap<String, String>) -> bool {
+    env.get("DB_CONNECTION").is_some_and(|value| value == "sqlite")
+}
+
+/// Prints rows like `mysql --batch`. A local panel keeps its data in SQLite,
+/// and PHP is the one SQLite reader such a machine is sure to have.
+const SQLITE_ROWS_PHP: &str = "$db=new PDO('sqlite:'.$argv[1],null,null,[PDO::SQLITE_ATTR_OPEN_FLAGS=>PDO::SQLITE_OPEN_READONLY]);\
+$db->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);\
+foreach($db->query($argv[2],PDO::FETCH_NUM) as $row){\
+echo implode(chr(9),array_map(fn($v)=>$v===null?'NULL':str_replace([chr(9),chr(10),chr(13)],' ',(string)$v),$row)),chr(10);}";
+
+fn run_sqlite(env: &HashMap<String, String>, sql: &str) -> Result<String, String> {
+    let database = env.get("DB_DATABASE").ok_or("DB_DATABASE is not set")?;
+    let output = Command::new(crate::platform::paths().php_cli(None))
+        .args(["-d", "display_errors=stderr", "-r", SQLITE_ROWS_PHP, "--", database, sql])
+        .output()
+        .map_err(|error| format!("php cli failed: {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
 fn run_mysql(env: &HashMap<String, String>, sql: &str) -> Result<String, String> {
+    if uses_sqlite(env) {
+        return run_sqlite(env, sql);
+    }
     let setting = |key: &str, default: &str| env.get(key).cloned().unwrap_or_else(|| default.to_string());
     let mut cmd = Command::new(find_mysql_client());
     cmd.arg("-h")
@@ -414,6 +498,17 @@ fn parse_ip_list(value: &str) -> std::sync::Arc<[std::net::IpAddr]> {
         .filter_map(|item| item.trim().parse().ok())
         .collect::<Vec<_>>()
         .into()
+}
+
+/// The panel's `.env`, with a relative SQLite path made absolute like Laravel does.
+fn read_panel_env(path: &Path) -> Result<HashMap<String, String>, String> {
+    let mut env = read_env_file(path)?;
+    if uses_sqlite(&env) {
+        let panel = path.parent().unwrap_or(Path::new(""));
+        let database = panel.join(env.get("DB_DATABASE").map_or("database/database.sqlite", String::as_str));
+        env.insert("DB_DATABASE".into(), database.to_string_lossy().into_owned());
+    }
+    Ok(env)
 }
 
 fn read_env_file(path: &Path) -> Result<HashMap<String, String>, String> {
@@ -612,6 +707,42 @@ fn current_version_hint(database: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panel_entry_serves_public_as_a_system_php_site_on_the_panel_host() {
+        let mut sites = Vec::new();
+        add_panel_site(&mut sites, None, " P.localhost. ", Path::new("panel"));
+        let snapshot = RuntimeSnapshot::new(
+            1,
+            sites.into(),
+            std::sync::Arc::from([]),
+            CachePolicy { enabled: false, ttl: Duration::ZERO, stale_while_revalidate: Duration::ZERO },
+        );
+
+        let site = crate::edge_gateway::resolve_site(&snapshot, "p.localhost:80").expect("panel host");
+        assert_eq!(site.document_root.as_deref(), Some(Path::new("panel").join("public").as_path()));
+        assert_eq!((site.scope.as_str(), site.runtime.as_str()), ("system", "php"));
+        assert_eq!(site.site_owner, None);
+        assert!(matches!(
+            site.routes.as_ref(),
+            [RouteConfig { path_prefix, action: RouteAction::Static }] if path_prefix == "/"
+        ));
+    }
+
+    #[test]
+    fn panel_entry_yields_to_a_row_and_to_a_reload_of_other_domains() {
+        let root = Path::new("panel");
+        let mut sites = vec![panel_site("p.localhost".to_string(), Path::new("row"))];
+        add_panel_site(&mut sites, None, "p.localhost", root);
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].document_root.as_deref(), Some(Path::new("row").join("public").as_path()));
+
+        let mut sites = Vec::new();
+        add_panel_site(&mut sites, Some(&["mysite.test".to_string()]), "p.localhost", root);
+        assert!(sites.is_empty());
+        add_panel_site(&mut sites, Some(&["p.localhost".to_string()]), "p.localhost", root);
+        assert_eq!(sites.len(), 1);
+    }
 
     #[test]
     fn parses_python_run_mode_and_workers() {

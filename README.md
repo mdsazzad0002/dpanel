@@ -131,8 +131,8 @@ sudo dpanel doctor
 Full steps, configuration, and permission setup are in the
 [Installation Guide](docs/installation.md).
 
-**On a Windows PC:** native Windows support is in progress and the full panel
-does not run there yet. See [dPanel on Windows](docs/windows.md) for what runs today.
+**On a Windows PC:** native Windows support is in progress and the panel
+is not complete yet. See [dPanel on Windows](docs/windows.md) for what runs today.
 
 ## Documentation
 

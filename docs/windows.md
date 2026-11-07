@@ -1,12 +1,10 @@
 # dPanel on Windows
 
-Native Windows support is in progress. The full hosting panel does not run on
-Windows yet: for a working panel, install it on a Linux server with
-`installer.sh`. Status and remaining work are in
-[plans/backlog.md](../plans/backlog.md).
-
-What does run on a Windows 10 or 11 PC today is a development setup: the Laravel
-panel and the drust API, built from this repository, on `127.0.0.1`.
+Native Windows support is in progress. A Windows 10 or 11 PC can run the panel and
+serve PHP websites for local development, built from this repository, on
+`127.0.0.1`. Much of the panel is still untested there, and there is no installer.
+For a public server, install on Linux with `installer.sh`. Status and remaining
+work are in [plans/backlog.md](../plans/backlog.md).
 
 ## What works
 
@@ -17,14 +15,14 @@ panel and the drust API, built from this repository, on `127.0.0.1`.
 | Laravel migrations and seed (SQLite) | Works |
 | Login, and the websites, databases, PHP, backups, DNS, email, monitoring and security pages | Open without errors |
 | Panel reads `/capabilities` from drust with the shared token | Works |
-| Creating a website | Fails with `This command must run as root` (backlog C4, F1) |
-| Website hosting: php-cgi pool, service supervisor, local SSL, hosts file | Not built yet (backlog F) |
-| Laravel features that call `posix_*` or Linux commands | Not ported yet (backlog D); they can fail |
-| Edge gateway on port 80 | Not tested |
+| Creating a PHP website | Works |
+| Opening that website on port 80, through the gateway and `php-cgi` | Works |
+| Service supervisor, autostart, local SSL, automatic hosts entries | Not built yet (backlog F) |
+| Features that call Linux commands | Not all ported (backlog C, D); they can fail |
 
-The page checks only confirm that the pages open. Website creation is the only
-action that changes the system that was tried, and it fails. Expect others that
-call Linux commands to fail too.
+The page checks only confirm that the pages open. Creating and opening a website
+is the only action tested end to end. Expect others that call Linux commands to
+fail.
 
 ## Requirements
 
@@ -68,7 +66,7 @@ Run these from the repository root in PowerShell.
 
    ```ini
    DPANEL_PROFILE=local
-   APP_URL=http://127.0.0.1:8000
+   APP_URL=http://p.localhost
    SESSION_SECURE_COOKIE=false
    DB_CONNECTION=sqlite
    DB_DATABASE=database/database.sqlite
@@ -87,26 +85,40 @@ Run these from the repository root in PowerShell.
 
 ## Run
 
-Use two PowerShell windows, from the repository root.
+drust runs twice: the API on `127.0.0.1:9500`, and the edge gateway, which serves
+the panel and every website on port 80 through a pool of `php-cgi` workers. PHP
+must be on `PATH`, and nothing else may listen on ports 80 or 443, so stop
+WampServer's Apache first.
+
+From the repository root, in one PowerShell window:
 
 ```powershell
-# Window 1: drust API on 127.0.0.1:9500
+$token = ((Get-Content dpanel\.env | Where-Object { $_ -like 'SERVERPANEL_EXECUTION_API_TOKEN=*' } | Select-Object -Last 1) -split '=', 2)[1]
 $env:DPANEL_PROFILE = 'local'
-$env:DRUST_API_TOKEN = '<token>'
-.\drust\target\debug\drust.exe serve --port 9500
+$env:DPANEL_PANEL_ROOT = "$PWD\dpanel"
+$env:DRUST_API_TOKEN = $token
+Start-Process .\drust\target\debug\drust.exe -ArgumentList 'serve', '--port', '9500' -WindowStyle Hidden
+$env:DRUST_HTTP_BIND = '127.0.0.1:80'
+$env:DRUST_HTTPS_BIND = '127.0.0.1:443'
+$env:DRUST_PANEL_DOMAIN = 'p.localhost'
+Start-Process .\drust\target\debug\drust.exe -ArgumentList 'edge-gateway' -WindowStyle Hidden
 ```
 
-```powershell
-# Window 2: the panel on 127.0.0.1:8000
-cd dpanel
-php artisan serve --host=127.0.0.1 --port=8000
-```
-
-Open <http://127.0.0.1:8000/login> and sign in with the seeded admin,
+Open <http://p.localhost/login> and sign in with the seeded admin,
 `test@example.com` and `password`. Change the password in your profile. Do not
-expose this setup to a network.
+expose this setup to a network. Nothing restarts these processes after a reboot
+yet, so run this again. To stop them, end `drust.exe` and `php-cgi.exe` in Task
+Manager.
 
-For frontend work, run `npm run dev` in a third window.
+## Websites
+
+Create a website in the panel. Its files go to
+`%USERPROFILE%\dPanel\sites\<owner>\public_html`.
+
+A `.localhost` domain such as `demo.localhost` opens in the browser straight
+away. Any other domain, such as `mysite.test`, needs a line like
+`127.0.0.1 mysite.test` in `C:\Windows\System32\drivers\etc\hosts`, which takes
+administrator rights.
 
 ## Troubleshooting
 
@@ -114,5 +126,5 @@ For frontend work, run `npm run dev` in a third window.
 | --- | --- |
 | Login returns to the login page | `SESSION_SECURE_COOKIE=false` is missing, or `.env` changed without `php artisan config:clear` |
 | A page shows a Redis connection error | Set `CACHE_STORE` and `QUEUE_CONNECTION` to `database`, then run `php artisan config:clear` |
-| `database.sqlite` cannot be deleted | `php artisan serve` still has it open; stop the server first |
-| `Call to undefined function posix_geteuid()` | That feature is not ported to Windows yet (backlog D1) |
+| `database.sqlite` cannot be deleted | A `php-cgi.exe` worker still has it open; stop the gateway and its workers first |
+| The gateway does not start or a site gives no answer | Another program holds port 80 or 443; stop it, for example WampServer's Apache |

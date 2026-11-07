@@ -49,8 +49,12 @@ const EXECUTABLE_FILE: &str = "D:P(A;;FA;;;OW)(A;;FA;;;SY)(A;;FRFX;;;BU)";
 
 pub struct NativeFileAccess;
 
-fn sddl_for(mode: FileMode) -> Option<&'static str> {
+/// A folder always gets an ACL its contents inherit: Windows rewrites what
+/// inherited from it, and a file left with no entries locks out even its owner.
+fn sddl_for(mode: FileMode, is_dir: bool) -> Option<&'static str> {
     match mode {
+        FileMode::Private if is_dir => Some(PRIVATE_DIR),
+        FileMode::SiteFile | FileMode::Shared | FileMode::Executable if is_dir => Some(SITE_DIR),
         FileMode::Private => Some(PRIVATE_FILE),
         FileMode::PrivateDir => Some(PRIVATE_DIR),
         FileMode::SiteDir => Some(SITE_DIR),
@@ -193,7 +197,8 @@ fn local_only<T>(value: T) -> Result<T, PlatformError> {
 
 impl FileAccess for NativeFileAccess {
     fn set_mode(&self, path: &Path, mode: FileMode) -> Result<(), PlatformError> {
-        let sddl = sddl_for(mode).ok_or(PlatformError::Unsupported {
+        let is_dir = fs::metadata(path).is_ok_and(|metadata| metadata.is_dir());
+        let sddl = sddl_for(mode, is_dir).ok_or(PlatformError::Unsupported {
             capability: Capability::FilePermissions,
         })?;
         Descriptor::parse(sddl)

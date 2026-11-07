@@ -2,12 +2,17 @@
 
 পুরো কাজের task তালিকা। প্রতিটা task ছোট, আলাদা commit-যোগ্য, আর তার শেষের শর্ত আছে। Technical contract: [platform-spec.md](platform-spec.md)।
 
-**Status:** A1-A6, B1-B8 শেষ; CI-তে Linux, Laravel, Windows ও macOS সবুজ (`aaa922fa`)। C1 চলছে। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
+**Status:** A1-A6, B1-B8 শেষ; CI-তে Linux, Laravel, Windows ও macOS সবুজ (`aaa922fa`)। C1 ও C4 প্রায় শেষ, F1-এর unit test পাস, F2 চলছে (নিচে দেখুন)। Windows-এ `cargo test --no-default-features`: 293 passed, 0 failed, 6 ignored; এই কাজ এখনও commit হয়নি, তাই CI-তে যাচাই হয়নি। কাজের সময় `Depends`-এর ক্রম মেনে চলুন।
 
 **খোলা বিষয়:**
 
-- Windows-এর 9টা test `skip_until_windows_has` দিয়ে skip করা: 8টা F1-এর, 1টা C1-এর। এই test-গুলো ওই task-এর আগে Windows-এ কিছু প্রমাণ করে না।
-- C1 চলছে। হয়েছে: `Paths`-এর সব dPanel path ও `binary(Tool)`। C1-এ বাকি: versioned PHP ও Python, `uv`, `/var/www/{domain}/public` fallback।
+- `skip_until_windows_has` আর code-এ নেই; কোনো test সেটা দিয়ে skip হয় না।
+- C1 শেষ নয়। হয়েছে: `Paths`, `binary(Tool)`, versioned PHP ও Python, `uv`, `default_document_root`। `platform/`-এর বাইরে বাকি: `app/support/system.rs` (`/var/www/ServerPanel`), `edge_gateway/source.rs` (`/usr/bin/mariadb`), `security_scan.rs` ও `upload_scan.rs` (`/usr/bin/timeout`), আর `/usr/bin/env` ও `PATH=` string (C5-এর সঙ্গে যাবে)।
+- C4 শেষ নয়। `useradd` পরিবারের command `platform/`-এর বাইরে নেই। বাকি: `login_users.rs`-এর `loginctl` ও `pkill`, `app/admin/create_user.rs`-এর `chown` ও `chmod`।
+- F1: Windows `Paths`, `FileAccess` ও local `AccountManager`-এর unit test পাস। `filemanager/e2e_local.rs` ignored, হাতে চালাতে হয়; suite সেটা প্রমাণ করে না। F1-এর `Depends`-এ C1 ও C4 এখনও খোলা।
+- F2 চলছে, আর **H1 পাস করার আগেই** শুরু হয়েছে: H1-এর সিদ্ধান্ত হয়নি, `plans/spikes/H1.md`-ও ছিল না। H1 pool-এর নকশা বদলাতে পারে। হয়েছে: `edge_gateway/php_cgi_pool.rs`, spec §9-এর default, প্রতি site-এ pool, TCP-তে `FastCgiEndpoint`। Crash, recycle, idle, queue ও 503-এর test একটা stand-in process দিয়ে পাস। আসল php-cgi দিয়ে শুধু একবার হাতে দেখা: `mysite.test` render হয়, worker মেরে দিলে পরের request-এ নতুন worker আসে। আসল php-cgi-র 500 request recycle চালানো হয়নি।
+- F2-এ বাকি: gateway হঠাৎ মরলে php-cgi থেকে যায় (Job Object দরকার); "alert" এখন শুধু log; এই PC-র php-cgi TS build, spec চায় NTS; `DRUST_API_TOKEN` PHP-তে না যাওয়া শুধু unit test-এ প্রমাণিত, আসল process-এ নয়।
+- Windows local-এ gateway চলে: `DPANEL_PROFILE=local`, `DPANEL_PANEL_ROOT`, `DRUST_HTTP_BIND`, `DRUST_HTTPS_BIND`, `DRUST_API_TOKEN` লাগে, আর `PATH`-এ PHP। SQLite panel-এর site PHP CLI দিয়ে পড়ে, কারণ Rust-এ SQLite crate নেই; প্রতি reload-এ কয়েকটা PHP process চলে (মাপা reload 0.7-0.9 সেকেন্ড)। Port 80-তে এখনও `php artisan serve`।
 - বাকি system path অন্য task-এর: `/etc/systemd` C2/C3, `/etc/passwd` ও `/etc/shadow` C4, sandbox-এর ভেতরের path ও `runuser` C5, `/etc/cron.d` C10, `/etc/letsencrypt` I5, `/etc/fail2ban` J7, ClamAV J10, `/etc/php` ও PHP-FPM pool F2/J4।
 - `/home` ইচ্ছা করে থেকে গেছে: `migration_ssh.rs` (remote server-এর path), sandbox-এর ভেতরের path ও terminal blocklist (C5), `ALLOWED_ROOT_PREFIXES` (Windows ও macOS-এ scan root-এর নকশা দরকার; এখন সেখানে scan চলবে না)।
 - Git for Windows-এ `core.autocrlf` চালু থাকে। Deploy-এর clone-এ সেটা site file-এ CRLF আনবে; F8-এর আগে সিদ্ধান্ত দরকার।
@@ -116,7 +121,8 @@ B7-এর পর নতুন error বেরোলে একই নিয়ম
 **অবস্থা (Windows, `ext-posix` ছাড়া; commit ও CI বাকি):**
 
 - D2: Done শর্ত test-এ প্রমাণিত (`PathServiceTest`, `ScriptPathResolverTest`, `SiteHomeRoutingTest`)। Windows local-এ `SERVER_BASE_DIR`-এ drust-এর sites root দিতে হয়।
-- D1: `posix_*` শুধু `ProcessIdentity`-তে। Done শর্ত এখনও পূরণ হয়নি: Windows-এ 12টা test fail করে। কোনোটা `posix`-এর কারণে নয়; এগুলো D4-এর (`tar`, `symlink`, `DatabaseController`-এর Windows skip)।
+- D1: Done। `posix_*` শুধু `ProcessIdentity`-তে। Windows-এ `ext-posix` ছাড়া `php artisan test`: 659 passed, 0 failed, 1 skipped (Git Bash ও PowerShell দুটোতেই)। Linux-এ এই পরিবর্তন এখনও চালানো হয়নি; CI দেখতে হবে।
+- D4 (আংশিক): `Services/Mcp/*`-এর file tool, `tar` ও `DatabaseController`-এর Windows skip ঠিক হয়েছে। MCP command এখন `McpCommandExecutor::quote` দিয়ে bash-এর জন্য quote হয়; Windows path filter `PathService::isPlainDrivePath`-এ (Spec §11 item 7)। আসল `mcp-exec.sh` drust দিয়ে Windows-এ চালিয়ে দেখা হয়নি; test bash সরাসরি চালায়। বাকি file-গুলোর `PHP_OS_FAMILY` check এখনও আছে।
 - D6: Queue, cache ও gateway reload Redis ছাড়া চলে, test-এ প্রমাণিত (`LocalProfileBackendsTest`)। Redis বন্ধ করে পুরো panel চালিয়ে দেখা হয়নি।
 
 ## E. macOS local

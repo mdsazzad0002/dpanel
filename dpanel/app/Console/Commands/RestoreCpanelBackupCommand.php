@@ -32,7 +32,7 @@ class RestoreCpanelBackupCommand extends Command
 
         try {
             $this->assertSafeTar($archive);
-            $extract = Process::timeout(1200)->run(['tar', '-xzf', $archive, '-C', $temporary, '--no-same-owner', '--no-same-permissions']);
+            $extract = CpanelMigrationArchive::tar('-xzf', $archive, ['-C', $temporary, '--no-same-owner', '--no-same-permissions'], 1200);
             if (! $extract->successful()) {
                 throw new RuntimeException('Archive extraction failed: '.trim($extract->errorOutput()));
             }
@@ -69,7 +69,7 @@ class RestoreCpanelBackupCommand extends Command
 
     private function assertSafeTar(string $archive): void
     {
-        $result = Process::timeout(120)->run(['tar', '-tzf', $archive]);
+        $result = CpanelMigrationArchive::tar('-tzf', $archive);
         if (! $result->successful()) {
             throw new RuntimeException('Invalid gzip/tar archive.');
         }
@@ -81,7 +81,7 @@ class RestoreCpanelBackupCommand extends Command
             }
         }
 
-        $verbose = Process::timeout(120)->run(['tar', '-tvzf', $archive]);
+        $verbose = CpanelMigrationArchive::tar('-tvzf', $archive);
         if (! $verbose->successful()
             || preg_split('/\R/', trim($verbose->output())) === false
             || collect(preg_split('/\R/', trim($verbose->output())) ?: [])

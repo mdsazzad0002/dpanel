@@ -4,6 +4,7 @@ namespace App\Services\Mcp;
 
 use App\Models\McpAccessToken;
 use App\Models\Server;
+use App\Services\PathService;
 
 /**
  * File operations for the MCP file tools, built on McpCommandExecutor so they
@@ -25,6 +26,9 @@ class McpFileAccess
      */
     private const WRITE_CHUNK_BYTES = 48000;
 
+    /** The same under McpCommandExecutor::WINDOWS_MAX_COMMAND_CHARS, with room for the paths. */
+    private const WINDOWS_WRITE_CHUNK_BYTES = 3000;
+
     /** Never written, moved or deleted over MCP. */
     private const PROTECTED_PATHS = ['/proc', '/sys', '/dev', '/boot', '/etc/shadow', '/etc/gshadow', '/etc/passwd', '/etc/group', '/etc/sudoers', '/etc/sudoers.d', '/etc/dpanel/mcp-local.conf'];
 
@@ -39,13 +43,18 @@ class McpFileAccess
     }
 
     /**
-     * Validate an absolute path and normalize "//" and "/./" away.
+     * Validate an absolute path and normalize "//" and "/./" away. A path on a
+     * Windows panel host must start at a drive; a managed server is always POSIX.
      */
-    public function path(mixed $value, string $field = 'path'): string
+    public function path(mixed $value, string $field = 'path', mixed $serverId = null): string
     {
         $path = trim((string) $value);
+        $onDrives = PathService::hostUsesDrivePaths() && $this->onDrives($this->server($serverId));
+        if ($onDrives) {
+            $path = PathService::normalizeAbsolutePath($path);
+        }
 
-        if ($path === '' || $path[0] !== '/' || strlen($path) > 1024 || preg_match('/[\x00-\x1F\x7F]/', $path) === 1) {
+        if (! $this->accepts($path, $serverId) || strlen($path) > 1024 || preg_match('/[\x00-\x1F\x7F]/', $path) === 1) {
             throw new McpToolException("{$field} must be an absolute path.");
         }
 
@@ -54,7 +63,35 @@ class McpFileAccess
             throw new McpToolException("{$field} must not contain \"..\".");
         }
 
-        return '/'.implode('/', $segments);
+        if (! $onDrives) {
+            return '/'.implode('/', $segments);
+        }
+
+        if (! PathService::isPlainDrivePath($path)) {
+            throw new McpToolException("{$field} must be a plain path on a drive: no streams, 8.3 names, trailing dots, wildcards or device names.");
+        }
+
+        return $segments[0].'/'.implode('/', array_slice($segments, 1));
+    }
+
+    /** Whether $path has the shape of an absolute path on the target. */
+    public function accepts(string $path, mixed $serverId = null): bool
+    {
+        return PathService::hostUsesDrivePaths() && $this->onDrives($this->server($serverId))
+            ? PathService::isDrivePath($path)
+            : str_starts_with($path, '/');
+    }
+
+    /** Whether $server means this host, and this host names files by drive. */
+    private function onDrives(?Server $server): bool
+    {
+        return $server === null && PathService::hostUsesDrivePaths();
+    }
+
+    /** NTFS ignores case, so ".ENV" must meet the same guards as ".env". */
+    private function comparable(?Server $server, string $path): string
+    {
+        return $this->onDrives($server) ? mb_strtolower($path) : $path;
     }
 
     /**
@@ -69,7 +106,7 @@ class McpFileAccess
 
         foreach ([$path, $this->resolve($server, $path, $token)] as $candidate) {
             foreach (McpCommandPolicy::SENSITIVE_PATHS as $sensitive) {
-                if (str_contains($candidate, $sensitive)) {
+                if (str_contains($this->comparable($server, $candidate), $sensitive)) {
                     throw new McpToolException("Read-only MCP tokens cannot read sensitive paths ({$sensitive}).");
                 }
             }
@@ -91,8 +128,10 @@ class McpFileAccess
         $resolved = $this->resolve($server, $path, $token);
 
         foreach ([$path, $resolved] as $candidate) {
-            foreach ([...self::PROTECTED_PATHS, self::backupRoot()] as $protected) {
-                if ($candidate === $protected || str_starts_with($candidate, $protected.'/')) {
+            foreach ($this->protectedPaths($server) as $protected) {
+                $left = $this->comparable($server, $candidate);
+                $right = $this->comparable($server, $protected);
+                if ($left === $right || str_starts_with($left, $right.'/')) {
                     throw new McpToolException("{$protected} cannot be changed over MCP.");
                 }
             }
@@ -131,8 +170,21 @@ class McpFileAccess
 
     public function resolve(?Server $server, string $path, McpAccessToken $token): string
     {
-        $quoted = escapeshellarg($path);
-        $resolved = trim($this->run($server, "readlink -f -- {$quoted} 2>/dev/null || printf '%s\\n' {$quoted}", $token));
+        $quoted = McpCommandExecutor::quote($path);
+        $follow = "readlink -f -- {$quoted} 2>/dev/null || printf '%s\\n' {$quoted}";
+
+        if ($this->onDrives($server)) {
+            // bash answers with its own names (/tmp/x, /c/x); the guards compare
+            // drive paths. A link that leaves the drives, such as to UNC, is refused.
+            $resolved = trim($this->run($server, "cygpath -m -- \"\$({$follow})\"", $token));
+            if (! PathService::isDrivePath($resolved)) {
+                throw new McpToolException("Could not resolve {$path} to a path on a drive.");
+            }
+
+            return $resolved;
+        }
+
+        $resolved = trim($this->run($server, $follow, $token));
 
         return $resolved !== '' && str_starts_with($resolved, '/') ? $resolved : $path;
     }
@@ -142,7 +194,7 @@ class McpFileAccess
      */
     public function readWhole(?Server $server, string $path, McpAccessToken $token): string
     {
-        $quoted = escapeshellarg($path);
+        $quoted = McpCommandExecutor::quote($path);
         $max = self::MAX_WRITE_BYTES;
 
         $output = $this->run($server, implode("\n", [
@@ -174,11 +226,11 @@ class McpFileAccess
 
         $directory = dirname($path);
         $temp = $directory.'/.dpanel-mcp-'.bin2hex(random_bytes(6)).'.tmp';
-        $qDir = escapeshellarg($directory);
-        $qTemp = escapeshellarg($temp);
+        $qDir = McpCommandExecutor::quote($directory);
+        $qTemp = McpCommandExecutor::quote($temp);
 
         try {
-            foreach (str_split($content, self::WRITE_CHUNK_BYTES) ?: [''] as $index => $chunk) {
+            foreach (str_split($content, $this->onDrives($server) ? self::WINDOWS_WRITE_CHUNK_BYTES : self::WRITE_CHUNK_BYTES) ?: [''] as $index => $chunk) {
                 // Line breaks every 3 characters keep the panel's blocked-word
                 // check (mkfs, reboot, …) from matching random base64.
                 $encoded = rtrim(chunk_split(base64_encode($chunk), 3, "\n"));
@@ -189,7 +241,7 @@ class McpFileAccess
                     : $write, $token);
             }
 
-            $output = $this->run($server, $this->commitScript($path, $temp, $expectedSha256, $backup), $token);
+            $output = $this->run($server, $this->commitScript($server, $path, $temp, $expectedSha256, $backup), $token);
         } catch (McpToolException $exception) {
             try {
                 $this->run($server, "rm -f -- {$qTemp}", $token);
@@ -223,10 +275,10 @@ class McpFileAccess
      */
     public function trash(?Server $server, string $path, bool $recursive, McpAccessToken $token): string
     {
-        $quoted = escapeshellarg($path);
-        $target = $this->backupDirectory('trash').$path;
-        $qTarget = escapeshellarg($target);
-        $qParent = escapeshellarg(dirname($target));
+        $quoted = McpCommandExecutor::quote($path);
+        $target = $this->backupTarget($server, 'trash', $path);
+        $qTarget = McpCommandExecutor::quote($target);
+        $qParent = McpCommandExecutor::quote(dirname($target));
 
         $this->run($server, implode("\n", [
             "{ [ -e {$quoted} ] || [ -L {$quoted} ]; } || { echo 'No such file or directory:' {$quoted}; exit 2; }",
@@ -237,19 +289,19 @@ class McpFileAccess
         return $target;
     }
 
-    private function commitScript(string $path, string $temp, ?string $expectedSha256, bool $backup): string
+    private function commitScript(?Server $server, string $path, string $temp, ?string $expectedSha256, bool $backup): string
     {
-        $backupPath = $this->backupDirectory('files').$path;
+        $backupPath = $this->backupTarget($server, 'files', $path);
 
         return implode("\n", array_filter([
-            'T='.escapeshellarg($path),
-            'N='.escapeshellarg($temp),
-            'B='.escapeshellarg($backupPath),
+            'T='.McpCommandExecutor::quote($path),
+            'N='.McpCommandExecutor::quote($temp),
+            'B='.McpCommandExecutor::quote($backupPath),
             'fail() { echo "$1"; rm -f -- "$N"; exit "$2"; }',
             'if [ -e "$T" ]; then',
             '  [ -f "$T" ] || fail "Not a regular file: $T" 2',
             $expectedSha256 !== null
-                ? '  current=$(sha256sum -- "$T" | cut -d" " -f1); [ "$current" = '.escapeshellarg($expectedSha256).' ] || fail "$T changed since it was read (sha256 is now $current). Read it again before writing." 3'
+                ? '  current=$(sha256sum -- "$T" | cut -d" " -f1); [ "$current" = '.McpCommandExecutor::quote($expectedSha256).' ] || fail "$T changed since it was read (sha256 is now $current). Read it again before writing." 3'
                 : null,
             $backup
                 ? '  { mkdir -p -- "$(dirname -- "$B")" && cp -p -- "$T" "$B"; } || fail "Could not back up $T to $B (pass backup=false to skip)." 4'
@@ -274,8 +326,38 @@ class McpFileAccess
         return rtrim((string) config('mcp.backup_root', '/var/backups/dpanel-mcp'), '/');
     }
 
-    private function backupDirectory(string $kind): string
+    /**
+     * @return list<string>
+     */
+    private function protectedPaths(?Server $server): array
     {
-        return self::backupRoot().'/'.$kind.'/'.now()->format('Ymd-His').'-'.bin2hex(random_bytes(3));
+        if (! $this->onDrives($server)) {
+            return [...self::PROTECTED_PATHS, self::backupRoot()];
+        }
+
+        return [
+            PathService::normalizeAbsolutePath((string) (getenv('SystemRoot') ?: 'C:/Windows')),
+            PathService::normalizeAbsolutePath((string) config('mcp.local_config_path')),
+            $this->backupRootOn($server),
+        ];
+    }
+
+    /** The default root is a POSIX path, which means nothing on a drive. */
+    private function backupRootOn(?Server $server): string
+    {
+        $root = self::backupRoot();
+        if (! $this->onDrives($server)) {
+            return $root;
+        }
+
+        return rtrim(PathService::normalizeAbsolutePath(PathService::isDrivePath($root) ? $root : storage_path('app/mcp-backups')), '/');
+    }
+
+    /** Where $path is kept under the backup root; "C:/x" becomes "<dir>/C/x". */
+    private function backupTarget(?Server $server, string $kind, string $path): string
+    {
+        $directory = $this->backupRootOn($server).'/'.$kind.'/'.now()->format('Ymd-His').'-'.bin2hex(random_bytes(3));
+
+        return $directory.(PathService::isDrivePath($path) ? '/'.$path[0].substr($path, 2) : $path);
     }
 }

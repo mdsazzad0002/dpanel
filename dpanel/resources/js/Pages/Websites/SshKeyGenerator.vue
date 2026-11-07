@@ -2,6 +2,9 @@
 import { computed, ref } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useServerBaseDir } from '@/composables/useServerBaseDir';
+
+const { ownerHome } = useServerBaseDir();
 
 const props = defineProps({ website: Object, sshHost: String, sshPort: Number });
 const page = usePage();
@@ -58,7 +61,7 @@ const downloadPrivateKey = () => {
             <div v-if="error" class="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800"><i class="bi bi-exclamation-triangle-fill mr-2"></i>{{ error }}</div>
 
             <section class="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                <div class="flex items-start gap-3"><span class="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-700"><i class="bi bi-key-fill"></i></span><div><h2 class="font-semibold">Generate ED25519 key</h2><p class="mt-1 text-sm text-slate-500">Public key automatically <code>/home/{{ website.site_owner }}/.ssh/authorized_keys</code>-এ install হবে।</p></div></div>
+                <div class="flex items-start gap-3"><span class="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-700"><i class="bi bi-key-fill"></i></span><div><h2 class="font-semibold">Generate ED25519 key</h2><p class="mt-1 text-sm text-slate-500">Public key automatically <code>{{ ownerHome(website.site_owner) }}/.ssh/authorized_keys</code>-এ install হবে।</p></div></div>
                 <div class="mt-5 grid gap-4 sm:grid-cols-2">
                     <label class="text-sm font-medium">Website user<input :value="website.site_owner" disabled class="mt-1.5 w-full rounded-lg border-slate-300 bg-slate-100 dark:bg-slate-800" /></label>
                     <label class="text-sm font-medium">Key comment<input v-model.trim="comment" maxlength="120" class="mt-1.5 w-full rounded-lg border-slate-300 dark:bg-slate-800" /></label>

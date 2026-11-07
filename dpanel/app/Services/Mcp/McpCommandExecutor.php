@@ -6,6 +6,7 @@ use App\Models\CommandJob;
 use App\Models\McpAccessToken;
 use App\Models\Server;
 use App\Services\ActivityLogService;
+use App\Services\PathService;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ServerPanel\CommandRunnerService;
 use App\Services\ServerPanel\CommandSafetyService;
@@ -24,6 +25,12 @@ class McpCommandExecutor
     /** server_id value that targets the panel host. */
     public const LOCAL = 'local';
 
+    /**
+     * Git's bash on Windows silently cuts every argument at 8186 characters, and
+     * a script cut short would still run its first lines.
+     */
+    public const WINDOWS_MAX_COMMAND_CHARS = 8000;
+
     public function __construct(
         private readonly McpCommandPolicy $policy,
         private readonly CommandRunnerService $commandRunner,
@@ -33,6 +40,20 @@ class McpCommandExecutor
         private readonly LocalHostAccess $localAccess,
         private readonly ActivityLogService $activityLog,
     ) {}
+
+    /**
+     * Quote an argument for the bash that runs these commands. escapeshellarg()
+     * quotes for the OS PHP runs on: on Windows that means cmd.exe, whose double
+     * quotes leave $(...) live in bash and which drops % and !.
+     */
+    public static function quote(string $argument): string
+    {
+        if (str_contains($argument, "\0")) {
+            throw new McpToolException('Arguments must not contain null bytes.');
+        }
+
+        return "'".str_replace("'", "'\\''", $argument)."'";
+    }
 
     /**
      * Resolve the target: "local" for the panel host, a server id, or — when
@@ -152,6 +173,10 @@ class McpCommandExecutor
      */
     private function runLocal(string $command, McpAccessToken $token, ?int $outputLimit): array
     {
+        if (PathService::hostUsesDrivePaths() && strlen($command) > self::WINDOWS_MAX_COMMAND_CHARS) {
+            throw new McpToolException('Command is too long for this host: the limit is '.self::WINDOWS_MAX_COMMAND_CHARS.' characters.');
+        }
+
         $classification = $this->safety->classify($command);
         if ($classification['risk_level'] === 'blocked') {
             throw new McpToolException('Command refused (blocked): '.$classification['risk_reason']);

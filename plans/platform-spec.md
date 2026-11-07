@@ -131,6 +131,7 @@ impl Paths {
     fn binary(&self, tool: Tool) -> Result<PathBuf, PlatformError>;
     fn php_candidates(&self, version: Option<&str>) -> Vec<PathBuf>; // সেরাটা আগে
     fn php_cli(&self, version: Option<&str>) -> PathBuf;             // যেটা চালানো হবে
+    fn php_cgi(&self, version: &str) -> Result<PathBuf, PlatformError>; // শুধু Windows
     fn python_candidates(&self, version: &str) -> Vec<PathBuf>;
     fn managed_python_dir(&self) -> PathBuf;  // drust-এর বসানো Python ও uv
     fn default_document_root(&self, domain: &str) -> PathBuf;
@@ -156,6 +157,10 @@ impl Paths {
 | Python | `/usr/local/pyenv/versions/{v}/bin/python3`, `/usr/bin/python{v}`, `/usr/local/bin/python{v}` | `/opt/homebrew/bin/python{v}`, `/usr/local/bin/python{v}` | `runtime_dir\python\{v}\python.exe` |
 | `managed_python_dir` | `/usr/local/dpanel-python` | `runtime_dir/python` | `runtime_dir\python` |
 | `default_document_root` | `/var/www/{domain}/public` | `site_home(domain)/public` | `site_home(domain)\public` |
+
+`php_cgi` প্রথমে `runtime_dir\php\{v}\php-cgi.exe` দেখে। তারপর `PATH`-এর `php.exe`-এর parent folder-এ `php{v}.{patch}` folder খোঁজে, সবচেয়ে নতুন patch আগে (যেমন WampServer)। অন্য version কখনও নেয় না।
+
+Local profile-এ (Windows) `DPANEL_PANEL_ROOT` `panel_root` বদলায়, কারণ developer-এর panel তার checkout-এ থাকে। Linux এটা দেখে না।
 
 `uv` অন্য tool-এর মতো `binary(Tool::Uv)` দিয়ে পাওয়া যায়। Windows-এর `runtime_dir\php` ও `runtime_dir\python` এখন শুধু নাম; F3 সেখানে install করলে এই table মিলিয়ে নিতে হবে।
 
@@ -469,6 +474,8 @@ Suspend idempotent: দুবার চালালেও ফল একই। Pa
 
 প্রতিটা process site user হিসেবে, সেই account-এর Job Object-এ চলবে।
 
+এখনকার অবস্থা: `edge_gateway/php_cgi_pool.rs`, শুধু Windows local-এ (`Platform::uses_php_cgi_pool`), H1-এর আগে। সব process logged-in user হিসেবে চলে, Job Object ছাড়া। php-cgi একবারে একটা request নেয়, তাই এক process এক port, `PHP_FCGI_CHILDREN=0`। Port বাছার সময় `SO_REUSEADDR` ছাড়া bind করে দেখা হয়, কারণ php-cgi সেটা set করে আর Windows-এ তাতে দুজন একই port পেতে পারে। Child-এর environment allowlist থেকে বানানো, তাই `DRUST_API_TOKEN` PHP পায় না।
+
 ## 10. macOS supervisor limit
 
 প্রস্তাবিত default। H5 spike-এর পর মান ঠিক হবে।
@@ -489,7 +496,7 @@ Package page-এ macOS-এ "soft limit" লেখা থাকবে।
 2. Site-এর process `drust.env`, `.env` বা `DRUST_API_TOKEN` পড়তে পারে না।
 3. drust API শুধু loopback-এ, আর token ছাড়া `401`।
 4. Website process admin, SYSTEM বা root হিসেবে চলে না।
-5. Local profile-এর সব port শুধু `127.0.0.1`-এ।
+5. Local profile-এর সব port শুধু `127.0.0.1`-এ। Gateway-তে `Platform::local_bind` `0.0.0.0`-কে loopback করে, অন্য address refuse করে।
 6. Path traversal, symlink ও Windows junction দিয়ে site folder-এর বাইরে যাওয়া যায় না।
 7. Windows-এ `C:\`, UNC, 8.3 নাম, `::$DATA` ও trailing dot path filter পার হতে পারে না।
 8. Log ও error message-এ password বা token থাকে না।

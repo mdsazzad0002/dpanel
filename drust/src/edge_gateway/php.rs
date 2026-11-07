@@ -19,10 +19,12 @@ use tokio::{
 };
 use tracing::{info, warn};
 
+use super::php_cgi_pool::{self, Lease, PoolError};
 use crate::platform::{
     self,
     fastcgi::{FastCgiEndpoint, FastCgiStream},
     fs::FileMode,
+    paths::plain_path,
 };
 
 /// PHP output up to this size is read whole and returned with an exact
@@ -48,7 +50,6 @@ pub async fn execute_php_front_controller(
     php_version: Option<&str>,
     site_owner: Option<&str>,
 ) -> Result<Response<Body>, String> {
-    let endpoint = FastCgiEndpoint::Unix(resolve_fpm_socket(php_version, site_owner).await?);
     let (parts, body) = request.into_parts();
     let declared_length = parts
         .headers
@@ -107,7 +108,7 @@ pub async fn execute_php_front_controller(
         ),
         (
             "SCRIPT_FILENAME".into(),
-            script.to_string_lossy().into_owned(),
+            plain_path(&script).to_string_lossy().into_owned(),
         ),
         ("SCRIPT_NAME".into(), script_name.clone()),
         ("PHP_SELF".into(), script_name),
@@ -170,10 +171,46 @@ pub async fn execute_php_front_controller(
     // for minutes on a large site/database. PHP-FPM's own request_terminate_timeout
     // is disabled, so this deadline is the only hard cap — keep it well above those.
     // It covers the whole exchange, including a streamed response body.
+    let (endpoint, lease) = match php_target(php_version, site_owner).await {
+        Ok(target) => target,
+        Err(PoolError::Failed(error)) => return Err(error),
+        Err(error) => return Ok(php_unavailable(&error)),
+    };
     let deadline = Instant::now() + Duration::from_secs(3600);
-    timeout_at(deadline, fastcgi_request(&endpoint, &params, input, deadline))
+    timeout_at(deadline, fastcgi_request(&endpoint, lease, &params, input, deadline))
         .await
         .map_err(|_| "PHP-FPM request timed out".to_string())?
+}
+
+/// Where this site's PHP listens: a PHP-FPM socket, or a process of the
+/// php-cgi pool where the platform has no PHP-FPM.
+async fn php_target(
+    php_version: Option<&str>,
+    site_owner: Option<&str>,
+) -> Result<(FastCgiEndpoint, Option<Lease>), PoolError> {
+    if platform::current().uses_php_cgi_pool() {
+        let version = php_version.unwrap_or("8.3");
+        validate_php_version(version).map_err(PoolError::Failed)?;
+        let lease = php_cgi_pool::lease(site_owner.unwrap_or("shared"), version).await?;
+        return Ok((lease.endpoint(), Some(lease)));
+    }
+    let socket = resolve_fpm_socket(php_version, site_owner)
+        .await
+        .map_err(PoolError::Failed)?;
+    Ok((FastCgiEndpoint::Unix(socket), None))
+}
+
+fn php_unavailable(error: &PoolError) -> Response<Body> {
+    let message = match error {
+        PoolError::Busy => "PHP is busy; try again shortly.",
+        _ => "PHP is failing for this site and has been paused for a moment.",
+    };
+    let mut response = Response::new(Body::from(message));
+    *response.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+    response
+        .headers_mut()
+        .insert(header::RETRY_AFTER, HeaderValue::from_static("30"));
+    response
 }
 
 /// Runs `phpinfo()` through the same PHP-FPM pool that serves the site, so
@@ -187,11 +224,14 @@ pub(crate) async fn render_phpinfo(
     if let Some(version) = php_version {
         validate_php_version(version)?;
     }
-    let endpoint = FastCgiEndpoint::Unix(resolve_fpm_socket(php_version, site_owner).await?);
+    let (endpoint, lease) = php_target(php_version, site_owner).await.map_err(|error| match error {
+        PoolError::Failed(error) => error,
+        other => format!("PHP is unavailable: {other:?}"),
+    })?;
     let script = tokio::task::spawn_blocking(ensure_phpinfo_script)
         .await
         .map_err(|error| format!("phpinfo script worker failed: {error}"))??;
-    let script = script.to_string_lossy().into_owned();
+    let script = plain_path(&script).to_string_lossy().into_owned();
     let params: Vec<(String, String)> = vec![
         ("GATEWAY_INTERFACE".into(), "CGI/1.1".into()),
         ("SERVER_SOFTWARE".into(), "drust-edge-gateway".into()),
@@ -209,7 +249,7 @@ pub(crate) async fn render_phpinfo(
     let deadline = Instant::now() + Duration::from_secs(30);
     let response = timeout_at(
         deadline,
-        fastcgi_request(&endpoint, &params, RequestInput::Buffered(Bytes::new()), deadline),
+        fastcgi_request(&endpoint, lease, &params, RequestInput::Buffered(Bytes::new()), deadline),
     )
     .await
     .map_err(|_| "PHP-FPM request timed out".to_string())??;
@@ -235,8 +275,10 @@ fn ensure_phpinfo_script() -> Result<PathBuf, String> {
     Ok(script)
 }
 
+/// `lease` is held until PHP has finished, also while a response streams.
 async fn fastcgi_request(
     endpoint: &FastCgiEndpoint,
+    lease: Option<Lease>,
     params: &[(String, String)],
     input: RequestInput,
     deadline: Instant,
@@ -269,6 +311,7 @@ async fn fastcgi_request(
     let (sender, receiver) = mpsc::channel::<Result<Bytes, std::io::Error>>(8);
     let _ = sender.try_send(Ok(first));
     tokio::spawn(async move {
+        let _lease = lease;
         loop {
             let item = match timeout_at(deadline, read_fcgi_record(&mut stream)).await {
                 Ok(Ok(FcgiRecord::Stdout(content))) => Ok(Bytes::from(content)),
@@ -314,6 +357,9 @@ async fn connect_fpm(endpoint: &FastCgiEndpoint, deadline: Instant) -> Result<Fa
                     std::io::ErrorKind::NotFound
                         | std::io::ErrorKind::ConnectionRefused
                         | std::io::ErrorKind::WouldBlock
+                        // Windows sometimes reports a TCP connect done too early, and
+                        // setting the socket then fails with error 10022.
+                        | std::io::ErrorKind::InvalidInput
                 ) && Instant::now() < give_up =>
             {
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -625,7 +671,10 @@ async fn resolve_fpm_socket(
 /// the shared pool, which cannot read the site user's files, until it
 /// finished. Sites that already have their socket cost one `exists()` check.
 pub fn prewarm_site_pool(scope: &str, site_owner: Option<&str>, php_version: Option<&str>, runtime: &str) {
-    if scope.eq_ignore_ascii_case("system") || !runtime.eq_ignore_ascii_case("php") {
+    if scope.eq_ignore_ascii_case("system")
+        || !runtime.eq_ignore_ascii_case("php")
+        || platform::current().uses_php_cgi_pool()
+    {
         return;
     }
     let Some(owner) = site_owner.and_then(normalize_site_owner) else {
@@ -1008,7 +1057,7 @@ mod tests {
         for listener in listeners().await {
             let (endpoint, server) = fake_fpm(listener, 1000).await;
             let input = RequestInput::Buffered(Bytes::from_static(b"name=value"));
-            let response = fastcgi_request(&endpoint, &[], input, deadline()).await.unwrap();
+            let response = fastcgi_request(&endpoint, None, &[], input, deadline()).await.unwrap();
             // An exact size is what lets the edge cache store the page.
             assert_eq!(response.body().size_hint().exact(), Some(1000));
             assert_eq!(server.await.unwrap(), 10);
@@ -1022,7 +1071,7 @@ mod tests {
             let (endpoint, server) = fake_fpm(listener, output_len).await;
             let upload = vec![b'u'; 2 * 1024 * 1024 + 1];
             let input = RequestInput::Streamed { length: upload.len() as u64, body: Body::from(upload) };
-            let response = fastcgi_request(&endpoint, &[], input, deadline()).await.unwrap();
+            let response = fastcgi_request(&endpoint, None, &[], input, deadline()).await.unwrap();
             assert_eq!(response.headers().get(header::CONTENT_TYPE).unwrap(), "text/plain");
             assert_eq!(response.body().size_hint().exact(), None);
             let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -1040,7 +1089,7 @@ mod tests {
 
             let output_len = 3 * BUFFERED_RESPONSE_BYTES;
             let (endpoint, _server) = fake_fpm(listener, output_len).await;
-            let response = fastcgi_request(&endpoint, &[], RequestInput::Buffered(Bytes::new()), deadline()).await.unwrap();
+            let response = fastcgi_request(&endpoint, None, &[], RequestInput::Buffered(Bytes::new()), deadline()).await.unwrap();
             let mut response = Some(response);
             let service = ServiceBuilder::new()
                 .layer(super::super::compression::layer())
@@ -1089,7 +1138,7 @@ mod tests {
 
             let response = tokio::time::timeout(
                 Duration::from_secs(5),
-                fastcgi_request(&endpoint, &[], RequestInput::Buffered(Bytes::new()), deadline()),
+                fastcgi_request(&endpoint, None, &[], RequestInput::Buffered(Bytes::new()), deadline()),
             )
             .await
             .expect("an event stream must not wait for PHP to finish")
@@ -1115,7 +1164,7 @@ mod tests {
         for listener in listeners().await {
             let (endpoint, _server) = fake_fpm(listener, 10).await;
             let input = RequestInput::Streamed { length: 5000, body: Body::from(vec![0u8; 100]) };
-            let error = fastcgi_request(&endpoint, &[], input, deadline()).await.unwrap_err();
+            let error = fastcgi_request(&endpoint, None, &[], input, deadline()).await.unwrap_err();
             assert!(error.contains("Content-Length"), "{error}");
         }
     }

@@ -2,6 +2,7 @@
 
 namespace App\Services\Backup;
 
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
@@ -67,7 +68,7 @@ class CpanelMigrationArchive
 
         $date = \DateTimeImmutable::createFromFormat('Ymd_His', $timestamp) ?: new \DateTimeImmutable;
         $archive = $runDirectory.DIRECTORY_SEPARATOR.'backup-'.$date->format('m.d.Y_H-i-s').'_dpanel.tar.gz';
-        $result = Process::timeout(1200)->run(['tar', '-C', $stage, '-czf', $archive, 'homedir', 'mysql', 'meta']);
+        $result = self::tar('-czf', $archive, ['-C', $stage, 'homedir', 'mysql', 'meta'], 1200);
         File::deleteDirectory($stage);
 
         if (! $result->successful()) {
@@ -81,5 +82,20 @@ class CpanelMigrationArchive
         }
 
         return $archive;
+    }
+
+    /**
+     * Run tar on $archive from its own folder. GNU tar reads a colon before the
+     * first slash as host:path, so "D:/x.tar.gz" would mean a remote host, and
+     * its --force-local does not exist in bsdtar, the tar Windows ships. Git's
+     * GNU tar also cannot extract into a -C folder written with backslashes.
+     *
+     * @param  list<string>  $arguments
+     */
+    public static function tar(string $flags, string $archive, array $arguments = [], int $timeout = 120): ProcessResult
+    {
+        return Process::path(dirname($archive))
+            ->timeout($timeout)
+            ->run(['tar', $flags, './'.basename($archive), ...str_replace(DIRECTORY_SEPARATOR, '/', $arguments)]);
     }
 }

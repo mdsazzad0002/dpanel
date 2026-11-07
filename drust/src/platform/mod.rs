@@ -112,6 +112,18 @@ impl Platform {
         one_user(self.os, self.profile)
     }
 
+    /// PHP-FPM has no Windows build, so php-cgi processes stand in for it.
+    /// A Windows server needs them under site users first (task J4).
+    pub fn uses_php_cgi_pool(&self) -> bool {
+        self.os == Os::Windows && self.profile == Profile::Local
+    }
+
+    /// Section 11 of the spec: a developer's PC serves nobody but itself.
+    /// `0.0.0.0` becomes loopback; any other outside address is refused.
+    pub fn local_bind(&self, bind: &str) -> Result<String, String> {
+        local_bind(bind, self.one_user())
+    }
+
     /// Only a machine with real accounts has to be root.
     pub fn needs_root(&self) -> bool {
         !self.one_user()
@@ -120,6 +132,21 @@ impl Platform {
 
 fn one_user(os: Os, profile: Profile) -> bool {
     os != Os::Linux && profile == Profile::Local
+}
+
+fn local_bind(bind: &str, loopback_only: bool) -> Result<String, String> {
+    if !loopback_only {
+        return Ok(bind.to_string());
+    }
+    let address: std::net::SocketAddr =
+        bind.parse().map_err(|_| format!("invalid listen address: {bind}"))?;
+    if address.ip().is_loopback() {
+        Ok(bind.to_string())
+    } else if address.ip().is_unspecified() {
+        Ok(format!("127.0.0.1:{}", address.port()))
+    } else {
+        Err(format!("a local profile listens on loopback only, not {bind}"))
+    }
 }
 
 pub fn current() -> &'static Platform {
@@ -240,6 +267,15 @@ mod tests {
         assert!(!one_user(Os::Linux, Profile::Server));
         assert!(!one_user(Os::Windows, Profile::Server));
         assert!(!one_user(Os::Macos, Profile::Server));
+    }
+
+    #[test]
+    fn a_local_profile_never_listens_outside_this_machine() {
+        assert_eq!(local_bind("0.0.0.0:80", true).unwrap(), "127.0.0.1:80");
+        assert_eq!(local_bind("[::]:443", true).unwrap(), "127.0.0.1:443");
+        assert_eq!(local_bind("127.0.0.1:19080", true).unwrap(), "127.0.0.1:19080");
+        assert!(local_bind("192.0.2.1:80", true).is_err());
+        assert_eq!(local_bind("0.0.0.0:80", false).unwrap(), "0.0.0.0:80");
     }
 
     #[test]

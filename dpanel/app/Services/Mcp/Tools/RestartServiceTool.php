@@ -64,7 +64,7 @@ class RestartServiceTool implements McpTool
         if ($server === null && $this->localAccess->level() === LocalHostAccess::READ) {
             throw new McpToolException('The panel host only allows read-only MCP commands. An admin can allow fixes with: sudo dpanel mcp local on full');
         }
-        $quoted = escapeshellarg($unit);
+        $quoted = McpCommandExecutor::quote($unit);
 
         return $this->executor->run(
             $server,

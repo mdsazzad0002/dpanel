@@ -5,6 +5,7 @@ namespace App\Services\Mcp\Tools;
 use App\Models\McpAccessToken;
 use App\Models\Website;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpFileAccess;
 use App\Services\Mcp\McpToolException;
 
@@ -77,15 +78,15 @@ class CheckWebsiteTool implements McpTool
             throw new McpToolException('path must be a URL path without spaces.');
         }
 
-        $h = escapeshellarg($host);
-        $https = escapeshellarg("https://{$host}{$path}");
+        $h = McpCommandExecutor::quote($host);
+        $https = McpCommandExecutor::quote("https://{$host}{$path}");
         $timing = "'%{http_code}|%{time_namelookup}|%{time_connect}|%{time_appconnect}|%{time_starttransfer}|%{time_total}|%{size_download}|%{ssl_verify_result}|%{num_redirects}|%{url_effective}'";
         $server = $this->files->server($arguments['server_id'] ?? null);
 
         $raw = $this->files->run($server, implode("\n", [
             'echo @@dns; getent ahosts '.$h." 2>/dev/null | awk '{print \$1}' | sort -u",
             "echo @@server_ips; hostname -I 2>/dev/null | tr ' ' '\\n' | grep -v '^\$'",
-            "echo @@http; curl -s -o /dev/null -m 15 -w '%{http_code}|%{redirect_url}' ".escapeshellarg("http://{$host}{$path}").' 2>/dev/null; echo',
+            "echo @@http; curl -s -o /dev/null -m 15 -w '%{http_code}|%{redirect_url}' ".McpCommandExecutor::quote("http://{$host}{$path}").' 2>/dev/null; echo',
             "echo @@https; curl -sk -L --max-redirs 5 -o /dev/null -m 20 -w {$timing} {$https} 2>/dev/null; echo",
             "echo @@origin; curl -sk -o /dev/null -m 20 --resolve {$h}:443:127.0.0.1 -w {$timing} {$https} 2>/dev/null; echo",
             "echo @@headers; curl -skI -m 15 {$https} 2>/dev/null | tr -d '\\r' | head -n 40",

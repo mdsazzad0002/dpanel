@@ -5,6 +5,7 @@ namespace App\Services\Mcp\Tools;
 use App\Models\McpAccessToken;
 use App\Models\Server;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpFileAccess;
 use App\Services\Mcp\McpToolException;
 
@@ -59,7 +60,7 @@ class FileOperationTool implements McpTool
             throw new McpToolException('action must be one of: '.implode(', ', self::ACTIONS).'.');
         }
 
-        $path = $this->files->path($arguments['path'] ?? null);
+        $path = $this->files->path($arguments['path'] ?? null, serverId: $arguments['server_id'] ?? null);
         $recursive = (bool) ($arguments['recursive'] ?? false);
         $server = $this->files->server($arguments['server_id'] ?? null);
 
@@ -75,7 +76,7 @@ class FileOperationTool implements McpTool
             $this->files->guardTree($path);
         }
 
-        $quoted = escapeshellarg($path);
+        $quoted = McpCommandExecutor::quote($path);
         $flag = $recursive ? '-R ' : '';
 
         $result = match ($action) {
@@ -94,11 +95,11 @@ class FileOperationTool implements McpTool
      */
     private function transfer(string $action, ?Server $server, string $path, array $arguments, McpAccessToken $token): array
     {
-        $destination = $this->files->path($arguments['destination'] ?? null, 'destination');
+        $destination = $this->files->path($arguments['destination'] ?? null, 'destination', $arguments['server_id'] ?? null);
         $this->files->guardWrite($server, $destination, $token);
 
-        $source = escapeshellarg($path);
-        $target = escapeshellarg($destination);
+        $source = McpCommandExecutor::quote($path);
+        $target = McpCommandExecutor::quote($destination);
         $overwrite = (bool) ($arguments['overwrite'] ?? false);
 
         $this->files->run($server, implode("\n", array_filter([

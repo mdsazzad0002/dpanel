@@ -29,7 +29,7 @@ class CpanelMigrationArchiveTest extends TestCase
             $archive = app(CpanelMigrationArchive::class)->create($run, '20260805_123456');
 
             $this->assertSame('backup-08.05.2026_12-34-56_dpanel.tar.gz', basename($archive));
-            $listing = shell_exec('tar -tzf '.escapeshellarg($archive));
+            $listing = CpanelMigrationArchive::tar('-tzf', $archive)->output();
             $this->assertStringContainsString('homedir/app-data.zip', (string) $listing);
             $this->assertStringContainsString('mysql/database-mysql.sql', (string) $listing);
             $this->assertStringContainsString('meta/manifest.json', (string) $listing);
@@ -50,8 +50,7 @@ class CpanelMigrationArchiveTest extends TestCase
 
             $extract = $run.'/extract';
             File::ensureDirectoryExists($extract);
-            exec('tar -xzf '.escapeshellarg($archive).' -C '.escapeshellarg($extract), $output, $status);
-            $this->assertSame(0, $status);
+            $this->assertTrue(CpanelMigrationArchive::tar('-xzf', $archive, ['-C', $extract])->successful());
             $manifest = json_decode(File::get($extract.'/meta/manifest.json'), true, 512, JSON_THROW_ON_ERROR);
             $this->assertSame(CpanelMigrationArchive::FORMAT, $manifest['format']);
             $this->assertSame(hash_file('sha256', $extract.'/mysql/database-mysql.sql'), $manifest['artifacts']['mysql/database-mysql.sql']['sha256']);

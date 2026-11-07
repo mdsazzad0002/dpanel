@@ -1,6 +1,9 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+import { useServerBaseDir } from '@/composables/useServerBaseDir';
+
+const { baseDir } = useServerBaseDir();
 
 // The Docker part of the runtime settings drawer. Either the site runs its
 // own container (which image, the port it listens on, where the site's folder
@@ -138,7 +141,7 @@ const hint = 'mt-1.5 text-xs text-slate-500 dark:text-slate-400';
         <label for="docker-mount-target" :class="label">Site folder inside the container (optional)</label>
         <input id="docker-mount-target" v-model="model.mount_target" type="text" placeholder="/usr/share/nginx/html" :class="input" class="font-mono" />
         <p :class="hint">
-            The site's root folder <code>{{ rootPath || '/home/…' }}</code> appears at this path in the container.
+            The site's root folder <code>{{ rootPath || `${baseDir}/…` }}</code> appears at this path in the container.
             Upload and edit its files with this website's File Manager, then restart the container. Leave blank to mount nothing.
         </p>
     </div>

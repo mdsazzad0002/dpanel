@@ -147,4 +147,43 @@ class PathServiceTest extends TestCase
             $this->assertFalse(PathService::isAbsolutePath($relative), $relative);
         }
     }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function plainDrivePaths(): array
+    {
+        return [
+            'plain' => ['C:/Sites/shop/index.php', true],
+            'backslashes' => ['C:\\Sites\\shop\\index.php', true],
+            'drive root' => ['D:/', true],
+            'spaces and dots inside a name' => ['C:/My Sites/a.b.c/index.php', true],
+            'a name that starts like a device' => ['C:/Sites/console/null.php', true],
+            'a tilde without a digit' => ['C:/Sites/~backup/a~b.txt', true],
+            'POSIX' => ['/home/shop', false],
+            'UNC' => ['\\\\server\\share\\x', false],
+            'extended' => ['\\\\?\\C:\\x', false],
+            'device' => ['\\\\.\\C:\\x', false],
+            'drive relative' => ['C:x', false],
+            'bare drive' => ['C:', false],
+            'data stream' => ['C:/Sites/a.php::$DATA', false],
+            'data stream on a folder' => ['C:/Sites::$INDEX_ALLOCATION/a.php', false],
+            'named stream' => ['C:/Sites/a.php:x', false],
+            'trailing dot' => ['C:/Sites/a.php.', false],
+            'trailing dot on a folder' => ['C:/Sites./a.php', false],
+            'parent' => ['C:/Sites/../a.php', false],
+            'trailing space on a folder' => ['C:/Sites /a.php', false],
+            '8.3 name' => ['C:/PROGRA~1/a.php', false],
+            'wildcard' => ['C:/Sites/*.php', false],
+            'pipe' => ['C:/Sites/a|b', false],
+            'device name' => ['C:/Sites/NUL', false],
+            'device in lower case with extension' => ['C:/Sites/com1.txt', false],
+        ];
+    }
+
+    #[DataProvider('plainDrivePaths')]
+    public function test_plain_drive_paths(string $path, bool $expected): void
+    {
+        $this->assertSame($expected, PathService::isPlainDrivePath($path));
+    }
 }

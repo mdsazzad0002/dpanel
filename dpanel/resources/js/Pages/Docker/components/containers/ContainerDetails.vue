@@ -3,6 +3,9 @@ import { computed, ref, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
 import LogViewer from '../LogViewer.vue';
 import ContainerConsole from './ContainerConsole.vue';
+import { useServerBaseDir } from '@/composables/useServerBaseDir';
+
+const { isInsideBase } = useServerBaseDir();
 
 // Everything about one container in one place. Opens on a tab ('overview',
 // 'env', 'storage', 'network', 'console', 'logs') so "Logs" in the list jumps
@@ -225,7 +228,7 @@ const stateClass = (state) => ({
                                 <span v-if="m.read_only" class="text-[11px] text-slate-500">read-only</span>
                             </div>
                             <p class="mt-1 break-all font-mono text-xs text-slate-500">{{ m.type === 'volume' ? `volume ${m.name}` : m.source }}</p>
-                            <p v-if="m.type === 'bind' && m.source.startsWith('/home/')" class="mt-1 text-xs text-slate-500">Edit these files with the File Manager of the website that owns this folder.</p>
+                            <p v-if="m.type === 'bind' && isInsideBase(m.source)" class="mt-1 text-xs text-slate-500">Edit these files with the File Manager of the website that owns this folder.</p>
                         </li>
                     </ul>
                 </div>

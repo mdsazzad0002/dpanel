@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Http\Controllers\PanelSearchController;
 use App\Services\Mcp\GatewayChatTools;
 use App\Services\Docker\DrustDockerClient;
+use App\Services\PathService;
 use App\Support\Platform\PlatformCapabilities;
 use App\Support\UserAccessCache;
 use Illuminate\Http\Request;
@@ -52,6 +53,7 @@ class HandleInertiaRequests extends Middleware
             'panel' => [
                 'token' => $panelToken,
                 'domain' => config('serverpanel.panel_domain'),
+                'serverBaseDir' => $user ? PathService::websiteBaseDirectory() : null,
             ],
             'phpmyadmin' => [
                 'url' => trim((string) config('app.phpmyadmin_url', '')),

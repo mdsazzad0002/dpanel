@@ -49,7 +49,7 @@ class WriteFileTool implements McpTool
 
     public function handle(array $arguments, McpAccessToken $token): array
     {
-        $path = $this->files->path($arguments['path'] ?? null);
+        $path = $this->files->path($arguments['path'] ?? null, serverId: $arguments['server_id'] ?? null);
         if (! is_string($arguments['content'] ?? null)) {
             throw new McpToolException('content must be a string.');
         }

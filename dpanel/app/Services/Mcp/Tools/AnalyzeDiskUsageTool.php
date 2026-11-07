@@ -4,6 +4,7 @@ namespace App\Services\Mcp\Tools;
 
 use App\Models\McpAccessToken;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpFileAccess;
 
 class AnalyzeDiskUsageTool implements McpTool
@@ -44,11 +45,11 @@ class AnalyzeDiskUsageTool implements McpTool
 
     public function handle(array $arguments, McpAccessToken $token): array
     {
-        $path = $this->files->path($arguments['path'] ?? '/');
+        $path = $this->files->path($arguments['path'] ?? '/', serverId: $arguments['server_id'] ?? null);
         $top = max(1, min(50, (int) ($arguments['top'] ?? 15)));
         $server = $this->files->server($arguments['server_id'] ?? null);
         $this->files->guardRead($server, $path, $token);
-        $p = escapeshellarg($path);
+        $p = McpCommandExecutor::quote($path);
 
         $raw = $this->files->run($server, implode("\n", [
             "echo @@filesystems; df -hP -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null | tail -n +2 | awk '{print \$6\"|\"\$2\"|\"\$3\"|\"\$4\"|\"\$5}'",

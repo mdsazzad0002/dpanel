@@ -48,6 +48,6 @@ class ServiceStatusTool implements McpTool
         $server = $this->executor->resolveServer($arguments['server_id'] ?? null);
 
         // systemctl status exits 3 for an inactive unit; that's still a valid answer.
-        return $this->executor->run($server, 'systemctl status '.escapeshellarg($unit).' --no-pager --lines=30 2>&1 || true', $token, trusted: true);
+        return $this->executor->run($server, 'systemctl status '.McpCommandExecutor::quote($unit).' --no-pager --lines=30 2>&1 || true', $token, trusted: true);
     }
 }

@@ -106,7 +106,11 @@ class WebsiteCreateOnWindowsTest extends TestCase
 
     public function test_a_refused_account_step_stores_nothing(): void
     {
-        $this->createSite(['domain' => 'refused.test', 'include_www' => false], drustAccepts: false)->assertServerError();
+        $this->createSite(['domain' => 'refused.test', 'include_www' => false], drustAccepts: false)
+            ->assertStatus(422)
+            ->assertJsonPath('type', 'error')
+            ->assertJsonPath('message', 'Website account setup failed.')
+            ->assertJsonPath('errors.account.0', 'home is not allowed');
 
         $this->assertFalse(Website::query()->where('domain', 'refused.test')->exists());
     }

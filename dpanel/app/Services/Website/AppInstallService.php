@@ -534,7 +534,7 @@ class AppInstallService
             $zip->close();
 
             $source = realpath($workDir.'/'.rtrim($base, '/'));
-            if ($source === false || ! str_starts_with($source, realpath($workDir).'/')) {
+            if ($source === false || ! str_starts_with($source, realpath($workDir).DIRECTORY_SEPARATOR)) {
                 return ['success' => false, 'output' => 'Unexpected WHMCS package layout.'];
             }
             $flat = new \ZipArchive();
@@ -544,7 +544,7 @@ class AppInstallService
             $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($source, \FilesystemIterator::SKIP_DOTS));
             foreach ($files as $file) {
                 if ($file->isFile() && ! $file->isLink()) {
-                    $flat->addFile($file->getPathname(), substr($file->getPathname(), strlen($source) + 1));
+                    $flat->addFile($file->getPathname(), str_replace(DIRECTORY_SEPARATOR, '/', substr($file->getPathname(), strlen($source) + 1)));
                 }
             }
             $flat->close();

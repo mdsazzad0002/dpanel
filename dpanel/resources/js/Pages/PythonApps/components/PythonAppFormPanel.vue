@@ -3,6 +3,7 @@ import Offcanvas from '@/Components/Offcanvas.vue';
 import InputError from '@/Components/InputError.vue';
 import { useForm } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
+import { useServerBaseDir } from '@/composables/useServerBaseDir';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -29,7 +30,8 @@ const blank = () => ({
 });
 const form = useForm(blank());
 const editing = computed(() => !!props.app);
-const home = computed(() => (form.site_owner ? `/home/${form.site_owner}/` : '/home/…/'));
+const { baseDir, ownerHome } = useServerBaseDir();
+const home = computed(() => (form.site_owner ? `${ownerHome(form.site_owner)}/` : `${baseDir.value}/…/`));
 
 watch(() => props.show, (open) => {
     if (!open) return;
@@ -81,7 +83,7 @@ const submit = () => {
             <div>
                 <label class="mb-1 block text-sm font-medium">Home directory</label>
                 <select v-model="form.site_owner" :disabled="editing" class="w-full rounded-lg border-slate-300 text-sm disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900">
-                    <option v-for="owner in owners" :key="owner" :value="owner">/home/{{ owner }}</option>
+                    <option v-for="owner in owners" :key="owner" :value="owner">{{ ownerHome(owner) }}</option>
                 </select>
                 <InputError :message="form.errors.site_owner" class="mt-1" />
             </div>

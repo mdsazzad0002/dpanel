@@ -52,19 +52,19 @@ class ReadServiceLogsTool implements McpTool
         $lines = max(1, min(1000, (int) ($arguments['lines'] ?? 200)));
         $server = $this->executor->resolveServer($arguments['server_id'] ?? null);
 
-        $command = 'journalctl -u '.escapeshellarg($unit).' -n '.$lines.' --no-pager -o short-iso';
+        $command = 'journalctl -u '.McpCommandExecutor::quote($unit).' -n '.$lines.' --no-pager -o short-iso';
 
         $since = trim((string) ($arguments['since'] ?? ''));
         if ($since !== '') {
             if (preg_match('/^[A-Za-z0-9 :.\-+]{1,40}$/', $since) !== 1) {
                 throw new McpToolException('since may only contain letters, digits, spaces and : . - +');
             }
-            $command .= ' --since '.escapeshellarg($since);
+            $command .= ' --since '.McpCommandExecutor::quote($since);
         }
 
         $grep = (string) ($arguments['grep'] ?? '');
         if ($grep !== '') {
-            $command .= ' --grep '.escapeshellarg(mb_substr($grep, 0, 200)).' --case-sensitive=false';
+            $command .= ' --grep '.McpCommandExecutor::quote(mb_substr($grep, 0, 200)).' --case-sensitive=false';
         }
 
         return $this->executor->run($server, $command.' 2>&1', $token, trusted: true);

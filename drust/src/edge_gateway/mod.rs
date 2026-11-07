@@ -8,6 +8,7 @@ mod h3_listener;
 mod matching;
 mod node_process;
 pub(crate) mod php;
+mod php_cgi_pool;
 mod precompress;
 mod proxy;
 mod python_process;

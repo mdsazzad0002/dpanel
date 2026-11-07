@@ -2,6 +2,9 @@
 import { computed, onMounted, ref } from 'vue';
 import DockerShell from './components/DockerShell.vue';
 import { useDocker } from './composables/useDocker';
+import { useServerBaseDir } from '@/composables/useServerBaseDir';
+
+const { baseDir } = useServerBaseDir();
 
 const docker = useDocker();
 const { status, loading, loadError, busy, message, act, post, get } = docker;
@@ -130,6 +133,6 @@ onMounted(load);
                 <button type="button" :disabled="busy === 'prune-all'" class="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-40 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950" @click="prune(true)"><i class="bi bi-exclamation-triangle mr-1"></i>Delete all unused volumes</button>
             </div>
         </section>
-        <p class="text-xs text-slate-500">Volume files live under Docker's folder on the server, which the File Manager does not open. To edit an app's files yourself, mount a folder inside a website's home instead (e.g. <code>/home/site-user/docker/app</code>).</p>
+        <p class="text-xs text-slate-500">Volume files live under Docker's folder on the server, which the File Manager does not open. To edit an app's files yourself, mount a folder inside a website's home instead (e.g. <code>{{ baseDir }}/site-user/docker/app</code>).</p>
     </DockerShell>
 </template>

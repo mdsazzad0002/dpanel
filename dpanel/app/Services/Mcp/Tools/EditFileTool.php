@@ -49,7 +49,7 @@ class EditFileTool implements McpTool
 
     public function handle(array $arguments, McpAccessToken $token): array
     {
-        $path = $this->files->path($arguments['path'] ?? null);
+        $path = $this->files->path($arguments['path'] ?? null, serverId: $arguments['server_id'] ?? null);
         $old = $arguments['old_string'] ?? null;
         $new = $arguments['new_string'] ?? null;
 

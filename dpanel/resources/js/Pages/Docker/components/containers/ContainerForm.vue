@@ -2,6 +2,9 @@
 import { computed, ref, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
 import { blankSpec, formToSpec, parseDockerRun, parseEnvLines, specToForm } from '../../composables/runSpec';
+import { useServerBaseDir } from '@/composables/useServerBaseDir';
+
+const { baseDir } = useServerBaseDir();
 
 // One form for "Run a container", "Edit and recreate" and "Duplicate": the
 // basics up front, the rest under "More options", and two shortcuts — paste a
@@ -178,10 +181,10 @@ const labelCls = 'mb-1 block text-xs font-medium text-slate-600 dark:text-slate-
                         <button type="button" :class="small" @click="form.volumes.push({ source: '', target: '', read_only: false })"><i class="bi bi-plus"></i> Add volume</button>
                     </div>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        A plain name (<code>my-data</code>) makes a named volume Docker manages. A folder in a website's home (<code>/home/site-user/docker/my-app</code>) can be edited with that website's File Manager.
+                        A plain name (<code>my-data</code>) makes a named volume Docker manages. A folder in a website's home (<code>{{ baseDir }}/site-user/docker/my-app</code>) can be edited with that website's File Manager.
                     </p>
                     <div v-for="(volume, i) in form.volumes" :key="'v' + i" class="mt-2 grid grid-cols-2 items-center gap-2 md:grid-cols-[1fr_1fr_auto_auto]">
-                        <input v-model="volume.source" type="text" placeholder="my-data or /home/user/folder" :class="input" class="font-mono" aria-label="Volume or host folder" />
+                        <input v-model="volume.source" type="text" :placeholder="`my-data or ${baseDir}/user/folder`" :class="input" class="font-mono" aria-label="Volume or host folder" />
                         <input v-model="volume.target" type="text" placeholder="/path/in/container" :class="input" class="font-mono" aria-label="Path in container" />
                         <label class="flex items-center gap-1 text-xs"><input v-model="volume.read_only" type="checkbox" /> Read-only</label>
                         <button type="button" :class="small" aria-label="Remove volume" @click="form.volumes.splice(i, 1)"><i class="bi bi-x-lg"></i></button>

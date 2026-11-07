@@ -4,6 +4,7 @@ namespace App\Services\Mcp\Tools;
 
 use App\Models\McpAccessToken;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpFileAccess;
 use App\Services\Mcp\McpToolException;
 
@@ -54,7 +55,7 @@ class SearchFilesTool implements McpTool
 
     public function handle(array $arguments, McpAccessToken $token): array
     {
-        $path = $this->files->path($arguments['path'] ?? null);
+        $path = $this->files->path($arguments['path'] ?? null, serverId: $arguments['server_id'] ?? null);
         $pattern = (string) ($arguments['pattern'] ?? '');
         $name = trim((string) ($arguments['name'] ?? ''));
         $max = max(1, min(1000, (int) ($arguments['max_results'] ?? 200)));
@@ -70,19 +71,19 @@ class SearchFilesTool implements McpTool
         $this->files->guardRead($server, $path, $token);
 
         $excludedDirs = ['.git', 'node_modules', ...(($arguments['include_vendor'] ?? false) ? [] : ['vendor'])];
-        $quoted = escapeshellarg($path);
+        $quoted = McpCommandExecutor::quote($path);
 
         if ($pattern !== '') {
             $flags = '-rIn --color=never -m 20 '.(($arguments['regex'] ?? false) ? '-E' : '-F').(($arguments['case_insensitive'] ?? false) ? ' -i' : '');
             $options = [
-                ...array_map(fn ($dir) => '--exclude-dir='.escapeshellarg($dir), $excludedDirs),
-                ...($name !== '' ? ['--include='.escapeshellarg($name)] : []),
-                ...($token->allowsMutations() ? [] : array_map(fn ($file) => '--exclude='.escapeshellarg($file), self::READ_ONLY_EXCLUDES)),
+                ...array_map(fn ($dir) => '--exclude-dir='.McpCommandExecutor::quote($dir), $excludedDirs),
+                ...($name !== '' ? ['--include='.McpCommandExecutor::quote($name)] : []),
+                ...($token->allowsMutations() ? [] : array_map(fn ($file) => '--exclude='.McpCommandExecutor::quote($file), self::READ_ONLY_EXCLUDES)),
             ];
-            $command = "grep {$flags} ".implode(' ', $options).' -e '.escapeshellarg($pattern)." -- {$quoted} 2>/dev/null | cut -c1-400 | head -n ".($max + 1);
+            $command = "grep {$flags} ".implode(' ', $options).' -e '.McpCommandExecutor::quote($pattern)." -- {$quoted} 2>/dev/null | cut -c1-400 | head -n ".($max + 1);
         } else {
-            $prune = implode(' -o ', array_map(fn ($dir) => '-name '.escapeshellarg($dir), $excludedDirs));
-            $command = "find {$quoted} \\( {$prune} \\) -prune -o -name ".escapeshellarg($name)." -printf '%p\\t%y\\t%s\\t%TY-%Tm-%Td %TH:%TM\\n' 2>/dev/null | head -n ".($max + 1);
+            $prune = implode(' -o ', array_map(fn ($dir) => '-name '.McpCommandExecutor::quote($dir), $excludedDirs));
+            $command = "find {$quoted} \\( {$prune} \\) -prune -o -name ".McpCommandExecutor::quote($name)." -printf '%p\\t%y\\t%s\\t%TY-%Tm-%Td %TH:%TM\\n' 2>/dev/null | head -n ".($max + 1);
         }
 
         $output = $this->files->run($server, "test -d {$quoted} || { echo 'Not a directory:' {$quoted}; exit 2; }\n".$command, $token, outputLimit: 500000);

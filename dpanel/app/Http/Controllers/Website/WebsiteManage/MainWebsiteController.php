@@ -254,7 +254,17 @@ class MainWebsiteController extends Controller
             $pythonTimeout = $parentWebsite->python_timeout;
             $demoFiles = [];
         } else {
-            $homeSetup = $this->filemanagerService->createAccountHome($siteOwner, null, '/bin/bash', $siteDirectory);
+            try {
+                $homeSetup = $this->filemanagerService->createAccountHome($siteOwner, null, '/bin/bash', $siteDirectory);
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'type' => 'error',
+                    'message' => 'Website account setup failed.',
+                    'errors' => [
+                        'account' => [$e->getMessage()],
+                    ],
+                ], 422);
+            }
             $projectRoot = $homeSetup['project_root'];
             $rootPath = $homeSetup['root_path'] ?? $homeSetup['public_html'];
             $startDirectory = array_key_exists('start_directory', $validated) ? trim((string) $validated['start_directory']) : null;

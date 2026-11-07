@@ -5,6 +5,7 @@ namespace App\Services\Mcp\Tools;
 use App\Models\McpAccessToken;
 use App\Models\Website;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpFileAccess;
 use App\Services\Mcp\McpToolException;
 
@@ -65,9 +66,10 @@ class FindWebsiteErrorsTool implements McpTool
             throw new McpToolException("No website found for {$domain}. Call list_websites to search.");
         }
 
+        $serverId = $arguments['server_id'] ?? null;
         $directories = collect([$site->project_root, $site->root_path])
-            ->filter(fn ($path) => is_string($path) && str_starts_with($path, '/'))
-            ->map(fn (string $path) => $this->files->path($path))
+            ->filter(fn ($path) => is_string($path) && $this->files->accepts($path, $serverId))
+            ->map(fn (string $path) => $this->files->path($path, serverId: $serverId))
             ->unique()
             ->values()
             ->all();
@@ -79,14 +81,14 @@ class FindWebsiteErrorsTool implements McpTool
 
         $url = ($site->enable_ssl ? 'https' : 'http').'://'.$site->domain.'/';
         $minutes = $days * 1440;
-        $roots = implode(' ', array_map('escapeshellarg', $directories));
+        $roots = implode(' ', array_map(McpCommandExecutor::quote(...), $directories));
         $fpmLog = $site->php_version && preg_match('/^\d+\.\d+$/', (string) $site->php_version) === 1
-            ? escapeshellarg("/var/log/php{$site->php_version}-fpm.log")
+            ? McpCommandExecutor::quote("/var/log/php{$site->php_version}-fpm.log")
             : '';
 
         $report = $this->files->run($server, implode("\n", array_filter([
-            'echo '.escapeshellarg("### HTTP check: {$url}"),
-            "curl -sk -o /dev/null -m 15 -w '%{http_code} in %{time_total}s\\n' ".escapeshellarg($url)." 2>&1 || echo 'request failed'",
+            'echo '.McpCommandExecutor::quote("### HTTP check: {$url}"),
+            "curl -sk -o /dev/null -m 15 -w '%{http_code} in %{time_total}s\\n' ".McpCommandExecutor::quote($url)." 2>&1 || echo 'request failed'",
             "echo '### Recent errors'",
             '{',
             '  :',
@@ -94,7 +96,7 @@ class FindWebsiteErrorsTool implements McpTool
             $fpmLog !== '' ? "  [ -f {$fpmLog} ] && echo {$fpmLog}" : null,
             '} | sort -u | head -n 20 | while IFS= read -r f; do',
             '  echo "=== $f ($(stat -c \'%s bytes, modified %y\' -- "$f" | cut -d. -f1))"',
-            '  tail -n 5000 -- "$f" | grep -iE '.escapeshellarg($pattern)." | tail -n {$lines} | cut -c1-600",
+            '  tail -n 5000 -- "$f" | grep -iE '.McpCommandExecutor::quote($pattern)." | tail -n {$lines} | cut -c1-600",
             'done',
             'true',
         ])), $token, outputLimit: 60000);

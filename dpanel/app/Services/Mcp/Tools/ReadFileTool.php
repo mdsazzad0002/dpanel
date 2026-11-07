@@ -4,6 +4,7 @@ namespace App\Services\Mcp\Tools;
 
 use App\Models\McpAccessToken;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpFileAccess;
 use App\Services\Mcp\McpToolException;
 
@@ -50,14 +51,14 @@ class ReadFileTool implements McpTool
 
     public function handle(array $arguments, McpAccessToken $token): array
     {
-        $path = $this->files->path($arguments['path'] ?? null);
+        $path = $this->files->path($arguments['path'] ?? null, serverId: $arguments['server_id'] ?? null);
         $offset = max(1, (int) ($arguments['offset'] ?? 1));
         $limit = max(1, min(5000, (int) ($arguments['limit'] ?? 1000)));
         $last = $offset + $limit - 1;
         $server = $this->files->server($arguments['server_id'] ?? null);
         $this->files->guardRead($server, $path, $token);
 
-        $quoted = escapeshellarg($path);
+        $quoted = McpCommandExecutor::quote($path);
         $max = self::MAX_BYTES;
 
         $output = $this->files->run($server, implode("\n", [

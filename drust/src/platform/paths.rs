@@ -97,6 +97,48 @@ fn php_places(
     }
 }
 
+/// Where a php-cgi of `version` can be, best first. Windows only: other
+/// systems have PHP-FPM. Besides dPanel's own copy, a PHP on `PATH` shows where
+/// a stack such as WampServer keeps its versions, as `<root>\php8.3.28`.
+fn php_cgi_places(
+    os: Os,
+    runtime_dir: &Path,
+    version: &str,
+    path_dirs: impl Iterator<Item = PathBuf>,
+    is_file: impl Fn(&Path) -> bool,
+    list_dir: impl Fn(&Path) -> Vec<PathBuf>,
+) -> Vec<PathBuf> {
+    if os != Os::Windows {
+        return Vec::new();
+    }
+    let prefix = format!("php{version}.");
+    let patch = |dir: &Path| {
+        let name = dir.file_name()?.to_str()?;
+        name.strip_prefix(&prefix)?.parse::<u32>().ok()
+    };
+    let mut stacks: Vec<(u32, PathBuf)> = path_dirs
+        .filter(|dir| is_file(&dir.join("php.exe")))
+        .filter_map(|dir| dir.parent().map(Path::to_path_buf))
+        .flat_map(|root| list_dir(&root))
+        .filter_map(|dir| patch(&dir).map(|patch| (patch, dir)))
+        .collect();
+    stacks.sort_by(|a, b| b.cmp(a));
+    std::iter::once(runtime_dir.join("php").join(version))
+        .chain(stacks.into_iter().map(|(_, dir)| dir))
+        .map(|dir| dir.join("php-cgi.exe"))
+        .collect()
+}
+
+/// `canonicalize` on Windows gives `\\?\C:\site`, which not every program
+/// accepts. Network paths keep their prefix.
+pub fn plain_path(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
 /// The one CLI to run. Linux always means its first place, so a copy elsewhere
 /// is never picked up by accident; the others take the first that is there.
 fn chosen_php(os: Os, mut places: Vec<PathBuf>, is_file: impl Fn(&Path) -> bool) -> PathBuf {
@@ -184,7 +226,8 @@ impl Paths {
                 let base = format!(r"{}\dPanel", var("LOCALAPPDATA", r"C:\ProgramData"));
                 let profile_dir = var("USERPROFILE", r"C:\Users\Public");
                 (
-                    format!(r"{base}\panel"),
+                    // A developer's panel lives in their checkout.
+                    env("DPANEL_PANEL_ROOT").unwrap_or_else(|| format!(r"{base}\panel")),
                     format!(r"{base}\config"),
                     format!(r"{base}\data"),
                     format!(r"{profile_dir}\dPanel\sites"),
@@ -313,6 +356,22 @@ impl Paths {
         chosen_php(self.os, self.php_candidates(version), Path::is_file)
     }
 
+    /// The php-cgi of `version`, which is already validated, like `8.3`.
+    pub fn php_cgi(&self, version: &str) -> Result<PathBuf, PlatformError> {
+        let path_var = env::var_os("PATH").unwrap_or_default();
+        let list_dir = |dir: &Path| {
+            std::fs::read_dir(dir)
+                .map(|entries| entries.filter_map(Result::ok).map(|entry| entry.path()).collect())
+                .unwrap_or_default()
+        };
+        php_cgi_places(self.os, &self.runtime_dir, version, env::split_paths(&path_var), Path::is_file, list_dir)
+            .into_iter()
+            .find(|path| path.is_file())
+            .ok_or_else(|| PlatformError::NotFound {
+                what: format!("php-cgi for PHP {version} is not installed"),
+            })
+    }
+
     /// Every place an installed Python `version` can be, best first.
     pub fn python_candidates(&self, version: &str) -> Vec<PathBuf> {
         python_places(self.os, &self.runtime_dir, version)
@@ -342,6 +401,9 @@ mod tests {
 
     fn paths(os: Os, profile: Profile) -> Paths {
         Paths::for_system(os, profile, |name| {
+            if name == "DPANEL_PANEL_ROOT" {
+                return None;
+            }
             Some(
                 match name {
                     "ProgramFiles" => r"D:\Apps",
@@ -365,6 +427,32 @@ mod tests {
             paths.data_dir.to_str().unwrap(),
             paths.sites_root.to_str().unwrap(),
         ]
+    }
+
+    #[test]
+    fn php_cgi_comes_from_dpanel_then_the_newest_patch_of_the_stack_on_path() {
+        let cgi = |dir: &str| Path::new(dir).join("php-cgi.exe");
+        let places = php_cgi_places(
+            Os::Windows,
+            Path::new("D:/rt"),
+            "8.3",
+            ["D:/none", "D:/wamp/php8.2.1"].map(PathBuf::from).into_iter(),
+            |path| path == Path::new("D:/wamp/php8.2.1").join("php.exe"),
+            |_| ["D:/wamp/php8.3.9", "D:/wamp/php8.3.28", "D:/wamp/php8.2.1", "D:/wamp/php8.30.0"].map(PathBuf::from).to_vec(),
+        );
+        assert_eq!(
+            places,
+            [Path::new("D:/rt").join("php").join("8.3").join("php-cgi.exe"), cgi("D:/wamp/php8.3.28"), cgi("D:/wamp/php8.3.9")]
+        );
+        let none = php_cgi_places(Os::Linux, Path::new("/rt"), "8.3", std::iter::empty(), |_| true, |_| Vec::new());
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn plain_path_drops_only_a_drive_paths_verbatim_prefix() {
+        assert_eq!(plain_path(Path::new(r"\\?\C:\site\index.php")), Path::new(r"C:\site\index.php"));
+        assert_eq!(plain_path(Path::new(r"\\?\UNC\host\share")), Path::new(r"\\?\UNC\host\share"));
+        assert_eq!(plain_path(Path::new("/home/a/index.php")), Path::new("/home/a/index.php"));
     }
 
     /// These are live servers' paths: changing one strands their data.

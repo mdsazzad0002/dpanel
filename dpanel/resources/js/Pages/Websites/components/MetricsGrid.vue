@@ -2,6 +2,7 @@
 import { computed, inject, ref } from 'vue';
 import { Deferred } from '@inertiajs/vue3';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+import { useServerBaseDir } from '@/composables/useServerBaseDir';
 
 const props = defineProps({
     website: {
@@ -69,9 +70,10 @@ const gitSafeDirectoryCommand = computed(() => {
     return path ? `git config --global --add safe.directory ${path}` : '';
 });
 
-// The panel can only run these for a website account under /home; the
-// /var/www system site keeps the copy-and-run commands only.
-const canRunLocalDevActions = computed(() => String(props.website?.root_path || '').startsWith('/home/'));
+// The panel can only run these for a website account under the base folder;
+// the /var/www system site keeps the copy-and-run commands only.
+const { isInsideBase } = useServerBaseDir();
+const canRunLocalDevActions = computed(() => isInsideBase(props.website?.root_path));
 const hasGit = computed(() => Boolean(props.rootInspection?.has_git));
 const showCommands = ref(false);
 const localDevLoading = ref('');

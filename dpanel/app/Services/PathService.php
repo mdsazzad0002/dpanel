@@ -64,6 +64,34 @@ class PathService
         return preg_match('#^[A-Za-z]:(/|$)#', self::normalizeAbsolutePath($path)) === 1;
     }
 
+    /** Whether paths on this host start at a drive letter. */
+    public static function hostUsesDrivePaths(): bool
+    {
+        return DIRECTORY_SEPARATOR === '\\';
+    }
+
+    /**
+     * Whether Windows opens exactly the file this drive path names. Refuses UNC
+     * and device paths, "C:x", streams ("a::$DATA"), trailing dots and spaces
+     * (Windows drops them, so "a.env." is "a.env"), 8.3 aliases ("WP-CON~1.PHP"),
+     * wildcards and device names ("NUL", "COM1.txt").
+     */
+    public static function isPlainDrivePath(string $path): bool
+    {
+        $path = self::normalizeAbsolutePath($path);
+        if (preg_match('#^[A-Za-z]:/#', $path) !== 1) {
+            return false;
+        }
+
+        foreach (explode('/', substr($path, 3)) as $segment) {
+            if ($segment !== '' && preg_match('/[:*?"<>|]|~\d|[. ]$|^(?:CON|PRN|AUX|NUL|COM\d|LPT\d)(?:\.|$)/i', $segment) === 1) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
      * $path below $base without a leading slash, '' for $base itself, or null
      * when $path is outside $base.
