@@ -232,10 +232,6 @@ macOS-এ Linux-এর cgroup বা Windows-এর Job Object-এর মতো 
 
 **Hard limit চাইলে: tenant VM।** `ResourceLimiter`-এর দ্বিতীয় implementation হিসেবে customer-এর site একটা হালকা VM-এ চলবে। এতে hard limit পাওয়া যায়, কিন্তু প্রতি site-এ বেশি RAM লাগে, আর site-এর ভেতরের অংশ তখন আর native থাকে না। এটা পরে, দরকার হলে।
 
-**License: dPanel-এর জন্য বাধা নয়।** dPanel সবার জন্য free, তাই dPanel বিতরণ করায় macOS-এর leasing শর্তের প্রশ্ন আসে না। Apple-এর license-এ Mac lease দেওয়ার শর্ত আছে (Big Sur-এর সময়ের terms; বর্তমান text যাচাই করা হয়নি), কিন্তু সেটা Mac ভাড়া দেওয়ার ব্যাপার।
-
-তবে dPanel-এর license ব্যবহারকারীদের hosting বিক্রির অনুমতি দেয়। তাই কেউ Mac-এ বাণিজ্যিক hosting চালাতে চাইলে তার নিজের Apple license দেখে নেওয়া উচিত, এই এক লাইনের সতর্কতা docs-এ দিন।
-
 **Hardware:** Apple hardware ছাড়া চলবে না। Data center-এ Mac mini/Studio, আর OS update-এর reboot সামলানোর ব্যবস্থা লাগবে।
 
 ### নতুন interface
@@ -309,7 +305,6 @@ Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আট�
 | Windows-এ production mail-এর deliverability ও maintenance | বেশি | Phase 6 spike; দরকার হলে প্রথম সংস্করণ mail ছাড়া ছাড়ুন |
 | দুই mail stack (Postfix ও Stalwart) maintain করা | বেশি | `MailBackend` interface, দুই stack-এই একই test |
 | macOS-এ soft limit-এর কারণে এক customer অন্যদের ধীর করে | বেশি | Supervisor test, কম density, দরকারে tenant VM |
-| dPanel free, কিন্তু Windows Server-এর license ব্যবহারকারীকে কিনতে হয় | মাঝারি | Docs-এ পরিষ্কার লিখুন; Linux free বিকল্প হিসেবে থাকবে |
 | Free project-এ signing ও test hardware-এর খরচ আয় ছাড়াই আসে | মাঝারি | Donation বা sponsor; খরচ কম রাখতে GitHub-hosted runner |
 | তিন platform maintain করার খরচ | বেশি | Capability flag, CI, desktop-এ feature সীমিত রাখা |
 | Windows-এ কিছু PHP extension না পাওয়া | মাঝারি | সমর্থিত PHP extension-এর তালিকা প্রকাশ করুন |
@@ -340,6 +335,6 @@ Signing ছাড়া Windows SmartScreen ও macOS Gatekeeper install আট�
 - [Job Object limits](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information), [Job Object CPU rate](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_cpu_rate_control_information)
 - [APFS quota: `addVolume`](https://eclecticlight.co/2017/04/08/how-to-make-your-own-apfs-volume/), [quota বদলানোর সীমা](https://openradar.appspot.com/34096467), [macOS 13 quota report](https://mjtsai.com/blog/2021/01/19/how-to-reserve-time-machine-space-on-an-apfs-drive/)
 - [macOS rlimit report](https://ai-fast-downward.dmi.unibas.ch/issue825), [Darwin limit code](https://docs.rs/crate/vetto/latest/source/src/sandbox/macos/limits.rs)
-- [macOS leasing terms](https://9to5mac.com/2020/11/11/macos-big-sur-adds-leasing-terms-that-pull-hosting-services-like-macstadium-out-of-a-legal-gray-area/), [macOS Server বন্ধ](https://www.macworld.com/article/634243/apple-discontinues-macos-server-after-23-years.html)
+- [macOS Server বন্ধ](https://www.macworld.com/article/634243/apple-discontinues-macos-server-after-23-years.html)
 - [instant-acme](https://docs.rs/crate/instant-acme/latest/source/README.md), [libunftp](https://docs.rs/crate/libunftp/latest), [ClamAV on Windows](https://docs.clamav.net/faq/faq-win32.html)
 - Compile result: `cargo check` (2026-11-07), repo-র একটা scratch copy-তে চালানো
