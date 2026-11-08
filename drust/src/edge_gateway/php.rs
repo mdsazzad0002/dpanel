@@ -733,6 +733,7 @@ fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(),
     let mut created = false;
     if !pool_path.exists() {
         let max_children = site_pool_max_children();
+        let error_log = prepare_php_error_log(owner);
         let content = format!(
             "; Managed dynamically by drust edge gateway.\n\
              [{owner}]\n\
@@ -746,7 +747,7 @@ fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(),
              pm.max_children = {max_children}\n\
              pm.process_idle_timeout = 300s\n\
              pm.max_requests = 500\n\
-             security.limit_extensions = .php\n",
+             security.limit_extensions = .php\n{error_log}",
             socket.display()
         );
         fs::write(&pool_path, content).map_err(|error| {
@@ -782,6 +783,31 @@ fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(),
         "PHP-FPM pool was provisioned but its socket did not start: {}",
         socket.display()
     ))
+}
+
+/// Pool lines that send this account's PHP errors to its own log (S4), read
+/// in the panel through `GET /sites/logs`. Empty when the folder cannot be
+/// made the account's: PHP then logs where it did before.
+fn prepare_php_error_log(owner: &str) -> String {
+    let log = super::site_logs::php_error_log(owner);
+    let Some(dir) = log.parent() else { return String::new() };
+    let made = fs::create_dir_all(dir).map_err(|error| error.to_string()).and_then(|_| {
+        let account = crate::platform::accounts().lookup(owner).map_err(|error| error.to_string())?;
+        let files = crate::platform::files();
+        files.set_owner(dir, &account).map_err(|error| error.to_string())?;
+        files.set_mode(dir, crate::platform::fs::FileMode::SiteDir).map_err(|error| error.to_string())
+    });
+    match made {
+        Ok(()) => php_error_log_lines(&log),
+        Err(error) => {
+            tracing::warn!(owner, %error, "PHP error log folder not prepared; keeping the default log");
+            String::new()
+        }
+    }
+}
+
+fn php_error_log_lines(log: &Path) -> String {
+    format!("php_admin_flag[log_errors] = on\nphp_admin_value[error_log] = {}\n", log.display())
 }
 
 /// A managed pool whose Linux user was deleted (e.g. the website was removed

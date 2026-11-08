@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
+use App\Services\Dns\Backend\DnsBackend;
+use App\Services\Dns\Backend\ZoneSpec;
 use App\Models\Mailbox;
 use App\Models\User;
 use App\Models\Website;
@@ -354,10 +356,7 @@ class DnsController extends Controller
         $validated['email'] = $validated['email'] ?: "hostmaster@{$domain}";
         $zoneType = $this->uiZoneTypeToPdns($validated['type']);
         $this->pdns()->transaction(function () use ($request, $domain, $zoneType, $validated): void {
-            $zoneId = (int) $this->pdns()->table('domains')->insertGetId([
-                'name' => $domain,
-                'type' => $zoneType,
-            ]);
+            $zoneId = $this->backend()->upsertZone(new ZoneSpec($domain, strtolower($zoneType)));
             $actor = $request->user();
             $website = Website::query()->visibleTo($actor)->whereRaw('LOWER(domain) = ?', [$domain])->first();
             DnsZone::query()->create([
@@ -371,7 +370,7 @@ class DnsController extends Controller
                 'created_by_user_id' => $actor?->id,
                 'owner_user_id' => $website?->assigned_user_id ?? $website?->assigned_reseller_id ?? $actor?->id,
                 'source' => $website ? 'website' : 'standalone',
-                'provider' => 'powerdns',
+                'provider' => $this->backend()->name(),
                 'mode' => 'authoritative',
             ]);
             $this->upsertSoaRecord($zoneId, $domain, $validated);
@@ -409,10 +408,8 @@ class DnsController extends Controller
         }
 
         $this->pdns()->transaction(function () use ($zoneId, $validated, $oldDomain, $newDomain) {
-            $this->pdns()->table('domains')->where('id', $zoneId)->update([
-                'name' => $newDomain,
-                'type' => $this->uiZoneTypeToPdns($validated['type']),
-            ]);
+            $this->backend()->renameZone($oldDomain, $newDomain);
+            $this->backend()->upsertZone(new ZoneSpec($newDomain, strtolower($this->uiZoneTypeToPdns($validated['type']))));
             DnsZone::query()->where('powerdns_domain_id', $zoneId)->update([
                 'domain' => $newDomain,
                 'status' => $validated['status'],
@@ -420,15 +417,6 @@ class DnsController extends Controller
             ]);
 
             if ($oldDomain !== $newDomain) {
-                $records = $this->pdns()->table('records')->where('domain_id', $zoneId)->get();
-                foreach ($records as $record) {
-                    $currentName = (string) $record->name;
-                    $newName = $this->replaceDomainSuffix($currentName, $oldDomain, $newDomain);
-                    if ($newName !== $currentName) {
-                        $this->pdns()->table('records')->where('id', $record->id)->update(['name' => $newName]);
-                    }
-                }
-
                 $this->ensureNameserverTable();
                 $this->pdns()->table(self::NAMESERVER_TABLE)->where('domain', $oldDomain)->update(['domain' => $newDomain, 'updated_at' => now()]);
             }
@@ -453,8 +441,7 @@ class DnsController extends Controller
 
         $zoneDomain = (string) $zone->name;
         $this->pdns()->transaction(function () use ($zoneId, $zoneDomain, $profile) {
-            $this->pdns()->table('records')->where('domain_id', $zoneId)->delete();
-            $this->pdns()->table('domains')->where('id', $zoneId)->delete();
+            $this->backend()->deleteZone($zoneDomain);
             $profile->delete();
             $this->ensureNameserverTable();
             $this->pdns()->table(self::NAMESERVER_TABLE)->where('domain', $zoneDomain)->delete();
@@ -954,6 +941,11 @@ class DnsController extends Controller
         }
 
         return ['name' => $name] + $normalized;
+    }
+
+    private function backend(): DnsBackend
+    {
+        return app(DnsBackend::class);
     }
 
     private function pdns()

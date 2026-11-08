@@ -9,6 +9,7 @@ pub mod fastcgi;
 pub mod firewall;
 pub mod fs;
 pub mod limits;
+pub mod metrics;
 pub mod paths;
 pub mod process;
 pub mod runner;

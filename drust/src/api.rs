@@ -19,6 +19,9 @@ mod fail2ban;
 mod file_sync;
 mod filemanager;
 mod firewall;
+mod site_logs;
+mod system;
+mod wordpress;
 mod ftp;
 mod git_deploy;
 mod laravel_queue;
@@ -123,6 +126,9 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(file_sync::routes())
         .merge(ftp::routes())
         .merge(firewall::routes())
+        .merge(site_logs::routes())
+        .merge(system::routes())
+        .merge(wordpress::routes())
         .merge(git_deploy::routes())
         .merge(php::routes())
         .merge(mongo_admin::routes())

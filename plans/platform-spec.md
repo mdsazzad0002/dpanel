@@ -379,7 +379,7 @@ Linux: UFW ও firewalld। Windows: `NetSecurity` PowerShell module, সব rul
 
 Rule-এর `id` তার action, port ও source-এর SHA-256-এর প্রথম 12 hex, তাই একই rule দুই backend-এ একই id পায়, আর কোথাও কিছু জমাতে হয় না। Backend শুধু নিজের লেখা ধরনের rule list করে; হাতে লেখা অন্য rule ছোঁয় না। UFW-তে deny `prepend` দিয়ে প্রথমে যায়। `ttl` এখনও রাখা হয় না।
 
-**Lock-out রক্ষা:** Rule প্রয়োগের পর 60 সেকেন্ডের মধ্যে panel থেকে confirm না এলে আগের অবস্থায় ফিরবে।
+**Lock-out রক্ষা:** Rule প্রয়োগের পর 60 সেকেন্ডের মধ্যে panel থেকে confirm না এলে আগের অবস্থায় ফিরবে। `POST`/`DELETE /firewall/rules` উত্তরে `confirm_token` ও `confirm_within_seconds` দেয়; আগে থেকে থাকা rule add করলে token `null`। `POST /firewall/confirm {"token"}` দেরিতে এলে `404`। অপেক্ষার তালিকা drust-এর memory-তে থাকে।
 
 ### 6.10 DnsBackend
 
@@ -395,6 +395,8 @@ pub trait DnsBackend {
 Database-এর `DnsZone` ও `DnsRecord` সবসময় source of truth থাকবে। Backend শুধু সেটা প্রয়োগ করবে।
 
 Implementation: PowerDNS, Windows `DnsServer` module, Cloudflare API, Local hosts file।
+
+প্রথম সংস্করণ panel-এ, PHP-তে: `App\Services\Dns\Backend\DnsBackend` (`upsertZone`, `renameZone`, `deleteZone`, `replaceRecords`, `enableDnssec`), `config('dns.engine')` দিয়ে বাছা। PowerDNS-এর gmysql table panel-এর database-এ, তাই drust-এ যাওয়ার দরকার পড়েনি। `replaceRecords` SOA রাখে ও serial বাড়ায়; zone-এর বাইরের নাম ফেরায়।
 
 ### 6.11 MailBackend (Laravel)
 
@@ -476,6 +478,7 @@ pub trait Scheduler {
 | `acme_orders` | Domain, challenge, status, error, `expires_at` |
 | `website_protected_directories` | `website_id`, `path`, `realm`, `username`, `password_hash` (`s256i$<rounds>$<salt hex>$<hex>`) |
 | `website_guard_settings` | `website_id`, `no_php_paths`, `hotlink_protection`, `hotlink_allowed_hosts`, `cloudflare_only` |
+| `wordpress_stagings` | `production_website_id`, `staging_website_id` (দুটোই unique), `clone_id`, `direction`, `stage`, `message`, `copied_at`, `deployed_at` |
 
 `throttle` এখনও নেই: gateway rate কমাতে পারে না, তাই panel শুধু `notify` ও `block` দেয়। `block`-এ site `over_limit` হয়, নতুন মাসে ফেরে।
 
@@ -502,6 +505,9 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `GET`, `POST`, `DELETE /firewall/rules` | Rule |
 | `POST /firewall/confirm` | Lock-out timer থামানো |
 | `POST /acme/issue`, `/acme/renew` | Certificate |
+| `GET /sites/logs?kind=access\|php&domain=&owner=&lines=` | Site-এর access log বা account-এর PHP error log-এর শেষ অংশ (S4) |
+| `POST /api/v1/wordpress` | নির্দিষ্ট wp-cli action, site user হিসেবে: `info`, `update_core`, `update_plugins`, `update_themes`, `security`, `fix`, `home_url`, `search_replace` (W1-W4) |
+| `GET /system/overview?services=`, `GET /system/services?services=` | Machine-এর সংখ্যা ও service-এর অবস্থা (D3) |
 
 Suspend idempotent: দুবার চালালেও ফল একই। Partial failure হলে কোন ধাপ ব্যর্থ হয়েছে সেটা response-এ থাকবে।
 

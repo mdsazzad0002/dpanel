@@ -14,6 +14,7 @@ import DropdownLink from '@/Components/DropdownLink.vue';
 import MarkdownContent from '@/Components/MarkdownContent.vue';
 import Modal from '@/Components/Modal.vue';
 import TopbarProfileMenu from '@/Layouts/components/TopbarProfileMenu.vue';
+import LanguageSwitch from '@/Components/i18n/LanguageSwitch.vue';
 import { Link, router, usePage, useRemember } from '@inertiajs/vue3';
 import { buildPanelMenu, filterPanelMenu, resolveItemRouteName } from '@/navigation/panelMenu';
 
@@ -794,6 +795,7 @@ watch(isSearchOpen, async (open) => {
             <div class="border-t border-slate-200/80 px-4 py-3 dark:border-slate-700/80">
                 <div :class="sidebarCollapsed ? 'justify-center' : 'justify-between'" class="flex items-center">
                     <span v-if="!sidebarCollapsed" class="text-xs text-slate-400 dark:text-slate-500">{{ appName }} v{{ appVersion }}</span>
+                    <LanguageSwitch v-if="!sidebarCollapsed" />
                     <button
                         @click="toggleTheme"
                         class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"

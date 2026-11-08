@@ -1,0 +1,42 @@
+<?php
+
+namespace App\Services\Dns\Backend;
+
+/**
+ * Where a zone is served from (spec section 6.10, backlog I3). PowerDNS now;
+ * the Windows DNS Server, Cloudflare and a local hosts file come later
+ * (J6, K5, local profiles). The panel's DnsZone and DnsRecord rows are the
+ * record of what was asked for; a backend makes the server answer that.
+ */
+interface DnsBackend
+{
+    /** The backend's own name for logs and the zone list, such as `powerdns`. */
+    public function name(): string;
+
+    /**
+     * Creates the zone, or changes its kind when it exists.
+     *
+     * @return int the backend's id for the zone
+     */
+    public function upsertZone(ZoneSpec $zone): int;
+
+    /** A zone that was renamed keeps its id and records; their names follow. */
+    public function renameZone(string $from, string $to): void;
+
+    /** The zone and every record in it. Gone already is not an error. */
+    public function deleteZone(string $name): void;
+
+    /**
+     * Every record but the SOA becomes exactly `$records`; the SOA serial moves on.
+     *
+     * @param  list<RecordSpec>  $records
+     */
+    public function replaceRecords(string $zone, array $records): void;
+
+    /**
+     * @return array{enabled: bool, ds: list<string>}
+     *
+     * @throws UnsupportedDnsFeature until the backend can sign zones (M6)
+     */
+    public function enableDnssec(string $zone, bool $on): array;
+}

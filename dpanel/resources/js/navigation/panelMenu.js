@@ -58,6 +58,7 @@ export const buildPanelMenu = (userRoles = []) => [
             { label: 'Connect & Clients', hint: 'Connection test and FTP client downloads', icon: 'CC', iconClass: 'bi bi-plug', routeName: 'ftp.connect', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
         ],
     },
+    { section: 'Hosting', label: 'WordPress', hint: 'Updates, staging and security for every WordPress site', icon: 'WP', iconClass: 'bi bi-wordpress', routeName: 'wordpress.index', color: 'blue', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
     { section: 'Hosting', label: 'Bandwidth', hint: 'Traffic and requests per website', icon: 'BW', iconClass: 'bi bi-bar-chart-line', routeName: 'bandwidth.index', activeRouteNames: ['bandwidth.index', 'dashboard.usage'], color: 'amber' },
     { section: 'Hosting', label: 'Node.js Apps', hint: 'Run Node.js apps from your home directory', icon: 'NJ', iconClass: 'bi bi-hexagon', routeName: 'apps.node.index', color: 'emerald', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
     { section: 'Hosting', label: 'Python Apps', hint: 'Run Python apps from your home directory', icon: 'PY', iconClass: 'bi bi-filetype-py', routeName: 'apps.python.index', color: 'cyan', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
@@ -179,6 +180,7 @@ export const buildPanelMenu = (userRoles = []) => [
         ],
     },
     { section: 'Security', label: 'Login Users', hint: 'Server accounts that can log in over SSH', icon: 'LU', iconClass: 'bi bi-person-lock', routeName: 'security.login-users', roles: ['admin'], userIds: [1], color: 'violet' },
+    { section: 'Security', label: 'Firewall Rules', hint: 'Allow or block ports and addresses', icon: 'FW', iconClass: 'bi bi-bricks', routeName: 'security.firewall.rules', roles: ['admin'], color: 'red' },
     { section: 'Security', label: 'Firewall & SSH', hint: 'Firewall, SSH and hardening', icon: 'SC', iconClass: 'bi bi-shield-lock', routeName: 'security.manager', roles: ['admin', 'reseller'], permissions: ['manage_security'], color: 'red' },
     {
         section: 'Security',

@@ -6,6 +6,7 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import { describePage, trackLinkClicks } from './composables/usePageUsage';
+import { i18n } from './i18n';
 
 const appName = 'dPanel';
 const THEME_KEY = 'serverpanel-theme';
@@ -91,6 +92,7 @@ createInertiaApp({
         return createApp({ render: () => h(App, props) })
             .use(plugin)
             .use(ZiggyVue)
+            .use(i18n)
             .mount(el);
     },
     progress: {

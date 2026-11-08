@@ -23,6 +23,8 @@ use App\Http\Controllers\Website\WebsiteEdgeCacheController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteHtaccessController;
+use App\Http\Controllers\Website\WebsiteLogController;
+use App\Http\Controllers\Wordpress\WordpressToolkitController;
 use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
 use App\Http\Controllers\Website\WebsiteBulkExportController;
@@ -349,6 +351,13 @@ Route::get('/websites/{id}/apps/{app}/install/status/{installId}', [AppInstaller
     ->whereIn('app', ['joomla', 'drupal', 'codeigniter', 'whmcs'])
     ->name('websites.apps.install.status');
 
+Route::get('/websites/{id}/logs', [WebsiteLogController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.logs.index');
+Route::get('/websites/{id}/logs/lines', [WebsiteLogController::class, 'lines'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:60,1'])
+    ->name('websites.logs.lines');
+
 Route::get('/websites/{id}/edge-cache', [WebsiteEdgeCacheController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.edge-cache.index');
@@ -591,3 +600,17 @@ Route::get('/seo/image-watermark', [ImageWatermarkController::class, 'index'])
 Route::post('/seo/image-watermark/check', [ImageWatermarkController::class, 'check'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])
     ->name('seo.image-watermark.check');
+
+// Every WordPress site on one page (W1-W4): wp-cli runs as each site's user.
+Route::middleware('role_or_permission:admin|reseller|manage_websites')->group(function () {
+    Route::get('/wordpress', [WordpressToolkitController::class, 'index'])->name('wordpress.index');
+    Route::get('/wordpress/sites', [WordpressToolkitController::class, 'sites'])->name('wordpress.sites');
+    Route::get('/wordpress/sites/{site}', [WordpressToolkitController::class, 'info'])->whereUuid('site')->name('wordpress.info');
+    Route::post('/wordpress/sites/{site}/update', [WordpressToolkitController::class, 'update'])->whereUuid('site')->middleware('throttle:30,1')->name('wordpress.update');
+    Route::get('/wordpress/sites/{site}/security', [WordpressToolkitController::class, 'security'])->whereUuid('site')->name('wordpress.security');
+    Route::post('/wordpress/sites/{site}/fix', [WordpressToolkitController::class, 'fix'])->whereUuid('site')->name('wordpress.fix');
+    Route::get('/wordpress/sites/{site}/staging', [WordpressToolkitController::class, 'staging'])->whereUuid('site')->name('wordpress.staging');
+    Route::post('/wordpress/sites/{site}/staging', [WordpressToolkitController::class, 'link'])->whereUuid('site')->name('wordpress.staging.link');
+    Route::delete('/wordpress/sites/{site}/staging', [WordpressToolkitController::class, 'unlink'])->whereUuid('site')->name('wordpress.staging.unlink');
+    Route::post('/wordpress/sites/{site}/staging/copy', [WordpressToolkitController::class, 'copy'])->whereUuid('site')->middleware('throttle:10,1')->name('wordpress.staging.copy');
+});

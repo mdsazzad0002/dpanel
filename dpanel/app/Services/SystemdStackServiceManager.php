@@ -3,11 +3,11 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Process;
 
 /**
- * Shows systemd status for one stack's services and turns them on or off
- * through drust. Subclasses name the stack: its config file and drust endpoint.
+ * Shows the status of one stack's services and turns them on or off, both
+ * through drust (backlog D3: the panel runs no `systemctl` itself).
+ * Subclasses name the stack: its config file and drust endpoint.
  */
 abstract class SystemdStackServiceManager
 {
@@ -19,10 +19,23 @@ abstract class SystemdStackServiceManager
      */
     public function statuses(): array
     {
-        $statuses = [];
+        $services = $this->services();
+        $units = array_values(array_unique(array_map(fn ($service) => (string) $service['unit'], $services)));
+        $states = $this->unitStates($units);
 
-        foreach ($this->services() as $key => $service) {
-            $statuses[$key] = $this->status((string) $key, (string) $service['label'], (string) $service['unit']);
+        $statuses = [];
+        foreach ($services as $key => $service) {
+            $unit = (string) $service['unit'];
+            $state = $states[$unit] ?? [];
+            $statuses[$key] = [
+                'key' => (string) $key,
+                'label' => (string) $service['label'],
+                'unit' => $unit,
+                'installed' => (bool) ($state['installed'] ?? false),
+                'active' => (bool) ($state['active'] ?? false),
+                'enabled' => (bool) ($state['enabled'] ?? false),
+                'state' => (string) ($state['state'] ?? 'unknown') ?: 'unknown',
+            ];
         }
 
         return $statuses;
@@ -84,38 +97,28 @@ abstract class SystemdStackServiceManager
     }
 
     /**
-     * @return array{key: string, label: string, unit: string, installed: bool, active: bool, enabled: bool, state: string}
+     * drust's `GET /system/services`; nothing known when drust does not answer.
+     *
+     * @param  list<string>  $units
+     * @return array<string, array<string, mixed>>
      */
-    private function status(string $key, string $label, string $unit): array
+    private function unitStates(array $units): array
     {
-        $loadState = $this->systemctl(['show', '--property=LoadState', '--value', $unit]);
-        $active = $this->systemctl(['is-active', $unit]);
-        $enabled = $this->systemctl(['is-enabled', $unit]);
-
-        return [
-            'key' => $key,
-            'label' => $label,
-            'unit' => $unit,
-            'installed' => $loadState === 'loaded',
-            'active' => $active === 'active',
-            'enabled' => $enabled === 'enabled',
-            'state' => $active !== '' ? $active : 'unknown',
-        ];
-    }
-
-    /**
-     * @param  array<int, string>  $arguments
-     */
-    private function systemctl(array $arguments): string
-    {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return '';
+        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        if ($units === [] || $baseUrl === '') {
+            return [];
         }
 
         try {
-            return trim(Process::timeout(10)->run(array_merge(['systemctl'], $arguments))->output());
+            $response = Http::acceptJson()->timeout(15)
+                ->withToken(trim((string) config('serverpanel.execution_api_token', '')))
+                ->get(rtrim($baseUrl, '/').'/system/services', ['services' => implode(',', $units)]);
         } catch (\Throwable) {
-            return '';
+            return [];
         }
+
+        $services = $response->json('services');
+
+        return $response->successful() && is_array($services) ? $services : [];
     }
 }

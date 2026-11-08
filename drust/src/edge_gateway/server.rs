@@ -118,6 +118,15 @@ pub fn serve_gateway_with_tls(
         tokio::runtime::Runtime::new().map_err(|error| format!("runtime build failed: {error}"))?;
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
+        super::site_logs::start(super::site_logs::logs_root());
+        tokio::spawn(async {
+            let mut every = tokio::time::interval(Duration::from_secs(600));
+            loop {
+                every.tick().await;
+                let sites_root = crate::platform::paths().sites_root().to_path_buf();
+                let _ = tokio::task::spawn_blocking(move || super::site_logs::rotate_php_error_logs(&sites_root)).await;
+            }
+        });
         spawn_redis_reload_listener(state.clone());
         spawn_snapshot_poll(state.clone());
         let app_router = build_demo_router(state).layer(map_request(ensure_host_header));
@@ -348,6 +357,23 @@ async fn track_request(request: Request<Body>, next: Next) -> Response {
 struct BandwidthResponseCounter(super::bandwidth::DomainBandwidthCounter);
 
 pub async fn handle_request(
+    State(state): State<Arc<DemoServerState>>,
+    request: Request<Body>,
+) -> Response {
+    let facts = super::site_logs::RequestFacts::of(&request);
+    let domain = {
+        let host = request.headers().get("host").and_then(|value| value.to_str().ok()).unwrap_or("-");
+        let snapshot = get_cached_snapshot(&state).await;
+        super::resolve_site(snapshot.as_ref(), host).and_then(|site| site.hostnames.first().cloned())
+    };
+    let response = respond(State(state), request).await;
+    if let Some(domain) = domain {
+        super::site_logs::record(facts.finish(domain, &response));
+    }
+    response
+}
+
+async fn respond(
     State(state): State<Arc<DemoServerState>>,
     mut request: Request<Body>,
 ) -> Response {
@@ -1068,6 +1094,15 @@ pub fn serve_demo_with_tls(
         tokio::runtime::Runtime::new().map_err(|error| format!("runtime build failed: {error}"))?;
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
+        super::site_logs::start(super::site_logs::logs_root());
+        tokio::spawn(async {
+            let mut every = tokio::time::interval(Duration::from_secs(600));
+            loop {
+                every.tick().await;
+                let sites_root = crate::platform::paths().sites_root().to_path_buf();
+                let _ = tokio::task::spawn_blocking(move || super::site_logs::rotate_php_error_logs(&sites_root)).await;
+            }
+        });
         spawn_redis_reload_listener(state.clone());
         spawn_snapshot_poll(state.clone());
         let router = build_demo_router(state);

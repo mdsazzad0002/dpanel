@@ -34,6 +34,7 @@ pub enum Tool {
     Timeout,
     Ufw,
     Uv,
+    WpCli,
 }
 
 impl Tool {
@@ -64,6 +65,7 @@ impl Tool {
             Self::Timeout => "timeout",
             Self::Ufw => "ufw",
             Self::Uv => "uv",
+            Self::WpCli => "wp",
         }
     }
 
@@ -96,6 +98,7 @@ impl Tool {
             Self::Timeout => &["/usr/bin/timeout", "/bin/timeout"],
             Self::Ufw => &["/usr/sbin/ufw", "/usr/bin/ufw"],
             Self::Uv => &["/usr/local/bin/uv", "/usr/bin/uv", "/root/.local/bin/uv"],
+            Self::WpCli => &["/usr/local/bin/wp", "/usr/bin/wp"],
         }
     }
 }

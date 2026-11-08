@@ -9,9 +9,12 @@ use App\Models\PanelSession;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Bandwidth\BandwidthUsageService;
+use App\Models\AccountUsageSample;
 use App\Services\Mail\SystemMailer;
+use App\Services\Platform\SystemOverviewClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -22,9 +25,8 @@ class DashboardController extends Controller
         $actor = $request->user();
 
         return Inertia::render('Dashboard/Dashboard', [
-            // Every field here comes from a `systemctl`/`du`/`redis-cli` shell-out,
-            // which is what makes the dashboard feel slow — deferred so the page
-            // renders immediately and these fill in via background requests.
+            // The machine numbers come from drust (backlog D3); deferred so the
+            // page renders at once and these fill in from background requests.
             'dashboardStats' => Inertia::defer(fn () => $this->buildStats($actor), 'system'),
             'accountSummary' => Inertia::defer(fn () => $this->buildAccountSummary($actor), 'account'),
             'canViewServerUsage' => (bool) $actor?->hasRole('admin'),
@@ -81,7 +83,7 @@ class DashboardController extends Controller
             'scope' => $actor->hasRole('reseller') ? 'Reseller aggregate usage' : 'Your account usage',
             'package_name' => $package?->name,
             'package_owner' => $package?->owner_user_id === null ? 'Admin' : 'Reseller',
-            'disk_used_mb' => $this->websiteDiskUsageMb($websites->pluck('root_path')->all()),
+            'disk_used_mb' => $this->measuredDiskMb($userIds),
             'disk_limit_mb' => $package?->max_storage_mb,
             'mailboxes_used' => (int) $mailboxes->count(),
             'mailboxes_limit' => $package?->max_mailboxes,
@@ -99,35 +101,22 @@ class DashboardController extends Controller
         ];
     }
 
-    /** @param array<int, mixed> $paths */
-    private function websiteDiskUsageMb(array $paths): float
+    /**
+     * The newest hourly reading of each account (`accounts:disk-check`),
+     * so the dashboard never walks the disk itself.
+     *
+     * @param  array<int, int>  $userIds
+     */
+    private function measuredDiskMb(array $userIds): float
     {
-        $validPaths = collect($paths)
-            ->map(fn ($path) => trim((string) $path))
-            ->filter(fn ($path) => $path !== '' && is_dir($path))
-            ->unique()
-            ->values();
+        $latest = AccountUsageSample::query()
+            ->whereIn('user_id', $userIds)
+            ->whereNotNull('disk_mb')
+            ->selectRaw('user_id, MAX(id) as id')
+            ->groupBy('user_id')
+            ->pluck('id');
 
-        if ($validPaths->isEmpty()) {
-            return 0.0;
-        }
-
-        // One `du` invocation covering every path instead of spawning a
-        // subprocess per website — this is what was slowing dashboard loads
-        // down for accounts with several sites.
-        $command = 'du -sb -- '.$validPaths->map(fn ($path) => escapeshellarg($path))->implode(' ').' 2>/dev/null';
-        $output = @shell_exec($command);
-
-        $bytes = 0;
-        if (is_string($output)) {
-            foreach (preg_split('/\R/', trim($output)) ?: [] as $line) {
-                if (preg_match('/^(\d+)/', trim($line), $matches) === 1) {
-                    $bytes += (int) $matches[1];
-                }
-            }
-        }
-
-        return round($bytes / 1024 / 1024, 2);
+        return (float) AccountUsageSample::query()->whereIn('id', $latest)->sum('disk_mb');
     }
 
     /**
@@ -149,64 +138,38 @@ class DashboardController extends Controller
         ];
     }
 
+    private const SERVICES = ['edge-gateway', 'drust', 'postfix', 'dovecot', 'mariadb', 'mysql', 'mysqld', 'redis-server', 'redis'];
+
     /**
      * @return array<string, mixed>
      */
     private function buildStats(?User $actor): array
     {
         $canViewServerUsage = (bool) $actor?->hasRole('admin');
-        $cpuCores = $this->cpuCoreCount();
-        $system = $canViewServerUsage ? $this->systemSnapshot($cpuCores) : null;
-
-        $serviceStates = $this->batchServiceStatuses([
-            'edge-gateway', 'drust', 'postfix', 'dovecot', 'mariadb', 'mysql', 'mysqld', 'redis-server', 'redis',
-        ]);
+        $overview = app(SystemOverviewClient::class)->overview(self::SERVICES) ?? [];
+        $states = array_merge(array_fill_keys(self::SERVICES, 'unknown'), (array) ($overview['services'] ?? []));
+        $system = $canViewServerUsage ? self::systemSnapshot($overview) : null;
 
         return [
-            'hostname' => $this->serverHostname(),
-            'server_ip' => $this->serverIpAddress(),
-            'os' => $this->serverOsName(),
-            'uptime' => $this->serverUptime(),
-            'cpu_cores' => $canViewServerUsage ? $cpuCores : null,
+            'hostname' => (string) ($overview['hostname'] ?? (gethostname() ?: 'unknown')),
+            'server_ip' => (string) ($overview['primary_ip'] ?? ($this->requestServerValue('SERVER_ADDR') ?: 'unknown')),
+            'os' => (string) ($overview['os_name'] ?? PHP_OS_FAMILY),
+            'uptime' => isset($overview['uptime_seconds']) ? self::formatDuration((int) $overview['uptime_seconds']) : 'unknown',
+            'cpu_cores' => $canViewServerUsage ? (int) ($overview['cpu_cores'] ?? 1) : null,
             'cpu_load_percent' => $system['cpu_load_percent'] ?? null,
             'memory_used_mb' => $system['memory_used_mb'] ?? null,
             'memory_total_mb' => $system['memory_total_mb'] ?? null,
             'disk_used_gb' => $system['disk_used_gb'] ?? null,
             'disk_total_gb' => $system['disk_total_gb'] ?? null,
             'services' => [
-                'drust_gateway' => $serviceStates['edge-gateway'],
-                'drust_api' => $serviceStates['drust'],
-                'mail' => $serviceStates['postfix'],
-                'dovecot' => $serviceStates['dovecot'],
-                'database' => $this->databaseServiceStatus($serviceStates),
-                'redis' => $this->redisServiceStatus($serviceStates),
+                'drust_gateway' => $states['edge-gateway'],
+                'drust_api' => $overview === [] ? 'down' : $states['drust'],
+                'mail' => $states['postfix'],
+                'dovecot' => $states['dovecot'],
+                'database' => $this->databaseServiceStatus($states),
+                'redis' => $this->redisServiceStatus($states),
             ],
         ];
-    }
-
-    /**
-     * Check several systemd units in a single `systemctl` invocation instead
-     * of spawning one process per unit.
-     *
-     * @param  array<int, string>  $services
-     * @return array<string, string> service name => 'running'|'down'|'unknown'
-     */
-    private function batchServiceStatuses(array $services): array
-    {
-        if ($services === [] || str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return array_fill_keys($services, 'unknown');
-        }
-
-        $command = 'systemctl is-active '.implode(' ', array_map('escapeshellarg', $services)).' 2>/dev/null';
-        $output = @shell_exec($command);
-        $lines = is_string($output) ? preg_split('/\R/', trim($output)) : [];
-
-        $states = [];
-        foreach ($services as $index => $service) {
-            $states[$service] = trim((string) ($lines[$index] ?? '')) === 'active' ? 'running' : 'down';
-        }
-
-        return $states;
     }
 
     /**
@@ -220,8 +183,10 @@ class DashboardController extends Controller
             return 'sqlite';
         }
 
-        if ($this->databaseServiceIsRunning($serviceStates, ['mariadb', 'mysql', 'mysqld'])) {
-            return 'mariadb';
+        foreach (['mariadb', 'mysql', 'mysqld'] as $service) {
+            if (($serviceStates[$service] ?? null) === 'running') {
+                return 'mariadb';
+            }
         }
 
         try {
@@ -229,8 +194,8 @@ class DashboardController extends Controller
             if (str_contains(strtolower($default), 'mysql') || str_contains(strtolower($default), 'mariadb')) {
                 return 'mariadb';
             }
-        } catch (\Throwable $e) {
-            // Fall through to configured driver label.
+        } catch (\Throwable) {
+            // Fall through to the configured driver's name.
         }
 
         return $default;
@@ -238,100 +203,22 @@ class DashboardController extends Controller
 
     /**
      * @param  array<string, string>  $serviceStates
-     * @param  array<int, string>  $services
-     */
-    private function databaseServiceIsRunning(array $serviceStates, array $services): bool
-    {
-        foreach ($services as $service) {
-            if (($serviceStates[$service] ?? null) === 'running') {
-                return true;
-            }
-        }
-
-        $process = @shell_exec('pgrep -x mariadbd >/dev/null 2>&1 || pgrep -x mysqld >/dev/null 2>&1; printf "%s" "$?"');
-        if (is_string($process) && trim($process) === '0') {
-            return true;
-        }
-
-        $socket = @shell_exec('test -S /run/mysqld/mysqld.sock || test -S /var/run/mysqld/mysqld.sock; printf "%s" "$?"');
-        return is_string($socket) && trim($socket) === '0';
-    }
-
-    /**
-     * @param  array<string, string>  $serviceStates
      */
     private function redisServiceStatus(array $serviceStates): string
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return 'unknown';
-        }
-
         if (($serviceStates['redis-server'] ?? null) === 'running' || ($serviceStates['redis'] ?? null) === 'running') {
             return 'running';
         }
 
-        $ping = @shell_exec('redis-cli ping 2>/dev/null');
-        if (is_string($ping) && strtoupper(trim($ping)) === 'PONG') {
-            return 'running';
+        // No service manager (Windows, macOS): ask Redis itself.
+        try {
+            return Redis::connection()->ping() ? 'running' : 'down';
+        } catch (\Throwable) {
+            return in_array('unknown', [$serviceStates['redis-server'] ?? 'unknown', $serviceStates['redis'] ?? 'unknown'], true) ? 'unknown' : 'down';
         }
-
-        return 'down';
     }
 
-    private function serverHostname(): string
-    {
-        $hostname = gethostname();
-        if (is_string($hostname) && trim($hostname) !== '') {
-            return trim($hostname);
-        }
-
-        $out = @shell_exec('hostname 2>/dev/null');
-        return is_string($out) && trim($out) !== '' ? trim($out) : 'unknown';
-    }
-
-    private function serverIpAddress(): string
-    {
-        $out = @shell_exec("hostname -I 2>/dev/null | awk '{print $1}'");
-        if (is_string($out) && filter_var(trim($out), FILTER_VALIDATE_IP)) {
-            return trim($out);
-        }
-
-        $out = @shell_exec("ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i==\"src\") {print $(i+1); exit}}'");
-        if (is_string($out) && filter_var(trim($out), FILTER_VALIDATE_IP)) {
-            return trim($out);
-        }
-
-        return (string) ($this->requestServerValue('SERVER_ADDR') ?: 'unknown');
-    }
-
-    private function serverOsName(): string
-    {
-        $release = @file_get_contents('/etc/os-release');
-        if (is_string($release) && preg_match('/^PRETTY_NAME=(.+)$/m', $release, $match) === 1) {
-            return trim((string) $match[1], " \t\n\r\0\x0B\"'");
-        }
-
-        return PHP_OS_FAMILY.' '.php_uname('r');
-    }
-
-    private function serverUptime(): string
-    {
-        $uptime = @file_get_contents('/proc/uptime');
-        if (is_string($uptime) && preg_match('/^([\d.]+)/', $uptime, $match) === 1) {
-            return $this->formatDuration((int) floor((float) $match[1]));
-        }
-
-        $out = @shell_exec('uptime -p 2>/dev/null');
-        return is_string($out) && trim($out) !== '' ? trim($out) : 'unknown';
-    }
-
-    private function cpuCoreCount(): int
-    {
-        $cores = (int) trim((string) @shell_exec('nproc 2>/dev/null'));
-        return $cores > 0 ? $cores : 1;
-    }
-
-    private function formatDuration(int $seconds): string
+    public static function formatDuration(int $seconds): string
     {
         $days = intdiv($seconds, 86400);
         $seconds %= 86400;
@@ -356,60 +243,32 @@ class DashboardController extends Controller
     private function requestServerValue(string $key): string
     {
         $value = $_SERVER[$key] ?? '';
+
         return is_string($value) ? trim($value) : '';
     }
 
     /**
+     * @param  array<string, mixed>  $overview
      * @return array{cpu_load_percent:float,memory_used_mb:int,memory_total_mb:int,disk_used_gb:float,disk_total_gb:float}
      */
-    private function systemSnapshot(int $cpuCores): array
+    public static function systemSnapshot(array $overview): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return [
-                'cpu_load_percent' => 0.0,
-                'memory_used_mb' => 0,
-                'memory_total_mb' => 0,
-                'disk_used_gb' => 0.0,
-                'disk_total_gb' => 0.0,
-            ];
-        }
-
-        $cpu = 0.0;
-        if (function_exists('sys_getloadavg')) {
-            $load = sys_getloadavg();
-            $cpu = round(min(100, max(0, ((float) ($load[0] ?? 0.0) / $cpuCores) * 100)), 2);
-        }
-
-        $memoryUsed = 0;
-        $memoryTotal = 0;
-        $memInfo = @file_get_contents('/proc/meminfo');
-        if (is_string($memInfo) && $memInfo !== '') {
-            preg_match('/^MemTotal:\s+(\d+)\s+kB$/m', $memInfo, $total);
-            preg_match('/^MemAvailable:\s+(\d+)\s+kB$/m', $memInfo, $available);
-            if (isset($total[1])) {
-                $memoryTotal = (int) floor(((int) $total[1]) / 1024);
-            }
-            if (isset($total[1], $available[1])) {
-                $memoryUsed = (int) floor((((int) $total[1]) - ((int) $available[1])) / 1024);
-            }
-        }
-
-        $diskTotalGb = 0.0;
-        $diskUsedGb = 0.0;
-        $basePath = base_path();
-        $diskTotal = @disk_total_space($basePath);
-        $diskFree = @disk_free_space($basePath);
-        if (is_numeric($diskTotal) && is_numeric($diskFree) && $diskTotal > 0) {
-            $diskTotalGb = round(((float) $diskTotal) / 1024 / 1024 / 1024, 2);
-            $diskUsedGb = round((((float) $diskTotal) - ((float) $diskFree)) / 1024 / 1024 / 1024, 2);
-        }
+        $cores = max(1, (int) ($overview['cpu_cores'] ?? 1));
+        $load = (float) ($overview['load'][0] ?? 0.0);
+        $memory = (array) ($overview['memory'] ?? []);
+        $totalKb = (int) ($memory['total_kb'] ?? 0);
+        $availableKb = (int) ($memory['available_kb'] ?? 0);
+        $disk = (array) ($overview['disk'] ?? []);
+        $diskTotal = (float) ($disk['total_bytes'] ?? 0);
+        $diskFree = (float) ($disk['free_bytes'] ?? 0);
+        $gb = 1024 * 1024 * 1024;
 
         return [
-            'cpu_load_percent' => $cpu,
-            'memory_used_mb' => $memoryUsed,
-            'memory_total_mb' => $memoryTotal,
-            'disk_used_gb' => $diskUsedGb,
-            'disk_total_gb' => $diskTotalGb,
+            'cpu_load_percent' => round(min(100, max(0, ($load / $cores) * 100)), 2),
+            'memory_used_mb' => (int) floor(max(0, $totalKb - $availableKb) / 1024),
+            'memory_total_mb' => (int) floor($totalKb / 1024),
+            'disk_used_gb' => $diskTotal > 0 ? round(($diskTotal - $diskFree) / $gb, 2) : 0.0,
+            'disk_total_gb' => $diskTotal > 0 ? round($diskTotal / $gb, 2) : 0.0,
         ];
     }
 }

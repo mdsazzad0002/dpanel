@@ -7,9 +7,11 @@ use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\Mailbox;
 use App\Models\Website;
+use App\Services\Platform\SystemOverviewClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -32,6 +34,17 @@ class MonitoringController extends Controller
     /**
      * @return array<string, mixed>
      */
+    private const SERVICES = ['edge-gateway', 'drust', 'mariadb', 'mysql', 'redis-server', 'redis', 'postfix', 'dovecot'];
+
+    /** drust's overview (backlog D3); empty when drust does not answer. */
+    private ?array $overview = null;
+
+    /** @return array<string, mixed> */
+    private function overview(): array
+    {
+        return $this->overview ??= app(SystemOverviewClient::class)->overview(self::SERVICES) ?? [];
+    }
+
     private function buildSnapshot(): array
     {
         return [
@@ -110,34 +123,21 @@ class MonitoringController extends Controller
 
     private function serviceStatus(string $service): string
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return 'unknown';
-        }
-
-        $out = @shell_exec('systemctl is-active '.escapeshellarg($service).' 2>/dev/null');
-        if (! is_string($out)) {
-            return 'unknown';
-        }
-
-        return trim($out) === 'active' ? 'running' : 'down';
+        return (string) ($this->overview()['services'][$service] ?? 'unknown');
     }
 
     private function redisServiceStatus(): string
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return 'unknown';
-        }
-
         if ($this->serviceStatus('redis-server') === 'running' || $this->serviceStatus('redis') === 'running') {
             return 'running';
         }
 
-        $ping = @shell_exec('redis-cli ping 2>/dev/null');
-        if (is_string($ping) && strtoupper(trim($ping)) === 'PONG') {
-            return 'running';
+        // No service manager (Windows, macOS): ask Redis itself.
+        try {
+            return Redis::connection()->ping() ? 'running' : 'down';
+        } catch (\Throwable) {
+            return $this->serviceStatus('redis-server') === 'unknown' ? 'unknown' : 'down';
         }
-
-        return 'down';
     }
 
     /**
@@ -166,13 +166,8 @@ class MonitoringController extends Controller
         $cpuInfo = @file_get_contents('/proc/cpuinfo');
         $cpuInfo = is_string($cpuInfo) ? $cpuInfo : '';
 
-        $cpu = 0.0;
-        if (function_exists('sys_getloadavg')) {
-            $load = sys_getloadavg();
-            $cores = (int) trim((string) @shell_exec('nproc 2>/dev/null'));
-            $cores = $cores > 0 ? $cores : 1;
-            $cpu = round(min(100, max(0, ((float) ($load[0] ?? 0.0) / $cores) * 100)), 2);
-        }
+        $machine = DashboardController::systemSnapshot($this->overview());
+        $cpu = $machine['cpu_load_percent'];
 
         $cpuClockMhz = null;
         $currentFrequency = @file_get_contents('/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq');
@@ -181,9 +176,7 @@ class MonitoringController extends Controller
         } elseif (preg_match('/^cpu MHz\s*:\s*([\d.]+)/m', $cpuInfo, $clockMatch) === 1) {
             $cpuClockMhz = round((float) $clockMatch[1], 2);
         }
-        $cpuModel = preg_match('/^model name\s*:\s*(.+)$/m', $cpuInfo, $modelMatch) === 1
-            ? trim($modelMatch[1])
-            : null;
+        $cpuModel = $this->overview()['cpu_model'] ?? null;
         $busSpeedMhz = preg_match('/^bus MHz\s*:\s*([\d.]+)/m', $cpuInfo, $busMatch) === 1
             ? round((float) $busMatch[1], 2)
             : null;
@@ -198,19 +191,8 @@ class MonitoringController extends Controller
         [$memorySpeedMtS, $memoryConfiguredSpeedMtS] = $hardware['memory_speed'];
         $busSpeedMhz ??= $hardware['bus_speed'];
 
-        $memoryUsed = 0;
-        $memoryTotal = 0;
-        $memInfo = @file_get_contents('/proc/meminfo');
-        if (is_string($memInfo) && $memInfo !== '') {
-            preg_match('/^MemTotal:\s+(\d+)\s+kB$/m', $memInfo, $total);
-            preg_match('/^MemAvailable:\s+(\d+)\s+kB$/m', $memInfo, $available);
-            if (isset($total[1])) {
-                $memoryTotal = (int) floor(((int) $total[1]) / 1024);
-            }
-            if (isset($total[1], $available[1])) {
-                $memoryUsed = (int) floor((((int) $total[1]) - ((int) $available[1])) / 1024);
-            }
-        }
+        $memoryUsed = $machine['memory_used_mb'];
+        $memoryTotal = $machine['memory_total_mb'];
 
         $disks = $this->physicalDisks();
         $basePath = base_path();
@@ -223,12 +205,8 @@ class MonitoringController extends Controller
         $diskTotalGb = (float) ($baseDisk['total_gb'] ?? 0.0);
         $diskUsedGb = (float) ($baseDisk['used_gb'] ?? 0.0);
         if ($diskTotalGb <= 0) {
-            $diskTotal = @disk_total_space($basePath);
-            $diskFree = @disk_free_space($basePath);
-            if (is_numeric($diskTotal) && is_numeric($diskFree) && $diskTotal > 0) {
-                $diskTotalGb = round(((float) $diskTotal) / 1024 / 1024 / 1024, 2);
-                $diskUsedGb = round((((float) $diskTotal) - ((float) $diskFree)) / 1024 / 1024 / 1024, 2);
-            }
+            $diskTotalGb = $machine['disk_total_gb'];
+            $diskUsedGb = $machine['disk_used_gb'];
         }
 
         return [
@@ -502,10 +480,11 @@ class MonitoringController extends Controller
      */
     private function hostTelemetry(): array
     {
-        $osRelease = @parse_ini_file('/etc/os-release');
+        $overview = $this->overview();
+        $memory = (array) ($overview['memory'] ?? []);
         $telemetry = [
-            'hostname' => gethostname() ?: null,
-            'os_name' => is_array($osRelease) ? ($osRelease['PRETTY_NAME'] ?? null) : PHP_OS_FAMILY,
+            'hostname' => $overview['hostname'] ?? (gethostname() ?: null),
+            'os_name' => $overview['os_name'] ?? PHP_OS_FAMILY,
             'kernel' => php_uname('r'),
             'cpu_cores' => null,
             'uptime_seconds' => null,
@@ -524,29 +503,12 @@ class MonitoringController extends Controller
             return $telemetry;
         }
 
-        $cpuInfo = @file_get_contents('/proc/cpuinfo');
-        $cores = is_string($cpuInfo) ? preg_match_all('/^processor\s*:/m', $cpuInfo) : 0;
-        $telemetry['cpu_cores'] = $cores > 0 ? $cores : null;
-
-        $uptime = @file_get_contents('/proc/uptime');
-        if (is_string($uptime) && is_numeric(strtok($uptime, ' '))) {
-            $telemetry['uptime_seconds'] = (int) strtok($uptime, ' ');
-        }
-
-        $load = function_exists('sys_getloadavg') ? sys_getloadavg() : false;
-        if (is_array($load)) {
-            $telemetry['load_average'] = array_map(fn ($value): float => round((float) $value, 2), $load);
-        }
-
-        $telemetry['process_count'] = count(glob('/proc/[0-9]*', GLOB_ONLYDIR) ?: []);
-
-        $memInfo = @file_get_contents('/proc/meminfo');
-        if (is_string($memInfo)
-            && preg_match('/^SwapTotal:\s+(\d+)\s+kB$/m', $memInfo, $swapTotal) === 1
-            && preg_match('/^SwapFree:\s+(\d+)\s+kB$/m', $memInfo, $swapFree) === 1) {
-            $telemetry['swap_total_mb'] = (int) floor((int) $swapTotal[1] / 1024);
-            $telemetry['swap_used_mb'] = (int) floor(((int) $swapTotal[1] - (int) $swapFree[1]) / 1024);
-        }
+        $telemetry['cpu_cores'] = isset($overview['cpu_cores']) ? (int) $overview['cpu_cores'] : null;
+        $telemetry['uptime_seconds'] = isset($overview['uptime_seconds']) ? (int) $overview['uptime_seconds'] : null;
+        $telemetry['load_average'] = isset($overview['load']) ? array_map(fn ($value): float => round((float) $value, 2), (array) $overview['load']) : null;
+        $telemetry['process_count'] = $overview['process_count'] ?? null;
+        $telemetry['swap_total_mb'] = (int) floor((int) ($memory['swap_total_kb'] ?? 0) / 1024);
+        $telemetry['swap_used_mb'] = (int) floor(max(0, (int) ($memory['swap_total_kb'] ?? 0) - (int) ($memory['swap_free_kb'] ?? 0)) / 1024);
 
         $telemetry['temperatures'] = $this->temperatureSensors();
         $interfaces = collect($this->networkInterfaces());

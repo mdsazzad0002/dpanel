@@ -17,6 +17,7 @@ pub(crate) mod rust_process;
 mod redirects;
 mod server;
 mod site_guards;
+pub mod site_logs;
 mod source;
 mod static_files;
 mod terminal_ws;

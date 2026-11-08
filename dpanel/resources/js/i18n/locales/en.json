@@ -1,0 +1,158 @@
+{
+    "common": {
+        "language": "Language",
+        "refresh": "Refresh",
+        "loading": "Loading…",
+        "sessionExpired": "Your session expired — reload the page and try again.",
+        "search": "Search",
+        "save": "Save",
+        "cancel": "Cancel",
+        "close": "Close",
+        "none": "None",
+        "back": "Back to Manage"
+    },
+    "firewall": {
+        "title": "Firewall Rules",
+        "subtitle": "Allow or block ports and addresses. A change you do not keep within the time shown is undone.",
+        "loadFailed": "Unable to load the firewall rules.",
+        "addFailed": "The rule could not be added.",
+        "removeFailed": "The rule could not be removed.",
+        "confirmFailed": "The change could not be kept.",
+        "removeConfirm": "Remove this firewall rule?",
+        "undone": "The change was not kept in time, so it has been undone.",
+        "backend": "Backend",
+        "state": "State",
+        "active": "Active",
+        "inactive": "Inactive",
+        "rules": "Rules",
+        "addRule": "Add a rule",
+        "action": "Action",
+        "allow": "Allow",
+        "deny": "Block",
+        "port": "Port",
+        "portTo": "To port",
+        "optional": "optional",
+        "protocol": "Protocol",
+        "source": "Source address",
+        "formHelp": "Give a port, a source address, or both. A block is checked before every allow.",
+        "add": "Add rule",
+        "remove": "Remove",
+        "anyPort": "any port",
+        "anywhere": "anywhere",
+        "empty": "No rules added from dPanel yet.",
+        "onlyOurs": "Only rules in the shapes dPanel writes are listed. Rules written by hand on the server are left alone.",
+        "pendingHelp": "Click Keep within {seconds} seconds, or the firewall goes back to how it was. If this page stops answering, the change locked you out and will be undone.",
+        "keep": "Keep this change"
+    },
+    "siteLogs": {
+        "title": "Logs",
+        "subtitle": "Requests to {domain} and its PHP errors.",
+        "loadFailed": "Unable to load the log.",
+        "access": "Access log",
+        "php": "PHP errors",
+        "filter": "Filter lines…",
+        "lines": "Lines",
+        "lastN": "Last {n}",
+        "follow": "Follow",
+        "noMatch": "No lines match.",
+        "noAccessLog": "No requests logged yet.",
+        "noPhpLog": "No PHP errors logged yet.",
+        "accessHelp": "Each line: client, time, request, status, bytes, referrer, browser and milliseconds taken. The log rotates at 10 MB and keeps five old files.",
+        "phpHelp": "PHP errors of every site this account owns. Sites made before this log existed keep logging where they did until their PHP pool is made again."
+    },
+    "wordpress": {
+        "title": "WordPress",
+        "subtitle": "Every WordPress site you manage: updates, staging copies and a security check.",
+        "loadFailed": "Unable to load WordPress details.",
+        "none": "No WordPress site was found among your websites.",
+        "finding": "Looking for WordPress sites…",
+        "selectAll": "Select all",
+        "selected": "{count} sites selected",
+        "bulkConfirm": "Update {count} sites now? Each site is updated in turn.",
+        "updateEverything": "Update core, plugins and themes",
+        "updatePlugins": "Update plugins only",
+        "updateFailed": "The update failed.",
+        "updated": "Updated.",
+        "core": "Core",
+        "coreUpdate": "Version {version} is available.",
+        "upToDate": "Up to date.",
+        "updateCore": "Update WordPress",
+        "plugins": "Plugins",
+        "themes": "Themes",
+        "updateAll": "Update all ({count})",
+        "updateTo": "Update to {version}",
+        "updateHelp": "Updates run with plugins and themes switched off for the command, so a broken plugin cannot stop its own update. Take a staging copy first for a big update.",
+        "tabs": {
+            "updates": "Updates",
+            "staging": "Staging",
+            "security": "Security"
+        },
+        "securityHelp": "Checks core files against wordpress.org, plugin files, admin names, open registration, debug mode and file editing.",
+        "runCheck": "Run check",
+        "checkAgain": "Check again",
+        "checkFailed": "The check could not run.",
+        "fixFailed": "The fix could not be applied.",
+        "score": "{passed} of {total} checks passed",
+        "reinstallConfirm": "Download WordPress core again over the current files? Content, plugins and themes are not touched.",
+        "checks": {
+            "core_files": {
+                "pass": "Core files match wordpress.org",
+                "issue": "Some core files are changed or should not be there"
+            },
+            "plugin_files": {
+                "pass": "Plugin files match wordpress.org",
+                "issue": "Some plugins have changed files"
+            },
+            "admin_names": {
+                "pass": "No administrator has an easily guessed name",
+                "issue": "An administrator has an easily guessed name"
+            },
+            "registration": {
+                "pass": "Anyone-can-register is off",
+                "issue": "Anyone can register an account"
+            },
+            "debug": {
+                "pass": "Debug mode is off",
+                "issue": "Debug mode is on and can show errors to visitors"
+            },
+            "file_edit": {
+                "pass": "The theme and plugin file editor is off",
+                "issue": "Admins can edit PHP files from wp-admin"
+            },
+            "core_update": {
+                "pass": "WordPress is up to date",
+                "issue": "A WordPress update is waiting"
+            },
+            "plugin_updates": {
+                "pass": "All plugins are up to date",
+                "issue": "Some plugins need an update"
+            }
+        },
+        "fixes": {
+            "disallow_file_edit": "Turn the editor off",
+            "disable_debug": "Turn debug off",
+            "close_registration": "Close registration",
+            "reinstall_core": "Restore core files"
+        },
+        "stagingHelp": "Pair this site with another of your sites as its staging copy. Copying replaces the other site's files and database (they go to the trash first) and rewrites the site address.",
+        "stagingSite": "Staging site",
+        "pickSite": "Pick a site…",
+        "noFreeSite": "Create another website to use as staging first",
+        "useAsStaging": "Use as staging",
+        "unlink": "Unpair",
+        "unlinkConfirm": "Unpair these sites? Neither site is changed.",
+        "stagingFailed": "The staging action failed.",
+        "lastCopy": "Last copy to staging",
+        "lastDeploy": "last deploy",
+        "never": "never",
+        "copyToStaging": "Copy to staging",
+        "deploy": "Deploy staging to live",
+        "copyConfirm": "Copy {from} over {to}? {to}'s current files and database go to the trash first.",
+        "deployConfirm": "Deploy {from} over the live site {to}? The live files and database go to the trash first.",
+        "stage": {
+            "queued": "Waiting to start…",
+            "copying": "Copying files and database…",
+            "rewriting": "Rewriting the site address…"
+        }
+    }
+}

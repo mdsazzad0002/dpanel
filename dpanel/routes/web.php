@@ -47,6 +47,7 @@ use App\Http\Controllers\RemoteMysqlAccessController;
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SecurityCenterController;
 use App\Http\Controllers\SecurityController;
+use App\Http\Controllers\Security\FirewallRuleController;
 use App\Http\Controllers\Security\LoginUserController;
 use App\Http\Controllers\Fail2banController;
 use App\Http\Controllers\DockerController;
@@ -949,6 +950,23 @@ Route::prefix('cpsess{token}')
             Route::get('/security/firewall-guide', [SecurityController::class, 'firewallGuide'])
                 ->middleware('role:admin|reseller')
                 ->name('security.firewall.guide');
+
+            // Firewall rules (S3): drust undoes a change that is not confirmed in time.
+            Route::get('/security/firewall/rules', [FirewallRuleController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('security.firewall.rules');
+            Route::get('/security/firewall/rules/list', [FirewallRuleController::class, 'list'])
+                ->middleware('role:admin')
+                ->name('security.firewall.rules.list');
+            Route::post('/security/firewall/rules', [FirewallRuleController::class, 'store'])
+                ->middleware('role:admin')
+                ->name('security.firewall.rules.store');
+            Route::delete('/security/firewall/rules/{rule}', [FirewallRuleController::class, 'destroy'])
+                ->middleware('role:admin')
+                ->name('security.firewall.rules.destroy');
+            Route::post('/security/firewall/confirm', [FirewallRuleController::class, 'confirm'])
+                ->middleware('role:admin')
+                ->name('security.firewall.confirm');
 
             // Linux accounts that can log in to the server — root-level changes, admins only.
             Route::get('/security/login-users', [LoginUserController::class, 'index'])

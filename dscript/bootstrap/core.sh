@@ -1735,6 +1735,9 @@ panel_install_app_dependencies() {
   # Website installers (Laravel, Drupal, ...) need composer too, so it is
   # ensured even when the panel's own vendor/ is already in place.
   panel_ensure_composer || return 1
+  # The WordPress page (plugins, themes, core updates) runs wp-cli; a site
+  # works without it, so a failed download is only a warning.
+  panel_ensure_wp_cli || panel_warn_log "wp-cli is not installed; the WordPress page cannot update sites."
 
   # Runs on every install and update: a release can add or bump packages, and
   # composer finishes quickly when vendor/ already matches composer.lock.
@@ -1782,6 +1785,37 @@ panel_ensure_composer() {
   rm -f "$installer"
   # Keep /usr/bin/composer working for older drust builds that hardcode it.
   [[ -e /usr/bin/composer ]] || ln -s "$target" /usr/bin/composer
+}
+
+# wp-cli in /usr/local/bin/wp, where drust looks first. The phar is checked
+# against the SHA-512 the wp-cli project publishes next to it.
+panel_ensure_wp_cli() {
+  local target="/usr/local/bin/wp"
+  local base="https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar"
+  local phar expected actual
+
+  if [[ -x "$target" ]]; then
+    "$target" cli update --yes --allow-root >/dev/null 2>&1 || true
+    return 0
+  fi
+  command -v php >/dev/null 2>&1 || { panel_warn_log "PHP CLI is missing; cannot install wp-cli."; return 1; }
+
+  panel_info_log "Installing wp-cli to ${target}."
+  phar="$(mktemp)"
+  if ! curl -fsSL --retry 3 "${base}/wp-cli.phar" -o "$phar"; then
+    rm -f "$phar"
+    panel_warn_log "Could not download wp-cli."
+    return 1
+  fi
+  expected="$(curl -fsSL --retry 3 "${base}/wp-cli.phar.sha512" | awk '{print $1}' || true)"
+  actual="$(sha512sum "$phar" | awk '{print $1}')"
+  if [[ -z "$expected" || "$expected" != "$actual" ]]; then
+    rm -f "$phar"
+    panel_warn_log "wp-cli checksum mismatch; not installing it."
+    return 1
+  fi
+  install -m 0755 "$phar" "$target"
+  rm -f "$phar"
 }
 
 panel_fix_app_permissions() {

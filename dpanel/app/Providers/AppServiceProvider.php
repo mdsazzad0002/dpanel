@@ -21,6 +21,10 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->scoped(\App\Support\Platform\PlatformCapabilities::class);
         $this->app->singleton(DnsRegistryService::class);
+        // Spec 6.10: PowerDNS is the only backend so far (Windows DNS J6, Cloudflare K5).
+        $this->app->bind(\App\Services\Dns\Backend\DnsBackend::class, fn ($app) => match ((string) config('dns.engine', 'powerdns')) {
+            default => $app->make(\App\Services\Dns\Backend\PowerDnsBackend::class),
+        });
         // Panel mail goes out from the admin's chosen system mailbox. Applied
         // when the mailer is first needed, so other requests skip the lookup.
         $this->app->afterResolving('mail.manager', fn () => $this->app->make(\App\Services\Mail\SystemMailer::class)->apply());
