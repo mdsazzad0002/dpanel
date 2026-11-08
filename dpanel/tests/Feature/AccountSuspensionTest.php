@@ -167,4 +167,34 @@ class AccountSuspensionTest extends TestCase
 
         $this->assertTrue($customer->fresh()->is_suspended);
     }
+
+    public function test_suspension_stops_their_cron_jobs_and_unsuspension_restarts_only_those(): void
+    {
+        $user = User::factory()->create();
+        $site = $this->website($user);
+        $cron = fn (string $id, string $status) => \App\Models\CronJob::create([
+            'id' => $id, 'website_id' => $site->id, 'domain' => $site->domain, 'name' => $id,
+            'expression' => '* * * * *', 'command' => 'true', 'status' => $status,
+        ]);
+        $running = $cron('running', 'active');
+        $off = $cron('off', 'disabled');
+        $synced = [];
+        $this->mock(\App\Services\Cron\CronSystemService::class)
+            ->shouldReceive('sync')
+            ->andReturnUsing(function ($job) use (&$synced) {
+                $synced[] = [$job->id, $job->status];
+
+                return 'ok';
+            });
+        $suspension = app(AccountSuspensionService::class);
+
+        $suspension->suspend($user);
+        $this->assertSame('suspended', $running->fresh()->status);
+        $this->assertSame('disabled', $off->fresh()->status);
+
+        $suspension->unsuspend($user);
+        $this->assertSame('active', $running->fresh()->status);
+        $this->assertSame('disabled', $off->fresh()->status);
+        $this->assertSame([['running', 'suspended'], ['running', 'active']], $synced);
+    }
 }
