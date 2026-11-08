@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Services\Dns\Backend\DnsBackend;
+use App\Services\Dns\Backend\RecordSpec;
 use App\Services\Dns\Backend\ZoneSpec;
 use App\Models\Mailbox;
 use App\Models\User;
@@ -134,34 +135,30 @@ class DnsController extends Controller
 
         $oldDomain = (string) $existing->domain;
         $oldHostname = $this->normalizeDomain((string) $existing->hostname);
-        $this->pdns()->table('records')
+        $this->backend()->deleteRecords($this->pdns()->table('records')
             ->where('domain_id', (int) $zone->id)
             ->whereIn('type', ['A', 'AAAA'])
-            ->where('name', $oldHostname)
-            ->delete();
+            ->where('name', $oldHostname)->pluck('id')->all());
 
-        $this->pdns()->table('records')
+        $this->backend()->deleteRecords($this->pdns()->table('records')
             ->where('domain_id', (int) $zone->id)
             ->where('type', 'NS')
             ->where('name', $domain)
-            ->where('content', $oldHostname)
-            ->delete();
+            ->where('content', $oldHostname)->pluck('id')->all());
 
         if ($oldDomain !== $domain) {
             $oldZone = $this->findDomainByName($oldDomain);
             if ($oldZone) {
-                $this->pdns()->table('records')
+                $this->backend()->deleteRecords($this->pdns()->table('records')
                     ->where('domain_id', (int) $oldZone->id)
                     ->whereIn('type', ['A', 'AAAA'])
-                    ->where('name', $oldHostname)
-                    ->delete();
+                    ->where('name', $oldHostname)->pluck('id')->all());
 
-                $this->pdns()->table('records')
+                $this->backend()->deleteRecords($this->pdns()->table('records')
                     ->where('domain_id', (int) $oldZone->id)
                     ->where('type', 'NS')
                     ->where('name', $oldDomain)
-                    ->where('content', $oldHostname)
-                    ->delete();
+                    ->where('content', $oldHostname)->pluck('id')->all());
 
                 $this->syncNameserverRecordsForDomain($oldDomain, (int) $oldZone->id);
             }
@@ -190,18 +187,16 @@ class DnsController extends Controller
 
         $zone = $this->findDomainByName($domain);
         if ($zone) {
-            $this->pdns()->table('records')
+            $this->backend()->deleteRecords($this->pdns()->table('records')
                 ->where('domain_id', (int) $zone->id)
                 ->whereIn('type', ['A', 'AAAA'])
-                ->where('name', $hostname)
-                ->delete();
+                ->where('name', $hostname)->pluck('id')->all());
 
-            $this->pdns()->table('records')
+            $this->backend()->deleteRecords($this->pdns()->table('records')
                 ->where('domain_id', (int) $zone->id)
                 ->where('type', 'NS')
                 ->where('name', $domain)
-                ->where('content', $hostname)
-                ->delete();
+                ->where('content', $hostname)->pluck('id')->all());
 
             $this->syncNameserverRecordsForDomain($domain, (int) $zone->id);
         }
@@ -477,17 +472,8 @@ class DnsController extends Controller
 
         $type = strtoupper((string) $validated['type']);
         ['name' => $name, 'content' => $content, 'priority' => $priority] = $this->prepareRecord((int) $zone->id, $zoneDomain, $validated);
-        $recordId = (int) $this->pdns()->table('records')->insertGetId([
-            'domain_id' => (int) $zone->id,
-            'name' => $name,
-            'type' => $type,
-            'content' => $content,
-            'ttl' => (int) $validated['ttl'],
-            'prio' => $priority,
-            'disabled' => $validated['status'] === 'disabled' ? 1 : 0,
-            'auth' => 1,
-        ]);
-        app(DnsZoneRules::class)->bumpSerial($this->pdns(), (int) $zone->id);
+        $recordId = (int) $this->backend()->addRecord((int) $zone->id, new RecordSpec($name, $type, $content, (int) $validated['ttl'], $priority, $validated['status'] === 'disabled'));
+        $this->backend()->touchZone((int) $zone->id);
         $profile = DnsZone::query()->where('powerdns_domain_id', (int) $zone->id)->first();
         if ($profile) {
             DnsRecord::query()->create([
@@ -550,19 +536,18 @@ class DnsController extends Controller
 
         $type = strtoupper((string) $validated['type']);
         ['name' => $name, 'content' => $content, 'priority' => $priority] = $this->prepareRecord((int) $zone->id, $zoneDomain, $validated, $recordId);
-        $this->pdns()->table('records')->where('id', $recordId)->update([
-            'domain_id' => (int) $zone->id,
+        $this->backend()->updateRecord($recordId, [
+            'zone_id' => (int) $zone->id,
             'name' => $name,
             'type' => $type,
             'content' => $content,
             'ttl' => (int) $validated['ttl'],
-            'prio' => $priority,
-            'disabled' => $validated['status'] === 'disabled' ? 1 : 0,
-            'auth' => 1,
+            'priority' => $priority,
+            'disabled' => $validated['status'] === 'disabled',
         ]);
-        app(DnsZoneRules::class)->bumpSerial($this->pdns(), (int) $zone->id);
+        $this->backend()->touchZone((int) $zone->id);
         if ((int) $record->domain_id !== (int) $zone->id) {
-            app(DnsZoneRules::class)->bumpSerial($this->pdns(), (int) $record->domain_id);
+            $this->backend()->touchZone((int) $record->domain_id);
         }
         $profile = DnsZone::query()->where('powerdns_domain_id', (int) $zone->id)->first();
         if ($profile) {
@@ -606,8 +591,8 @@ class DnsController extends Controller
         [$recordId, $record] = $this->resolvePowerDnsRecord($id);
         abort_unless($record, 404);
         $this->authorizeZone($request, (int) $record->domain_id);
-        $this->pdns()->table('records')->where('id', $recordId)->delete();
-        app(DnsZoneRules::class)->bumpSerial($this->pdns(), (int) $record->domain_id);
+        $this->backend()->deleteRecords([$recordId]);
+        $this->backend()->touchZone((int) $record->domain_id);
         DnsRecord::query()->where('powerdns_record_id', $recordId)->delete();
 
         return redirect()->route('dns.zones')->with('success', 'DNS record deleted.');
@@ -810,16 +795,7 @@ class DnsController extends Controller
                     continue;
                 }
 
-                $recordId = (int) $this->pdns()->table('records')->insertGetId([
-                    'domain_id' => (int) $zone->id,
-                    'name' => $name,
-                    'type' => $type,
-                    'content' => $content,
-                    'ttl' => (int) $record['ttl'],
-                    'prio' => $priority,
-                    'disabled' => 0,
-                    'auth' => 1,
-                ]);
+                $recordId = (int) $this->backend()->addRecord((int) $zone->id, new RecordSpec($name, $type, $content, (int) $record['ttl'], $priority, false));
                 DnsRecord::query()->create([
                     'id' => (string) Str::uuid(),
                     'dns_zone_id' => $profile->id,
@@ -834,7 +810,7 @@ class DnsController extends Controller
                 ]);
                 $created++;
             }
-            app(DnsZoneRules::class)->bumpSerial($this->pdns(), (int) $zone->id);
+            $this->backend()->touchZone((int) $zone->id);
         }
 
         return redirect()->route('dns.zones')->with('success', "Cloudflare zone imported into PowerDNS. Created {$created}, skipped {$skipped}.");
@@ -1128,24 +1104,21 @@ class DnsController extends Controller
             ->unique()
             ->values();
 
-        $this->pdns()->table('records')
+        $this->backend()->deleteRecords($this->pdns()->table('records')
             ->where('domain_id', $zoneId)
             ->where('type', 'NS')
-            ->where('name', $domain)
-            ->delete();
+            ->where('name', $domain)->pluck('id')->all());
 
         if ($hostnames->isNotEmpty()) {
-            $this->pdns()->table('records')
+            $this->backend()->deleteRecords($this->pdns()->table('records')
                 ->where('domain_id', $zoneId)
                 ->whereIn('type', ['A', 'AAAA'])
-                ->whereIn('name', $hostnames->all())
-                ->delete();
+                ->whereIn('name', $hostnames->all())->pluck('id')->all());
         } else {
-            $this->pdns()->table('records')
+            $this->backend()->deleteRecords($this->pdns()->table('records')
                 ->where('domain_id', $zoneId)
                 ->whereIn('type', ['A', 'AAAA'])
-                ->where('name', 'like', "ns%.{$domain}")
-                ->delete();
+                ->where('name', 'like', "ns%.{$domain}")->pluck('id')->all());
         }
 
         $activeEntries = $this->pdns()->table(self::NAMESERVER_TABLE)
@@ -1165,45 +1138,18 @@ class DnsController extends Controller
             $ttl = max(60, (int) $entry->ttl);
             $hostname = $this->normalizeDomain((string) $entry->hostname);
 
-            $this->pdns()->table('records')->insert([
-                'domain_id' => $zoneId,
-                'name' => $domain,
-                'type' => 'NS',
-                'content' => $hostname,
-                'ttl' => $ttl,
-                'prio' => 0,
-                'disabled' => 0,
-                'auth' => 1,
-            ]);
+            $this->backend()->addRecord($zoneId, new RecordSpec($domain, 'NS', $hostname, $ttl, 0, false));
 
             if (! empty($entry->ipv4)) {
-                $this->pdns()->table('records')->insert([
-                    'domain_id' => $zoneId,
-                    'name' => $hostname,
-                    'type' => 'A',
-                    'content' => (string) $entry->ipv4,
-                    'ttl' => $ttl,
-                    'prio' => 0,
-                    'disabled' => 0,
-                    'auth' => 1,
-                ]);
+                $this->backend()->addRecord($zoneId, new RecordSpec($hostname, 'A', (string) $entry->ipv4, $ttl, 0, false));
             }
 
             if (! empty($entry->ipv6)) {
-                $this->pdns()->table('records')->insert([
-                    'domain_id' => $zoneId,
-                    'name' => $hostname,
-                    'type' => 'AAAA',
-                    'content' => (string) $entry->ipv6,
-                    'ttl' => $ttl,
-                    'prio' => 0,
-                    'disabled' => 0,
-                    'auth' => 1,
-                ]);
+                $this->backend()->addRecord($zoneId, new RecordSpec($hostname, 'AAAA', (string) $entry->ipv6, $ttl, 0, false));
             }
         }
 
-        app(DnsZoneRules::class)->bumpSerial($this->pdns(), $zoneId);
+        $this->backend()->touchZone($zoneId);
     }
 
     private function upsertSoaRecord(int $zoneId, string $domain, array $validated): void
@@ -1234,28 +1180,18 @@ class DnsController extends Controller
         ]);
 
         if ($existing) {
-            $this->pdns()->table('records')->where('id', $existing->id)->update([
+            $this->backend()->updateRecord((int) $existing->id, [
                 'name' => $domain,
                 'content' => $soaContent,
                 'ttl' => (int) $validated['minimum_ttl'],
-                'prio' => 0,
-                'disabled' => $validated['status'] === 'disabled' ? 1 : 0,
-                'auth' => 1,
+                'priority' => 0,
+                'disabled' => $validated['status'] === 'disabled',
             ]);
 
             return;
         }
 
-        $this->pdns()->table('records')->insert([
-            'domain_id' => $zoneId,
-            'name' => $domain,
-            'type' => 'SOA',
-            'content' => $soaContent,
-            'ttl' => (int) $validated['minimum_ttl'],
-            'prio' => 0,
-            'disabled' => $validated['status'] === 'disabled' ? 1 : 0,
-            'auth' => 1,
-        ]);
+        $this->backend()->addRecord($zoneId, new RecordSpec($domain, 'SOA', $soaContent, (int) $validated['minimum_ttl'], 0, $validated['status'] === 'disabled'));
     }
 
     /**

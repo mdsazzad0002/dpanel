@@ -26,7 +26,11 @@ use App\Http\Controllers\DnsController;
 use App\Http\Controllers\DnsFindReplaceController;
 use App\Http\Controllers\DnsZoneConnectionController;
 use App\Http\Controllers\DnsZoneFileController;
+use App\Http\Controllers\Email\MailAutoresponderController;
+use App\Http\Controllers\Email\MailForwarderController;
+use App\Http\Controllers\Email\SmtpRelayController;
 use App\Http\Controllers\EmailController;
+use App\Http\Controllers\Settings\BrandingController;
 use App\Http\Controllers\MailBimiController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\MailContactController;
@@ -104,6 +108,8 @@ Route::middleware(['panel.session'])->group(function (): void {
         ->name('webmail.mailbox');
 });
 
+// Public on purpose: the login page shows the server's logo (backlog U4).
+Route::get('/branding/{branding}/logo', [BrandingController::class, 'logo'])->name('branding.logo');
 Route::post('/sso/webmail/consume', [SsoController::class, 'consumeWebmail'])
     ->name('sso.webmail.consume');
 
@@ -309,6 +315,40 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller')
                 ->name('server-tasks.cancel');
 
+            Route::get('/settings/branding', [BrandingController::class, 'edit'])
+                ->middleware('role:admin|reseller')
+                ->name('settings.branding');
+            Route::post('/settings/branding', [BrandingController::class, 'update'])
+                ->middleware('role:admin|reseller')
+                ->name('settings.branding.update');
+            // Forward-only addresses, catch-all, automatic replies and the relay (M1-M3, M8).
+            Route::get('/emails/forwarders', [MailForwarderController::class, 'index'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.forwarders');
+            Route::post('/emails/forwarders', [MailForwarderController::class, 'store'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.forwarders.store');
+            Route::delete('/emails/forwarders/{id}', [MailForwarderController::class, 'destroy'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.forwarders.destroy');
+            Route::put('/emails/catch-all', [MailForwarderController::class, 'catchAll'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.catch-all');
+            Route::get('/emails/smtp-relay', [SmtpRelayController::class, 'show'])
+                ->middleware('role:admin')
+                ->name('emails.smtp-relay');
+            Route::put('/emails/smtp-relay', [SmtpRelayController::class, 'update'])
+                ->middleware('role:admin')
+                ->name('emails.smtp-relay.update');
+            Route::delete('/emails/smtp-relay', [SmtpRelayController::class, 'destroy'])
+                ->middleware('role:admin')
+                ->name('emails.smtp-relay.destroy');
+            Route::get('/emails/{id}/autoresponder', [MailAutoresponderController::class, 'show'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.autoresponder');
+            Route::put('/emails/{id}/autoresponder', [MailAutoresponderController::class, 'update'])
+                ->middleware('role_or_permission:admin|reseller|manage_email')
+                ->name('emails.autoresponder.update');
             // Before the /emails/{id} routes, which would otherwise take "system-mail" as an id.
             Route::get('/emails/system-mail', [SystemMailController::class, 'show'])
                 ->middleware('role:admin')

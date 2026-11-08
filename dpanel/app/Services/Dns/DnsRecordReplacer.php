@@ -5,6 +5,8 @@ namespace App\Services\Dns;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use Illuminate\Support\Collection;
+use App\Services\Dns\Backend\DnsBackend;
+use App\Services\Dns\Backend\RecordSpec;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -21,6 +23,7 @@ class DnsRecordReplacer
     public function __construct(
         private readonly DnsRecordContent $recordContent,
         private readonly DnsZoneRules $rules,
+        private readonly DnsBackend $dns,
     ) {}
 
     /**
@@ -116,13 +119,13 @@ class DnsRecordReplacer
                     continue;
                 }
 
-                DB::table('records')->where('id', $change['id'])->update(['content' => $change['after'], 'prio' => $change['priority']]);
+                $this->dns->updateRecord((int) $change['id'], ['content' => $change['after'], 'priority' => $change['priority']]);
                 DnsRecord::query()->where('powerdns_record_id', $change['id'])->update(['content' => $change['after'], 'priority' => $change['priority']]);
                 $touched[(int) $record->domain_id] = true;
                 $updated++;
             }
             foreach (array_keys($touched) as $zoneId) {
-                $this->rules->bumpSerial(DB::connection(), $zoneId);
+                $this->dns->touchZone($zoneId);
             }
         });
 

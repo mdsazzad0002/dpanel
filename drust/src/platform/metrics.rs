@@ -124,14 +124,7 @@ fn hostname(os: Os) -> String {
 }
 
 fn disk(path: &Path) -> Option<Disk> {
-    #[cfg(unix)]
-    let space = super::unix::disk::space(path);
-    #[cfg(not(unix))]
-    let space: Option<(u64, u64)> = {
-        let _ = path;
-        None
-    };
-    space.map(|(total, free)| Disk { path: path.display().to_string(), total_bytes: total, free_bytes: free })
+    super::disk_space(path).map(|(total, free)| Disk { path: path.display().to_string(), total_bytes: total, free_bytes: free })
 }
 
 pub fn overview(services: &[String], disk_path: &Path) -> Overview {

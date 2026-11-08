@@ -168,7 +168,9 @@ const canUseAiSearch = computed(() => userRoles.value.length > 0);
 const aiServerTools = computed(() => (page.props.auth?.can_use_server_tools ? 'read' : 'off'));
 const userPermissions = computed(() => page.props.auth?.permissions ?? []);
 const panelToken = computed(() => page.props.panel?.token ?? '');
-const appName = computed(() => page.props.app?.name ?? 'dPanel');
+const appName = computed(() => page.props.branding?.name || page.props.app?.name || 'dPanel');
+// U4: the brand colour, as a thin bar over the sidebar and the page.
+const brandColor = computed(() => page.props.branding?.color || '');
 const appVersion = computed(() => page.props.app?.version ?? '1.0');
 const panelSearchItems = computed(() => Array.isArray(page.props.panelSearch?.items) ? page.props.panelSearch.items : []);
 const currentUser = computed(() => page.props.auth?.user ?? {});
@@ -657,6 +659,7 @@ watch(isSearchOpen, async (open) => {
             ]"
             class="fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-slate-200/80 bg-white transition-all duration-300 dark:border-slate-700/80 dark:bg-slate-900"
         >
+            <div v-if="brandColor" class="h-1 w-full shrink-0" :style="{ backgroundColor: brandColor }"></div>
             <!-- Logo -->
             <div :class="sidebarCollapsed ? 'justify-center' : 'justify-between'" class="flex h-16 items-center border-b border-slate-200/80 px-4 dark:border-slate-700/80">
                 <Link :href="panelRoute('dashboard')" class="flex items-center gap-2">

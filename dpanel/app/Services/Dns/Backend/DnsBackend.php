@@ -34,6 +34,31 @@ interface DnsBackend
     public function replaceRecords(string $zone, array $records): void;
 
     /**
+     * One record, for a form that edits records one at a time. The serial is
+     * left alone: call {@see touchZone()} once after a batch.
+     *
+     * @return int the backend's id for the record
+     */
+    public function addRecord(int $zoneId, RecordSpec $record): int;
+
+    /**
+     * Changes only the given fields of one record.
+     *
+     * @param  array{zone_id?: int, name?: string, type?: string, content?: string, ttl?: int, priority?: int|null, disabled?: bool}  $changes
+     */
+    public function updateRecord(int $recordId, array $changes): void;
+
+    /**
+     * Records already gone are not an error.
+     *
+     * @param  list<int>  $recordIds
+     */
+    public function deleteRecords(array $recordIds): void;
+
+    /** Moves the SOA serial on, so secondaries and caches see the change. */
+    public function touchZone(int $zoneId): void;
+
+    /**
      * @return array{enabled: bool, ds: list<string>}
      *
      * @throws UnsupportedDnsFeature until the backend can sign zones (M6)

@@ -28,7 +28,7 @@ use paths::Paths;
 use runner::{IsolatedRunner, NoRunner, RunuserRunner, SameUserRunner};
 use scheduler::{CronDirScheduler, Scheduler, TimerScheduler};
 use service::{NoServices, ServiceManager, SystemdServices};
-use std::{env, fmt, io, sync::OnceLock};
+use std::{env, fmt, io, path::Path, sync::OnceLock};
 
 #[cfg(unix)]
 use unix::{fs::NativeFileAccess, random::fill};
@@ -291,8 +291,22 @@ pub fn random_bytes(buffer: &mut [u8]) -> Result<(), PlatformError> {
     fill(buffer).map_err(|error| PlatformError::from_io("read random bytes", error))
 }
 
-/// For a test of exact Unix modes, which Windows ACLs have no form of.
-#[cfg(test)]
+/// `(total, available)` bytes of the filesystem holding `path`; available is
+/// what a normal user may still write.
+pub fn disk_space(path: &Path) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    return unix::disk::space(path);
+    #[cfg(windows)]
+    return windows::disk::space(path);
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// Windows ACLs have no form of Unix modes, so a mode from an archive or a
+/// test of exact modes has nothing to apply to there.
 pub fn os_has_no_file_modes() -> bool {
     current().os() == Os::Windows
 }

@@ -1,3 +1,4 @@
+pub(crate) mod cli;
 pub(crate) mod postgresql;
 pub(crate) mod request;
 

@@ -152,7 +152,77 @@
         "stage": {
             "queued": "শুরুর অপেক্ষায়…",
             "copying": "File ও database copy হচ্ছে…",
-            "rewriting": "Site-এর address বদলানো হচ্ছে…"
-        }
+            "rewriting": "Site-এর address বদলানো হচ্ছে…",
+            "testing": "Staging copy-তে update ও পরীক্ষা চলছে…",
+            "updating": "Staging পাস করেছে; এই site update হচ্ছে…"
+        },
+        "safeUpdate": "নিরাপদ update",
+        "safeHelp": "এই site staging site-এ copy করে, copy-তে update চালায়, আর copy error ছাড়া খুললে তবেই এই site update করে। Staging site link করা থাকতে হবে।",
+        "safeStarted": "নিরাপদ update শুরু হয়েছে। Staging tab-এ দেখুন।"
+    },
+    "mailForwarders": {
+        "title": "Forwarder ও Catch-all",
+        "subtitle": "শুধু forward করা address, আর অজানা address-এর mail কোথায় যায়",
+        "add": "Forwarder যোগ করুন",
+        "address": "Address",
+        "domain": "Domain",
+        "destinations": "যেখানে পাঠাবে",
+        "goesTo": "যায়",
+        "formHelp": "কোনো mailbox বানানো হয় না: এই address-এর mail সরাসরি চলে যায়। একাধিক address কমা দিয়ে আলাদা করুন।",
+        "addButton": "যোগ করুন",
+        "list": "Forwarder",
+        "empty": "এখনও কোনো forwarder নেই।",
+        "remove": "সরান",
+        "removeConfirm": "{address}-এর forward বন্ধ করবেন? এর mail ফেরত যাবে।",
+        "addFailed": "Forwarder যোগ হয়নি।",
+        "removeFailed": "Forwarder সরানো যায়নি।",
+        "catchAll": "Catch-all",
+        "catchAllHelp": "Domain-এর যে address-এর mailbox বা forwarder নেই, তার mail এখানে আসে। খালি রাখলে ফেরত যায়।",
+        "catchAllOff": "বন্ধ: অজানা address-এর mail ফেরত যায়",
+        "save": "Save",
+        "catchAllFailed": "Catch-all save হয়নি।",
+        "noDomains": "আপনার এখনও কোনো website বা mailbox-এর domain নেই।"
+    },
+    "smtpRelay": {
+        "title": "SMTP Relay",
+        "subtitle": "বাইরে যাওয়া সব mail অন্য server দিয়ে পাঠান",
+        "now": "এখন বাইরের mail",
+        "direct": "এই server থেকে সরাসরি যায়",
+        "through": "{host}:{port} দিয়ে যায়",
+        "host": "Relay server",
+        "port": "Port",
+        "username": "Username",
+        "password": "Password",
+        "help": "TLS সবসময় লাগে। Password Postfix-এ যায়, panel রাখে না, তাই প্রতিবার save-এ আবার দিন।",
+        "save": "Save ও প্রয়োগ",
+        "disable": "সরাসরি পাঠান",
+        "disableConfirm": "বাইরের mail আবার এই server থেকে সরাসরি পাঠাবেন?",
+        "failed": "Postfix বদলায়নি।"
+    },
+    "autoresponder": {
+        "title": "স্বয়ংক্রিয় উত্তর",
+        "help": "প্রতি sender-কে নির্দিষ্ট দিনে একবার উত্তর দেয়; spam বা mailing list-এ কখনো নয়।",
+        "on": "চালু",
+        "subject": "Subject",
+        "body": "বার্তা",
+        "from": "শুরু (ঐচ্ছিক)",
+        "until": "শেষ (ঐচ্ছিক)",
+        "interval": "একই sender-কে কত দিন পর পর",
+        "save": "উত্তর save করুন",
+        "loadFailed": "স্বয়ংক্রিয় উত্তর আনা যায়নি।",
+        "saveFailed": "স্বয়ংক্রিয় উত্তর save হয়নি।"
+    },
+    "branding": {
+        "title": "Branding",
+        "serverHelp": "সবাই এই নাম, logo ও রং দেখে, যদি না তাদের reseller-এর নিজের থাকে।",
+        "resellerHelp": "আপনি ও আপনার customer এই নাম, logo ও রং দেখেন।",
+        "name": "Panel-এর নাম",
+        "color": "রং",
+        "logo": "Logo",
+        "logoHelp": "PNG, JPG বা WebP, সর্বোচ্চ 512 KB।",
+        "removeLogo": "Logo সরান",
+        "fallback": "খালি রাখা অংশ server-এর branding থেকে আসে, তারপর dPanel-এর নিজের।",
+        "save": "Save",
+        "failed": "Branding save হয়নি।"
     }
 }

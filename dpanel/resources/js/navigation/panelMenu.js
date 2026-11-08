@@ -110,7 +110,9 @@ export const buildPanelMenu = (userRoles = []) => [
             { label: 'Create Email', hint: 'Add a mailbox', icon: 'CE', iconClass: 'bi bi-envelope-plus', routeName: 'emails.create', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
             { label: 'List Emails', hint: 'View all mailboxes', icon: 'LE', iconClass: 'bi bi-envelope-open', routeName: 'emails.list', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
             { label: 'Mail DNS Guide', hint: 'Configure MX, SPF, DKIM and DMARC', icon: 'DG', iconClass: 'bi bi-diagram-3', routeName: 'emails.guide', activeRouteNames: ['emails.guide', 'emails.guide.dkim', 'emails.guide.export'], roles: ['admin', 'reseller'], permissions: ['manage_mail_dns'] },
+            { label: 'Forwarders & Catch-all', hint: 'Addresses that only forward, and mail to unknown addresses', icon: 'FC', iconClass: 'bi bi-forward', routeName: 'emails.forwarders', roles: ['admin', 'reseller'], permissions: ['manage_email'] },
             { label: 'System Email', hint: 'Sender for login codes and reset links', icon: 'SE', iconClass: 'bi bi-envelope-check', routeName: 'emails.system-mail', roles: ['admin'] },
+            { label: 'SMTP Relay', hint: 'Send outgoing mail through another server', icon: 'SR', iconClass: 'bi bi-send', routeName: 'emails.smtp-relay', roles: ['admin'] },
             { label: 'Mail IPs & SSL', hint: 'Mail IPs, hostnames and SMTP/IMAP certificates', icon: 'MS', iconClass: 'bi bi-shield-lock', routeName: 'emails.mail-ssl', roles: ['admin'], permissions: ['manage_mail_server'] },
             { label: 'Mail Health', hint: 'Failures, queue and spam signals', icon: 'MH', iconClass: 'bi bi-heart-pulse', routeName: 'mail-health.index', roles: ['admin', 'reseller'], permissions: ['view_mail_health'] },
         ],
@@ -207,6 +209,7 @@ export const buildPanelMenu = (userRoles = []) => [
         color: 'pink',
         children: userManagementChildren(userRoles),
     },
+    { section: 'System', label: 'Branding', hint: 'Panel name, logo and colour', icon: 'BR', iconClass: 'bi bi-palette', routeName: 'settings.branding', roles: ['admin', 'reseller'], color: 'violet' },
     { section: 'System', label: 'Resource Packages', hint: 'Manage user quotas', icon: 'PK', iconClass: 'bi bi-box-seam', routeName: 'packages.index', roles: ['admin', 'superadmin', 'reseller'], permissions: ['manage_packages'] },
     {
         section: 'System',

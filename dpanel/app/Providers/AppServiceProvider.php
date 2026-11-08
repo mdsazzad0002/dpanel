@@ -25,6 +25,10 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(\App\Services\Dns\Backend\DnsBackend::class, fn ($app) => match ((string) config('dns.engine', 'powerdns')) {
             default => $app->make(\App\Services\Dns\Backend\PowerDnsBackend::class),
         });
+        // Spec 6.11: Postfix and Dovecot until Stalwart (J5, K4).
+        $this->app->bind(\App\Services\Mail\Backend\MailBackend::class, fn ($app) => match ((string) config('mail.backend', 'postfix-dovecot')) {
+            default => $app->make(\App\Services\Mail\Backend\PostfixDovecotBackend::class),
+        });
         // Panel mail goes out from the admin's chosen system mailbox. Applied
         // when the mailer is first needed, so other requests skip the lookup.
         $this->app->afterResolving('mail.manager', fn () => $this->app->make(\App\Services\Mail\SystemMailer::class)->apply());

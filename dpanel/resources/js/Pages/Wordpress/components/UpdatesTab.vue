@@ -14,6 +14,8 @@ const loading = ref(false);
 const busy = ref('');
 const error = ref('');
 const notice = ref('');
+// W5: try the update on a fresh staging copy first; production follows only if it still works.
+const safe = ref(false);
 
 const load = async () => {
     loading.value = true;
@@ -33,6 +35,11 @@ const update = async (kind, names = []) => {
     error.value = '';
     notice.value = '';
     try {
+        if (safe.value) {
+            await api.post('wordpress.safe-update', { site: props.site.id }, { kind, names });
+            notice.value = t('wordpress.safeStarted');
+            return;
+        }
         info.value = await api.post('wordpress.update', { site: props.site.id }, { kind, names });
         emit('version', info.value.version);
         notice.value = t('wordpress.updated');
@@ -68,6 +75,10 @@ onMounted(load);
 
             <ItemTable :title="t('wordpress.plugins')" :items="info.plugins" :busy="busy === 'plugins'" :disabled="!!busy" @update="update('plugins', $event)" />
             <ItemTable :title="t('wordpress.themes')" :items="info.themes" :busy="busy === 'themes'" :disabled="!!busy" @update="update('themes', $event)" />
+            <label class="flex items-start gap-2 rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-800">
+                <input v-model="safe" type="checkbox" class="mt-0.5 rounded" />
+                <span><span class="font-semibold text-slate-800 dark:text-slate-100">{{ t('wordpress.safeUpdate') }}</span><br /><span class="text-xs text-slate-500 dark:text-slate-400">{{ t('wordpress.safeHelp') }}</span></span>
+            </label>
             <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('wordpress.updateHelp') }}</p>
         </template>
     </div>

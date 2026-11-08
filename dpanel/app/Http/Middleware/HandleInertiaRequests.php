@@ -48,6 +48,8 @@ class HandleInertiaRequests extends Middleware
                 'name' => config('app.name'),
                 'version' => config('app.version'),
             ],
+            // The reseller's or the server's name, logo and colour (U4).
+            'branding' => fn () => app(\App\Services\Branding\BrandingResolver::class)->forUser($user),
             // Re-sent on every visit: a login/logout regenerates it without a full page load.
             'csrf_token' => $request->hasSession() ? $request->session()->token() : null,
             'panel' => [

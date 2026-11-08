@@ -152,7 +152,77 @@
         "stage": {
             "queued": "Waiting to start…",
             "copying": "Copying files and database…",
-            "rewriting": "Rewriting the site address…"
-        }
+            "rewriting": "Rewriting the site address…",
+            "testing": "Updating and testing the staging copy…",
+            "updating": "Staging passed; updating this site…"
+        },
+        "safeUpdate": "Safe update",
+        "safeHelp": "Copy this site over its staging site, update the copy, and update this site only if the copy still loads without errors. Needs a linked staging site.",
+        "safeStarted": "Safe update started. Follow it on the Staging tab."
+    },
+    "mailForwarders": {
+        "title": "Forwarders & Catch-all",
+        "subtitle": "Addresses that only forward, and where mail to unknown addresses goes",
+        "add": "Add a forwarder",
+        "address": "Address",
+        "domain": "Domain",
+        "destinations": "Forward to",
+        "goesTo": "Goes to",
+        "formHelp": "No mailbox is made: mail to this address goes straight on. Separate several addresses with commas.",
+        "addButton": "Add",
+        "list": "Forwarders",
+        "empty": "No forwarders yet.",
+        "remove": "Remove",
+        "removeConfirm": "Stop forwarding {address}? Mail to it will be refused.",
+        "addFailed": "The forwarder was not added.",
+        "removeFailed": "The forwarder was not removed.",
+        "catchAll": "Catch-all",
+        "catchAllHelp": "Mail to an address of the domain that has no mailbox or forwarder goes here. Leave empty to refuse it.",
+        "catchAllOff": "Off: unknown addresses are refused",
+        "save": "Save",
+        "catchAllFailed": "The catch-all was not saved.",
+        "noDomains": "You have no website or mailbox domain yet."
+    },
+    "smtpRelay": {
+        "title": "SMTP Relay",
+        "subtitle": "Send all outgoing mail through another server",
+        "now": "Outgoing mail now",
+        "direct": "Sent directly from this server",
+        "through": "Through {host}:{port}",
+        "host": "Relay server",
+        "port": "Port",
+        "username": "Username",
+        "password": "Password",
+        "help": "TLS is always required. The password goes to Postfix and is not stored by the panel, so enter it again whenever you save.",
+        "save": "Save and apply",
+        "disable": "Send directly",
+        "disableConfirm": "Send outgoing mail directly from this server again?",
+        "failed": "Postfix was not changed."
+    },
+    "autoresponder": {
+        "title": "Automatic reply",
+        "help": "Answers each sender once per interval, never to spam or mailing lists.",
+        "on": "On",
+        "subject": "Subject",
+        "body": "Message",
+        "from": "From (optional)",
+        "until": "Until (optional)",
+        "interval": "Days between replies to one sender",
+        "save": "Save reply",
+        "loadFailed": "The automatic reply could not be loaded.",
+        "saveFailed": "The automatic reply was not saved."
+    },
+    "branding": {
+        "title": "Branding",
+        "serverHelp": "The name, logo and colour everyone sees, unless their reseller has their own.",
+        "resellerHelp": "The name, logo and colour you and your customers see.",
+        "name": "Panel name",
+        "color": "Colour",
+        "logo": "Logo",
+        "logoHelp": "PNG, JPG or WebP, at most 512 KB.",
+        "removeLogo": "Remove logo",
+        "fallback": "Anything left empty comes from the server's branding, then dPanel's own.",
+        "save": "Save",
+        "failed": "Branding was not saved."
     }
 }

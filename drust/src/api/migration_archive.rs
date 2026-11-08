@@ -285,35 +285,17 @@ fn file_name(path: &Path) -> String {
         .to_ascii_lowercase()
 }
 
-/// Member names of a tar (gzip, zstd or plain; tar detects which), refusing
-/// absolute or `..` paths, links and special files.
+/// Member names of a tar (gzip, zstd or plain), refusing absolute or `..`
+/// paths, links and special files.
 fn listing(path: &Path) -> Result<Vec<String>, String> {
-    let out = Command::new("tar")
-        .arg("-tvf")
-        .arg(path)
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(format!(
-            "cannot read the backup archive: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
-    let verbose = String::from_utf8_lossy(&out.stdout);
-    if verbose
-        .lines()
-        .any(|line| !matches!(line.as_bytes().first(), Some(b'-' | b'd')))
-    {
+    let entries = crate::app::archive::list(path)
+        .map_err(|e| format!("cannot read the backup archive: {e}"))?;
+    if entries.iter().any(|e| !matches!(e.kind, crate::app::archive::EntryKind::File | crate::app::archive::EntryKind::Dir)) {
         return Err("the archive contains links or special files, which are not restored".into());
     }
-    let out = Command::new("tar")
-        .arg("-tf")
-        .arg(path)
-        .output()
-        .map_err(|e| e.to_string())?;
-    let names: Vec<String> = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|v| v.trim_start_matches("./").trim_end_matches('/').to_string())
+    let names: Vec<String> = entries
+        .iter()
+        .map(|e| crate::app::archive::normalized(&e.name))
         .filter(|v| !v.is_empty() && v != ".")
         .collect();
     if names.iter().any(|v| !safe_relative(v)) {
@@ -332,19 +314,7 @@ fn safe_relative(value: &str) -> bool {
 
 /// One member's contents. A member listed as `x` may be stored as `./x`.
 fn member(archive: &Path, name: &str) -> Option<String> {
-    for candidate in [name.to_string(), format!("./{name}")] {
-        let out = Command::new("tar")
-            .arg("-xOf")
-            .arg(archive)
-            .arg(&candidate)
-            .stderr(Stdio::null())
-            .output()
-            .ok()?;
-        if out.status.success() {
-            return Some(String::from_utf8_lossy(&out.stdout).into_owned());
-        }
-    }
-    None
+    crate::app::archive::read_member(archive, name).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn valid_account(value: &str) -> bool {
@@ -1015,54 +985,12 @@ fn ensure_account(account: &str, home: &Path) -> Result<(), String> {
 }
 
 fn extract(archive: &Path, member: &str, into: &Path) -> Result<(), String> {
-    let out = Command::new("tar")
-        .arg("-xf")
-        .arg(archive)
-        .arg("-C")
-        .arg(into)
-        .args(["--no-same-owner", "--no-same-permissions", "--"])
-        .arg(member)
-        .output()
-        .map_err(|e| e.to_string())?;
-    if out.status.success() {
-        return Ok(());
-    }
-    // Some panels store members as ./name.
-    let retry = Command::new("tar")
-        .arg("-xf")
-        .arg(archive)
-        .arg("-C")
-        .arg(into)
-        .args(["--no-same-owner", "--no-same-permissions", "--"])
-        .arg(format!("./{member}"))
-        .output()
-        .map_err(|e| e.to_string())?;
-    if retry.status.success() {
-        return Ok(());
-    }
-    Err(format!(
-        "cannot extract {member}: {}",
-        String::from_utf8_lossy(&out.stderr).trim()
-    ))
+    crate::app::archive::extract(archive, into, Some(member)).map_err(|e| format!("cannot extract {member}: {e}"))
 }
 
 fn untar(archive: &Path, into: &Path) -> Result<(), String> {
-    let out = Command::new("tar")
-        .arg("-xf")
-        .arg(archive)
-        .arg("-C")
-        .arg(into)
-        .args(["--no-same-owner", "--no-same-permissions"])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(format!(
-            "cannot extract {}: {}",
-            file_name(archive),
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
-    Ok(())
+    crate::app::archive::extract_all(archive, into)
+        .map_err(|e| format!("cannot extract {}: {e}", file_name(archive)))
 }
 
 /// Copy `from` (a file or directory) to `to`, merging into an existing
@@ -1071,25 +999,7 @@ fn copy_into(from: &Path, to: &Path) -> Result<(), String> {
     if !from.exists() {
         return Ok(());
     }
-    if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let source = if from.is_dir() {
-        fs::create_dir_all(to).map_err(|e| e.to_string())?;
-        from.join(".")
-    } else {
-        from.to_path_buf()
-    };
-    let out = Command::new("cp")
-        .arg("-a")
-        .arg(&source)
-        .arg(to)
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    Ok(())
+    crate::app::archive::copy_tree(from, to)
 }
 
 fn largest_file(dir: &Path) -> Option<PathBuf> {
@@ -1111,33 +1021,17 @@ fn largest_file(dir: &Path) -> Option<PathBuf> {
     best.map(|(_, path)| path)
 }
 
-/// A plain .sql path for `dump`, gunzipping into `work` when it is
-/// compressed (checked by magic bytes, so the name does not matter).
+/// A plain .sql path for `dump`, decompressing into `work` when it is
+/// gzip or zstd (checked by magic bytes, so the name does not matter).
 fn plain_sql(dump: &Path, work: &Path) -> Result<PathBuf, String> {
-    let mut magic = [0u8; 4];
-    let read = {
-        use std::io::Read;
-        fs::File::open(dump)
-            .and_then(|mut f| f.read(&mut magic))
-            .map_err(|e| e.to_string())?
-    };
-    let tool = match &magic[..read] {
-        [0x1f, 0x8b, ..] => "gzip",
-        [0x28, 0xb5, 0x2f, 0xfd] => "zstd",
-        _ => return Ok(dump.to_path_buf()),
-    };
     let target = work.join("dump.sql");
-    let output = fs::File::create(&target).map_err(|e| e.to_string())?;
-    let status = Command::new(tool)
-        .arg("-dc")
-        .arg(dump)
-        .stdout(output)
-        .status()
-        .map_err(|e| format!("{tool}: {e}"))?;
-    if !status.success() {
-        return Err(format!("cannot decompress {}", file_name(dump)));
+    if crate::app::archive::decompress(dump, &target)
+        .map_err(|e| format!("cannot decompress {}: {e}", file_name(dump)))?
+    {
+        Ok(target)
+    } else {
+        Ok(dump.to_path_buf())
     }
-    Ok(target)
 }
 
 fn import_database(db: &str, dump: &Path) -> Result<(), String> {

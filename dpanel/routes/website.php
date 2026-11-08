@@ -24,6 +24,7 @@ use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteHtaccessController;
 use App\Http\Controllers\Website\WebsiteLogController;
+use App\Http\Controllers\Wordpress\WordpressSafeUpdateController;
 use App\Http\Controllers\Wordpress\WordpressToolkitController;
 use App\Http\Controllers\Website\WebsiteManage\MainWebsiteController;
 use App\Http\Controllers\Website\WebsiteOperationsController;
@@ -613,4 +614,5 @@ Route::middleware('role_or_permission:admin|reseller|manage_websites')->group(fu
     Route::post('/wordpress/sites/{site}/staging', [WordpressToolkitController::class, 'link'])->whereUuid('site')->name('wordpress.staging.link');
     Route::delete('/wordpress/sites/{site}/staging', [WordpressToolkitController::class, 'unlink'])->whereUuid('site')->name('wordpress.staging.unlink');
     Route::post('/wordpress/sites/{site}/staging/copy', [WordpressToolkitController::class, 'copy'])->whereUuid('site')->middleware('throttle:10,1')->name('wordpress.staging.copy');
+    Route::post('/wordpress/sites/{site}/safe-update', WordpressSafeUpdateController::class)->whereUuid('site')->middleware('throttle:10,1')->name('wordpress.safe-update');
 });

@@ -11,6 +11,9 @@ class WordpressStaging extends Model
 
     public const TO_PRODUCTION = 'to_production';
 
+    /** W5: production is copied to staging, updated there, then on production. */
+    public const SAFE_UPDATE = 'safe_update';
+
     protected $fillable = [
         'production_website_id', 'staging_website_id', 'user_id',
         'clone_id', 'direction', 'stage', 'message', 'copied_at', 'deployed_at',
@@ -33,6 +36,6 @@ class WordpressStaging extends Model
 
     public function busy(): bool
     {
-        return in_array($this->stage, ['queued', 'copying', 'rewriting'], true);
+        return in_array($this->stage, ['queued', 'copying', 'rewriting', 'testing', 'updating'], true);
     }
 }

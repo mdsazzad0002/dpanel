@@ -3,20 +3,16 @@
 namespace App\Http\Controllers\Wordpress;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\CloneWebsiteJob;
-use App\Jobs\WordpressStagingFinishJob;
 use App\Models\Website;
 use App\Models\WordpressStaging;
 use App\Services\ActivityLogService;
-use App\Services\Backup\CloneShareJobStatus;
+use App\Services\Wordpress\WordpressStagingCopier;
 use App\Services\Wordpress\WordpressInfo;
 use App\Services\Wordpress\WordpressSecurityReport;
 use App\Services\Wordpress\WordpressSites;
 use App\Services\Wordpress\WpCliClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -33,6 +29,7 @@ class WordpressToolkitController extends Controller
         private readonly WpCliClient $wp,
         private readonly WordpressSites $sites,
         private readonly ActivityLogService $activity,
+        private readonly WordpressStagingCopier $copier,
     ) {}
 
     public function index(): Response
@@ -111,7 +108,7 @@ class WordpressToolkitController extends Controller
             ->map(fn (Website $candidate) => ['id' => (string) $candidate->id, 'domain' => (string) $candidate->domain])
             ->values();
 
-        return response()->json(['ok' => true, 'staging' => $link ? $this->describe($link) : null, 'targets' => $targets]);
+        return response()->json(['ok' => true, 'staging' => $link ? $this->copier->describe($link) : null, 'targets' => $targets]);
     }
 
     public function link(Request $request, string $token, string $site): JsonResponse
@@ -136,7 +133,7 @@ class WordpressToolkitController extends Controller
         ]);
         $this->activity->log('wordpress.staging_linked', $website, ['staging' => $target->domain], $request);
 
-        return response()->json(['ok' => true, 'staging' => $this->describe($link)]);
+        return response()->json(['ok' => true, 'staging' => $this->copier->describe($link)]);
     }
 
     public function unlink(Request $request, string $token, string $site): JsonResponse
@@ -162,51 +159,14 @@ class WordpressToolkitController extends Controller
         [$from, $to] = $validated['direction'] === WordpressStaging::TO_STAGING ? [$website, $staging] : [$staging, $website];
 
         try {
-            $home = trim($this->wp->run($from, 'home_url')['home']['output'] ?? '');
+            $this->copier->start($link, $from, $to, $validated['direction'], (int) $request->user()->id);
         } catch (\RuntimeException $e) {
             return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
         }
-        if (preg_match('#^https?://#i', $home) !== 1) {
-            return response()->json(['ok' => false, 'message' => "The site address of {$from->domain} could not be read."], 422);
-        }
-
-        $cloneId = (string) Str::uuid();
-        CloneShareJobStatus::set($cloneId, ['stage' => 'queued']);
-        $link->update(['clone_id' => $cloneId, 'direction' => $validated['direction'], 'stage' => 'queued', 'message' => null]);
-
-        Bus::chain([
-            new CloneWebsiteJob($cloneId, (string) $from->id, (string) $to->id, (int) $request->user()->id),
-            new WordpressStagingFinishJob($link->id, $home),
-        ])->onQueue('heavy')->dispatch();
 
         $this->activity->log('wordpress.staging_'.$validated['direction'], $website, ['from' => $from->domain, 'to' => $to->domain], $request);
 
-        return response()->json(['ok' => true, 'staging' => $this->describe($link->fresh())]);
-    }
-
-    /** @return array<string, mixed> */
-    private function describe(WordpressStaging $link): array
-    {
-        $stage = $link->stage;
-        if ($link->busy() && $link->clone_id !== null) {
-            $clone = CloneShareJobStatus::get($link->clone_id);
-            if (($clone['stage'] ?? '') === 'failed') {
-                $link->update(['stage' => 'failed', 'message' => (string) ($clone['message'] ?? 'The copy failed.')]);
-                $stage = 'failed';
-            } elseif ($stage === 'queued' && ! in_array($clone['stage'] ?? 'queued', ['queued', 'ready'], true)) {
-                $stage = 'copying';
-            }
-        }
-
-        return [
-            'staging_website_id' => (string) $link->staging_website_id,
-            'staging_domain' => (string) ($link->staging?->domain ?? ''),
-            'direction' => $link->direction,
-            'stage' => $stage,
-            'message' => $link->message,
-            'copied_at' => $link->copied_at?->toIso8601String(),
-            'deployed_at' => $link->deployed_at?->toIso8601String(),
-        ];
+        return response()->json(['ok' => true, 'staging' => $this->copier->describe($link->fresh())]);
     }
 
     private function website(Request $request, string $id): Website

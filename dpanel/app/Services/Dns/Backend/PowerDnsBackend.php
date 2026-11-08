@@ -106,6 +106,52 @@ class PowerDnsBackend implements DnsBackend
         });
     }
 
+    public function addRecord(int $zoneId, RecordSpec $record): int
+    {
+        return (int) $this->db()->table('records')->insertGetId([
+            'domain_id' => $zoneId,
+            'name' => self::normalize($record->name),
+            'type' => strtoupper($record->type),
+            'content' => $record->content,
+            'ttl' => $record->ttl,
+            'prio' => $record->priority,
+            'disabled' => $record->disabled ? 1 : 0,
+            'auth' => 1,
+        ]);
+    }
+
+    public function updateRecord(int $recordId, array $changes): void
+    {
+        $columns = ['zone_id' => 'domain_id', 'name' => 'name', 'type' => 'type', 'content' => 'content', 'ttl' => 'ttl', 'priority' => 'prio', 'disabled' => 'disabled'];
+        $row = [];
+        foreach ($changes as $field => $value) {
+            if (! isset($columns[$field])) {
+                throw new \InvalidArgumentException("Unknown record field {$field}.");
+            }
+            $row[$columns[$field]] = match ($field) {
+                'name' => self::normalize((string) $value),
+                'type' => strtoupper((string) $value),
+                'disabled' => $value ? 1 : 0,
+                default => $value,
+            };
+        }
+        if ($row !== []) {
+            $this->db()->table('records')->where('id', $recordId)->update($row + ['auth' => 1]);
+        }
+    }
+
+    public function deleteRecords(array $recordIds): void
+    {
+        foreach (array_chunk(array_values(array_unique(array_map('intval', $recordIds))), 500) as $chunk) {
+            $this->db()->table('records')->whereIn('id', $chunk)->delete();
+        }
+    }
+
+    public function touchZone(int $zoneId): void
+    {
+        $this->rules->bumpSerial($this->db(), $zoneId);
+    }
+
     public function enableDnssec(string $zone, bool $on): array
     {
         throw new UnsupportedDnsFeature('DNSSEC needs the gmysql-dnssec schema first (backlog M6).');

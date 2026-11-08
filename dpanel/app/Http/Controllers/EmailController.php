@@ -16,6 +16,8 @@ use App\Services\Mail\MailDnsRecords;
 use App\Services\Mail\MailIps;
 use App\Services\Mail\MailDnsVerifier;
 use App\Services\Mail\MailDnsZoneWriter;
+use App\Services\Mail\Backend\MailBackend;
+use App\Services\Mail\Backend\MailBackendException;
 use App\Services\Mail\MailDomainProvisioner;
 use App\Services\ResourceQuotaService;
 use Illuminate\Database\Eloquent\Collection;
@@ -39,7 +41,10 @@ class EmailController extends Controller
     private const DOVECOT_AUTH_FILE = '/etc/dovecot/conf.d/auth-serverpanel.conf.ext';
     private const DOVECOT_AUTH_INCLUDE_FILE = '/etc/dovecot/conf.d/10-auth.conf';
 
-    public function __construct(private readonly ResourceQuotaService $quotas)
+    public function __construct(
+        private readonly ResourceQuotaService $quotas,
+        private readonly MailBackend $mail,
+    )
     {
     }
 
@@ -399,7 +404,7 @@ class EmailController extends Controller
             ->implode(' ');
     }
 
-    public function store(Request $request, MailDomainProvisioner $provisioner): JsonResponse
+    public function store(Request $request): JsonResponse
     {
         $validated = $this->validatePayload($request);
         $domain = strtolower(trim((string) $validated['domain']));
@@ -451,7 +456,7 @@ class EmailController extends Controller
         }
 
         // Mailbox exists at this point; prep failures are reported, not fatal.
-        $prepared = $provisioner->ensureReady($domain);
+        $prepared = $this->mail->ensureDomain($domain);
         // The choice is only offered to mail server admins; anyone else keeps the domain's IP.
         if (! empty($validated['mail_ip_id']) && $this->mailIpChoices($request)['mailIps'] !== []) {
             app(MailIps::class)->assign($domain, $validated['mail_ip_id']);
@@ -1010,11 +1015,13 @@ class EmailController extends Controller
      */
     private function provisionMailboxStorage(Mailbox $mailbox, ?string $oldMailHome = null): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return ['ok' => true, 'message' => 'Storage sync skipped on Windows.'];
-        }
+        try {
+            $this->mail->ensureMailbox($mailbox, $oldMailHome);
 
-        return $this->syncMailboxStorage($mailbox, $oldMailHome !== null && $oldMailHome !== '' && $oldMailHome !== (string) $mailbox->mail_home ? 'move' : 'create', $oldMailHome);
+            return ['ok' => true, 'message' => 'Maildir synchronized.'];
+        } catch (MailBackendException $e) {
+            return ['ok' => false, 'message' => $e->getMessage()];
+        }
     }
 
     /**
@@ -1022,27 +1029,13 @@ class EmailController extends Controller
      */
     private function removeMailboxFromStorage(Mailbox $mailbox): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
-            return ['ok' => true, 'message' => 'Storage cleanup skipped on Windows.'];
-        }
-
-        return $this->syncMailboxStorage($mailbox, 'remove');
-    }
-
-    /** @return array{ok: bool, message: string} */
-    private function syncMailboxStorage(Mailbox $mailbox, string $action, ?string $previousMailHome = null): array
-    {
-        $baseUrl = rtrim((string) config('serverpanel.execution_api_base_url', ''), '/');
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
-        if ($baseUrl === '' || $token === '') return ['ok' => false, 'message' => 'Rust execution service is not configured.'];
         try {
-            $response = Http::acceptJson()->asJson()->withToken($token)->timeout((int) config('serverpanel.execution_api_timeout', 60))->post($baseUrl.'/api/v1/mailbox-storage', [
-                'action' => $action, 'mail_home' => $mailbox->mail_home, 'site_owner' => $mailbox->site_owner, 'previous_mail_home' => $previousMailHome,
-            ]);
-            return $response->ok() && $response->json('success') === true
-                ? ['ok' => true, 'message' => 'Maildir synchronized.']
-                : ['ok' => false, 'message' => (string) ($response->json('message') ?: $response->body())];
-        } catch (\Throwable $e) { return ['ok' => false, 'message' => $e->getMessage()]; }
+            $this->mail->removeMailbox($mailbox);
+
+            return ['ok' => true, 'message' => 'Maildir synchronized.'];
+        } catch (MailBackendException $e) {
+            return ['ok' => false, 'message' => $e->getMessage()];
+        }
     }
 
     /**

@@ -14,7 +14,7 @@ const loading = ref(false);
 const error = ref('');
 let timer = null;
 
-const busy = () => ['queued', 'copying', 'rewriting'].includes(staging.value?.stage);
+const busy = () => ['queued', 'copying', 'rewriting', 'testing', 'updating'].includes(staging.value?.stage);
 
 const load = async () => {
     loading.value = true;
@@ -79,6 +79,7 @@ onUnmounted(() => window.clearTimeout(timer));
             <p class="text-xs text-slate-500">{{ t('wordpress.lastCopy') }}: {{ when(staging.copied_at) }} · {{ t('wordpress.lastDeploy') }}: {{ when(staging.deployed_at) }}</p>
             <p v-if="busy()" class="text-sm text-blue-700 dark:text-blue-300"><i class="bi bi-arrow-repeat mr-1 animate-spin"></i>{{ t(`wordpress.stage.${staging.stage}`) }}</p>
             <p v-else-if="staging.stage === 'failed'" class="text-sm text-red-700 dark:text-red-300">{{ staging.message }}</p>
+            <p v-else-if="staging.direction === 'safe_update' && staging.message" class="text-sm text-emerald-700 dark:text-emerald-300">{{ staging.message }}</p>
             <div class="flex flex-wrap gap-2">
                 <button type="button" :disabled="busy()" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50 dark:border-slate-700" @click="copy('to_staging')">{{ t('wordpress.copyToStaging') }}</button>
                 <button type="button" :disabled="busy() || !staging.copied_at" class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="copy('to_production')">{{ t('wordpress.deploy') }}</button>

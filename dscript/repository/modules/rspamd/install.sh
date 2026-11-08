@@ -115,7 +115,7 @@ if header :is "X-Spam" "Yes" {
 }' && changed=true
 
   if [[ "$version" == 2.4* ]]; then
-    rspamd_write "$DOVECOT_SIEVE_CONF" "# Managed by dPanel: run the spam filter on every delivery.
+    rspamd_write "$DOVECOT_SIEVE_CONF" "# Managed by dPanel: run the spam filter, then the mailbox's own reply, on every delivery.
 protocol lmtp {
   mail_plugins {
     sieve = yes
@@ -124,14 +124,22 @@ protocol lmtp {
 sieve_script dpanel_spam {
   type = before
   path = ${SIEVE_SCRIPT}
+}
+# A mailbox's own script: its automatic reply, written by the panel.
+sieve_script personal {
+  driver = file
+  path = ~/sieve
+  active_path = ~/.dovecot.sieve
 }" && changed=true
   else
-    rspamd_write "$DOVECOT_SIEVE_CONF" "# Managed by dPanel: run the spam filter on every delivery.
+    rspamd_write "$DOVECOT_SIEVE_CONF" "# Managed by dPanel: run the spam filter, then the mailbox's own reply, on every delivery.
 protocol lmtp {
   mail_plugins = \$mail_plugins sieve
 }
 plugin {
   sieve_before = ${SIEVE_SCRIPT}
+  # A mailbox's own script: its automatic reply, written by the panel.
+  sieve = file:~/sieve;active=~/.dovecot.sieve
 }" && changed=true
   fi
 

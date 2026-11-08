@@ -4,6 +4,8 @@ namespace App\Services\Dns;
 
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
+use App\Services\Dns\Backend\DnsBackend;
+use App\Services\Dns\Backend\RecordSpec;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -16,6 +18,7 @@ class DnsZoneImporter
     public function __construct(
         private readonly DnsRecordContent $recordContent,
         private readonly DnsZoneRules $rules,
+        private readonly DnsBackend $dns,
     ) {}
 
     /**
@@ -35,7 +38,7 @@ class DnsZoneImporter
                 $kept = DB::table('records')->where('domain_id', $zoneId)
                     ->where(fn ($query) => $query->where('type', 'SOA')->orWhere(fn ($ns) => $ns->where('type', 'NS')->where('name', $domain)))
                     ->pluck('id');
-                DB::table('records')->where('domain_id', $zoneId)->whereNotIn('id', $kept)->delete();
+                $this->dns->deleteRecords(DB::table('records')->where('domain_id', $zoneId)->whereNotIn('id', $kept)->pluck('id')->all());
                 DnsRecord::query()->where('dns_zone_id', $profile->id)->whereNotIn('powerdns_record_id', $kept)->delete();
             }
 
@@ -61,16 +64,7 @@ class DnsZoneImporter
                     continue;
                 }
 
-                $recordId = (int) DB::table('records')->insertGetId([
-                    'domain_id' => $zoneId,
-                    'name' => $name,
-                    'type' => $type,
-                    'content' => $content,
-                    'ttl' => $ttl,
-                    'prio' => $priority,
-                    'disabled' => 0,
-                    'auth' => 1,
-                ]);
+                $recordId = $this->dns->addRecord($zoneId, new RecordSpec($name, $type, $content, $ttl, $priority));
                 DnsRecord::query()->create([
                     'id' => (string) Str::uuid(),
                     'dns_zone_id' => $profile->id,
@@ -84,7 +78,7 @@ class DnsZoneImporter
                 ]);
                 $created++;
             }
-            $this->rules->bumpSerial(DB::connection(), $zoneId);
+            $this->dns->touchZone($zoneId);
         });
 
         return ['created' => $created, 'skipped' => $skipped];

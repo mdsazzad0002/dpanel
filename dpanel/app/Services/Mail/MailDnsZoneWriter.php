@@ -7,6 +7,8 @@ use App\Models\DnsZone;
 use App\Models\User;
 use App\Services\Dns\DnsRecordContent;
 use App\Services\Dns\DnsZoneRules;
+use App\Services\Dns\Backend\DnsBackend;
+use App\Services\Dns\Backend\RecordSpec;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -24,6 +26,7 @@ class MailDnsZoneWriter
     public function __construct(
         private readonly DnsRecordContent $recordContent,
         private readonly DnsZoneRules $rules,
+        private readonly DnsBackend $dns,
     ) {}
 
     /**
@@ -98,23 +101,14 @@ class MailDnsZoneWriter
 
                 if ($existing->isNotEmpty()) {
                     $ids = $existing->pluck('id')->all();
-                    DB::table('records')->whereIn('id', $ids)->delete();
+                    $this->dns->deleteRecords($ids);
                     DnsRecord::query()->where('dns_zone_id', $zone->id)->whereIn('powerdns_record_id', $ids)->delete();
                     $result['replaced']++;
                 } else {
                     $result['added']++;
                 }
 
-                $recordId = (int) DB::table('records')->insertGetId([
-                    'domain_id' => $zoneId,
-                    'name' => $name,
-                    'type' => $type,
-                    'content' => $content,
-                    'ttl' => self::TTL,
-                    'prio' => $priority,
-                    'disabled' => 0,
-                    'auth' => 1,
-                ]);
+                $recordId = $this->dns->addRecord($zoneId, new RecordSpec($name, $type, $content, self::TTL, $priority));
                 DnsRecord::query()->create([
                     'id' => (string) Str::uuid(),
                     'dns_zone_id' => $zone->id,
@@ -128,7 +122,7 @@ class MailDnsZoneWriter
                 ]);
             }
 
-            $this->rules->bumpSerial(DB::connection(), $zoneId);
+            $this->dns->touchZone($zoneId);
         });
 
         return $result;

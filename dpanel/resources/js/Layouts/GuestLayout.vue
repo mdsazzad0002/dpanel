@@ -49,7 +49,7 @@ import { Link } from '@inertiajs/vue3';
                             <Link href="/" class="inline-flex items-center gap-3">
                                 <ApplicationLogo class="fill-current text-emerald-400" />
                                 <span class="font-mono text-xs uppercase tracking-[0.3em] text-emerald-200/80">
-                                    dPanel
+                                    {{ $page.props.branding?.name || 'dPanel' }}
                                 </span>
                             </Link>
                         </div>

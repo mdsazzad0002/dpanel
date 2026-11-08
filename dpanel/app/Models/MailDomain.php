@@ -29,6 +29,7 @@ class MailDomain extends Model
         'status',
         'assigned_user_id',
         'bimi_logo_path',
+        'catch_all_to',
     ];
 
     protected $hidden = [

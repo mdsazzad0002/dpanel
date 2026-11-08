@@ -2167,11 +2167,17 @@ dbname = ${db_name}"
   # sandbox: mail from a sandbox mailbox to any other server is discarded
   # (sender_dependent_default_transport_maps only applies to non-local
   # recipients), so it still reaches mailboxes on this server.
+  # Forward-only addresses (mail_forwarders) have no mailbox. A domain's
+  # catch-all is the "@domain" key; Postfix tries it only when the full
+  # address found nothing, so every mailbox answers with itself first, or a
+  # catch-all would take mail meant for real mailboxes.
+  local legacy_domains="SELECT 1 FROM mailboxes WHERE domain = '%s' AND status = 'active' LIMIT 1"
+  local legacy_aliases="SELECT CONCAT(email, ',', forwarding_to) FROM mailboxes WHERE email = '%s' AND status = 'active' AND forwarding_to <> '' AND (delivery_mode <> 'sandbox' OR SUBSTRING_INDEX(forwarding_to, '@', -1) IN (SELECT domain FROM mailboxes WHERE status = 'active')) LIMIT 1"
   for map in domains mailboxes aliases sandbox; do
     case "$map" in
-      domains) query="SELECT 1 FROM mailboxes WHERE domain = '%s' AND status = 'active' LIMIT 1" ;;
+      domains) query="SELECT 1 FROM mailboxes WHERE domain = '%s' AND status = 'active' UNION ALL SELECT 1 FROM mail_forwarders WHERE domain = '%s' AND status = 'active' LIMIT 1" ;;
       mailboxes) query="SELECT 1 FROM mailboxes WHERE email = '%s' AND status = 'active' LIMIT 1" ;;
-      aliases) query="SELECT CONCAT(email, ',', forwarding_to) FROM mailboxes WHERE email = '%s' AND status = 'active' AND forwarding_to <> '' AND (delivery_mode <> 'sandbox' OR SUBSTRING_INDEX(forwarding_to, '@', -1) IN (SELECT domain FROM mailboxes WHERE status = 'active')) LIMIT 1" ;;
+      aliases) query="SELECT CASE WHEN status = 'active' AND forwarding_to <> '' AND (delivery_mode <> 'sandbox' OR SUBSTRING_INDEX(forwarding_to, '@', -1) IN (SELECT domain FROM mailboxes WHERE status = 'active')) THEN CONCAT(email, ',', forwarding_to) ELSE email END FROM mailboxes WHERE email = '%s' UNION ALL SELECT destinations FROM mail_forwarders WHERE address = '%s' AND status = 'active' UNION ALL SELECT catch_all_to FROM mail_domains WHERE CONCAT('@', domain) = '%s' AND status = 'active' AND catch_all_to <> '' LIMIT 1" ;;
       sandbox) query="SELECT 'discard:dpanel-sandbox' FROM mailboxes WHERE email = '%s' AND delivery_mode = 'sandbox' LIMIT 1" ;;
     esac
     file="/etc/postfix/dpanel-virtual-${map}.cf"
@@ -2185,19 +2191,28 @@ query = ${query}"
     chmod 0640 "$file"
   done
 
-  # Both queries need the delivery_mode column. Until the migration has run
-  # they would fail, and Postfix would defer every message, so fall back to
-  # the previous queries instead.
+  # The queries need columns and tables from the panel's migrations. Until
+  # they have run a query would fail, and Postfix would defer every message,
+  # so fall back to the previous queries instead.
   local sandbox_ready=true
   if postmap -q 'probe@dpanel.invalid' "mysql:/etc/postfix/dpanel-virtual-sandbox.cf" 2>&1 >/dev/null | grep -qiE 'warning|fatal|error'; then
     sandbox_ready=false
     panel_warn_log "mailboxes.delivery_mode is missing; run 'php artisan migrate --force' to enable sandbox mailboxes."
-    content="${connection}
-query = SELECT CONCAT(email, ',', forwarding_to) FROM mailboxes WHERE email = '%s' AND status = 'active' AND forwarding_to <> '' LIMIT 1"
-    if [[ "$(cat /etc/postfix/dpanel-virtual-aliases.cf)" != "$content" ]]; then
-      printf '%s\n' "$content" > /etc/postfix/dpanel-virtual-aliases.cf
-      changed=true
-    fi
+    legacy_aliases="SELECT CONCAT(email, ',', forwarding_to) FROM mailboxes WHERE email = '%s' AND status = 'active' AND forwarding_to <> '' LIMIT 1"
+  fi
+  if postmap -q 'probe@dpanel.invalid' "mysql:/etc/postfix/dpanel-virtual-aliases.cf" 2>&1 >/dev/null | grep -qiE 'warning|fatal|error' \
+    || postmap -q 'dpanel.invalid' "mysql:/etc/postfix/dpanel-virtual-domains.cf" 2>&1 >/dev/null | grep -qiE 'warning|fatal|error'; then
+    panel_warn_log "Mail forwarders and catch-all need 'php artisan migrate --force'; using the previous mail queries until then."
+    for map in domains aliases; do
+      file="/etc/postfix/dpanel-virtual-${map}.cf"
+      if [[ "$map" == domains ]]; then query="$legacy_domains"; else query="$legacy_aliases"; fi
+      content="${connection}
+query = ${query}"
+      if [[ "$(cat "$file")" != "$content" ]]; then
+        printf '%s\n' "$content" > "$file"
+        changed=true
+      fi
+    done
   fi
   panel_postfix_sender_transport_maps "$sandbox_ready" && changed=true
 

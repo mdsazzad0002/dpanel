@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import AutoresponderCard from './components/AutoresponderCard.vue';
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -106,6 +107,7 @@ const submit = () => {
                     </button>
                 </div>
             </form>
+            <AutoresponderCard :mailbox-id="String(props.mailbox.id)" />
         </div>
     </AuthenticatedLayout>
 </template>

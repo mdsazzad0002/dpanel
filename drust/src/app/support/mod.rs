@@ -1,3 +1,4 @@
+pub mod archive;
 mod domain;
 mod filesystem;
 mod process;

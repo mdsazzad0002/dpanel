@@ -396,7 +396,7 @@ Database-এর `DnsZone` ও `DnsRecord` সবসময় source of truth থ
 
 Implementation: PowerDNS, Windows `DnsServer` module, Cloudflare API, Local hosts file।
 
-প্রথম সংস্করণ panel-এ, PHP-তে: `App\Services\Dns\Backend\DnsBackend` (`upsertZone`, `renameZone`, `deleteZone`, `replaceRecords`, `enableDnssec`), `config('dns.engine')` দিয়ে বাছা। PowerDNS-এর gmysql table panel-এর database-এ, তাই drust-এ যাওয়ার দরকার পড়েনি। `replaceRecords` SOA রাখে ও serial বাড়ায়; zone-এর বাইরের নাম ফেরায়।
+প্রথম সংস্করণ panel-এ, PHP-তে: `App\Services\Dns\Backend\DnsBackend` (`upsertZone`, `renameZone`, `deleteZone`, `replaceRecords`, `enableDnssec`, আর একটা একটা record-এর জন্য `addRecord`, `updateRecord`, `deleteRecords`, `touchZone`), `config('dns.engine')` দিয়ে বাছা। Record-এর id backend-এর (PowerDNS-এর `records.id`), কারণ `dns_records.powerdns_record_id` ও form সেটা ধরে রাখে। `addRecord`/`updateRecord`/`deleteRecords` serial ছোঁয় না; caller batch-এর শেষে একবার `touchZone` ডাকে। PowerDNS-এর gmysql table panel-এর database-এ, তাই drust-এ যাওয়ার দরকার পড়েনি। `replaceRecords` SOA রাখে ও serial বাড়ায়; zone-এর বাইরের নাম ফেরায়।
 
 ### 6.11 MailBackend (Laravel)
 
@@ -414,7 +414,27 @@ interface MailBackend {
 }
 ```
 
-`PostfixDovecotBackend`-এ বর্তমান code সরবে, আচরণ অপরিবর্তিত রেখে। IMAP-এ পড়া (`MailboxImapService`) দুই backend-এ একই থাকবে। Stalwart management API-র ঠিক কোন endpoint লাগবে, সেটা H3 spike থেকে এই section-এ যোগ হবে।
+প্রথম সংস্করণ (`App\Services\Mail\Backend\MailBackend`, `config('mail.backend')`): domain নাম string হিসেবে, আর M1-M3, M8-এর জন্য বাড়তি method।
+
+```php
+interface MailBackend {
+    public function ensureDomain(string $domain): array;               // {ok, messages}
+    public function ensureMailbox(Mailbox $mailbox, ?string $previousMailHome = null): void;
+    public function removeMailbox(Mailbox $mailbox): void;
+    public function setForwarding(Mailbox $mailbox, ?string $target): void;
+    public function setAutoresponder(Mailbox $mailbox, ?AutoresponderData $data): void;
+    public function supportsAutoresponder(): bool;
+    public function setCatchAll(MailDomain $domain, ?string $target): void;
+    public function ensureForwarder(MailForwarder $forwarder): void;
+    public function removeForwarder(MailForwarder $forwarder): void;
+    public function setRelay(?RelaySettings $relay): void;
+    public function relay(): array;                                    // {host, port, username}
+}
+```
+
+`dkimRecord`, `health` ও `queue` এখনও নেই: DKIM `MailDomainProvisioner`-এ, health `MailHealthController`-এ, queue P5-এ আসবে। ব্যর্থ হলে `MailBackendException`; backend বা server না পারলে `UnsupportedMailFeature`, আর panel সেটা লুকায়।
+
+`PostfixDovecotBackend`-এ বর্তমান code সরেছে, আচরণ অপরিবর্তিত। Postfix ও Dovecot panel-এর table সরাসরি পড়ে, তাই mailbox, forwarder ও catch-all row বদলালেই পরের mail-এ লাগে। Alias query প্রতিটা mailbox-এর জন্য নিজেকে ফেরায়, যাতে `@domain` catch-all আসল mailbox-এর mail না নেয়। Maildir ও Sieve script drust লেখে (`/api/v1/mailbox-storage`), relay `mail-smtp-relay.sh` (root, password environment-এ)। IMAP-এ পড়া (`MailboxImapService`) দুই backend-এ একই থাকবে। Stalwart management API-র ঠিক কোন endpoint লাগবে, সেটা H3 spike থেকে এই section-এ যোগ হবে।
 
 ### 6.12 AcmeClient
 
@@ -468,6 +488,7 @@ pub trait Scheduler {
 | `package_plans` | `enforcement_mode` (`report`, `enforce`) | `report` |
 | `users` | `terminated_at`, `purge_after` (nullable timestamp) | `null` |
 | `users` | `disk_over_limit_at` (nullable timestamp), `bandwidth_over_limit_month` (nullable `Y-m`) | `null` |
+| `mail_domains` | `catch_all_to` (nullable string) | `null` |
 
 নতুন table:
 
@@ -478,7 +499,10 @@ pub trait Scheduler {
 | `acme_orders` | Domain, challenge, status, error, `expires_at` |
 | `website_protected_directories` | `website_id`, `path`, `realm`, `username`, `password_hash` (`s256i$<rounds>$<salt hex>$<hex>`) |
 | `website_guard_settings` | `website_id`, `no_php_paths`, `hotlink_protection`, `hotlink_allowed_hosts`, `cloudflare_only` |
-| `wordpress_stagings` | `production_website_id`, `staging_website_id` (দুটোই unique), `clone_id`, `direction`, `stage`, `message`, `copied_at`, `deployed_at` |
+| `wordpress_stagings` | `production_website_id`, `staging_website_id` (দুটোই unique), `clone_id`, `direction` (`to_staging`, `to_production`, `safe_update`), `stage`, `message`, `copied_at`, `deployed_at` |
+| `mail_forwarders` | `address` (unique), `domain`, `destinations` (কমা দিয়ে), `status`, `created_by`, `assigned_reseller_id` |
+| `mailbox_autoresponders` | `mailbox_id` (unique), `enabled`, `subject`, `body`, `interval_days`, `starts_on`, `ends_on` |
+| `brandings` | `owner_id` (null = server, নয়তো reseller; unique), `panel_name`, `logo_path`, `primary_color` |
 
 `throttle` এখনও নেই: gateway rate কমাতে পারে না, তাই panel শুধু `notify` ও `block` দেয়। `block`-এ site `over_limit` হয়, নতুন মাসে ফেরে।
 
@@ -508,6 +532,7 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `GET /sites/logs?kind=access\|php&domain=&owner=&lines=` | Site-এর access log বা account-এর PHP error log-এর শেষ অংশ (S4) |
 | `POST /api/v1/wordpress` | নির্দিষ্ট wp-cli action, site user হিসেবে: `info`, `update_core`, `update_plugins`, `update_themes`, `security`, `fix`, `home_url`, `search_replace` (W1-W4) |
 | `GET /system/overview?services=`, `GET /system/services?services=` | Machine-এর সংখ্যা ও service-এর অবস্থা (D3) |
+| `POST /api/v1/mailbox-storage` `action=autoresponder` | Mailbox-এর Sieve `vacation` script লেখা বা (`autoresponder: null`) মোছা; drust script বানায়, panel শুধু subject, body, days, তারিখ পাঠায় (M1) |
 
 Suspend idempotent: দুবার চালালেও ফল একই। Partial failure হলে কোন ধাপ ব্যর্থ হয়েছে সেটা response-এ থাকবে।
 

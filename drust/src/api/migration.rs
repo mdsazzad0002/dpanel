@@ -174,35 +174,9 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
         fs::remove_dir_all(&stage).ok();
         return Err("archive contains an unsafe path".into());
     }
-    let status = if source
-        .to_string_lossy()
-        .to_ascii_lowercase()
-        .ends_with(".zip")
-    {
-        Command::new("unzip")
-            .args([
-                "-q",
-                source.to_string_lossy().as_ref(),
-                "-d",
-                stage.to_string_lossy().as_ref(),
-            ])
-            .status()
-    } else {
-        Command::new("tar")
-            .args([
-                "-xzf",
-                source.to_string_lossy().as_ref(),
-                "-C",
-                stage.to_string_lossy().as_ref(),
-                "--no-same-owner",
-                "--no-same-permissions",
-            ])
-            .status()
-    }
-    .map_err(|e| e.to_string())?;
-    if !status.success() {
+    if let Err(error) = crate::app::archive::extract_all(&source, &stage) {
         fs::remove_dir_all(&stage).ok();
-        return Err("website archive extraction failed".into());
+        return Err(format!("website archive extraction failed: {error}"));
     }
     let content_root = collapse_single_directory(&stage)?;
     let project_root = PathBuf::from(&req.target_root);
@@ -232,28 +206,15 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
                     .any(|part| matches!(part, Component::ParentDir))
             {
                 fs::create_dir_all(&target_project_root).map_err(|e| e.to_string())?;
-                let extras_copy_source = format!("{}/.", extras_dir.display());
-                let _ = Command::new("cp")
-                    .args([
-                        "-a",
-                        &extras_copy_source,
-                        target_project_root.to_string_lossy().as_ref(),
-                    ])
-                    .status();
+                let _ = crate::app::archive::copy_tree(&extras_dir, &target_project_root);
             }
         }
         fs::remove_dir_all(&extras_dir).ok();
     }
 
-    let copy_source = format!("{}/.", content_root.display());
-    if !Command::new("cp")
-        .args(["-a", &copy_source, project_root.to_string_lossy().as_ref()])
-        .status()
-        .map_err(|e| e.to_string())?
-        .success()
-    {
+    if let Err(error) = crate::app::archive::copy_tree(&content_root, &project_root) {
         fs::remove_dir_all(&stage).ok();
-        return Err("cannot copy website files".into());
+        return Err(format!("cannot copy website files: {error}"));
     }
     let mut database_backup = None;
     let mut wordpress_url = serde_json::Value::Null;
@@ -467,49 +428,11 @@ fn archive_under_root(value: &str, extensions: &[&str]) -> Result<PathBuf, Strin
 }
 
 fn generic_archive_listing(path: &Path) -> Result<Vec<String>, String> {
-    let zip = path
-        .to_string_lossy()
-        .to_ascii_lowercase()
-        .ends_with(".zip");
-    let out = if zip {
-        Command::new("unzip")
-            .args(["-Z1", path.to_string_lossy().as_ref()])
-            .output()
-    } else {
-        Command::new("tar")
-            .args(["-tzf", path.to_string_lossy().as_ref()])
-            .output()
-    }
-    .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err("invalid website archive".into());
-    }
-    let verbose = if zip {
-        Command::new("zipinfo")
-            .args(["-l", path.to_string_lossy().as_ref()])
-            .output()
-    } else {
-        Command::new("tar")
-            .args(["-tvzf", path.to_string_lossy().as_ref()])
-            .output()
-    }
-    .map_err(|e| e.to_string())?;
-    if !verbose.status.success()
-        || String::from_utf8_lossy(&verbose.stdout)
-            .lines()
-            .any(|line| {
-                matches!(
-                    line.as_bytes().first(),
-                    Some(b'l' | b'b' | b'c' | b'p' | b's')
-                )
-            })
-    {
+    let entries = crate::app::archive::list(path).map_err(|_| "invalid website archive".to_string())?;
+    if entries.iter().any(|e| !matches!(e.kind, crate::app::archive::EntryKind::File | crate::app::archive::EntryKind::Dir)) {
         return Err("archive contains links or unsupported special files".into());
     }
-    Ok(String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::to_string)
-        .collect())
+    Ok(entries.into_iter().map(|e| e.name).collect())
 }
 
 fn collapse_single_directory(stage: &Path) -> Result<PathBuf, String> {

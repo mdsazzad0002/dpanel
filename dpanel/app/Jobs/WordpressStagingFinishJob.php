@@ -41,7 +41,9 @@ class WordpressStagingFinishJob implements ShouldQueue
             return;
         }
 
-        $target = $staging->direction === WordpressStaging::TO_STAGING ? $staging->staging : $staging->production;
+        // Only a deploy copies onto production; a safe update copies to staging too.
+        $toProduction = $staging->direction === WordpressStaging::TO_PRODUCTION;
+        $target = $toProduction ? $staging->production : $staging->staging;
         if (! $target instanceof Website) {
             $staging->update(['stage' => 'failed', 'message' => 'The target website no longer exists.']);
 
@@ -58,9 +60,10 @@ class WordpressStagingFinishJob implements ShouldQueue
         }
 
         $staging->update([
-            'stage' => 'done',
+            // A safe update goes on in WordpressSafeUpdateJob.
+            'stage' => $staging->direction === WordpressStaging::SAFE_UPDATE ? 'testing' : 'done',
             'message' => null,
-            $staging->direction === WordpressStaging::TO_STAGING ? 'copied_at' : 'deployed_at' => now(),
+            $toProduction ? 'deployed_at' : 'copied_at' => now(),
         ]);
     }
 
