@@ -1,17 +1,12 @@
-use std::fs;
-use std::path::PathBuf;
+//! Validation of the panel's cron jobs; `platform::scheduler()` installs them.
 
-use crate::platform::{self, fs::FileMode};
+use crate::platform::{self, scheduler::CronJob};
 
-fn cron_paths(id: &str) -> Result<(PathBuf, PathBuf), String> {
+fn valid_id(id: &str) -> Result<(), String> {
     if id.is_empty() || !id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-') {
         return Err("Cron job id contains invalid characters.".to_string());
     }
-
-    Ok((
-        PathBuf::from(format!("/etc/cron.d/dpanel-{id}")),
-        PathBuf::from(format!("/etc/cron.d/serverpanel-{id}")),
-    ))
+    Ok(())
 }
 
 pub(crate) fn upsert(
@@ -21,7 +16,7 @@ pub(crate) fn upsert(
     command: &str,
     enabled: bool,
 ) -> Result<String, String> {
-    let (path, legacy_path) = cron_paths(id)?;
+    valid_id(id)?;
     if !enabled {
         return delete(id);
     }
@@ -42,33 +37,37 @@ pub(crate) fn upsert(
         return Err("Cron expression and command must be single-line values.".to_string());
     }
 
-    let content = format!(
-        "# Managed by dPanel; job-id={id}\n{} {} {}\n",
-        expression.trim(),
-        user,
-        command.trim()
-    );
-    let temp = path.with_extension(format!("tmp-{}", std::process::id()));
-    fs::write(&temp, content).map_err(|error| format!("Cannot write cron file: {error}"))?;
-    platform::files().set_mode(&temp, FileMode::Shared)
-        .map_err(|error| format!("Cannot set cron file permissions: {error}"))?;
-    fs::rename(&temp, &path).map_err(|error| format!("Cannot activate cron file: {error}"))?;
-    if legacy_path.exists() {
-        fs::remove_file(&legacy_path)
-            .map_err(|error| format!("Cannot remove legacy cron file: {error}"))?;
-    }
-
+    let job = CronJob {
+        id: id.to_string(),
+        user: user.to_string(),
+        expression: expression.trim().to_string(),
+        command: command.trim().to_string(),
+    };
+    platform::scheduler()
+        .upsert(&job)
+        .map_err(|error| format!("Cannot install cron job: {error}"))?;
     Ok(format!("System cron job {id} installed."))
 }
 
 pub(crate) fn delete(id: &str) -> Result<String, String> {
-    let (path, legacy_path) = cron_paths(id)?;
-    for candidate in [path, legacy_path] {
-        if candidate.exists() {
-            fs::remove_file(&candidate)
-                .map_err(|error| format!("Cannot remove cron file: {error}"))?;
-        }
-    }
-
+    valid_id(id)?;
+    platform::scheduler()
+        .remove(id)
+        .map_err(|error| format!("Cannot remove cron job: {error}"))?;
     Ok(format!("System cron job {id} removed."))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bad_input_never_reaches_the_scheduler() {
+        assert!(upsert("../x", "shop", "* * * * *", "true", true).is_err());
+        assert!(upsert("1", "sh op", "* * * * *", "true", true).is_err());
+        assert!(upsert("1", "shop", "* * * *", "true", true).is_err());
+        assert!(upsert("1", "shop", "* * * * *", "true\nrm -rf /", true).is_err());
+        assert!(upsert("1", "shop", "* * * * *", "  ", true).is_err());
+        assert!(delete("a/b").is_err());
+    }
 }

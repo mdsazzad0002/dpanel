@@ -235,6 +235,9 @@ pub fn serve(args: Vec<String>) -> ExitCode {
 
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     runtime.block_on(async {
+        if let Some(store) = crate::platform::scheduler().timer_store() {
+            tokio::spawn(crate::platform::scheduler::run_timer(store.to_path_buf()));
+        }
         let router = build_router(state);
         let addr = format!("127.0.0.1:{port}");
         let listener = tokio::net::TcpListener::bind(&addr)

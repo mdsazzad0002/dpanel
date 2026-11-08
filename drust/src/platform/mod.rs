@@ -11,6 +11,7 @@ pub mod limits;
 pub mod paths;
 pub mod process;
 pub mod runner;
+pub mod scheduler;
 pub mod service;
 #[cfg(unix)]
 mod unix;
@@ -22,6 +23,7 @@ use capabilities::Capability;
 use fs::FileAccess;
 use paths::Paths;
 use runner::{IsolatedRunner, NoRunner, RunuserRunner, SameUserRunner};
+use scheduler::{CronDirScheduler, Scheduler, TimerScheduler};
 use service::{NoServices, ServiceManager, SystemdServices};
 use std::{env, fmt, io, sync::OnceLock};
 
@@ -89,6 +91,7 @@ pub struct Platform {
     accounts: Box<dyn AccountManager>,
     services: Box<dyn ServiceManager>,
     runner: Box<dyn IsolatedRunner>,
+    scheduler: Box<dyn Scheduler>,
 }
 
 impl Platform {
@@ -118,6 +121,10 @@ impl Platform {
 
     pub fn runner(&self) -> &dyn IsolatedRunner {
         self.runner.as_ref()
+    }
+
+    pub fn scheduler(&self) -> &dyn Scheduler {
+        self.scheduler.as_ref()
     }
 
     /// A local profile on a PC runs every site as the logged-in user, so a site
@@ -173,6 +180,7 @@ pub fn current() -> &'static Platform {
         let accounts = accounts_for(os, profile, &paths);
         let services = services_for(os);
         let runner = runner_for(os, profile);
+        let scheduler = scheduler_for(os, &paths);
         Platform {
             os,
             profile,
@@ -180,6 +188,7 @@ pub fn current() -> &'static Platform {
             accounts,
             services,
             runner,
+            scheduler,
         }
     })
 }
@@ -209,6 +218,14 @@ fn runner_for(os: Os, profile: Profile) -> Box<dyn IsolatedRunner> {
     }
 }
 
+/// Linux has cron; elsewhere drust runs the jobs itself.
+fn scheduler_for(os: Os, paths: &Paths) -> Box<dyn Scheduler> {
+    match os {
+        Os::Linux => Box::new(CronDirScheduler { dir: "/etc/cron.d".into() }),
+        _ => Box::new(TimerScheduler { store: paths.state_dir().join("cron-jobs.json") }),
+    }
+}
+
 /// Shorthand for `current().paths()`.
 pub fn paths() -> &'static Paths {
     current().paths()
@@ -227,6 +244,11 @@ pub fn accounts() -> &'static dyn AccountManager {
 /// Shorthand for `current().services()`.
 pub fn services() -> &'static dyn ServiceManager {
     current().services()
+}
+
+/// Shorthand for `current().scheduler()`.
+pub fn scheduler() -> &'static dyn Scheduler {
+    current().scheduler()
 }
 
 /// `program` as `owner`, with nothing of this process's environment but the allowlist.

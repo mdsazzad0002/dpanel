@@ -429,6 +429,22 @@ pub trait AcmeClient {
 
 Windows ও macOS-এ crontab-এর বদলে drust-এর timer। Cron expression ও job record বর্তমান database-এই থাকবে। Job `IsolatedRunner` দিয়ে site owner হিসেবে চলবে। একই job আগের run চলাকালীন আবার শুরু হবে না। Linux-এ crontab অপরিবর্তিত।
 
+```rust
+pub struct CronJob { id: String, user: String, expression: String, command: String }
+
+pub trait Scheduler {
+    fn upsert(&self, job: &CronJob) -> Result<(), PlatformError>;
+    fn remove(&self, id: &str) -> Result<(), PlatformError>; // না থাকলে error নয়
+    fn timer_store(&self) -> Option<&Path>;                  // drust নিজে চালালে
+}
+```
+
+- Linux: `CronDirScheduler`, আগের মতো `/etc/cron.d/dpanel-<id>`, পুরোনো `serverpanel-<id>` মুছে দেয়।
+- Windows ও macOS: `TimerScheduler`। Panel যা পাঠায় তার copy `state_dir/cron-jobs.json`-এ (owner-only, কারণ command-এ password থাকতে পারে)। Database-এর record-ই আসল; drust শুধু panel-এর পাঠানো job রাখে।
+- Timer প্রতি মিনিটের শুরুতে local time-এ due job চালায়। drust বন্ধ থাকার মিনিট পরে চালানো হয় না, cron-এর মতো।
+- Expression পাঁচটা সংখ্যার field: `*`, `n`, `a-b`, `a/n`, `a-b/n`, `,` তালিকা। Weekday-তে 0 ও 7 রবিবার। দুটো day field-ই সীমিত হলে যেকোনো একটা মিললেই চলে। নাম (`mon`) ও `@daily` timer-এ নেই; `upsert` তখনই refuse করে।
+- Command shell-এ চলে: Unix-এ `/bin/sh -c`, Windows-এ `cmd /C`, `IsolatedRunner` দিয়ে, stdin/stdout/stderr বন্ধ। আগের run শেষ না হলে সেই job-এর নতুন run বাদ যায়।
+
 ## 7. Data model
 
 সব migration additive। পুরোনো server-এ data হারাবে না।
