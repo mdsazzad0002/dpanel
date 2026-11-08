@@ -13,7 +13,7 @@
 [Installation](docs/installation.md) ·
 [Supported distributions](docs/supported-distributions.md) ·
 [Windows](docs/windows.md) ·
-[Documentation](docs/README.md) ·
+[Documentation](https://dpanel.dengrweb.com) ·
 [Screenshots](docs/screenshots.md) ·
 [Contributing](CONTRIBUTING.md) ·
 [Security](SECURITY.md)
@@ -135,6 +135,9 @@ Full steps, configuration, and permission setup are in the
 is not complete yet. See [dPanel on Windows](docs/windows.md) for what runs today.
 
 ## Documentation
+
+The full documentation is online at **[dpanel.dengrweb.com](https://dpanel.dengrweb.com)**.
+The same guides are also kept in this repository:
 
 | Guide | Description |
 | --- | --- |
