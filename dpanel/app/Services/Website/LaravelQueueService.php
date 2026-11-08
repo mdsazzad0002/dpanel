@@ -18,10 +18,15 @@ class LaravelQueueService
         protected WordpressInstallService $wordpressInstallService,
     ) {}
 
-    /** Rewrites, enables and starts the enabled workers; removes the rest. */
+    /**
+     * Rewrites, enables and starts the enabled workers; removes the rest.
+     * A suspended owner runs none, while the rows keep which ones come back.
+     */
     public function sync(Website $website): void
     {
-        $workers = $website->queueWorkers()->where('enabled', true)->orderBy('id')->get();
+        $workers = $website->assignedUser?->is_suspended
+            ? collect()
+            : $website->queueWorkers()->where('enabled', true)->orderBy('id')->get();
         $payload = ['workers' => $workers->map(fn (WebsiteQueueWorker $worker): array => [
             'id' => (string) $worker->id,
             'connection' => $worker->connection ?: null,

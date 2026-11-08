@@ -7,16 +7,18 @@ use App\Models\PanelSession;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Cron\CronSystemService;
+use App\Services\Website\LaravelQueueService;
 
 /**
  * The one way an account is suspended, from the panel and from WHMCS alike.
- * Mail, FTP, queue workers and SSH are still open (task P1).
+ * Mail, FTP and SSH are still open (task P1).
  */
 class AccountSuspensionService
 {
     public function __construct(
         private readonly EdgeGatewayReloader $gateway,
         private readonly CronSystemService $cron,
+        private readonly LaravelQueueService $queues,
     ) {}
 
     /** A reseller's customers go with them, and come back with them. */
@@ -41,6 +43,7 @@ class AccountSuspensionService
         PanelSession::query()->where('user_id', $user->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
         $this->setServingState($user, 'active', 'suspended');
         $this->setCronStatus($user, 'active', 'suspended');
+        $this->syncQueueWorkers($user->refresh());
     }
 
     private function open(User $user): void
@@ -48,6 +51,7 @@ class AccountSuspensionService
         $user->update(['is_suspended' => false, 'suspended_at' => null, 'suspended_with_reseller' => false]);
         $this->setServingState($user, 'suspended', 'active');
         $this->setCronStatus($user, 'suspended', 'active');
+        $this->syncQueueWorkers($user->refresh());
     }
 
     /** A site over its limit stays that way: suspension does not own that state. */
@@ -72,6 +76,19 @@ class AccountSuspensionService
                 $job->update(['status' => $to]);
                 try {
                     $this->cron->sync($job, $websites[$job->website_id]);
+                } catch (\RuntimeException $e) {
+                    report($e);
+                }
+            });
+    }
+
+    /** `sync` reads the owner's suspension, so the same call stops and restarts. */
+    private function syncQueueWorkers(User $user): void
+    {
+        Website::query()->where('assigned_user_id', $user->id)->whereHas('queueWorkers')->get()
+            ->each(function (Website $website): void {
+                try {
+                    $this->queues->sync($website);
                 } catch (\RuntimeException $e) {
                     report($e);
                 }

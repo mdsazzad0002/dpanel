@@ -197,4 +197,29 @@ class AccountSuspensionTest extends TestCase
         $this->assertSame('disabled', $off->fresh()->status);
         $this->assertSame([['running', 'suspended'], ['running', 'active']], $synced);
     }
+
+    public function test_suspension_stops_their_queue_workers_and_unsuspension_brings_back_the_enabled_ones(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        $user = User::factory()->create();
+        $site = $this->website($user);
+        $this->website($user); // no workers, so drust is not asked about it
+        $site->queueWorkers()->create(['queue' => 'default', 'processes' => 1, 'tries' => 1, 'timeout' => 60, 'sleep' => 3, 'memory' => 128, 'enabled' => true]);
+        $site->queueWorkers()->create(['queue' => 'mail', 'processes' => 1, 'tries' => 1, 'timeout' => 60, 'sleep' => 3, 'memory' => 128, 'enabled' => false]);
+        $this->mock(\App\Services\Website\LaravelQueueService::class, function ($mock) {
+            $mock->makePartial()->shouldAllowMockingProtectedMethods();
+            $mock->shouldReceive('resolveProjectRoot')->andReturn('/home/shop/app');
+        });
+        \Illuminate\Support\Facades\Http::fake(['drust.test/*' => \Illuminate\Support\Facades\Http::response(['success' => true])]);
+        $suspension = app(AccountSuspensionService::class);
+
+        $suspension->suspend($user);
+        $suspension->unsuspend($user);
+
+        $sent = \Illuminate\Support\Facades\Http::recorded()
+            ->map(fn ($pair) => [$pair[0]['site_id'], $pair[0]['action'], array_column($pair[0]['workers'] ?? [], 'queue')])
+            ->all();
+        $this->assertSame([[$site->id, 'apply', []], [$site->id, 'apply', ['default']]], $sent);
+        $this->assertTrue($site->queueWorkers()->where('queue', 'default')->first()->enabled);
+    }
 }
