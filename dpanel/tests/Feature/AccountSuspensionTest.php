@@ -216,10 +216,41 @@ class AccountSuspensionTest extends TestCase
         $suspension->suspend($user);
         $suspension->unsuspend($user);
 
-        $sent = \Illuminate\Support\Facades\Http::recorded()
+        $sent = \Illuminate\Support\Facades\Http::recorded(fn ($request) => str_contains($request->url(), '/laravel/queue'))
             ->map(fn ($pair) => [$pair[0]['site_id'], $pair[0]['action'], array_column($pair[0]['workers'] ?? [], 'queue')])
-            ->all();
+            ->values()->all();
         $this->assertSame([[$site->id, 'apply', []], [$site->id, 'apply', ['default']]], $sent);
         $this->assertTrue($site->queueWorkers()->where('queue', 'default')->first()->enabled);
+    }
+
+    public function test_suspension_blocks_each_system_account_once_but_never_the_panels_own(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        $user = User::factory()->create();
+        $this->website($user);
+        $this->website($user); // the same `shop` account
+        $this->website($user)->update(['site_owner' => 'www-data']);
+        \Illuminate\Support\Facades\Http::fake(['drust.test/*' => \Illuminate\Support\Facades\Http::response(['success' => true])]);
+        $suspension = app(AccountSuspensionService::class);
+
+        $suspension->suspend($user);
+        $suspension->unsuspend($user);
+
+        $urls = \Illuminate\Support\Facades\Http::recorded(fn ($request) => str_contains($request->url(), '/accounts/'))
+            ->map(fn ($pair) => $pair[0]->url())->values()->all();
+        $this->assertSame(['http://drust.test/accounts/shop/suspend', 'http://drust.test/accounts/shop/unsuspend'], $urls);
+    }
+
+    public function test_drust_refusing_still_leaves_the_account_suspended(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        $user = User::factory()->create();
+        $site = $this->website($user);
+        \Illuminate\Support\Facades\Http::fake(['drust.test/*' => \Illuminate\Support\Facades\Http::response(['success' => false, 'message' => 'no'], 500)]);
+
+        app(AccountSuspensionService::class)->suspend($user);
+
+        $this->assertTrue($user->fresh()->is_suspended);
+        $this->assertSame('suspended', $site->fresh()->serving_state);
     }
 }

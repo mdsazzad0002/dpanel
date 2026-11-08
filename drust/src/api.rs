@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::app;
 use crate::platform::PlatformError;
 
+mod accounts;
 mod admin;
 mod backup;
 mod cron;
@@ -112,6 +113,7 @@ impl IntoResponse for PlatformError {
 pub fn build_router(state: ApiState) -> Router {
     Router::new()
         .merge(health::routes())
+        .merge(accounts::routes())
         .merge(vhost_ops::routes())
         .merge(website::routes())
         .merge(admin::routes())

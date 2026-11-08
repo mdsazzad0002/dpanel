@@ -124,6 +124,9 @@ pub trait AccountManager: Send + Sync + std::fmt::Debug {
     fn lock(&self, name: &str, locked: bool) -> Result<(), PlatformError>;
     fn set_shell(&self, name: &str, shell: &str) -> Result<(), PlatformError>;
     fn set_comment(&self, name: &str, comment: &str) -> Result<(), PlatformError>;
+    /// Blocks every login, SSH keys included, and ends the open ones;
+    /// `false` lets the account in again. Running twice gives the same result.
+    fn suspend(&self, name: &str, suspended: bool) -> Result<(), PlatformError>;
     /// Ends interactive logins only; site workers and cron jobs keep running.
     fn end_sessions(&self, name: &str) -> Result<(), PlatformError>;
     /// Does nothing when the group does not exist on this system.
@@ -179,6 +182,21 @@ fn user_args(spec: &AccountSpec) -> Vec<String> {
     }
     args.push(spec.name.to_string());
     args
+}
+
+/// The first uid `useradd` gives a person; below it are system accounts
+/// like `www-data`, which the panel and every site depend on.
+const FIRST_PERSON_UID: u32 = 1000;
+const NOBODY_UID: u32 = 65534;
+
+fn may_suspend(uid: u32) -> bool {
+    uid >= FIRST_PERSON_UID && uid != NOBODY_UID
+}
+
+/// An expired account cannot log in with a password or a key, since sshd asks
+/// PAM about the account either way; an empty date means it never expires.
+fn suspend_args(name: &str, suspended: bool) -> [&str; 3] {
+    ["--expiredate", if suspended { "1" } else { "" }, name]
 }
 
 fn delete_args(name: &str, keep_files: bool) -> Vec<&str> {
@@ -285,6 +303,20 @@ impl AccountManager for LinuxAccounts {
 
     fn lock(&self, name: &str, locked: bool) -> Result<(), PlatformError> {
         run("usermod", &[if locked { "--lock" } else { "--unlock" }, name]).map(|_| ())
+    }
+
+    fn suspend(&self, name: &str, suspended: bool) -> Result<(), PlatformError> {
+        let uid = self.lookup(name)?.uid;
+        if !may_suspend(uid) {
+            return Err(PlatformError::PermissionDenied {
+                what: format!("{name} is a system account and is never suspended"),
+            });
+        }
+        run("usermod", &suspend_args(name, suspended))?;
+        if suspended {
+            self.end_sessions(name)?;
+        }
+        Ok(())
     }
 
     fn end_sessions(&self, name: &str) -> Result<(), PlatformError> {
@@ -401,6 +433,11 @@ impl AccountManager for LocalAccounts {
         Ok(())
     }
 
+    /// A local profile serves only this machine; nobody else logs in.
+    fn suspend(&self, _name: &str, _suspended: bool) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
     fn end_sessions(&self, _name: &str) -> Result<(), PlatformError> {
         Ok(())
     }
@@ -471,6 +508,10 @@ impl AccountManager for NoAccounts {
     }
 
     fn lock(&self, _name: &str, _locked: bool) -> Result<(), PlatformError> {
+        unsupported()
+    }
+
+    fn suspend(&self, _name: &str, _suspended: bool) -> Result<(), PlatformError> {
         unsupported()
     }
 
@@ -682,5 +723,20 @@ mod tests {
             NoAccounts.end_sessions("shop"),
             Err(PlatformError::Unsupported { capability: Capability::Isolation })
         ));
+    }
+
+    #[test]
+    fn system_accounts_are_never_suspended() {
+        for uid in [0, 33, 999, 65534] {
+            assert!(!may_suspend(uid), "{uid}");
+        }
+        assert!(may_suspend(1000));
+        assert!(may_suspend(1042));
+    }
+
+    #[test]
+    fn suspension_expires_the_account_and_unsuspension_clears_the_date() {
+        assert_eq!(suspend_args("shop", true), ["--expiredate", "1", "shop"]);
+        assert_eq!(suspend_args("shop", false), ["--expiredate", "", "shop"]);
     }
 }

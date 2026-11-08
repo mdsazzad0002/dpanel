@@ -7,11 +7,12 @@ use App\Models\PanelSession;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Cron\CronSystemService;
+use App\Services\Platform\SystemAccountSuspender;
 use App\Services\Website\LaravelQueueService;
 
 /**
  * The one way an account is suspended, from the panel and from WHMCS alike.
- * Mail, FTP and SSH are still open (task P1).
+ * Mail and the panel's own FTP accounts are still open (task P1).
  */
 class AccountSuspensionService
 {
@@ -19,6 +20,7 @@ class AccountSuspensionService
         private readonly EdgeGatewayReloader $gateway,
         private readonly CronSystemService $cron,
         private readonly LaravelQueueService $queues,
+        private readonly SystemAccountSuspender $accounts,
     ) {}
 
     /** A reseller's customers go with them, and come back with them. */
@@ -44,6 +46,7 @@ class AccountSuspensionService
         $this->setServingState($user, 'active', 'suspended');
         $this->setCronStatus($user, 'active', 'suspended');
         $this->syncQueueWorkers($user->refresh());
+        $this->eachSystemAccount($user, fn (string $account) => $this->accounts->suspend($account));
     }
 
     private function open(User $user): void
@@ -52,6 +55,7 @@ class AccountSuspensionService
         $this->setServingState($user, 'suspended', 'active');
         $this->setCronStatus($user, 'suspended', 'active');
         $this->syncQueueWorkers($user->refresh());
+        $this->eachSystemAccount($user, fn (string $account) => $this->accounts->unsuspend($account));
     }
 
     /** A site over its limit stays that way: suspension does not own that state. */
@@ -89,6 +93,22 @@ class AccountSuspensionService
             ->each(function (Website $website): void {
                 try {
                     $this->queues->sync($website);
+                } catch (\RuntimeException $e) {
+                    report($e);
+                }
+            });
+    }
+
+    /** One call per account: several of the user's websites can share one. */
+    private function eachSystemAccount(User $user, \Closure $change): void
+    {
+        Website::query()->where('assigned_user_id', $user->id)->pluck('site_owner')
+            ->map(fn ($owner) => trim((string) $owner))
+            ->filter(fn (string $owner) => SystemAccountSuspender::suspendable($owner))
+            ->unique()
+            ->each(function (string $account) use ($change): void {
+                try {
+                    $change($account);
                 } catch (\RuntimeException $e) {
                     report($e);
                 }

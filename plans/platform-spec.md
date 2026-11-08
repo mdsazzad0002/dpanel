@@ -260,6 +260,7 @@ pub trait AccountManager {
     fn lookup(&self, name: &str) -> Result<OwnerId, PlatformError>;
     fn set_password(&self, name: &str, secret: &str) -> Result<(), PlatformError>;
     fn lock(&self, name: &str, locked: bool) -> Result<(), PlatformError>;
+    fn suspend(&self, name: &str, suspended: bool) -> Result<(), PlatformError>;
     fn set_shell(&self, name: &str, shell: &str) -> Result<(), PlatformError>;
     fn set_comment(&self, name: &str, comment: &str) -> Result<(), PlatformError>;
     fn end_sessions(&self, name: &str) -> Result<(), PlatformError>;
@@ -489,6 +490,8 @@ pub trait Scheduler {
 | `POST /acme/issue`, `/acme/renew` | Certificate |
 
 Suspend idempotent: দুবার চালালেও ফল একই। Partial failure হলে কোন ধাপ ব্যর্থ হয়েছে সেটা response-এ থাকবে।
+
+এখন `/accounts/{name}/suspend` শুধু system account-এর login বন্ধ করে: `AccountManager::suspend` Linux-এ `usermod --expiredate 1` দেয় (মেয়াদ শেষ account PAM-এ আটকায়, তাই SSH key-ও কাজ করে না) আর `end_sessions` চালায়; `/unsuspend` মেয়াদ মুছে দেয়। Uid 1000-এর নিচে ও `nobody` কখনো suspend হয় না। Session, website, cron ও worker panel নিজেই বন্ধ করে (`AccountSuspensionService`)। Local profile-এ কিছু করে না, account ছাড়া server-এ `501`।
 
 ## 9. Windows php-cgi pool
 
