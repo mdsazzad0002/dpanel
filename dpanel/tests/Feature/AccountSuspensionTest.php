@@ -253,4 +253,63 @@ class AccountSuspensionTest extends TestCase
         $this->assertTrue($user->fresh()->is_suspended);
         $this->assertSame('suspended', $site->fresh()->serving_state);
     }
+
+    private function mailbox(string $email, string $status, ?User $creator = null): \App\Models\Mailbox
+    {
+        [$local, $domain] = explode('@', $email);
+
+        return \App\Models\Mailbox::query()->create([
+            'id' => (string) Str::uuid(), 'domain' => $domain, 'mailbox' => $local, 'email' => $email,
+            'password' => 'x', 'quota_mb' => 100, 'status' => $status, 'created_by' => $creator?->id,
+        ]);
+    }
+
+    public function test_suspension_closes_their_mailboxes_and_unsuspension_reopens_only_those(): void
+    {
+        $user = User::factory()->create();
+        $site = $this->website($user);
+        $onDomain = $this->mailbox("info@{$site->domain}", 'active');
+        $off = $this->mailbox("old@{$site->domain}", 'disabled');
+        $created = $this->mailbox('me@elsewhere.test', 'active', $user);
+        $someoneElse = $this->mailbox('them@other.test', 'active', User::factory()->create());
+        $suspension = app(AccountSuspensionService::class);
+
+        $suspension->suspend($user);
+        $this->assertSame('suspended', $onDomain->fresh()->status);
+        $this->assertSame('suspended', $created->fresh()->status);
+        $this->assertSame('disabled', $off->fresh()->status);
+        $this->assertSame('active', $someoneElse->fresh()->status);
+
+        $suspension->unsuspend($user);
+        $this->assertSame('active', $onDomain->fresh()->status);
+        $this->assertSame('active', $created->fresh()->status);
+        $this->assertSame('disabled', $off->fresh()->status);
+    }
+
+    public function test_suspension_blocks_their_ftp_accounts_and_unsuspension_reopens_only_those(): void
+    {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        $user = User::factory()->create();
+        $site = $this->website($user);
+        $site->update(['site_owner' => 'www-data']); // only the FTP accounts reach drust
+        $ftp = fn (string $name, string $status) => \App\Models\FtpAccount::query()->create([
+            'website_id' => $site->id, 'username' => $name, 'directory' => '/home/shop/public_html', 'status' => $status,
+        ]);
+        $open = $ftp('ftp_open', 'active');
+        $closed = $ftp('ftp_closed', 'disabled');
+        \Illuminate\Support\Facades\Http::fake(['drust.test/*' => \Illuminate\Support\Facades\Http::response(['success' => true])]);
+        $suspension = app(AccountSuspensionService::class);
+
+        $suspension->suspend($user);
+        $this->assertSame('suspended', $open->fresh()->status);
+        $this->assertSame('disabled', $closed->fresh()->status);
+
+        $suspension->unsuspend($user);
+        $this->assertSame('active', $open->fresh()->status);
+        $this->assertSame('disabled', $closed->fresh()->status);
+
+        $urls = \Illuminate\Support\Facades\Http::recorded(fn ($request) => str_contains($request->url(), '/accounts/'))
+            ->map(fn ($pair) => $pair[0]->url())->values()->all();
+        $this->assertSame(['http://drust.test/accounts/ftp_open/suspend', 'http://drust.test/accounts/ftp_open/unsuspend'], $urls);
+    }
 }

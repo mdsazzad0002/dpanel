@@ -124,6 +124,7 @@ export const buildPanelMenu = (userRoles = []) => [
         color: 'amber',
         children: [
             { label: 'Redirect Rules', hint: 'HTTPS, www and domain redirects', icon: 'RR', iconClass: 'bi bi-arrow-return-right', routeName: 'rules.redirects.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+            { label: 'Site Protection', hint: 'Password folders, no PHP in uploads, hotlink, Cloudflare only', icon: 'SP', iconClass: 'bi bi-shield-lock', routeName: 'rules.site-protection.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
             { label: 'Port Share', hint: 'Serve a website path from a Node.js/Python app or local port', icon: 'PS', iconClass: 'bi bi-ethernet', routeName: 'rules.port-shares.index', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
         ],
     },

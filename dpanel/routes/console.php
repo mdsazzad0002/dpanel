@@ -40,3 +40,14 @@ Schedule::command('websites:git-sync')
     ->everyMinute()
     ->withoutOverlapping();
 
+Schedule::command('accounts:purge-terminated')
+    ->dailyAt('04:00')
+    ->withoutOverlapping();
+
+Schedule::command('accounts:disk-check')
+    ->hourly()
+    ->withoutOverlapping();
+
+Schedule::command('accounts:bandwidth-check')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();

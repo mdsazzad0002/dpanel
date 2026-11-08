@@ -42,6 +42,14 @@ class ResourceQuotaService
         if ($package !== null && (int) $query->count() >= (int) $package->max_mailboxes) {
             throw ValidationException::withMessages(['mailbox' => "Package mailbox limit reached ({$package->max_mailboxes})."]);
         }
+        // The storage limit covers the account, not each mailbox on its own.
+        $allocated = (int) (clone $query)->sum('quota_mb');
+        if ($package !== null && $allocated + $quotaMb > (int) $package->max_storage_mb) {
+            $left = max(0, (int) $package->max_storage_mb - $allocated);
+            throw ValidationException::withMessages([
+                'quota_mb' => "The package storage limit ({$package->max_storage_mb} MB) is shared by all mailboxes; {$left} MB is left.",
+            ]);
+        }
 
         $reseller = $this->quotaReseller($user);
         if ($reseller === null) {

@@ -12,6 +12,7 @@ use App\Http\Controllers\RedisExplorerController;
 use App\Http\Controllers\Projects\AppProjectController;
 use App\Http\Controllers\Projects\PortShareController;
 use App\Http\Controllers\Rules\RedirectRuleController;
+use App\Http\Controllers\Rules\SiteGuardController;
 use App\Http\Controllers\Seo\IconGeneratorController;
 use App\Http\Controllers\Seo\ImageWatermarkController;
 use App\Http\Controllers\Seo\SitemapVerifyController;
@@ -514,6 +515,21 @@ Route::patch('/rules/redirects/{rule}/toggle', [RedirectRuleController::class, '
 Route::delete('/rules/redirects/{rule}', [RedirectRuleController::class, 'destroy'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('rules.redirects.destroy');
+
+// Rules → Site Protection ===========================================================
+Route::get('/rules/site-protection', [SiteGuardController::class, 'index'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.site-protection.index');
+Route::post('/rules/site-protection/{website}/users', [SiteGuardController::class, 'storeUser'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:30,1'])
+    ->name('rules.site-protection.users.store');
+Route::delete('/rules/site-protection/users/{user}', [SiteGuardController::class, 'destroyUser'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->whereNumber('user')
+    ->name('rules.site-protection.users.destroy');
+Route::put('/rules/site-protection/{website}/settings', [SiteGuardController::class, 'updateSettings'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.site-protection.settings.update');
 
 // Rules → Port Share ================================================================
 Route::get('/rules/port-shares', [PortShareController::class, 'index'])

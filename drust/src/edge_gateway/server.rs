@@ -375,16 +375,21 @@ pub async fn handle_request(
     }
     // A closed site must not keep answering from its redirects or the cache.
     let open_site = site.filter(|site| site.serving_state.serves());
-    if let Some(response) = open_site.and_then(|site| super::redirect_for(site, &request)) {
+    // The guards come first: a protected folder must not answer from a redirect or the cache.
+    let guarded = open_site
+        .and_then(|site| super::site_guards::check(site, &request))
+        .or_else(|| open_site.and_then(|site| super::redirect_for(site, &request)));
+    if let Some(response) = guarded {
         return if let Some(counter) = &bandwidth_counter {
             account_response(counter, response)
         } else {
             response
         };
     }
-    let decision = open_site.map_or(edge_cache::Decision::Off, |site| {
-        edge_cache::decide(site, &request, edge_cache::unix_now())
-    });
+    // A protected folder's pages are per visitor, so the shared cache keeps out.
+    let decision = open_site
+        .filter(|site| !super::basic_auth::is_protected(site, &request))
+        .map_or(edge_cache::Decision::Off, |site| edge_cache::decide(site, &request, edge_cache::unix_now()));
     let head = request.method() == axum::http::Method::HEAD;
     let mut stale = None;
     let mut _fill_guard = None;
@@ -1338,6 +1343,7 @@ pub fn sample_panel_snapshot(panel_domain: &str) -> RuntimeSnapshot {
             allowed_ips: Arc::from([]),
             cache: Default::default(),
             redirects: Arc::from([]),
+            guards: Default::default(),
         }]),
         Arc::from([TlsConfig {
             hostnames: Arc::from([primary_domain, www_domain]),
@@ -1451,6 +1457,7 @@ mod edge_cache_tests {
                 ..SiteCacheConfig::default()
             },
             redirects: Arc::from([]),
+            guards: Default::default(),
         };
         let snapshot = RuntimeSnapshot::new(1, Arc::from([site]), Arc::from([]), CachePolicy {
             enabled: true,

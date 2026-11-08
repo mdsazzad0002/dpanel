@@ -756,6 +756,7 @@ mod tests {
                 ..SiteCacheConfig::default()
             },
             redirects: Arc::from([]),
+            guards: Default::default(),
         }
     }
 

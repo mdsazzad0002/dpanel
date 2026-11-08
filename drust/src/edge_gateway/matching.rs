@@ -86,6 +86,7 @@ mod tests {
                 allowed_ips: Arc::from([]),
                 cache: Default::default(),
                 redirects: Arc::from([]),
+                guards: Default::default(),
             }]),
             Arc::from([]),
             CachePolicy {
@@ -137,6 +138,7 @@ mod tests {
             allowed_ips: Arc::from([]),
             cache: Default::default(),
             redirects: Arc::from([]),
+            guards: Default::default(),
         };
 
         let route = resolve_route(&site, "/api/users").unwrap();

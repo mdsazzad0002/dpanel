@@ -162,6 +162,7 @@ mod tests {
             allowed_ips: Arc::from([]),
             cache: Default::default(),
             redirects: rules.into(),
+            guards: Default::default(),
         }
     }
 

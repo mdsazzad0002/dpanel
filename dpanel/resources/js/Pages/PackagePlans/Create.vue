@@ -1,6 +1,7 @@
 <script setup>
 import { usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import EnforcementFields from './Enforcement/EnforcementFields.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const page = usePage();
@@ -17,6 +18,8 @@ const form = useForm({
     max_websites: 1,
     max_databases: 1,
     max_bandwidth_gb: 10,
+    enforcement_mode: 'report',
+    over_bandwidth_action: 'notify',
     allow_forwarding: true,
     allow_aliases: false,
     priority_support: false,
@@ -83,6 +86,7 @@ const submit = () => {
                     <input v-model.number="form.max_bandwidth_gb" type="number" min="0" max="1048576" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.max_bandwidth_gb" class="mt-1 text-xs text-red-600">{{ form.errors.max_bandwidth_gb }}</p>
                 </div>
+                <EnforcementFields :form="form" />
 
                 <div>
                     <label class="mb-1 block text-sm">Sort Order</label>

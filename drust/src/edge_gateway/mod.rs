@@ -1,4 +1,5 @@
 mod bandwidth;
+mod basic_auth;
 mod bind;
 mod compression;
 mod config;
@@ -15,6 +16,7 @@ mod python_process;
 pub(crate) mod rust_process;
 mod redirects;
 mod server;
+mod site_guards;
 mod source;
 mod static_files;
 mod terminal_ws;
@@ -38,6 +40,7 @@ pub use php::{
     prewarm_site_pool,
 };
 pub use redirects::{RedirectRule, redirect_for};
+pub use site_guards::SiteGuards;
 pub use proxy::{
     ProxyConfig, build_client, health_check_upstream, proxy_request, proxy_request_with_timeout,
 };

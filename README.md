@@ -13,7 +13,8 @@
 [Installation](docs/installation.md) ·
 [Supported distributions](docs/supported-distributions.md) ·
 [Windows](docs/windows.md) ·
-[Documentation](https://dpanel.dengrweb.com) ·
+[Documentation](docs/README.md) ·
+[Online docs](https://dpanel.dengrweb.com) ·
 [Screenshots](docs/screenshots.md) ·
 [Contributing](CONTRIBUTING.md) ·
 [Security](SECURITY.md)

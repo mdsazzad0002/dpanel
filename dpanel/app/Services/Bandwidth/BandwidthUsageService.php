@@ -103,6 +103,21 @@ class BandwidthUsageService
     }
 
     /**
+     * Bytes in and out this month on the user's websites and their aliases,
+     * which is what the package bandwidth limit counts.
+     */
+    public function bytesForUser(User $user, string $month): int
+    {
+        $usage = $this->snapshot($month) ?? [];
+        $websites = Website::query()->where('assigned_user_id', $user->id)->get(['id', 'domain']);
+        $domains = $websites->pluck('domain')
+            ->merge(Website::query()->whereIn('parent_id', $websites->pluck('id'))->pluck('domain'))
+            ->map(fn ($domain) => $this->normalize($domain))->filter()->unique()->values()->all();
+
+        return $this->sumDomains($usage, $domains)['total_bytes'];
+    }
+
+    /**
      * Main websites (aliases excluded) the actor may see: admins every
      * website, resellers their own and their customers', others their own.
      */

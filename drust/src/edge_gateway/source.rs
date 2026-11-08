@@ -158,6 +158,19 @@ fn load_sites(
         }
     };
 
+    // Optional as well (tasks S5, S6). An alias row takes its main site's guards.
+    let mut guards = match run_mysql(env, &format!("{GUARD_SETTINGS_SQL}{}", site_filter("WHERE"))) {
+        Ok(rows) => parse_guard_settings(&rows),
+        Err(error) => {
+            tracing::warn!(%error, "site guard settings unavailable; none applied");
+            HashMap::new()
+        }
+    };
+    match run_mysql(env, &format!("{PROTECTED_DIRECTORIES_SQL}{} ORDER BY w.id,d.path,d.id", site_filter("WHERE"))) {
+        Ok(rows) => add_protected_directories(&mut guards, &rows),
+        Err(error) => tracing::warn!(%error, "protected directories unavailable; none applied"),
+    }
+
     let mut sites = Vec::new();
     let mut tls = Vec::new();
     for line in stdout.lines() {
@@ -262,6 +275,7 @@ fn load_sites(
             allowed_ips: parse_ip_list(cols[12]),
             cache: cache_settings.remove(cols[0].trim()).unwrap_or_default(),
             redirects: redirects.remove(cols[0].trim()).map(Into::into).unwrap_or_else(|| std::sync::Arc::from([])),
+            guards: guards.remove(cols[0].trim()).unwrap_or_default(),
         });
         if enable_ssl {
             tls.push(super::TlsConfig {
@@ -326,6 +340,7 @@ fn panel_site(domain: String, panel_root: &Path) -> SiteConfig {
         allowed_ips: std::sync::Arc::from([]),
         cache: Default::default(),
         redirects: std::sync::Arc::from([]),
+        guards: Default::default(),
     }
 }
 
@@ -400,6 +415,70 @@ fn parse_redirect_rules(rows: &str) -> HashMap<String, Vec<super::RedirectRule>>
         }
     }
     rules
+}
+
+/// Lists are comma-separated; the panel never stores a comma inside an entry.
+/// The last column is the main site and its aliases, whose pages may always embed the media.
+const GUARD_SETTINGS_SQL: &str = "SELECT w.id,COALESCE(g.no_php_paths,''),g.hotlink_protection,COALESCE(g.hotlink_allowed_hosts,''),COALESCE((SELECT GROUP_CONCAT(a.domain) FROM websites a WHERE a.id=g.website_id OR a.parent_id=g.website_id),''),g.cloudflare_only FROM websites w JOIN website_guard_settings g ON g.website_id=COALESCE(w.parent_id,w.id)";
+
+const PROTECTED_DIRECTORIES_SQL: &str = "SELECT w.id,d.path,COALESCE(d.realm,''),d.username,d.password_hash FROM websites w JOIN website_protected_directories d ON d.website_id=COALESCE(w.parent_id,w.id)";
+
+fn comma_list(value: &str) -> impl Iterator<Item = &str> {
+    value.split(',').map(str::trim).filter(|item| !item.is_empty() && *item != "NULL")
+}
+
+fn parse_guard_settings(rows: &str) -> HashMap<String, super::SiteGuards> {
+    let mut guards = HashMap::new();
+    for line in rows.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 4 {
+            continue;
+        }
+        let no_php_paths: Vec<String> = comma_list(cols[1])
+            .map(super::basic_auth::canonical_path)
+            .collect();
+        let own_sites = cols.get(4).copied().unwrap_or("");
+        let hotlink_allowed_hosts = matches!(cols[2].trim(), "1" | "true").then(|| {
+            comma_list(cols[3]).chain(comma_list(own_sites)).map(str::to_ascii_lowercase).collect::<Vec<_>>().into()
+        });
+        guards.insert(
+            cols[0].trim().to_string(),
+            super::SiteGuards {
+                no_php_paths: no_php_paths.into(),
+                hotlink_allowed_hosts,
+                cloudflare_only: cols.get(5).is_some_and(|value| matches!(value.trim(), "1" | "true")),
+                ..Default::default()
+            },
+        );
+    }
+    guards
+}
+
+/// One row per user of a folder; the folder's realm is its first row's.
+fn add_protected_directories(guards: &mut HashMap<String, super::SiteGuards>, rows: &str) {
+    let mut folders: HashMap<String, Vec<(String, String, Vec<(String, String)>)>> = HashMap::new();
+    for line in rows.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 5 || cols[3].trim().is_empty() || cols[4].trim().is_empty() {
+            continue;
+        }
+        let site = folders.entry(cols[0].trim().to_string()).or_default();
+        let user = (cols[3].trim().to_string(), cols[4].trim().to_string());
+        match site.iter_mut().find(|(path, _, _)| path == cols[1].trim()) {
+            Some((_, _, users)) => users.push(user),
+            None => site.push((cols[1].trim().to_string(), cols[2].trim().to_string(), vec![user])),
+        }
+    }
+    for (site, list) in folders {
+        let directories: Vec<_> = list
+            .into_iter()
+            .map(|(path, realm, users)| {
+                let realm = if realm.is_empty() || realm == "NULL" { "Restricted".to_string() } else { realm };
+                super::basic_auth::ProtectedDirectory::new(&path, &realm, users)
+            })
+            .collect();
+        guards.entry(site).or_default().protected_directories = directories.into();
+    }
 }
 
 const PORT_SHARES_SQL: &str = "SELECT website_id,path_prefix,target_port,strip_prefix FROM port_shares WHERE enabled=1";
@@ -764,6 +843,20 @@ mod tests {
         assert!(sites.is_empty());
         add_panel_site(&mut sites, Some(&["p.localhost".to_string()]), "p.localhost", root);
         assert_eq!(sites.len(), 1);
+    }
+
+    #[test]
+    fn reads_guard_settings_and_groups_protected_users_by_folder() {
+        let mut guards = parse_guard_settings("a\t/wp-content/uploads, /files\t1\tcdn.test\tshop.test,brand.test\t1\nb\t\t0\tNULL\t\t0\n");
+        add_protected_directories(&mut guards, "a\t/admin\tStaff\talice\th1\na\t/admin\tStaff\tbob\th2\nc\t/\t\tcarol\th3\n");
+        assert_eq!(&*guards["a"].no_php_paths, ["/wp-content/uploads".to_string(), "/files".to_string()]);
+        let hosts = ["cdn.test", "shop.test", "brand.test"].map(String::from);
+        assert_eq!(guards["a"].hotlink_allowed_hosts.as_deref(), Some(&hosts[..]));
+        assert_eq!(guards["a"].protected_directories.len(), 1);
+        assert_eq!(guards["a"].protected_directories[0].users.len(), 2);
+        assert!(guards["b"].hotlink_allowed_hosts.is_none());
+        assert!(guards["a"].cloudflare_only && !guards["b"].cloudflare_only);
+        assert_eq!(guards["c"].protected_directories[0].realm, "Restricted");
     }
 
     #[test]

@@ -8,6 +8,7 @@ use App\Models\PanelSession;
 use App\Models\User;
 use App\Models\WhmcsAccount;
 use App\Services\AccountSuspensionService;
+use App\Services\AccountTerminationService;
 use App\Support\UserAccessCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -75,9 +76,12 @@ class WhmcsController extends Controller
             $plan = PackagePlan::query()->whereNull('owner_user_id')->where('slug', $data['plan_slug'] ?? '')->first();
             if (! $plan) return $this->error('Unknown plan slug.', 422);
             $this->applyPlan($user, $plan);
-        } elseif ($action === 'suspend' || $action === 'terminate') {
+        } elseif ($action === 'suspend') {
             app(AccountSuspensionService::class)->suspend($user);
-            $account->update(['status' => $action === 'terminate' ? 'terminated' : 'suspended']);
+            $account->update(['status' => 'suspended']);
+        } elseif ($action === 'terminate') {
+            app(AccountTerminationService::class)->terminate($user);
+            $account->update(['status' => 'terminated']);
         } elseif ($action === 'unsuspend') {
             app(AccountSuspensionService::class)->unsuspend($user);
             $account->update(['status' => 'active']);
@@ -117,7 +121,7 @@ class WhmcsController extends Controller
     {
         $user->update(['package_id' => $plan->id, 'disk_space_mb_limit' => $plan->max_storage_mb, 'mail_accounts_limit' => $plan->max_mailboxes, 'websites_limit' => $plan->max_websites, 'databases_limit' => $plan->max_databases, 'bandwidth_gb_limit' => $plan->max_bandwidth_gb]);
     }
-    private function accountData(WhmcsAccount $a): array { return ['external_id' => $a->external_id, 'status' => $a->status, 'user_id' => $a->user_id, 'email' => $a->user->email, 'plan_slug' => $a->user->package?->slug]; }
+    private function accountData(WhmcsAccount $a): array { return ['external_id' => $a->external_id, 'status' => $a->status, 'user_id' => $a->user_id, 'email' => $a->user->email, 'plan_slug' => $a->user->package?->slug, 'delete_after' => $a->user->purge_after?->toIso8601String()]; }
     private function ok(array $data = []): JsonResponse { return response()->json(['ok' => true, ...$data])->header('Cache-Control', 'no-store'); }
     private function error(string $message, int $status): JsonResponse { return response()->json(['ok' => false, 'message' => $message], $status)->header('Cache-Control', 'no-store'); }
 }

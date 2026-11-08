@@ -18,11 +18,21 @@ class PackagePlan extends Model
         'max_websites',
         'max_databases',
         'max_bandwidth_gb',
+        'enforcement_mode',
+        'over_bandwidth_action',
         'allow_forwarding',
         'allow_aliases',
         'priority_support',
         'sort_order',
     ];
+
+    public const MODE_REPORT = 'report';
+
+    public const MODE_ENFORCE = 'enforce';
+
+    public const BANDWIDTH_NOTIFY = 'notify';
+
+    public const BANDWIDTH_BLOCK = 'block';
 
     public $incrementing = false;
 

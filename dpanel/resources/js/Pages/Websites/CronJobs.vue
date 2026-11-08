@@ -172,6 +172,7 @@ const toggleItem = (item) => {
                     <select v-model="form.status" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option value="active">active</option>
                         <option value="disabled">disabled</option>
+                        <option v-if="form.status === 'suspended'" value="suspended">suspended (runs again when the account is unsuspended)</option>
                     </select>
                 </div>
                 <div>
@@ -219,7 +220,7 @@ const toggleItem = (item) => {
                             <td class="px-4 py-3 text-xs text-slate-500">{{ job.created_at ? new Date(job.created_at).toLocaleString() : '-' }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
-                                    <button type="button" :disabled="statusForm.processing" class="rounded-md border border-amber-300 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50" @click="toggleItem(job)">
+                                    <button v-if="job.status !== 'suspended'" type="button" :disabled="statusForm.processing" class="rounded-md border border-amber-300 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50" @click="toggleItem(job)">
                                         {{ job.status === 'active' ? 'Disable' : 'Enable' }}
                                     </button>
                                     <button type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editItem(job)">

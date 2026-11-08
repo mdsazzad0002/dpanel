@@ -70,6 +70,7 @@ pub struct SiteConfig {
     pub cache: super::SiteCacheConfig,
     /// In panel order; empty for most sites.
     pub redirects: Arc<[super::RedirectRule]>,
+    pub guards: super::SiteGuards,
 }
 
 #[derive(Clone, Debug)]

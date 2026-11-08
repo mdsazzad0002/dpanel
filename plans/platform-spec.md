@@ -350,6 +350,8 @@ pub trait DiskQuota {
 
 Linux: ext4/XFS quota, না থাকলে scan। Windows: NTFS per-user quota। macOS: প্রতি account-এ APFS volume।
 
+Linux-এ usage সবসময় scan (sites root-এ uid-এর file, allocated block), যাতে quota ছাড়া filesystem-এও কাজ করে। `set` `setquota -u <uid> <kb> <kb> 0 0 -a` চালায়: soft ও hard একই, তাই grace period নেই। `setquota` থাকলে `level` `Hard`, না থাকলে `Soft`।
+
 ### 6.8 FastCGI endpoint
 
 ```rust
@@ -374,6 +376,8 @@ pub trait FirewallBackend {
 ```
 
 Linux: UFW ও firewalld। Windows: `NetSecurity` PowerShell module, সব rule-এর নাম `dPanel:` দিয়ে শুরু। macOS: নিজের `pf` anchor।
+
+Rule-এর `id` তার action, port ও source-এর SHA-256-এর প্রথম 12 hex, তাই একই rule দুই backend-এ একই id পায়, আর কোথাও কিছু জমাতে হয় না। Backend শুধু নিজের লেখা ধরনের rule list করে; হাতে লেখা অন্য rule ছোঁয় না। UFW-তে deny `prepend` দিয়ে প্রথমে যায়। `ttl` এখনও রাখা হয় না।
 
 **Lock-out রক্ষা:** Rule প্রয়োগের পর 60 সেকেন্ডের মধ্যে panel থেকে confirm না এলে আগের অবস্থায় ফিরবে।
 
@@ -460,6 +464,8 @@ pub trait Scheduler {
 | `package_plans` | `mail_per_hour` (int) | `0` = সীমাহীন |
 | `package_plans` | `over_bandwidth_action` (`notify`, `throttle`, `block`) | `notify` |
 | `package_plans` | `enforcement_mode` (`report`, `enforce`) | `report` |
+| `users` | `terminated_at`, `purge_after` (nullable timestamp) | `null` |
+| `users` | `disk_over_limit_at` (nullable timestamp), `bandwidth_over_limit_month` (nullable `Y-m`) | `null` |
 
 নতুন table:
 
@@ -468,6 +474,14 @@ pub trait Scheduler {
 | `account_usage_samples` | `user_id`, `sampled_at`, `disk_mb`, `bandwidth_mb`, `cpu_percent`, `memory_mb` |
 | `firewall_rules` | Panel-এর rule, backend-এর সঙ্গে reconcile হবে |
 | `acme_orders` | Domain, challenge, status, error, `expires_at` |
+| `website_protected_directories` | `website_id`, `path`, `realm`, `username`, `password_hash` (`s256i$<rounds>$<salt hex>$<hex>`) |
+| `website_guard_settings` | `website_id`, `no_php_paths`, `hotlink_protection`, `hotlink_allowed_hosts`, `cloudflare_only` |
+
+`throttle` এখনও নেই: gateway rate কমাতে পারে না, তাই panel শুধু `notify` ও `block` দেয়। `block`-এ site `over_limit` হয়, নতুন মাসে ফেরে।
+
+`terminate` করলে account suspend হয় আর `purge_after` 30 দিন পরে বসে। এর মধ্যে unsuspend করলে দুটোই মোছে। সময় পেরোলে প্রতিটা website আগে trash-এ archive হয়, তারপর মোছে।
+
+Alias row-এর নিজের `website_guard_settings` বা protected directory নেই: gateway main site-এর (`parent_id`) row পড়ে।
 
 `enforcement_mode=report` মানে limit ছাড়ালে শুধু report ও notification। পুরোনো server-এ upgrade-এর পর এটাই থাকবে, যাতে কেউ হঠাৎ বন্ধ না হয়।
 
@@ -483,8 +497,8 @@ pub trait Scheduler {
 | --- | --- |
 | `GET /capabilities` | Section 5 |
 | `POST /accounts/{name}/suspend`, `/unsuspend` | Mail, FTP, cron, worker, SSH বন্ধ ও চালু |
-| `PUT /accounts/{name}/limits` | Resource ও disk limit |
-| `GET /accounts/{name}/usage` | এখনকার usage |
+| `PUT /accounts/{name}/limits` | Resource ও disk limit; এখন শুধু `{"disk_mb": n}`, `0` limit তুলে নেয় |
+| `GET /accounts/{name}/usage` | এখনকার usage: `disk_mb`, `disk_limit_level` (`hard`, `soft`, `none`) |
 | `GET`, `POST`, `DELETE /firewall/rules` | Rule |
 | `POST /firewall/confirm` | Lock-out timer থামানো |
 | `POST /acme/issue`, `/acme/renew` | Certificate |

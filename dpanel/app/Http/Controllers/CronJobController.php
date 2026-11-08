@@ -66,7 +66,7 @@ class CronJobController extends Controller
             'name' => trim((string) $validated['name']),
             'expression' => trim((string) $validated['expression']),
             'command' => trim((string) $validated['command']),
-            'status' => (string) $validated['status'],
+            'status' => $this->statusFor($website, (string) $validated['status']),
             'description' => trim((string) ($validated['description'] ?? '')),
         ]);
 
@@ -102,7 +102,7 @@ class CronJobController extends Controller
             'name' => trim((string) $validated['name']),
             'expression' => trim((string) $validated['expression']),
             'command' => trim((string) $validated['command']),
-            'status' => (string) $validated['status'],
+            'status' => $this->statusFor($website, (string) $validated['status']),
             'description' => trim((string) ($validated['description'] ?? '')),
         ]);
 
@@ -164,9 +164,23 @@ class CronJobController extends Controller
             'name' => ['required', 'string', 'max:120'],
             'expression' => ['required', 'string', 'max:120', 'regex:/^(\S+\s+){4}\S+$/'],
             'command' => ['required', 'string', 'max:2000'],
-            'status' => ['required', 'in:active,disabled'],
+            'status' => ['required', 'in:active,disabled,suspended'],
             'description' => ['nullable', 'string', 'max:500'],
         ]);
+    }
+
+    /**
+     * While the owner is suspended a job that should run is kept `suspended`,
+     * so unsuspending starts it; one turned off stays `disabled`. Without a
+     * suspension, `suspended` means run.
+     */
+    private function statusFor(Website $website, string $requested): string
+    {
+        if ($requested === 'disabled') {
+            return 'disabled';
+        }
+
+        return $website->assignedUser?->is_suspended ? 'suspended' : 'active';
     }
 
     private function findWebsite(string $id, Request $request): ?Website
