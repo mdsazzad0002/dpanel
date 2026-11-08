@@ -123,4 +123,48 @@ class AccountSuspensionTest extends TestCase
         $this->assertSame('active', $closed->fresh()->serving_state);
         $this->assertSame('over_limit', $overLimit->fresh()->serving_state);
     }
+
+    public function test_suspending_a_reseller_suspends_their_customers(): void
+    {
+        $reseller = User::factory()->create();
+        $customer = User::factory()->create(['reseller_id' => $reseller->id]);
+        $site = $this->website($customer);
+        $other = User::factory()->create();
+
+        app(AccountSuspensionService::class)->suspend($reseller);
+
+        $this->assertTrue($customer->fresh()->is_suspended);
+        $this->assertSame('suspended', $site->fresh()->serving_state);
+        $this->assertFalse($other->fresh()->is_suspended);
+    }
+
+    public function test_unsuspending_a_reseller_keeps_a_customer_suspended_on_their_own(): void
+    {
+        $reseller = User::factory()->create();
+        $withReseller = User::factory()->create(['reseller_id' => $reseller->id]);
+        $onTheirOwn = User::factory()->create(['reseller_id' => $reseller->id]);
+        $ownSite = $this->website($onTheirOwn);
+        $suspension = app(AccountSuspensionService::class);
+
+        $suspension->suspend($onTheirOwn);
+        $suspension->suspend($reseller);
+        $suspension->unsuspend($reseller);
+
+        $this->assertFalse($withReseller->fresh()->is_suspended);
+        $this->assertTrue($onTheirOwn->fresh()->is_suspended);
+        $this->assertSame('suspended', $ownSite->fresh()->serving_state);
+    }
+
+    public function test_suspending_a_customer_again_makes_it_their_own_suspension(): void
+    {
+        $reseller = User::factory()->create();
+        $customer = User::factory()->create(['reseller_id' => $reseller->id]);
+        $suspension = app(AccountSuspensionService::class);
+
+        $suspension->suspend($reseller);
+        $suspension->suspend($customer);
+        $suspension->unsuspend($reseller);
+
+        $this->assertTrue($customer->fresh()->is_suspended);
+    }
 }
