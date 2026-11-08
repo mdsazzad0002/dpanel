@@ -196,4 +196,21 @@ class PlatformCapabilitiesTest extends TestCase
 
         return collect(app(PanelSearchController::class)->buildItems($request))->pluck('label')->all();
     }
+
+    public function test_opening_permissions_is_refused_where_the_os_has_no_file_modes(): void
+    {
+        $this->drustReports(['file_permissions' => false]);
+        $website = \App\Models\Website::create([
+            'id' => (string) \Illuminate\Support\Str::uuid(), 'domain' => 'shop.test', 'hostname' => 'shop.test',
+            'project_root' => '/home/shop', 'root_path' => '/home/shop/public_html', 'site_owner' => 'shop',
+            'php_version' => '8.3', 'enable_ssl' => false, 'status' => 'live', 'type' => 'primary', 'ssl_mode' => 'none',
+        ]);
+        $this->mock(\App\Services\Website\WebsiteGitService::class)->shouldNotReceive('localDevelopment');
+
+        $this->withoutMiddleware(\App\Http\Middleware\EnsurePanelSessionIsValid::class)
+            ->actingAs($this->admin())
+            ->withSession(['panel_session_token' => $this->token])
+            ->postJson("/cpsess{$this->token}/websites/{$website->id}/local-development", ['action' => 'open_permissions'])
+            ->assertNotFound();
+    }
 }

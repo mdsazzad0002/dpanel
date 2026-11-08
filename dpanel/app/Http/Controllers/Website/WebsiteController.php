@@ -911,6 +911,8 @@ class WebsiteController extends Controller
     public function localDevelopment(Request $request, string $token, string $id): JsonResponse
     {
         $data = $request->validate(['action' => ['required', 'in:trust,ignore_file_mode,open_permissions']]);
+        // chmod 777 has no meaning where the OS has no Unix modes.
+        abort_if($data['action'] === 'open_permissions' && ! app(\App\Support\Platform\PlatformCapabilities::class)->allows('file_permissions'), 404);
         $this->findAuthorizedWebsiteOrFail($id);
         $website = \App\Models\Website::query()->findOrFail($id);
         if (trim((string) $website->site_owner) === '') {

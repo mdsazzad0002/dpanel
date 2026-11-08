@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, ref } from 'vue';
-import { Deferred } from '@inertiajs/vue3';
+import { Deferred, usePage } from '@inertiajs/vue3';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
 import { useServerBaseDir } from '@/composables/useServerBaseDir';
 
@@ -72,6 +72,7 @@ const gitSafeDirectoryCommand = computed(() => {
 
 // The panel can only run these for a website account under the base folder;
 // the /var/www system site keeps the copy-and-run commands only.
+const page = usePage();
 const { isInsideBase } = useServerBaseDir();
 const canRunLocalDevActions = computed(() => isInsideBase(props.website?.root_path));
 const hasGit = computed(() => Boolean(props.rootInspection?.has_git));
@@ -82,7 +83,8 @@ const localDevActions = computed(() => [
     { key: 'trust', label: 'Trust Repo', icon: 'bi-shield-check', needsGit: true, hint: 'Mark the Git repository as safe for every user, so VS Code doesn\'t ask to trust it.' },
     { key: 'open_permissions', label: 'Permission All', icon: 'bi-unlock', needsGit: false, hint: 'chmod -R 777 the project so your own user can edit every file.' },
     { key: 'ignore_file_mode', label: 'Ignore Mode', icon: 'bi-git', needsGit: true, hint: 'git config core.fileMode false — permission changes stop showing as modified files.' },
-]);
+// Windows has no Unix modes to open up.
+].filter((action) => action.key !== 'open_permissions' || page.props.platform?.capabilities?.file_permissions !== false));
 
 const runLocalDevAction = async (action) => {
     if (localDevLoading.value) return;
