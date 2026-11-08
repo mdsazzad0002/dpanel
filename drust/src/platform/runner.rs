@@ -95,8 +95,14 @@ mod tests {
     #[test]
     fn only_allowed_variables_are_passed_on() {
         let passed = environment(|name| Some(OsString::from(format!("value-of-{name}"))));
-        assert_eq!(passed.len(), INHERITED_ENV.len());
-        assert!(passed.iter().all(|(name, _)| INHERITED_ENV.contains(&name.as_str())));
+        // Windows treats `HTTP_PROXY` and `http_proxy` as one variable.
+        let key = |name: &str| if cfg!(windows) { name.to_ascii_uppercase() } else { name.to_string() };
+        let mut expected: Vec<String> = INHERITED_ENV.iter().map(|name| key(name)).collect();
+        expected.sort();
+        expected.dedup();
+        let mut seen: Vec<String> = passed.iter().map(|(name, _)| key(name)).collect();
+        seen.sort();
+        assert_eq!(seen, expected);
     }
 
     #[test]
