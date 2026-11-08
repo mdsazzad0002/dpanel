@@ -17,6 +17,7 @@ use serde::Deserialize;
 use crate::{
     api::{ApiResponse, ApiState, check_token},
     app,
+    platform::{fs::FileMode, paths::Tool},
 };
 
 pub fn routes() -> Router<Arc<ApiState>> {
@@ -73,7 +74,7 @@ fn create_and_install(request: &Request) -> Result<(String, String, String), Str
     let _temporary = TemporaryDirectory(directory.clone());
     let key_path = directory.join("deploy_key");
 
-    let output = Command::new("ssh-keygen")
+    let output = Command::new(ssh_keygen())
         .args(["-q", "-t", "ed25519", "-N", "", "-C", comment, "-f"])
         .arg(&key_path)
         .output()
@@ -91,7 +92,7 @@ fn create_and_install(request: &Request) -> Result<(String, String, String), Str
         .map_err(|error| format!("Unable to read public key: {error}"))?;
     install_public_key(&request.site_owner, public_key.trim())?;
 
-    let fingerprint_output = Command::new("ssh-keygen")
+    let fingerprint_output = Command::new(ssh_keygen())
         .args(["-lf"])
         .arg(key_path.with_extension("pub"))
         .output()
@@ -100,6 +101,10 @@ fn create_and_install(request: &Request) -> Result<(String, String, String), Str
         .trim()
         .to_string();
     Ok((private_key, public_key.trim().to_string(), fingerprint))
+}
+
+fn ssh_keygen() -> PathBuf {
+    crate::platform::paths().binary_or_name(Tool::SshKeygen)
 }
 
 fn validate_owner(owner: &str) -> Result<(), String> {
@@ -137,44 +142,19 @@ fn install_public_key(owner: &str, public_key: &str) -> Result<(), String> {
         writeln!(file, "{public_key}")
             .map_err(|error| format!("Unable to install public key: {error}"))?;
     }
-    if crate::platform::current().one_user() {
-        let files = crate::platform::files();
-        return files
-            .set_mode(&ssh_dir, crate::platform::fs::FileMode::PrivateDir)
-            .and_then(|_| files.set_mode(&authorized_keys, crate::platform::fs::FileMode::Private))
-            .map_err(|error| format!("Unable to apply SSH permissions: {error}"));
+    let files = crate::platform::files();
+    if !crate::platform::current().one_user() {
+        let owner = crate::platform::accounts()
+            .lookup(owner)
+            .map_err(|error| error.to_string())?;
+        files
+            .set_owner(&ssh_dir, &owner)
+            .and_then(|_| files.set_owner(&authorized_keys, &owner))
+            .map_err(|error| format!("Unable to apply SSH permissions: {error}"))?;
     }
-    let group = crate::platform::accounts()
-        .primary_group(owner)
-        .map_err(|error| error.to_string())?;
-    for (program, args) in [
-        (
-            "chown",
-            vec![
-                format!("{owner}:{group}"),
-                ssh_dir.to_string_lossy().into_owned(),
-                authorized_keys.to_string_lossy().into_owned(),
-            ],
-        ),
-        (
-            "chmod",
-            vec!["0700".into(), ssh_dir.to_string_lossy().into_owned()],
-        ),
-        (
-            "chmod",
-            vec![
-                "0600".into(),
-                authorized_keys.to_string_lossy().into_owned(),
-            ],
-        ),
-    ] {
-        let status = Command::new(program)
-            .args(&args)
-            .status()
-            .map_err(|error| format!("Unable to run {program}: {error}"))?;
-        if !status.success() {
-            return Err(format!("Unable to apply SSH permissions with {program}."));
-        }
-    }
+    files
+        .set_mode(&ssh_dir, FileMode::PrivateDir)
+        .and_then(|_| files.set_mode(&authorized_keys, FileMode::Private))
+        .map_err(|error| format!("Unable to apply SSH permissions: {error}"))?;
     Ok(())
 }

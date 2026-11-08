@@ -18,7 +18,7 @@ use sha1::{Digest, Sha1};
 use crate::api::{ApiResponse, ApiState, check_token};
 
 mod conflicts;
-use crate::app::{run_status, user_group};
+use crate::platform::paths::Tool;
 
 pub fn routes() -> Router<Arc<ApiState>> {
     Router::new()
@@ -134,17 +134,9 @@ fn local_dev(request: &LocalDevRequest) -> Result<(String, serde_json::Value), S
             if !target.is_dir() {
                 return Err(format!("{} does not exist.", target.display()));
             }
-            let output = Command::new("chmod")
-                .args(["-R", "777"])
-                .arg(target)
-                .output()
-                .map_err(|error| format!("Unable to run chmod: {error}"))?;
-            if !output.status.success() {
-                return Err(format!(
-                    "Unable to change permissions: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ));
-            }
+            let files = crate::platform::files();
+            crate::platform::fs::set_mode_tree(files, target, crate::platform::fs::FileMode::Raw(0o777))
+                .map_err(|error| format!("Unable to change permissions: {error}"))?;
             Ok(("Permissions opened to 777.".into(), display(&[target])))
         }
         _ => Err("Unsupported local development action.".into()),
@@ -155,7 +147,8 @@ fn local_dev(request: &LocalDevRequest) -> Result<(String, serde_json::Value), S
 /// there. Returns whether it was added.
 pub(crate) fn trust_directory(path: &Path) -> Result<bool, String> {
     let path = path.to_string_lossy();
-    let existing = Command::new("git")
+    let git = crate::platform::paths().binary_or_name(Tool::Git);
+    let existing = Command::new(&git)
         .args(["config", "--system", "--get-all", "safe.directory"])
         .output()
         .map_err(|error| format!("Unable to run git: {error}"))?;
@@ -165,7 +158,7 @@ pub(crate) fn trust_directory(path: &Path) -> Result<bool, String> {
     {
         return Ok(false);
     }
-    let output = Command::new("git")
+    let output = Command::new(&git)
         .args(["config", "--system", "--add", "safe.directory", &path])
         .output()
         .map_err(|error| format!("Unable to run git: {error}"))?;
@@ -439,14 +432,12 @@ fn clone_repository(request: &Request, target: &Path, auth: &Auth) -> Result<Str
         // then runs `git clone` into it via runuser and needs write access,
         // or clone fails with "<target>/.git: Permission denied" the moment
         // it tries to create the repo's .git folder.
-        let group = user_group(&request.site_owner).unwrap_or_else(|_| request.site_owner.clone());
-        run_status(
-            "chown",
-            &[
-                &format!("{}:{group}", request.site_owner),
-                &target.to_string_lossy(),
-            ],
-        )?;
+        let owner = crate::platform::accounts()
+            .lookup(&request.site_owner)
+            .map_err(|error| error.to_string())?;
+        crate::platform::files()
+            .set_owner(target, &owner)
+            .map_err(|error| format!("Unable to prepare deployment folder: {error}"))?;
     }
     if fs::read_dir(target)
         .map_err(|error| error.to_string())?

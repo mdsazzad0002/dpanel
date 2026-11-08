@@ -304,7 +304,7 @@ pub(crate) fn parse_login(message: &str) -> Option<(&'static str, String, String
 /// Recent SSH logins, newest first, both accepted and failed.
 pub fn ssh_history() -> Result<Value, String> {
     let limit = HISTORY_LIMIT.to_string();
-    let output = Command::new("journalctl")
+    let output = Command::new(crate::platform::paths().binary_or_name(Tool::Journalctl))
         .args([
             "-u", "ssh.service", "-u", "sshd.service", "--no-pager", "-r", "-n", &limit,
             "-o", "json", "--output-fields=MESSAGE,_PID",

@@ -210,6 +210,7 @@ pub trait FileAccess {
 - `create_private` নতুন file বানায়, আগে থাকলে ব্যর্থ। `replace_private` truncate করে, পুরোনো file-এর mode রেখে। `LinkPolicy::Refuse` মানে `O_NOFOLLOW`।
 - `remove_file` file বা symlink মোছে, link যেখানে দেখায় সেটা নয়। Windows-এ folder-এর link folder হিসেবে মুছতে হয়, তাই `fs::remove_file` সেখানে ব্যর্থ হয়; symlink মুছতে পারে এমন code এটাই ব্যবহার করবে।
 - Windows-এ ACL SDDL হিসেবে লেখা আর native API দিয়ে বসানো। `create_private` ও `create_dir_private` প্রথম মুহূর্ত থেকেই নিজের ACL নিয়ে তৈরি হয়, folder-এর ACL কখনো পায় না; নইলে secret সেখানে আসলে private থাকত না।
+- `set_mode_tree(files, root, mode)` হলো `chmod -R`: folder ও তার ভেতরের সব, কিন্তু ভেতরের symlink follow করে না, কারণ সেটা system-এর যেকোনো জায়গায় দেখাতে পারে।
 - Windows-এ `owner`, `set_owner` ও `set_link_owner` local profile-এ logged-in user ধরে নেয়, server-এ `Unsupported` (per-site user task J-তে)।
 - Linux-এর `chown`, `chmod`, `setfacl`, `find`, `cp` command `filemanager`-এ আগের মতোই আছে; rule 4 অনুযায়ী এগুলো বদলানো আলাদা task। `Platform::one_user()` সত্য হলে (Linux ছাড়া অন্য OS-এর local profile) `filemanager` এই command-এর বদলে `platform::files()` ব্যবহার করে।
 

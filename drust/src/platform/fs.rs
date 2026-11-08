@@ -81,9 +81,76 @@ pub trait FileAccess: Send + Sync {
     fn remove_file(&self, path: &Path) -> Result<(), PlatformError>;
 }
 
+/// `chmod -R`: the folder and everything under it, without following a
+/// symlink inside it, which could point anywhere on the system.
+pub fn set_mode_tree(files: &dyn FileAccess, root: &Path, mode: FileMode) -> Result<(), PlatformError> {
+    files.set_mode(root, mode)?;
+    let entries = std::fs::read_dir(root).map_err(|error| PlatformError::from_io("read directory", error))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| PlatformError::from_io("read directory", error))?;
+        let kind = entry.file_type().map_err(|error| PlatformError::from_io("read file type", error))?;
+        if kind.is_symlink() {
+            continue;
+        }
+        if kind.is_dir() {
+            set_mode_tree(files, &entry.path(), mode)?;
+        } else {
+            files.set_mode(&entry.path(), mode)?;
+        }
+    }
+    Ok(())
+}
+
 /// `0644`-style text for the panel; `None` where the OS has no modes.
 pub fn mode_string(files: &dyn FileAccess, metadata: &Metadata) -> Option<String> {
     files
         .mode_bits(metadata)
         .map(|mode| format!("{:04o}", mode & 0o7777))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{path::PathBuf, sync::Mutex};
+
+    #[derive(Default)]
+    struct Recorder(Mutex<Vec<(PathBuf, FileMode)>>);
+
+    impl FileAccess for Recorder {
+        fn set_mode(&self, path: &Path, mode: FileMode) -> Result<(), PlatformError> {
+            self.0.lock().unwrap().push((path.to_path_buf(), mode));
+            Ok(())
+        }
+        fn mode_bits(&self, _: &Metadata) -> Option<u32> { None }
+        fn owner(&self, _: &Metadata) -> Result<OwnerId, PlatformError> { unimplemented!() }
+        fn set_owner(&self, _: &Path, _: &OwnerId) -> Result<(), PlatformError> { unimplemented!() }
+        fn set_link_owner(&self, _: &Path, _: &OwnerId) -> Result<(), PlatformError> { unimplemented!() }
+        fn create_private(&self, _: &Path) -> Result<File, PlatformError> { unimplemented!() }
+        fn replace_private(&self, _: &Path, _: LinkPolicy) -> Result<File, PlatformError> { unimplemented!() }
+        fn create_dir_private(&self, _: &Path) -> Result<(), PlatformError> { unimplemented!() }
+        fn symlink(&self, _: &Path, _: &Path) -> Result<(), PlatformError> { unimplemented!() }
+        fn remove_file(&self, _: &Path) -> Result<(), PlatformError> { unimplemented!() }
+    }
+
+    #[test]
+    fn a_tree_gets_the_mode_everywhere_but_through_a_link() {
+        let root = std::env::temp_dir().join(format!("dpanel-mode-tree-{}", std::process::id()));
+        let outside = root.with_extension("outside");
+        std::fs::create_dir_all(root.join("a/b")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(root.join("a/b/file"), "x").unwrap();
+        std::fs::write(outside.join("secret"), "x").unwrap();
+        let linked = super::super::files().symlink(&outside, &root.join("link")).is_ok();
+
+        let recorder = Recorder::default();
+        set_mode_tree(&recorder, &root, FileMode::Raw(0o777)).unwrap();
+        let mut seen: Vec<PathBuf> = recorder.0.into_inner().unwrap().into_iter().map(|(path, _)| path).collect();
+        seen.sort();
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+
+        let mut expected = vec![root.clone(), root.join("a"), root.join("a/b"), root.join("a/b/file")];
+        expected.sort();
+        assert_eq!(seen, expected, "symlink made: {linked}");
+    }
 }
