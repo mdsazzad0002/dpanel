@@ -168,7 +168,9 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system clock should be after the epoch")
             .as_nanos();
-        let panel_root = std::env::temp_dir().join(format!("dpanel-backup-delete-{nonce}"));
+        // Each test its own folder: macOS clocks tick in microseconds, so two
+        // tests running at once can read the same nonce.
+        let panel_root = std::env::temp_dir().join(format!("dpanel-backup-delete-inside-{nonce}"));
         let backup_root = panel_root.join("storage/app/backups");
         let run_path = backup_root.join("20261021_023002");
         fs::create_dir_all(&run_path).expect("backup run should be created");
@@ -192,7 +194,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system clock should be after the epoch")
             .as_nanos();
-        let panel_root = std::env::temp_dir().join(format!("dpanel-backup-delete-{nonce}"));
+        let panel_root = std::env::temp_dir().join(format!("dpanel-backup-delete-outside-{nonce}"));
         let outside_run = std::env::temp_dir().join(format!("20261021_023002-{nonce}"));
         fs::create_dir_all(&panel_root).expect("panel root should be created");
         fs::create_dir_all(&outside_run).expect("outside directory should be created");
@@ -216,7 +218,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system clock should be after the epoch")
             .as_nanos();
-        let panel_root = std::env::temp_dir().join(format!("dpanel-backup-delete-{nonce}"));
+        let panel_root = std::env::temp_dir().join(format!("dpanel-backup-delete-symlink-{nonce}"));
         let backup_root = panel_root.join("storage/app/backups");
         let actual_run = backup_root.join("20261020_023002");
         let linked_run = backup_root.join("20261021_023002");
