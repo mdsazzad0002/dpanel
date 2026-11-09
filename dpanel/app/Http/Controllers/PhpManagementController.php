@@ -130,7 +130,7 @@ class PhpManagementController extends Controller
             'version' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
         ]);
         $version = (string) $validated['version'];
-        $versions = $this->detectServerPhpVersionsViaScript();
+        $versions = array_keys($this->detectServerPhpVersionsViaScript());
 
         if (! in_array($version, $versions, true)) {
             return response()->json([
@@ -164,7 +164,7 @@ class PhpManagementController extends Controller
     public function updateExtensions(Request $request): RedirectResponse|JsonResponse
     {
         $state = $this->readRawState();
-        $versions = $this->detectServerPhpVersionsViaScript();
+        $versions = array_keys($this->detectServerPhpVersionsViaScript());
 
         $validated = $request->validate([
             'version' => ['required', 'string'],
@@ -275,7 +275,7 @@ class PhpManagementController extends Controller
         ]);
         $version = (string) $validated['version'];
 
-        if (! in_array($version, $this->detectServerPhpVersionsViaScript(), true)) {
+        if (! array_key_exists($version, $this->detectServerPhpVersionsViaScript())) {
             return response()->json(['success' => false, 'message' => 'The Rust API did not report this PHP version.'], 422);
         }
 
@@ -550,7 +550,7 @@ class PhpManagementController extends Controller
      */
     private function detectServerPhpVersions(): array
     {
-        $scriptVersions = $this->detectServerPhpVersionsViaScript();
+        $scriptVersions = array_keys($this->detectServerPhpVersionsViaScript());
         if (count($scriptVersions) > 0) {
             return $scriptVersions;
         }
