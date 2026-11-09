@@ -3,6 +3,8 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
+import MailQueueTab from './components/MailQueueTab.vue';
+import SendLimitsPanel from './components/SendLimitsPanel.vue';
 
 const props = defineProps({
     mailHealth: { type: Object, required: true },
@@ -302,8 +304,9 @@ const statusClass = (status) => ({
                     { id: 'failures', label: 'Failed emails', count: mailHealth.failures?.length ?? 0 },
                     { id: 'queue', label: 'Mail queue', count: queue.count ?? 0 },
                     { id: 'spam', label: 'Spam detector', count: spamEvents.length },
+                    ...(canClearLog ? [{ id: 'limits', label: 'Sending limits' }] : []),
                 ]" :key="tab.id" type="button" class="whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium" :class="activeTab === tab.id ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'" @click="activeTab = tab.id">
-                    {{ tab.label }} <span class="ml-1 rounded-full bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-700">{{ tab.count }}</span>
+                    {{ tab.label }} <span v-if="tab.count !== undefined" class="ml-1 rounded-full bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-700">{{ tab.count }}</span>
                 </button>
             </div>
 
@@ -326,11 +329,9 @@ const statusClass = (status) => ({
                 <div v-if="failures.length === 0" class="rounded-xl border border-dashed border-slate-300 p-10 text-center text-slate-500 dark:border-slate-700"><i class="bi bi-check-circle text-3xl text-emerald-500"></i><p class="mt-2 font-medium">No matching delivery failures found</p><p class="text-sm">This reflects the current readable log sample.</p></div>
             </section>
 
-            <section v-else-if="activeTab === 'queue'" class="space-y-3">
-                <div v-if="!queue.available" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"><p class="font-semibold">Postfix queue is unavailable</p><p class="mt-1">{{ queue.error }}</p></div>
-                <article v-for="message in queue.messages" :key="message.queue_id" class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"><div class="flex flex-wrap justify-between gap-2"><div><span class="font-mono font-semibold">{{ message.queue_id }}</span><span class="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs capitalize text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">{{ message.status_marker }}</span></div><span class="text-sm text-slate-500">{{ formatBytes(message.size_bytes) }}</span></div><p class="mt-2 text-sm"><span class="text-slate-500">From:</span> {{ message.sender || 'MAILER-DAEMON' }}</p><p class="mt-1 text-sm"><span class="text-slate-500">To:</span> {{ message.recipients?.join(', ') || 'Unavailable' }}</p></article>
-                <div v-if="queue.available && queue.messages?.length === 0" class="rounded-xl border border-dashed border-slate-300 p-10 text-center text-slate-500 dark:border-slate-700"><i class="bi bi-inbox text-3xl text-emerald-500"></i><p class="mt-2 font-medium">Mail queue is empty</p></div>
-            </section>
+            <MailQueueTab v-else-if="activeTab === 'queue'" :queue="queue" :can-manage="canClearLog" @changed="refresh" @result="showResult" />
+
+            <SendLimitsPanel v-else-if="activeTab === 'limits'" @result="showResult" />
 
             <section v-else class="space-y-3">
                 <div v-if="!mailHealth.diagnostics?.spam_engine?.detected" class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200"><p class="font-semibold">No spam engine activity detected</p><p class="mt-1">Install the spam filter with <code>sudo dpanel module rspamd install</code> (it is set up automatically on servers with 1 GB of RAM or more).</p></div>

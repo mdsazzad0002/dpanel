@@ -20,6 +20,8 @@ const form = useForm({
     max_bandwidth_gb: 10,
     enforcement_mode: 'report',
     over_bandwidth_action: 'notify',
+    max_emails_per_hour: 0,
+    max_emails_per_day: 0,
     allow_forwarding: true,
     allow_aliases: false,
     priority_support: false,

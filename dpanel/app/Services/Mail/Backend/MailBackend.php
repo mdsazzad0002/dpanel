@@ -66,4 +66,37 @@ interface MailBackend
 
     /** @return array{host: string, port: int|null, username: string} what the server uses now */
     public function relay(): array;
+
+    /**
+     * Each account's outbound mail limit (P5), one "key value" pair per line.
+     * `$senders` maps a mailbox address, a domain or `user:<system user>` to
+     * an account key (`a<user id>`); `$limits` maps an account key to
+     * `<per hour>:<per day>`, 0 meaning none.
+     *
+     * @return array{ready: bool, reason: string} whether the server enforces them
+     *
+     * @throws MailBackendException
+     * @throws UnsupportedMailFeature
+     */
+    public function setSendLimits(string $senders, string $limits): array;
+
+    /** @return array{ready: bool, reason: string} whether the server can enforce limits now */
+    public function sendLimitStatus(): array;
+
+    /**
+     * Deletes these queued messages for good (P5).
+     *
+     * @param  list<string>  $ids  queue ids
+     * @return int how many were deleted
+     *
+     * @throws MailBackendException
+     */
+    public function deleteQueued(array $ids): int;
+
+    /**
+     * Tries to deliver every queued message now.
+     *
+     * @throws MailBackendException
+     */
+    public function retryQueue(): void;
 }

@@ -108,13 +108,7 @@ class PostfixDovecotBackend implements MailBackend
     public function relay(): array
     {
         $result = $this->gateway->execute($this->script(), ['--status'], [], true);
-        $values = ['MAIL_RELAY_HOST' => '', 'MAIL_RELAY_PORT' => '', 'MAIL_RELAY_USERNAME' => ''];
-        foreach (preg_split('/\R/', (string) ($result['output'] ?? '')) as $line) {
-            [$key, $value] = array_pad(explode('=', trim($line), 2), 2, '');
-            if (array_key_exists($key, $values)) {
-                $values[$key] = $value;
-            }
-        }
+        $values = $this->values($result, ['MAIL_RELAY_HOST', 'MAIL_RELAY_PORT', 'MAIL_RELAY_USERNAME']);
 
         return [
             'host' => $values['MAIL_RELAY_HOST'],
@@ -123,9 +117,90 @@ class PostfixDovecotBackend implements MailBackend
         ];
     }
 
-    private function script(): string
+    public function setSendLimits(string $senders, string $limits): array
     {
-        return ScriptPathResolver::resolveRepositoryRoot().'/scripts/mail-smtp-relay.sh';
+        if ($this->windows()) {
+            throw new UnsupportedMailFeature('Outbound mail limits need Rspamd, which this server does not run.');
+        }
+        $result = $this->gateway->execute($this->script('mail-send-limits.sh'), ['--apply'], [
+            'DPANEL_MAIL_SENDERS' => $senders,
+            'DPANEL_MAIL_LIMITS' => $limits,
+        ], true);
+        if (! ($result['success'] ?? false)) {
+            throw new MailBackendException(trim((string) ($result['output'] ?? '')) ?: 'The mail limits could not be written.');
+        }
+
+        return $this->limitState($result);
+    }
+
+    public function sendLimitStatus(): array
+    {
+        if ($this->windows()) {
+            return ['ready' => false, 'reason' => 'Outbound mail limits need Rspamd, which this server does not run.'];
+        }
+        $result = $this->gateway->execute($this->script('mail-send-limits.sh'), ['--status'], [], true);
+        if (! ($result['success'] ?? false)) {
+            return ['ready' => false, 'reason' => trim((string) ($result['output'] ?? '')) ?: 'The mail limit state could not be read.'];
+        }
+
+        return $this->limitState($result);
+    }
+
+    public function deleteQueued(array $ids): int
+    {
+        if ($ids === []) {
+            return 0;
+        }
+        $result = $this->gateway->execute($this->script('mail-queue.sh'), array_map(fn (string $id) => "--delete={$id}", $ids), [], true);
+        if (! ($result['success'] ?? false)) {
+            throw new MailBackendException(trim((string) ($result['output'] ?? '')) ?: 'The messages could not be deleted.');
+        }
+
+        return (int) $this->values($result, ['MAIL_QUEUE_DELETED'])['MAIL_QUEUE_DELETED'];
+    }
+
+    public function retryQueue(): void
+    {
+        $result = $this->gateway->execute($this->script('mail-queue.sh'), ['--retry'], [], true);
+        if (! ($result['success'] ?? false)) {
+            throw new MailBackendException(trim((string) ($result['output'] ?? '')) ?: 'The queue could not be retried.');
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @return array{ready: bool, reason: string}
+     */
+    private function limitState(array $result): array
+    {
+        $values = $this->values($result, ['MAIL_LIMITS_READY', 'MAIL_LIMITS_REASON']);
+
+        return ['ready' => $values['MAIL_LIMITS_READY'] === '1', 'reason' => $values['MAIL_LIMITS_REASON']];
+    }
+
+    /**
+     * The KEY=value lines a script printed.
+     *
+     * @param  array<string, mixed>  $result
+     * @param  list<string>  $keys
+     * @return array<string, string>
+     */
+    private function values(array $result, array $keys): array
+    {
+        $values = array_fill_keys($keys, '');
+        foreach (preg_split('/\R/', (string) ($result['output'] ?? '')) as $line) {
+            [$key, $value] = array_pad(explode('=', trim($line), 2), 2, '');
+            if (array_key_exists($key, $values)) {
+                $values[$key] = $value;
+            }
+        }
+
+        return $values;
+    }
+
+    private function script(string $name = 'mail-smtp-relay.sh'): string
+    {
+        return ScriptPathResolver::resolveRepositoryRoot().'/scripts/'.$name;
     }
 
     private function windows(): bool

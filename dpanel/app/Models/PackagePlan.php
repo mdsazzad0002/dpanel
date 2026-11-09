@@ -18,6 +18,8 @@ class PackagePlan extends Model
         'max_websites',
         'max_databases',
         'max_bandwidth_gb',
+        'max_emails_per_hour',
+        'max_emails_per_day',
         'enforcement_mode',
         'over_bandwidth_action',
         'allow_forwarding',
@@ -47,6 +49,8 @@ class PackagePlan extends Model
         'max_websites' => 'integer',
         'max_databases' => 'integer',
         'max_bandwidth_gb' => 'integer',
+        'max_emails_per_hour' => 'integer',
+        'max_emails_per_day' => 'integer',
         'sort_order' => 'integer',
     ];
 

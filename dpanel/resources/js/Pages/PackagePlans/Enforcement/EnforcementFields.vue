@@ -24,4 +24,18 @@ defineProps({
         <p class="mt-1 text-xs text-slate-500">0 GB means no limit. Usage resets on the first day of each month.</p>
         <p v-if="form.errors.over_bandwidth_action" class="mt-1 text-xs text-red-600">{{ form.errors.over_bandwidth_action }}</p>
     </div>
+    <div>
+        <label class="mb-1 block text-sm">Emails per hour</label>
+        <input v-model.number="form.max_emails_per_hour" type="number" min="0" max="1000000" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+        <p v-if="form.errors.max_emails_per_hour" class="mt-1 text-xs text-red-600">{{ form.errors.max_emails_per_hour }}</p>
+    </div>
+    <div>
+        <label class="mb-1 block text-sm">Emails per day</label>
+        <input v-model.number="form.max_emails_per_day" type="number" min="0" max="10000000" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+        <p v-if="form.errors.max_emails_per_day" class="mt-1 text-xs text-red-600">{{ form.errors.max_emails_per_day }}</p>
+    </div>
+    <p class="text-xs text-slate-500 md:col-span-2">
+        Outgoing mail from the account's mailboxes and websites, each recipient counted once. 0 means no limit.
+        Over the limit, mail is held back until the hour or day is over (website mail waits in the queue, mail apps are asked to try later) and the account is notified. Needs the Rspamd module.
+    </p>
 </template>

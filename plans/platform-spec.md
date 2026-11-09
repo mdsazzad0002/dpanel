@@ -429,10 +429,14 @@ interface MailBackend {
     public function removeForwarder(MailForwarder $forwarder): void;
     public function setRelay(?RelaySettings $relay): void;
     public function relay(): array;                                    // {host, port, username}
+    public function setSendLimits(string $senders, string $limits): array; // P5; {ready, reason}
+    public function sendLimitStatus(): array;                          // {ready, reason}
+    public function deleteQueued(array $ids): int;                     // P5
+    public function retryQueue(): void;
 }
 ```
 
-`dkimRecord`, `health` ও `queue` এখনও নেই: DKIM `MailDomainProvisioner`-এ, health `MailHealthController`-এ, queue P5-এ আসবে। ব্যর্থ হলে `MailBackendException`; backend বা server না পারলে `UnsupportedMailFeature`, আর panel সেটা লুকায়।
+`dkimRecord`, `health` ও `queue` এখনও নেই: DKIM `MailDomainProvisioner`-এ, health `MailHealthController`-এ, queue-র তালিকা `MailDeliveryDiagnosticsService`-এ (`postqueue -p`)। P5-এ queue থেকে মোছা ও retry এসেছে। `setSendLimits`-এর দুটো map প্রতি line-এ একটা `key value`: sender (mailbox, domain বা `user:<system user>`) → account (`a<user id>`), আর account → `<প্রতি ঘণ্টা>:<প্রতি দিন>`। Postfix-এ Rspamd গোনে, Redis-এর `dpanel:mail:<account>:{h,d}:<window>` key-এ; Stalwart-এর নিজের throttle J5-এ দেখতে হবে। ব্যর্থ হলে `MailBackendException`; backend বা server না পারলে `UnsupportedMailFeature`, আর panel সেটা লুকায়।
 
 `PostfixDovecotBackend`-এ বর্তমান code সরেছে, আচরণ অপরিবর্তিত। Postfix ও Dovecot panel-এর table সরাসরি পড়ে, তাই mailbox, forwarder ও catch-all row বদলালেই পরের mail-এ লাগে। Alias query প্রতিটা mailbox-এর জন্য নিজেকে ফেরায়, যাতে `@domain` catch-all আসল mailbox-এর mail না নেয়। Maildir ও Sieve script drust লেখে (`/api/v1/mailbox-storage`), relay `mail-smtp-relay.sh` (root, password environment-এ)। IMAP-এ পড়া (`MailboxImapService`) দুই backend-এ একই থাকবে। Stalwart management API-র ঠিক কোন endpoint লাগবে, সেটা H3 spike থেকে এই section-এ যোগ হবে।
 

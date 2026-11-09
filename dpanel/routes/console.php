@@ -51,3 +51,9 @@ Schedule::command('accounts:disk-check')
 Schedule::command('accounts:bandwidth-check')
     ->everyFifteenMinutes()
     ->withoutOverlapping();
+
+// P5: new mailboxes, domains and package limits reach Rspamd within five
+// minutes; an account that reached its limit is told once per hour or day.
+Schedule::command('mail:send-limits')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

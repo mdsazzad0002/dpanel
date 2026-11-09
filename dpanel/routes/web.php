@@ -28,6 +28,8 @@ use App\Http\Controllers\DnsZoneConnectionController;
 use App\Http\Controllers\DnsZoneFileController;
 use App\Http\Controllers\Email\MailAutoresponderController;
 use App\Http\Controllers\Email\MailForwarderController;
+use App\Http\Controllers\Email\MailQueueController;
+use App\Http\Controllers\Email\MailSendLimitController;
 use App\Http\Controllers\Email\SmtpRelayController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\Settings\BrandingController;
@@ -386,6 +388,18 @@ Route::prefix('cpsess{token}')
             Route::patch('/mail-health/outbound-gate', [MailHealthController::class, 'setOutboundGate'])
                 ->middleware(['role:admin|superadmin', 'throttle:10,1'])
                 ->name('mail-health.outbound-gate');
+            Route::delete('/mail-health/queue', [MailQueueController::class, 'destroy'])
+                ->middleware(['role:admin|superadmin', 'throttle:20,1'])
+                ->name('mail-health.queue.destroy');
+            Route::post('/mail-health/queue/retry', [MailQueueController::class, 'retry'])
+                ->middleware(['role:admin|superadmin', 'throttle:5,1'])
+                ->name('mail-health.queue.retry');
+            Route::get('/mail-health/send-limits', [MailSendLimitController::class, 'index'])
+                ->middleware(['role:admin|superadmin', 'throttle:30,1'])
+                ->name('mail-health.send-limits');
+            Route::post('/mail-health/send-limits/apply', [MailSendLimitController::class, 'apply'])
+                ->middleware(['role:admin|superadmin', 'throttle:5,1'])
+                ->name('mail-health.send-limits.apply');
             Route::post('/emails', [EmailController::class, 'store'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('emails.store');

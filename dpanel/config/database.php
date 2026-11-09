@@ -180,6 +180,19 @@ return [
             'backoff_cap' => env('REDIS_BACKOFF_CAP', 1000),
         ],
 
+        // Raw, unprefixed connection to the Redis database Rspamd counts
+        // outbound mail in (backlog P5, dpanel_ratelimit.lua).
+        'mail_limits' => [
+            'url' => env('REDIS_URL'),
+            'host' => env('REDIS_HOST', '127.0.0.1'),
+            'username' => env('REDIS_USERNAME'),
+            'password' => env('REDIS_PASSWORD'),
+            'port' => env('REDIS_PORT', '6379'),
+            'database' => env('MAIL_LIMITS_REDIS_DB', '0'),
+            'options' => ['prefix' => null],
+            'max_retries' => 1,
+        ],
+
         // Raw, unprefixed connection used only to inspect isolated website namespaces.
         'website_cache' => [
             'url' => env('REDIS_URL'),

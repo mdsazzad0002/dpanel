@@ -35,6 +35,8 @@ const form = useForm({
     max_bandwidth_gb: Number(props.plan.max_bandwidth_gb ?? 10),
     enforcement_mode: props.plan.enforcement_mode ?? 'report',
     over_bandwidth_action: props.plan.over_bandwidth_action ?? 'notify',
+    max_emails_per_hour: Number(props.plan.max_emails_per_hour ?? 0),
+    max_emails_per_day: Number(props.plan.max_emails_per_day ?? 0),
     allow_forwarding: props.plan.allow_forwarding ?? true,
     allow_aliases: props.plan.allow_aliases ?? false,
     priority_support: props.plan.priority_support ?? false,
