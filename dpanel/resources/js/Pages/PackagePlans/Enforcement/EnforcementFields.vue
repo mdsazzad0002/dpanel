@@ -34,6 +34,27 @@ defineProps({
         <input v-model.number="form.max_emails_per_day" type="number" min="0" max="10000000" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
         <p v-if="form.errors.max_emails_per_day" class="mt-1 text-xs text-red-600">{{ form.errors.max_emails_per_day }}</p>
     </div>
+    <div class="grid gap-4 md:col-span-2 md:grid-cols-3">
+        <div>
+            <label class="mb-1 block text-sm">CPU limit (%)</label>
+            <input v-model.number="form.max_cpu_percent" type="number" min="0" max="6400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+            <p v-if="form.errors.max_cpu_percent" class="mt-1 text-xs text-red-600">{{ form.errors.max_cpu_percent }}</p>
+        </div>
+        <div>
+            <label class="mb-1 block text-sm">Memory limit (MB)</label>
+            <input v-model.number="form.max_memory_mb" type="number" min="0" max="1048576" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+            <p v-if="form.errors.max_memory_mb" class="mt-1 text-xs text-red-600">{{ form.errors.max_memory_mb }}</p>
+        </div>
+        <div>
+            <label class="mb-1 block text-sm">Process limit</label>
+            <input v-model.number="form.max_processes" type="number" min="0" max="100000" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+            <p v-if="form.errors.max_processes" class="mt-1 text-xs text-red-600">{{ form.errors.max_processes }}</p>
+        </div>
+    </div>
+    <p class="text-xs text-slate-500 md:col-span-2">
+        For the account's websites' PHP, all its sites together. 100% CPU is one full core; 0 means no limit.
+        With a limit, the account's PHP runs in its own PHP-FPM, so it cannot slow other accounts down. Needs a Linux server with systemd; applied within five minutes.
+    </p>
     <p class="text-xs text-slate-500 md:col-span-2">
         Outgoing mail from the account's mailboxes and websites, each recipient counted once. 0 means no limit.
         Over the limit, mail is held back until the hour or day is over (website mail waits in the queue, mail apps are asked to try later) and the account is notified. Needs the Rspamd module.

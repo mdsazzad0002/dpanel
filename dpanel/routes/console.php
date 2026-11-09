@@ -52,6 +52,12 @@ Schedule::command('accounts:bandwidth-check')
     ->everyFifteenMinutes()
     ->withoutOverlapping();
 
+// P4: package CPU and memory limits reach the account's slice within five
+// minutes, and each run samples the account's use for the dashboard.
+Schedule::command('accounts:resource-check')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
 // P5: new mailboxes, domains and package limits reach Rspamd within five
 // minutes; an account that reached its limit is told once per hour or day.
 Schedule::command('mail:send-limits')

@@ -23,7 +23,7 @@ mod windows;
 use account::{AccountManager, LinuxAccounts, LocalAccounts, NoAccounts};
 use capabilities::Capability;
 use fs::FileAccess;
-use limits::{DiskQuota, NoLimits};
+use limits::{DiskQuota, NoLimits, ResourceLimiter};
 use paths::Paths;
 use runner::{IsolatedRunner, NoRunner, RunuserRunner, SameUserRunner};
 use scheduler::{CronDirScheduler, Scheduler, TimerScheduler};
@@ -96,6 +96,7 @@ pub struct Platform {
     runner: Box<dyn IsolatedRunner>,
     scheduler: Box<dyn Scheduler>,
     disk_quota: Box<dyn DiskQuota>,
+    resource_limiter: Box<dyn ResourceLimiter>,
 }
 
 impl Platform {
@@ -133,6 +134,10 @@ impl Platform {
 
     pub fn disk_quota(&self) -> &dyn DiskQuota {
         self.disk_quota.as_ref()
+    }
+
+    pub fn resource_limiter(&self) -> &dyn ResourceLimiter {
+        self.resource_limiter.as_ref()
     }
 
     /// A local profile on a PC runs every site as the logged-in user, so a site
@@ -190,6 +195,7 @@ pub fn current() -> &'static Platform {
         let runner = runner_for(os, profile);
         let scheduler = scheduler_for(os, &paths);
         let disk_quota = disk_quota_for(os, profile, &paths);
+        let resource_limiter = resource_limiter_for(os, profile);
         Platform {
             os,
             profile,
@@ -199,6 +205,7 @@ pub fn current() -> &'static Platform {
             runner,
             scheduler,
             disk_quota,
+            resource_limiter,
         }
     })
 }
@@ -251,6 +258,19 @@ fn disk_quota_for(os: Os, profile: Profile, paths: &Paths) -> Box<dyn DiskQuota>
     }
 }
 
+/// A Linux server puts each limited account in its own systemd slice; a PC
+/// has nothing to limit, and Windows and macOS wait for tasks J2 and K3.
+fn resource_limiter_for(os: Os, profile: Profile) -> Box<dyn ResourceLimiter> {
+    match (os, profile) {
+        #[cfg(unix)]
+        (Os::Linux, Profile::Server) => Box::new(unix::slices::SystemdSlices {
+            unit_dir: "/etc/systemd/system".into(),
+            cgroup_root: "/sys/fs/cgroup".into(),
+        }),
+        _ => Box::new(NoLimits),
+    }
+}
+
 /// Shorthand for `current().paths()`.
 pub fn paths() -> &'static Paths {
     current().paths()
@@ -279,6 +299,11 @@ pub fn scheduler() -> &'static dyn Scheduler {
 /// Shorthand for `current().disk_quota()`.
 pub fn disk_quota() -> &'static dyn DiskQuota {
     current().disk_quota()
+}
+
+/// Shorthand for `current().resource_limiter()`.
+pub fn resource_limiter() -> &'static dyn ResourceLimiter {
+    current().resource_limiter()
 }
 
 /// `program` as `owner`, with nothing of this process's environment but the allowlist.

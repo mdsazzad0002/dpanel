@@ -9,6 +9,7 @@ mod h3_listener;
 mod matching;
 mod node_process;
 pub(crate) mod php;
+pub(crate) mod php_fpm_master;
 mod php_cgi_pool;
 mod precompress;
 mod proxy;

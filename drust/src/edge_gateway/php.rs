@@ -693,7 +693,7 @@ pub fn prewarm_site_pool(scope: &str, site_owner: Option<&str>, php_version: Opt
     });
 }
 
-fn fpm_socket(name: &str) -> PathBuf {
+pub(super) fn fpm_socket(name: &str) -> PathBuf {
     crate::platform::paths().run_dir().join("php").join(name)
 }
 
@@ -709,18 +709,29 @@ fn resolve_shared_fpm_socket(version: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("PHP-FPM socket not found for PHP {version}"))
 }
 
-fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(), String> {
+/// Held while any site pool is created or moved between masters, so a
+/// request that finds no socket waits instead of making a second pool.
+pub(super) fn provision_lock() -> Result<std::sync::MutexGuard<'static, ()>, String> {
     static PROVISION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    let _guard = PROVISION_LOCK
+    PROVISION_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
-        .map_err(|_| "PHP-FPM provision lock is poisoned".to_string())?;
+        .map_err(|_| "PHP-FPM provision lock is poisoned".to_string())
+}
+
+fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(), String> {
+    let _guard = provision_lock()?;
 
     if socket.exists() {
         return Ok(());
     }
     validate_php_version(version)?;
     validate_system_user(owner)?;
+    // An account with CPU or memory limits runs its own master (P4); its
+    // pool must never also be in the shared master's pool.d.
+    if let Some(group) = super::php_fpm_master::group_of(owner) {
+        return super::php_fpm_master::ensure_running(owner, version, socket, &group);
+    }
 
     let pool_directory = PathBuf::from(format!("/etc/php/{version}/fpm/pool.d"));
     if !pool_directory.is_dir() {
@@ -732,25 +743,7 @@ fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(),
     let pool_path = pool_directory.join(format!("dpanel-{owner}.conf"));
     let mut created = false;
     if !pool_path.exists() {
-        let max_children = site_pool_max_children();
-        let error_log = prepare_php_error_log(owner);
-        let content = format!(
-            "; Managed dynamically by drust edge gateway.\n\
-             [{owner}]\n\
-             user = {owner}\n\
-             group = {owner}\n\
-             listen = {}\n\
-             listen.owner = www-data\n\
-             listen.group = www-data\n\
-             listen.mode = 0660\n\
-             pm = ondemand\n\
-             pm.max_children = {max_children}\n\
-             pm.process_idle_timeout = 300s\n\
-             pm.max_requests = 500\n\
-             security.limit_extensions = .php\n{error_log}",
-            socket.display()
-        );
-        fs::write(&pool_path, content).map_err(|error| {
+        fs::write(&pool_path, site_pool_content(owner, socket)).map_err(|error| {
             format!(
                 "cannot create PHP-FPM pool {}: {error}",
                 pool_path.display()
@@ -783,6 +776,28 @@ fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(),
         "PHP-FPM pool was provisioned but its socket did not start: {}",
         socket.display()
     ))
+}
+
+/// A site user's pool, the same in the shared master and in an account's own one.
+pub(super) fn site_pool_content(owner: &str, socket: &Path) -> String {
+    let max_children = site_pool_max_children();
+    let error_log = prepare_php_error_log(owner);
+    format!(
+        "; Managed dynamically by drust edge gateway.\n\
+         [{owner}]\n\
+         user = {owner}\n\
+         group = {owner}\n\
+         listen = {}\n\
+         listen.owner = www-data\n\
+         listen.group = www-data\n\
+         listen.mode = 0660\n\
+         pm = ondemand\n\
+         pm.max_children = {max_children}\n\
+         pm.process_idle_timeout = 300s\n\
+         pm.max_requests = 500\n\
+         security.limit_extensions = .php\n{error_log}",
+        socket.display()
+    )
 }
 
 /// Pool lines that send this account's PHP errors to its own log (S4), read
@@ -844,7 +859,7 @@ fn quarantine_orphan_pools(pool_directory: &Path) {
     }
 }
 
-fn validate_php_version(version: &str) -> Result<(), String> {
+pub(super) fn validate_php_version(version: &str) -> Result<(), String> {
     let Some((major, minor)) = version.split_once('.') else {
         return Err(format!("invalid PHP version: {version}"));
     };
@@ -858,7 +873,7 @@ fn validate_php_version(version: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_system_user(owner: &str) -> Result<(), String> {
+pub(super) fn validate_system_user(owner: &str) -> Result<(), String> {
     let exists = crate::platform::accounts()
         .exists(owner)
         .map_err(|error| format!("cannot validate site owner {owner}: {error}"))?;
@@ -942,7 +957,7 @@ fn test_fpm_configuration(version: &str) -> Result<(), String> {
     }
 }
 
-fn reload_fpm_service(version: &str) -> Result<(), String> {
+pub(super) fn reload_fpm_service(version: &str) -> Result<(), String> {
     crate::php_config::ensure_graceful_reload(version);
     let service = format!("php{version}-fpm");
     crate::platform::services()

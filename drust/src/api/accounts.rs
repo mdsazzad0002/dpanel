@@ -43,7 +43,7 @@ fn level_name(level: crate::platform::limits::LimitLevel) -> &'static str {
 }
 
 /// Site accounts only: the panel's own and the system's are never limited.
-fn limitable(name: &str) -> Result<crate::platform::fs::OwnerId, crate::platform::PlatformError> {
+pub(super) fn limitable(name: &str) -> Result<crate::platform::fs::OwnerId, crate::platform::PlatformError> {
     let owner = crate::platform::accounts().lookup(name)?;
     if owner.uid < 1000 || name == "nobody" {
         return Err(crate::platform::PlatformError::PermissionDenied {

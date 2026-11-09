@@ -41,6 +41,9 @@ pub trait ServiceManager: Send + Sync + std::fmt::Debug {
     fn reset_failed(&self, unit: &str) -> Result<(), PlatformError>;
     /// Picks up unit definitions that changed on disk.
     fn reload_definitions(&self) -> Result<(), PlatformError>;
+    /// Changes resource settings such as `MemoryMax=512M` on a running unit
+    /// at once; they last until the next boot, when the unit file applies.
+    fn set_runtime_properties(&self, unit: &str, properties: &[String]) -> Result<(), PlatformError>;
     /// Loaded units whose name matches a `name*` pattern.
     fn unit_names(&self, pattern: &str) -> Result<Vec<String>, PlatformError>;
     /// `unit` can be a `name*` pattern.
@@ -162,6 +165,12 @@ impl ServiceManager for SystemdServices {
         systemctl(&["daemon-reload"])
     }
 
+    fn set_runtime_properties(&self, unit: &str, properties: &[String]) -> Result<(), PlatformError> {
+        let mut args = vec!["set-property", "--runtime", unit];
+        args.extend(properties.iter().map(String::as_str));
+        systemctl(&args)
+    }
+
     fn unit_names(&self, pattern: &str) -> Result<Vec<String>, PlatformError> {
         systemctl_text(&["list-units", "--all", "--plain", "--no-legend", pattern])
             .map(|text| first_column(&text))
@@ -224,6 +233,10 @@ impl ServiceManager for NoServices {
     }
 
     fn reload_definitions(&self) -> Result<(), PlatformError> {
+        unsupported()
+    }
+
+    fn set_runtime_properties(&self, _unit: &str, _properties: &[String]) -> Result<(), PlatformError> {
         unsupported()
     }
 

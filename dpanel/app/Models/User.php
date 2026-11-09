@@ -31,6 +31,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'purge_after',
         'disk_over_limit_at',
         'bandwidth_over_limit_month',
+        'resource_limits_applied',
         'role',
         'reseller_id',
         'package_id',

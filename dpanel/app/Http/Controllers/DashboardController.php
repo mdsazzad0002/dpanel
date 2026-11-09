@@ -96,6 +96,7 @@ class DashboardController extends Controller
             'bandwidth_limit_gb' => $package?->max_bandwidth_gb,
             'bandwidth_requests' => $bandwidth['requests'],
             'bandwidth_status' => $bandwidth['status'],
+            ...$this->resourceUsage($actor, $package),
             'last_login_ip' => $session?->ip_address,
             'last_login_at' => $session?->created_at?->toIso8601String(),
         ];
@@ -117,6 +118,26 @@ class DashboardController extends Controller
             ->pluck('id');
 
         return (float) AccountUsageSample::query()->whereIn('id', $latest)->sum('disk_mb');
+    }
+
+    /**
+     * CPU and memory of the account's slice (P4), from the newest five-minute
+     * sample; null limits when the package sets none.
+     *
+     * @return array<string, float|int|null>
+     */
+    private function resourceUsage(User $actor, ?\App\Models\PackagePlan $package): array
+    {
+        $sample = $package?->hasResourceLimits()
+            ? AccountUsageSample::query()->where('user_id', $actor->id)->whereNotNull('memory_mb')->latest('id')->first()
+            : null;
+
+        return [
+            'cpu_used_percent' => $sample?->cpu_percent,
+            'cpu_limit_percent' => ($package?->max_cpu_percent ?? 0) > 0 ? $package->max_cpu_percent : null,
+            'memory_used_mb' => $sample?->memory_mb,
+            'memory_limit_mb' => ($package?->max_memory_mb ?? 0) > 0 ? $package->max_memory_mb : null,
+        ];
     }
 
     /**

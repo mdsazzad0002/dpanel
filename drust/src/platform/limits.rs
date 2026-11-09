@@ -1,5 +1,5 @@
 //! CPU, memory and disk limits per account. `plans/platform-spec.md` sections
-//! 6.6 and 6.7. Interfaces only for now: P2, P4, J2 and K3 bring the backends.
+//! 6.6 and 6.7. Linux has both (P2, P4); J2, J3, K2 and K3 bring the rest.
 
 use super::{PlatformError, capabilities::Capability, fs::OwnerId};
 
@@ -26,11 +26,28 @@ pub struct UsageSample {
     pub processes: u32,
 }
 
+/// One panel account's share of the machine. Keyed by the account (`a<user
+/// id>`), not by a system user: an account's websites may run as several
+/// system users, and the package limit is for all of them together.
 pub trait ResourceLimiter: Send + Sync + std::fmt::Debug {
     fn level(&self) -> LimitLevel;
-    fn apply(&self, owner: &OwnerId, profile: &ResourceProfile) -> Result<(), PlatformError>;
-    fn usage(&self, owner: &OwnerId) -> Result<UsageSample, PlatformError>;
-    fn clear(&self, owner: &OwnerId) -> Result<(), PlatformError>;
+    /// A `0` in the profile means no limit of that kind.
+    fn apply(&self, group: &str, profile: &ResourceProfile) -> Result<(), PlatformError>;
+    fn usage(&self, group: &str) -> Result<UsageSample, PlatformError>;
+    fn clear(&self, group: &str) -> Result<(), PlatformError>;
+}
+
+/// The systemd slice an account's processes run in on Linux.
+pub fn slice_name(group: &str) -> String {
+    format!("dpanel-{group}.slice")
+}
+
+/// `a` and the panel user's id: safe in a unit, path or file name.
+pub fn valid_group(group: &str) -> bool {
+    group.len() >= 2
+        && group.len() <= 21
+        && group.starts_with('a')
+        && group[1..].bytes().all(|byte| byte.is_ascii_digit())
 }
 
 pub trait DiskQuota: Send + Sync + std::fmt::Debug {
@@ -61,15 +78,15 @@ impl ResourceLimiter for NoLimits {
         LimitLevel::None
     }
 
-    fn apply(&self, _owner: &OwnerId, _profile: &ResourceProfile) -> Result<(), PlatformError> {
+    fn apply(&self, _group: &str, _profile: &ResourceProfile) -> Result<(), PlatformError> {
         no_limits()
     }
 
-    fn usage(&self, _owner: &OwnerId) -> Result<UsageSample, PlatformError> {
+    fn usage(&self, _group: &str) -> Result<UsageSample, PlatformError> {
         no_limits()
     }
 
-    fn clear(&self, _owner: &OwnerId) -> Result<(), PlatformError> {
+    fn clear(&self, _group: &str) -> Result<(), PlatformError> {
         no_limits()
     }
 }
@@ -103,12 +120,21 @@ mod tests {
         assert_eq!(ResourceLimiter::level(&NoLimits), LimitLevel::None);
         assert_eq!(DiskQuota::level(&NoLimits), LimitLevel::None);
         assert!(matches!(
-            ResourceLimiter::clear(&NoLimits, &OWNER),
+            ResourceLimiter::clear(&NoLimits, "a1"),
             Err(PlatformError::Unsupported { capability: Capability::ResourceLimits })
         ));
         assert!(matches!(
             NoLimits.set(&OWNER, 100),
             Err(PlatformError::Unsupported { capability: Capability::DiskQuota })
         ));
+    }
+
+    #[test]
+    fn a_group_is_a_and_digits_only() {
+        assert!(valid_group("a12"));
+        assert!(!valid_group("a"));
+        assert!(!valid_group("b12"));
+        assert!(!valid_group("a1/../x"));
+        assert!(!valid_group("a-1"));
     }
 }

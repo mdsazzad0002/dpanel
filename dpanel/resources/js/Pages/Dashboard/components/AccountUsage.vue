@@ -40,6 +40,9 @@ const quotas = computed(() => {
         { label: 'Databases', icon: 'bi-database', used: s.databases_used, limit: s.databases_limit },
         { label: 'Mailboxes', icon: 'bi-envelope', used: s.mailboxes_used, limit: s.mailboxes_limit, note: `${formatMb(s.mail_storage_mb)} allocated storage` },
         { label: 'Bandwidth', icon: 'bi-activity', used: s.bandwidth_used_gb, limit: s.bandwidth_limit_gb, format: formatBandwidth, note: `${s.bandwidth_status ?? ''} · ${s.bandwidth_requests ?? 0} requests` },
+        // Only when the package limits them (P4); sampled every five minutes.
+        ...(s.cpu_limit_percent ? [{ label: 'CPU', icon: 'bi-cpu', used: s.cpu_used_percent, limit: s.cpu_limit_percent, format: (v) => `${Number(v || 0).toFixed(0)}%`, note: '100% is one core, measured over the last five minutes' }] : []),
+        ...(s.memory_limit_mb ? [{ label: 'Memory', icon: 'bi-memory', used: s.memory_used_mb, limit: s.memory_limit_mb, format: formatMb }] : []),
     ].map((q) => {
         const format = q.format ?? ((v) => Number(v || 0));
         const percent = quotaPercent(q.used, q.limit);

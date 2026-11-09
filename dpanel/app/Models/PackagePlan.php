@@ -20,6 +20,9 @@ class PackagePlan extends Model
         'max_bandwidth_gb',
         'max_emails_per_hour',
         'max_emails_per_day',
+        'max_cpu_percent',
+        'max_memory_mb',
+        'max_processes',
         'enforcement_mode',
         'over_bandwidth_action',
         'allow_forwarding',
@@ -51,8 +54,16 @@ class PackagePlan extends Model
         'max_bandwidth_gb' => 'integer',
         'max_emails_per_hour' => 'integer',
         'max_emails_per_day' => 'integer',
+        'max_cpu_percent' => 'integer',
+        'max_memory_mb' => 'integer',
+        'max_processes' => 'integer',
         'sort_order' => 'integer',
     ];
+
+    public function hasResourceLimits(): bool
+    {
+        return $this->max_cpu_percent > 0 || $this->max_memory_mb > 0 || $this->max_processes > 0;
+    }
 
     public function mailboxes(): HasMany
     {

@@ -325,15 +325,17 @@ pub struct UsageSample { pub cpu_percent: f32, pub memory_mb: u64, pub processes
 
 pub trait ResourceLimiter {
     fn level(&self) -> LimitLevel; // Hard, Soft, None
-    fn apply(&self, owner: &OwnerId, profile: &ResourceProfile) -> Result<(), PlatformError>;
-    fn usage(&self, owner: &OwnerId) -> Result<UsageSample, PlatformError>;
-    fn clear(&self, owner: &OwnerId) -> Result<(), PlatformError>;
+    fn apply(&self, group: &str, profile: &ResourceProfile) -> Result<(), PlatformError>;
+    fn usage(&self, group: &str) -> Result<UsageSample, PlatformError>;
+    fn clear(&self, group: &str) -> Result<(), PlatformError>;
 }
 ```
 
+`group` হলো panel-এর account, `a<user id>` (P4): এক account-এর কয়েকটা site user থাকতে পারে, আর package-এর limit সবার মিলিয়ে। Profile-এ `0` মানে সেই limit নেই; `cpu_percent`-এ 100 মানে এক core।
+
 | OS | Implementation |
 | --- | --- |
-| Linux | প্রতি account-এ systemd slice: `CPUQuota`, `MemoryMax`, `TasksMax` |
+| Linux | প্রতি account-এ systemd slice `dpanel-a<id>.slice`: `CPUQuota`, `MemoryMax`, `TasksMax`। Account-এর site user-দের PHP নিজের PHP-FPM master-এ (`dpanel-php<v>-fpm-<owner>.service`) সেই slice-এ চলে, কারণ shared master-এর worker তার নিজের cgroup-এ থাকে |
 | Windows | Job Object: job-wide memory limit, CPU rate hard cap, active process limit |
 | macOS | Section 10-এর supervisor loop |
 
@@ -530,6 +532,9 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `POST /accounts/{name}/suspend`, `/unsuspend` | Mail, FTP, cron, worker, SSH বন্ধ ও চালু |
 | `PUT /accounts/{name}/limits` | Resource ও disk limit; এখন শুধু `{"disk_mb": n}`, `0` limit তুলে নেয় |
 | `GET /accounts/{name}/usage` | এখনকার usage: `disk_mb`, `disk_limit_level` (`hard`, `soft`, `none`) |
+| `PUT /resource-limits/{group}` | `{"cpu_percent", "memory_mb", "max_processes", "owners": [site user]}`; সব `0` হলে limit সরায়। Site user-দের PHP slice-এ যায়, তালিকা থেকে বাদ পড়া user shared master-এ ফেরে (P4) |
+| `DELETE /resource-limits/{group}` | সব site user shared master-এ, slice-এর limit সরানো |
+| `GET /resource-limits/{group}/usage` | `cpu_percent` (আগের call থেকে গড়), `memory_mb`, `processes`, `limit_level`; limit না পারলে `501` |
 | `GET`, `POST`, `DELETE /firewall/rules` | Rule |
 | `POST /firewall/confirm` | Lock-out timer থামানো |
 | `POST /acme/issue`, `/acme/renew` | Certificate |
