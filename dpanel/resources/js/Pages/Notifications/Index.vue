@@ -19,6 +19,7 @@ const busy = ref(false);
 const getNotificationIcon = (notification) => {
     if (notification.status === 'completed') return 'bi-check-circle-fill text-emerald-500';
     if (notification.status === 'blocked' || notification.status === 'failed') return 'bi-x-circle-fill text-red-500';
+    if (notification.status === 'warning') return 'bi-exclamation-triangle-fill text-amber-500';
     if (notification.status === 'processing') return 'bi-arrow-repeat text-amber-500';
     return 'bi-info-circle-fill text-blue-500';
 };

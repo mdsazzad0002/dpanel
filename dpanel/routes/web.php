@@ -20,6 +20,7 @@ use App\Http\Controllers\Webhooks\GitDeployWebhookController;
 use App\Http\Controllers\CloneShareController;
 use App\Http\Controllers\SitePushApiController;
 use App\Http\Controllers\BandwidthController;
+use App\Http\Controllers\UsageController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\DnsController;
@@ -239,6 +240,11 @@ Route::prefix('cpsess{token}')
             ->name('dashboard.usage');
         Route::get('/bandwidth', [BandwidthController::class, 'index'])
             ->name('bandwidth.index');
+        Route::get('/usage', [UsageController::class, 'index'])
+            ->name('usage.index');
+        Route::get('/usage/{id}/history', [UsageController::class, 'history'])
+            ->middleware('throttle:60,1')
+            ->name('usage.history');
 
         Route::get('/billing', [BillingSystemController::class, 'index'])
             ->middleware('role:admin|superadmin')

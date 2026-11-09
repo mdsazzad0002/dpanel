@@ -28,6 +28,7 @@ const statusMeta = computed(() => {
         case 'completed': return { label: 'Completed', icon: 'bi-check-circle-fill', class: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' };
         case 'blocked':
         case 'failed': return { label: 'Failed', icon: 'bi-x-circle-fill', class: 'text-red-600 bg-red-50 dark:bg-red-900/20' };
+        case 'warning': return { label: 'Warning', icon: 'bi-exclamation-triangle-fill', class: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' };
         case 'processing': return { label: 'Processing', icon: 'bi-arrow-repeat', class: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' };
         default: return { label: 'Info', icon: 'bi-info-circle-fill', class: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' };
     }

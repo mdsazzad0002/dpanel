@@ -7,7 +7,7 @@ use App\Models\PackagePlan;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\EdgeGatewayReloader;
-use App\Services\NotificationService;
+use App\Services\UsageAlertService;
 
 /**
  * Task P3: the package's monthly bandwidth limit. Going over sends one notice
@@ -19,7 +19,7 @@ class BandwidthLimitService
 {
     public function __construct(
         private readonly BandwidthUsageService $usage,
-        private readonly NotificationService $notifications,
+        private readonly UsageAlertService $alerts,
         private readonly EdgeGatewayReloader $gateway,
     ) {}
 
@@ -57,10 +57,7 @@ class BandwidthLimitService
         ]);
 
         $over = $bytes >= $limitBytes;
-        if ($over && $user->bandwidth_over_limit_month !== $month) {
-            $user->update(['bandwidth_over_limit_month' => $month]);
-            $this->notify($user, $package, $bytes);
-        }
+        $this->notify($user, $package, $bytes, $month);
 
         $block = $over && $package->over_bandwidth_action === PackagePlan::BANDWIDTH_BLOCK;
         $block
@@ -81,19 +78,15 @@ class BandwidthLimitService
         $this->gateway->reloadDomains($domains);
     }
 
-    private function notify(User $user, PackagePlan $package, int $bytes): void
+    private function notify(User $user, PackagePlan $package, int $bytes, string $month): void
     {
         $used = round($bytes / 1024 ** 3, 2);
         $blocked = $package->over_bandwidth_action === PackagePlan::BANDWIDTH_BLOCK;
-        $this->notifications->create(
-            type: 'bandwidth_limit',
-            status: 'blocked',
-            title: 'Monthly bandwidth limit reached',
-            message: "{$user->name} used {$used} GB of {$package->max_bandwidth_gb} GB this month."
-                .($blocked ? ' Their websites are paused until the month ends.' : ''),
-            assignedUserId: $user->id,
-            assignedResellerId: $user->reseller_id,
-            subject: $user,
+        $this->alerts->record(
+            $user, 'bandwidth', $bytes, (int) $package->max_bandwidth_gb * 1024 ** 3,
+            "{$used} GB of {$package->max_bandwidth_gb} GB this month",
+            period: $month,
+            note: $blocked ? 'Their websites are paused until the month ends.' : '',
             data: ['bytes' => $bytes, 'limit_gb' => (int) $package->max_bandwidth_gb, 'blocked' => $blocked],
         );
     }

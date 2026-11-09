@@ -59,6 +59,7 @@ export const buildPanelMenu = (userRoles = []) => [
         ],
     },
     { section: 'Hosting', label: 'WordPress', hint: 'Updates, staging and security for every WordPress site', icon: 'WP', iconClass: 'bi bi-wordpress', routeName: 'wordpress.index', color: 'blue', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
+    { section: 'Hosting', label: 'Usage & Limits', hint: 'Disk, bandwidth, CPU and memory against the package', icon: 'UL', iconClass: 'bi bi-speedometer2', routeName: 'usage.index', color: 'rose' },
     { section: 'Hosting', label: 'Bandwidth', hint: 'Traffic and requests per website', icon: 'BW', iconClass: 'bi bi-bar-chart-line', routeName: 'bandwidth.index', activeRouteNames: ['bandwidth.index', 'dashboard.usage'], color: 'amber' },
     { section: 'Hosting', label: 'Node.js Apps', hint: 'Run Node.js apps from your home directory', icon: 'NJ', iconClass: 'bi bi-hexagon', routeName: 'apps.node.index', color: 'emerald', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
     { section: 'Hosting', label: 'Python Apps', hint: 'Run Python apps from your home directory', icon: 'PY', iconClass: 'bi bi-filetype-py', routeName: 'apps.python.index', color: 'cyan', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },

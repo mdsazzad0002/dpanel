@@ -19,7 +19,7 @@ class DiskUsageService
 {
     public function __construct(
         private readonly AccountLimitsClient $limits,
-        private readonly NotificationService $notifications,
+        private readonly UsageAlertService $alerts,
     ) {}
 
     /** @return array{checked: int, over: int, failed: int} */
@@ -63,7 +63,7 @@ class DiskUsageService
         AccountUsageSample::query()->create(['user_id' => $user->id, 'sampled_at' => now(), 'disk_mb' => $total]);
 
         $over = $total >= $limit;
-        $this->notifyOnCrossing($user, $over, $total, $limit);
+        $this->alerts->record($user, 'disk', $total, $limit, "{$total} MB of {$limit} MB", data: ['disk_mb' => $total, 'limit_mb' => $limit]);
         $this->applyLimits($package, $used, $limit - $total);
 
         return ['disk_mb' => $total, 'limit_mb' => $limit, 'over' => $over];
@@ -88,31 +88,6 @@ class DiskUsageService
                 }
             }
         }
-    }
-
-    private function notifyOnCrossing(User $user, bool $over, int $total, int $limit): void
-    {
-        if (! $over) {
-            if ($user->disk_over_limit_at !== null) {
-                $user->update(['disk_over_limit_at' => null]);
-            }
-
-            return;
-        }
-        if ($user->disk_over_limit_at !== null) {
-            return;
-        }
-        $user->update(['disk_over_limit_at' => now()]);
-        $this->notifications->create(
-            type: 'disk_quota',
-            status: 'blocked',
-            title: 'Disk space limit reached',
-            message: "{$user->name} uses {$total} MB of {$limit} MB.",
-            assignedUserId: $user->id,
-            assignedResellerId: $user->reseller_id,
-            subject: $user,
-            data: ['disk_mb' => $total, 'limit_mb' => $limit],
-        );
     }
 
     /** @return list<string> */

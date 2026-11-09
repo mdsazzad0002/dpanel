@@ -144,4 +144,15 @@ class ResourceLimitTest extends TestCase
         $this->assertSame([200, 2048, 300], [$plan->max_cpu_percent, $plan->max_memory_mb, $plan->max_processes]);
         $this->assertTrue($plan->hasResourceLimits());
     }
+
+    public function test_memory_and_cpu_at_their_limit_send_a_notice(): void
+    {
+        // drust reports 300 MB and 42.5% CPU.
+        $user = $this->account(44, 300);
+
+        app(ResourceLimitService::class)->check($user);
+
+        $titles = \App\Models\Notification::query()->where('assigned_user_id', $user->id)->pluck('title')->all();
+        $this->assertEqualsCanonicalizing(['Memory limit reached', 'CPU limit reached'], $titles);
+    }
 }

@@ -18,7 +18,10 @@ use App\Services\Platform\UnsupportedLimit;
  */
 class ResourceLimitService
 {
-    public function __construct(private readonly ResourceLimitsClient $client) {}
+    public function __construct(
+        private readonly ResourceLimitsClient $client,
+        private readonly UsageAlertService $alerts,
+    ) {}
 
     public static function group(User $user): string
     {
@@ -83,7 +86,26 @@ class ResourceLimitService
             'memory_mb' => $usage['memory_mb'],
         ]);
 
+        $this->alert($user, $package, $usage);
+
         return $usage;
+    }
+
+    /** @param  array{cpu_percent: float, memory_mb: int, processes: int}  $usage */
+    private function alert(User $user, \App\Models\PackagePlan $package, array $usage): void
+    {
+        if ($package->max_memory_mb > 0) {
+            $this->alerts->record($user, 'memory', $usage['memory_mb'], $package->max_memory_mb,
+                "{$usage['memory_mb']} MB of {$package->max_memory_mb} MB memory",
+                note: 'At the limit the server reclaims memory from its PHP, and may stop a PHP process.');
+        }
+        if ($package->max_cpu_percent > 0) {
+            $cpu = round($usage['cpu_percent']);
+            // The kernel holds the average just under the quota, so 95% of it counts as reaching it.
+            $this->alerts->record($user, 'cpu', $usage['cpu_percent'], $package->max_cpu_percent * 0.95,
+                "{$cpu}% of {$package->max_cpu_percent}% CPU over the last five minutes",
+                note: 'At the limit its websites are slowed down.');
+        }
     }
 
     /** @return list<string> */
