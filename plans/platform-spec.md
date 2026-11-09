@@ -501,6 +501,7 @@ pub trait Scheduler {
 | Table | কাজ |
 | --- | --- |
 | `account_usage_samples` | `user_id`, `sampled_at`, `disk_mb`, `bandwidth_mb`, `cpu_percent`, `memory_mb` |
+| `usage_alerts` | `user_id`, `resource` (`disk`, `bandwidth`, `memory`, `cpu`), `period` (bandwidth-এ মাস), `level` (80 বা 100), `notified_at`; প্রতি account ও resource-এ একটা (P6) |
 | `firewall_rules` | Panel-এর rule, backend-এর সঙ্গে reconcile হবে |
 | `acme_orders` | Domain, challenge, status, error, `expires_at` |
 | `website_protected_directories` | `website_id`, `path`, `realm`, `username`, `password_hash` (`s256i$<rounds>$<salt hex>$<hex>`) |
