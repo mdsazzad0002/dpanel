@@ -395,6 +395,11 @@ impl Paths {
         self.binary(tool).unwrap_or_else(|_| PathBuf::from(tool.name()))
     }
 
+    /// The WAF's rules (backlog S2): `main.conf` and the OWASP CRS under it.
+    pub fn waf_dir(&self) -> PathBuf {
+        self.config_dir.join("waf")
+    }
+
     pub fn tls_dir(&self) -> PathBuf {
         self.config_dir.join("tls")
     }

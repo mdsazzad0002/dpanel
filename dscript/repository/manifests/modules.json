@@ -6,6 +6,7 @@
   "mongodb": "1.0.0",
   "clamav": "1.0.0",
   "rspamd": "1.1.0",
+  "waf": "1.0.0",
   "filemanager": "1.0.0",
   "ssl": "1.1.0",
   "firewall": "1.0.0",

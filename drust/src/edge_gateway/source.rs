@@ -170,6 +170,12 @@ fn load_sites(
         Ok(rows) => add_protected_directories(&mut guards, &rows),
         Err(error) => tracing::warn!(%error, "protected directories unavailable; none applied"),
     }
+    // The WAF mode (S2): a site without a guard row gets the default,
+    // `detect`; before the column's migration runs every site is `off`.
+    match run_mysql(env, &format!("{WAF_MODE_SQL}{}", site_filter("WHERE"))) {
+        Ok(rows) => apply_waf_modes(&mut guards, &rows),
+        Err(error) => tracing::warn!(%error, "WAF modes unavailable; the firewall stays off"),
+    }
 
     let mut sites = Vec::new();
     let mut tls = Vec::new();
@@ -229,6 +235,7 @@ fn load_sites(
                 }]),
             }
         };
+
         let static_route = || -> std::sync::Arc<[RouteConfig]> {
             std::sync::Arc::from([RouteConfig {
                 path_prefix: "/".to_string(),
@@ -452,6 +459,16 @@ fn parse_guard_settings(rows: &str) -> HashMap<String, super::SiteGuards> {
         );
     }
     guards
+}
+
+const WAF_MODE_SQL: &str = "SELECT w.id,COALESCE(g.waf_mode,'detect') FROM websites w LEFT JOIN website_guard_settings g ON g.website_id=COALESCE(w.parent_id,w.id)";
+
+fn apply_waf_modes(guards: &mut HashMap<String, super::SiteGuards>, rows: &str) {
+    for line in rows.lines() {
+        if let Some((site, mode)) = line.split_once('\t') {
+            guards.entry(site.trim().to_string()).or_default().waf = super::WafMode::parse(mode);
+        }
+    }
 }
 
 /// One row per user of a folder; the folder's realm is its first row's.
@@ -857,6 +874,11 @@ mod tests {
         assert!(guards["b"].hotlink_allowed_hosts.is_none());
         assert!(guards["a"].cloudflare_only && !guards["b"].cloudflare_only);
         assert_eq!(guards["c"].protected_directories[0].realm, "Restricted");
+        apply_waf_modes(&mut guards, "a\tblock\nd\tdetect\ne\tNULL\n");
+        assert_eq!(guards["a"].waf, super::super::WafMode::Block);
+        assert_eq!(guards["d"].waf, super::super::WafMode::Detect);
+        assert_eq!(guards["e"].waf, super::super::WafMode::Off);
+        assert!(guards["a"].cloudflare_only, "a WAF mode keeps the other guards");
     }
 
     #[test]

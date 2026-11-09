@@ -58,7 +58,10 @@
         "noAccessLog": "এখনও কোনো request log হয়নি।",
         "noPhpLog": "এখনও কোনো PHP error log হয়নি।",
         "accessHelp": "প্রতি line-এ: client, সময়, request, status, byte, referrer, browser ও কত millisecond লাগল। 10 MB হলে log ঘোরে, পুরোনো পাঁচটা file থাকে।",
-        "phpHelp": "এই account-এর সব site-এর PHP error। এই log আসার আগে বানানো site-এর PHP pool আবার না বানানো পর্যন্ত আগের জায়গাতেই log হয়।"
+        "phpHelp": "এই account-এর সব site-এর PHP error। এই log আসার আগে বানানো site-এর PHP pool আবার না বানানো পর্যন্ত আগের জায়গাতেই log হয়।",
+        "waf": "ফায়ারওয়াল",
+        "noWafLog": "ফায়ারওয়াল এখনো কোনো request ধরেনি।",
+        "wafHelp": "Web application firewall যে request ধরেছে: সময়, client, request, কী করেছে (blocked, would-block বা matched), কোন status দিত, আর কোন rule। শুধু PHP বা app-এ যাওয়া request দেখা হয়।"
     },
     "wordpress": {
         "title": "WordPress",

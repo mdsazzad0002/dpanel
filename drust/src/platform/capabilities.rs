@@ -26,6 +26,8 @@ pub enum Capability {
     Clamav,
     /// Starting and stopping system services; the supervisor brings it to the others.
     Services,
+    /// The web application firewall: libmodsecurity and its rules are installed (S2).
+    Waf,
 }
 
 impl Capability {
@@ -48,6 +50,7 @@ impl Capability {
             Self::FilePermissions => "file_permissions",
             Self::Clamav => "clamav",
             Self::Services => "services",
+            Self::Waf => "waf",
         }
     }
 }
@@ -80,16 +83,18 @@ pub struct Capabilities {
     pub file_permissions: bool,
     pub clamav: bool,
     pub services: bool,
+    pub waf: bool,
 }
 
 /// What this machine reports, with Docker looked up on `PATH`.
 pub fn report() -> Report {
     let platform = super::current();
-    report_for(platform.os(), platform.profile(), docker_on_path())
+    report_for(platform.os(), platform.profile(), docker_on_path(), super::waf::available())
 }
 
-/// `docker_installed` only matters on a local profile, where Docker Desktop is optional.
-fn report_for(os: Os, profile: Profile, docker_installed: bool) -> Report {
+/// `docker_installed` only matters on a local profile, where Docker Desktop is
+/// optional; `waf_installed` is whether libmodsecurity and the rules are there.
+fn report_for(os: Os, profile: Profile, docker_installed: bool, waf_installed: bool) -> Report {
     let server = profile == Profile::Server;
     let linux = os == Os::Linux;
     let capabilities = Capabilities {
@@ -127,6 +132,7 @@ fn report_for(os: Os, profile: Profile, docker_installed: bool) -> Report {
         file_permissions: os != Os::Windows,
         clamav: linux,
         services: linux,
+        waf: server && waf_installed,
     };
     Report {
         os: os.as_str(),
@@ -152,7 +158,7 @@ mod tests {
     use serde_json::json;
 
     fn capabilities(os: Os, profile: Profile, docker: bool) -> serde_json::Value {
-        serde_json::to_value(report_for(os, profile, docker)).unwrap()["capabilities"].clone()
+        serde_json::to_value(report_for(os, profile, docker, false)).unwrap()["capabilities"].clone()
     }
 
     #[test]
@@ -164,7 +170,7 @@ mod tests {
                 "resource_limits": "hard", "disk_quota": "hard",
                 "mail": "postfix", "dns": "powerdns", "ssl": "certbot",
                 "firewall": true, "ftp": true, "terminal": true, "docker": true,
-                "redis": true, "reseller": true, "file_permissions": true, "clamav": true, "services": true,
+                "redis": true, "reseller": true, "file_permissions": true, "clamav": true, "services": true, "waf": false,
             })
         );
     }
@@ -179,7 +185,7 @@ mod tests {
                 "mail": "stalwart", "dns": "windows_dns", "ssl": "acme",
                 "firewall": true, "ftp": true, "terminal": false, "docker": false,
                 "redis": false, "reseller": true, "file_permissions": false, "clamav": false,
-                "services": false,
+                "services": false, "waf": false,
             })
         );
     }
@@ -194,7 +200,7 @@ mod tests {
                 "mail": "stalwart", "dns": "external", "ssl": "acme",
                 "firewall": true, "ftp": true, "terminal": false, "docker": false,
                 "redis": true, "reseller": true, "file_permissions": true, "clamav": false,
-                "services": false,
+                "services": false, "waf": false,
             })
         );
     }
@@ -217,6 +223,14 @@ mod tests {
     }
 
     #[test]
+    fn the_waf_needs_a_server_and_its_library() {
+        let on = |os, profile, installed| serde_json::to_value(report_for(os, profile, false, installed)).unwrap()["capabilities"]["waf"].clone();
+        assert_eq!(on(Os::Linux, Profile::Server, true), true);
+        assert_eq!(on(Os::Linux, Profile::Server, false), false);
+        assert_eq!(on(Os::Linux, Profile::Local, true), false);
+    }
+
+    #[test]
     fn local_docker_follows_what_is_installed() {
         assert_eq!(capabilities(Os::Macos, Profile::Local, true)["docker"], true);
         assert_eq!(capabilities(Os::Macos, Profile::Local, false)["docker"], false);
@@ -224,7 +238,7 @@ mod tests {
 
     #[test]
     fn report_names_the_os_profile_and_version() {
-        let report = serde_json::to_value(report_for(Os::Macos, Profile::Local, false)).unwrap();
+        let report = serde_json::to_value(report_for(Os::Macos, Profile::Local, false, false)).unwrap();
         assert_eq!(report["os"], "macos");
         assert_eq!(report["profile"], "local");
         assert_eq!(report["version"], env!("CARGO_PKG_VERSION"));

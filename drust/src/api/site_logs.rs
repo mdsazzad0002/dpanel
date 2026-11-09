@@ -45,6 +45,12 @@ fn chosen(query: &LogQuery) -> Result<std::path::PathBuf, &'static str> {
             let domain = query.domain.as_deref().unwrap_or_default();
             site_logs::access_log_path(&site_logs::logs_root(), domain).ok_or("Invalid domain.")
         }
+        "waf" => {
+            let domain = query.domain.as_deref().unwrap_or_default();
+            site_logs::safe_domain(domain)
+                .map(|domain| site_logs::logs_root().join(domain).join("waf.log"))
+                .ok_or("Invalid domain.")
+        }
         "php" => {
             let owner = query.owner.as_deref().unwrap_or_default();
             if !valid_owner(owner) {
@@ -92,6 +98,8 @@ mod tests {
         assert!(chosen(&query("access", Some("shop.test"), None)).unwrap().ends_with("shop.test/access.log"));
         assert!(chosen(&query("php", None, Some("site1"))).unwrap().ends_with("site1/logs/php-error.log"));
         assert!(chosen(&query("access", Some("../../etc"), None)).is_err());
+        assert!(chosen(&query("waf", Some("Shop.test"), None)).unwrap().ends_with("shop.test/waf.log"));
+        assert!(chosen(&query("waf", Some("../x"), None)).is_err());
         assert!(chosen(&query("php", None, Some("../root"))).is_err());
         assert!(chosen(&query("php", None, Some("Root"))).is_err());
         assert!(chosen(&query("shadow", None, None)).is_err());

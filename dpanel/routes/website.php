@@ -540,6 +540,9 @@ Route::delete('/rules/site-protection/users/{user}', [SiteGuardController::class
 Route::put('/rules/site-protection/{website}/settings', [SiteGuardController::class, 'updateSettings'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('rules.site-protection.settings.update');
+Route::put('/rules/site-protection/{website}/waf', [SiteGuardController::class, 'updateWaf'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.site-protection.waf.update');
 
 // Rules → Port Share ================================================================
 Route::get('/rules/port-shares', [PortShareController::class, 'index'])

@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
-/** A website's access log and its account's PHP error log (backlog S4). */
+/** A website's access log, its firewall matches (S2) and its account's PHP error log (S4). */
 class WebsiteLogController extends Controller
 {
     public function index(Request $request, string $token, string $id): Response
@@ -26,7 +26,7 @@ class WebsiteLogController extends Controller
     {
         $website = $this->website($request, $id);
         $validated = $request->validate([
-            'kind' => ['required', 'in:access,php'],
+            'kind' => ['required', 'in:access,php,waf'],
             'lines' => ['nullable', 'integer', 'between:10,2000'],
         ]);
 

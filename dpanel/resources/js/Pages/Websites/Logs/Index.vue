@@ -64,11 +64,11 @@ onUnmounted(() => window.clearInterval(timer));
         <div class="mx-auto max-w-6xl space-y-4">
             <div class="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:flex-row sm:items-center dark:border-slate-800/80 dark:bg-slate-900/50">
                 <div class="inline-flex rounded-xl border border-slate-200 p-1 dark:border-slate-700" role="tablist">
-                    <button v-for="option in ['access', 'php']" :key="option" type="button" role="tab" :aria-selected="kind === option"
+                    <button v-for="option in ['access', 'waf', 'php']" :key="option" type="button" role="tab" :aria-selected="kind === option"
                         class="rounded-lg px-3 py-1.5 text-sm font-semibold"
                         :class="kind === option ? 'bg-blue-600 text-white' : 'text-slate-600 dark:text-slate-300'"
                         @click="kind = option">
-                        {{ option === 'access' ? t('siteLogs.access') : t('siteLogs.php') }}
+                        {{ t(`siteLogs.${option}`) }}
                     </button>
                 </div>
                 <input v-model="filter" type="search" :placeholder="t('siteLogs.filter')" class="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
@@ -84,8 +84,8 @@ onUnmounted(() => window.clearInterval(timer));
             </div>
 
             <div v-if="error" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">{{ error }}</div>
-            <LogLines :lines="shown" :empty-text="exists ? t('siteLogs.noMatch') : (kind === 'access' ? t('siteLogs.noAccessLog') : t('siteLogs.noPhpLog'))" />
-            <p class="text-xs text-slate-500 dark:text-slate-400">{{ kind === 'access' ? t('siteLogs.accessHelp') : t('siteLogs.phpHelp') }}</p>
+            <LogLines :lines="shown" :empty-text="exists ? t('siteLogs.noMatch') : t({ access: 'siteLogs.noAccessLog', waf: 'siteLogs.noWafLog', php: 'siteLogs.noPhpLog' }[kind])" />
+            <p class="text-xs text-slate-500 dark:text-slate-400">{{ t({ access: 'siteLogs.accessHelp', waf: 'siteLogs.wafHelp', php: 'siteLogs.phpHelp' }[kind]) }}</p>
         </div>
     </AuthenticatedLayout>
 </template>

@@ -4,9 +4,11 @@ import { Head } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import ProtectedFolders from './SiteProtection/ProtectedFolders.vue';
 import UploadAndHotlink from './SiteProtection/UploadAndHotlink.vue';
+import Firewall from './SiteProtection/Firewall.vue';
 
 const props = defineProps({
     websites: { type: Array, default: () => [] },
+    wafAvailable: { type: Boolean, default: false },
 });
 
 const search = ref('');
@@ -16,7 +18,7 @@ const filtered = computed(() => {
     return props.websites.filter((w) => !needle || w.domain.toLowerCase().includes(needle));
 });
 const selected = computed(() => props.websites.find((w) => w.id === selectedId.value) ?? null);
-const isGuarded = (w) => w.directories.length > 0 || w.no_php_paths.length > 0 || w.hotlink_protection || w.cloudflare_only;
+const isGuarded = (w) => w.directories.length > 0 || w.no_php_paths.length > 0 || w.hotlink_protection || w.cloudflare_only || w.waf_mode === 'block';
 </script>
 
 <template>
@@ -25,7 +27,7 @@ const isGuarded = (w) => w.directories.length > 0 || w.no_php_paths.length > 0 |
         <div class="space-y-6">
             <div>
                 <h1 class="text-2xl font-semibold">Site Protection</h1>
-                <p class="mt-1 text-sm text-slate-500">Ask for a password on a folder, stop PHP from running in upload folders, and stop other sites from embedding your images, and accept traffic only through Cloudflare. The edge gateway checks these before anything else answers.</p>
+                <p class="mt-1 text-sm text-slate-500">Ask for a password on a folder, stop PHP from running in upload folders, and stop other sites from embedding your images, accept traffic only through Cloudflare, and screen requests with a web application firewall. The edge gateway checks these before anything else answers.</p>
             </div>
 
             <div v-if="websites.length === 0" class="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
@@ -52,6 +54,7 @@ const isGuarded = (w) => w.directories.length > 0 || w.no_php_paths.length > 0 |
 
                 <div v-if="selected" :key="selected.id" class="space-y-6">
                     <ProtectedFolders :website="selected" />
+                    <Firewall :website="selected" :available="wafAvailable" />
                     <UploadAndHotlink :website="selected" />
                 </div>
             </div>

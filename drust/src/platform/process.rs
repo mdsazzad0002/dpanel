@@ -59,6 +59,36 @@ pub fn new_process_group(command: &mut Command) -> &mut Command {
     }
 }
 
+/// Gives up root for good, becoming `nobody`, once a process has read what
+/// only root may (the WAF worker after loading its rules). Does nothing when
+/// not root, or where there is no such thing.
+pub fn drop_privileges() -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        // SAFETY: plain libc calls on this process's own credentials.
+        unsafe {
+            if libc::geteuid() != 0 {
+                return Ok(());
+            }
+            let (uid, gid) = super::accounts()
+                .lookup("nobody")
+                .map(|owner| (owner.uid, owner.gid))
+                .unwrap_or((65534, 65534));
+            if libc::setgroups(0, std::ptr::null()) != 0 || libc::setgid(gid) != 0 || libc::setuid(uid) != 0 {
+                return Err(format!("cannot become nobody: {}", std::io::Error::last_os_error()));
+            }
+            if libc::setuid(0) == 0 {
+                return Err("still able to become root after dropping privileges".into());
+            }
+        }
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

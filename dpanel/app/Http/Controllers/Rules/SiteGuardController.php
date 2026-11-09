@@ -7,6 +7,7 @@ use App\Models\Website;
 use App\Models\WebsiteGuardSetting;
 use App\Models\WebsiteProtectedDirectory;
 use App\Services\EdgeGatewayReloader;
+use App\Support\Platform\PlatformCapabilities;
 use App\Support\BasicAuthHash;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -16,8 +17,9 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Rules → Site Protection (tasks S5, S6): password-protected folders, folders
- * where PHP never runs, hotlink protection, and Cloudflare-only. The edge gateway enforces
+ * Rules → Site Protection (tasks S5, S6, S2): password-protected folders,
+ * folders where PHP never runs, hotlink protection, Cloudflare-only, and the
+ * web application firewall. The edge gateway enforces
  * all three before redirects and the cache; an alias uses its main site's.
  */
 class SiteGuardController extends Controller
@@ -27,7 +29,7 @@ class SiteGuardController extends Controller
 
     private const HOST = '/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i';
 
-    public function index(Request $request): Response
+    public function index(Request $request, PlatformCapabilities $capabilities): Response
     {
         $websites = $this->websites($request)->orderBy('domain')->get(['id', 'domain']);
         $ids = $websites->pluck('id');
@@ -53,8 +55,11 @@ class SiteGuardController extends Controller
                     'hotlink_protection' => (bool) ($setting?->hotlink_protection ?? false),
                     'hotlink_allowed_hosts' => $setting?->hotlinkAllowedHosts() ?? [],
                     'cloudflare_only' => (bool) ($setting?->cloudflare_only ?? false),
+                    'waf_mode' => (string) ($setting?->waf_mode ?? 'detect'),
                 ];
             })->values(),
+            // Strictly true: an older drust does not report it at all.
+            'wafAvailable' => ($capabilities->report()['capabilities']['waf'] ?? false) === true,
         ]);
     }
 
@@ -113,6 +118,22 @@ class SiteGuardController extends Controller
         ]);
 
         return $this->applied($reloader, $website, 'Protection settings saved');
+    }
+
+    /** The web application firewall (S2): off, detect only, or block. */
+    public function updateWaf(Request $request, string $token, string $website, EdgeGatewayReloader $reloader): RedirectResponse
+    {
+        $website = $this->website($request, $website);
+        $validated = $request->validate([
+            'waf_mode' => ['required', Rule::in(WebsiteGuardSetting::WAF_MODES)],
+        ]);
+        WebsiteGuardSetting::query()->updateOrCreate(['website_id' => $website->id], ['waf_mode' => $validated['waf_mode']]);
+
+        return $this->applied($reloader, $website, match ($validated['waf_mode']) {
+            'block' => 'The firewall now blocks attacks',
+            'detect' => 'The firewall now logs attacks without blocking',
+            default => 'The firewall is off',
+        });
     }
 
     /** `/Admin/` and `/admin` are the same folder to the gateway. */

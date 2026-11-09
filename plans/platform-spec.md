@@ -87,7 +87,8 @@ drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupporte
     "resource_limits": "hard", "disk_quota": "hard",
     "mail": "stalwart", "dns": "windows_dns", "ssl": "acme",
     "firewall": true, "ftp": true, "terminal": false, "docker": false,
-    "redis": false, "reseller": true, "file_permissions": false, "clamav": false, "services": false
+    "redis": false, "reseller": true, "file_permissions": false, "clamav": false, "services": false,
+    "waf": false
   }
 }
 ```
@@ -109,6 +110,7 @@ drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupporte
 | `file_permissions` | হ্যাঁ | না (F1 পর্যন্ত) | হ্যাঁ | Windows-এ না, বাকিতে হ্যাঁ |
 | `clamav` | হ্যাঁ | না (J10 পর্যন্ত) | না (K7 পর্যন্ত) | Linux-এ হ্যাঁ, বাকিতে না |
 | `services` | হ্যাঁ | না (F4 পর্যন্ত) | না (E2 পর্যন্ত) | Linux-এ হ্যাঁ, বাকিতে না |
+| `waf` | `waf` module থাকলে | না (libmodsecurity দেখা হয়নি) | না (দেখা হয়নি) | না |
 
 Laravel-এ route গুলো `capability:<name>` middleware দিয়ে আটকাবে। Sidebar ও search একই তথ্য Inertia shared prop থেকে নেবে। Capability বন্ধ থাকলে route `404` দেবে। যে feature কোনো OS-এ চলে না, সেখানে তার UI থাকে না, আর backend error না দিয়ে চুপচাপ ফিরে আসে।
 
@@ -505,7 +507,7 @@ pub trait Scheduler {
 | `firewall_rules` | Panel-এর rule, backend-এর সঙ্গে reconcile হবে |
 | `acme_orders` | Domain, challenge, status, error, `expires_at` |
 | `website_protected_directories` | `website_id`, `path`, `realm`, `username`, `password_hash` (`s256i$<rounds>$<salt hex>$<hex>`) |
-| `website_guard_settings` | `website_id`, `no_php_paths`, `hotlink_protection`, `hotlink_allowed_hosts`, `cloudflare_only` |
+| `website_guard_settings` | `website_id`, `no_php_paths`, `hotlink_protection`, `hotlink_allowed_hosts`, `cloudflare_only`, `waf_mode` (`off`, `detect`, `block`; row না থাকলে `detect`) |
 | `wordpress_stagings` | `production_website_id`, `staging_website_id` (দুটোই unique), `clone_id`, `direction` (`to_staging`, `to_production`, `safe_update`), `stage`, `message`, `copied_at`, `deployed_at` |
 | `mail_forwarders` | `address` (unique), `domain`, `destinations` (কমা দিয়ে), `status`, `created_by`, `assigned_reseller_id` |
 | `mailbox_autoresponders` | `mailbox_id` (unique), `enabled`, `subject`, `body`, `interval_days`, `starts_on`, `ends_on` |
@@ -539,7 +541,7 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `GET`, `POST`, `DELETE /firewall/rules` | Rule |
 | `POST /firewall/confirm` | Lock-out timer থামানো |
 | `POST /acme/issue`, `/acme/renew` | Certificate |
-| `GET /sites/logs?kind=access\|php&domain=&owner=&lines=` | Site-এর access log বা account-এর PHP error log-এর শেষ অংশ (S4) |
+| `GET /sites/logs?kind=access\|waf\|php&domain=&owner=&lines=` | Site-এর access log, WAF-এর match (S2) বা account-এর PHP error log-এর শেষ অংশ (S4) |
 | `POST /api/v1/wordpress` | নির্দিষ্ট wp-cli action, site user হিসেবে: `info`, `update_core`, `update_plugins`, `update_themes`, `security`, `fix`, `home_url`, `search_replace` (W1-W4) |
 | `GET /system/overview?services=`, `GET /system/services?services=` | Machine-এর সংখ্যা ও service-এর অবস্থা (D3) |
 | `POST /api/v1/mailbox-storage` `action=autoresponder` | Mailbox-এর Sieve `vacation` script লেখা বা (`autoresponder: null`) মোছা; drust script বানায়, panel শুধু subject, body, days, তারিখ পাঠায় (M1) |

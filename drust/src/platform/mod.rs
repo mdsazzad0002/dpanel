@@ -15,6 +15,7 @@ pub mod process;
 pub mod runner;
 pub mod scheduler;
 pub mod service;
+pub mod waf;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]

@@ -218,6 +218,10 @@ pub async fn dispatch(
             };
             match plan {
                 Ok(StaticPlan::Php) => {
+                    let request = match super::waf::screen(site, request).await {
+                        Ok(request) => request,
+                        Err(response) => return annotated_response(response, site_match, route_match),
+                    };
                     let response = execute_php_front_controller(
                         request,
                         &config.document_root,
@@ -342,6 +346,10 @@ pub async fn dispatch(
                     }
                 }
             }
+            let request = match super::waf::screen(site, request).await {
+                Ok(request) => request,
+                Err(response) => return annotated_response(response, site_match, route_match),
+            };
             let timeout = if site.runtime == "python" {
                 site.python_run.proxy_timeout()
             } else {
@@ -368,7 +376,10 @@ pub async fn dispatch(
             return annotated_response(response, site_match, route_match);
         }
         RouteAction::PortShare { port, strip_prefix } => {
-            let mut request = request;
+            let mut request = match super::waf::screen(site, request).await {
+                Ok(request) => request,
+                Err(response) => return annotated_response(response, site_match, route_match),
+            };
             if *strip_prefix {
                 if let Some(uri) = strip_uri_prefix(request.uri(), route_match) {
                     *request.uri_mut() = uri;

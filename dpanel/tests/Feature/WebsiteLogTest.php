@@ -58,6 +58,17 @@ class WebsiteLogTest extends TestCase
         Http::assertSent(fn ($request) => $request['kind'] === 'access' && $request['domain'] === 'shop.test' && (int) $request['lines'] === 50);
     }
 
+    public function test_the_firewall_log_goes_by_the_sites_domain(): void
+    {
+        Http::fake(['drust.test/sites/logs*' => Http::response(['success' => true, 'exists' => true, 'lines' => ['x blocked 403 | 942100 SQLi']])]);
+        $site = $this->website($this->admin());
+
+        $this->as(User::query()->first())->getJson("/cpsess{$this->token}/websites/{$site->id}/logs/lines?kind=waf")
+            ->assertOk()->assertJsonPath('lines.0', 'x blocked 403 | 942100 SQLi');
+
+        Http::assertSent(fn ($request) => $request['kind'] === 'waf' && $request['domain'] === 'shop.test');
+    }
+
     public function test_the_php_log_goes_by_the_sites_account_and_a_strange_one_reads_nothing(): void
     {
         Http::fake(['drust.test/sites/logs*' => Http::response(['success' => true, 'exists' => true, 'lines' => ['PHP Warning: x']])]);

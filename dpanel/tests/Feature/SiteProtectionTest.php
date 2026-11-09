@@ -152,4 +152,46 @@ class SiteProtectionTest extends TestCase
                 ->where('websites.0.directories.0.users.0.username', 'alice'))
             ->assertDontSee('s256i');
     }
+
+    public function test_the_firewall_defaults_to_detect_and_its_mode_can_be_set(): void
+    {
+        $admin = $this->admin();
+        $site = $this->website($admin);
+        $this->website($admin, 'brand.test', $site->id);
+
+        $this->as($admin)->get("/cpsess{$this->token}/rules/site-protection")
+            ->assertInertia(fn ($page) => $page->where('websites.0.waf_mode', 'detect')->where('wafAvailable', false));
+
+        $this->as($admin)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'block'])
+            ->assertSessionHasNoErrors()->assertSessionHas('success');
+        $this->assertSame('block', WebsiteGuardSetting::query()->find($site->id)->waf_mode);
+        $this->assertEqualsCanonicalizing(['shop.test', 'brand.test'], end($this->reloaded));
+
+        $this->as($admin)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'panic'])
+            ->assertSessionHasErrors('waf_mode');
+    }
+
+    public function test_saving_the_other_settings_keeps_the_firewall_mode(): void
+    {
+        $admin = $this->admin();
+        $site = $this->website($admin);
+        $this->as($admin)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'off']);
+
+        $this->as($admin)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/settings", [
+            'no_php_paths' => ['/uploads'], 'hotlink_protection' => false, 'hotlink_allowed_hosts' => [],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('off', WebsiteGuardSetting::query()->find($site->id)->waf_mode);
+    }
+
+    public function test_another_customers_site_cannot_be_changed(): void
+    {
+        $owner = User::factory()->create();
+        $owner->assignRole('general');
+        $other = User::factory()->create();
+        $other->assignRole('general');
+        $site = $this->website($owner);
+
+        $this->as($other)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'off'])->assertNotFound();
+    }
 }

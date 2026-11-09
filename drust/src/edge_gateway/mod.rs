@@ -18,6 +18,8 @@ pub(crate) mod rust_process;
 mod redirects;
 mod server;
 mod site_guards;
+mod waf;
+pub use waf::{WafMode, run_worker as run_waf_worker};
 pub mod site_logs;
 mod source;
 mod static_files;

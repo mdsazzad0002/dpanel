@@ -27,6 +27,8 @@ pub struct SiteGuards {
     /// Refuse connections that do not come from Cloudflare's network, so the
     /// origin cannot be reached around Cloudflare's protection.
     pub cloudflare_only: bool,
+    /// Whether PHP and app requests pass the firewall first (S2).
+    pub waf: super::waf::WafMode,
 }
 
 /// Cloudflare's published ranges (cloudflare.com/ips), which change rarely.

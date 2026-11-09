@@ -32,8 +32,19 @@ mod vhost;
 mod vhost_ops;
 
 fn main() -> std::process::ExitCode {
-    tracing_subscriber::fmt::init();
     let args = std::env::args().skip(1).collect::<Vec<_>>();
+    // Before any logging: the worker's stdout carries its answers.
+    if args.first().map(String::as_str) == Some("waf-worker") {
+        let rules = args.get(1).map(std::path::PathBuf::from).unwrap_or_else(platform::waf::rules_file);
+        return match edge_gateway::run_waf_worker(&rules) {
+            Ok(()) => std::process::ExitCode::from(0),
+            Err(error) => {
+                eprintln!("waf-worker: {error}");
+                std::process::ExitCode::from(1)
+            }
+        };
+    }
+    tracing_subscriber::fmt::init();
     if args.first().map(String::as_str) == Some("edge-gateway") {
         // DRUST_HTTP_BIND is the canonical public listener. Keep the old
         // variable as a fallback for existing installations during upgrades.

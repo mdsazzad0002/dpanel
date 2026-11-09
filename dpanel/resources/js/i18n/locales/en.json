@@ -58,7 +58,10 @@
         "noAccessLog": "No requests logged yet.",
         "noPhpLog": "No PHP errors logged yet.",
         "accessHelp": "Each line: client, time, request, status, bytes, referrer, browser and milliseconds taken. The log rotates at 10 MB and keeps five old files.",
-        "phpHelp": "PHP errors of every site this account owns. Sites made before this log existed keep logging where they did until their PHP pool is made again."
+        "phpHelp": "PHP errors of every site this account owns. Sites made before this log existed keep logging where they did until their PHP pool is made again.",
+        "waf": "Firewall",
+        "noWafLog": "The firewall has not matched any request yet.",
+        "wafHelp": "Requests the web application firewall matched: time, client, request, what it did (blocked, would-block or matched), the status it chose, and the rules. Only requests to PHP or an app are checked."
     },
     "wordpress": {
         "title": "WordPress",
