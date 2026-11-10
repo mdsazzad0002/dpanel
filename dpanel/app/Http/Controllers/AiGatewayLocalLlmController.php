@@ -166,9 +166,9 @@ class AiGatewayLocalLlmController extends Controller
     }
 
     /**
-     * What drust-llm read from the model itself on first load, else the
-     * catalog's category, else a guess from the name. Text only either
-     * way: drust-llm can't see images or call tools.
+     * What drust-llm read from the model itself on first load ("tools"
+     * when its chat template supports them), else the catalog's category,
+     * else a guess from the name. drust-llm can't see images.
      */
     private function capabilitiesFor(array $model): array
     {

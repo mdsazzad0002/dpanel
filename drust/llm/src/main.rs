@@ -1,4 +1,5 @@
 mod admin;
+mod chat;
 mod infer;
 mod openai;
 mod profile;
@@ -20,6 +21,10 @@ pub struct Config {
     pub models_dir: std::path::PathBuf,
     pub default_model: Option<String>,
     pub ctx_size: u32,
+    /// KV cache tokens shared by a model's requests (DRUST_LLM_KV_SIZE).
+    pub kv_size: u32,
+    /// Thinking models think unless a request says otherwise (DRUST_LLM_THINK).
+    pub thinking: bool,
     pub threads: i32,
     pub parallel: u32,
     pub max_loaded: usize,
@@ -52,6 +57,8 @@ impl Config {
         // on a 2-core/4-thread i5, 2 threads gave 15 tok/s, 3 gave 11 and
         // 4 dropped to 1.
         let threads = num("DRUST_LLM_THREADS", physical_cores() as i32)?.max(1);
+        // The panel's chat tools alone take ~7k tokens.
+        let ctx_size: u32 = num("DRUST_LLM_CTX_SIZE", 16384)?.max(256);
 
         Ok(Self {
             bind,
@@ -60,7 +67,9 @@ impl Config {
                 .unwrap_or_else(|| "/var/lib/drust/llm".into())
                 .into(),
             default_model: var("DRUST_LLM_DEFAULT_MODEL"),
-            ctx_size: num("DRUST_LLM_CTX_SIZE", 4096)?,
+            ctx_size,
+            kv_size: num("DRUST_LLM_KV_SIZE", ctx_size)?.max(ctx_size),
+            thinking: matches!(var("DRUST_LLM_THINK").as_deref().map(str::trim), Some("1" | "on" | "true" | "yes")),
             threads,
             parallel: num("DRUST_LLM_PARALLEL", 4u32)?.clamp(1, 64),
             max_loaded: num("DRUST_LLM_MAX_LOADED", 1usize)?.max(1),

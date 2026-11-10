@@ -91,6 +91,8 @@ async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respo
         "config": {
             "default_model": config.default_model,
             "ctx_size": config.ctx_size,
+            "kv_size": config.kv_size,
+            "thinking": config.thinking,
             "max_tokens": config.max_tokens,
             "threads": config.threads,
             "gpu_layers": config.gpu_layers,

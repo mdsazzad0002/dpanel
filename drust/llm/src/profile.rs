@@ -31,7 +31,8 @@ pub struct Detected {
     pub n_layer: u32,
     pub n_ctx_train: u32,
     pub chat_template: bool,
-    /// In the AI Gateway's vocabulary: "chat", plus "code" for code models.
+    /// In the AI Gateway's vocabulary: "chat", plus "code" for code models
+    /// and "tools" when the chat template formats tool calls itself.
     pub capabilities: Vec<String>,
     /// Writes its reasoning (<think>…</think>) before answering.
     pub thinks: bool,
@@ -136,6 +137,9 @@ pub fn detect(model: &LlamaModel, id: &str) -> Detected {
     let mut capabilities = vec!["chat".to_string()];
     if has(&["coder", "codestral", "devstral", "starcoder", "codellama", "codegemma", "codeqwen", "code-"]) {
         capabilities.push("code".to_string());
+    }
+    if template.as_deref().is_some_and(crate::chat::native_tools) {
+        capabilities.push("tools".to_string());
     }
     let thinks = template.as_deref().is_some_and(|t| t.contains("<think>"))
         || has(&["-r1", "r1-", "qwq", "reasoning", "thinking"]);

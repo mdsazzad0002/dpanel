@@ -153,7 +153,12 @@ class OpenAiAdapter implements ProviderAdapter
 
     private function requestFor(AiGatewayProvider $provider, string $apiKey, ?int $timeout = null)
     {
-        $request = Http::withToken($apiKey)->timeout($timeout ?? config('aigateway.timeout', 90));
+        // Models on this server's CPU read a long prompt (the chat's tools
+        // alone are ~7k tokens) far slower than a cloud API answers.
+        $default = $provider->slug === 'local-llm'
+            ? config('aigateway.local_llm.chat_timeout', 600)
+            : config('aigateway.timeout', 90);
+        $request = Http::withToken($apiKey)->timeout($timeout ?? $default);
 
         if ($provider->driver === 'openrouter') {
             $request = $request->withHeaders([

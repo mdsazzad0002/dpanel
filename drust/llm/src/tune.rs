@@ -179,6 +179,8 @@ async fn run_job(engine: &Engine, prompt: &str, max_tokens: u32) -> Result<(), S
         presence_penalty: 0.0,
         seed: 0,
         stop: Vec::new(),
+        special: false,
+        reuse_prefix: false,
     };
     engine.stats.queued.fetch_add(1, Ordering::Relaxed);
     engine

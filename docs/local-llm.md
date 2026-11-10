@@ -21,9 +21,11 @@ Expect a few tokens per second from a 3B model on a 4-core VPS.
 
 A model serves up to `DRUST_LLM_PARALLEL` requests at once (default 4).
 They are decoded together in one batch per step, so the weights are read
-from RAM once for all of them; more requests wait in a queue. Each request
-reserves `DRUST_LLM_CTX_SIZE` tokens of KV cache, so memory grows with
-`parallel × ctx_size`.
+from RAM once for all of them; more requests wait in a queue. All requests
+share one KV cache of `DRUST_LLM_KV_SIZE` tokens (default: the context
+size), so one request can use the whole window. A finished request's
+tokens stay cached: the next request that starts the same way, such as the
+next round of a tool loop, only reads what is new.
 
 ### Speed checklist
 
@@ -39,8 +41,30 @@ Generation speed on a CPU depends on these, roughly in order:
    the CPU is overheating and the kernel is pausing it. No setting fixes
    that; the machine needs better cooling.
 
-Local models get text only. They cannot read images, generate images or
-call tools, so leave the `vision`, `image_generation` and `tools` tags off.
+### Tools and thinking
+
+Prompts are built with the model's own Jinja chat template, as
+llama-server does with `--jinja`, so tools and earlier tool results reach
+the model in the format it was trained on. Tool calls are read back from
+each family's own format: `<tool_call>` (Qwen, Hermes, SmolLM3),
+`<|tool_call|>` (Granite, Phi-4), `[TOOL_CALLS]` (Mistral) and bare JSON
+(Llama 3.x). They are returned as OpenAI `tool_calls`. Models whose
+template has no tool support (Gemma, SmolLM2, DeepSeek R1) get the tools
+described in the system message instead. Those models aren't tagged
+`tools`, and they call tools less reliably.
+
+The panel's chat tools take ~7k tokens, so they need the default 16k
+context. Small models (1B and under) often pick the wrong tool or
+arguments; use a 3B+ model with tool support for the chat's server tools.
+
+Thinking (`<think>…</think>`) comes back as `reasoning_content`, not in
+the answer. Qwen3 and SmolLM3 don't think unless a request asks, since on a
+CPU thinking can take most of a minute. A request asks with
+`chat_template_kwargs: {"enable_thinking": true}` or a `reasoning_effort`
+other than `"none"`; `DRUST_LLM_THINK=on` makes thinking the default.
+
+Local models can't read or generate images, so leave the `vision` and
+`image_generation` tags off.
 
 ## Install
 
@@ -192,7 +216,9 @@ curl -N http://127.0.0.1:9510/v1/chat/completions \
 | `DRUST_LLM_API_KEY` | (required) | Bearer key for every route |
 | `DRUST_LLM_MODELS_DIR` | `/var/lib/drust/llm` | Where `.gguf` files live |
 | `DRUST_LLM_DEFAULT_MODEL` | — | Model used for `"auto"` |
-| `DRUST_LLM_CTX_SIZE` | `4096` | Context window per request, capped at the model's own |
+| `DRUST_LLM_CTX_SIZE` | `16384` | Context window per request, capped at the model's own |
+| `DRUST_LLM_KV_SIZE` | context size | KV cache tokens a model's requests share |
+| `DRUST_LLM_THINK` | `off` | `on`: thinking models think unless a request says otherwise |
 | `DRUST_LLM_MAX_TOKENS` | `2048` | Upper limit for `max_tokens` |
 | `DRUST_LLM_THREADS` | physical cores | CPU threads for the model |
 | `DRUST_LLM_PARALLEL` | `4` | Requests generated at once; more wait in a queue |

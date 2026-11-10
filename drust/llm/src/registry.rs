@@ -294,6 +294,7 @@ fn save_speed(dir: &Path, id: &str, slot: &Slot) {
 pub async fn start_engine(state: &AppState, path: PathBuf, gpu_layers: u32) -> Result<infer::Engine, String> {
     let config = EngineConfig {
         ctx_size: state.config.ctx_size,
+        kv_size: state.config.kv_size,
         parallel: state.config.parallel,
         threads: state.config.threads,
         gpu_layers,

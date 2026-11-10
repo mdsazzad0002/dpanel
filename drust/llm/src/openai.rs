@@ -1,5 +1,6 @@
 use crate::{
     AppState, api_error, check_key,
+    chat::{self, ChatMessage, Delta, OutputParser},
     infer::{self, GenEvent, GenParams, Job},
     registry::{unix_now, valid_id},
 };
@@ -14,8 +15,8 @@ use axum::{
     routing::{get, post},
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
-use std::{convert::Infallible, sync::Arc};
+use serde_json::{Map, Value, json};
+use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 use tokio::sync::mpsc;
 
 pub fn routes() -> Router<Arc<AppState>> {
@@ -71,39 +72,19 @@ struct ChatRequest {
     stop: Option<Value>,
     #[serde(default)]
     stream_options: Option<Value>,
-}
-
-#[derive(Deserialize)]
-struct ChatMessage {
-    role: String,
     #[serde(default)]
-    content: Value,
-}
-
-/// OpenAI content is a string or a list of parts; only text parts are
-/// usable here, images need a vision model this runner doesn't serve.
-fn message_text(content: &Value) -> Result<String, &'static str> {
-    match content {
-        Value::Null => Ok(String::new()),
-        Value::String(text) => Ok(text.clone()),
-        Value::Array(parts) => {
-            let mut text = String::new();
-            for part in parts {
-                match part.get("type").and_then(Value::as_str) {
-                    Some("text") => {
-                        if !text.is_empty() {
-                            text.push('\n');
-                        }
-                        text.push_str(part.get("text").and_then(Value::as_str).unwrap_or(""));
-                    }
-                    Some("image_url") => return Err("local models can't read images"),
-                    _ => {}
-                }
-            }
-            Ok(text)
-        }
-        _ => Err("message content must be a string or a list of parts"),
-    }
+    tools: Option<Vec<Value>>,
+    #[serde(default)]
+    tool_choice: Option<Value>,
+    /// Passed to the chat template, e.g. {"enable_thinking": true}.
+    #[serde(default)]
+    chat_template_kwargs: Option<Map<String, Value>>,
+    /// "none" turns thinking off, any other effort on.
+    #[serde(default)]
+    reasoning_effort: Option<String>,
+    /// Ollama's switch for the same.
+    #[serde(default)]
+    think: Option<bool>,
 }
 
 /// `model` may be omitted or "auto": then the configured default, else
@@ -145,13 +126,23 @@ async fn chat_completions(
     if req.messages.is_empty() {
         return bad("invalid_messages", "messages must not be empty");
     }
-    let mut messages = Vec::with_capacity(req.messages.len());
     for message in &req.messages {
-        match message_text(&message.content) {
-            Ok(text) => messages.push((message.role.clone(), text)),
-            Err(error) => return bad("invalid_content", error),
+        if let Err(error) = chat::message_text(&message.content) {
+            return bad("invalid_content", error);
         }
     }
+    // tool_choice "none": answer in text; the tools stay out of the prompt.
+    let tools = match req.tool_choice.as_ref().and_then(Value::as_str) {
+        Some("none") => Vec::new(),
+        _ => req.tools.clone().unwrap_or_default(),
+    };
+    let kwargs = req.chat_template_kwargs.clone().unwrap_or_default();
+    let thinking = kwargs
+        .get("enable_thinking")
+        .and_then(Value::as_bool)
+        .or(req.think)
+        .or_else(|| req.reasoning_effort.as_deref().map(|effort| effort != "none"))
+        .unwrap_or(state.config.thinking);
     let stop = match &req.stop {
         None | Some(Value::Null) => Vec::new(),
         Some(Value::String(stop)) => vec![stop.clone()],
@@ -167,10 +158,11 @@ async fn chat_completions(
         }
         Err(error) => return api_error(StatusCode::SERVICE_UNAVAILABLE, "model_load_failed", &error),
     };
-    let prompt = match infer::render_prompt(&model, &messages) {
+    let prompt = match infer::render_prompt(&model, &req.messages, &tools, thinking, &kwargs) {
         Ok(prompt) => prompt,
         Err(error) => return bad("invalid_messages", &error),
     };
+    let parser = OutputParser::new(chat::tool_names(&tools), prompt.think_open);
 
     let params = GenParams {
         max_tokens: req
@@ -185,10 +177,12 @@ async fn chat_completions(
         presence_penalty: req.presence_penalty.unwrap_or(0.0).clamp(-2.0, 2.0),
         seed: req.seed.unwrap_or_else(|| unix_now() as u32),
         stop,
+        special: !tools.is_empty(),
+        reuse_prefix: true,
     };
 
     let (tx, rx) = mpsc::unbounded_channel();
-    if let Err(error) = model.submit(Job { prompt, params, tx }) {
+    if let Err(error) = model.submit(Job { prompt: prompt.text, params, tx }) {
         return api_error(StatusCode::SERVICE_UNAVAILABLE, "model_unavailable", &error);
     }
     state.registry.touch(&model_id).await;
@@ -201,9 +195,9 @@ async fn chat_completions(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     if req.stream {
-        stream_response(rx, id, model_id, include_usage).into_response()
+        stream_response(rx, parser, id, model_id, include_usage).into_response()
     } else {
-        collect_response(rx, id, model_id).await
+        collect_response(rx, parser, id, model_id).await
     }
 }
 
@@ -222,15 +216,41 @@ fn usage(prompt_tokens: usize, completion_tokens: usize) -> Value {
     })
 }
 
-async fn collect_response(mut rx: mpsc::UnboundedReceiver<GenEvent>, id: String, model: String) -> Response {
-    let mut content = String::new();
+fn finish_reason_for(reason: &str, calls: &[Value]) -> String {
+    if calls.is_empty() { reason.to_string() } else { "tool_calls".to_string() }
+}
+
+async fn collect_response(
+    mut rx: mpsc::UnboundedReceiver<GenEvent>,
+    mut parser: OutputParser,
+    id: String,
+    model: String,
+) -> Response {
+    let (mut content, mut reasoning) = (String::new(), String::new());
+    let mut take = |deltas: Vec<Delta>| {
+        for delta in deltas {
+            match delta {
+                Delta::Content(text) => content.push_str(&text),
+                Delta::Reasoning(text) => reasoning.push_str(&text),
+            }
+        }
+    };
     while let Some(event) = rx.recv().await {
         match event {
-            GenEvent::Text(text) => content.push_str(&text),
+            GenEvent::Text(text) => take(parser.push(&text)),
             GenEvent::Error(error) => {
                 return api_error(StatusCode::INTERNAL_SERVER_ERROR, "generation_failed", &error);
             }
             GenEvent::Done { finish_reason, prompt_tokens, completion_tokens } => {
+                let (deltas, calls) = parser.finish();
+                take(deltas);
+                let mut message = json!({ "role": "assistant", "content": content.trim() });
+                if !reasoning.trim().is_empty() {
+                    message["reasoning_content"] = json!(reasoning.trim());
+                }
+                if !calls.is_empty() {
+                    message["tool_calls"] = json!(calls);
+                }
                 return Json(json!({
                     "id": id,
                     "object": "chat.completion",
@@ -238,8 +258,8 @@ async fn collect_response(mut rx: mpsc::UnboundedReceiver<GenEvent>, id: String,
                     "model": model,
                     "choices": [{
                         "index": 0,
-                        "message": { "role": "assistant", "content": content },
-                        "finish_reason": finish_reason,
+                        "message": message,
+                        "finish_reason": finish_reason_for(finish_reason, &calls),
                     }],
                     "usage": usage(prompt_tokens, completion_tokens),
                 }))
@@ -252,6 +272,7 @@ async fn collect_response(mut rx: mpsc::UnboundedReceiver<GenEvent>, id: String,
 
 fn stream_response(
     rx: mpsc::UnboundedReceiver<GenEvent>,
+    parser: OutputParser,
     id: String,
     model: String,
     include_usage: bool,
@@ -265,45 +286,71 @@ fn stream_response(
             "model": model,
             "choices": [{ "index": 0, "delta": delta, "finish_reason": finish_reason }],
         })
+        .to_string()
+    };
+    let delta_chunk = {
+        let chunk = chunk.clone();
+        move |delta: Delta| match delta {
+            Delta::Content(text) => chunk(json!({ "content": text }), None),
+            Delta::Reasoning(text) => chunk(json!({ "reasoning_content": text }), None),
+        }
     };
 
-    // The first chunk carries the role, as OpenAI's does; after Done comes
-    // the optional usage chunk and then [DONE].
-    let first = chunk(json!({ "role": "assistant", "content": "" }), None);
-    let state = (rx, Some(first), Vec::<String>::new(), false);
-    let stream = futures_util::stream::unfold(state, move |(mut rx, mut first, mut queued, mut ended)| {
+    // The first chunk carries the role, as OpenAI's does; tool calls come
+    // whole at the end, then the finish reason, the optional usage chunk
+    // and [DONE].
+    let mut queue = VecDeque::new();
+    queue.push_back(chunk(json!({ "role": "assistant", "content": "" }), None));
+    let state = (rx, parser, queue, false);
+    let stream = futures_util::stream::unfold(state, move |(mut rx, mut parser, mut queue, mut ended)| {
         let chunk = chunk.clone();
+        let delta_chunk = delta_chunk.clone();
         async move {
-            if let Some(first) = first.take() {
-                return Some((Ok(Event::default().data(first.to_string())), (rx, None, queued, ended)));
-            }
-            if let Some(next) = queued.pop() {
-                return Some((Ok(Event::default().data(next)), (rx, None, queued, ended)));
-            }
-            if ended {
-                return None;
-            }
-            let event = match rx.recv().await {
-                Some(GenEvent::Text(text)) => chunk(json!({ "content": text }), None),
-                Some(GenEvent::Done { finish_reason, prompt_tokens, completion_tokens }) => {
-                    ended = true;
-                    queued.push("[DONE]".into());
-                    if include_usage {
-                        let mut usage_chunk = chunk(json!({}), None);
-                        usage_chunk["choices"] = json!([]);
-                        usage_chunk["usage"] = usage(prompt_tokens, completion_tokens);
-                        queued.push(usage_chunk.to_string());
+            loop {
+                if let Some(next) = queue.pop_front() {
+                    return Some((Ok(Event::default().data(next)), (rx, parser, queue, ended)));
+                }
+                if ended {
+                    return None;
+                }
+                match rx.recv().await {
+                    Some(GenEvent::Text(text)) => queue.extend(parser.push(&text).into_iter().map(&delta_chunk)),
+                    Some(GenEvent::Done { finish_reason, prompt_tokens, completion_tokens }) => {
+                        ended = true;
+                        let (deltas, calls) = parser.finish();
+                        queue.extend(deltas.into_iter().map(&delta_chunk));
+                        if !calls.is_empty() {
+                            let indexed: Vec<Value> = calls
+                                .iter()
+                                .enumerate()
+                                .map(|(index, call)| {
+                                    let mut call = call.clone();
+                                    call["index"] = json!(index);
+                                    call
+                                })
+                                .collect();
+                            queue.push_back(chunk(json!({ "tool_calls": indexed }), None));
+                        }
+                        queue.push_back(chunk(json!({}), Some(&finish_reason_for(finish_reason, &calls))));
+                        if include_usage {
+                            let mut usage_chunk: Value = serde_json::from_str(&chunk(json!({}), None)).unwrap_or_default();
+                            usage_chunk["choices"] = json!([]);
+                            usage_chunk["usage"] = usage(prompt_tokens, completion_tokens);
+                            queue.push_back(usage_chunk.to_string());
+                        }
+                        queue.push_back("[DONE]".into());
                     }
-                    chunk(json!({}), Some(finish_reason))
+                    Some(GenEvent::Error(error)) => {
+                        ended = true;
+                        queue.push_back(
+                            json!({ "error": { "message": error, "type": "server_error", "code": "generation_failed" } })
+                                .to_string(),
+                        );
+                        queue.push_back("[DONE]".into());
+                    }
+                    None => return None,
                 }
-                Some(GenEvent::Error(error)) => {
-                    ended = true;
-                    queued.push("[DONE]".into());
-                    json!({ "error": { "message": error, "type": "server_error", "code": "generation_failed" } })
-                }
-                None => return None,
-            };
-            Some((Ok(Event::default().data(event.to_string())), (rx, None, queued, ended)))
+            }
         }
     });
     Sse::new(stream).keep_alive(KeepAlive::default())
