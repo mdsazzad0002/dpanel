@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
+use super::custom;
 use crate::app::ensure_root;
 use crate::platform::{
     self,
@@ -242,6 +243,54 @@ fn certificate_expiry(path: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// What `ensure` answers while an uploaded certificate serves the domain. It
+/// is never renewed here: an expired one is an error the panel shows.
+fn custom_status(domain: &str, uploaded: &custom::Custom, now: i64) -> Result<Value, String> {
+    if uploaded.info.not_after <= now {
+        return Err(format!(
+            "The uploaded certificate for {domain} has expired. Upload a new one, or reinstall SSL to get a free certificate."
+        ));
+    }
+    if !uploaded.info.covers(domain) {
+        return Err(format!("The uploaded certificate is not for {domain}."));
+    }
+    let mut data = valid_response(
+        &uploaded.certificate_path,
+        &uploaded.private_key_path,
+        uploaded.info.not_after,
+        false,
+        false,
+        false,
+    );
+    data["custom"] = json!(true);
+    Ok(data)
+}
+
+/// `POST /api/v1/ssl/install`: the customer's own certificate and key.
+pub(super) fn install_custom(domain: &str, certificate: &str, private_key: &str) -> Result<Value, String> {
+    ensure_root()?;
+    let domain = domain.trim().to_lowercase();
+    if !valid_domain(&domain) || is_ip_address(&domain) {
+        return Err("Invalid SSL domain.".into());
+    }
+    let tls_dir = platform::paths().tls_dir();
+    let uploaded = custom::install(&tls_dir, &domain, certificate, private_key, acme::unix_now())?;
+    if !trigger_gateway_reload() {
+        return Err("Certificate is installed, but notifying the edge gateway to reload it failed.".into());
+    }
+    let mut data = valid_response(
+        &uploaded.certificate_path,
+        &uploaded.private_key_path,
+        uploaded.info.not_after,
+        false,
+        true,
+        false,
+    );
+    data["custom"] = json!(true);
+    data["names"] = json!(uploaded.info.names);
+    Ok(data)
+}
+
 pub(super) fn ensure(
     domain: &str,
     root_path: &str,
@@ -254,6 +303,29 @@ pub(super) fn ensure(
     if !valid_domain(&domain) {
         return Err("Invalid SSL domain.".into());
     }
+    let tls_dir = platform::paths().tls_dir();
+    if !force {
+        if let Some(uploaded) = custom::current(&tls_dir, &domain) {
+            return custom_status(&domain, &uploaded, acme::unix_now());
+        }
+    }
+    let data = ensure_issued(&domain, root_path, include_www, renew_before_days, force)?;
+    // A forced reinstall replaces an uploaded certificate, but only once the
+    // new one exists, so a failed issue leaves the site as it was.
+    if custom::remove(&tls_dir, &domain)? && !trigger_gateway_reload() {
+        return Err("Certificate is valid, but notifying the edge gateway to reload it failed.".into());
+    }
+    Ok(data)
+}
+
+fn ensure_issued(
+    domain: &str,
+    root_path: &str,
+    include_www: bool,
+    renew_before_days: u64,
+    force: bool,
+) -> Result<Value, String> {
+    let domain = domain.to_string();
     let root_path_buf = Path::new(root_path);
     let has_parent_dir_component = root_path_buf
         .components()
@@ -509,6 +581,9 @@ pub(super) fn remove(domain: &str) -> Result<Value, String> {
         return Err("Invalid SSL domain.".into());
     }
     let mut removed = delete_certbot_lineage(&domain)?;
+    if custom::remove(&platform::paths().tls_dir(), &domain)? {
+        removed = true;
+    }
     // Only what the ACME client issued: /etc/drust/tls also holds the panel's
     // own certificate, which came from the installer.
     if acme::client().forget(&domain).map_err(|error| error.to_string())? {
@@ -719,6 +794,26 @@ mod tests {
 
         assert_eq!(fixture.asked().len(), 1);
         assert_eq!(data["certificate_path"], fixture.own("crt").display().to_string());
+    }
+
+    #[test]
+    fn an_uploaded_certificate_reports_itself_and_an_expired_one_is_an_error() {
+        let folder = tempfile::tempdir().unwrap();
+        let (certificate_path, private_key_path) = acme::custom_certificate_files(folder.path(), "example.com");
+        std::fs::create_dir_all(certificate_path.parent().unwrap()).unwrap();
+        write_certificate(&certificate_path, &["example.com"], 20);
+        let uploaded = custom::current(folder.path(), "example.com").unwrap();
+
+        // Inside what would be the renewal window, and still left alone.
+        let data = custom_status("example.com", &uploaded, NOW).unwrap();
+        assert_eq!(data["custom"], true);
+        assert_eq!((&data["issued"], &data["renewed"], &data["gateway_reloaded"]), (&json!(false), &json!(false), &json!(false)));
+        assert_eq!(data["certificate_path"], certificate_path.display().to_string());
+        assert_eq!(data["private_key_path"], private_key_path.display().to_string());
+
+        let error = custom_status("example.com", &uploaded, NOW + 21 * DAY).unwrap_err();
+        assert!(error.contains("has expired"), "{error}");
+        assert!(custom_status("other.com", &uploaded, NOW).unwrap_err().contains("not for other.com"));
     }
 
     #[test]

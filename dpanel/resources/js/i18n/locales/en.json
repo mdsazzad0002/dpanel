@@ -227,5 +227,22 @@
         "fallback": "Anything left empty comes from the server's branding, then dPanel's own.",
         "save": "Save",
         "failed": "Branding was not saved."
+    },
+    "customCertificate": {
+        "open": "Upload certificate",
+        "title": "Upload a certificate for {domain}",
+        "help": "Use a certificate you bought or were given. It is checked before it is installed: it must be for this domain, not expired, and match the key.",
+        "fields": {
+            "certificate": "Certificate",
+            "private_key": "Private key",
+            "chain": "CA bundle (optional)"
+        },
+        "chooseFile": "Choose file",
+        "note": "It is not renewed automatically: you get a notification 30, 7 and 1 days before it expires. To go back to a free certificate, use Reinstall SSL.",
+        "install": "Install certificate",
+        "installing": "Installing…",
+        "installed": "Your certificate is installed.",
+        "failed": "The certificate was not installed.",
+        "fileTooLarge": "That file is too large to be a certificate or a key."
     }
 }

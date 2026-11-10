@@ -726,6 +726,34 @@ class WebsiteController extends Controller
             : back()->with('success', $message);
     }
 
+    /** Backlog M5: the customer's own certificate instead of an issued one. */
+    public function uploadSsl(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->findAuthorizedWebsiteOrFail($id);
+        $validated = $request->validate([
+            'certificate' => ['required', 'string', 'max:49152'],
+            'private_key' => ['required', 'string', 'max:16384'],
+            'chain' => ['nullable', 'string', 'max:16384'],
+        ]);
+        $website = Website::query()->findOrFail($id);
+        $certificate = trim($validated['certificate'])."\n";
+        if (trim((string) ($validated['chain'] ?? '')) !== '') {
+            $certificate .= trim((string) $validated['chain'])."\n";
+        }
+
+        try {
+            $result = $this->sslLifecycleService->installCustomForWebsite($website, $certificate, trim($validated['private_key'])."\n");
+        } catch (\Throwable $e) {
+            return response()->json(['type' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'type' => 'success',
+            'message' => 'Your certificate is installed.',
+            'ssl' => collect($result)->only(['status', 'custom', 'expires_at', 'names'])->all(),
+        ]);
+    }
+
     public function uninstallSsl(Request $request, string $token, string $id): JsonResponse
     {
         $this->findAuthorizedWebsiteOrFail($id);

@@ -675,7 +675,7 @@ fn normalize_domain(domain: &str) -> String {
 
 /// The certificate and key files serving `domain`.
 ///
-/// A certificate from drust's own ACME client (in `tls_dir`) wins while that
+/// A certificate the customer uploaded always wins. Then: a certificate from drust's own ACME client (in `tls_dir`) wins while that
 /// engine is on; otherwise certbot's, then whatever else is in `tls_dir`. A
 /// www alias with no certificate of its own falls back to its main domain's,
 /// which may cover www; the SNI resolver skips it if it does not.
@@ -686,6 +686,9 @@ fn certificate_files(
     certbot: impl Fn(&str) -> Option<(PathBuf, PathBuf)>,
 ) -> (PathBuf, PathBuf) {
     let in_tls_dir = |name: &str| (tls_dir.join(format!("{name}.crt")), tls_dir.join(format!("{name}.key")));
+    if let Some(uploaded) = acme::uploaded_certificate(tls_dir, domain) {
+        return uploaded;
+    }
     let own = in_tls_dir(domain);
     if engine == SslEngine::Acme && own.0.is_file() {
         return own;
@@ -875,6 +878,34 @@ mod tests {
         assert_eq!(certificate_files("www.both.example.com", SslEngine::Certbot, tls, certbot), lineage("both.example.com"));
         assert_eq!(certificate_files("www.new.example.com", SslEngine::Acme, tls, certbot), own("new.example.com"));
         assert_eq!(certificate_files("www.new.example.com", SslEngine::Certbot, tls, certbot), own("www.new.example.com"));
+    }
+
+    #[test]
+    fn an_uploaded_certificate_wins_over_every_engine() {
+        let folder = tempfile::tempdir().unwrap();
+        let tls = folder.path();
+        let certbot = |name: &str| (!name.starts_with("www.")).then(|| (PathBuf::from("/live/fullchain.pem"), PathBuf::from("/live/privkey.pem")));
+        let upload = |domain: &str, names: &[&str]| {
+            let files = acme::custom_certificate_files(tls, domain);
+            fs::create_dir_all(files.0.parent().unwrap()).unwrap();
+            let names: Vec<String> = names.iter().map(|name| name.to_string()).collect();
+            fs::write(&files.0, rcgen::generate_simple_self_signed(names).unwrap().cert.pem()).unwrap();
+            files
+        };
+        let both = upload("both.example.com", &["both.example.com", "www.both.example.com"]);
+        let bare = upload("bare.example.com", &["bare.example.com"]);
+
+        for engine in [SslEngine::Acme, SslEngine::Certbot, SslEngine::LocalCa] {
+            assert_eq!(certificate_files("both.example.com", engine, tls, certbot), both);
+            assert_eq!(certificate_files("bare.example.com", engine, tls, certbot), bare);
+            // A www alias uses the upload only when the upload names it.
+            assert_eq!(certificate_files("www.both.example.com", engine, tls, certbot), both);
+            assert_eq!(certificate_files("www.bare.example.com", engine, tls, certbot), certbot("bare.example.com").unwrap());
+        }
+
+        // Taking it away uncovers what the engine issued.
+        fs::remove_file(&both.0).unwrap();
+        assert_eq!(certificate_files("both.example.com", SslEngine::Certbot, tls, certbot), certbot("both.example.com").unwrap());
     }
 
     #[test]

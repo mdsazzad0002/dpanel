@@ -150,7 +150,7 @@ impl AccountKey {
 }
 
 /// Owner-only, and never half written: a temporary file renamed into place.
-fn write_private(path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
     let temporary = temporary_beside(path);
     let files = platform::files();
     let mut file = files.replace_private(&temporary, LinkPolicy::Refuse)?;
@@ -160,7 +160,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
     fs::rename(&temporary, path).map_err(|error| PlatformError::from_io("write file", error))
 }
 
-fn write_public(path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
+pub(crate) fn write_public(path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
     let temporary = temporary_beside(path);
     fs::write(&temporary, bytes)
         .and_then(|()| fs::rename(&temporary, path))

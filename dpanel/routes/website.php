@@ -217,6 +217,9 @@ Route::get('/websites/{id}/ssl', [WebsiteOperationsController::class, 'sslManage
 Route::post('/websites/{id}/ssl/issue', [WebsiteOperationsController::class, 'issueSsl'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ssl.issue');
+Route::post('/websites/{id}/ssl/custom', [WebsiteOperationsController::class, 'uploadSsl'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
+    ->name('websites.ssl.custom');
 Route::delete('/websites/{id}/ssl', [WebsiteOperationsController::class, 'uninstallSsl'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ssl.uninstall');

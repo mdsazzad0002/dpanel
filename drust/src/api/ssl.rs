@@ -9,4 +9,5 @@ pub fn routes() -> Router<Arc<ApiState>> {
         .route("/api/v1/ssl/ensure", post(crate::ssl::ensure::handle))
         .route("/api/v1/ssl/remove", post(crate::ssl::ensure::remove))
         .route("/api/v1/ssl/renew", post(crate::ssl::ensure::renew))
+        .route("/api/v1/ssl/install", post(crate::ssl::ensure::install))
 }

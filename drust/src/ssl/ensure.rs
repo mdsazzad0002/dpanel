@@ -83,3 +83,31 @@ pub(crate) async fn remove(
         Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
     }
 }
+
+#[derive(Deserialize)]
+pub(crate) struct InstallRequest {
+    pub domain: String,
+    pub certificate: String,
+    pub private_key: String,
+}
+
+/// `POST /api/v1/ssl/install`: a certificate the customer uploaded.
+pub(crate) async fn install(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<InstallRequest>,
+) -> impl IntoResponse {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+
+    let result = tokio::task::spawn_blocking(move || {
+        certificate::install_custom(&request.domain, &request.certificate, &request.private_key)
+    })
+    .await
+    .unwrap_or_else(|error| Err(format!("the certificate task stopped: {error}")));
+    match result {
+        Ok(data) => ApiResponse::ok_data("SSL certificate installed", data).into_response(),
+        Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+    }
+}

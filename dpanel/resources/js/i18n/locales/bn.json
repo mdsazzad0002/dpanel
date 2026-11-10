@@ -227,5 +227,22 @@
         "fallback": "খালি রাখা অংশ server-এর branding থেকে আসে, তারপর dPanel-এর নিজের।",
         "save": "Save",
         "failed": "Branding save হয়নি।"
+    },
+    "customCertificate": {
+        "open": "Certificate upload",
+        "title": "{domain}-এর certificate upload করুন",
+        "help": "কেনা বা অন্য কোথাও থেকে পাওয়া certificate ব্যবহার করুন। বসানোর আগে যাচাই হয়: এই domain-এর হতে হবে, মেয়াদ থাকতে হবে, আর key-এর সঙ্গে মিলতে হবে।",
+        "fields": {
+            "certificate": "Certificate",
+            "private_key": "Private key",
+            "chain": "CA bundle (ঐচ্ছিক)"
+        },
+        "chooseFile": "File বাছুন",
+        "note": "এটা নিজে থেকে renew হয় না: মেয়াদ শেষের 30, 7 ও 1 দিন আগে notification পাবেন। Free certificate-এ ফিরতে Reinstall SSL ব্যবহার করুন।",
+        "install": "Certificate বসান",
+        "installing": "বসানো হচ্ছে…",
+        "installed": "আপনার certificate বসানো হয়েছে।",
+        "failed": "Certificate বসানো যায়নি।",
+        "fileTooLarge": "এই file certificate বা key হওয়ার পক্ষে বেশি বড়।"
     }
 }

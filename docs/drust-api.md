@@ -386,6 +386,24 @@ Set `DRUST_SSL_ENGINE=acme` in `/etc/drust/drust.env` and restart `drust.service
 - A Certbot certificate that is still valid is kept. The built-in client takes over when it comes up for renewal, for new websites, and when a certificate is reinstalled from the panel. Certbot's files are never deleted, so setting the engine back to `certbot` is safe.
 - Only HTTP-01 is supported, so there are no wildcard certificates yet. The mail hostname's certificate still comes from Certbot.
 
+#### Installing your own certificate
+
+```http
+POST /api/v1/ssl/install
+```
+
+```json
+{
+  "domain": "example.com",
+  "certificate": "-----BEGIN CERTIFICATE-----\n...",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n..."
+}
+```
+
+`certificate` is the domain's certificate followed by the CA's, in PEM. The daemon refuses it unless the first certificate names the domain (a wildcard counts), has not expired, and belongs to the key; the key must be an unencrypted RSA, ECDSA or Ed25519 key. It does not check that a browser trusts the CA.
+
+The files go to `/etc/drust/tls/custom/<domain>.crt` and `<domain>.key`, and the gateway serves them before any issued certificate. A `www.` alias uses its main domain's uploaded certificate when that certificate names it. `ssl/ensure` then reports the uploaded certificate with `"custom": true` and never renews or replaces it; once it has expired, `ssl/ensure` fails. `ssl/ensure` with `"force": true` issues a certificate again and deletes the uploaded one after the new one exists; `ssl/remove` deletes it too.
+
 ```http
 POST /api/v1/ssl/renew
 ```

@@ -26,6 +26,7 @@ class SslCertificate extends Model
         'expires_at',
         'renewed_at',
         'auto_renew',
+        'expiry_alert_days',
         'server_id',
         'website_id',
     ];

@@ -468,6 +468,7 @@ pub trait AcmeClient {
 - **Key:** প্রতি certificate-এ নতুন P-256 key। Key ও certificate আগে `.new` file-এ, তারপর rename।
 - **Certbot থেকে সরা:** `acme` engine-এ ভালো certbot certificate থেকে যায় (সব site একসঙ্গে নতুন করে নিলে CA-র rate limit-এ পড়ত)। Client নেয় যখন সেটা renew-এর সময়ে আসে, নতুন site-এ, আর panel থেকে reinstall করলে। Gateway `acme` engine-এ `tls_dir`-এর certificate আগে নেয়, নয়তো certbot-এর; certbot-এর file কখনো মোছা হয় না, তাই engine ফেরালে আগের certificate-ই চলে। Certbot-এর নিজের timer আগে renew করলে site certbot-এই থাকে।
 - **Certificate পড়া:** `CertInfo` (`x509-parser`) মেয়াদ ও নাম পড়ে, `openssl` program ছাড়া। Certbot-এর পথ ও IP-র self-signed certificate এখনও `openssl` চালায়।
+- **Upload করা certificate (M5):** `tls_dir/custom/<domain>.crt` ও `.key`-তে, আলাদা folder-এ, তাই কোনো engine সেটা renew বা overwrite করে না, আর সরালে আগের issue করা certificate-ই আবার চলে। drust বসানোর আগে দেখে: chain-এর প্রথম certificate এই domain-এর (wildcard চলে), মেয়াদ আছে, আর key মেলে (`rustls`-এর `keys_match`, gateway যেভাবে load করে সেভাবেই; RSA, ECDSA, Ed25519, password ছাড়া)। CA trusted কিনা দেখে না। Gateway সব engine-এ এটা আগে নেয়; `www.` alias main domain-এর upload নেয় যদি সেটায় www-এর নাম থাকে। `ssl/ensure` তখন `custom: true` দিয়ে এটাই জানায়, মেয়াদ শেষ হলে error; `force` দিলে নতুন certificate issue হওয়ার পরে upload মোছে। Panel key রাখে না (`ssl_certificates.type = custom`, `auto_renew = false`), আর 30, 7 ও 1 দিন আগে ও মেয়াদ শেষে owner-কে একবার করে notification দেয় (`ssl_certificates.expiry_alert_days`, রোজের `serverpanel:ssl-reconcile`-এ)।
 - **বাইরে:** mail hostname-এর certificate (`ensure-mail-tls.sh`) ও installer-এর `issue-ssl.sh` এখনও certbot।
 
 ### 6.13 Scheduler
@@ -507,6 +508,7 @@ pub trait Scheduler {
 | `users` | `terminated_at`, `purge_after` (nullable timestamp) | `null` |
 | `users` | `disk_over_limit_at` (nullable timestamp), `bandwidth_over_limit_month` (nullable `Y-m`) | `null` |
 | `mail_domains` | `catch_all_to` (nullable string) | `null` |
+| `ssl_certificates` | `expiry_alert_days` (nullable int: শেষ পাঠানো সতর্কতা, 30, 7, 1 বা 0) | `null` |
 
 নতুন table:
 
@@ -551,6 +553,7 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `GET`, `POST`, `DELETE /firewall/rules` | Rule |
 | `POST /firewall/confirm` | Lock-out timer থামানো |
 | `POST /api/v1/ssl/ensure`, `/api/v1/ssl/remove` | আগের endpoint, দুই engine-এ একই request ও response; panel-এর কিছু বদলায়নি (I5) |
+| `POST /api/v1/ssl/install` | Customer-এর নিজের certificate (M5): `{domain, certificate, private_key}`; উত্তর `ssl/ensure`-এর মতো, সঙ্গে `custom: true` ও `names` |
 | `POST /api/v1/ssl/renew` | `AcmeClient::renew_due`: due certificate প্রতি `{domain, renewed, error}`; `certbot` engine-এ কিছু করে না |
 | `GET /sites/logs?kind=access\|waf\|php&domain=&owner=&lines=` | Site-এর access log, WAF-এর match (S2) বা account-এর PHP error log-এর শেষ অংশ (S4) |
 | `POST /api/v1/wordpress` | নির্দিষ্ট wp-cli action, site user হিসেবে: `info`, `update_core`, `update_plugins`, `update_themes`, `security`, `fix`, `home_url`, `search_replace` (W1-W4) |

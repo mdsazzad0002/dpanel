@@ -85,32 +85,96 @@ class SslLifecycleService
             throw new \RuntimeException((string) ($json['message'] ?? $response->body() ?: 'SSL ensure failed.'));
         }
 
+        $this->recordValid($website, $domain, $data);
+
+        return $data;
+    }
+
+    /**
+     * Installs a certificate the customer brought. drust checks that it is
+     * for this domain, has not expired and matches the key, and keeps it
+     * apart from issued certificates; the key is never stored by the panel.
+     *
+     * @return array<string, mixed>
+     */
+    public function installCustomForWebsite(Website $website, string $certificate, string $privateKey): array
+    {
+        $domainName = strtolower(trim((string) $website->domain));
+        if (self::isReservedSslDomain($domainName) || filter_var($domainName, FILTER_VALIDATE_IP) !== false) {
+            throw new \RuntimeException("A certificate cannot be installed for \"{$domainName}\".");
+        }
+
+        $response = $this->drustSslRequest('install', [
+            'domain' => $domainName,
+            'certificate' => $certificate,
+            'private_key' => $privateKey,
+        ]);
+        $json = $response->json();
+        $data = is_array($json['data'] ?? null) ? $json['data'] : [];
+        if (! $response->successful() || ! (bool) ($json['success'] ?? false)) {
+            $message = (string) ($json['message'] ?? $response->body() ?: 'Certificate install failed.');
+            throw new \RuntimeException(preg_replace('/^Failed: /', '', $message));
+        }
+
+        $website->forceFill(['enable_ssl' => true])->save();
+        $domain = Domain::query()->firstOrNew(['name' => $domainName]);
+        if (! $domain->exists) {
+            $domain->id = (string) Str::uuid();
+        }
+        $domain->fill([
+            'assigned_user_id' => $website->assigned_user_id,
+            'assigned_reseller_id' => $website->assigned_reseller_id,
+            'is_active' => true,
+            'ssl_enabled' => true,
+        ]);
+        $this->recordValid($website, $domain, $data + ['custom' => true]);
+
+        return $data;
+    }
+
+    /**
+     * What a valid answer from drust means for the panel's own records.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function recordValid(Website $website, Domain $domain, array $data): void
+    {
+        $custom = ! empty($data['custom']);
         $expiresAt = ! empty($data['expires_at']) ? Carbon::parse((string) $data['expires_at']) : null;
         $domain->ssl_status = 'valid';
         $domain->ssl_expires_at = $expiresAt;
         $domain->ssl_checked_at = now();
         $domain->save();
 
-        $certificate = SslCertificate::query()->firstOrNew(['domain' => $domainName]);
+        $certificate = SslCertificate::query()->firstOrNew(['domain' => $domain->name]);
         if (! $certificate->exists) {
             $certificate->id = (string) Str::uuid();
         }
+        // A different certificate starts its expiry warnings over.
+        $replaced = ! empty($data['issued']) || ! empty($data['renewed'])
+            || (string) $certificate->type !== ($custom ? 'custom' : 'letsencrypt');
         $certificate->fill([
             'certificate_path' => $data['certificate_path'] ?? null,
             'private_key_path' => $data['private_key_path'] ?? null,
+            'type' => $custom ? 'custom' : 'letsencrypt',
             'status' => 'valid',
             'issued_at' => ! empty($data['issued']) ? now() : $certificate->issued_at,
             'renewed_at' => ! empty($data['renewed']) ? now() : $certificate->renewed_at,
             'expires_at' => $expiresAt,
-            'auto_renew' => true,
+            // Nothing can renew a certificate the customer uploaded.
+            'auto_renew' => ! $custom,
+            'expiry_alert_days' => $replaced ? null : $certificate->expiry_alert_days,
         ])->save();
+
+        $mode = $custom ? 'custom' : 'letsencrypt';
+        if ((string) $website->ssl_mode !== $mode) {
+            $website->forceFill(['ssl_mode' => $mode])->saveQuietly();
+        }
 
         // Full reload so the gateway serves the certificate right away. A
         // per-domain reload (fired when enable_ssl is saved, before the cert
         // exists) is not enough on its own.
         app(EdgeGatewayReloader::class)->reload();
-
-        return $data;
     }
 
     /**

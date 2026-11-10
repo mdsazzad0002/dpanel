@@ -21,6 +21,7 @@ use x509_parser::{extensions::GeneralName, pem::parse_x509_pem};
 use super::{Os, PlatformError, Profile, paths::Paths};
 
 pub use client::Rfc8555Client;
+pub(crate) use client::{write_private, write_public};
 
 pub const LETS_ENCRYPT: &str = "https://acme-v02.api.letsencrypt.org/directory";
 
@@ -178,6 +179,25 @@ pub fn certbot_lineage(name: &str) -> Option<(PathBuf, PathBuf)> {
     let live = Path::new(CERTBOT_LIVE_DIR).join(name);
     let certificate = live.join("fullchain.pem");
     certificate.is_file().then(|| (certificate, live.join("privkey.pem")))
+}
+
+/// Where a certificate the customer uploaded for `domain` lives (task M5). A
+/// folder of its own, so no engine ever renews or overwrites it, and taking it
+/// away uncovers whatever the engine issued before.
+pub fn custom_certificate_files(tls_dir: &Path, domain: &str) -> (PathBuf, PathBuf) {
+    let folder = tls_dir.join("custom");
+    (folder.join(format!("{domain}.crt")), folder.join(format!("{domain}.key")))
+}
+
+/// The uploaded certificate that serves `domain`: its own, or for a www alias
+/// the main domain's when that one names www too.
+pub fn uploaded_certificate(tls_dir: &Path, domain: &str) -> Option<(PathBuf, PathBuf)> {
+    let own = custom_certificate_files(tls_dir, domain);
+    if own.0.is_file() {
+        return Some(own);
+    }
+    let of_main = custom_certificate_files(tls_dir, domain.strip_prefix("www.")?);
+    CertInfo::read(&of_main.0).is_some_and(|info| info.covers(domain)).then_some(of_main)
 }
 
 /// What a certificate file says about itself, read without the `openssl`
