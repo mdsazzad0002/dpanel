@@ -28,14 +28,35 @@ pub(crate) async fn handle(
         return error.into_response();
     }
 
-    match certificate::ensure(
-        &request.domain,
-        &request.root_path,
-        request.include_www.unwrap_or(false),
-        request.renew_before_days.unwrap_or(30),
-        request.force.unwrap_or(false),
-    ) {
+    // Issuing takes as long as the CA does, so it stays off the async workers.
+    let result = tokio::task::spawn_blocking(move || {
+        certificate::ensure(
+            &request.domain,
+            &request.root_path,
+            request.include_www.unwrap_or(false),
+            request.renew_before_days.unwrap_or(30),
+            request.force.unwrap_or(false),
+        )
+    })
+    .await
+    .unwrap_or_else(|error| Err(format!("the certificate task stopped: {error}")));
+    match result {
         Ok(data) => ApiResponse::ok_data("SSL certificate is valid", data).into_response(),
+        Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
+    }
+}
+
+/// `POST /api/v1/ssl/renew`: renews what drust's ACME client issued and is due.
+pub(crate) async fn renew(State(state): State<Arc<ApiState>>, headers: axum::http::HeaderMap) -> impl IntoResponse {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+
+    let result = tokio::task::spawn_blocking(certificate::renew_due)
+        .await
+        .unwrap_or_else(|error| Err(format!("the certificate task stopped: {error}")));
+    match result {
+        Ok(data) => ApiResponse::ok_data("Due certificates renewed", data).into_response(),
         Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
     }
 }
@@ -54,7 +75,10 @@ pub(crate) async fn remove(
         return error.into_response();
     }
 
-    match certificate::remove(&request.domain) {
+    let result = tokio::task::spawn_blocking(move || certificate::remove(&request.domain))
+        .await
+        .unwrap_or_else(|error| Err(format!("the certificate task stopped: {error}")));
+    match result {
         Ok(data) => ApiResponse::ok_data("SSL certificate removed", data).into_response(),
         Err(error) => ApiResponse::error(&format!("Failed: {error}")).into_response(),
     }

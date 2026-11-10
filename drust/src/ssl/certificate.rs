@@ -1,11 +1,16 @@
 use std::net::{Ipv4Addr, ToSocketAddrs};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
 use crate::app::ensure_root;
-use crate::platform::{self, fs::FileMode};
+use crate::platform::{
+    self,
+    acme::{self, AcmeClient, CertInfo, CertRequest, Challenge, SslEngine},
+    fs::FileMode,
+};
 
 /// Suffixes that are never publicly resolvable, so a CA can never issue a
 /// certificate for them. Kept in sync with
@@ -125,7 +130,7 @@ fn ensure_ip(ip: &str, renew_before_days: u64, force: bool) -> Result<Value, Str
 
 /// Deletes the certbot lineage named `name`; false when there was none.
 fn delete_certbot_lineage(name: &str) -> Result<bool, String> {
-    if !Path::new(&format!("/etc/letsencrypt/live/{name}")).exists() {
+    if !Path::new(acme::CERTBOT_LIVE_DIR).join(name).exists() {
         return Ok(false);
     }
     let output = Command::new("certbot")
@@ -270,17 +275,34 @@ pub(super) fn ensure(
         return ensure_ip(&domain, renew_before_days, force);
     }
 
-    let live_dir = format!("/etc/letsencrypt/live/{domain}");
-    let certificate_path = format!("{live_dir}/fullchain.pem");
-    let private_key_path = format!("{live_dir}/privkey.pem");
-    let existed = Path::new(&certificate_path).is_file();
-    let main_valid = existed && certificate_valid(&certificate_path, &domain, renew_before_days);
     let www_domain = format!("www.{domain}");
     let include_www = include_www
         && (www_domain.as_str(), 80)
             .to_socket_addrs()
             .map(|mut addresses| addresses.next().is_some())
             .unwrap_or(false);
+    if acme::engine() == SslEngine::Acme {
+        return ensure_with_acme(
+            &acme::client(),
+            &AcmeEnsure {
+                tls_dir: platform::paths().tls_dir(),
+                directory: acme::directory_url(),
+                certbot: acme::certbot_lineage(&domain),
+                now: acme::unix_now(),
+            },
+            &domain,
+            include_www,
+            renew_before_days,
+            force,
+            trigger_gateway_reload,
+        );
+    }
+
+    let live_dir = format!("{}/{domain}", acme::CERTBOT_LIVE_DIR);
+    let certificate_path = format!("{live_dir}/fullchain.pem");
+    let private_key_path = format!("{live_dir}/privkey.pem");
+    let existed = Path::new(&certificate_path).is_file();
+    let main_valid = existed && certificate_valid(&certificate_path, &domain, renew_before_days);
     let www_valid = !include_www
         || (existed && certificate_valid(&certificate_path, &www_domain, renew_before_days));
     // force: reinstall requested from the panel, even for a valid certificate.
@@ -375,6 +397,109 @@ pub(super) fn ensure(
     }))
 }
 
+/// Where `ensure_with_acme` looks, apart from the client.
+struct AcmeEnsure {
+    tls_dir: PathBuf,
+    directory: String,
+    /// The certbot certificate and key for the domain, if certbot issued one.
+    certbot: Option<(PathBuf, PathBuf)>,
+    now: i64,
+}
+
+fn valid_response(
+    certificate_path: &Path,
+    private_key_path: &Path,
+    not_after: i64,
+    include_www: bool,
+    issued: bool,
+    renewed: bool,
+) -> Value {
+    json!({
+        "status": "valid",
+        "issued": issued,
+        "renewed": renewed,
+        "include_www": include_www,
+        "certificate_path": certificate_path.display().to_string(),
+        "private_key_path": private_key_path.display().to_string(),
+        "expires_at": chrono::DateTime::from_timestamp(not_after, 0).map(|time| time.to_rfc3339()),
+        "gateway_reloaded": issued || renewed,
+        "gateway_reload_scheduled": false,
+    })
+}
+
+/// `ensure` with drust's own ACME client instead of certbot.
+///
+/// A certbot certificate that is still good is kept, so turning the engine on
+/// does not reissue every site at once and run into the CA's rate limits. The
+/// client takes over when that certificate comes up for renewal, for new
+/// sites, and on a forced reinstall.
+fn ensure_with_acme(
+    client: &dyn AcmeClient,
+    at: &AcmeEnsure,
+    domain: &str,
+    include_www: bool,
+    renew_before_days: u64,
+    force: bool,
+    reload_gateway: impl Fn() -> bool,
+) -> Result<Value, String> {
+    let mut domains = vec![domain.to_string()];
+    if include_www {
+        domains.push(format!("www.{domain}"));
+    }
+    let margin = Duration::from_secs(renew_before_days.saturating_mul(86_400));
+    let good = |info: &CertInfo| info.outlives(at.now, margin) && domains.iter().all(|name| info.covers(name));
+
+    let certificate_path = at.tls_dir.join(format!("{domain}.crt"));
+    let private_key_path = at.tls_dir.join(format!("{domain}.key"));
+    let current = CertInfo::read(&certificate_path).filter(|_| private_key_path.is_file());
+    if !force {
+        if let Some(info) = current.as_ref().filter(|info| good(info)) {
+            return Ok(valid_response(&certificate_path, &private_key_path, info.not_after, include_www, false, false));
+        }
+        if let Some((certificate, key)) = at.certbot.as_ref() {
+            if let Some(info) = CertInfo::read(certificate).filter(|info| good(info)) {
+                return Ok(valid_response(certificate, key, info.not_after, include_www, false, false));
+            }
+        }
+    }
+
+    let request = CertRequest { domains, challenge: Challenge::Http01, directory: at.directory.clone() };
+    let issued = client.issue(&request).map_err(|error| error.to_string())?;
+    if !reload_gateway() {
+        return Err("Certificate is valid, but notifying the edge gateway to reload it failed.".into());
+    }
+    let existed = current.is_some();
+    Ok(valid_response(
+        &issued.certificate_path,
+        &issued.private_key_path,
+        issued.not_after,
+        include_www,
+        !existed,
+        existed,
+    ))
+}
+
+/// Renews every certificate drust's ACME client issued that is close to
+/// expiry. With certbot as the engine there is nothing to do: its own timer
+/// renews what it issued.
+pub(super) fn renew_due() -> Result<Value, String> {
+    ensure_root()?;
+    let engine = acme::engine();
+    if engine != SslEngine::Acme {
+        return Ok(json!({ "engine": engine.as_str(), "results": [] }));
+    }
+    let results = acme::client().renew_due().map_err(|error| error.to_string())?;
+    let gateway_reloaded = results.iter().any(|result| result.renewed) && trigger_gateway_reload();
+    Ok(json!({
+        "engine": engine.as_str(),
+        "gateway_reloaded": gateway_reloaded,
+        "results": results
+            .iter()
+            .map(|result| json!({ "domain": result.domain, "renewed": result.renewed, "error": result.error }))
+            .collect::<Vec<_>>(),
+    }))
+}
+
 /// Uninstall: removes the certificate the gateway would serve for `domain`
 /// (its certbot lineage, and for an IP the self-signed pair) and reloads.
 pub(super) fn remove(domain: &str) -> Result<Value, String> {
@@ -384,6 +509,11 @@ pub(super) fn remove(domain: &str) -> Result<Value, String> {
         return Err("Invalid SSL domain.".into());
     }
     let mut removed = delete_certbot_lineage(&domain)?;
+    // Only what the ACME client issued: /etc/drust/tls also holds the panel's
+    // own certificate, which came from the installer.
+    if acme::client().forget(&domain).map_err(|error| error.to_string())? {
+        removed = true;
+    }
     // Only IPs: /etc/drust/tls also holds the panel's own domain certificate.
     if is_ip_address(&domain) {
         let tls_dir = platform::paths().tls_dir();
@@ -401,4 +531,200 @@ pub(super) fn remove(domain: &str) -> Result<Value, String> {
         return Err("Certificate removed, but notifying the edge gateway to reload failed.".into());
     }
     Ok(json!({ "status": "removed", "removed": removed }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::sync::Mutex;
+
+    use rcgen::{CertificateParams, KeyPair};
+
+    use super::*;
+    use crate::platform::{
+        PlatformError,
+        acme::{IssuedCert, RenewResult},
+    };
+
+    const NOW: i64 = 1_800_000_000;
+    const DAY: i64 = 86_400;
+
+    /// A self-signed certificate for `names` that ends `days` after `NOW`.
+    fn write_certificate(path: &Path, names: &[&str], days: i64) {
+        let key = KeyPair::generate().unwrap();
+        let mut params = CertificateParams::new(names.iter().map(|name| name.to_string()).collect::<Vec<_>>()).unwrap();
+        params.not_after = time::OffsetDateTime::from_unix_timestamp(NOW + days * DAY).unwrap();
+        std::fs::write(path, params.self_signed(&key).unwrap().pem()).unwrap();
+        std::fs::write(path.with_extension("key"), key.serialize_pem()).unwrap();
+    }
+
+    /// Issues 90-day certificates into `tls_dir` and remembers what was asked.
+    struct FakeClient {
+        tls_dir: PathBuf,
+        asked: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl AcmeClient for FakeClient {
+        fn issue(&self, request: &CertRequest) -> Result<IssuedCert, PlatformError> {
+            assert_eq!(request.challenge, Challenge::Http01);
+            assert_eq!(request.directory, "https://ca.example/directory");
+            self.asked.lock().unwrap().push(request.domains.clone());
+            let certificate_path = self.tls_dir.join(format!("{}.crt", request.domains[0]));
+            let names: Vec<&str> = request.domains.iter().map(String::as_str).collect();
+            write_certificate(&certificate_path, &names, 90);
+            Ok(IssuedCert {
+                domain: request.domains[0].clone(),
+                private_key_path: certificate_path.with_extension("key"),
+                certificate_path,
+                not_after: NOW + 90 * DAY,
+            })
+        }
+
+        fn renew_due(&self) -> Result<Vec<RenewResult>, PlatformError> {
+            unreachable!()
+        }
+
+        fn revoke(&self, _: &str) -> Result<(), PlatformError> {
+            unreachable!()
+        }
+    }
+
+    struct Fixture {
+        folder: tempfile::TempDir,
+        client: FakeClient,
+        at: AcmeEnsure,
+        reloads: Cell<u32>,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let folder = tempfile::tempdir().unwrap();
+            let tls_dir = folder.path().join("tls");
+            std::fs::create_dir_all(&tls_dir).unwrap();
+            Self {
+                client: FakeClient { tls_dir: tls_dir.clone(), asked: Mutex::new(Vec::new()) },
+                at: AcmeEnsure { tls_dir, directory: "https://ca.example/directory".into(), certbot: None, now: NOW },
+                folder,
+                reloads: Cell::new(0),
+            }
+        }
+
+        fn own(&self, extension: &str) -> PathBuf {
+            self.at.tls_dir.join(format!("example.com.{extension}"))
+        }
+
+        fn ensure(&self, include_www: bool, force: bool) -> Value {
+            let reload = || {
+                self.reloads.set(self.reloads.get() + 1);
+                true
+            };
+            ensure_with_acme(&self.client, &self.at, "example.com", include_www, 30, force, reload).unwrap()
+        }
+
+        fn asked(&self) -> Vec<Vec<String>> {
+            self.client.asked.lock().unwrap().clone()
+        }
+    }
+
+    #[test]
+    fn a_site_without_a_certificate_gets_one_and_the_gateway_reloads() {
+        let fixture = Fixture::new();
+
+        let data = fixture.ensure(false, false);
+
+        assert_eq!(fixture.asked(), vec![vec!["example.com".to_string()]]);
+        assert_eq!(fixture.reloads.get(), 1);
+        assert_eq!(data["status"], "valid");
+        assert_eq!(data["issued"], true);
+        assert_eq!(data["renewed"], false);
+        assert_eq!(data["gateway_reloaded"], true);
+        assert_eq!(data["certificate_path"], fixture.own("crt").display().to_string());
+        assert_eq!(data["private_key_path"], fixture.own("key").display().to_string());
+        // The panel reads this with Carbon::parse.
+        let expires = chrono::DateTime::parse_from_rfc3339(data["expires_at"].as_str().unwrap()).unwrap();
+        assert_eq!(expires.timestamp(), NOW + 90 * DAY);
+    }
+
+    #[test]
+    fn a_good_certificate_is_left_alone_unless_a_reinstall_is_forced() {
+        let fixture = Fixture::new();
+        write_certificate(&fixture.own("crt"), &["example.com"], 31);
+
+        let data = fixture.ensure(false, false);
+        assert!(fixture.asked().is_empty());
+        assert_eq!(fixture.reloads.get(), 0);
+        assert_eq!((&data["issued"], &data["renewed"], &data["gateway_reloaded"]), (&json!(false), &json!(false), &json!(false)));
+
+        let data = fixture.ensure(false, true);
+        assert_eq!(fixture.asked().len(), 1);
+        assert_eq!((&data["issued"], &data["renewed"]), (&json!(false), &json!(true)));
+    }
+
+    #[test]
+    fn a_certificate_inside_the_renewal_window_is_renewed() {
+        let fixture = Fixture::new();
+        write_certificate(&fixture.own("crt"), &["example.com"], 30);
+
+        let data = fixture.ensure(false, false);
+
+        assert_eq!(fixture.asked().len(), 1);
+        assert_eq!(data["renewed"], true);
+        assert_eq!(fixture.reloads.get(), 1);
+    }
+
+    #[test]
+    fn a_certificate_that_lacks_www_or_its_key_is_issued_again() {
+        let fixture = Fixture::new();
+        write_certificate(&fixture.own("crt"), &["example.com"], 80);
+
+        let data = fixture.ensure(true, false);
+        assert_eq!(fixture.asked(), vec![vec!["example.com".to_string(), "www.example.com".to_string()]]);
+        assert_eq!(data["include_www"], true);
+
+        std::fs::remove_file(fixture.own("key")).unwrap();
+        let data = fixture.ensure(true, false);
+        assert_eq!(fixture.asked().len(), 2);
+        assert_eq!(data["issued"], true);
+    }
+
+    #[test]
+    fn a_good_certbot_certificate_is_kept_until_it_is_due() {
+        let mut fixture = Fixture::new();
+        let lineage = fixture.folder.path().join("fullchain.pem");
+        fixture.at.certbot = Some((lineage.clone(), fixture.folder.path().join("privkey.pem")));
+
+        write_certificate(&lineage, &["example.com"], 60);
+        let data = fixture.ensure(false, false);
+        assert!(fixture.asked().is_empty());
+        assert_eq!(data["certificate_path"], lineage.display().to_string());
+        assert_eq!(data["private_key_path"], fixture.folder.path().join("privkey.pem").display().to_string());
+        assert_eq!(data["issued"], false);
+
+        // Due: the ACME client takes over, and its certificate is the answer.
+        write_certificate(&lineage, &["example.com"], 10);
+        let data = fixture.ensure(false, false);
+        assert_eq!(fixture.asked().len(), 1);
+        assert_eq!(data["certificate_path"], fixture.own("crt").display().to_string());
+        assert_eq!(data["issued"], true);
+    }
+
+    #[test]
+    fn a_forced_reinstall_moves_a_certbot_site_to_the_acme_client() {
+        let mut fixture = Fixture::new();
+        let lineage = fixture.folder.path().join("fullchain.pem");
+        write_certificate(&lineage, &["example.com"], 60);
+        fixture.at.certbot = Some((lineage, fixture.folder.path().join("privkey.pem")));
+
+        let data = fixture.ensure(false, true);
+
+        assert_eq!(fixture.asked().len(), 1);
+        assert_eq!(data["certificate_path"], fixture.own("crt").display().to_string());
+    }
+
+    #[test]
+    fn a_gateway_that_cannot_be_told_is_an_error() {
+        let fixture = Fixture::new();
+        let error = ensure_with_acme(&fixture.client, &fixture.at, "example.com", false, 30, false, || false).unwrap_err();
+        assert!(error.contains("edge gateway"), "{error}");
+    }
 }

@@ -4,6 +4,7 @@
 //! `plans/platform-spec.md`.
 
 pub mod account;
+pub mod acme;
 pub mod capabilities;
 pub mod fastcgi;
 pub mod firewall;

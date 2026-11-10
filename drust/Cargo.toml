@@ -47,6 +47,11 @@ http-body = "1"
 # Mail DNS checks query public resolvers directly (like dig), never /etc/hosts.
 hickory-resolver = { version = "0.24", default-features = false, features = ["tokio-runtime"] }
 mongodb = "3"
+# The ACME client (task I5): account and certificate keys, the CSR, and
+# reading a certificate's names and expiry without the openssl program.
+ring = "0.17"
+rcgen = "0.14"
+x509-parser = "0.18"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -66,3 +71,6 @@ speech = ["dep:whisper-rs", "dep:hound"]
 
 [dev-dependencies]
 webpki-roots = "1.0.9"
+# The test ACME server signs what the client asks for, so it reads a CSR.
+rcgen = { version = "0.14", features = ["x509-parser"] }
+time = "0.3"

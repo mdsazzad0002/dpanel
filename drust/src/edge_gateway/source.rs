@@ -4,6 +4,7 @@ use super::{
     CacheMode, CachePolicy, RouteAction, RouteConfig, RuntimeSnapshot, SiteCacheConfig, SiteConfig,
     UpstreamConfig,
 };
+use crate::platform::acme::{self, SslEngine};
 
 #[derive(Clone, Debug)]
 pub struct DbSnapshotConfig {
@@ -672,32 +673,51 @@ fn normalize_domain(domain: &str) -> String {
     domain.trim().trim_end_matches('.').to_lowercase()
 }
 
-/// Certbot lineage serving `domain`. A www alias that has no certificate of
-/// its own yet falls back to its main domain's lineage, which used to cover
-/// www; the SNI resolver skips it if that certificate does not.
-fn certbot_lineage(domain: &str) -> Option<String> {
-    let has = |name: &str| Path::new(&format!("/etc/letsencrypt/live/{name}/fullchain.pem")).is_file();
-    if has(domain) {
-        return Some(domain.to_string());
+/// The certificate and key files serving `domain`.
+///
+/// A certificate from drust's own ACME client (in `tls_dir`) wins while that
+/// engine is on; otherwise certbot's, then whatever else is in `tls_dir`. A
+/// www alias with no certificate of its own falls back to its main domain's,
+/// which may cover www; the SNI resolver skips it if it does not.
+fn certificate_files(
+    domain: &str,
+    engine: SslEngine,
+    tls_dir: &Path,
+    certbot: impl Fn(&str) -> Option<(PathBuf, PathBuf)>,
+) -> (PathBuf, PathBuf) {
+    let in_tls_dir = |name: &str| (tls_dir.join(format!("{name}.crt")), tls_dir.join(format!("{name}.key")));
+    let own = in_tls_dir(domain);
+    if engine == SslEngine::Acme && own.0.is_file() {
+        return own;
     }
-    domain
-        .strip_prefix("www.")
-        .filter(|main| has(main) && !crate::platform::paths().tls_dir().join(format!("{domain}.crt")).is_file())
-        .map(str::to_string)
+    if let Some(files) = certbot(domain) {
+        return files;
+    }
+    if own.0.is_file() {
+        return own;
+    }
+    if let Some(main) = domain.strip_prefix("www.") {
+        let of_main = in_tls_dir(main);
+        if engine == SslEngine::Acme && of_main.0.is_file() {
+            return of_main;
+        }
+        if let Some(files) = certbot(main) {
+            return files;
+        }
+    }
+    own
+}
+
+fn default_certificate_files(domain: &str) -> (PathBuf, PathBuf) {
+    certificate_files(domain, acme::engine(), &crate::platform::paths().tls_dir(), acme::certbot_lineage)
 }
 
 fn default_cert_path(domain: &str) -> PathBuf {
-    match certbot_lineage(domain) {
-        Some(lineage) => PathBuf::from(format!("/etc/letsencrypt/live/{lineage}/fullchain.pem")),
-        None => crate::platform::paths().tls_dir().join(format!("{domain}.crt")),
-    }
+    default_certificate_files(domain).0
 }
 
 fn default_key_path(domain: &str) -> PathBuf {
-    match certbot_lineage(domain) {
-        Some(lineage) => PathBuf::from(format!("/etc/letsencrypt/live/{lineage}/privkey.pem")),
-        None => crate::platform::paths().tls_dir().join(format!("{domain}.key")),
-    }
+    default_certificate_files(domain).1
 }
 
 fn resolve_document_root(
@@ -825,6 +845,37 @@ fn current_version_hint(database: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_acme_certificate_wins_only_while_that_engine_is_on() {
+        let folder = tempfile::tempdir().unwrap();
+        let tls = folder.path();
+        let certbot = |name: &str| {
+            (name == "both.example.com" || name == "old.example.com")
+                .then(|| (PathBuf::from(format!("/live/{name}/fullchain.pem")), PathBuf::from(format!("/live/{name}/privkey.pem"))))
+        };
+        let own = |name: &str| (tls.join(format!("{name}.crt")), tls.join(format!("{name}.key")));
+        let lineage = |name: &str| certbot(name).unwrap();
+        for name in ["both.example.com", "new.example.com"] {
+            fs::write(own(name).0, "").unwrap();
+        }
+
+        // Both exist: the engine decides, and turning it off goes back to certbot.
+        assert_eq!(certificate_files("both.example.com", SslEngine::Acme, tls, certbot), own("both.example.com"));
+        assert_eq!(certificate_files("both.example.com", SslEngine::Certbot, tls, certbot), lineage("both.example.com"));
+        // Only one exists: that one, whatever the engine.
+        for engine in [SslEngine::Acme, SslEngine::Certbot] {
+            assert_eq!(certificate_files("old.example.com", engine, tls, certbot), lineage("old.example.com"));
+            assert_eq!(certificate_files("new.example.com", engine, tls, certbot), own("new.example.com"));
+            assert_eq!(certificate_files("none.example.com", engine, tls, certbot), own("none.example.com"));
+        }
+        // A www alias borrows its main domain's certificate, from the engine's side first.
+        assert_eq!(certificate_files("www.old.example.com", SslEngine::Certbot, tls, certbot), lineage("old.example.com"));
+        assert_eq!(certificate_files("www.both.example.com", SslEngine::Acme, tls, certbot), own("both.example.com"));
+        assert_eq!(certificate_files("www.both.example.com", SslEngine::Certbot, tls, certbot), lineage("both.example.com"));
+        assert_eq!(certificate_files("www.new.example.com", SslEngine::Acme, tls, certbot), own("new.example.com"));
+        assert_eq!(certificate_files("www.new.example.com", SslEngine::Certbot, tls, certbot), own("www.new.example.com"));
+    }
 
     #[test]
     fn panel_entry_serves_public_as_a_system_php_site_on_the_panel_host() {

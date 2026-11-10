@@ -99,6 +99,15 @@ pub async fn dispatch(
             "",
         );
     };
+    // A token of drust's own ACME client: answered before the site's IP
+    // rules, runtime or state get a say, because the CA asks from anywhere.
+    if let Some(response) = shared_acme_challenge_response(&path) {
+        return annotated_response(
+            response,
+            site.hostnames.first().map(String::as_str).unwrap_or(""),
+            "acme-challenge",
+        );
+    }
     let client_ips = request_client_ips(&request);
     let explicitly_allowed = client_ips.iter().any(|ip| site.allowed_ips.contains(ip));
     let explicitly_banned = client_ips.iter().any(|ip| site.banned_ips.contains(ip));
@@ -865,9 +874,14 @@ pub fn upstream_health_response(body: String) -> Response {
     response
 }
 
-/// Hostnames that are not websites (the mail hostname) still need HTTP-01
-/// certificates, so certbot writes their tokens to this one shared webroot.
+/// The one folder of HTTP-01 tokens that answers for every hostname. drust's
+/// ACME client writes each website's token here, and certbot writes those of
+/// hostnames that are not websites (the mail hostname).
 fn shared_acme_challenge_response(path: &str) -> Option<Response> {
+    acme_token_response(&platform::acme::challenge_dir(), path)
+}
+
+fn acme_token_response(directory: &Path, path: &str) -> Option<Response> {
     let token = path.strip_prefix("/.well-known/acme-challenge/")?;
     if token.is_empty()
         || !token
@@ -876,14 +890,7 @@ fn shared_acme_challenge_response(path: &str) -> Option<Response> {
     {
         return None;
     }
-    let body = fs::read(
-        platform::paths()
-            .data_dir()
-            .join("acme")
-            .join(".well-known/acme-challenge")
-            .join(token),
-    )
-    .ok()?;
+    let body = fs::read(directory.join(token)).ok()?;
     let mut response = Response::new(Body::from(body));
     response
         .headers_mut()
@@ -1081,6 +1088,28 @@ fn format_http_date(_value: std::time::SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn an_acme_token_is_served_from_the_shared_folder_and_nothing_else_is() {
+        let folder = tempfile::tempdir().unwrap();
+        std::fs::write(folder.path().join("tok_en-1"), "tok_en-1.thumbprint").unwrap();
+        std::fs::write(folder.path().join("secret.txt"), "no").unwrap();
+
+        let response = acme_token_response(folder.path(), "/.well-known/acme-challenge/tok_en-1").unwrap();
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "text/plain");
+        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        assert_eq!(&body[..], b"tok_en-1.thumbprint");
+
+        for path in [
+            "/.well-known/acme-challenge/missing",
+            "/.well-known/acme-challenge/secret.txt",
+            "/.well-known/acme-challenge/../tok_en-1",
+            "/.well-known/acme-challenge/",
+            "/tok_en-1",
+        ] {
+            assert!(acme_token_response(folder.path(), path).is_none(), "{path}");
+        }
+    }
 
     #[test]
     fn strips_share_prefix_and_keeps_query() {

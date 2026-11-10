@@ -370,6 +370,28 @@ Body:
 
 The daemon validates the real certificate hostname and expiry with OpenSSL. It invokes Certbot only when the certificate is missing, invalid, or inside the renewal window, then validates the resulting certificate again. After a successful validation it restarts `edge-gateway.service` so the SNI certificate store and port 443 listener are refreshed immediately.
 
+#### Issuing without Certbot
+
+Set `DRUST_SSL_ENGINE=acme` in `/etc/drust/drust.env` and restart `drust.service` and `edge-gateway.service` to let drust's own ACME client issue website certificates. The request and the response stay the same.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `DRUST_SSL_ENGINE` | `certbot` | `acme` turns the built-in client on |
+| `DRUST_ACME_DIRECTORY` | Let's Encrypt production | The ACME directory URL. Use `https://acme-staging-v02.api.letsencrypt.org/directory` to try it without rate limits |
+| `DRUST_ACME_EMAIL` | none | Address for the CA's expiry notices |
+| `DRUST_ACME_CA_BUNDLE` | none | PEM file of extra roots, for a private CA |
+
+- Certificates are written to `/etc/drust/tls/<domain>.crt` and `<domain>.key`. The account key and the renewal records are in `/var/lib/drust/acme`.
+- The HTTP-01 token is served from `/var/lib/dpanel/acme/.well-known/acme-challenge/`, which the gateway answers for every hostname. Nothing is written into the website's folder.
+- A Certbot certificate that is still valid is kept. The built-in client takes over when it comes up for renewal, for new websites, and when a certificate is reinstalled from the panel. Certbot's files are never deleted, so setting the engine back to `certbot` is safe.
+- Only HTTP-01 is supported, so there are no wildcard certificates yet. The mail hostname's certificate still comes from Certbot.
+
+```http
+POST /api/v1/ssl/renew
+```
+
+Renews every certificate the built-in client issued that expires within 30 days, and answers with one result per certificate that was due. With `certbot` as the engine it does nothing. The panel's daily `serverpanel:ssl-reconcile` already renews website certificates through `ssl/ensure`, so this endpoint is only needed without the panel.
+
 ### Database request
 
 ```http

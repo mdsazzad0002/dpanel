@@ -1,6 +1,6 @@
 //! What this build of drust can do on this system.
 
-use super::{Os, Profile};
+use super::{Os, Profile, acme::SslEngine};
 use serde::Serialize;
 use std::{env, path::Path};
 
@@ -89,12 +89,19 @@ pub struct Capabilities {
 /// What this machine reports, with Docker looked up on `PATH`.
 pub fn report() -> Report {
     let platform = super::current();
-    report_for(platform.os(), platform.profile(), docker_on_path(), super::waf::available())
+    report_for(platform.os(), platform.profile(), docker_on_path(), super::waf::available(), super::acme::engine())
 }
 
 /// `docker_installed` only matters on a local profile, where Docker Desktop is
-/// optional; `waf_installed` is whether libmodsecurity and the rules are there.
-fn report_for(os: Os, profile: Profile, docker_installed: bool, waf_installed: bool) -> Report {
+/// optional; `waf_installed` is whether libmodsecurity and the rules are there;
+/// `ssl_engine` is what issues certificates here (a Linux server may pick).
+fn report_for(
+    os: Os,
+    profile: Profile,
+    docker_installed: bool,
+    waf_installed: bool,
+    ssl_engine: SslEngine,
+) -> Report {
     let server = profile == Profile::Server;
     let linux = os == Os::Linux;
     let capabilities = Capabilities {
@@ -118,11 +125,7 @@ fn report_for(os: Os, profile: Profile, docker_installed: bool, waf_installed: b
             (Profile::Server, Os::Windows) => "windows_dns",
             (Profile::Server, Os::Macos) => "external",
         },
-        ssl: match (profile, os) {
-            (Profile::Local, _) => "local_ca",
-            (Profile::Server, Os::Linux) => "certbot",
-            (Profile::Server, _) => "acme",
-        },
+        ssl: ssl_engine.as_str(),
         firewall: server,
         ftp: server,
         terminal: !server || linux,
@@ -158,7 +161,7 @@ mod tests {
     use serde_json::json;
 
     fn capabilities(os: Os, profile: Profile, docker: bool) -> serde_json::Value {
-        serde_json::to_value(report_for(os, profile, docker, false)).unwrap()["capabilities"].clone()
+        serde_json::to_value(report_for(os, profile, docker, false, SslEngine::choose(os, profile, None))).unwrap()["capabilities"].clone()
     }
 
     #[test]
@@ -224,10 +227,17 @@ mod tests {
 
     #[test]
     fn the_waf_needs_a_server_and_its_library() {
-        let on = |os, profile, installed| serde_json::to_value(report_for(os, profile, false, installed)).unwrap()["capabilities"]["waf"].clone();
+        let on = |os, profile, installed| serde_json::to_value(report_for(os, profile, false, installed, SslEngine::choose(os, profile, None))).unwrap()["capabilities"]["waf"].clone();
         assert_eq!(on(Os::Linux, Profile::Server, true), true);
         assert_eq!(on(Os::Linux, Profile::Server, false), false);
         assert_eq!(on(Os::Linux, Profile::Local, true), false);
+    }
+
+    #[test]
+    fn a_linux_server_reports_the_ssl_engine_it_was_told_to_use() {
+        let ssl = |engine| serde_json::to_value(report_for(Os::Linux, Profile::Server, false, false, engine)).unwrap()["capabilities"]["ssl"].clone();
+        assert_eq!(ssl(SslEngine::Certbot), "certbot");
+        assert_eq!(ssl(SslEngine::Acme), "acme");
     }
 
     #[test]
@@ -238,7 +248,7 @@ mod tests {
 
     #[test]
     fn report_names_the_os_profile_and_version() {
-        let report = serde_json::to_value(report_for(Os::Macos, Profile::Local, false, false)).unwrap();
+        let report = serde_json::to_value(report_for(Os::Macos, Profile::Local, false, false, SslEngine::LocalCa)).unwrap();
         assert_eq!(report["os"], "macos");
         assert_eq!(report["profile"], "local");
         assert_eq!(report["version"], env!("CARGO_PKG_VERSION"));

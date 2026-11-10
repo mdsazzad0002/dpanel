@@ -39,7 +39,7 @@ drust/src/platform/
   limits.rs       ResourceLimiter
   firewall.rs     FirewallBackend
   dns.rs          DnsBackend
-  acme.rs         AcmeClient
+  acme/           AcmeClient, SslEngine, CertInfo; client.rs-এ RFC 8555
   scheduler.rs    Scheduler
   supervisor.rs   Local ও macOS/Windows-এর child process supervisor
   unix/           Linux ও macOS-এ একই code, যেমন FileAccess
@@ -100,7 +100,7 @@ drust API-তে `Unsupported` মানে HTTP `501` ও `{"error":"unsupporte
 | `disk_quota` | `hard` | `hard` | `hard` | `none` |
 | `mail` | `postfix` | `stalwart` | `stalwart` | `catcher` |
 | `dns` | `powerdns` | `windows_dns` | `external` | `hosts` |
-| `ssl` | `certbot`, পরে `acme` | `acme` | `acme` | `local_ca` |
+| `ssl` | `certbot`; `DRUST_SSL_ENGINE=acme` দিলে `acme` | `acme` | `acme` | `local_ca` |
 | `firewall` | হ্যাঁ | হ্যাঁ | হ্যাঁ | না |
 | `ftp` | হ্যাঁ | হ্যাঁ | হ্যাঁ | না |
 | `terminal` | হ্যাঁ | না | না | হ্যাঁ |
@@ -456,9 +456,19 @@ pub trait AcmeClient {
 
 - `CertRequest`: domains, challenge (`Http01`, `Dns01`), ACME directory URL।
 - Certificate `Paths::tls_dir()`-এ `<domain>.crt` ও `<domain>.key` নামে থাকবে, যেটা gateway আগে থেকেই চেনে।
-- HTTP-01 token gateway-এর memory থেকে সরাসরি দেওয়া হবে, site folder-এ file লিখে নয়।
+- HTTP-01 token site folder-এ লেখা হয় না। Gateway আর API আলাদা process, তাই memory নয়: token যায় `data_dir/acme/.well-known/acme-challenge/<token>`-এ, আর gateway সেই folder থেকে যেকোনো hostname-এর জন্য উত্তর দেয়, site-এর IP rule, runtime বা state দেখার আগে। CA দেখা শেষ করলেই file মোছে।
 - Renew: মেয়াদ শেষের 30 দিন আগে, দিনে একবার।
 - Local profile `rcgen` দিয়ে local CA ব্যবহার করবে।
+
+প্রথম সংস্করণ (I5): `platform/acme/`-এ `Rfc8555Client`, RFC 8555 নিজে লেখা (`reqwest`, `ring`-এর ES256 account key, `rcgen`-এর CSR)। শুধু `Http01`; `Dns01` চাইলে refuse করে (M4)। External account binding নেই, তাই ZeroSSL চলে না।
+
+- **Engine:** `platform::acme::engine()`। Linux server-এ `certbot`, `DRUST_SSL_ENGINE=acme` দিলে `acme`; অন্য server-এ সবসময় `acme`; local-এ `local_ca` (এখনও বানানো হয়নি, E4/F6)। `drust.env` gateway-ও পড়ে, তাই দুই process একই engine দেখে। `/capabilities`-এর `ssl` এই মান।
+- **Setting:** `DRUST_ACME_DIRECTORY` (default Let's Encrypt production), `DRUST_ACME_EMAIL` (ঐচ্ছিক contact), `DRUST_ACME_CA_BUNDLE` (private CA-র root)। Directory ও server-এর দেওয়া প্রতিটা URL HTTPS হতে হয়; plain HTTP শুধু loopback-এ, test-এর জন্য।
+- **State:** `state_dir/acme/account-<directory-র hash>.pk8` (CA প্রতি একটা account key, owner-only) আর `state_dir/acme/orders/<domain>.json` (domains, directory, challenge)। `renew_due` এই record ধরে চলে; panel-এর `acme_orders` table বানানো হয়নি।
+- **Key:** প্রতি certificate-এ নতুন P-256 key। Key ও certificate আগে `.new` file-এ, তারপর rename।
+- **Certbot থেকে সরা:** `acme` engine-এ ভালো certbot certificate থেকে যায় (সব site একসঙ্গে নতুন করে নিলে CA-র rate limit-এ পড়ত)। Client নেয় যখন সেটা renew-এর সময়ে আসে, নতুন site-এ, আর panel থেকে reinstall করলে। Gateway `acme` engine-এ `tls_dir`-এর certificate আগে নেয়, নয়তো certbot-এর; certbot-এর file কখনো মোছা হয় না, তাই engine ফেরালে আগের certificate-ই চলে। Certbot-এর নিজের timer আগে renew করলে site certbot-এই থাকে।
+- **Certificate পড়া:** `CertInfo` (`x509-parser`) মেয়াদ ও নাম পড়ে, `openssl` program ছাড়া। Certbot-এর পথ ও IP-র self-signed certificate এখনও `openssl` চালায়।
+- **বাইরে:** mail hostname-এর certificate (`ensure-mail-tls.sh`) ও installer-এর `issue-ssl.sh` এখনও certbot।
 
 ### 6.13 Scheduler
 
@@ -505,7 +515,7 @@ pub trait Scheduler {
 | `account_usage_samples` | `user_id`, `sampled_at`, `disk_mb`, `bandwidth_mb`, `cpu_percent`, `memory_mb` |
 | `usage_alerts` | `user_id`, `resource` (`disk`, `bandwidth`, `memory`, `cpu`), `period` (bandwidth-এ মাস), `level` (80 বা 100), `notified_at`; প্রতি account ও resource-এ একটা (P6) |
 | `firewall_rules` | Panel-এর rule, backend-এর সঙ্গে reconcile হবে |
-| `acme_orders` | Domain, challenge, status, error, `expires_at` |
+| `acme_orders` | Domain, challenge, status, error, `expires_at`. এখনও নেই: I5 renewal-এর record drust-এর `state_dir/acme/orders/`-এ রাখে, আর অবস্থা আগের মতো `domains` ও `ssl_certificates`-এ |
 | `website_protected_directories` | `website_id`, `path`, `realm`, `username`, `password_hash` (`s256i$<rounds>$<salt hex>$<hex>`) |
 | `website_guard_settings` | `website_id`, `no_php_paths`, `hotlink_protection`, `hotlink_allowed_hosts`, `cloudflare_only`, `waf_mode` (`off`, `detect`, `block`; row না থাকলে `detect`) |
 | `wordpress_stagings` | `production_website_id`, `staging_website_id` (দুটোই unique), `clone_id`, `direction` (`to_staging`, `to_production`, `safe_update`), `stage`, `message`, `copied_at`, `deployed_at` |
@@ -540,7 +550,8 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `GET /resource-limits/{group}/usage` | `cpu_percent` (আগের call থেকে গড়), `memory_mb`, `processes`, `limit_level`; limit না পারলে `501` |
 | `GET`, `POST`, `DELETE /firewall/rules` | Rule |
 | `POST /firewall/confirm` | Lock-out timer থামানো |
-| `POST /acme/issue`, `/acme/renew` | Certificate |
+| `POST /api/v1/ssl/ensure`, `/api/v1/ssl/remove` | আগের endpoint, দুই engine-এ একই request ও response; panel-এর কিছু বদলায়নি (I5) |
+| `POST /api/v1/ssl/renew` | `AcmeClient::renew_due`: due certificate প্রতি `{domain, renewed, error}`; `certbot` engine-এ কিছু করে না |
 | `GET /sites/logs?kind=access\|waf\|php&domain=&owner=&lines=` | Site-এর access log, WAF-এর match (S2) বা account-এর PHP error log-এর শেষ অংশ (S4) |
 | `POST /api/v1/wordpress` | নির্দিষ্ট wp-cli action, site user হিসেবে: `info`, `update_core`, `update_plugins`, `update_themes`, `security`, `fix`, `home_url`, `search_replace` (W1-W4) |
 | `GET /system/overview?services=`, `GET /system/services?services=` | Machine-এর সংখ্যা ও service-এর অবস্থা (D3) |
