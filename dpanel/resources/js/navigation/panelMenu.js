@@ -97,6 +97,7 @@ export const buildPanelMenu = (userRoles = []) => [
         children: [
             { label: 'Nameservers', hint: 'Manage NS records', icon: 'NS', iconClass: 'bi bi-signpost-split', routeName: 'dns.nameservers', roles: ['admin', 'reseller'], permissions: ['manage_dns'] },
             { label: 'DNS Zones', hint: 'Manage DNS zones', icon: 'DZ', iconClass: 'bi bi-bounding-box-circles', routeName: 'dns.zones', roles: ['admin', 'reseller', 'general', 'general_user'], permissions: ['manage_dns'] },
+            { label: 'Zone Transfers', hint: 'Secondary nameservers', icon: 'ZT', iconClass: 'bi bi-arrow-left-right', routeName: 'dns.transfers', roles: ['admin'] },
         ],
     },
     {

@@ -390,6 +390,17 @@ install_powerdns() {
     > /etc/powerdns/pdns.d/listener.conf
   chmod 0644 /etc/powerdns/pdns.d/listener.conf
 
+  # Zone transfers (backlog M7), as the dns module writes them: PowerDNS 4.5
+  # renamed master/slave to primary/secondary.
+  local pdns_version
+  pdns_version="$(pdns_server --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -n1)"
+  if [[ -n "${pdns_version}" ]] && (( ${pdns_version%%.*} < 4 || (${pdns_version%%.*} == 4 && ${pdns_version#*.} < 5) )); then
+    printf 'master=yes\nslave=yes\n' > /etc/powerdns/pdns.d/transfers.conf
+  else
+    printf 'primary=yes\nsecondary=yes\n' > /etc/powerdns/pdns.d/transfers.conf
+  fi
+  chmod 0644 /etc/powerdns/pdns.d/transfers.conf
+
   if command -v ufw >/dev/null 2>&1; then
     ufw allow 53/udp comment 'Authoritative DNS'
     ufw allow 53/tcp comment 'Authoritative DNS'

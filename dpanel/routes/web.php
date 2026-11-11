@@ -861,6 +861,17 @@ Route::prefix('cpsess{token}')
                 ->middleware('role_or_permission:admin|reseller|manage_dns')
                 ->name('dns.nameservers.destroy');
 
+            Route::get('/dns/transfers', [\App\Http\Controllers\DnsTransfersController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('dns.transfers');
+            Route::post('/dns/transfers', [\App\Http\Controllers\DnsTransfersController::class, 'store'])
+                ->middleware(['role:admin', 'throttle:20,1'])
+                ->name('dns.transfers.store');
+            Route::delete('/dns/transfers/{id}', [\App\Http\Controllers\DnsTransfersController::class, 'destroy'])
+                ->middleware('role:admin')
+                ->whereNumber('id')
+                ->name('dns.transfers.destroy');
+
             Route::get('/dns/zones', [DnsController::class, 'zones'])
                 ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.zones');

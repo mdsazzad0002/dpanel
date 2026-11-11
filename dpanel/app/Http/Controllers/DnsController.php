@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Website;
 use App\Services\Dns\DnsRecordContent;
 use App\Services\Dns\DnsRegistryService;
+use App\Services\Dns\DnsSecondaryServers;
 use App\Services\Dns\DnsZoneRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -227,6 +228,7 @@ class DnsController extends Controller
                 'id' => (string) $domainRow->id,
                 'domain' => (string) $domainRow->name,
                 'type' => $this->pdnsZoneTypeToUi((string) ($domainRow->type ?? 'NATIVE')),
+                'primaries' => strtoupper((string) ($domainRow->type ?? '')) === 'SLAVE' ? (string) ($domainRow->master ?? '') : '',
                 'email' => $soaParsed['email'],
                 'refresh' => $soaParsed['refresh'],
                 'retry' => $soaParsed['retry'],
@@ -300,6 +302,7 @@ class DnsController extends Controller
             // One domain, or several separated by new lines, commas or spaces.
             'domain' => ['required', 'string', 'max:20000'],
             'type' => ['required', 'in:master,slave'],
+            'primaries' => ['nullable', 'string', 'max:500'],
             'email' => ['nullable', 'email', 'max:255'],
             'refresh' => ['required', 'integer', 'min:300', 'max:86400'],
             'retry' => ['required', 'integer', 'min:60', 'max:86400'],
@@ -321,6 +324,7 @@ class DnsController extends Controller
         if ($domains->count() > 100) {
             throw ValidationException::withMessages(['domain' => 'Add up to 100 domains at a time.']);
         }
+        $validated['primary'] = $this->secondaryZonePrimary($request, $validated);
 
         $created = [];
         $existing = [];
@@ -351,7 +355,7 @@ class DnsController extends Controller
         $validated['email'] = $validated['email'] ?: "hostmaster@{$domain}";
         $zoneType = $this->uiZoneTypeToPdns($validated['type']);
         $this->pdns()->transaction(function () use ($request, $domain, $zoneType, $validated): void {
-            $zoneId = $this->backend()->upsertZone(new ZoneSpec($domain, strtolower($zoneType)));
+            $zoneId = $this->backend()->upsertZone(new ZoneSpec($domain, strtolower($zoneType), $validated['primary'] ?? null));
             $actor = $request->user();
             $website = Website::query()->visibleTo($actor)->whereRaw('LOWER(domain) = ?', [$domain])->first();
             DnsZone::query()->create([
@@ -368,10 +372,47 @@ class DnsController extends Controller
                 'provider' => $this->backend()->name(),
                 'mode' => 'authoritative',
             ]);
+            // A secondary zone is filled by PowerDNS from its primary; a SOA
+            // written here could carry a higher serial and stop the transfer.
+            if ($zoneType === 'SLAVE') {
+                return;
+            }
             $this->upsertSoaRecord($zoneId, $domain, $validated);
             $this->syncNameserverRecordsForDomain($domain, $zoneId);
             $this->syncRecordEntities($zoneId);
         });
+    }
+
+    /**
+     * Backlog M7: a secondary ("slave") zone copies the zone from its primary
+     * servers, so it needs their addresses. Only an admin may make one: this
+     * server then asks those addresses for the zone.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function secondaryZonePrimary(Request $request, array $validated): ?string
+    {
+        if (($validated['type'] ?? 'master') !== 'slave') {
+            return null;
+        }
+        if (! $request->user()?->hasRole('admin')) {
+            throw ValidationException::withMessages(['type' => 'Only an admin can add a secondary zone.']);
+        }
+        $given = collect(preg_split('/[\s,;]+/', (string) ($validated['primaries'] ?? '')) ?: [])->filter()->values();
+        $addresses = $given->map(fn ($address) => DnsSecondaryServers::normalize((string) $address));
+        if ($given->isEmpty() || $given->count() > 5 || $addresses->contains(null)) {
+            throw ValidationException::withMessages(['primaries' => 'Give the IP address of each primary server (up to 5), separated by commas.']);
+        }
+
+        return $addresses->unique()->implode(',');
+    }
+
+    /** Records of a secondary zone come from its primary; edits here would be overwritten. */
+    private function refuseSecondaryZone(int $zoneId): void
+    {
+        if (strtoupper((string) $this->pdns()->table('domains')->where('id', $zoneId)->value('type')) === 'SLAVE') {
+            throw ValidationException::withMessages(['zone_domain' => 'This is a secondary zone: its records come from the primary server. Change them there.']);
+        }
     }
 
     public function updateZone(Request $request, string $token,  string $id): RedirectResponse
@@ -380,7 +421,8 @@ class DnsController extends Controller
         $validated = $request->validate([
             'domain' => ['required', 'string', 'max:255'],
             'type' => ['required', 'in:master,slave'],
-            'email' => ['required', 'email', 'max:255'],
+            'primaries' => ['nullable', 'string', 'max:500'],
+            'email' => ['nullable', 'email', 'max:255'],
             'refresh' => ['required', 'integer', 'min:300', 'max:86400'],
             'retry' => ['required', 'integer', 'min:60', 'max:86400'],
             'expire' => ['required', 'integer', 'min:3600', 'max:2592000'],
@@ -402,9 +444,15 @@ class DnsController extends Controller
             return redirect()->route('dns.zones')->with('error', 'Domain already exists.');
         }
 
+        $validated['primary'] = $this->secondaryZonePrimary($request, $validated);
+        if (! $validated['primary'] && strtoupper((string) $existingZone->type) === 'SLAVE' && ! $request->user()?->hasRole('admin')) {
+            throw ValidationException::withMessages(['type' => 'Only an admin can change a secondary zone.']);
+        }
+        $validated['email'] = $validated['email'] ?: "hostmaster@{$newDomain}";
+
         $this->pdns()->transaction(function () use ($zoneId, $validated, $oldDomain, $newDomain) {
             $this->backend()->renameZone($oldDomain, $newDomain);
-            $this->backend()->upsertZone(new ZoneSpec($newDomain, strtolower($this->uiZoneTypeToPdns($validated['type']))));
+            $this->backend()->upsertZone(new ZoneSpec($newDomain, strtolower($this->uiZoneTypeToPdns($validated['type'])), $validated['primary']));
             DnsZone::query()->where('powerdns_domain_id', $zoneId)->update([
                 'domain' => $newDomain,
                 'status' => $validated['status'],
@@ -416,6 +464,13 @@ class DnsController extends Controller
                 $this->pdns()->table(self::NAMESERVER_TABLE)->where('domain', $oldDomain)->update(['domain' => $newDomain, 'updated_at' => now()]);
             }
 
+            if ($validated['primary']) {
+                // Start empty: PowerDNS copies the whole zone, SOA included, from the primary.
+                $this->backend()->deleteRecords($this->pdns()->table('records')->where('domain_id', $zoneId)->pluck('id')->all());
+                DnsRecord::query()->whereIn('dns_zone_id', DnsZone::query()->where('powerdns_domain_id', $zoneId)->pluck('id'))->delete();
+
+                return;
+            }
             $this->upsertSoaRecord($zoneId, $newDomain, $validated);
             $this->syncNameserverRecordsForDomain($newDomain, $zoneId);
             $this->syncRecordEntities($zoneId);
@@ -469,6 +524,7 @@ class DnsController extends Controller
             return redirect()->route('dns.zones')->with('error', 'Zone not found.');
         }
         $this->authorizeZone($request, (int) $zone->id);
+        $this->refuseSecondaryZone((int) $zone->id);
 
         $type = strtoupper((string) $validated['type']);
         ['name' => $name, 'content' => $content, 'priority' => $priority] = $this->prepareRecord((int) $zone->id, $zoneDomain, $validated);
@@ -533,6 +589,8 @@ class DnsController extends Controller
             return redirect()->route('dns.zones')->with('error', 'Zone not found.');
         }
         $this->authorizeZone($request, (int) $zone->id);
+        $this->refuseSecondaryZone((int) $zone->id);
+        $this->refuseSecondaryZone((int) $record->domain_id);
 
         $type = strtoupper((string) $validated['type']);
         ['name' => $name, 'content' => $content, 'priority' => $priority] = $this->prepareRecord((int) $zone->id, $zoneDomain, $validated, $recordId);
@@ -591,6 +649,7 @@ class DnsController extends Controller
         [$recordId, $record] = $this->resolvePowerDnsRecord($id);
         abort_unless($record, 404);
         $this->authorizeZone($request, (int) $record->domain_id);
+        $this->refuseSecondaryZone((int) $record->domain_id);
         $this->backend()->deleteRecords([$recordId]);
         $this->backend()->touchZone((int) $record->domain_id);
         DnsRecord::query()->where('powerdns_record_id', $recordId)->delete();

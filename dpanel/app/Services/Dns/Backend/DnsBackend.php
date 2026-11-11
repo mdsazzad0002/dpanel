@@ -74,4 +74,13 @@ interface DnsBackend
      * @throws UnsupportedDnsFeature where this server cannot sign zones
      */
     public function dnssecStatus(string $zone): array;
+
+    /**
+     * Lets `$secondaries` (IP addresses) transfer the zone and sends them a
+     * NOTIFY when its serial changes; an empty list stops both (M7). A zone
+     * this server is itself a secondary for is left alone.
+     *
+     * @param  list<string>  $secondaries
+     */
+    public function setTransfers(string $zone, array $secondaries): void;
 }

@@ -268,5 +268,28 @@
         "confirmOn": "Issue a wildcard certificate for {domain} and *.{domain}? A TXT record is added to the domain's DNS while the CA checks it. This can take a few minutes.",
         "confirmOff": "Stop covering *.{domain}? {domain} gets a plain certificate, and subdomains without their own certificate lose HTTPS.",
         "failed": "Wildcard SSL failed."
+    },
+    "dnsTransfers": {
+        "title": "Zone Transfers",
+        "subtitle": "Secondary nameservers that copy this server's DNS zones",
+        "secondariesTitle": "Secondary nameservers",
+        "secondariesHelp": "Each server listed here may copy (AXFR) all {count} zones this server is primary for, and is sent a NOTIFY whenever one changes.",
+        "none": "No secondaries. Only this server answers for its zones.",
+        "address": "IP address",
+        "label": "Name (optional)",
+        "add": "Add",
+        "remove": "Remove",
+        "removeConfirm": "Stop {address} from copying zones from this server?",
+        "stepsTitle": "On the secondary",
+        "step1": "Add each zone there as a secondary zone with this server's IP as its primary. On another dPanel server: DNS Zones → Add domains, type slave.",
+        "step2": "Give the secondary a nameserver name and list it with this server's ({nameservers}) in DNS_OUR_NAMESERVERS, so every zone carries its NS record.",
+        "step3": "Add the secondary's name at each domain's registrar, next to this server's.",
+        "copiedTitle": "Zones this server copies",
+        "copiedHelp": "Secondary zones: PowerDNS copies them from their primary and keeps them up to date. Their records are changed on the primary.",
+        "zone": "Zone",
+        "primaries": "Primary",
+        "lastCheck": "Last checked",
+        "notYet": "not yet",
+        "noCopied": "None. Add one under DNS Zones with the type slave."
     }
 }

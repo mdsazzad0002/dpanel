@@ -18,6 +18,8 @@ const editing = computed(() => props.zone !== null);
 const form = useForm({
     domain: props.zone?.domain ?? '',
     type: props.zone?.type ?? 'master',
+    // A secondary (slave) zone copies everything from these servers (M7).
+    primaries: props.zone?.primaries ?? '',
     email: props.zone?.email ?? '',
     refresh: Number(props.zone?.refresh ?? 3600),
     retry: Number(props.zone?.retry ?? 600),
@@ -35,7 +37,7 @@ const domains = computed(() => [...new Set(String(form.domain).toLowerCase().spl
 const error = computed(() => Object.values(form.errors)[0] || '');
 
 const statusOptions = [{ value: 'active', label: 'active' }, { value: 'disabled', label: 'disabled' }];
-const zoneTypeOptions = [{ value: 'master', label: 'master' }, { value: 'slave', label: 'slave' }];
+const zoneTypeOptions = [{ value: 'master', label: 'master' }, { value: 'slave', label: 'slave (copy from a primary)' }];
 const transferUserOptions = computed(() => props.transferUsers.map((user) => ({ value: user.id, label: `${user.name} · ${user.email}` })));
 
 const submit = () => {
@@ -101,6 +103,12 @@ const transfer = () => {
                     <label class="mb-1 block text-sm">Status</label>
                     <SearchableSelect v-model="form.status" :options="statusOptions" />
                 </div>
+            </div>
+            <div v-if="form.type === 'slave'">
+                <label class="mb-1 block text-sm">Primary server IPs</label>
+                <input v-model="form.primaries" type="text" placeholder="203.0.113.10, 2001:db8::10" class="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm dark:border-slate-700 dark:bg-slate-800" />
+                <p class="mt-1 text-xs text-slate-500">This server copies the whole zone from them and keeps it up to date; records are changed on the primary. The primary must allow this server's IP to transfer the zone. Admins only.</p>
+                <p v-if="form.errors.primaries || form.errors.type" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ form.errors.primaries || form.errors.type }}</p>
             </div>
             <div>
                 <label class="mb-1 block text-sm">SOA email</label>

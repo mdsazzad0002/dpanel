@@ -268,5 +268,28 @@
         "confirmOn": "{domain} ও *.{domain}-এর জন্য wildcard certificate নেবেন? CA যাচাই করার সময় domain-এর DNS-এ একটা TXT record যোগ হবে। কয়েক মিনিট লাগতে পারে।",
         "confirmOff": "*.{domain} আর ঢাকা হবে না? {domain} সাধারণ certificate পাবে, আর নিজের certificate নেই এমন subdomain HTTPS হারাবে।",
         "failed": "Wildcard SSL ব্যর্থ হয়েছে।"
+    },
+    "dnsTransfers": {
+        "title": "Zone Transfers",
+        "subtitle": "এই server-এর DNS zone copy করে এমন secondary nameserver",
+        "secondariesTitle": "Secondary nameserver",
+        "secondariesHelp": "এখানের প্রতিটা server এই server-এর primary {count}টা zone-এর সবগুলো copy (AXFR) করতে পারে, আর কোনোটা বদলালে NOTIFY পায়।",
+        "none": "কোনো secondary নেই। নিজের zone-এর উত্তর শুধু এই server দেয়।",
+        "address": "IP address",
+        "label": "নাম (ঐচ্ছিক)",
+        "add": "যোগ করুন",
+        "remove": "সরান",
+        "removeConfirm": "{address} আর এই server থেকে zone copy করবে না?",
+        "stepsTitle": "Secondary-তে",
+        "step1": "প্রতিটা zone সেখানে secondary zone হিসেবে যোগ করুন, primary হিসেবে এই server-এর IP দিয়ে। অন্য dPanel server-এ: DNS Zones → Add domains, type slave।",
+        "step2": "Secondary-কে একটা nameserver নাম দিন, আর DNS_OUR_NAMESERVERS-এ এই server-এর ({nameservers}) সঙ্গে লিখুন, যাতে প্রতিটা zone-এ তার NS record থাকে।",
+        "step3": "প্রতিটা domain-এর registrar-এ এই server-এর পাশে secondary-র নামও দিন।",
+        "copiedTitle": "এই server যে zone copy করে",
+        "copiedHelp": "Secondary zone: PowerDNS এগুলো primary থেকে copy করে ও হালনাগাদ রাখে। Record বদলাতে হয় primary-তে।",
+        "zone": "Zone",
+        "primaries": "Primary",
+        "lastCheck": "শেষ যাচাই",
+        "notYet": "এখনও নয়",
+        "noCopied": "নেই। DNS Zones-এ type slave দিয়ে যোগ করুন।"
     }
 }

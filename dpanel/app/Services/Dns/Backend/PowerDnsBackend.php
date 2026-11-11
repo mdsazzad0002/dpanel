@@ -2,6 +2,7 @@
 
 namespace App\Services\Dns\Backend;
 
+use App\Services\Dns\DnsSecondaryServers;
 use App\Services\Dns\DnsZoneRules;
 use App\Services\Platform\DnssecClient;
 use Illuminate\Database\ConnectionInterface;
@@ -12,13 +13,19 @@ use Illuminate\Support\Facades\Log;
  * PowerDNS with the gmysql backend: its `domains` and `records` tables live
  * in the panel's own database, so a change is a transaction there. Signing
  * (M6) needs `pdnsutil`, so it goes through drust; a signed zone is
- * rectified after its records change.
+ * rectified after its records change. A zone with secondaries (M7) is a
+ * MASTER zone, which PowerDNS notifies about, with its ACLs in
+ * `domainmetadata`; a SLAVE zone is filled by PowerDNS from its primary.
  */
 class PowerDnsBackend implements DnsBackend
 {
+    /** What M7 keeps in `domainmetadata`, one row per secondary. */
+    private const TRANSFER_KINDS = ['ALLOW-AXFR-FROM', 'ALSO-NOTIFY'];
+
     public function __construct(
         private readonly DnsZoneRules $rules,
         private readonly DnssecClient $dnssec,
+        private readonly DnsSecondaryServers $secondaries,
     ) {}
 
     public function name(): string
@@ -38,11 +45,44 @@ class PowerDnsBackend implements DnsBackend
         $existing = $this->db()->table('domains')->where('name', $name)->value('id');
         if ($existing !== null) {
             $this->db()->table('domains')->where('id', $existing)->update($row);
-
-            return (int) $existing;
+        } else {
+            $existing = $this->db()->table('domains')->insertGetId(['name' => $name, ...$row]);
+        }
+        if ($zone->kind !== 'slave') {
+            $this->setTransfers($name, $this->secondaries->addresses());
         }
 
-        return (int) $this->db()->table('domains')->insertGetId(['name' => $name, ...$row]);
+        return (int) $existing;
+    }
+
+    public function setTransfers(string $zone, array $secondaries): void
+    {
+        $name = self::normalize($zone);
+        $db = $this->db();
+        $row = $db->table('domains')->where('name', $name)->first(['id', 'type']);
+        if ($row === null) {
+            throw new \RuntimeException("No zone {$name}.");
+        }
+        if (strtoupper((string) $row->type) === 'SLAVE') {
+            return;
+        }
+        $db->transaction(function () use ($db, $row, $secondaries): void {
+            // NATIVE zones are never notified about, so with secondaries the zone is MASTER.
+            $db->table('domains')->where('id', $row->id)->update(['type' => $secondaries === [] ? 'NATIVE' : 'MASTER']);
+            if (! $this->hasTable('domainmetadata')) {
+                return;
+            }
+            $db->table('domainmetadata')->where('domain_id', $row->id)->whereIn('kind', self::TRANSFER_KINDS)->delete();
+            $rows = [];
+            foreach (array_values(array_unique($secondaries)) as $address) {
+                foreach (self::TRANSFER_KINDS as $kind) {
+                    $rows[] = ['domain_id' => $row->id, 'kind' => $kind, 'content' => $address];
+                }
+            }
+            if ($rows !== []) {
+                $db->table('domainmetadata')->insert($rows);
+            }
+        });
     }
 
     public function renameZone(string $from, string $to): void

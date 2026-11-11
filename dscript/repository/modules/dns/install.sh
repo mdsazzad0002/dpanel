@@ -55,8 +55,23 @@ dns_stop_bind() {
   systemctl mask named.service >/dev/null 2>&1 || true
 }
 
-# Writes gmysql.conf and listener.conf exactly as the drust service
-# installer does; keep the two in step.
+# Zone transfers (backlog M7): send NOTIFY for MASTER zones and fetch SLAVE
+# zones from their primary. PowerDNS 4.5 renamed master/slave; 5 dropped
+# the old names. Which secondaries may transfer is per zone, in the panel.
+dns_transfer_settings() {
+  local version major minor
+  version="$(pdns_server --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -n1)"
+  major="${version%%.*}"
+  minor="${version#*.}"
+  if [[ -n "$version" ]] && (( major < 4 || (major == 4 && minor < 5) )); then
+    printf 'master=yes\nslave=yes\n'
+  else
+    printf 'primary=yes\nsecondary=yes\n'
+  fi
+}
+
+# Writes gmysql.conf, listener.conf and transfers.conf exactly as the drust
+# service installer does; keep the two in step.
 dns_write_config() {
   local env_file conf_dir include_dir db_host db_port db_name db_user db_password listen file
   env_file="$(panel_resolve_app_env_file)"
@@ -84,7 +99,7 @@ dns_write_config() {
   # would launch twice or fight over the port; park it.
   for file in "$include_dir"/*.conf; do
     [[ -f "$file" ]] || continue
-    [[ "$file" == "${include_dir}/gmysql.conf" || "$file" == "${include_dir}/listener.conf" ]] && continue
+    [[ "$file" == "${include_dir}/gmysql.conf" || "$file" == "${include_dir}/listener.conf" || "$file" == "${include_dir}/transfers.conf" ]] && continue
     if grep -qE '^\s*(launch|local-address|local-port)' "$file"; then
       panel_warn_log "Disabling ${file}; dPanel manages the PowerDNS backend and listener."
       mv "$file" "${file}.disabled"
@@ -97,6 +112,8 @@ dns_write_config() {
   chown root:pdns "${include_dir}/gmysql.conf" 2>/dev/null || true
   printf 'local-address=%s\nlocal-port=53\n' "$listen" >"${include_dir}/listener.conf"
   chmod 644 "${include_dir}/listener.conf"
+  dns_transfer_settings >"${include_dir}/transfers.conf"
+  chmod 644 "${include_dir}/transfers.conf"
   panel_info_log "PowerDNS reads zones from ${db_name} on ${db_host:-127.0.0.1}; listening on ${listen}:53."
 }
 
