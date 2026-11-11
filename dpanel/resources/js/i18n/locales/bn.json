@@ -371,5 +371,54 @@
         "confirmFiles": "{path} নতুন restored-… folder-এ restore করবেন?",
         "confirmDatabase": "{name} আগের অবস্থায় ফেরাবেন? এখনকার content আগে রাখা হবে।",
         "confirmMailbox": "{email}-এর message নতুন Restored-… folder-এ ফেরাবেন?"
+    },
+    "restoreTest": {
+        "title": "Restore test",
+        "help": "Backup তখনই কাজের, যখন সেটা ফেরানো যায়। প্রতি সপ্তাহে, সেদিনের নির্ধারিত backup-এর পরে, restic repository যাচাই করে ও রাখা data-র একটা অংশ পড়ে দেখে; তারপর প্রতিটা website-এর নতুনতম restore point restore-এর মতো করে পড়া হয়: প্রতিটা database dump পুরোটা, যার শেষ শেষ-হওয়া dump-এর মতো হতে হবে, আর home-এর ছড়ানো কিছু file, যার size লেখা size-এর সমান হতে হবে। Website-এ কিছুই লেখা হয় না।",
+        "testNow": "এখনই test",
+        "running": "Test চলছে…",
+        "overdue": "{when}-এর পর কোনো restore test পাস করেনি।",
+        "neverPassed": "এখনও কোনো restore test পাস করেনি।",
+        "lastPassed": "শেষবার পাস করেছে {when}।",
+        "weekly": "প্রতি সপ্তাহে restore point test করা",
+        "day": "দিন",
+        "days": {
+            "0": "রবিবার",
+            "1": "সোমবার",
+            "2": "মঙ্গলবার",
+            "3": "বুধবার",
+            "4": "বৃহস্পতিবার",
+            "5": "শুক্রবার",
+            "6": "শনিবার"
+        },
+        "percent": "Repository-র কত data পড়া হবে (%)",
+        "sample": "প্রতি website-এ কয়টা file পড়া হবে",
+        "settingsHelp": "Test সেদিনের নির্ধারিত backup-এর ঠিক পরে চলে, তাই backup-এর সাথে ঠেলাঠেলি হয় না। বেশি data পড়লে বেশি ক্ষতি ধরা পড়ে, কিন্তু সময় বেশি লাগে, আর cloud storage-এ download-এর খরচ লাগে।",
+        "needsSchedule": "দৈনিক backup বন্ধ, তাই সাপ্তাহিক test চলে না। Schedule চালু করুন, বা \"এখনই test\" চাপুন।",
+        "noRuns": "এখনও কোনো restore test চলেনি।",
+        "status": {
+            "running": "চলছে",
+            "passed": "পাস",
+            "failed": "ব্যর্থ"
+        },
+        "trigger": {
+            "schedule": "সাপ্তাহিক",
+            "manual": "হাতে চালানো"
+        },
+        "summary": "{tested}টা website test হয়েছে, {failed}টা ব্যর্থ",
+        "repositoryCheck": "Repository যাচাই, data-র {percent}% পড়া হয়েছে",
+        "website": "Website",
+        "point": "Restore point",
+        "filesRead": "File",
+        "databases": "Database",
+        "result": "ফল",
+        "filesOf": "{total}টার মধ্যে {read}টা পড়া হয়েছে",
+        "readBack": "পুরোটা পড়া গেছে",
+        "problem": {
+            "missing": "Restore point নেই",
+            "unreadable": "পড়া যায়নি",
+            "damaged": "ক্ষতিগ্রস্ত",
+            "stale": "পুরোনো"
+        }
     }
 }

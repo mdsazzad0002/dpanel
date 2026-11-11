@@ -659,6 +659,12 @@ Route::prefix('cpsess{token}')
                 ->middleware(['role_or_permission:admin|reseller|manage_backups', 'throttle:10,1'])
                 ->where('snapshot', '[0-9a-f]{8,64}')
                 ->name('backups.incremental.restore');
+            Route::post('/backups/incremental/test', [\App\Http\Controllers\ResticBackupController::class, 'testNow'])
+                ->middleware(['role:admin', 'throttle:6,1'])
+                ->name('backups.incremental.test');
+            Route::patch('/backups/incremental/test', [\App\Http\Controllers\ResticBackupController::class, 'updateRestoreTest'])
+                ->middleware('role:admin')
+                ->name('backups.incremental.test.settings');
             Route::post('/backups/incremental/sync', [\App\Http\Controllers\ResticBackupController::class, 'sync'])
                 ->middleware(['role:admin', 'throttle:10,1'])
                 ->name('backups.incremental.sync');

@@ -135,7 +135,7 @@ pub(crate) struct Target {
 }
 
 impl Target {
-    fn checked(&self) -> Result<(), String> {
+    pub(crate) fn checked(&self) -> Result<(), String> {
         if !safe_word(&self.id, b"-") {
             return Err("Invalid website id.".into());
         }
@@ -164,7 +164,7 @@ fn within(home: &Path, path: &str) -> Result<PathBuf, String> {
 }
 
 /// The snapshot, once its tags show it belongs to `website`.
-fn owned(restic: &dyn Restic, repo: &Repo, snapshot: &str, website: &Target) -> Result<Value, String> {
+pub(crate) fn owned(restic: &dyn Restic, repo: &Repo, snapshot: &str, website: &Target) -> Result<Value, String> {
     if !safe_snapshot(snapshot) {
         return Err("Invalid restore point.".into());
     }
@@ -181,7 +181,7 @@ fn owned(restic: &dyn Restic, repo: &Repo, snapshot: &str, website: &Target) -> 
 }
 
 /// `restic ls` of `path`: its own node and, for a folder, what is directly in it.
-fn nodes(restic: &dyn Restic, repo: &Repo, snapshot: &str, path: &Path) -> Result<Vec<Value>, String> {
+pub(crate) fn nodes(restic: &dyn Restic, repo: &Repo, snapshot: &str, path: &Path) -> Result<Vec<Value>, String> {
     let run = restic.run(repo, &args(&["ls", "--json", snapshot, &path.display().to_string()]))?;
     if !run.ok() {
         return Err(format!("restic could not list the restore point: {}", run.reason()));

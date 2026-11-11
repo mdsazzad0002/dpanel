@@ -271,7 +271,8 @@ pub(crate) fn backup(
         }
         let website_tag = format!("website:{}", website.id);
         let owner_tag = format!("owner:{}", website.site_owner);
-        let mut command = args(&["backup", "--json", "--host", "dpanel", "--tag", "dpanel", "--exclude-caches"]);
+        // A restore test's `check` may hold the lock; wait for it rather than fail.
+        let mut command = args(&["backup", "--json", "--retry-lock", "30m", "--host", "dpanel", "--tag", "dpanel", "--exclude-caches"]);
         command.extend(["--tag".into(), website_tag, "--tag".into(), owner_tag]);
         command.extend([home.display().to_string(), staging.display().to_string()]);
         let run = restic.run(repo, &command)?;
@@ -567,6 +568,7 @@ mod tests {
         for tag in ["dpanel", "website:9b6f-11", "owner:shop"] {
             assert!(asked.windows(2).any(|pair| pair[0] == "--tag" && pair[1] == tag), "{tag} missing: {asked:?}");
         }
+        assert!(asked.windows(2).any(|pair| pair[0] == "--retry-lock" && pair[1] == "30m"), "{asked:?}");
         assert_eq!(asked[asked.len() - 2], home.path().display().to_string());
         assert_eq!(*fake.staged.lock().unwrap(), [cli::dump_file_name("shop_wp")]);
         assert!(!staging_dir(state.path(), "9b6f-11").exists());

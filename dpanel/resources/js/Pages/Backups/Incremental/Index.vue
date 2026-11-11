@@ -4,11 +4,12 @@ import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { useI18n } from 'vue-i18n';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { usePanelApi } from '@/composables/usePanelApi';
+import RestoreTestPanel from './components/RestoreTestPanel.vue';
 
 /**
  * Backups → Incremental (backlog W6): encrypted restic restore points. An
  * admin sets up the repository and keeps its key; everyone sees the restore
- * points of their own websites.
+ * points of their own websites. The restore test report (W8) is admin-only.
  */
 const props = defineProps({
     isAdmin: { type: Boolean, default: false },
@@ -17,6 +18,7 @@ const props = defineProps({
     newKey: { type: String, default: null },
     setup: { type: Object, default: null },
     websites: { type: Array, default: () => [] },
+    restoreTest: { type: Object, default: null },
 });
 
 const { t } = useI18n();
@@ -156,6 +158,8 @@ const button = 'rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50';
                     <button type="button" :disabled="runForm.processing" :class="[button, 'border border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200']" @click="run()">{{ t('incrementalBackups.runAll') }}</button>
                 </div>
             </section>
+
+            <RestoreTestPanel v-if="isAdmin && configured && restoreTest" :report="restoreTest" :backup-scheduled="Boolean(setup?.enabled)" />
 
             <section :class="card">
                 <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100">{{ t('incrementalBackups.restorePoints') }}</h2>

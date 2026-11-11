@@ -371,5 +371,54 @@
         "confirmFiles": "Restore {path} into a new restored-… folder?",
         "confirmDatabase": "Put {name} back as it was? Its current content is saved first.",
         "confirmMailbox": "Bring back the messages of {email} into a new Restored-… folder?"
+    },
+    "restoreTest": {
+        "title": "Restore test",
+        "help": "A backup only counts if it comes back. Each week, after that day's scheduled backup, restic checks the repository and reads back part of the stored data, then every website's newest restore point is read as a restore would read it: each database dump in full, which must end like a finished dump, and a spread of the home's files, which must match their recorded size. Nothing is written to the websites.",
+        "testNow": "Test now",
+        "running": "Testing…",
+        "overdue": "No restore test has passed since {when}.",
+        "neverPassed": "No restore test has passed yet.",
+        "lastPassed": "Last passed {when}.",
+        "weekly": "Test the restore points every week",
+        "day": "Day",
+        "days": {
+            "0": "Sunday",
+            "1": "Monday",
+            "2": "Tuesday",
+            "3": "Wednesday",
+            "4": "Thursday",
+            "5": "Friday",
+            "6": "Saturday"
+        },
+        "percent": "Repository data read back (%)",
+        "sample": "Files read per website",
+        "settingsHelp": "The test runs right after the scheduled backup on that day, so it never competes with it. Reading more data finds more damage but takes longer, and costs download fees on cloud storage.",
+        "needsSchedule": "The daily backup is off, so the weekly test does not run. Turn the schedule on, or use Test now.",
+        "noRuns": "No restore test has run yet.",
+        "status": {
+            "running": "Running",
+            "passed": "Passed",
+            "failed": "Failed"
+        },
+        "trigger": {
+            "schedule": "weekly",
+            "manual": "by hand"
+        },
+        "summary": "{tested} website(s) tested, {failed} failed",
+        "repositoryCheck": "Repository check, {percent}% of the data read back",
+        "website": "Website",
+        "point": "Restore point",
+        "filesRead": "Files",
+        "databases": "Databases",
+        "result": "Result",
+        "filesOf": "{read} of {total} read",
+        "readBack": "Read back whole",
+        "problem": {
+            "missing": "No restore point",
+            "unreadable": "Could not be read",
+            "damaged": "Damaged",
+            "stale": "Out of date"
+        }
     }
 }

@@ -21,7 +21,8 @@ class ResticSettings
     /**
      * @return array{repository: string, password: string, env: array<string, string>, key_confirmed_at: ?string,
      *   enabled: bool, schedule_time: string, keep_daily: int, keep_weekly: int, keep_monthly: int,
-     *   last_run_at: ?string, last_run_status: ?string, last_run_message: ?string}
+     *   last_run_at: ?string, last_run_status: ?string, last_run_message: ?string,
+     *   restore_test_enabled: bool, restore_test_day: int, restore_test_percent: int, restore_test_sample: int}
      */
     public function read(): array
     {
@@ -42,6 +43,11 @@ class ResticSettings
             'last_run_at' => $state['last_run_at'] ?? null,
             'last_run_status' => $state['last_run_status'] ?? null,
             'last_run_message' => $state['last_run_message'] ?? null,
+            // W8: a weekly restore test, run after that day's scheduled backup.
+            'restore_test_enabled' => (bool) ($state['restore_test_enabled'] ?? true),
+            'restore_test_day' => min(6, max(0, (int) ($state['restore_test_day'] ?? 0))),
+            'restore_test_percent' => min(100, max(0, (int) ($state['restore_test_percent'] ?? 5))),
+            'restore_test_sample' => min(100, max(1, (int) ($state['restore_test_sample'] ?? 20))),
         ];
     }
 

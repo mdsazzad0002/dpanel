@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Jobs\RestoreResticItemJob;
 use App\Jobs\RunResticBackupsJob;
+use App\Jobs\RunResticRestoreTestJob;
 use App\Models\Mailbox;
+use App\Models\ResticRestoreTest;
 use App\Models\ResticSnapshot;
 use App\Models\User;
 use App\Models\Website;
@@ -59,6 +61,7 @@ class ResticBackupController extends Controller
                 'last_run_status' => $state['last_run_status'],
                 'last_run_message' => $state['last_run_message'],
             ] : null,
+            'restoreTest' => $admin ? $this->restoreTestReport($state) : null,
             'websites' => $websites->map(fn (Website $website) => [
                 'id' => (string) $website->id,
                 'domain' => (string) $website->domain,
@@ -179,9 +182,78 @@ class ResticBackupController extends Controller
             $ids = [(string) $website->id];
         }
 
+        if (ResticRestoreTest::running() !== null) {
+            return back()->with('error', 'A restore test is reading the repository. Back up again when it has finished.');
+        }
+
         RunResticBackupsJob::dispatch($ids);
 
         return back()->with('success', 'Backup started. The restore point appears here when it is done.');
+    }
+
+    /** W8: the restore test now, outside the weekly schedule. */
+    public function testNow(Request $request): RedirectResponse
+    {
+        $this->adminOnly($request);
+        if (! $this->settings->configured()) {
+            return back()->with('error', 'Incremental backups are not set up on this server.');
+        }
+        $state = $this->settings->read();
+        $backingUp = $state['last_run_status'] === 'running' && $state['last_run_at'] !== null && now()->subDay()->lt($state['last_run_at']);
+        if ($backingUp || ResticRestoreTest::running() !== null) {
+            return back()->with('error', $backingUp ? 'A backup is running. Test the restore points when it has finished.' : 'A restore test is already running.');
+        }
+
+        RunResticRestoreTestJob::dispatch('manual');
+
+        return back()->with('success', 'Restore test started. The report appears here when it is done.');
+    }
+
+    public function updateRestoreTest(Request $request): RedirectResponse
+    {
+        $this->adminOnly($request);
+        $validated = $request->validate([
+            'restore_test_enabled' => ['required', 'boolean'],
+            'restore_test_day' => ['required', 'integer', 'min:0', 'max:6'],
+            'restore_test_percent' => ['required', 'integer', 'min:0', 'max:100'],
+            'restore_test_sample' => ['required', 'integer', 'min:1', 'max:100'],
+        ]);
+        $this->settings->write($validated);
+
+        return back()->with('success', 'Restore test settings saved.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @return array<string, mixed>
+     */
+    private function restoreTestReport(array $state): array
+    {
+        $lastPassed = ResticRestoreTest::query()->where('status', 'passed')->latest('started_at')->value('started_at');
+
+        return [
+            'enabled' => $state['restore_test_enabled'],
+            'day' => $state['restore_test_day'],
+            'percent' => $state['restore_test_percent'],
+            'sample' => $state['restore_test_sample'],
+            // The test rides on the scheduled backup; without it nothing runs.
+            'scheduled' => $state['enabled'] && $state['restore_test_enabled'],
+            'last_passed_at' => $lastPassed ? \Illuminate\Support\Carbon::parse($lastPassed)->toIso8601String() : null,
+            'runs' => ResticRestoreTest::query()->latest('started_at')->limit(10)->get()->map(fn (ResticRestoreTest $test) => [
+                'id' => $test->id,
+                'trigger' => $test->trigger,
+                'status' => $test->status,
+                'started_at' => $test->started_at?->toIso8601String(),
+                'finished_at' => $test->finished_at?->toIso8601String(),
+                'repository_healthy' => $test->repository_healthy,
+                'repository_message' => $test->repository_message,
+                'read_data_percent' => $test->read_data_percent,
+                'websites_tested' => $test->websites_tested,
+                'websites_failed' => $test->websites_failed,
+                'message' => $test->message,
+                'results' => array_values((array) $test->results),
+            ])->values(),
+        ];
     }
 
     public function sync(Request $request): RedirectResponse

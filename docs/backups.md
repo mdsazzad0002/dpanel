@@ -237,3 +237,14 @@ restic snapshots --tag website:<website id>
 restic restore <snapshot id> --target /root/restore
 ```
 
+### Restore test
+
+A backup is only worth something if it comes back. The **Restore test** section of Backups → Incremental (admins only) proves that it does:
+
+1. restic checks the repository and reads back part of the stored data (5% by default) in full.
+2. For every website, its newest restore point is read the way a restore would read it: every database dump in full, which must end like a finished `mysqldump`, and a spread of files from the home (20 by default), which must come back at the size the restore point recorded. restic checks each piece against its hash as it reads, so damage shows up. Nothing is written to the websites.
+
+A website fails the test when its restore point cannot be read, when a dump is cut short, when it has no restore point at all, or when the daily backup is on but the newest restore point is more than two days old. Each run is kept as a report (the last 52); admins get a notification when a run fails, and the section warns when no run has passed for two weeks.
+
+The test runs once a week, right after that day's scheduled backup (Sunday by default), so it never competes with a backup for the repository. With the daily backup off it does not run on its own; use **Test now**. Reading more data finds more damage but takes longer, and on cloud storage it costs download fees.
+

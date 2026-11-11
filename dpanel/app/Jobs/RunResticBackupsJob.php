@@ -70,6 +70,13 @@ class RunResticBackupsJob implements ShouldQueue, ShouldBeUnique
             $this->tellAdmins($message);
         }
         $settings->write(['last_run_at' => now()->toIso8601String(), 'last_run_status' => $failed === [] ? 'completed' : 'failed', 'last_run_message' => mb_substr($message, 0, 2000)]);
+
+        // W8: on the chosen weekday the restore test follows the full run, so
+        // it reads the restore points just taken and never races the backup.
+        $state = $settings->read();
+        if ($this->websiteIds === null && $state['restore_test_enabled'] && now()->dayOfWeek === $state['restore_test_day']) {
+            RunResticRestoreTestJob::dispatch('schedule');
+        }
     }
 
     /** Admins see every notification, so one is enough. */

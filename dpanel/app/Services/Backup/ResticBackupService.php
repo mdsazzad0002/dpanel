@@ -131,6 +131,34 @@ class ResticBackupService
         ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
     }
 
+    /**
+     * restic's integrity check of the whole repository (W8), reading
+     * `$percent` of the stored data back.
+     *
+     * @return array{healthy: bool, message: string}
+     */
+    public function check(int $percent): array
+    {
+        $data = $this->call('check', $this->repo() + ['read_data_percent' => $percent], 21600);
+
+        return ['healthy' => (bool) ($data['healthy'] ?? false), 'message' => (string) ($data['message'] ?? '')];
+    }
+
+    /**
+     * Reads one restore point back (W8): every database dump in full and
+     * `$sample` of the home's files. Nothing is written.
+     *
+     * @return array<string, mixed>
+     */
+    public function verify(Website $website, string $snapshotId, int $sample): array
+    {
+        return $this->call('verify', $this->repo() + [
+            'snapshot_id' => $snapshotId,
+            'website' => $this->target($website, false),
+            'sample' => $sample,
+        ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
+    }
+
     /** @return array{id: string, site_owner: string, databases: list<array<string, string>>} */
     private function target(Website $website, bool $withDatabases): array
     {
