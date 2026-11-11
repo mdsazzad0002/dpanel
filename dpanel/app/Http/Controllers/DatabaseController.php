@@ -160,6 +160,27 @@ class DatabaseController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        ['engine' => $engine, 'sync' => $syncResult] = $this->provision($request);
+
+        if ($syncResult['success']) {
+            return redirect()->route('databases.list')->with('success', 'Database created and synced to '.$this->engineLabel($engine).' successfully.');
+        }
+
+        if ($syncResult['ran']) {
+            return redirect()->route('databases.list')->with('error', 'Database request saved, but server sync failed: '.$syncResult['output']);
+        }
+
+        return redirect()->route('databases.list')->with('error', 'Database request saved as pending. Server sync did not run on this environment.');
+    }
+
+    /**
+     * Creates a database (and its user) for a website the user can see, and
+     * syncs it to the server. Shared by the form above and the public API (U1).
+     *
+     * @return array{record: DatabaseRequestModel, engine: string, sync: array{ran: bool, success: bool, output: string}}
+     */
+    public function provision(Request $request): array
+    {
         $this->migrateLegacyJsonRequests();
 
         $input = $request->all();
@@ -184,7 +205,7 @@ class DatabaseController extends Controller
         $syncResult = $this->syncDatabaseToServer($validated, $engine);
         $status = $syncResult['success'] ? 'active' : ($syncResult['ran'] ? 'failed' : 'pending');
 
-        DatabaseRequestModel::query()->create([
+        $record = DatabaseRequestModel::query()->create([
             'id' => (string) str()->uuid(),
             'engine' => $engine,
             'domain' => $validated['domain'],
@@ -198,15 +219,7 @@ class DatabaseController extends Controller
             'assigned_user_id' => $owner?->id ?? $request->user()?->id,
         ]);
 
-        if ($syncResult['success']) {
-            return redirect()->route('databases.list')->with('success', 'Database created and synced to '.$this->engineLabel($engine).' successfully.');
-        }
-
-        if ($syncResult['ran']) {
-            return redirect()->route('databases.list')->with('error', 'Database request saved, but server sync failed: '.$syncResult['output']);
-        }
-
-        return redirect()->route('databases.list')->with('error', 'Database request saved as pending. Server sync did not run on this environment.');
+        return ['record' => $record, 'engine' => $engine, 'sync' => $syncResult];
     }
 
     /**

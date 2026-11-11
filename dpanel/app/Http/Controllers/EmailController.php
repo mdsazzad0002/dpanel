@@ -542,24 +542,35 @@ class EmailController extends Controller
             return redirect()->route('emails.list')->with('error', 'Mailbox not found.');
         }
 
+        $result = $this->deleteMailbox($mailbox);
+
+        return redirect()->route('emails.list')->with($result['ok'] ? 'success' : 'error', $result['message']);
+    }
+
+    /**
+     * Removes the mailbox's storage, row and picture. Shared by the page and
+     * the public API (U1); the caller has checked the user may see it.
+     *
+     * @return array{ok: bool, message: string} not ok when the storage could not be cleaned up
+     */
+    public function deleteMailbox(Mailbox $mailbox): array
+    {
         $email = strtolower(trim((string) ($mailbox->email ?? '')));
         $storageDelete = $email !== '' ? $this->removeMailboxFromStorage($mailbox) : ['ok' => true, 'message' => ''];
 
-        $deleted = Mailbox::query()->where('id', $id)->delete();
+        $deleted = Mailbox::query()->where('id', $mailbox->id)->delete();
         if ($deleted === 0) {
-            return redirect()->route('emails.list')->with('error', 'Mailbox not found.');
+            return ['ok' => false, 'message' => 'Mailbox not found.'];
         }
         if ($mailbox->avatar_path) {
             Storage::disk('local')->delete($mailbox->avatar_path);
         }
 
         if (! $storageDelete['ok']) {
-            return redirect()
-                ->route('emails.list')
-                ->with('error', "Mailbox deleted from panel, but storage cleanup failed for {$email}: ".$storageDelete['message']);
+            return ['ok' => false, 'message' => "Mailbox deleted from panel, but storage cleanup failed for {$email}: ".$storageDelete['message']];
         }
 
-        return redirect()->route('emails.list')->with('success', 'Mailbox deleted successfully.');
+        return ['ok' => true, 'message' => 'Mailbox deleted successfully.'];
     }
 
     /**

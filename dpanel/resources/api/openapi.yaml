@@ -1,0 +1,538 @@
+openapi: 3.0.3
+info:
+  title: dPanel API
+  version: "1.0"
+  description: |
+    The public REST API of dPanel. Make a token under Profile menu → API Tokens
+    and send it as `Authorization: Bearer dp-api-...`.
+
+    A token acts as the user who made it and never does more than that user may
+    in the panel: a customer's token only sees their own websites, zones,
+    databases and mailboxes. Each endpoint needs one scope; a `write` scope also
+    allows reading the same area. Requests of a suspended account are refused
+    with `403`.
+
+    Every error is JSON: `{"message": "...", "errors": {"field": ["..."]}}`,
+    where `errors` is only there for invalid input (`422`). Each token may make
+    120 requests a minute (`429` after that, with `Retry-After`).
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Account
+  - name: Websites
+  - name: DNS
+  - name: Databases
+  - name: Mail
+paths:
+  /openapi.yaml:
+    get:
+      tags: [Account]
+      summary: This document
+      security: []
+      responses:
+        "200":
+          description: The OpenAPI document, as YAML.
+  /me:
+    get:
+      tags: [Account]
+      summary: The token and its owner
+      description: Needs no scope. `usable_scopes` leaves out scopes the owner may no longer use.
+      responses:
+        "200":
+          description: The token's owner and scopes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          name: { type: string }
+                          email: { type: string }
+                          role: { type: string, enum: [admin, reseller, general] }
+                      token:
+                        type: object
+                        properties:
+                          name: { type: string }
+                          scopes: { type: array, items: { type: string } }
+                          usable_scopes: { type: array, items: { type: string } }
+                          expires_at: { type: string, format: date-time, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /websites:
+    get:
+      tags: [Websites]
+      summary: List websites
+      description: "Scope: `websites:read`."
+      responses:
+        "200":
+          description: The websites the owner can see.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Website" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Websites]
+      summary: Create a website
+      description: |
+        Scope: `websites:write`. Creates the site's system account and folder,
+        as the Create Website page does. A main site gets its own system
+        account; a subdomain (`type: sub`) shares its parent's. Package limits
+        apply. An admin or reseller may give it to a customer with `owner_id`;
+        a customer always owns what they create. SSL is issued in the background.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain, php_version]
+              properties:
+                domain: { type: string, example: shop.example.com }
+                type: { type: string, enum: [main, sub], default: main }
+                parent_id: { type: string, description: "The parent website, for `type: sub`." }
+                php_version: { type: string, example: "8.3" }
+                enable_ssl: { type: boolean, default: false }
+                manage_dns: { type: boolean, default: false, description: "Create or update the domain's DNS zone on this server." }
+                include_www: { type: boolean, default: false, description: "Also serve www.<domain>, as an alias." }
+                owner_id: { type: integer, description: "Admins and resellers only." }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data: { $ref: "#/components/schemas/Website" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Invalid" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /websites/{website}:
+    parameters:
+      - { name: website, in: path, required: true, schema: { type: string }, description: "The website's id." }
+    get:
+      tags: [Websites]
+      summary: Show a website
+      description: "Scope: `websites:read`."
+      responses:
+        "200":
+          description: The website.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Website" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Websites]
+      summary: Delete a website
+      description: |
+        Scope: `websites:write`. As on the Websites page: a main site's files are
+        archived to the trash first, then the site, its cron jobs and (when no
+        other site shares it) its system account are removed. An alias or
+        subdomain is removed without touching shared files.
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /dns/zones:
+    get:
+      tags: [DNS]
+      summary: List DNS zones
+      description: "Scope: `dns:read`."
+      responses:
+        "200":
+          description: The zones the owner can see.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/DnsZone" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /dns/zones/{zone}/records:
+    parameters:
+      - $ref: "#/components/parameters/Zone"
+    get:
+      tags: [DNS]
+      summary: List a zone's records
+      description: "Scope: `dns:read`. The SOA record is not listed; it belongs to the zone's settings."
+      responses:
+        "200":
+          description: The records.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/DnsRecord" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [DNS]
+      summary: Add a record
+      description: "Scope: `dns:write`. Checked as on the DNS page: valid content for the type, and no CNAME beside other records of the same name."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DnsRecordInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data: { $ref: "#/components/schemas/DnsRecord" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /dns/zones/{zone}/records/{record}:
+    parameters:
+      - $ref: "#/components/parameters/Zone"
+      - { name: record, in: path, required: true, schema: { type: integer }, description: "The record's id." }
+    put:
+      tags: [DNS]
+      summary: Change a record
+      description: "Scope: `dns:write`. Fields left out keep their current value."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DnsRecordInput" }
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data: { $ref: "#/components/schemas/DnsRecord" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Invalid" }
+    delete:
+      tags: [DNS]
+      summary: Delete a record
+      description: "Scope: `dns:write`."
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /databases:
+    get:
+      tags: [Databases]
+      summary: List databases
+      description: "Scope: `databases:read`. Passwords are not listed."
+      responses:
+        "200":
+          description: The databases the owner can see.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Database" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Databases]
+      summary: Create a database
+      description: |
+        Scope: `databases:write`. The database and its user belong to one of the
+        owner's websites, and both names get that site's prefix
+        (`<system user>_<name>`). Package limits apply. The password is
+        generated when left out, and is only returned in this response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [website, name, user]
+              properties:
+                website: { type: string, description: The website's domain., example: shop.example.com }
+                name: { type: string, pattern: "^[A-Za-z0-9_]+$", maxLength: 31 }
+                user: { type: string, pattern: "^[A-Za-z0-9_]+$", maxLength: 31 }
+                password: { type: string, minLength: 8 }
+                engine: { type: string, enum: [mariadb, postgresql, mongodb], default: mariadb }
+      responses:
+        "201":
+          description: Created. `status` is `failed` or `pending` when the server could not create it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    allOf:
+                      - $ref: "#/components/schemas/Database"
+                      - type: object
+                        properties:
+                          password: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /databases/{database}:
+    parameters:
+      - { name: database, in: path, required: true, schema: { type: string }, description: "The database's id." }
+    delete:
+      tags: [Databases]
+      summary: Remove a database from the panel
+      description: "Scope: `databases:write`. As on the Databases page, this removes the panel's record; the database on the server and its data are kept."
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /mailboxes:
+    get:
+      tags: [Mail]
+      summary: List mailboxes
+      description: "Scope: `mail:read`."
+      responses:
+        "200":
+          description: The mailboxes the owner can see.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Mailbox" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Mail]
+      summary: Create a mailbox
+      description: "Scope: `mail:write`. Only on the domain of one of the owner's websites. Package limits apply."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email, example: info@shop.example.com }
+                password: { type: string, minLength: 8 }
+                quota_mb: { type: integer, default: 1024, minimum: 1, maximum: 102400 }
+                forwarding_to: { type: string, format: email }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data: { $ref: "#/components/schemas/Mailbox" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Invalid" }
+        "500": { $ref: "#/components/responses/Message" }
+  /mailboxes/{mailbox}:
+    parameters:
+      - $ref: "#/components/parameters/Mailbox"
+    delete:
+      tags: [Mail]
+      summary: Delete a mailbox and its mail
+      description: "Scope: `mail:write`. `502` when the panel's record is gone but the mail on disk could not be removed."
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { $ref: "#/components/responses/Message" }
+  /mailboxes/{mailbox}/password:
+    parameters:
+      - $ref: "#/components/parameters/Mailbox"
+    put:
+      tags: [Mail]
+      summary: Change a mailbox's password
+      description: "Scope: `mail:write`."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, minLength: 8 }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Invalid" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "`dp-api-...`, from Profile menu → API Tokens."
+  parameters:
+    Zone:
+      name: zone
+      in: path
+      required: true
+      schema: { type: string }
+      description: The zone's domain, such as `example.com`, or its id.
+    Mailbox:
+      name: mailbox
+      in: path
+      required: true
+      schema: { type: string }
+      description: The mailbox's id.
+  responses:
+    Message:
+      description: Done; or, with an error status, what went wrong.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Message" }
+    Unauthorized:
+      description: No token, or an invalid, expired or revoked one.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Message" }
+    Forbidden:
+      description: The token lacks the scope, its owner may no longer use that area, or the account is suspended.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Message" }
+    NotFound:
+      description: Not found, or not the owner's.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Message" }
+    Invalid:
+      description: Invalid input, or a package limit was reached.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Too many requests for this token; wait for `Retry-After` seconds.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Message" }
+  schemas:
+    Message:
+      type: object
+      properties:
+        message: { type: string }
+    Error:
+      type: object
+      properties:
+        message: { type: string }
+        errors:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+    Website:
+      type: object
+      properties:
+        id: { type: string }
+        domain: { type: string }
+        type: { type: string, enum: [main, sub, alias] }
+        parent_id: { type: string, nullable: true }
+        status: { type: string }
+        serving_state: { type: string, enum: [active, suspended, over_limit] }
+        runtime: { type: string }
+        php_version: { type: string, nullable: true }
+        root_path: { type: string }
+        system_user: { type: string }
+        ssl:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            mode: { type: string }
+        manage_dns: { type: boolean }
+        owner_id: { type: integer, nullable: true }
+        reseller_id: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+    DnsZone:
+      type: object
+      properties:
+        id: { type: string }
+        domain: { type: string }
+        status: { type: string }
+        dnssec_enabled: { type: boolean }
+        owner_id: { type: integer, nullable: true }
+        website_id: { type: string, nullable: true }
+    DnsRecordInput:
+      type: object
+      required: [type, name, content, ttl]
+      properties:
+        type: { type: string, enum: [A, AAAA, CNAME, MX, TXT, NS, SRV, CAA, PTR] }
+        name: { type: string, description: "`@` for the zone itself, `www`, or a full name in the zone." }
+        content: { type: string }
+        ttl: { type: integer, minimum: 60, maximum: 86400 }
+        priority: { type: integer, nullable: true, description: "For MX and SRV." }
+        status: { type: string, enum: [active, disabled], default: active }
+    DnsRecord:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string, description: "`@`, or the part before the zone." }
+        fqdn: { type: string }
+        type: { type: string }
+        content: { type: string }
+        ttl: { type: integer }
+        priority: { type: integer, nullable: true }
+        status: { type: string, enum: [active, disabled] }
+    Database:
+      type: object
+      properties:
+        id: { type: string }
+        engine: { type: string, enum: [mariadb, postgresql, mongodb] }
+        website: { type: string }
+        name: { type: string }
+        user: { type: string }
+        host: { type: string }
+        charset: { type: string }
+        collation: { type: string }
+        status: { type: string, enum: [active, failed, pending] }
+        owner_id: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+    Mailbox:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string }
+        domain: { type: string }
+        quota_mb: { type: integer }
+        forwarding_to: { type: string, nullable: true }
+        status: { type: string }
+        delivery_mode: { type: string }
+        created_at: { type: string, format: date-time, nullable: true }

@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ])
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
@@ -61,6 +62,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'ai_gateway.key' => \App\Http\Middleware\AuthenticateAiGatewayApiKey::class,
             'mcp.token' => \App\Http\Middleware\AuthenticateMcpToken::class,
             'whmcs.auth' => \App\Http\Middleware\AuthenticateWhmcsRequest::class,
+            'api.json' => \App\Http\Middleware\AcceptJson::class,
+            'api.token' => \App\Http\Middleware\AuthenticateApiToken::class,
+            'api.scope' => \App\Http\Middleware\RequireApiScope::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

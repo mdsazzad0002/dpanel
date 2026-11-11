@@ -420,5 +420,46 @@
             "damaged": "ক্ষতিগ্রস্ত",
             "stale": "পুরোনো"
         }
+    },
+    "apiTokens": {
+        "menu": "API Token",
+        "title": "API Token",
+        "subtitle": "Token দিয়ে আপনার নিজের script ও tool dPanel API ব্যবহার করতে পারে। Panel-এ আপনি যা পারেন, token-ও শুধু সেটুকু পারে।",
+        "baseUrl": "API-এর ঠিকানা",
+        "docs": "Reference",
+        "example": "উদাহরণ",
+        "limits": "প্রতিটা token মিনিটে 120টা request করতে পারে। Account suspend থাকলে request কাজ করে না।",
+        "create": "নতুন token",
+        "name": "নাম",
+        "namePlaceholder": "Deploy script",
+        "expires": "মেয়াদ",
+        "days": "{days} দিন পরে",
+        "never": "কখনো না",
+        "scopes": "কী করতে পারবে",
+        "noScopes": "আপনার account API-এর কোনো অংশ ব্যবহার করতে পারে না।",
+        "areas": {
+            "websites": "Website",
+            "dns": "DNS record",
+            "databases": "Database",
+            "mail": "Mailbox"
+        },
+        "read": "দেখা",
+        "write": "দেখা ও বদলানো",
+        "scopeHelp": "Token-কে শুধু যা দরকার তা-ই দিন। Token দিয়ে করা বদল activity log-এ লেখা হয়।",
+        "createButton": "Token বানান",
+        "createFailed": "Token বানানো যায়নি।",
+        "shownOnce": "এখনই token-টা copy করুন। এটা আর দেখানো হবে না।",
+        "copy": "Copy",
+        "copied": "Copy হয়েছে",
+        "yourTokens": "আপনার token",
+        "empty": "আপনার কোনো API token নেই।",
+        "expired": "মেয়াদ শেষ",
+        "lastUsed": "শেষ ব্যবহার {when}, {ip} থেকে",
+        "neverUsed": "কখনো ব্যবহার হয়নি",
+        "expiresOn": "মেয়াদ শেষ {when}",
+        "noExpiry": "মেয়াদ শেষ হয় না",
+        "revoke": "বাতিল করুন",
+        "revokeConfirm": "\"{name}\" বাতিল করবেন? যা এটা ব্যবহার করছে, তা সঙ্গে সঙ্গে বন্ধ হবে।",
+        "revokeFailed": "Token বাতিল করা যায়নি।"
     }
 }

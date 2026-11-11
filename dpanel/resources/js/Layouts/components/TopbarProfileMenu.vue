@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { Link } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 
@@ -15,6 +16,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['toggle-theme']);
+const { t } = useI18n();
 
 const userName = computed(() => String(props.user?.name ?? 'User'));
 const userEmail = computed(() => String(props.user?.email ?? ''));
@@ -141,6 +143,10 @@ const copyEmail = async () => {
                 <DropdownLink v-if="route().has('self-connection.manager')" :href="panelRoute('self-connection.manager')">
                     <i class="bi bi-hdd-network mr-3 text-slate-400"></i>
                     <span>Database & Redis</span>
+                </DropdownLink>
+                <DropdownLink v-if="route().has('settings.api-tokens')" :href="panelRoute('settings.api-tokens')">
+                    <i class="bi bi-key-fill mr-3 text-slate-400"></i>
+                    <span>{{ t('apiTokens.menu') }}</span>
                 </DropdownLink>
                 <DropdownLink v-if="route().has('mcp.tokens.index')" :href="panelRoute('mcp.tokens.index')">
                     <i class="bi bi-plug mr-3 text-slate-400"></i>

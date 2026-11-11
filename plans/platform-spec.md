@@ -530,6 +530,7 @@ pub trait Scheduler {
 | `dns_secondary_servers` | `address` (IP, unique), `label`; এই server-এর zone যারা copy করে (M7) |
 | `restic_snapshots` | `website_id`, `snapshot_id` (unique), `taken_at`, `files_new`, `files_changed`, `data_added`, `total_bytes`, `warning`; repository-র restore point-এর প্রতিচ্ছবি, `sync` repository থেকে আবার বানায় (W6) |
 | `restic_restore_tests` | `trigger` (`schedule`/`manual`), `status` (`running`/`passed`/`failed`), `started_at`, `finished_at`, `repository_healthy`, `repository_message`, `read_data_percent`, `websites_tested`, `websites_failed`, `results` (JSON, website প্রতি: `snapshot_id`, `ok`, `problem` `missing`/`unreadable`/`damaged`/`stale`, `error`, file ও database-এর হিসাব), `message`; restore test-এর report, শেষ 52টা থাকে (W8) |
+| `api_tokens` | `user_id`, `name`, `token_prefix`, `token_hash` (SHA-256, unique), `scopes` (JSON: `websites:read` ইত্যাদি), `last_used_at`, `last_used_ip`, `expires_at`; revoke করলে row মোছে (U1) |
 
 `throttle` এখনও নেই: gateway rate কমাতে পারে না, তাই panel শুধু `notify` ও `block` দেয়। `block`-এ site `over_limit` হয়, নতুন মাসে ফেরে।
 
@@ -574,6 +575,18 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 Suspend idempotent: দুবার চালালেও ফল একই। Partial failure হলে কোন ধাপ ব্যর্থ হয়েছে সেটা response-এ থাকবে।
 
 এখন `/accounts/{name}/suspend` শুধু system account-এর login বন্ধ করে: `AccountManager::suspend` Linux-এ `usermod --expiredate 1` দেয় (মেয়াদ শেষ account PAM-এ আটকায়, তাই SSH key-ও কাজ করে না) আর `end_sessions` চালায়; `/unsuspend` মেয়াদ মুছে দেয়। Uid 1000-এর নিচে ও `nobody` কখনো suspend হয় না। Session, website, cron ও worker panel নিজেই বন্ধ করে (`AccountSuspensionService`)। Local profile-এ কিছু করে না, account ছাড়া server-এ `501`।
+
+### 8.1 Panel-এর public API (U1)
+
+drust-এর নয়, panel-এর নিজের API: `routes/api.php`, prefix `/api/v1`, `Authorization: Bearer dp-api-...` (`api_tokens`)। Session, cookie, CSRF নেই। Token তার owner হিসেবে চলে: প্রতিটা endpoint panel-এর একই `visibleTo` ও package limit মানে। Owner suspended বা terminated হলে `403`। Scope: `websites`, `dns`, `databases`, `mail`, প্রতিটার `:read` ও `:write` (`write`-এ `read`-ও চলে); owner-এর role বা permission সেই area-র panel route-এর মতো না হলে scope-টা `403` দেয়। Error সবসময় JSON `{message, errors?}`; token প্রতি মিনিটে 120 request (`api-v1` limiter)। `GET` ছাড়া সফল request activity log-এ `api.request`। পুরো বর্ণনা `dpanel/resources/api/openapi.yaml` (OpenAPI 3), `GET /api/v1/openapi.yaml`-এ token ছাড়া; `ApiOpenApiTest` দেখে route আর document মেলে।
+
+| Method, path | Scope | কাজ |
+| --- | --- | --- |
+| `GET /api/v1/me` | - | Token ও owner |
+| `GET`, `POST /api/v1/websites`; `GET`, `DELETE /api/v1/websites/{id}` | `websites` | `MainWebsiteController`-এর `store`/`destroy` দিয়ে; main ও sub |
+| `GET /api/v1/dns/zones`; `GET`, `POST /api/v1/dns/zones/{zone}/records`; `PUT`, `DELETE .../records/{id}` | `dns` | `DnsRecordService` দিয়ে (DNS page-ও এটা ব্যবহার করে); record id = PowerDNS id; SOA বাদ |
+| `GET`, `POST /api/v1/databases`; `DELETE /api/v1/databases/{id}` | `databases` | `DatabaseController::provision`; delete শুধু panel-এর row মোছে, page-এর মতো |
+| `GET`, `POST /api/v1/mailboxes`; `PUT /api/v1/mailboxes/{id}/password`; `DELETE /api/v1/mailboxes/{id}` | `mail` | `EmailController`-এর `store`/`deleteMailbox`; শুধু নিজের website-এর domain-এ |
 
 ## 9. Windows php-cgi pool
 

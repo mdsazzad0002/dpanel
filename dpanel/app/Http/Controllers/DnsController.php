@@ -11,6 +11,7 @@ use App\Models\Mailbox;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Dns\DnsRecordContent;
+use App\Services\Dns\DnsRecordService;
 use App\Services\Dns\DnsRegistryService;
 use App\Services\Dns\DnsSecondaryServers;
 use App\Services\Dns\DnsZoneRules;
@@ -407,14 +408,6 @@ class DnsController extends Controller
         return $addresses->unique()->implode(',');
     }
 
-    /** Records of a secondary zone come from its primary; edits here would be overwritten. */
-    private function refuseSecondaryZone(int $zoneId): void
-    {
-        if (strtoupper((string) $this->pdns()->table('domains')->where('id', $zoneId)->value('type')) === 'SLAVE') {
-            throw ValidationException::withMessages(['zone_domain' => 'This is a secondary zone: its records come from the primary server. Change them there.']);
-        }
-    }
-
     public function updateZone(Request $request, string $token,  string $id): RedirectResponse
     {
         $this->ensureDnsTables();
@@ -524,26 +517,8 @@ class DnsController extends Controller
             return redirect()->route('dns.zones')->with('error', 'Zone not found.');
         }
         $this->authorizeZone($request, (int) $zone->id);
-        $this->refuseSecondaryZone((int) $zone->id);
 
-        $type = strtoupper((string) $validated['type']);
-        ['name' => $name, 'content' => $content, 'priority' => $priority] = $this->prepareRecord((int) $zone->id, $zoneDomain, $validated);
-        $recordId = (int) $this->backend()->addRecord((int) $zone->id, new RecordSpec($name, $type, $content, (int) $validated['ttl'], $priority, $validated['status'] === 'disabled'));
-        $this->backend()->touchZone((int) $zone->id);
-        $profile = DnsZone::query()->where('powerdns_domain_id', (int) $zone->id)->first();
-        if ($profile) {
-            DnsRecord::query()->create([
-                'id' => (string) Str::uuid(),
-                'powerdns_record_id' => $recordId,
-                'dns_zone_id' => $profile->id,
-                'type' => $type,
-                'name' => $name,
-                'content' => $content,
-                'ttl' => (int) $validated['ttl'],
-                'priority' => $priority,
-                'is_active' => $validated['status'] !== 'disabled',
-            ]);
-        }
+        $this->recordService()->add((int) $zone->id, $zoneDomain, $validated);
 
         return redirect()->route('dns.zones')->with('success', 'DNS record created.');
     }
@@ -589,40 +564,8 @@ class DnsController extends Controller
             return redirect()->route('dns.zones')->with('error', 'Zone not found.');
         }
         $this->authorizeZone($request, (int) $zone->id);
-        $this->refuseSecondaryZone((int) $zone->id);
-        $this->refuseSecondaryZone((int) $record->domain_id);
 
-        $type = strtoupper((string) $validated['type']);
-        ['name' => $name, 'content' => $content, 'priority' => $priority] = $this->prepareRecord((int) $zone->id, $zoneDomain, $validated, $recordId);
-        $this->backend()->updateRecord($recordId, [
-            'zone_id' => (int) $zone->id,
-            'name' => $name,
-            'type' => $type,
-            'content' => $content,
-            'ttl' => (int) $validated['ttl'],
-            'priority' => $priority,
-            'disabled' => $validated['status'] === 'disabled',
-        ]);
-        $this->backend()->touchZone((int) $zone->id);
-        if ((int) $record->domain_id !== (int) $zone->id) {
-            $this->backend()->touchZone((int) $record->domain_id);
-        }
-        $profile = DnsZone::query()->where('powerdns_domain_id', (int) $zone->id)->first();
-        if ($profile) {
-            DnsRecord::query()->updateOrCreate(
-                ['powerdns_record_id' => $recordId],
-                [
-                    'id' => DnsRecord::query()->where('powerdns_record_id', $recordId)->value('id') ?: (string) Str::uuid(),
-                    'dns_zone_id' => $profile->id,
-                    'type' => $type,
-                    'name' => $name,
-                    'content' => $content,
-                    'ttl' => (int) $validated['ttl'],
-                    'priority' => $priority,
-                    'is_active' => $validated['status'] !== 'disabled',
-                ],
-            );
-        }
+        $row = $this->recordService()->update($recordId, (int) $record->domain_id, (int) $zone->id, $zoneDomain, $validated);
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -630,12 +573,12 @@ class DnsController extends Controller
                 'record' => [
                     'id' => (string) $recordId,
                     'zone_domain' => $zoneDomain,
-                    'type' => $type,
-                    'name' => $this->toUiRecordName($name, $zoneDomain),
-                    'content' => $content,
-                    'ttl' => (int) $validated['ttl'],
-                    'priority' => in_array($type, ['MX', 'SRV'], true) ? $priority : null,
-                    'status' => $validated['status'],
+                    'type' => $row['type'],
+                    'name' => $this->toUiRecordName($row['name'], $zoneDomain),
+                    'content' => $row['content'],
+                    'ttl' => $row['ttl'],
+                    'priority' => $row['priority'],
+                    'status' => $row['status'],
                 ],
             ]);
         }
@@ -649,10 +592,7 @@ class DnsController extends Controller
         [$recordId, $record] = $this->resolvePowerDnsRecord($id);
         abort_unless($record, 404);
         $this->authorizeZone($request, (int) $record->domain_id);
-        $this->refuseSecondaryZone((int) $record->domain_id);
-        $this->backend()->deleteRecords([$recordId]);
-        $this->backend()->touchZone((int) $record->domain_id);
-        DnsRecord::query()->where('powerdns_record_id', $recordId)->delete();
+        $this->recordService()->delete($recordId, (int) $record->domain_id);
 
         return redirect()->route('dns.zones')->with('success', 'DNS record deleted.');
     }
@@ -948,34 +888,10 @@ class DnsController extends Controller
         return $payload;
     }
 
-    /**
-     * Checks a submitted record and returns it as PowerDNS stores it.
-     *
-     * @param  array{type:string,name:string,content:string,priority?:int|null}  $input
-     * @return array{name:string,content:string,priority:int}
-     *
-     * @throws ValidationException
-     */
-    private function prepareRecord(int $zoneId, string $zoneDomain, array $input, ?int $exceptRecordId = null): array
+    /** Single-record changes, shared with the public API (U1). */
+    private function recordService(): DnsRecordService
     {
-        $type = strtoupper((string) $input['type']);
-        $name = $this->toFqdnRecordName((string) $input['name'], $zoneDomain);
-        $rules = app(DnsZoneRules::class);
-        $content = app(DnsRecordContent::class);
-
-        try {
-            $content->assertValidName($name);
-        } catch (\InvalidArgumentException $exception) {
-            throw ValidationException::withMessages(['name' => $exception->getMessage()]);
-        }
-        try {
-            $normalized = $content->normalize($type, (string) $input['content'], isset($input['priority']) ? (int) $input['priority'] : null, $zoneDomain);
-            $rules->assertNoCnameConflict($this->pdns(), $zoneId, $zoneDomain, $name, $type, $exceptRecordId);
-        } catch (\InvalidArgumentException $exception) {
-            throw ValidationException::withMessages(['content' => $exception->getMessage()]);
-        }
-
-        return ['name' => $name] + $normalized;
+        return app(DnsRecordService::class);
     }
 
     private function backend(): DnsBackend
@@ -1280,32 +1196,12 @@ class DnsController extends Controller
 
     private function toFqdnRecordName(string $name, string $zoneDomain): string
     {
-        $normalized = strtolower(trim($name));
-        if ($normalized === '' || $normalized === '@') {
-            return $zoneDomain;
-        }
-
-        $normalized = rtrim($normalized, '.');
-        if (Str::endsWith($normalized, ".{$zoneDomain}") || $normalized === $zoneDomain) {
-            return $normalized;
-        }
-
-        return "{$normalized}.{$zoneDomain}";
+        return DnsRecordService::fqdn($name, $zoneDomain);
     }
 
     private function toUiRecordName(string $fqdn, string $zoneDomain): string
     {
-        $fqdn = $this->normalizeDomain($fqdn);
-        if ($fqdn === $zoneDomain) {
-            return '@';
-        }
-
-        $suffix = ".{$zoneDomain}";
-        if (Str::endsWith($fqdn, $suffix)) {
-            return (string) Str::beforeLast($fqdn, $suffix);
-        }
-
-        return $fqdn;
+        return DnsRecordService::relativeName($fqdn, $zoneDomain);
     }
 
     private function replaceDomainSuffix(string $name, string $oldDomain, string $newDomain): string

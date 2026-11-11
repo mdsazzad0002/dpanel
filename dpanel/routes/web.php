@@ -34,6 +34,7 @@ use App\Http\Controllers\Email\MailQueueController;
 use App\Http\Controllers\Email\MailSendLimitController;
 use App\Http\Controllers\Email\SmtpRelayController;
 use App\Http\Controllers\EmailController;
+use App\Http\Controllers\Settings\ApiTokenController;
 use App\Http\Controllers\Settings\BrandingController;
 use App\Http\Controllers\MailBimiController;
 use App\Http\Controllers\MailClientController;
@@ -330,6 +331,15 @@ Route::prefix('cpsess{token}')
             Route::post('/settings/branding', [BrandingController::class, 'update'])
                 ->middleware('role:admin|reseller')
                 ->name('settings.branding.update');
+            // Each user's own tokens for the public API (U1, routes/api.php).
+            Route::get('/settings/api-tokens', [ApiTokenController::class, 'index'])
+                ->name('settings.api-tokens');
+            Route::post('/settings/api-tokens', [ApiTokenController::class, 'store'])
+                ->middleware('throttle:20,1')
+                ->name('settings.api-tokens.store');
+            Route::delete('/settings/api-tokens/{apiToken}', [ApiTokenController::class, 'destroy'])
+                ->whereNumber('apiToken')
+                ->name('settings.api-tokens.destroy');
             // Forward-only addresses, catch-all, automatic replies and the relay (M1-M3, M8).
             Route::get('/emails/forwarders', [MailForwarderController::class, 'index'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')

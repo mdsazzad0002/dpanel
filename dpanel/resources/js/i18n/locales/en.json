@@ -420,5 +420,46 @@
             "damaged": "Damaged",
             "stale": "Out of date"
         }
+    },
+    "apiTokens": {
+        "menu": "API Tokens",
+        "title": "API Tokens",
+        "subtitle": "Tokens let your own scripts and tools use the dPanel API. A token can only do what you can do in the panel.",
+        "baseUrl": "API address",
+        "docs": "Reference",
+        "example": "Example",
+        "limits": "Each token may make 120 requests a minute. Requests stop working while your account is suspended.",
+        "create": "New token",
+        "name": "Name",
+        "namePlaceholder": "Deploy script",
+        "expires": "Expires",
+        "days": "In {days} days",
+        "never": "Never",
+        "scopes": "What it may do",
+        "noScopes": "Your account may not use any part of the API.",
+        "areas": {
+            "websites": "Websites",
+            "dns": "DNS records",
+            "databases": "Databases",
+            "mail": "Mailboxes"
+        },
+        "read": "Read",
+        "write": "Read and change",
+        "scopeHelp": "Give a token only what it needs. Changes made with a token are written to the activity log.",
+        "createButton": "Create token",
+        "createFailed": "The token could not be created.",
+        "shownOnce": "Copy this token now. It is not shown again.",
+        "copy": "Copy",
+        "copied": "Copied",
+        "yourTokens": "Your tokens",
+        "empty": "You have no API tokens.",
+        "expired": "Expired",
+        "lastUsed": "Last used {when} from {ip}",
+        "neverUsed": "Never used",
+        "expiresOn": "expires {when}",
+        "noExpiry": "does not expire",
+        "revoke": "Revoke",
+        "revokeConfirm": "Revoke \"{name}\"? Anything using it stops working at once.",
+        "revokeFailed": "The token could not be revoked."
     }
 }
