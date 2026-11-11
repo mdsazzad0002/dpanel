@@ -1,14 +1,17 @@
 import '../css/app.css';
 import './bootstrap';
 
-import { createInertiaApp, router } from '@inertiajs/vue3';
+import { createInertiaApp, router, usePage } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import { describePage, trackLinkClicks } from './composables/usePageUsage';
 import { i18n } from './i18n';
 
-const appName = 'dPanel';
+// The tab title follows Settings → Branding (shared as `branding.name`).
+const currentPage = usePage();
+const appName = () => currentPage.props?.branding?.name || 'dPanel';
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const THEME_KEY = 'serverpanel-theme';
 
 const applyInitialTheme = () => {
@@ -52,19 +55,32 @@ const syncSessionTokens = (pageProps) => {
     }
 };
 
+// Settings → Branding colour as --brand-color on <html>; app.css paints the
+// scrollbars with it. Blade sets it for the first paint, this keeps it current.
+const applyBrandColor = (pageProps) => {
+    if (typeof document === 'undefined') return;
+    const color = pageProps?.branding?.color;
+    if (color) {
+        document.documentElement.style.setProperty('--brand-color', color);
+    } else {
+        document.documentElement.style.removeProperty('--brand-color');
+    }
+};
+
 // Quick Access ranks tools by link clicks, counted per user in this browser only.
 let currentUserId = null;
 
 router.on('navigate', (event) => {
     const page = event.detail.page;
     syncSessionTokens(page.props);
+    applyBrandColor(page.props);
     currentUserId = page.props?.auth?.user?.id ?? null;
 
     // <Head> sets document.title after the page renders, so read it a moment later.
     const userId = currentUserId;
     const subject = page.props?.website?.domain ?? page.props?.databaseRequest?.database_name ?? null;
     window.setTimeout(() => {
-        const title = document.title.replace(new RegExp(` - ${appName}$`), '').trim();
+        const title = document.title.replace(new RegExp(` - ${escapeRegExp(appName())}$`), '').trim();
         describePage(userId, page.url, title, subject);
     }, 150);
 });
@@ -74,7 +90,7 @@ if (typeof document !== 'undefined') {
 }
 
 createInertiaApp({
-    title: (title) => `${title} - ${appName}`,
+    title: (title) => (title ? `${title} - ${appName()}` : appName()),
     resolve: (name) =>
         resolvePageComponent(
             `./Pages/${name}.vue`,

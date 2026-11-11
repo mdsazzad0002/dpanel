@@ -7,6 +7,7 @@ use App\Models\DatabaseRequest;
 use App\Models\Website;
 use App\Models\WebsiteTrashBackup;
 use App\Services\Cron\CronSystemService;
+use App\Services\Redis\WebsiteRedisExplorer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -15,10 +16,14 @@ use Illuminate\Support\Facades\Log;
  * Deletes a primary website: its files are archived to the trash first, then
  * its cron jobs, queue workers, directory and (when no other site shares it)
  * system user go. Each step that fails puts the cron jobs back and stops.
+ * Its Redis keys are removed last, once the website is really gone.
  */
 class WebsiteDeletionService
 {
-    public function __construct(private readonly CronSystemService $cron) {}
+    public function __construct(
+        private readonly CronSystemService $cron,
+        private readonly WebsiteRedisExplorer $redis,
+    ) {}
 
     /**
      * @return list<string> what was cleaned up, for the success message
@@ -146,7 +151,30 @@ class WebsiteDeletionService
             throw new WebsiteDeletionFailed('Website destroy failed.', 'destroy', $e);
         }
 
+        $redisKeys = $this->purgeRedisKeys($website);
+        if ($redisKeys > 0) {
+            $cleanupMessages[] = "{$redisKeys} Redis key(s) removed.";
+        }
+
         return $cleanupMessages;
+    }
+
+    /**
+     * Best effort: a Redis outage must not undo a finished deletion, and keys
+     * left behind are only stale cache and sessions.
+     */
+    private function purgeRedisKeys(Website $website): int
+    {
+        try {
+            return $this->redis->purge($this->redis->prefixFor($website));
+        } catch (\Throwable $e) {
+            Log::warning('Website Redis cleanup failed', [
+                'website_id' => (string) $website->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
     }
 
     private function restoreSystemCronJobs(iterable $cronJobs, Website $website): void

@@ -211,6 +211,49 @@ class WebsiteRedisExplorer
         return (int) $this->connection()->client()->del($keys);
     }
 
+    /**
+     * Removes a deleted website's whole namespace. Every database that holds
+     * keys is swept, not only the website cache DB, because apps also put
+     * sessions and queues elsewhere under the same prefix. The prefix ends in
+     * the website's unique id, so no other website's keys can match.
+     *
+     * @return int keys removed
+     */
+    public function purge(string $prefix): int
+    {
+        if (! preg_match('/^sp_[a-z0-9_]+_[A-Za-z0-9-]+_$/', $prefix)) {
+            throw new InvalidArgumentException('Invalid website Redis prefix.');
+        }
+
+        $client = $this->connection()->client();
+        $home = (int) $client->getDbNum();
+        $pattern = $this->escapeGlob($prefix).'*';
+        $databases = [];
+        foreach (array_keys((array) $client->info('keyspace')) as $name) {
+            if (preg_match('/^db(\d+)$/', (string) $name, $m)) {
+                $databases[] = (int) $m[1];
+            }
+        }
+
+        $removed = 0;
+        try {
+            foreach ($databases as $database) {
+                $client->select($database);
+                $iterator = null;
+                do {
+                    $batch = $client->scan($iterator, $pattern, 1000);
+                    if (is_array($batch) && $batch !== []) {
+                        $removed += (int) $client->unlink(array_map('strval', $batch));
+                    }
+                } while ($iterator);
+            }
+        } finally {
+            $client->select($home);
+        }
+
+        return $removed;
+    }
+
     /** `$seconds` null removes the expiry. */
     public function setTtl(string $prefix, string $name, ?int $seconds): bool
     {

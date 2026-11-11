@@ -1,21 +1,33 @@
 <script setup>
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { LOCALES, setLocale } from '@/i18n';
 
 const { locale, t } = useI18n();
+
+const options = LOCALES.map((item) => ({ value: item.code, label: item.label, keywords: item.keywords }));
+
+const current = computed({
+    get: () => locale.value,
+    set: (code) => setLocale(code),
+});
 </script>
 
 <template>
-    <label class="inline-flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
-        <i class="bi bi-translate" aria-hidden="true"></i>
-        <span class="sr-only">{{ t('common.language') }}</span>
-        <select
-            :value="locale"
-            class="rounded-md border-0 bg-transparent py-0.5 pl-1 pr-6 text-xs text-slate-500 focus:ring-1 focus:ring-blue-500 dark:text-slate-400"
-            :aria-label="t('common.language')"
-            @change="setLocale($event.target.value)"
-        >
-            <option v-for="item in LOCALES" :key="item.code" :value="item.code">{{ item.label }}</option>
-        </select>
-    </label>
+    <!-- Topbar control next to the notification bell, styled like its buttons. -->
+    <SearchableSelect
+        v-model="current"
+        :options="options"
+        :placeholder="t('common.language')"
+        :search-placeholder="t('common.search')"
+        :title="t('common.language')"
+        :aria-label="t('common.language')"
+        button-class="h-9 gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80"
+        panel-class="right-0 w-56"
+    >
+        <template #prefix>
+            <i class="bi bi-translate text-xs" aria-hidden="true"></i>
+        </template>
+    </SearchableSelect>
 </template>

@@ -18,8 +18,6 @@ const props = defineProps({
             connection: 'website_cache',
             connected: false,
             error: null,
-            key_count: 0,
-            sample_keys: [],
         }),
     },
     application: {
@@ -306,7 +304,7 @@ const rollbackRevision = (revision) => {
                     <ul class="mt-3 space-y-2 text-sm text-amber-800 dark:text-amber-200">
                         <li><strong>Connection refused:</strong> ask the server administrator to start Redis.</li>
                         <li><strong>Class Redis not found:</strong> enable the PHP Redis extension for this website’s PHP version.</li>
-                        <li><strong>No keys shown:</strong> generate a cache entry, then refresh this page.</li>
+                        <li><strong>No keys in Redis Explorer:</strong> open a few pages of the website so it writes its cache and sessions, then press Refresh there.</li>
                         <li><strong>Old values:</strong> use “Clear Website Cache” below; it deletes only this website’s namespace.</li>
                     </ul>
                 </div>
@@ -316,9 +314,12 @@ const rollbackRevision = (revision) => {
             </div>
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Verify &amp; manage cache keys</h2>
-                <div class="mt-3 flex items-center justify-between gap-3">
-                    <p class="text-sm">Total keys with this prefix: <strong>{{ redisCache.key_count }}</strong></p>
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Manage cache</h2>
+                <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-sm text-slate-600 dark:text-slate-300">
+                        See and inspect this website's keys in
+                        <Link :href="panelRoute('websites.redis-explorer.index', { id: website.id })" class="font-medium text-blue-600 hover:underline dark:text-blue-400">Redis Explorer</Link>.
+                    </p>
                     <button
                         type="button"
                         :disabled="clearForm.processing || !redisCache.connected"
@@ -327,24 +328,6 @@ const rollbackRevision = (revision) => {
                     >
                         Clear Website Cache
                     </button>
-                </div>
-
-                <div class="mt-4 overflow-x-auto rounded-md border border-slate-200 dark:border-slate-800">
-                    <table class="min-w-full text-left text-sm">
-                        <thead class="bg-slate-50 dark:bg-slate-800">
-                            <tr>
-                                <th class="px-3 py-2">Sample Keys (max 25)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="key in redisCache.sample_keys" :key="key" class="border-t border-slate-200 dark:border-slate-800">
-                                <td class="px-3 py-2 font-mono text-xs">{{ key }}</td>
-                            </tr>
-                            <tr v-if="redisCache.sample_keys.length === 0">
-                                <td class="px-3 py-4 text-center text-slate-500">No keys found for this website prefix.</td>
-                            </tr>
-                        </tbody>
-                    </table>
                 </div>
             </section>
         </div>

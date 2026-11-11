@@ -15,6 +15,9 @@ const props = defineProps({
     // Fallback label for the current modelValue when it isn't present in `options`
     // (happens in remote mode before that item's page of results has loaded).
     modelLabel: { type: String, default: '' },
+    // Optional overrides for the trigger button and the dropdown panel (e.g. a compact topbar control).
+    buttonClass: { type: [String, Array], default: '' },
+    panelClass: { type: [String, Array], default: 'w-full' },
 });
 
 const emit = defineEmits(['update:modelValue', 'search']);
@@ -38,7 +41,8 @@ const filtered = computed(() => {
     if (props.remote) return props.options;
     const q = query.value.trim().toLowerCase();
     if (!q) return props.options;
-    return props.options.filter((o) => o.label.toLowerCase().includes(q));
+    // An option may carry extra `keywords` (e.g. "bangla" for বাংলা) that match too.
+    return props.options.filter((o) => `${o.label} ${o.keywords ?? ''}`.toLowerCase().includes(q));
 });
 
 const visible = computed(() => (props.remote ? filtered.value : filtered.value.slice(0, props.maxVisible)));
@@ -97,10 +101,12 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside));
         <button
             type="button"
             :disabled="disabled"
-            class="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800"
+            :class="buttonClass || 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800'"
+            class="flex items-center justify-between text-left disabled:cursor-not-allowed disabled:opacity-50"
             @click="open ? closePanel() : openPanel()"
         >
-            <span :class="selected ? 'text-slate-800 dark:text-slate-100' : 'text-slate-400'" class="truncate">
+            <slot name="prefix" />
+            <span :class="selected ? (buttonClass ? '' : 'text-slate-800 dark:text-slate-100') : 'text-slate-400'" class="truncate">
                 {{ selected ? selected.label : placeholder }}
             </span>
             <i class="bi bi-chevron-down ml-2 shrink-0 text-xs text-slate-400"></i>
@@ -116,7 +122,8 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside));
         >
             <div
                 v-if="open"
-                class="absolute z-50 mt-1.5 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
+                :class="panelClass"
+                class="absolute z-50 mt-1.5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
             >
                 <div class="relative border-b border-slate-200 p-2 dark:border-slate-700">
                     <i class="bi bi-search absolute left-5 top-1/2 -translate-y-1/2 text-xs text-slate-400"></i>

@@ -129,7 +129,7 @@ class RedisCacheController extends Controller
         abort_if($website === null, 404);
 
         $prefix = $this->buildWebsiteRedisPrefix($website);
-        $stats = $this->collectPrefixStats($prefix);
+        $stats = $this->checkRedisConnection();
         $application = $this->detectApplication($website);
 
         return Inertia::render('Websites/RedisCache', [
@@ -144,8 +144,6 @@ class RedisCacheController extends Controller
                 'database' => (int) config('database.redis.website_cache.database', 1),
                 'connected' => $stats['connected'],
                 'error' => $stats['error'],
-                'key_count' => $stats['key_count'],
-                'sample_keys' => $stats['sample_keys'],
             ],
         ]);
     }
@@ -206,18 +204,22 @@ class RedisCacheController extends Controller
     }
 
     /**
-     * @return array{connected:bool,error:?string,key_count:int,sample_keys:array<int,string>}
+     * Only whether Redis answers: the keys themselves are counted and shown
+     * on the Redis Explorer page, so this page no longer scans them.
+     *
+     * @return array{connected:bool,error:?string}
      */
-    private function collectPrefixStats(string $prefix): array
+    private function checkRedisConnection(): array
     {
-        $scan = $this->scanRedisKeys($prefix.'*', 25);
+        try {
+            Redis::connection($this->connectionName())->ping();
 
-        return [
-            'connected' => $scan['connected'],
-            'error' => $scan['error'],
-            'key_count' => $scan['count'],
-            'sample_keys' => $scan['keys'],
-        ];
+            return ['connected' => true, 'error' => null];
+        } catch (Throwable $e) {
+            report($e);
+
+            return ['connected' => false, 'error' => 'Unable to connect to Redis.'];
+        }
     }
 
     /**

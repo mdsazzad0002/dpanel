@@ -679,7 +679,7 @@ watch(isSearchOpen, async (open) => {
             </div>
 
             <!-- Navigation -->
-            <nav ref="sidebarNavRef" :class="sidebarCollapsed ? 'px-2' : 'px-3'" class="mt-3 min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-4 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700" @scroll="updateSidebarScrollTop">
+            <nav ref="sidebarNavRef" :class="sidebarCollapsed ? 'px-2' : 'px-3'" class="mt-3 min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-4 scrollbar-thin" @scroll="updateSidebarScrollTop">
                 <template v-for="item in visibleMenu" :key="item.id || item.label">
                     <div v-if="item.sectionStart" :class="sidebarCollapsed ? 'mx-2 my-2 border-t border-slate-200 dark:border-slate-700' : 'px-3 pb-0.5 pt-3'">
                         <span v-if="!sidebarCollapsed" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ item.sectionStart }}</span>
@@ -799,7 +799,6 @@ watch(isSearchOpen, async (open) => {
             <div class="border-t border-slate-200/80 px-4 py-3 dark:border-slate-700/80">
                 <div :class="sidebarCollapsed ? 'justify-center' : 'justify-between'" class="flex items-center">
                     <span v-if="!sidebarCollapsed" class="text-xs text-slate-400 dark:text-slate-500">{{ appName }} v{{ appVersion }}</span>
-                    <LanguageSwitch v-if="!sidebarCollapsed" />
                     <button
                         @click="toggleTheme"
                         class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
@@ -865,6 +864,8 @@ watch(isSearchOpen, async (open) => {
                         >
                             <i class="bi bi-search text-xs"></i>
                         </button>
+
+                        <LanguageSwitch />
 
                         <!-- Notification Bell -->
                         <div class="relative" ref="notificationsRef">
@@ -1233,30 +1234,3 @@ watch(isSearchOpen, async (open) => {
     </div>
 </template>
 
-<style>
-/* Custom scrollbar styling */
-.scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-}
-
-.scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: rgba(156, 163, 175, 0.3);
-    border-radius: 3px;
-}
-
-.scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(156, 163, 175, 0.5);
-}
-
-.dark .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: rgba(75, 85, 99, 0.3);
-}
-
-.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(75, 85, 99, 0.5);
-}
-</style>

@@ -116,7 +116,13 @@ fn execute(req: &Request) -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({"config_path": path, "backup_path": backup}))
 }
 
+/// Laravel puts REDIS_PREFIX on every key of the connection and CACHE_PREFIX
+/// on top for cache keys, so only REDIS_PREFIX carries the website prefix:
+/// setting both doubled it (`sp_x_1_sp_x_1_key`). Sessions (REDIS_DB) and the
+/// cache (REDIS_CACHE_DB) share the website cache database, where the panel's
+/// Redis Explorer looks; the prefix keeps websites apart within it.
 fn update_env(mut text: String, prefix: &str, host: &str, port: u16, db: u8) -> String {
+    let db = db.to_string();
     for (key, value) in [
         ("CACHE_STORE", "redis"),
         ("CACHE_DRIVER", "redis"),
@@ -125,9 +131,9 @@ fn update_env(mut text: String, prefix: &str, host: &str, port: u16, db: u8) -> 
         ("REDIS_CLIENT", "phpredis"),
         ("REDIS_HOST", host),
         ("REDIS_PORT", &port.to_string()),
-        ("REDIS_DB", "0"),
-        ("REDIS_CACHE_DB", &db.to_string()),
-        ("CACHE_PREFIX", prefix),
+        ("REDIS_DB", &db),
+        ("REDIS_CACHE_DB", &db),
+        ("CACHE_PREFIX", ""),
         ("REDIS_PREFIX", prefix),
     ] {
         let line = format!("{key}={value}");
@@ -234,4 +240,27 @@ fn update_codeigniter3(text: String, prefix: &str, host: &str, port: u16, db: u8
         cleaned.push_str(&block);
     }
     cleaned
+}
+
+#[cfg(test)]
+mod tests {
+    use super::update_env;
+
+    #[test]
+    fn laravel_env_carries_the_prefix_once_and_one_database() {
+        let out = update_env(
+            "APP_NAME=x\nCACHE_STORE=database\nCACHE_PREFIX=old_\nREDIS_DB=0\n".into(),
+            "sp_site_1_",
+            "127.0.0.1",
+            6379,
+            1,
+        );
+        assert!(out.contains("REDIS_PREFIX=sp_site_1_\n"));
+        assert!(out.contains("CACHE_PREFIX=\n"));
+        assert!(out.contains("CACHE_STORE=redis\n"));
+        assert!(out.contains("REDIS_DB=1\n"));
+        assert!(out.contains("REDIS_CACHE_DB=1\n"));
+        assert!(!out.contains("old_"));
+        assert_eq!(out.matches("sp_site_1_").count(), 1);
+    }
 }

@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Every scrollbar follows the Settings → Branding colour (--brand-color, set on
+   <html>), and falls back to grey. scrollbar-color is inherited, so this one
+   rule covers the page and every scrolling box inside it. */
+:root {
+    scrollbar-color: var(--brand-color, rgba(156, 163, 175, 0.5)) transparent;
+}
+
+.dark {
+    scrollbar-color: var(--brand-color, rgba(75, 85, 99, 0.6)) transparent;
+}
+
+.scrollbar-thin {
+    scrollbar-width: thin;
+}
+
 .itc {
     display: inline-flex;
     align-items: center;

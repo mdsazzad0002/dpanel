@@ -28,4 +28,19 @@ class WebsiteRedisExplorerTest extends TestCase
 
         (new WebsiteRedisExplorer)->fullKey('sp_a_1_', '');
     }
+
+    /** A prefix that is not a website's own could match every key on the server. */
+    public function test_purge_refuses_anything_but_a_website_prefix(): void
+    {
+        $explorer = new WebsiteRedisExplorer;
+
+        foreach (['', '*', 'sp_', 'sp_*', 'laravel_cache_', 'sp_a_1'] as $prefix) {
+            try {
+                $explorer->purge($prefix);
+                $this->fail("Prefix '{$prefix}' was accepted.");
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
 }

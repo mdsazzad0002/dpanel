@@ -5,6 +5,7 @@ import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
 import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
 import CustomCertificateButton from '@/Pages/Websites/components/CustomCertificateButton.vue';
 import WildcardSslButton from '@/Pages/Websites/components/WildcardSslButton.vue';
+import SiteFavicon from '@/Pages/Websites/components/SiteFavicon.vue';
 
 const props = defineProps({
     website: {
@@ -37,6 +38,21 @@ const runtimeLabel = computed(() => {
 
 const pushToast = inject('pushToast');
 const { panelRoute, requestJson } = usePanelApi();
+
+// The connected database's auto-login, like DB Login on the Databases page:
+// phpMyAdmin for MariaDB, pgAdmin for PostgreSQL, signed in as its own user.
+const connectedDatabase = computed(() => {
+    const list = props.databaseConnection?.databases || [];
+    return list.find((db) => db.database_name === props.databaseConnection?.database_name) || list[0] || null;
+});
+const databaseLoginUrl = computed(() => {
+    const db = connectedDatabase.value;
+    if (!props.databaseConnection?.available || !db?.id) return '';
+    return db.engine === 'postgresql'
+        ? panelRoute('databases.pgadmin.autologin', { id: db.id })
+        : panelRoute('databases.phpmyadmin.autologin', { id: db.id });
+});
+const databaseTool = computed(() => (connectedDatabase.value?.engine === 'postgresql' ? 'pgAdmin' : 'phpMyAdmin'));
 
 const statusValue = computed(() => String(props.website?.status ?? 'unknown').toLowerCase());
 const statusLabel = computed(() => {
@@ -200,6 +216,7 @@ const disableWebsiteSsl = async () => {
         <!-- Domain -->
         <div>
             <div class="flex flex-wrap items-center gap-2">
+                <SiteFavicon :url="liveSiteUrl" :domain="website.domain" box-class="h-9 w-9 rounded-lg text-sm" />
                 <h2 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">{{ website.domain || '-' }}</h2>
                 <button v-if="liveSiteUrl" type="button" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800 dark:hover:text-blue-400" @click="copyToClipboard(liveSiteUrl)" title="Copy website URL" aria-label="Copy website URL">
                     <i class="bi bi-copy text-sm"></i>
@@ -245,7 +262,20 @@ const disableWebsiteSsl = async () => {
             </div>
             <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 dark:border-slate-700/80 dark:bg-slate-800/30">
                 <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Database Connection</p>
-                <p class="mt-1.5 truncate text-sm font-semibold" :class="databaseConnection.available ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'">{{ databaseConnection.available ? databaseConnection.database_name : 'No active database' }}</p>
+                <div class="mt-1.5 flex items-center justify-between gap-2">
+                    <p class="min-w-0 truncate text-sm font-semibold" :class="databaseConnection.available ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'">{{ databaseConnection.available ? databaseConnection.database_name : 'No active database' }}</p>
+                    <a
+                        v-if="databaseLoginUrl"
+                        :href="databaseLoginUrl"
+                        target="_blank"
+                        rel="noopener"
+                        class="inline-flex shrink-0 items-center gap-1 rounded-md border border-blue-300 px-1.5 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
+                        :title="`Open in ${databaseTool} (new tab)`"
+                    >
+                        <i class="bi bi-box-arrow-in-right"></i>
+                        Login
+                    </a>
+                </div>
             </div>
         </div>
     </div>

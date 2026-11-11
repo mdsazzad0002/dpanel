@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, ref, watch } from 'vue';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+import Offcanvas from '@/Components/Offcanvas.vue';
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -98,15 +99,17 @@ const deleteKeys = async (names) => {
         notice.value = `Deleted ${data.deleted} key(s).`;
         keys.value = keys.value.filter((k) => !names.includes(k.name));
         selected.value = selected.value.filter((n) => !names.includes(n));
-        if (detail.value && names.includes(detail.value.name)) detail.value = null;
+        if (detailName.value && names.includes(detailName.value)) closeDetail();
         loadStats();
     } catch (e) {
         error.value = e.message;
     }
 };
 
-// ---- Key detail ----
+// ---- Key detail (offcanvas) ----
 const detail = ref(null);
+const detailOpen = ref(false);
+const detailName = ref('');
 const detailLoading = ref(false);
 const detailError = ref('');
 const viewMode = ref('pretty');
@@ -116,10 +119,22 @@ const ttlInput = ref('');
 const notice = ref('');
 const copied = ref(false);
 
+const closeDetail = () => {
+    detailOpen.value = false;
+    detailName.value = '';
+    detail.value = null;
+    editing.value = false;
+};
+
 const openKey = async (name, nextCursor = '0') => {
+    detailOpen.value = true;
+    detailName.value = name;
     detailLoading.value = true;
     detailError.value = '';
-    if (nextCursor === '0') { editing.value = false; }
+    if (nextCursor === '0') {
+        editing.value = false;
+        if (detail.value?.name !== name) detail.value = null;
+    }
     try {
         const data = await requestJson(r('websites.redis-explorer.show', { name, cursor: nextCursor }), { method: 'GET' });
         if (nextCursor !== '0' && detail.value?.name === name) {
@@ -176,7 +191,7 @@ const memberText = (value) => value.pretty || value.raw;
 
 watch(notice, (value) => { if (value) window.setTimeout(() => { if (notice.value === value) notice.value = ''; }, 3000); });
 
-const refreshAll = () => { loadKeys(true); loadStats(); if (detail.value) openKey(detail.value.name); };
+const refreshAll = () => { loadKeys(true); loadStats(); if (detailOpen.value && detailName.value) openKey(detailName.value); };
 
 onMounted(() => { loadKeys(true); loadStats(); });
 </script>
@@ -248,8 +263,8 @@ onMounted(() => { loadKeys(true); loadStats(); });
                 <span>Fragmentation {{ stats.server.fragmentation_ratio }}</span>
             </section>
 
-            <div class="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-                <!-- Key list -->
+            <div>
+                <!-- Key list: full width; a key's detail opens in the offcanvas -->
                 <section class="flex min-h-[28rem] flex-col rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                     <div class="space-y-2 border-b border-slate-200 p-3 dark:border-slate-800">
                         <div class="relative">
@@ -279,7 +294,7 @@ onMounted(() => { loadKeys(true); loadStats(); });
                         <li
                             v-for="k in visibleKeys"
                             :key="k.name"
-                            :class="detail?.name === k.name ? 'bg-blue-50 dark:bg-blue-950/40' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'"
+                            :class="detailOpen && detailName === k.name ? 'bg-blue-50 dark:bg-blue-950/40' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'"
                             class="flex cursor-pointer items-center gap-2 px-3 py-2"
                             @click="openKey(k.name)"
                         >
@@ -301,13 +316,13 @@ onMounted(() => { loadKeys(true); loadStats(); });
                 </section>
 
                 <!-- Key detail -->
-                <section class="min-h-[28rem] rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                <Offcanvas :show="detailOpen" :title="detailName" subtitle="Redis key" width="wide" @close="closeDetail">
                     <div v-if="detailLoading && !detail" class="p-10 text-center text-sm text-slate-500">Loading key…</div>
-                    <div v-else-if="!detail" class="flex h-full flex-col items-center justify-center p-10 text-center text-sm text-slate-500">
+                    <div v-else-if="!detail" class="flex flex-col items-center justify-center p-10 text-center text-sm text-slate-500">
                         <i class="bi bi-hdd-stack text-3xl text-slate-300 dark:text-slate-600"></i>
-                        <p class="mt-2">{{ detailError || 'Select a key to view its value.' }}</p>
+                        <p class="mt-2">{{ detailError || 'This key could not be loaded.' }}</p>
                     </div>
-                    <div v-else class="flex h-full flex-col">
+                    <div v-else class="-mx-5 -my-4 flex min-h-full flex-col">
                         <div class="space-y-3 border-b border-slate-200 p-4 dark:border-slate-800">
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
@@ -390,7 +405,7 @@ onMounted(() => { loadKeys(true); loadStats(); });
                             </div>
                         </div>
                     </div>
-                </section>
+                </Offcanvas>
             </div>
         </div>
     </AuthenticatedLayout>

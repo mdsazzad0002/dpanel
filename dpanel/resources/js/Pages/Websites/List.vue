@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, reactive, ref, watch } from 'vue';
 import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
+import SiteFavicon from '@/Pages/Websites/components/SiteFavicon.vue';
 import BulkDownloadPanel from '@/Pages/Websites/components/bulk-download/BulkDownloadPanel.vue';
 
 const page = usePage();
@@ -547,10 +548,10 @@ const saveOwnership = async () => {
                 </div>
             </div>
 
-            <!-- Website Cards -->
-            <div class="space-y-3">
+            <!-- Websites: one bordered table, a row per website, no gap between groups -->
+            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm divide-y divide-[color:var(--brand-color,#e2e8f0)] dark:divide-[color:var(--brand-color,#1e293b)] dark:border-slate-800 dark:bg-slate-900/50">
                 <!-- Empty State -->
-                <div v-if="paginatedWebsites.length === 0" class="flex flex-col items-center rounded-2xl border border-slate-200/80 bg-white py-16 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                <div v-if="paginatedWebsites.length === 0" class="flex flex-col items-center py-16">
                     <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
                         <svg viewBox="0 0 24 24" class="h-8 w-8 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" stroke-width="1.5">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
@@ -568,7 +569,7 @@ const saveOwnership = async () => {
                 <div
                     v-for="item in paginatedWebsites"
                     :key="item.id"
-                    class="group rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition-all duration-150 hover:border-slate-300 hover:shadow-md dark:border-slate-800/80 dark:bg-slate-900/50 dark:hover:border-slate-700"
+                    class="group px-4 py-3 transition-colors duration-150 hover:bg-slate-50/70 dark:hover:bg-slate-800/30"
                 >
                     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                         <!-- Left: Domain Info -->
@@ -583,9 +584,7 @@ const saveOwnership = async () => {
                                     @change="toggleSelected(item)"
                                 />
                                 <span v-else class="w-4 shrink-0"></span>
-                                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-sm font-bold text-white shadow-sm">
-                                    {{ item.domain?.charAt(0)?.toUpperCase() || 'W' }}
-                                </div>
+                                <SiteFavicon :url="siteUrl(item)" :domain="item.domain" />
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-2">
                                         <Link
@@ -725,19 +724,16 @@ const saveOwnership = async () => {
                         </div>
                     </div>
 
-                    <div v-if="item.aliases?.length" class="mt-4 border-t border-slate-200/80 pt-4 dark:border-slate-800/80">
-                        <div class="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                            <span class="h-px w-6 bg-slate-200 dark:bg-slate-700"></span>
-                            Alias Children
-                        </div>
+                    <!-- Alias children: plain rows, indented under the domain; the brand-colour line between websites closes the group -->
+                    <div v-if="item.aliases?.length" class="mt-2 space-y-1 sm:ml-20">
                         <div
                             v-for="alias in item.aliases"
                             :key="alias.id"
-                            class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 pl-6 dark:border-slate-700 dark:bg-slate-800/40 sm:flex-row sm:items-center sm:justify-between"
+                            class="flex flex-col gap-3 py-1.5 sm:flex-row sm:items-center sm:justify-between"
                         >
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-2">
-                                    <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-300">A</span>
+                                    <SiteFavicon :url="siteUrl(alias)" domain="A" box-class="h-5 w-5 rounded-full text-[10px]" letter-class="bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-300" />
                                     <Link
                                         :href="panelRoute('websites.alias-api.index', { id: alias.parent_id || item.id })"
                                         class="truncate text-[14px] font-semibold text-slate-900 hover:text-blue-600 dark:text-slate-100 dark:hover:text-blue-400"
