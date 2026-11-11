@@ -15,6 +15,8 @@ pub struct RuntimeSnapshot {
     pub tls: Arc<[TlsConfig]>,
     pub cache: CachePolicy,
     pub hostname_index: Arc<HashMap<String, usize>>,
+    /// The IP pool's rules (backlog U5); empty until the panel has a pool.
+    pub ip_bindings: Arc<super::IpBindings>,
 }
 
 /// Whether a site serves its visitors. `websites.status` is about provisioning,
@@ -147,7 +149,13 @@ impl RuntimeSnapshot {
             tls,
             cache,
             hostname_index: Arc::new(hostname_index),
+            ip_bindings: Arc::new(super::IpBindings::default()),
         }
+    }
+
+    pub fn with_ip_bindings(mut self, bindings: super::IpBindings) -> Self {
+        self.ip_bindings = Arc::new(bindings);
+        self
     }
 
     pub fn empty() -> Self {

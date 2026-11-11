@@ -41,6 +41,7 @@ drust/src/platform/
   dns.rs          DnsBackend
   acme/           AcmeClient, SslEngine, CertInfo; client.rs-এ RFC 8555
   scheduler.rs    Scheduler
+  network.rs      AddressSource: interface-এর IP ঠিকানা (U5)
   supervisor.rs   Local ও macOS/Windows-এর child process supervisor
   unix/           Linux ও macOS-এ একই code, যেমন FileAccess
   linux/  macos/  windows/
@@ -497,6 +498,21 @@ pub trait Scheduler {
 - Expression পাঁচটা সংখ্যার field: `*`, `n`, `a-b`, `a/n`, `a-b/n`, `,` তালিকা। Weekday-তে 0 ও 7 রবিবার। দুটো day field-ই সীমিত হলে যেকোনো একটা মিললেই চলে। নাম (`mon`) ও `@daily` timer-এ নেই; `upsert` তখনই refuse করে।
 - Command shell-এ চলে: Unix-এ `/bin/sh -c`, Windows-এ `cmd /C`, `IsolatedRunner` দিয়ে, stdin/stdout/stderr বন্ধ। আগের run শেষ না হলে সেই job-এর নতুন run বাদ যায়।
 
+### 6.14 AddressSource (U5)
+
+```rust
+pub struct InterfaceAddress { pub interface: String, pub address: IpAddr, pub prefix: u8 }
+
+pub trait AddressSource: Send + Sync {
+    fn addresses(&self) -> Result<Vec<InterfaceAddress>, PlatformError>;
+}
+pub fn usable(found: Vec<InterfaceAddress>) -> Vec<ServerAddress>; // interface, address, prefix, family, public
+```
+
+Unix (Linux ও macOS): `unix/net.rs`-এ `getifaddrs`। Windows: এখনও `Unsupported { capability: IpAddresses }` (`GetAdaptersAddresses` পরে)। `usable` loopback, link-local, multicast ও unspecified বাদ দেয়, একই ঠিকানা একবার, IPv4 আগে; `public` false হয় RFC 1918, ULA, CGNAT `100.64/10` ও documentation range-এ। Panel কখনো `ip addr` চালিয়ে pool বানায় না (mail-এর পুরোনো `MailIps::localAddresses` এখনও চালায়)।
+
+**Gateway-র সিদ্ধান্ত (U5):** gateway আগের মতো সব ঠিকানায় একটা listener-এ শোনে (`0.0.0.0`/`[::]`, dual-stack), প্রতি ঠিকানায় আলাদা bind নয়: নতুন ঠিকানা restart ছাড়াই চলে, আর site সরালে শুধু reload লাগে। প্রতিটা connection-এর local address (`LocalAddr`, `::ffff:a.b.c.d` IPv4 হিসেবে; HTTP/3-এ quinn-এর `local_ip()`) request-এ যায়, আর `select_site` ঠিক করে: ঠিকানা pool-এ না থাকলে (loopback ইত্যাদি) শুধু Host; **dedicated** ঠিকানায় শুধু সেই ঠিকানার site, অন্য Host "Site not found"; **shared** ঠিকানায় সব site (dedicated ঠিকানায় সরানো site-ও, যাতে DNS বদলানোর সময় পুরোনো ঠিকানায় চলে); bare IP (বা Host নেই) হলে ঠিকানার `default_website_id`-এর site, কিন্তু অচেনা hostname কখনো default site পায় না। Rule-গুলো `RuntimeSnapshot.ip_bindings`-এ (`IpBindings { addresses: ঠিকানা → {dedicated, default_site}, site_ips: site id → ঠিকানা }`), প্রতি full ও per-domain reload-এ `ip_addresses` ও `websites.ip_address_id` থেকে পড়া; alias তার main site-এর ঠিকানা পায়। Table না থাকলে rule খালি, অর্থাৎ আগের আচরণ। SNI ছাড়া bare IP-র HTTPS এখনও fallback certificate পায়।
+
 ## 7. Data model
 
 সব migration additive। পুরোনো server-এ data হারাবে না।
@@ -516,6 +532,7 @@ pub trait Scheduler {
 | `mail_domains` | `catch_all_to` (nullable string) | `null` |
 | `ssl_certificates` | `expiry_alert_days` (nullable int: শেষ পাঠানো সতর্কতা, 30, 7, 1 বা 0) | `null` |
 | `users` | `is_service_account` (boolean; extension-এর service account, `HumanUserScope` সব Eloquent query থেকে বাদ দেয়, তাই login করতে পারে না; fillable নয়) | `false` |
+| `websites` | `ip_address_id` (nullable, `ip_addresses.id`; U5) | `null` = main IP |
 
 নতুন table:
 
@@ -535,6 +552,7 @@ pub trait Scheduler {
 | `restic_snapshots` | `website_id`, `snapshot_id` (unique), `taken_at`, `files_new`, `files_changed`, `data_added`, `total_bytes`, `warning`; repository-র restore point-এর প্রতিচ্ছবি, `sync` repository থেকে আবার বানায় (W6) |
 | `restic_restore_tests` | `trigger` (`schedule`/`manual`), `status` (`running`/`passed`/`failed`), `started_at`, `finished_at`, `repository_healthy`, `repository_message`, `read_data_percent`, `websites_tested`, `websites_failed`, `results` (JSON, website প্রতি: `snapshot_id`, `ok`, `problem` `missing`/`unreadable`/`damaged`/`stale`, `error`, file ও database-এর হিসাব), `message`; restore test-এর report, শেষ 52টা থাকে (W8) |
 | `api_tokens` | `user_id`, `name`, `token_prefix`, `token_hash` (SHA-256, unique), `scopes` (JSON: `websites:read` ইত্যাদি), `last_used_at`, `last_used_ip`, `expires_at`; revoke করলে row মোছে (U1) |
+| `ip_addresses` | IP pool (U5): `address` (unique, interface-এর ঠিকানা, gateway যা দেখে), `public_address` (NAT-এর public ঠিকানা, DNS-এ যায়), `interface`, `label`, `mode` (`shared`, `dedicated`), `reseller_id`, `user_id` (dedicated-এর মালিক; customer-এর ঠিকানায় তার reseller-ও থাকে), `is_main` (একটা, সবসময় shared), `default_website_id` (bare IP-তে কোন site)। ব্যবহার: shared সবার; `user_id` থাকলে শুধু সেই user-এর website; শুধু `reseller_id` থাকলে সেই reseller-এর website, আর বাছতে পারে শুধু admin বা সেই reseller। Admin-এর জন্যও একই নিয়ম। Mail-এর `mail_ips` আলাদা থাকে; pool-এ dedicated ঠিকানা শুধু মালিকের domain-এর mail পাঠায় |
 | `panel_updates` | drust-এর update run-এর copy (U6): `run_id` (unique), `action` (`update`, `rollback`), `status`, `step`, `target_ref`, `from_version/ref/commit`, `to_version/ref/commit`, `rollback_of`, `restore_database`, `has_backup`, `message`, `user_id`, `started_at`, `finished_at`, `notified_at`। আসল অবস্থা drust-এর `state_dir/panel-update/<id>/`-এ; rollback database ফেরালে row drust থেকে আবার আসে |
 | `extensions` | Install করা extension (U7, [extension-spec.md](extension-spec.md)): `identifier` (manifest-এর `id`, unique), `name`, `version`, `description`, `author`, `homepage`, `manifest` (JSON), `granted_scopes` (JSON, admin-এর অনুমোদন), `events` (JSON, scope দিয়ে ছাঁটা), `ui_title`, `ui_url`, `webhook_url`, `webhook_secret` (encrypted), `enabled`, `service_user_id` (cascade), `installed_by`, `last_delivery_at`, `last_delivery_status`, `last_delivery_error`। Token U1-এর `api_tokens`-এ, owner service account |
 
@@ -576,6 +594,7 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `GET /sites/logs?kind=access\|waf\|php&domain=&owner=&lines=` | Site-এর access log, WAF-এর match (S2) বা account-এর PHP error log-এর শেষ অংশ (S4) |
 | `POST /api/v1/wordpress` | নির্দিষ্ট wp-cli action, site user হিসেবে: `info`, `update_core`, `update_plugins`, `update_themes`, `security`, `fix`, `home_url`, `search_replace` (W1-W4) |
 | `GET /system/overview?services=`, `GET /system/services?services=` | Machine-এর সংখ্যা ও service-এর অবস্থা (D3) |
+| `GET /system/addresses` | Interface-এর ব্যবহারযোগ্য IP ঠিকানা `{addresses: [{interface, address, prefix, family, public}]}`; Windows-এ `501` (U5, §6.14) |
 | `GET`, `POST /api/v1/panel-update/runs` | Panel update-এর run-এর তালিকা `{active, runs}`; `POST` `{"action": "update", "target_ref", "repo"}` বা `{"action": "rollback", "from_run", "restore_database"}` `dscript/scripts/panel-update.sh`-কে `run_detached` দিয়ে `dpanel-update-<id>` unit-এ চালায়। একটা চলার সময় `409`, git checkout-এ `400`, systemd ছাড়া `501` (U6) |
 | `GET /api/v1/panel-update/runs/{id}?offset=` | একটা run-এর `state` আর `offset` থেকে log (সর্বোচ্চ 256 KB); unit না থাকলে চলমান run `interrupted` (U6) |
 | `POST /api/v1/mailbox-storage` `action=autoresponder` | Mailbox-এর Sieve `vacation` script লেখা বা (`autoresponder: null`) মোছা; drust script বানায়, panel শুধু subject, body, days, তারিখ পাঠায় (M1) |

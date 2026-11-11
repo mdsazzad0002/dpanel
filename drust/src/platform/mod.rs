@@ -11,6 +11,7 @@ pub mod firewall;
 pub mod fs;
 pub mod limits;
 pub mod metrics;
+pub mod network;
 pub mod paths;
 pub mod process;
 pub mod runner;

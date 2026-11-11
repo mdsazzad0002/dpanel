@@ -23,6 +23,7 @@ use App\Http\Controllers\Website\WebsiteEdgeCacheController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteHtaccessController;
+use App\Http\Controllers\Website\WebsiteIpController;
 use App\Http\Controllers\Website\WebsiteLogController;
 use App\Http\Controllers\Wordpress\WordpressSafeUpdateController;
 use App\Http\Controllers\Wordpress\WordpressToolkitController;
@@ -226,6 +227,13 @@ Route::delete('/websites/{id}/ssl', [WebsiteOperationsController::class, 'uninst
 Route::patch('/websites/{id}/ssl/wildcard', [WebsiteOperationsController::class, 'updateSslWildcard'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.ssl.wildcard');
+// The address of the IP pool the site answers on (U5).
+Route::get('/websites/{id}/ip', [WebsiteIpController::class, 'show'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.ip.show');
+Route::put('/websites/{id}/ip', [WebsiteIpController::class, 'update'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('websites.ip.update');
 Route::patch('/websites/{id}/ssl/status', [WebsiteOperationsController::class, 'updateSslStatus'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ssl.status.update');

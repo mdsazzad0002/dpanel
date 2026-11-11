@@ -364,13 +364,18 @@ pub async fn handle_request(
     let domain = {
         let host = request.headers().get("host").and_then(|value| value.to_str().ok()).unwrap_or("-");
         let snapshot = get_cached_snapshot(&state).await;
-        super::resolve_site(snapshot.as_ref(), host).and_then(|site| site.hostnames.first().cloned())
+        super::select_site(snapshot.as_ref(), host, local_ip(&request)).and_then(|site| site.hostnames.first().cloned())
     };
     let response = respond(State(state), request).await;
     if let Some(domain) = domain {
         super::site_logs::record(facts.finish(domain, &response));
     }
     response
+}
+
+/// The address the connection arrived on, set by the listeners (U5).
+fn local_ip(request: &Request<Body>) -> Option<std::net::IpAddr> {
+    request.extensions().get::<super::LocalAddr>().map(|local| local.0)
 }
 
 async fn respond(
@@ -386,7 +391,7 @@ async fn respond(
     let path = request.uri().path().to_string();
     tracing::debug!(host = %host, path = %path, "incoming request");
     let snapshot = get_cached_snapshot(&state).await;
-    let site = super::resolve_site(snapshot.as_ref(), &host);
+    let site = super::select_site(snapshot.as_ref(), &host, local_ip(&request));
     let canonical_domain = site.and_then(|site| site.hostnames.first().cloned());
     let bandwidth_counter = canonical_domain
         .as_deref()
@@ -762,10 +767,14 @@ async fn reload_domains(
 
     let source = state.source_config.clone();
     let wanted = domains.iter().cloned().collect::<Vec<_>>();
-    let loaded =
-        tokio::task::spawn_blocking(move || super::load_domain_sites(&source, &wanted)).await;
+    let loaded = tokio::task::spawn_blocking(move || {
+        // A site moved to another IP arrives as a per-domain reload, so the
+        // pool's rules are read again with it (one small query).
+        super::load_domain_sites(&source, &wanted).map(|loaded| (loaded, super::load_ip_bindings(&source)))
+    })
+    .await;
     match loaded {
-        Ok(Ok((fresh_sites, fresh_tls))) => {
+        Ok(Ok(((fresh_sites, fresh_tls), bindings))) => {
             let current = state.snapshot.read().await.clone();
             let targeted = |hostnames: &[String]| {
                 hostnames.first().is_some_and(|domain| domains.contains(domain))
@@ -807,12 +816,19 @@ async fn reload_domains(
                 .cloned()
                 .collect::<Vec<_>>();
             tls.extend(fresh_tls);
-            let updated = RuntimeSnapshot::new(
+            let mut updated = RuntimeSnapshot::new(
                 current.version,
                 Arc::from(sites),
                 Arc::from(tls),
                 current.cache.clone(),
             );
+            updated.ip_bindings = match bindings {
+                Ok(bindings) => Arc::new(bindings),
+                Err(error) => {
+                    warn!(%error, "IP pool rules unavailable; keeping the previous ones");
+                    current.ip_bindings.clone()
+                }
+            };
             if let Some(resolver) = &state.tls_resolver {
                 let store = tls_store_from_snapshot(&updated);
                 if let Err(error) = resolver.update(&store) {
@@ -862,6 +878,7 @@ fn snapshot_fingerprint(snapshot: &RuntimeSnapshot) -> u64 {
         .iter()
         .map(|site| hasher.hash_one(format!("{site:?}")))
         .chain(snapshot.tls.iter().map(|tls| hasher.hash_one(format!("tls {tls:?}"))))
+        .chain(std::iter::once(hasher.hash_one(snapshot.ip_bindings.fingerprint())))
         .collect::<Vec<_>>();
     parts.sort_unstable();
     hasher.hash_one(parts)
@@ -1230,6 +1247,7 @@ async fn serve_listener(
         if let Err(error) = stream.set_nodelay(true) {
             tracing::debug!(peer = %peer, %error, "could not enable TCP_NODELAY");
         }
+        let local = stream.local_addr().ok().map(|addr| super::LocalAddr::new(addr.ip()));
         let tls = tls.clone();
         let router = router.clone();
         tokio::spawn(async move {
@@ -1237,6 +1255,9 @@ async fn serve_listener(
             let router = router.layer(map_request(move |mut request: Request<Body>| async move {
                 request.extensions_mut().insert(peer);
                 request.extensions_mut().insert(axum::extract::ConnectInfo(peer));
+                if let Some(local) = local {
+                    request.extensions_mut().insert(local);
+                }
                 request
             }));
             let Some(acceptor) = tls else {

@@ -119,6 +119,7 @@ class Website extends Model
         'docker_container_port' => 'integer',
         'docker_env' => 'encrypted:array',
         'docker_public' => 'boolean',
+        'ip_address_id' => 'integer',
     ];
 
     /** Variable values can hold secrets and reach every page that serializes a website. */
@@ -202,6 +203,12 @@ class Website extends Model
     public function parent(): BelongsTo
     {
         return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    /** Null: the main IP of the pool (backlog U5). */
+    public function ipAddress(): BelongsTo
+    {
+        return $this->belongsTo(IpAddress::class);
     }
 
     public function children(): HasMany

@@ -110,15 +110,22 @@ class MailIps
 
     /**
      * Sends the domain's mail from this IP (null: the default IP). Postfix
-     * reads the assignment from MySQL, so nothing needs reloading.
+     * reads the assignment from MySQL, so nothing needs reloading. An IP the
+     * IP pool dedicates to another account is refused (U5): the reason
+     * comes back and nothing changes.
      */
-    public function assign(string $domain, ?string $mailIpId): void
+    public function assign(string $domain, ?string $mailIpId): ?string
     {
         $mailIp = $mailIpId ? MailIp::query()->find($mailIpId) : null;
+        if ($mailIp && ! $mailIp->is_default && ($error = app(\App\Services\Network\IpPool::class)->mailConflict($mailIp->ip, $domain))) {
+            return $error;
+        }
         MailDomain::query()->updateOrCreate(
             ['domain' => strtolower(trim($domain))],
             ['mail_ip_id' => $mailIp && ! $mailIp->is_default ? $mailIp->id : null],
         );
+
+        return null;
     }
 
     /** Writes one Postfix transport per non-default IP. @return array{ok: bool, message: string} */

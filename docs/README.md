@@ -9,6 +9,7 @@
 | Work on dPanel on a Windows PC | [dPanel on Windows](windows.md) |
 | Update a server, or get a fix from `main` | [Versions and updates](installation.md#versions-and-updates) |
 | Update or roll back from the panel | [Updating from the panel](updates.md) |
+| Give websites and mail their own IP address | [IP addresses](ip-addresses.md) |
 | Find a command quickly | [Quick Reference](quick-reference.md) |
 | Fix an error message | [Troubleshooting](troubleshooting.md) |
 | Install Laravel/WordPress or build a site with npm/composer | [Websites and Apps](websites.md) |

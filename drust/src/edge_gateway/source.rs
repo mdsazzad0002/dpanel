@@ -31,6 +31,11 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
     if sites.is_empty() {
         return Err("database snapshot returned no active websites".to_string());
     }
+    // Before the pool's migration runs there are no rules: Host alone decides.
+    let bindings = ip_bindings_from(&env).unwrap_or_else(|error| {
+        tracing::warn!(%error, "IP pool rules unavailable; matching by Host only");
+        super::IpBindings::default()
+    });
 
     Ok(RuntimeSnapshot::new(
         current_version_hint(&database),
@@ -41,7 +46,47 @@ pub fn load_runtime_snapshot(config: &DbSnapshotConfig) -> Result<RuntimeSnapsho
             ttl: config.ttl,
             stale_while_revalidate: Duration::from_secs(1),
         },
-    ))
+    )
+    .with_ip_bindings(bindings))
+}
+
+/// The IP pool's rules (backlog U5), read on every reload.
+pub fn load_ip_bindings(config: &DbSnapshotConfig) -> Result<super::IpBindings, String> {
+    ip_bindings_from(&read_panel_env(&config.env_path)?)
+}
+
+fn ip_bindings_from(env: &HashMap<String, String>) -> Result<super::IpBindings, String> {
+    let addresses = run_mysql(env, IP_ADDRESSES_SQL)?;
+    let sites = run_mysql(env, SITE_IPS_SQL)?;
+    Ok(parse_ip_bindings(&addresses, &sites))
+}
+
+/// `address` is what the gateway sees on a connection (the private address
+/// behind NAT); `public_address` only matters to DNS.
+const IP_ADDRESSES_SQL: &str = "SELECT address,mode,COALESCE(default_website_id,'') FROM ip_addresses";
+
+/// An alias (and `www.`) answers on its main site's address.
+const SITE_IPS_SQL: &str = "SELECT w.id,a.address FROM websites w LEFT JOIN websites p ON p.id=w.parent_id AND w.type IN ('alias','alis') JOIN ip_addresses a ON a.id=COALESCE(p.ip_address_id,w.ip_address_id)";
+
+fn parse_ip_bindings(addresses: &str, sites: &str) -> super::IpBindings {
+    let ip = |text: &str| text.trim().parse::<std::net::IpAddr>().ok().map(super::ip_binding::canonical);
+    let mut bindings = super::IpBindings::default();
+    for line in addresses.lines() {
+        let mut cols = line.split('\t');
+        let (Some(address), mode, default_site) = (cols.next().and_then(ip), cols.next().unwrap_or(""), cols.next().unwrap_or("")) else {
+            continue;
+        };
+        let default_site = optional_string(default_site);
+        bindings.addresses.insert(address, super::AddressRule { dedicated: mode.trim() == "dedicated", default_site });
+    }
+    for line in sites.lines() {
+        if let Some((id, address)) = line.split_once('\t')
+            && let Some(address) = ip(address)
+        {
+            bindings.site_ips.insert(id.trim().to_string(), address);
+        }
+    }
+    bindings
 }
 
 /// The sites (and certificates) of just these domains, for a reload after
@@ -1005,6 +1050,21 @@ mod tests {
         assert_eq!(guards["d"].waf, super::super::WafMode::Detect);
         assert_eq!(guards["e"].waf, super::super::WafMode::Off);
         assert!(guards["a"].cloudflare_only, "a WAF mode keeps the other guards");
+    }
+
+    #[test]
+    fn parses_the_ip_pool_rules() {
+        let addresses = "10.0.0.5\tshared\t\n10.0.0.6\tdedicated\tsite-own\n::ffff:10.0.0.7\tdedicated\tNULL\nnot-an-ip\tshared\t\n";
+        let sites = "site-own\t10.0.0.6\nsite-www\t10.0.0.6\nsite-bad\tnope\n";
+        let bindings = parse_ip_bindings(addresses, sites);
+        assert_eq!(bindings.addresses.len(), 3);
+        let own = &bindings.addresses[&"10.0.0.6".parse().unwrap()];
+        assert!(own.dedicated);
+        assert_eq!(own.default_site.as_deref(), Some("site-own"));
+        assert!(!bindings.addresses[&"10.0.0.5".parse().unwrap()].dedicated);
+        assert_eq!(bindings.addresses[&"10.0.0.7".parse().unwrap()].default_site, None);
+        assert_eq!(bindings.site_ips.len(), 2);
+        assert_eq!(bindings.site_ips["site-www"], "10.0.0.6".parse::<std::net::IpAddr>().unwrap());
     }
 
     #[test]

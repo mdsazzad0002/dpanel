@@ -6,6 +6,7 @@ mod config;
 mod dispatcher;
 pub mod edge_cache;
 mod h3_listener;
+mod ip_binding;
 mod matching;
 mod node_process;
 pub(crate) mod php;
@@ -34,6 +35,7 @@ pub use config::{
 pub use dispatcher::{DispatchContext, dispatch};
 pub use edge_cache::{CacheMode, EdgeCache, SiteCacheConfig};
 pub use h3_listener::run_h3_listener;
+pub use ip_binding::{AddressRule, IpBindings, LocalAddr, select_site};
 pub use matching::{normalize_request_path, resolve_route, resolve_site};
 pub use node_process::{
     NodeProcessStatus, ensure_node_process_running, node_process_status, remove_node_process,
@@ -55,7 +57,7 @@ pub use python_process::{
 pub use server::{
     sample_dispatch_context, sample_snapshot, sample_tls_store, serve_demo_with_tls, serve_gateway,
 };
-pub use source::{DbSnapshotConfig, load_domain_sites, load_runtime_snapshot};
+pub use source::{DbSnapshotConfig, load_domain_sites, load_ip_bindings, load_runtime_snapshot};
 pub use static_files::{
     StaticAsset, StaticAssetBody, StaticFileConfig, browser_cache_control, clear_static_cache, clear_static_cache_under,
     load_static_asset, resolve_static_path,

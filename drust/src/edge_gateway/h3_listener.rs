@@ -52,6 +52,7 @@ pub async fn run_h3_listener(
                 }
             };
             let peer = connection.remote_address();
+            let local = connection.local_ip().map(super::LocalAddr::new);
             let h3_connection = h3_quinn::Connection::new(connection);
             let mut h3_conn = match h3::server::builder().build(h3_connection).await {
                 Ok(conn) => conn,
@@ -67,7 +68,7 @@ pub async fn run_h3_listener(
                         tokio::spawn(async move {
                             match resolver.resolve_request().await {
                                 Ok((request, stream)) => {
-                                    handle_h3_request(router, request, stream, peer).await;
+                                    handle_h3_request(router, request, stream, peer, local).await;
                                 }
                                 Err(error) => {
                                     warn!(%peer, %error, "HTTP/3 request resolve failed");
@@ -92,6 +93,7 @@ async fn handle_h3_request<S>(
     request: http::Request<()>,
     stream: RequestStream<S, Bytes>,
     peer: SocketAddr,
+    local: Option<super::LocalAddr>,
 ) where
     S: BidiStream<Bytes> + Send + 'static,
     S::SendStream: Send,
@@ -100,6 +102,9 @@ async fn handle_h3_request<S>(
     let (mut send, recv) = stream.split();
     let (mut parts, _) = request.into_parts();
     parts.extensions.insert(ConnectInfo(peer));
+    if let Some(local) = local {
+        parts.extensions.insert(local);
+    }
     let body = Body::from_stream(recv_data_stream(recv));
     let axum_request = Request::from_parts(parts, body);
 

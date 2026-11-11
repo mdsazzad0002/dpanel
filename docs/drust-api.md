@@ -100,6 +100,7 @@ Every endpoint except `GET /health` requires the bearer token.
 | Media | `media/ocr`, `media/transcribe` (each takes a `url` to download, or the file as base64 `data`) |
 | Scripts | `script/run` |
 | Panel updates | `panel-update/runs` (GET list, POST start), `panel-update/runs/{id}` (GET state and log) |
+| System | `/system/overview`, `/system/services`, `/system/addresses` (no `/api/v1/` prefix) |
 
 Paths in the table are relative to `/api/v1/`. The legacy `sync-vhost`
 endpoint is kept only for compatibility and returns an error; the edge gateway
@@ -452,6 +453,14 @@ GET  /api/v1/panel-update/runs/{id}?offset=0
 A rollback without `from_run` restores the newest successful update that has a backup and was not rolled back yet. The answer is `{"success": true, "run": {...}}`; a run has `id`, `action`, `status` (`queued`, `running`, `succeeded`, `rolled_back`, `failed`, `interrupted`), `step`, `target_ref`, `from_*` and `to_*` (`version`, `ref`, `commit`), `rollback_of`, `message`, `started_at`, `finished_at` and `has_backup`. A second run while one is going answers `409`; a server without systemd `501`; a git checkout at the install root `400`.
 
 `GET /runs` answers `{"active": id or null, "runs": [...]}`, newest first. `GET /runs/{id}` adds `log` (at most 256 KB from byte `offset`) and `offset` for the next read. A run whose unit is gone while it says `running` is reported as `interrupted`. Runs live in `/var/lib/drust/panel-update/{id}/`; see [Updating from the panel](updates.md).
+
+### Server addresses
+
+```http
+GET /system/addresses
+```
+
+The IP addresses on the server's interfaces, for the panel's IP pool ([IP addresses](ip-addresses.md)): `{"success": true, "addresses": [{"interface": "eth0", "address": "203.0.113.10", "prefix": 24, "family": "ipv4", "public": true}]}`. Loopback, link-local, multicast and unspecified addresses are left out, each address appears once, IPv4 first. `public` is false for private (RFC 1918, ULA), CGNAT and documentation ranges. Unix reads `getifaddrs`; Windows answers `501` with `"capability": "ip_addresses"`.
 
 ### Database request
 

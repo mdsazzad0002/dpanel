@@ -118,7 +118,9 @@ class MailHostnameController extends Controller
             'domain' => ['required', 'string', 'max:253'],
             'mail_ip_id' => ['nullable', 'string', 'exists:mail_ips,id'],
         ]);
-        $this->ips->assign($validated['domain'], $validated['mail_ip_id'] ?? null);
+        if ($error = $this->ips->assign($validated['domain'], $validated['mail_ip_id'] ?? null)) {
+            return response()->json(['ok' => false, 'message' => $error], 422);
+        }
         $mailIp = MailDomain::query()->where('domain', strtolower(trim($validated['domain'])))->first()?->mailIp;
         $message = "{$validated['domain']} now sends from ".($mailIp ? "{$mailIp->ip} ({$mailIp->hostname})" : 'the default IP').'. Update its MX and SPF records in the Mail DNS Guide.';
 

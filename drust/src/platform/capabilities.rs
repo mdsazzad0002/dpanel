@@ -28,6 +28,8 @@ pub enum Capability {
     Services,
     /// The web application firewall: libmodsecurity and its rules are installed (S2).
     Waf,
+    /// Listing the machine's IP addresses for the IP pool (U5).
+    IpAddresses,
 }
 
 impl Capability {
@@ -51,6 +53,7 @@ impl Capability {
             Self::Clamav => "clamav",
             Self::Services => "services",
             Self::Waf => "waf",
+            Self::IpAddresses => "ip_addresses",
         }
     }
 }

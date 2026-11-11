@@ -37,6 +37,7 @@ use App\Http\Controllers\EmailController;
 use App\Http\Controllers\Settings\ApiTokenController;
 use App\Http\Controllers\Settings\BrandingController;
 use App\Http\Controllers\Settings\ExtensionController;
+use App\Http\Controllers\Settings\IpAddressController;
 use App\Http\Controllers\Settings\PanelUpdateController;
 use App\Http\Controllers\MailBimiController;
 use App\Http\Controllers\MailClientController;
@@ -360,6 +361,16 @@ Route::prefix('cpsess{token}')
                 Route::post('/{extension}/ping', [ExtensionController::class, 'ping'])->whereNumber('extension')->middleware('throttle:20,1')->name('ping');
                 Route::delete('/{extension}', [ExtensionController::class, 'destroy'])->whereNumber('extension')->name('destroy');
                 Route::get('/{extension}/page', [ExtensionController::class, 'page'])->whereNumber('extension')->name('page');
+            });
+            // The IP pool (U5): admins manage it, a reseller passes their addresses on.
+            Route::middleware('role:admin|reseller')->prefix('system/ip-addresses')->name('system.ip-addresses.')->group(function (): void {
+                Route::get('/', [IpAddressController::class, 'index'])->name('index');
+                Route::patch('/{id}', [IpAddressController::class, 'update'])->whereNumber('id')->middleware('throttle:30,1')->name('update');
+                Route::middleware('role:admin')->group(function (): void {
+                    Route::post('/', [IpAddressController::class, 'store'])->middleware('throttle:30,1')->name('store');
+                    Route::post('/{id}/main', [IpAddressController::class, 'makeMain'])->whereNumber('id')->middleware('throttle:10,1')->name('main');
+                    Route::delete('/{id}', [IpAddressController::class, 'destroy'])->whereNumber('id')->middleware('throttle:30,1')->name('destroy');
+                });
             });
             // Forward-only addresses, catch-all, automatic replies and the relay (M1-M3, M8).
             Route::get('/emails/forwarders', [MailForwarderController::class, 'index'])
