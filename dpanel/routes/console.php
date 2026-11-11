@@ -72,3 +72,9 @@ Schedule::command('accounts:resource-check')
 Schedule::command('mail:send-limits')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+// U6: a dPanel update that ends while nobody watches System → Updates still
+// reaches the admins' notifications within a minute.
+Schedule::command('panel:update-sync')
+    ->everyMinute()
+    ->withoutOverlapping();

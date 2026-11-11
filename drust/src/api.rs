@@ -36,6 +36,7 @@ mod migration;
 mod migration_archive;
 mod migration_ssh;
 mod node;
+mod panel_update;
 mod rust;
 mod php;
 mod mongo_admin;
@@ -162,6 +163,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(migration_archive::routes())
         .merge(migration_ssh::routes())
         .merge(node::routes())
+        .merge(panel_update::routes())
         .merge(rust::routes())
         .merge(python::routes())
         .merge(restic::routes())

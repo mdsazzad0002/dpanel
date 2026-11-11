@@ -88,6 +88,10 @@ sudo env DPANEL_VERSION=v1.3.0 ./installer.sh update # to one release
 sudo env DPANEL_VERSION=main ./installer.sh update   # unreleased fixes on main
 ```
 
+Admins can also do this from the panel, under **System → Updates**, which
+takes a backup first and can roll an update back; see
+[Updating from the panel](updates.md).
+
 `update` with no version installs the **latest release tag**, not the newest
 commit. A fix that is merged to `main` reaches servers only after a new tag is
 published, or when you update with `DPANEL_VERSION=main`.

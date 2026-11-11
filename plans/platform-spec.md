@@ -247,8 +247,11 @@ pub trait ServiceManager {
     fn reload_definitions(&self) -> Result<(), PlatformError>;
     fn unit_names(&self, pattern: &str) -> Result<Vec<String>, PlatformError>;
     fn logs(&self, unit: &str, lines: u32, style: LogStyle) -> Result<String, PlatformError>;
+    fn run_detached(&self, unit: &str, program: &Path, args: &[String]) -> Result<(), PlatformError>; // নিজের unit-এ, drust restart হলেও চলে
 }
 ```
+
+`run_detached` Linux-এ `systemd-run --unit <unit> --collect --quiet -- <program> <args>`: transient service, drust-এর environment (API token) পায় না; চলছে কিনা `status(unit)` বলে। Panel update (U6) এটা দিয়ে চলে, কারণ update drust-কেই restart করে।
 
 `platform::services()` দিয়ে পাওয়া যায়। Linux-এ `SystemdServices` (`systemctl` ও `journalctl`)। Windows ও macOS-এ এখন `NoServices`, সব call `Unsupported`, আর `services` capability বন্ধ; E2 ও F4-এ `supervisor.rs` আসবে। OS service শুধু supervisor-কে চালাবে।
 
@@ -531,6 +534,7 @@ pub trait Scheduler {
 | `restic_snapshots` | `website_id`, `snapshot_id` (unique), `taken_at`, `files_new`, `files_changed`, `data_added`, `total_bytes`, `warning`; repository-র restore point-এর প্রতিচ্ছবি, `sync` repository থেকে আবার বানায় (W6) |
 | `restic_restore_tests` | `trigger` (`schedule`/`manual`), `status` (`running`/`passed`/`failed`), `started_at`, `finished_at`, `repository_healthy`, `repository_message`, `read_data_percent`, `websites_tested`, `websites_failed`, `results` (JSON, website প্রতি: `snapshot_id`, `ok`, `problem` `missing`/`unreadable`/`damaged`/`stale`, `error`, file ও database-এর হিসাব), `message`; restore test-এর report, শেষ 52টা থাকে (W8) |
 | `api_tokens` | `user_id`, `name`, `token_prefix`, `token_hash` (SHA-256, unique), `scopes` (JSON: `websites:read` ইত্যাদি), `last_used_at`, `last_used_ip`, `expires_at`; revoke করলে row মোছে (U1) |
+| `panel_updates` | drust-এর update run-এর copy (U6): `run_id` (unique), `action` (`update`, `rollback`), `status`, `step`, `target_ref`, `from_version/ref/commit`, `to_version/ref/commit`, `rollback_of`, `restore_database`, `has_backup`, `message`, `user_id`, `started_at`, `finished_at`, `notified_at`। আসল অবস্থা drust-এর `state_dir/panel-update/<id>/`-এ; rollback database ফেরালে row drust থেকে আবার আসে |
 
 `throttle` এখনও নেই: gateway rate কমাতে পারে না, তাই panel শুধু `notify` ও `block` দেয়। `block`-এ site `over_limit` হয়, নতুন মাসে ফেরে।
 
@@ -570,6 +574,8 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `GET /sites/logs?kind=access\|waf\|php&domain=&owner=&lines=` | Site-এর access log, WAF-এর match (S2) বা account-এর PHP error log-এর শেষ অংশ (S4) |
 | `POST /api/v1/wordpress` | নির্দিষ্ট wp-cli action, site user হিসেবে: `info`, `update_core`, `update_plugins`, `update_themes`, `security`, `fix`, `home_url`, `search_replace` (W1-W4) |
 | `GET /system/overview?services=`, `GET /system/services?services=` | Machine-এর সংখ্যা ও service-এর অবস্থা (D3) |
+| `GET`, `POST /api/v1/panel-update/runs` | Panel update-এর run-এর তালিকা `{active, runs}`; `POST` `{"action": "update", "target_ref", "repo"}` বা `{"action": "rollback", "from_run", "restore_database"}` `dscript/scripts/panel-update.sh`-কে `run_detached` দিয়ে `dpanel-update-<id>` unit-এ চালায়। একটা চলার সময় `409`, git checkout-এ `400`, systemd ছাড়া `501` (U6) |
+| `GET /api/v1/panel-update/runs/{id}?offset=` | একটা run-এর `state` আর `offset` থেকে log (সর্বোচ্চ 256 KB); unit না থাকলে চলমান run `interrupted` (U6) |
 | `POST /api/v1/mailbox-storage` `action=autoresponder` | Mailbox-এর Sieve `vacation` script লেখা বা (`autoresponder: null`) মোছা; drust script বানায়, panel শুধু subject, body, days, তারিখ পাঠায় (M1) |
 
 Suspend idempotent: দুবার চালালেও ফল একই। Partial failure হলে কোন ধাপ ব্যর্থ হয়েছে সেটা response-এ থাকবে।

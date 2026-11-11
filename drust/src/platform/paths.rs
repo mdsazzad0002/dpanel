@@ -9,6 +9,7 @@ use std::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
+    Bash,
     Clamdscan,
     Clamscan,
     Composer,
@@ -34,6 +35,7 @@ pub enum Tool {
     Sshd,
     Systemctl,
     Tar,
+    SystemdRun,
     Timeout,
     Ufw,
     Uv,
@@ -43,6 +45,7 @@ pub enum Tool {
 impl Tool {
     fn name(self) -> &'static str {
         match self {
+            Self::Bash => "bash",
             Self::Clamdscan => "clamdscan",
             Self::Clamscan => "clamscan",
             Self::Composer => "composer",
@@ -68,6 +71,7 @@ impl Tool {
             Self::Sshd => "sshd",
             Self::Systemctl => "systemctl",
             Self::Tar => "tar",
+            Self::SystemdRun => "systemd-run",
             Self::Timeout => "timeout",
             Self::Ufw => "ufw",
             Self::Uv => "uv",
@@ -79,6 +83,7 @@ impl Tool {
     /// tool from `PATH` there.
     fn unix_candidates(self) -> &'static [&'static str] {
         match self {
+            Self::Bash => &["/usr/bin/bash", "/bin/bash"],
             Self::Clamdscan => &["/usr/bin/clamdscan", "/usr/local/bin/clamdscan"],
             Self::Clamscan => &["/usr/bin/clamscan", "/usr/local/bin/clamscan"],
             Self::Composer => &["/usr/local/bin/composer", "/usr/bin/composer"],
@@ -104,6 +109,7 @@ impl Tool {
             Self::Sshd => &["/usr/sbin/sshd", "/usr/local/sbin/sshd"],
             Self::Systemctl => &["/usr/bin/systemctl", "/bin/systemctl"],
             Self::Tar => &["/usr/bin/tar", "/bin/tar"],
+            Self::SystemdRun => &["/usr/bin/systemd-run", "/bin/systemd-run"],
             Self::Timeout => &["/usr/bin/timeout", "/bin/timeout"],
             Self::Ufw => &["/usr/sbin/ufw", "/usr/bin/ufw"],
             Self::Uv => &["/usr/local/bin/uv", "/usr/bin/uv", "/root/.local/bin/uv"],

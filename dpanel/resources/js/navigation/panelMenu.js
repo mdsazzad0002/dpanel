@@ -212,6 +212,7 @@ export const buildPanelMenu = (userRoles = []) => [
         children: userManagementChildren(userRoles),
     },
     { section: 'System', label: 'Branding', hint: 'Panel name, logo and colour', icon: 'BR', iconClass: 'bi bi-palette', routeName: 'settings.branding', roles: ['admin', 'reseller'], color: 'violet' },
+    { section: 'System', label: 'Updates', hint: 'Update dPanel or roll back an update', icon: 'UP', iconClass: 'bi bi-cloud-arrow-down', routeName: 'system.updates.index', roles: ['admin'], color: 'emerald' },
     { section: 'System', label: 'Resource Packages', hint: 'Manage user quotas', icon: 'PK', iconClass: 'bi bi-box-seam', routeName: 'packages.index', roles: ['admin', 'superadmin', 'reseller'], permissions: ['manage_packages'] },
     {
         section: 'System',

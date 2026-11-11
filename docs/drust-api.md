@@ -99,6 +99,7 @@ Every endpoint except `GET /health` requires the bearer token.
 | Docker | `docker` (GET status, POST actions), `docker/{logs, inspect, stats, exec}`, `docker/{networks, volumes, system, stacks}` (GET list, POST actions), `docker/stacks/{show, logs}` |
 | Media | `media/ocr`, `media/transcribe` (each takes a `url` to download, or the file as base64 `data`) |
 | Scripts | `script/run` |
+| Panel updates | `panel-update/runs` (GET list, POST start), `panel-update/runs/{id}` (GET state and log) |
 
 Paths in the table are relative to `/api/v1/`. The legacy `sync-vhost`
 endpoint is kept only for compatibility and returns an error; the edge gateway
@@ -432,6 +433,25 @@ POST /api/v1/dns/dnssec/{zone}/rectify
 Signing runs `pdnsutil`: one ECDSA P-256 key (CSK) and narrow NSEC3 with no salt and no extra iterations, then a rectify. Asking for what the zone already is changes nothing, and turning it off removes the keys. `ds` holds a SHA-256 (digest type 2) and a SHA-384 line; most registrars want the first. Call `rectify` after changing a signed zone's records; the panel does this itself.
 
 The zone name must be lower case, without a trailing dot. A zone PowerDNS does not have is an error. On a server whose DNS is not PowerDNS, every DNSSEC endpoint answers `501`. PowerDNS must run with `gmysql-dnssec=yes`, which the installer writes.
+
+### Panel updates
+
+```http
+GET  /api/v1/panel-update/runs
+POST /api/v1/panel-update/runs
+GET  /api/v1/panel-update/runs/{id}?offset=0
+```
+
+`POST` starts `dscript/scripts/panel-update.sh` as its own systemd unit, `dpanel-update-{id}`, so it outlives drust's restart during the update:
+
+```json
+{"action": "update", "target_ref": "v1.2.3", "repo": "owner/dpanel"}
+{"action": "rollback", "from_run": "20261111-093000-1a2b", "restore_database": true}
+```
+
+A rollback without `from_run` restores the newest successful update that has a backup and was not rolled back yet. The answer is `{"success": true, "run": {...}}`; a run has `id`, `action`, `status` (`queued`, `running`, `succeeded`, `rolled_back`, `failed`, `interrupted`), `step`, `target_ref`, `from_*` and `to_*` (`version`, `ref`, `commit`), `rollback_of`, `message`, `started_at`, `finished_at` and `has_backup`. A second run while one is going answers `409`; a server without systemd `501`; a git checkout at the install root `400`.
+
+`GET /runs` answers `{"active": id or null, "runs": [...]}`, newest first. `GET /runs/{id}` adds `log` (at most 256 KB from byte `offset`) and `offset` for the next read. A run whose unit is gone while it says `running` is reported as `interrupted`. Runs live in `/var/lib/drust/panel-update/{id}/`; see [Updating from the panel](updates.md).
 
 ### Database request
 

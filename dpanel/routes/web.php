@@ -36,6 +36,7 @@ use App\Http\Controllers\Email\SmtpRelayController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\Settings\ApiTokenController;
 use App\Http\Controllers\Settings\BrandingController;
+use App\Http\Controllers\Settings\PanelUpdateController;
 use App\Http\Controllers\MailBimiController;
 use App\Http\Controllers\MailClientController;
 use App\Http\Controllers\MailContactController;
@@ -340,6 +341,14 @@ Route::prefix('cpsess{token}')
             Route::delete('/settings/api-tokens/{apiToken}', [ApiTokenController::class, 'destroy'])
                 ->whereNumber('apiToken')
                 ->name('settings.api-tokens.destroy');
+            // Updating dPanel itself and rolling it back (U6).
+            Route::middleware('role:admin')->prefix('system/updates')->name('system.updates.')->group(function (): void {
+                Route::get('/', [PanelUpdateController::class, 'index'])->name('index');
+                Route::get('/check', [PanelUpdateController::class, 'check'])->middleware('throttle:20,1')->name('check');
+                Route::get('/status', [PanelUpdateController::class, 'status'])->name('status');
+                Route::post('/', [PanelUpdateController::class, 'update'])->middleware('throttle:10,1')->name('update');
+                Route::post('/rollback', [PanelUpdateController::class, 'rollback'])->middleware('throttle:10,1')->name('rollback');
+            });
             // Forward-only addresses, catch-all, automatic replies and the relay (M1-M3, M8).
             Route::get('/emails/forwarders', [MailForwarderController::class, 'index'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')

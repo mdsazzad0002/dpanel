@@ -48,6 +48,10 @@ pub trait ServiceManager: Send + Sync + std::fmt::Debug {
     fn unit_names(&self, pattern: &str) -> Result<Vec<String>, PlatformError>;
     /// `unit` can be a `name*` pattern.
     fn logs(&self, unit: &str, lines: u32, style: LogStyle) -> Result<String, PlatformError>;
+    /// Starts `program` as its own short-lived unit named `unit`, so that it
+    /// keeps running when drust restarts (a panel update rebuilds drust);
+    /// returns once it has started. `status(unit)` tells whether it still runs.
+    fn run_detached(&self, unit: &str, program: &Path, args: &[String]) -> Result<(), PlatformError>;
 }
 
 fn failed(action: &str, detail: impl Into<String>) -> PlatformError {
@@ -107,6 +111,15 @@ fn log_args(unit: &str, lines: u32, style: LogStyle) -> Vec<String> {
         LogStyle::RecentMessages => args.extend(["cat", "--since", "-1min"].map(String::from)),
     }
     args
+}
+
+/// A transient service: it is gone from `systemctl` once it ends (`--collect`),
+/// and it does not take drust's environment, so the API token stays behind.
+fn detached_args(unit: &str, program: &Path, args: &[String]) -> Vec<std::ffi::OsString> {
+    let mut all: Vec<std::ffi::OsString> = ["--unit", unit, "--collect", "--quiet", "--"].map(Into::into).to_vec();
+    all.push(program.as_os_str().to_os_string());
+    all.extend(args.iter().map(Into::into));
+    all
 }
 
 fn first_column(text: &str) -> Vec<String> {
@@ -183,6 +196,17 @@ impl ServiceManager for SystemdServices {
             .map_err(|error| failed("journalctl", format!("cannot run journalctl: {error}")))?;
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
+
+    fn run_detached(&self, unit: &str, program: &Path, args: &[String]) -> Result<(), PlatformError> {
+        let output = Command::new(binary(Tool::SystemdRun)?)
+            .args(detached_args(unit, program, args))
+            .output()
+            .map_err(|error| failed("systemd-run", format!("cannot run systemd-run: {error}")))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        Err(failed("systemd-run", String::from_utf8_lossy(&output.stderr).trim().to_string()))
+    }
 }
 
 /// Every call is `Unsupported`, until the supervisor exists.
@@ -247,6 +271,10 @@ impl ServiceManager for NoServices {
     fn logs(&self, _unit: &str, _lines: u32, _style: LogStyle) -> Result<String, PlatformError> {
         unsupported()
     }
+
+    fn run_detached(&self, _unit: &str, _program: &Path, _args: &[String]) -> Result<(), PlatformError> {
+        unsupported()
+    }
 }
 
 #[cfg(test)]
@@ -269,6 +297,13 @@ mod tests {
             log_args("web", 20, LogStyle::RecentMessages).join(" "),
             "--no-pager -n 20 -u web -o cat --since -1min"
         );
+    }
+
+    #[test]
+    fn a_detached_run_is_its_own_unit_with_the_arguments_untouched() {
+        let args = detached_args("dpanel-update-1", Path::new("/usr/bin/bash"), &["run.sh".into(), "a b".into()]);
+        let args: Vec<String> = args.iter().map(|arg| arg.to_string_lossy().into_owned()).collect();
+        assert_eq!(args, ["--unit", "dpanel-update-1", "--collect", "--quiet", "--", "/usr/bin/bash", "run.sh", "a b"]);
     }
 
     #[test]
