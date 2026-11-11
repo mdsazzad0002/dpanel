@@ -60,7 +60,40 @@ class AiGatewayModelController extends Controller
             'providers' => AiGatewayProvider::query()->orderBy('name')->get(['id', 'name', 'driver']),
             'providerFilter' => $providerFilter ?: null,
             'defaultModelSeed' => config('aigateway.driver_default_models'),
+            'localTranscription' => $this->localTranscription(),
         ]);
+    }
+
+    /**
+     * drust's whisper.cpp, the voice-to-text gateway (AiGatewayService::transcribe). It is not a
+     * provider model, so the page shows it on its own: on or off, reachable, and when it last worked.
+     */
+    private function localTranscription(): array
+    {
+        $mode = AiGatewayService::localTranscriptionMode();
+        $url = (string) config('serverpanel.media_transcribe_api_url');
+        $reachable = false;
+
+        if ($mode !== 'off' && str_starts_with($url, 'http')) {
+            try {
+                $health = preg_replace('#/api/v1/media/transcribe$#', '', $url).'/health';
+                $reachable = \Illuminate\Support\Facades\Http::timeout(2)->get($health)->json('status') === 'ok';
+            } catch (\Throwable) {
+                $reachable = false;
+            }
+        }
+
+        $logs = \App\Models\AiGatewayRequestLog::query()
+            ->where('operation', 'transcription')
+            ->where('model', AiGatewayService::LOCAL_TRANSCRIPTION_MODEL);
+
+        return [
+            'mode' => $mode,
+            'model' => AiGatewayService::LOCAL_TRANSCRIPTION_MODEL,
+            'reachable' => $reachable,
+            'last_used_at' => (clone $logs)->latest('id')->value('created_at')?->toIso8601String(),
+            'uses_7d' => (clone $logs)->where('created_at', '>=', now()->subDays(7))->count(),
+        ];
     }
 
     /**

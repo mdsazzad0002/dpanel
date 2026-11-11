@@ -4,6 +4,7 @@ use App\Http\Controllers\AiGatewayApiKeyController;
 use App\Http\Controllers\AiGatewayController;
 use App\Http\Controllers\AiGatewayMediaController;
 use App\Http\Controllers\AiGatewayLocalLlmController;
+use App\Http\Controllers\AiGatewayVoiceController;
 use App\Http\Controllers\AiGatewayLogController;
 use App\Http\Controllers\AiGatewayModelController;
 use App\Http\Controllers\AiGatewayProviderController;
@@ -197,6 +198,7 @@ Route::middleware(['ai_gateway.key', 'throttle:60,1'])->group(function (): void 
     Route::post('/api/v1/chat/completions', [AiGatewayApiController::class, 'chatCompletions'])->name('api.ai-gateway.chat.completions');
     Route::post('/api/v1/images/generations', [AiGatewayApiController::class, 'imageGenerations'])->name('api.ai-gateway.images.generations');
     Route::post('/api/v1/audio/transcriptions', [AiGatewayApiController::class, 'audioTranscriptions'])->name('api.ai-gateway.audio.transcriptions');
+    Route::post('/api/v1/audio/translations', [AiGatewayApiController::class, 'audioTranslations'])->name('api.ai-gateway.audio.translations');
 });
 // Remote MCP (Model Context Protocol) endpoint, so AI clients such as Claude
 // or Cursor can diagnose and fix this server from anywhere. Authenticated via
@@ -860,6 +862,23 @@ Route::prefix('cpsess{token}')
 
                     // API docs (how to call the external endpoints below)
                     Route::get('docs', [AiGatewayController::class, 'docs'])->name('ai-gateway.docs');
+                });
+
+            // Voice to text (drust's whisper.cpp): model file, CPU threads, restart and a test form.
+            // It runs on this server's CPUs, so only admins manage it.
+            Route::prefix('ai-gateway/voice')
+                ->middleware('role:admin')
+                ->group(function (): void {
+                    Route::get('/', [AiGatewayVoiceController::class, 'index'])->name('ai-gateway.voice.index');
+                    Route::post('settings', [AiGatewayVoiceController::class, 'save'])->name('ai-gateway.voice.save');
+                    Route::post('restart', [AiGatewayVoiceController::class, 'restart'])->name('ai-gateway.voice.restart');
+                    Route::get('state', [AiGatewayVoiceController::class, 'state'])->name('ai-gateway.voice.state');
+                    Route::post('mode', [AiGatewayVoiceController::class, 'mode'])->name('ai-gateway.voice.mode');
+                    Route::post('models/pull', [AiGatewayVoiceController::class, 'pull'])->name('ai-gateway.voice.pull');
+                    Route::post('models/remove', [AiGatewayVoiceController::class, 'remove'])->name('ai-gateway.voice.remove');
+                    Route::post('test', [AiGatewayVoiceController::class, 'test'])
+                        ->middleware('throttle:20,1')
+                        ->name('ai-gateway.voice.test');
                 });
 
             // Local models (drust-llm): downloads use this server's disk and

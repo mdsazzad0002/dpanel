@@ -240,9 +240,10 @@ class AiGatewayApiController extends Controller
      * POST /api/v1/audio/transcriptions — OpenAI-compatible speech to text
      * (multipart `file`), routed automatically to a model with the
      * "transcription" capability: Whisper on OpenAI/Groq, or a Gemini model
-     * listening to the audio.
+     * listening to the audio. drust's own whisper.cpp goes first when it is
+     * running (config aigateway.local_transcription).
      */
-    public function audioTranscriptions(Request $request): JsonResponse|\Illuminate\Http\Response
+    public function audioTranscriptions(Request $request, bool $translate = false): JsonResponse|\Illuminate\Http\Response
     {
         $data = $request->validate([
             'file' => ['required', 'file', 'max:'.(25 * 1024)],
@@ -280,7 +281,7 @@ class AiGatewayApiController extends Controller
                 (string) file_get_contents($file->getRealPath()),
                 $file->getClientOriginalName() ?: 'audio',
                 $mime,
-                ['language' => $data['language'] ?? null, 'prompt' => $data['prompt'] ?? null, 'channel' => 'api', 'created_by' => null],
+                ['language' => $data['language'] ?? null, 'prompt' => $data['prompt'] ?? null, 'channel' => 'api', 'created_by' => null, 'translate' => $translate],
             );
         } catch (\Throwable $e) {
             return $this->errorResponse($e);
@@ -294,8 +295,18 @@ class AiGatewayApiController extends Controller
             'text' => $result['text'],
             'language' => $result['language'],
             'model' => $result['model'],
-            'provider' => $result['provider']->name,
+            'provider' => $result['provider']?->name ?? 'drust',
         ], fn ($value) => $value !== null));
+    }
+
+    /**
+     * POST /api/v1/audio/translations — OpenAI-compatible speech straight to
+     * English text (multipart `file`, optional `language` of the speech),
+     * done by drust's whisper.cpp.
+     */
+    public function audioTranslations(Request $request): JsonResponse|\Illuminate\Http\Response
+    {
+        return $this->audioTranscriptions($request, true);
     }
 
     /**

@@ -22,6 +22,21 @@ return [
 
     // So does transcribing a long voice recording.
     'transcription_timeout' => (int) env('AIGATEWAY_TRANSCRIPTION_TIMEOUT', 180),
+    // drust's whisper.cpp (media/transcribe) as the voice-to-text gateway:
+    // "first" = before the transcription models, "fallback" = only when they fail or none exist, "off"
+    'local_transcription' => env('AIGATEWAY_LOCAL_TRANSCRIPTION', 'first'),
+
+    // whisper.cpp models the Voice to Text page offers to download (drust fetches them
+    // from huggingface.co/ggerganov/whisper.cpp); sizes in MB, speed relative on CPU
+    'whisper_catalog' => [
+        ['file' => 'ggml-tiny-q5_1.bin', 'label' => 'Tiny', 'size_mb' => 31, 'note' => 'Fastest, English only really'],
+        ['file' => 'ggml-base-q5_1.bin', 'label' => 'Base', 'size_mb' => 57, 'note' => 'Fast; weak for Bangla'],
+        ['file' => 'ggml-small-q5_1.bin', 'label' => 'Small', 'size_mb' => 181, 'note' => 'Understands Bangla, often writes it in another script'],
+        ['file' => 'ggml-medium-q5_0.bin', 'label' => 'Medium', 'size_mb' => 514, 'note' => 'Better, about 3× slower than Small'],
+        ['file' => 'ggml-large-v3-turbo-q5_0.bin', 'label' => 'Large v3 Turbo', 'size_mb' => 547, 'note' => 'Best for Bangla on CPU (recommended)'],
+        ['file' => 'ggml-large-v3-turbo-q8_0.bin', 'label' => 'Large v3 Turbo (q8)', 'size_mb' => 834, 'note' => 'Slightly more accurate, bigger'],
+        ['file' => 'ggml-large-v3-q5_0.bin', 'label' => 'Large v3', 'size_mb' => 1080, 'note' => 'Most accurate, slowest'],
+    ],
 
     // Maximum number of retries for transient provider failures.
     'max_retries' => (int) env('AIGATEWAY_MAX_RETRIES', 1),

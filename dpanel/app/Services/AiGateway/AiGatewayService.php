@@ -418,10 +418,32 @@ class AiGatewayService
      */
     public function transcribe(string $audio, string $filename, string $mime, array $options = []): array
     {
+        // drust's own whisper.cpp (free, on this server) is the voice-to-text gateway when it is
+        // there: "first" tries it before the models, "fallback" only when they all fail, "off" never
+        $local = self::localTranscriptionMode();
+
+        // speech straight to English (/audio/translations): only drust's whisper does that here
+        if (! empty($options['translate'])) {
+            if ($local !== 'off' && ($result = $this->transcribeLocally($audio, $filename, $mime, $options))) {
+                return $result;
+            }
+
+            throw new Exceptions\AiGatewayException('Voice translation needs drust\'s voice to text (AI Gateway → Voice to Text), and it did not answer.');
+        }
+
+        if ($local === 'first' && ($result = $this->transcribeLocally($audio, $filename, $mime, $options))) {
+            return $result;
+        }
+
         $candidates = $this->router->candidates(null, null, ['transcription']);
 
         if ($candidates->isEmpty()) {
-            throw new Exceptions\AiGatewayException('No active transcription model. Add one (e.g. whisper-large-v3-turbo on Groq, whisper-1 on OpenAI or gemini-2.5-flash) under AI Gateway → Models and give it the "transcription" capability.');
+            if ($local === 'fallback' && ($result = $this->transcribeLocally($audio, $filename, $mime, $options))) {
+                return $result;
+            }
+
+            throw new Exceptions\AiGatewayException('No active transcription model. Add one (e.g. whisper-large-v3-turbo on Groq, whisper-1 on OpenAI or gemini-2.5-flash) under AI Gateway → Models and give it the "transcription" capability'
+                .($local !== 'off' ? ', or check that drust\'s voice transcription (media/transcribe) is running.' : '.'));
         }
 
         $lastException = null;
@@ -472,8 +494,88 @@ class AiGatewayService
             return [...$result, 'provider' => $provider, 'trace_id' => $traceId];
         }
 
+        if ($local === 'fallback' && ($result = $this->transcribeLocally($audio, $filename, $mime, $options))) {
+            return $result;
+        }
+
         throw $lastException;
     }
+
+    /**
+     * Speech to text with drust's whisper.cpp (POST media/transcribe, the file as base64).
+     * Never throws: null when drust is not configured, not reachable or built without speech.
+     *
+     * @return array{text: string, language: ?string, model: string, provider: null, trace_id: string}|null
+     */
+    private function transcribeLocally(string $audio, string $filename, string $mime, array $options): ?array
+    {
+        $url = (string) config('serverpanel.media_transcribe_api_url');
+        if ($url === '' || $audio === '') {
+            return null;
+        }
+
+        $traceId = (string) Str::uuid();
+        $start = microtime(true);
+        $language = $options['language'] ?? null;
+
+        try {
+            $token = (string) config('serverpanel.execution_api_token');
+            $response = \Illuminate\Support\Facades\Http::timeout((int) config('aigateway.transcription_timeout', 180))->acceptJson()
+                ->when($token !== '', fn ($request) => $request->withToken($token))
+                ->post($url, array_filter([
+                    'data' => base64_encode($audio),
+                    'language' => $language ?: null,
+                    'translate' => ! empty($options['translate']) ?: null,
+                ]));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('AI Gateway: local transcription failed', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+
+        $text = trim((string) $response->json('data.text'));
+        if (! $response->successful() || ! $response->json('success') || $text === '') {
+            \Illuminate\Support\Facades\Log::warning('AI Gateway: local transcription did not succeed', ['status' => $response->status(), 'body' => Str::limit($response->body(), 500)]);
+
+            return null;
+        }
+
+        AiGatewayRequestLog::create([
+            'trace_id' => $traceId,
+            'channel' => $options['channel'] ?? 'gateway',
+            'operation' => ! empty($options['translate']) ? 'translation' : 'transcription',
+            'model' => self::LOCAL_TRANSCRIPTION_MODEL,
+            'status' => 'success',
+            'request_payload' => config('aigateway.log_payloads', true) ? $filename.' ('.$mime.', '.strlen($audio).' bytes)' : null,
+            'response_snippet' => Str::limit($text, 500),
+            'input_tokens' => 0,
+            'output_tokens' => 0,
+            'cost' => 0,
+            'latency_ms' => (int) round((microtime(true) - $start) * 1000),
+            'created_by' => $options['created_by'] ?? auth()->id() ?? null,
+        ]);
+
+        return ['text' => $text, 'language' => $language, 'model' => self::LOCAL_TRANSCRIPTION_MODEL, 'provider' => null, 'trace_id' => $traceId];
+    }
+
+    /** Where the panel keeps the Voice to Text page's choice (over AIGATEWAY_LOCAL_TRANSCRIPTION). */
+    public const LOCAL_TRANSCRIPTION_MODE_KEY = 'aigateway.local_transcription_mode';
+
+    public const LOCAL_TRANSCRIPTION_MODES = ['first', 'fallback', 'off'];
+
+    /**
+     * drust's whisper as the voice-to-text gateway: "first" (before the live transcription
+     * models), "fallback" (only when they fail or none exist) or "off" (live models only).
+     */
+    public static function localTranscriptionMode(): string
+    {
+        $mode = (string) (\Illuminate\Support\Facades\Cache::get(self::LOCAL_TRANSCRIPTION_MODE_KEY) ?: config('aigateway.local_transcription', 'first'));
+
+        return in_array($mode, self::LOCAL_TRANSCRIPTION_MODES, true) ? $mode : 'first';
+    }
+
+    /** How a transcription made by drust's whisper.cpp shows up in responses and the request log. */
+    public const LOCAL_TRANSCRIPTION_MODEL = 'whisper.cpp (drust)';
 
     /**
      * Capabilities auto-routing should prefer for a request.

@@ -16,7 +16,15 @@ const props = defineProps({
     providers: { type: Array, default: () => [] },
     providerFilter: { type: [Number, String], default: null },
     defaultModelSeed: { type: Object, default: () => ({}) },
+    localTranscription: { type: Object, default: null },
 });
+
+// drust's whisper.cpp: the voice-to-text gateway, not a provider model, so it has its own card
+const LOCAL_MODES = {
+    first: 'Used first for every voice note; the transcription models below only when it fails',
+    fallback: 'Used only when the transcription models below fail or none are set up',
+    off: 'Turned off (AIGATEWAY_LOCAL_TRANSCRIPTION=off)',
+};
 
 const filteredProvider = props.providers.find((p) => p.id === props.providerFilter);
 
@@ -248,6 +256,24 @@ const saveEdit = (m) => {
             <div v-if="page.props.flash?.error"
                 class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{
                     page.props.flash.error }}
+            </div>
+
+            <div v-if="localTranscription"
+                class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-800">
+                <div class="flex items-center gap-2 font-medium">
+                    <span class="inline-block h-2 w-2 rounded-full"
+                        :class="localTranscription.mode === 'off' ? 'bg-slate-400' : (localTranscription.reachable ? 'bg-emerald-500' : 'bg-red-500')"></span>
+                    Voice to text (local) · {{ localTranscription.model }}
+                </div>
+                <Link :href="panelRoute('ai-gateway.voice.index')" class="text-xs text-blue-600 hover:underline">Settings, restart &amp; test →</Link>
+                <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-slate-700 dark:text-slate-300">transcription</span>
+                <span class="text-xs text-slate-500">
+                    {{ localTranscription.mode === 'off' ? 'Off' : (localTranscription.reachable ? 'Running' : 'drust not reachable') }}
+                    · {{ LOCAL_MODES[localTranscription.mode] || localTranscription.mode }}
+                </span>
+                <span class="ml-auto text-xs text-slate-400">
+                    {{ localTranscription.uses_7d }} in 7 days<template v-if="localTranscription.last_used_at"> · last {{ new Date(localTranscription.last_used_at).toLocaleString() }}</template>
+                </span>
             </div>
 
             <form @submit.prevent="add"
