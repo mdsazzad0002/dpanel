@@ -244,5 +244,20 @@
         "installed": "আপনার certificate বসানো হয়েছে।",
         "failed": "Certificate বসানো যায়নি।",
         "fileTooLarge": "এই file certificate বা key হওয়ার পক্ষে বেশি বড়।"
+    },
+    "dnssec": {
+        "title": "DNSSEC",
+        "loading": "দেখা হচ্ছে…",
+        "on": "এই zone sign করা। নিচের DS record আপনার domain registrar-এ যোগ করুন; তার আগে resolver zone-টাকে unsigned ধরে।",
+        "off": "Sign করলে resolver যাচাই করতে পারে যে এই domain-এর উত্তর সত্যিই এই server থেকে আসছে।",
+        "enable": "DNSSEC চালু করুন",
+        "disable": "DNSSEC বন্ধ করুন",
+        "saving": "Save হচ্ছে…",
+        "registrar": "Registrar-এর জন্য DS record (বেশিরভাগ registrar digest type 2-এরটা চায়):",
+        "copy": "Copy",
+        "copied": "Copy হয়েছে",
+        "failed": "DNSSEC বদলানো যায়নি।",
+        "confirmEnable": "এই zone sign করবেন? Registrar-এ DS record যোগ না করা পর্যন্ত visitor-দের জন্য কিছু বদলায় না।",
+        "confirmDisable": "আগে registrar থেকে DS record সরান আর এক দিন অপেক্ষা করুন। Sign বন্ধ হওয়ার সময় সেটা থেকে গেলে domain আর resolve হবে না। এখন DNSSEC বন্ধ করবেন?"
     }
 }

@@ -92,7 +92,7 @@ dns_write_config() {
   done
 
   install -m 640 /dev/null "${include_dir}/gmysql.conf"
-  printf 'launch+=gmysql\ngmysql-host=%s\ngmysql-port=%s\ngmysql-dbname=%s\ngmysql-user=%s\ngmysql-password=%s\ngmysql-dnssec=no\n' \
+  printf 'launch+=gmysql\ngmysql-host=%s\ngmysql-port=%s\ngmysql-dbname=%s\ngmysql-user=%s\ngmysql-password=%s\ngmysql-dnssec=yes\n' \
     "${db_host:-127.0.0.1}" "${db_port:-3306}" "$db_name" "$db_user" "$db_password" >"${include_dir}/gmysql.conf"
   chown root:pdns "${include_dir}/gmysql.conf" 2>/dev/null || true
   printf 'local-address=%s\nlocal-port=53\n' "$listen" >"${include_dir}/listener.conf"

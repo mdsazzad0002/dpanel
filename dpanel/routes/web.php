@@ -26,6 +26,7 @@ use App\Http\Controllers\DatabaseController;
 use App\Http\Controllers\DnsController;
 use App\Http\Controllers\DnsFindReplaceController;
 use App\Http\Controllers\DnsZoneConnectionController;
+use App\Http\Controllers\DnsZoneDnssecController;
 use App\Http\Controllers\DnsZoneFileController;
 use App\Http\Controllers\Email\MailAutoresponderController;
 use App\Http\Controllers\Email\MailForwarderController;
@@ -881,6 +882,12 @@ Route::prefix('cpsess{token}')
             Route::post('/dns/zones/{id}/import', [DnsZoneFileController::class, 'import'])
                 ->middleware('role_or_permission:admin|reseller|general|general_user|manage_dns')
                 ->name('dns.zones.import');
+            Route::get('/dns/zones/{id}/dnssec', [DnsZoneDnssecController::class, 'show'])
+                ->middleware(['role_or_permission:admin|reseller|general|general_user|manage_dns', 'throttle:30,1'])
+                ->name('dns.zones.dnssec');
+            Route::put('/dns/zones/{id}/dnssec', [DnsZoneDnssecController::class, 'update'])
+                ->middleware(['role_or_permission:admin|reseller|general|general_user|manage_dns', 'throttle:10,1'])
+                ->name('dns.zones.dnssec.update');
             Route::get('/dns/zones/connection', [DnsZoneConnectionController::class, 'index'])
                 ->middleware(['role_or_permission:admin|reseller|general|general_user|manage_dns', 'throttle:20,1'])
                 ->name('dns.zones.connection');

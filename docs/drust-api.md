@@ -91,6 +91,7 @@ Every endpoint except `GET /health` requires the bearer token.
 | Runtimes | `php/config`, `node/control`, `python/control`, `cron-job` |
 | SSL | `ssl/ensure` |
 | Databases | `database-request`, `database-config`, `postgresql/service`, `postgresql/pgadmin-login` |
+| DNS | `dns/lookup`, `dns/dnssec/{zone}` (GET status, PUT on or off), `dns/dnssec/{zone}/rectify` |
 | Mail | `mailbox-storage` |
 | Backups | `backup/run`, `backup/delete` (uses `DRUST_PANEL_ROOT` for backup storage and confirms deletion) |
 | Migration | `migration/cpanel/{inspect, restore}`, `migration/cyberpanel-ssh/{discover, transfer}`, `migration/generic/restore` |
@@ -409,6 +410,28 @@ POST /api/v1/ssl/renew
 ```
 
 Renews every certificate the built-in client issued that expires within 30 days, and answers with one result per certificate that was due. With `certbot` as the engine it does nothing. The panel's daily `serverpanel:ssl-reconcile` already renews website certificates through `ssl/ensure`, so this endpoint is only needed without the panel.
+
+### DNSSEC
+
+```http
+GET /api/v1/dns/dnssec/{zone}
+PUT /api/v1/dns/dnssec/{zone}
+POST /api/v1/dns/dnssec/{zone}/rectify
+```
+
+`PUT` takes `{"enabled": true}` or `{"enabled": false}`; `GET` and `PUT` answer:
+
+```json
+{
+  "success": true,
+  "enabled": true,
+  "ds": ["example.com. IN DS 23119 13 2 eb25..."]
+}
+```
+
+Signing runs `pdnsutil`: one ECDSA P-256 key (CSK) and narrow NSEC3 with no salt and no extra iterations, then a rectify. Asking for what the zone already is changes nothing, and turning it off removes the keys. `ds` holds a SHA-256 (digest type 2) and a SHA-384 line; most registrars want the first. Call `rectify` after changing a signed zone's records; the panel does this itself.
+
+The zone name must be lower case, without a trailing dot. A zone PowerDNS does not have is an error. On a server whose DNS is not PowerDNS, every DNSSEC endpoint answers `501`. PowerDNS must run with `gmysql-dnssec=yes`, which the installer writes.
 
 ### Database request
 

@@ -381,7 +381,7 @@ install_powerdns() {
     printf 'gmysql-dbname=%s\n' "${db_name}"
     printf 'gmysql-user=%s\n' "${db_user}"
     printf 'gmysql-password=%s\n' "${db_password}"
-    printf 'gmysql-dnssec=no\n'
+    printf 'gmysql-dnssec=yes\n'
   } > "${gmysql_config}"
   install -o root -g pdns -m 0640 "${gmysql_config}" /etc/powerdns/pdns.d/gmysql.conf
   rm -f "${gmysql_config}"

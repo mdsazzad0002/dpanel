@@ -59,9 +59,19 @@ interface DnsBackend
     public function touchZone(int $zoneId): void;
 
     /**
+     * Signs the zone, or removes its keys; asking for what it already is
+     * changes nothing. `ds` is what the registrar needs (M6).
+     *
      * @return array{enabled: bool, ds: list<string>}
      *
-     * @throws UnsupportedDnsFeature until the backend can sign zones (M6)
+     * @throws UnsupportedDnsFeature where this server cannot sign zones
      */
     public function enableDnssec(string $zone, bool $on): array;
+
+    /**
+     * @return array{enabled: bool, ds: list<string>}
+     *
+     * @throws UnsupportedDnsFeature where this server cannot sign zones
+     */
+    public function dnssecStatus(string $zone): array;
 }

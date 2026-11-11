@@ -20,6 +20,7 @@ mod fail2ban;
 mod file_sync;
 mod filemanager;
 mod firewall;
+mod dnssec;
 mod site_logs;
 mod system;
 mod wordpress;
@@ -127,6 +128,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(filemanager::routes())
         .merge(file_sync::routes())
         .merge(ftp::routes())
+        .merge(dnssec::routes())
         .merge(firewall::routes())
         .merge(site_logs::routes())
         .merge(system::routes())

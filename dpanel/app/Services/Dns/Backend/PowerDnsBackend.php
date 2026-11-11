@@ -3,16 +3,23 @@
 namespace App\Services\Dns\Backend;
 
 use App\Services\Dns\DnsZoneRules;
+use App\Services\Platform\DnssecClient;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * PowerDNS with the gmysql backend: its `domains` and `records` tables live
- * in the panel's own database, so a change is a transaction there.
+ * in the panel's own database, so a change is a transaction there. Signing
+ * (M6) needs `pdnsutil`, so it goes through drust; a signed zone is
+ * rectified after its records change.
  */
 class PowerDnsBackend implements DnsBackend
 {
-    public function __construct(private readonly DnsZoneRules $rules) {}
+    public function __construct(
+        private readonly DnsZoneRules $rules,
+        private readonly DnssecClient $dnssec,
+    ) {}
 
     public function name(): string
     {
@@ -59,6 +66,7 @@ class PowerDnsBackend implements DnsBackend
                 }
             }
         });
+        $this->rectifyIfSigned($to);
     }
 
     public function deleteZone(string $name): void
@@ -70,6 +78,11 @@ class PowerDnsBackend implements DnsBackend
                 return;
             }
             $db->table('records')->where('domain_id', $id)->delete();
+            foreach (['cryptokeys', 'domainmetadata'] as $table) {
+                if ($this->hasTable($table)) {
+                    $db->table($table)->where('domain_id', $id)->delete();
+                }
+            }
             $db->table('domains')->where('id', $id)->delete();
         });
     }
@@ -104,6 +117,7 @@ class PowerDnsBackend implements DnsBackend
             }
             $this->rules->bumpSerial($db, (int) $id);
         });
+        $this->rectifyIfSigned($zone);
     }
 
     public function addRecord(int $zoneId, RecordSpec $record): int
@@ -150,11 +164,56 @@ class PowerDnsBackend implements DnsBackend
     public function touchZone(int $zoneId): void
     {
         $this->rules->bumpSerial($this->db(), $zoneId);
+        $name = $this->db()->table('domains')->where('id', $zoneId)->value('name');
+        if ($name !== null) {
+            $this->rectifyIfSigned((string) $name);
+        }
     }
 
     public function enableDnssec(string $zone, bool $on): array
     {
-        throw new UnsupportedDnsFeature('DNSSEC needs the gmysql-dnssec schema first (backlog M6).');
+        return $this->dnssec->set(self::normalize($zone), $on);
+    }
+
+    public function dnssecStatus(string $zone): array
+    {
+        return $this->dnssec->status(self::normalize($zone));
+    }
+
+    public function isSigned(string $zone): bool
+    {
+        if (! $this->hasTable('cryptokeys')) {
+            return false;
+        }
+        $id = $this->db()->table('domains')->where('name', self::normalize($zone))->value('id');
+
+        return $id !== null && $this->db()->table('cryptokeys')->where('domain_id', $id)->exists();
+    }
+
+    /** @var array<string, bool> */
+    private array $tables = [];
+
+    /** A database made by DnsController's fallback has no DNSSEC tables, so nothing there is signed. */
+    private function hasTable(string $table): bool
+    {
+        return $this->tables[$table] ??= $this->db()->getSchemaBuilder()->hasTable($table);
+    }
+
+    /**
+     * A signed zone answers wrongly for names whose `auth` or empty
+     * non-terminals are stale. The records are already saved, so a failure
+     * here is logged, not thrown; the next change rectifies again.
+     */
+    private function rectifyIfSigned(string $zone): void
+    {
+        if (! $this->isSigned($zone)) {
+            return;
+        }
+        try {
+            $this->dnssec->rectify(self::normalize($zone));
+        } catch (\Throwable $error) {
+            Log::warning('Could not rectify a signed DNS zone.', ['zone' => $zone, 'error' => $error->getMessage()]);
+        }
     }
 
     private static function normalize(string $name): string

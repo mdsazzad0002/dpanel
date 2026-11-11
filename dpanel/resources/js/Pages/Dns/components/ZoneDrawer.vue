@@ -6,6 +6,7 @@ import ZoneScanImport from '@/Pages/Dns/components/ZoneScanImport.vue';
 import ZoneFileImport from '@/Pages/Dns/components/ZoneFileImport.vue';
 import ZoneSettingsForm from '@/Pages/Dns/components/ZoneSettingsForm.vue';
 import ConnectionBadge from '@/Pages/Dns/components/ConnectionBadge.vue';
+import ZoneDnssec from '@/Pages/Dns/components/ZoneDnssec.vue';
 
 const props = defineProps({
     zone: { type: Object, required: true },
@@ -95,6 +96,8 @@ const deleteZone = () => {
             <section v-else class="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
                 Connected: {{ zone.domain }} uses {{ connection.current.join(', ') }}, and this server answers for it.
             </section>
+
+            <ZoneDnssec :key="`dnssec-${zone.domain}`" :url="panelRoute('dns.zones.dnssec', { id: zoneId })" />
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">DNS records</h3>

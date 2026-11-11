@@ -244,5 +244,20 @@
         "installed": "Your certificate is installed.",
         "failed": "The certificate was not installed.",
         "fileTooLarge": "That file is too large to be a certificate or a key."
+    },
+    "dnssec": {
+        "title": "DNSSEC",
+        "loading": "Checking…",
+        "on": "This zone is signed. Add the DS record below at your domain registrar; until then, resolvers treat the zone as unsigned.",
+        "off": "Signing lets resolvers check that answers for this domain really come from this server.",
+        "enable": "Turn on DNSSEC",
+        "disable": "Turn off DNSSEC",
+        "saving": "Saving…",
+        "registrar": "DS records for your registrar (most want the one with digest type 2):",
+        "copy": "Copy",
+        "copied": "Copied",
+        "failed": "DNSSEC could not be changed.",
+        "confirmEnable": "Sign this zone? Nothing changes for visitors until you add the DS record at your registrar.",
+        "confirmDisable": "Remove the DS record at your registrar first and wait a day. If it is still there when signing stops, the domain stops resolving. Turn off DNSSEC now?"
     }
 }

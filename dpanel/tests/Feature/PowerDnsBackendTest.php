@@ -9,6 +9,7 @@ use App\Services\Dns\Backend\UnsupportedDnsFeature;
 use App\Services\Dns\Backend\ZoneSpec;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /** Backlog I3: zones and records reach PowerDNS only through DnsBackend. */
@@ -107,8 +108,10 @@ class PowerDnsBackendTest extends TestCase
         $this->assertSame(0, DB::table('records')->count());
     }
 
-    public function test_dnssec_says_it_is_not_there_yet(): void
+    public function test_dnssec_is_unsupported_where_drust_cannot_sign(): void
     {
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        Http::fake(['drust.test/*' => Http::response(['error' => 'unsupported', 'capability' => 'dns'], 501)]);
         $this->expectException(UnsupportedDnsFeature::class);
         $this->dns->enableDnssec('shop.test', true);
     }

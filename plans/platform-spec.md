@@ -400,7 +400,7 @@ Database-এর `DnsZone` ও `DnsRecord` সবসময় source of truth থ
 
 Implementation: PowerDNS, Windows `DnsServer` module, Cloudflare API, Local hosts file।
 
-প্রথম সংস্করণ panel-এ, PHP-তে: `App\Services\Dns\Backend\DnsBackend` (`upsertZone`, `renameZone`, `deleteZone`, `replaceRecords`, `enableDnssec`, আর একটা একটা record-এর জন্য `addRecord`, `updateRecord`, `deleteRecords`, `touchZone`), `config('dns.engine')` দিয়ে বাছা। Record-এর id backend-এর (PowerDNS-এর `records.id`), কারণ `dns_records.powerdns_record_id` ও form সেটা ধরে রাখে। `addRecord`/`updateRecord`/`deleteRecords` serial ছোঁয় না; caller batch-এর শেষে একবার `touchZone` ডাকে। PowerDNS-এর gmysql table panel-এর database-এ, তাই drust-এ যাওয়ার দরকার পড়েনি। `replaceRecords` SOA রাখে ও serial বাড়ায়; zone-এর বাইরের নাম ফেরায়।
+প্রথম সংস্করণ panel-এ, PHP-তে: `App\Services\Dns\Backend\DnsBackend` (`upsertZone`, `renameZone`, `deleteZone`, `replaceRecords`, `enableDnssec`, আর একটা একটা record-এর জন্য `addRecord`, `updateRecord`, `deleteRecords`, `touchZone`), `config('dns.engine')` দিয়ে বাছা। Record-এর id backend-এর (PowerDNS-এর `records.id`), কারণ `dns_records.powerdns_record_id` ও form সেটা ধরে রাখে। `addRecord`/`updateRecord`/`deleteRecords` serial ছোঁয় না; caller batch-এর শেষে একবার `touchZone` ডাকে। PowerDNS-এর gmysql table panel-এর database-এ, তাই drust-এ যাওয়ার দরকার পড়েনি; শুধু DNSSEC (`enableDnssec`, `dnssecStatus`, rectify) drust-এর `/api/v1/dns/dnssec`-এ যায়, কারণ `pdnsutil` root-এর config পড়ে। Sign করা zone (`cryptokeys`-এ row আছে) `replaceRecords`, `renameZone` ও `touchZone`-এর পরে rectify হয়; ব্যর্থ হলে log, change উল্টায় না। `deleteZone` key ও metadata-ও মোছে। PowerDNS চলে `gmysql-dnssec=yes` দিয়ে। `replaceRecords` SOA রাখে ও serial বাড়ায়; zone-এর বাইরের নাম ফেরায়।
 
 ### 6.11 MailBackend (Laravel)
 
@@ -553,6 +553,8 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `GET`, `POST`, `DELETE /firewall/rules` | Rule |
 | `POST /firewall/confirm` | Lock-out timer থামানো |
 | `POST /api/v1/ssl/ensure`, `/api/v1/ssl/remove` | আগের endpoint, দুই engine-এ একই request ও response; panel-এর কিছু বদলায়নি (I5) |
+| `GET`, `PUT /api/v1/dns/dnssec/{zone}` | `{"enabled"}`; উত্তর `{enabled, ds: [DS line]}`। `pdnsutil`: ECDSA P-256 CSK, narrow NSEC3 `1 0 0 -`, তারপর rectify; PowerDNS ছাড়া `501` (M6) |
+| `POST /api/v1/dns/dnssec/{zone}/rectify` | Sign করা zone-এর record বদলের পরে `auth` ও empty non-terminal ঠিক করা (M6) |
 | `POST /api/v1/ssl/install` | Customer-এর নিজের certificate (M5): `{domain, certificate, private_key}`; উত্তর `ssl/ensure`-এর মতো, সঙ্গে `custom: true` ও `names` |
 | `POST /api/v1/ssl/renew` | `AcmeClient::renew_due`: due certificate প্রতি `{domain, renewed, error}`; `certbot` engine-এ কিছু করে না |
 | `GET /sites/logs?kind=access\|waf\|php&domain=&owner=&lines=` | Site-এর access log, WAF-এর match (S2) বা account-এর PHP error log-এর শেষ অংশ (S4) |
