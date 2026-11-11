@@ -14,6 +14,8 @@ jobs:
         working-directory: drust
     steps:
       - uses: actions/checkout@v4
+      - name: Platform guard (backlog C11)
+        run: ../.github/scripts/platform-guard.sh
       - name: Install build dependencies
         run: |
           sudo apt-get update
