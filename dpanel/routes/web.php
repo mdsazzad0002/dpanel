@@ -36,6 +36,7 @@ use App\Http\Controllers\Email\SmtpRelayController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\Settings\ApiTokenController;
 use App\Http\Controllers\Settings\BrandingController;
+use App\Http\Controllers\Settings\ExtensionController;
 use App\Http\Controllers\Settings\PanelUpdateController;
 use App\Http\Controllers\MailBimiController;
 use App\Http\Controllers\MailClientController;
@@ -348,6 +349,17 @@ Route::prefix('cpsess{token}')
                 Route::get('/status', [PanelUpdateController::class, 'status'])->name('status');
                 Route::post('/', [PanelUpdateController::class, 'update'])->middleware('throttle:10,1')->name('update');
                 Route::post('/rollback', [PanelUpdateController::class, 'rollback'])->middleware('throttle:10,1')->name('rollback');
+            });
+            // Extensions: installed from a manifest, acting through their own scoped API token (U7).
+            Route::middleware('role:admin')->prefix('system/extensions')->name('system.extensions.')->group(function (): void {
+                Route::get('/', [ExtensionController::class, 'index'])->name('index');
+                Route::post('/review', [ExtensionController::class, 'review'])->middleware('throttle:30,1')->name('review');
+                Route::post('/', [ExtensionController::class, 'store'])->middleware('throttle:20,1')->name('store');
+                Route::put('/{extension}/state', [ExtensionController::class, 'state'])->whereNumber('extension')->name('state');
+                Route::post('/{extension}/credentials', [ExtensionController::class, 'credentials'])->whereNumber('extension')->middleware('throttle:10,1')->name('credentials');
+                Route::post('/{extension}/ping', [ExtensionController::class, 'ping'])->whereNumber('extension')->middleware('throttle:20,1')->name('ping');
+                Route::delete('/{extension}', [ExtensionController::class, 'destroy'])->whereNumber('extension')->name('destroy');
+                Route::get('/{extension}/page', [ExtensionController::class, 'page'])->whereNumber('extension')->name('page');
             });
             // Forward-only addresses, catch-all, automatic replies and the relay (M1-M3, M8).
             Route::get('/emails/forwarders', [MailForwarderController::class, 'index'])

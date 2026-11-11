@@ -33,6 +33,7 @@ class DnsZoneLifecycleTest extends TestCase
             $table->string('role')->nullable();
             $table->boolean('is_suspended')->default(false);
             $table->unsignedBigInteger('reseller_id')->nullable();
+            $table->boolean('is_service_account')->default(false);
             $table->timestamps();
         });
         Schema::create('websites', function (Blueprint $table) {

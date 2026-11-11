@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\ApiToken;
+use App\Models\Extension;
 use App\Services\ActivityLogService;
 use Closure;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
@@ -36,6 +37,10 @@ class AuthenticateApiToken implements AuthenticatesRequests
         }
         if ($user->is_suspended || $user->terminated_at !== null) {
             return $this->error('The account that owns this API token is suspended.', 403);
+        }
+        // An extension's token (U7) works only while the extension is enabled.
+        if ($user->is_service_account && ! Extension::query()->where('service_user_id', $user->id)->where('enabled', true)->exists()) {
+            return $this->error('This extension is disabled.', 403);
         }
 
         $token->touchLastUsed($request->ip());

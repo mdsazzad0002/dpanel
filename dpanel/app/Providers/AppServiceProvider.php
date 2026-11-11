@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\Extensions\ExtensionEvents;
 use App\Services\ServerPanel\Contracts\AiSuggestionProvider;
 use App\Services\ServerPanel\HeuristicAiSuggestionProvider;
 use App\Services\ServerPanel\OpenAiSuggestionProvider;
@@ -76,6 +77,9 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(max(1, (int) config('api.rate_limit', 120)))
                 ->by($token ? 'token:'.$token->id : 'ip:'.$request->ip());
         });
+
+        // Extensions (U7): panel changes become signed webhooks.
+        ExtensionEvents::listen();
     }
 
     private function shouldBypassLoopbackViteHotFile(): bool

@@ -12,6 +12,7 @@ dPanel সবার জন্য free। লক্ষ্য তিন OS: Linux,
 | [windows-macos-native-plan.md](windows-macos-native-plan.md) | Architecture, সিদ্ধান্ত, ঝুঁকি, সময় | কীভাবে আর কেন বুঝতে |
 | [platform-spec.md](platform-spec.md) | Interface, data model, API, security invariant | Code লেখার সময় |
 | [backlog.md](backlog.md) | প্রতিটা task: dependency, file, শেষের শর্ত | প্রতিদিনের কাজে |
+| [extension-spec.md](extension-spec.md) | Extension-এর manifest, permission, sandbox, threat (U7) | Extension বানানো বা বদলানোর সময় |
 
 ## কাজ শুরু করার নিয়ম
 

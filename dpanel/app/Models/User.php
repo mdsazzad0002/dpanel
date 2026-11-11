@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\HumanUserScope;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -77,7 +78,17 @@ class User extends Authenticatable implements MustVerifyEmail
             'bandwidth_gb_limit' => 'integer',
             'websites_limit' => 'integer',
             'two_factor_enabled' => 'boolean',
+            'is_service_account' => 'boolean',
         ];
+    }
+
+    /**
+     * Extension service accounts (U7) are not people: they are left out of
+     * every query, which also keeps them from signing in. Not fillable.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new HumanUserScope);
     }
 
     public function reseller(): BelongsTo

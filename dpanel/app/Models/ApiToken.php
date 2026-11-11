@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\HumanUserScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
@@ -41,7 +42,9 @@ class ApiToken extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        // An extension's token (U7) belongs to its service account, which
+        // HumanUserScope hides everywhere else.
+        return $this->belongsTo(User::class)->withoutGlobalScope(HumanUserScope::class);
     }
 
     /**

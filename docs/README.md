@@ -43,6 +43,7 @@
 | [Server Task Runner](ssh-command-runner.md) | SSH connector, command safety rules, and task reports |
 | [MCP Access](mcp.md) | Remote MCP server: connecting AI clients, tokens, tools, and command safety |
 | [dPanel API](api.md) | REST API tokens, scopes, and endpoints for websites, DNS, databases and mail |
+| [Extensions](extensions.md) | Installing extensions, their scoped tokens, signed webhooks and the sandboxed admin page |
 | [WHMCS Integration](../dpanel/integrations/whmcs/README.md) | Connecting dPanel to WHMCS billing |
 
 ## Project policies

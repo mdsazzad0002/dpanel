@@ -515,6 +515,7 @@ pub trait Scheduler {
 | `users` | `disk_over_limit_at` (nullable timestamp), `bandwidth_over_limit_month` (nullable `Y-m`) | `null` |
 | `mail_domains` | `catch_all_to` (nullable string) | `null` |
 | `ssl_certificates` | `expiry_alert_days` (nullable int: শেষ পাঠানো সতর্কতা, 30, 7, 1 বা 0) | `null` |
+| `users` | `is_service_account` (boolean; extension-এর service account, `HumanUserScope` সব Eloquent query থেকে বাদ দেয়, তাই login করতে পারে না; fillable নয়) | `false` |
 
 নতুন table:
 
@@ -535,6 +536,7 @@ pub trait Scheduler {
 | `restic_restore_tests` | `trigger` (`schedule`/`manual`), `status` (`running`/`passed`/`failed`), `started_at`, `finished_at`, `repository_healthy`, `repository_message`, `read_data_percent`, `websites_tested`, `websites_failed`, `results` (JSON, website প্রতি: `snapshot_id`, `ok`, `problem` `missing`/`unreadable`/`damaged`/`stale`, `error`, file ও database-এর হিসাব), `message`; restore test-এর report, শেষ 52টা থাকে (W8) |
 | `api_tokens` | `user_id`, `name`, `token_prefix`, `token_hash` (SHA-256, unique), `scopes` (JSON: `websites:read` ইত্যাদি), `last_used_at`, `last_used_ip`, `expires_at`; revoke করলে row মোছে (U1) |
 | `panel_updates` | drust-এর update run-এর copy (U6): `run_id` (unique), `action` (`update`, `rollback`), `status`, `step`, `target_ref`, `from_version/ref/commit`, `to_version/ref/commit`, `rollback_of`, `restore_database`, `has_backup`, `message`, `user_id`, `started_at`, `finished_at`, `notified_at`। আসল অবস্থা drust-এর `state_dir/panel-update/<id>/`-এ; rollback database ফেরালে row drust থেকে আবার আসে |
+| `extensions` | Install করা extension (U7, [extension-spec.md](extension-spec.md)): `identifier` (manifest-এর `id`, unique), `name`, `version`, `description`, `author`, `homepage`, `manifest` (JSON), `granted_scopes` (JSON, admin-এর অনুমোদন), `events` (JSON, scope দিয়ে ছাঁটা), `ui_title`, `ui_url`, `webhook_url`, `webhook_secret` (encrypted), `enabled`, `service_user_id` (cascade), `installed_by`, `last_delivery_at`, `last_delivery_status`, `last_delivery_error`। Token U1-এর `api_tokens`-এ, owner service account |
 
 `throttle` এখনও নেই: gateway rate কমাতে পারে না, তাই panel শুধু `notify` ও `block` দেয়। `block`-এ site `over_limit` হয়, নতুন মাসে ফেরে।
 
@@ -593,6 +595,23 @@ drust-এর নয়, panel-এর নিজের API: `routes/api.php`, pref
 | `GET /api/v1/dns/zones`; `GET`, `POST /api/v1/dns/zones/{zone}/records`; `PUT`, `DELETE .../records/{id}` | `dns` | `DnsRecordService` দিয়ে (DNS page-ও এটা ব্যবহার করে); record id = PowerDNS id; SOA বাদ |
 | `GET`, `POST /api/v1/databases`; `DELETE /api/v1/databases/{id}` | `databases` | `DatabaseController::provision`; delete শুধু panel-এর row মোছে, page-এর মতো |
 | `GET`, `POST /api/v1/mailboxes`; `PUT /api/v1/mailboxes/{id}/password`; `DELETE /api/v1/mailboxes/{id}` | `mail` | `EmailController`-এর `store`/`deleteMailbox`; শুধু নিজের website-এর domain-এ |
+
+### 8.2 Extension (U7)
+
+পুরো নকশা [extension-spec.md](extension-spec.md)। Extension-এর নিজের `/api/v1` route নেই: U1-এর endpoint নিজের token দিয়ে ডাকে। Token-এর owner service account হলে `AuthenticateApiToken` দেখে তার extension চালু কিনা, নয়তো `403 This extension is disabled.`। Panel-এর admin route (session, `role:admin`):
+
+| Method, path | কাজ |
+| --- | --- |
+| `GET /system/extensions` | Page: install করা extension |
+| `POST /system/extensions/review` | `{manifest}` যাচাই; উত্তর `{manifest, grantable, installed}`, ভুলে `422` `errors.manifest` |
+| `POST /system/extensions` | `{manifest, scopes}`: নতুন `id` হলে install (`201`, token ও secret একবার), থাকলে update; `scopes` ⊆ manifest ∩ admin-এর scope, নয়তো `422` |
+| `PUT /system/extensions/{id}/state` | `{enabled}`; বন্ধ হলে token `403`, event যায় না, page `404` |
+| `POST /system/extensions/{id}/credentials` | নতুন token ও webhook secret, পুরোনো token মোছে |
+| `POST /system/extensions/{id}/ping` | Signed `ping` এখনই পাঠায়; ব্যর্থ হলে `502` |
+| `DELETE /system/extensions/{id}` | Token, row ও service account মোছে |
+| `GET /system/extensions/{id}/page` | Admin page: `sandbox="allow-scripts allow-forms allow-popups"` iframe, header `Content-Security-Policy: frame-src <origin>; frame-ancestors 'self'`, URL-এ signed `dpanel_context` |
+
+Webhook: `POST` JSON, `X-Dpanel-Signature: sha256=<HMAC-SHA256("<timestamp>.<body>", secret)>`, redirect নয়, 3 বার চেষ্টা; event এখন `website.created`, `website.deleted`।
 
 ## 9. Windows php-cgi pool
 
