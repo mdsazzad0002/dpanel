@@ -201,8 +201,15 @@ mod tests {
 
     #[tokio::test]
     async fn system_accounts_are_never_limited() {
-        let (_, body) = send("PUT", "/resource-limits/a12", r#"{"memory_mb":512,"owners":["root"]}"#).await;
-        assert_eq!(body["success"], false);
-        assert!(body["message"].as_str().unwrap_or_default().contains("not a site account"), "{body}");
+        let (status, body) = send("PUT", "/resource-limits/a12", r#"{"memory_mb":512,"owners":["root"]}"#).await;
+        assert_ne!(body["success"], true, "{body}");
+        // Only Linux knows `root` as uid 0; elsewhere the account lookup is
+        // unsupported (501) and the limit is refused all the same.
+        if crate::platform::current().os() == crate::platform::Os::Linux {
+            assert_eq!(body["success"], false);
+            assert!(body["message"].as_str().unwrap_or_default().contains("not a site account"), "{body}");
+        } else {
+            assert!(!status.is_success(), "{status} {body}");
+        }
     }
 }
