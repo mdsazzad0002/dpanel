@@ -51,7 +51,7 @@ fn valid_zone(zone: &str) -> bool {
 }
 
 /// PowerDNS is the DNS server only on a Linux server; elsewhere there is nothing to sign.
-fn ensure_powerdns() -> Result<(), PlatformError> {
+pub(crate) fn ensure_powerdns() -> Result<(), PlatformError> {
     if crate::platform::capabilities::report().capabilities.dns == "powerdns" {
         Ok(())
     } else {
@@ -59,12 +59,12 @@ fn ensure_powerdns() -> Result<(), PlatformError> {
     }
 }
 
-struct Run {
-    ok: bool,
-    text: String,
+pub(crate) struct Run {
+    pub(crate) ok: bool,
+    pub(crate) text: String,
 }
 
-fn pdnsutil(args: &[&str]) -> Result<Run, PlatformError> {
+pub(crate) fn pdnsutil(args: &[&str]) -> Result<Run, PlatformError> {
     let binary = crate::platform::paths().binary(Tool::Pdnsutil)?;
     let output = Command::new(binary)
         .args(args)

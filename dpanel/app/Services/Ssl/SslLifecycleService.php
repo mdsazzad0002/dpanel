@@ -16,8 +16,10 @@ class SslLifecycleService
     /** Suffixes that are never publicly resolvable, so a CA can never issue for them. */
     private const RESERVED_SSL_SUFFIXES = ['.localhost', '.local', '.test', '.example', '.invalid'];
 
-    public function __construct(protected WebsiteService $websiteService)
-    {
+    public function __construct(
+        protected WebsiteService $websiteService,
+        protected WildcardDnsTarget $wildcardDns,
+    ) {
     }
 
     public static function isReservedSslDomain(string $domainName): bool
@@ -66,7 +68,15 @@ class SslLifecycleService
             );
         }
 
-        $response = $this->drustSslRequest('ensure', [
+        // A name right under a wildcard site is already covered by its
+        // certificate, which the gateway serves for it (backlog M4).
+        if (! $force && ! $website->ssl_wildcard && ($covered = $this->coveredByWildcard($domainName)) !== null) {
+            $this->recordValid($website, $domain, $covered);
+
+            return $covered;
+        }
+
+        $payload = [
             'domain' => $domainName,
             'root_path' => $this->websiteService->resolveWebsiteDocumentRoot(
                 (string) $website->root_path,
@@ -75,7 +85,13 @@ class SslLifecycleService
             'renew_before_days' => max(0, (int) config('serverpanel.ssl_auto_renew_days', 30)),
             // Reinstall: issue a new certificate even when the current one is valid.
             'force' => $force,
-        ]);
+        ];
+        if ($website->ssl_wildcard) {
+            // Resolved on every call, so a zone that moved is followed and a
+            // Cloudflare token is never stored outside the panel's .env.
+            $payload['wildcard'] = $this->wildcardDns->for($domainName);
+        }
+        $response = $this->drustSslRequest('ensure', $payload, $website->ssl_wildcard ? 600 : 300);
         $json = $response->json();
         $data = is_array($json['data'] ?? null) ? $json['data'] : [];
         if (! $response->successful() || ! (bool) ($json['success'] ?? false)) {
@@ -202,14 +218,47 @@ class SslLifecycleService
         app(EdgeGatewayReloader::class)->reload();
     }
 
-    protected function drustSslRequest(string $action, array $payload): \Illuminate\Http\Client\Response
+    /**
+     * The certificate of the wildcard site one label up, while it is good,
+     * as drust would report it for this name.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function coveredByWildcard(string $domainName): ?array
+    {
+        $parent = Str::after($domainName, '.');
+        if ($parent === $domainName || ! str_contains($parent, '.')) {
+            return null;
+        }
+        $covers = Website::query()->where('domain', $parent)->where('enable_ssl', true)->where('ssl_wildcard', true)->exists();
+        if (! $covers) {
+            return null;
+        }
+        $certificate = SslCertificate::query()->where('domain', $parent)->where('type', 'letsencrypt')->where('status', 'valid')->first();
+        if ($certificate === null || $certificate->expires_at === null || Carbon::parse($certificate->expires_at)->isPast()) {
+            return null;
+        }
+
+        return [
+            'status' => 'valid',
+            'issued' => false,
+            'renewed' => false,
+            'wildcard_of' => $parent,
+            'certificate_path' => $certificate->certificate_path,
+            'private_key_path' => $certificate->private_key_path,
+            'expires_at' => Carbon::parse($certificate->expires_at)->toIso8601String(),
+        ];
+    }
+
+    protected function drustSslRequest(string $action, array $payload, int $timeout = 300): \Illuminate\Http\Client\Response
     {
         $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust SSL API is not configured.');
         }
 
-        $request = Http::acceptJson()->asJson()->timeout(300);
+        // A wildcard waits for its TXT record to reach the nameservers, twice.
+        $request = Http::acceptJson()->asJson()->timeout($timeout);
         $token = trim((string) config('serverpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);

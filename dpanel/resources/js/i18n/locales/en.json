@@ -259,5 +259,14 @@
         "failed": "DNSSEC could not be changed.",
         "confirmEnable": "Sign this zone? Nothing changes for visitors until you add the DS record at your registrar.",
         "confirmDisable": "Remove the DS record at your registrar first and wait a day. If it is still there when signing stops, the domain stops resolving. Turn off DNSSEC now?"
+    },
+    "wildcardSsl": {
+        "turnOn": "Wildcard SSL",
+        "turnOff": "Wildcard SSL: on",
+        "working": "Working...",
+        "help": "One certificate for {domain} and every *.{domain} subdomain. The domain's DNS must be on this server or on Cloudflare.",
+        "confirmOn": "Issue a wildcard certificate for {domain} and *.{domain}? A TXT record is added to the domain's DNS while the CA checks it. This can take a few minutes.",
+        "confirmOff": "Stop covering *.{domain}? {domain} gets a plain certificate, and subdomains without their own certificate lose HTTPS.",
+        "failed": "Wildcard SSL failed."
     }
 }

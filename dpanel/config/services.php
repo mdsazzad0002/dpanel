@@ -40,6 +40,11 @@ return [
         'bot_username' => '@dPanel_security_bot',
     ],
 
+    // Wildcard certificates (DNS-01, backlog M4) on Cloudflare-hosted zones.
+    'cloudflare' => [
+        'api_token' => env('CLOUDFLARE_API_TOKEN'),
+    ],
+
     'openai' => [
         'api_key' => env('OPENAI_API_KEY'),
         'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),

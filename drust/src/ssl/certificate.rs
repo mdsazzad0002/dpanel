@@ -1,15 +1,16 @@
 use std::net::{Ipv4Addr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::custom;
+use super::{custom, dns01};
 use crate::app::ensure_root;
 use crate::platform::{
     self,
-    acme::{self, AcmeClient, CertInfo, CertRequest, Challenge, SslEngine},
+    acme::{self, AcmeClient, CertInfo, CertRequest, Challenge, Dns01Solver, SslEngine},
     fs::FileMode,
 };
 
@@ -258,7 +259,7 @@ fn custom_status(domain: &str, uploaded: &custom::Custom, now: i64) -> Result<Va
         &uploaded.certificate_path,
         &uploaded.private_key_path,
         uploaded.info.not_after,
-        false,
+        (false, uploaded.info.names.contains(&format!("*.{domain}"))),
         false,
         false,
     );
@@ -282,7 +283,7 @@ pub(super) fn install_custom(domain: &str, certificate: &str, private_key: &str)
         &uploaded.certificate_path,
         &uploaded.private_key_path,
         uploaded.info.not_after,
-        false,
+        (false, uploaded.info.names.contains(&format!("*.{domain}"))),
         true,
         false,
     );
@@ -291,12 +292,14 @@ pub(super) fn install_custom(domain: &str, certificate: &str, private_key: &str)
     Ok(data)
 }
 
+/// `wildcard`: also `*.<domain>`, proved in the DNS zone it names (M4).
 pub(super) fn ensure(
     domain: &str,
     root_path: &str,
     include_www: bool,
     renew_before_days: u64,
     force: bool,
+    wildcard: Option<&dns01::DnsTarget>,
 ) -> Result<Value, String> {
     ensure_root()?;
     let domain = domain.trim().to_lowercase();
@@ -309,7 +312,7 @@ pub(super) fn ensure(
             return custom_status(&domain, &uploaded, acme::unix_now());
         }
     }
-    let data = ensure_issued(&domain, root_path, include_www, renew_before_days, force)?;
+    let data = ensure_issued(&domain, root_path, include_www, renew_before_days, force, wildcard)?;
     // A forced reinstall replaces an uploaded certificate, but only once the
     // new one exists, so a failed issue leaves the site as it was.
     if custom::remove(&tls_dir, &domain)? && !trigger_gateway_reload() {
@@ -324,6 +327,7 @@ fn ensure_issued(
     include_www: bool,
     renew_before_days: u64,
     force: bool,
+    wildcard: Option<&dns01::DnsTarget>,
 ) -> Result<Value, String> {
     let domain = domain.to_string();
     let root_path_buf = Path::new(root_path);
@@ -344,7 +348,35 @@ fn ensure_issued(
         return Err(format!("Website root path does not exist: {root_path}"));
     }
     if is_ip_address(&domain) {
+        if wildcard.is_some() {
+            return Err("An IP address cannot have a wildcard certificate.".into());
+        }
         return ensure_ip(&domain, renew_before_days, force);
+    }
+
+    let at = || AcmeEnsure {
+        tls_dir: platform::paths().tls_dir(),
+        directory: acme::directory_url(),
+        certbot: acme::certbot_lineage(&domain),
+        now: acme::unix_now(),
+    };
+    // certbot here has no DNS plugin, so a wildcard always comes from drust's
+    // own client, whatever the engine. The gateway prefers that file.
+    if let Some(target) = wildcard {
+        if acme::engine() == SslEngine::LocalCa {
+            return Err("Wildcard certificates need a public CA; this is a local install.".into());
+        }
+        let solver = dns01::solver(target, &domain)?;
+        return ensure_with_acme(
+            &acme::client(),
+            &at(),
+            &domain,
+            false,
+            Some(solver),
+            renew_before_days,
+            force,
+            trigger_gateway_reload,
+        );
     }
 
     let www_domain = format!("www.{domain}");
@@ -356,14 +388,10 @@ fn ensure_issued(
     if acme::engine() == SslEngine::Acme {
         return ensure_with_acme(
             &acme::client(),
-            &AcmeEnsure {
-                tls_dir: platform::paths().tls_dir(),
-                directory: acme::directory_url(),
-                certbot: acme::certbot_lineage(&domain),
-                now: acme::unix_now(),
-            },
+            &at(),
             &domain,
             include_www,
+            None,
             renew_before_days,
             force,
             trigger_gateway_reload,
@@ -444,8 +472,12 @@ fn ensure_issued(
         );
     }
 
+    // The site was a wildcard before: the gateway would keep serving the ACME
+    // client's file, so it goes, now that certbot's certificate is good.
+    let dropped_wildcard = acme::client().forget(&domain).map_err(|error| error.to_string())?;
+
     // Only a changed certificate requires the gateway to pick up new files.
-    let gateway_reloaded = if needs_issue {
+    let gateway_reloaded = if needs_issue || dropped_wildcard {
         if !trigger_gateway_reload() {
             return Err(
                 "Certificate is valid, but notifying the edge gateway to reload it failed.".into(),
@@ -461,6 +493,7 @@ fn ensure_issued(
         "issued": needs_issue && !existed,
         "renewed": needs_issue && existed,
         "include_www": include_www,
+        "wildcard": false,
         "certificate_path": certificate_path,
         "private_key_path": private_key_path,
         "expires_at": certificate_expiry(&certificate_path),
@@ -482,7 +515,7 @@ fn valid_response(
     certificate_path: &Path,
     private_key_path: &Path,
     not_after: i64,
-    include_www: bool,
+    (include_www, wildcard): (bool, bool),
     issued: bool,
     renewed: bool,
 ) -> Value {
@@ -491,6 +524,7 @@ fn valid_response(
         "issued": issued,
         "renewed": renewed,
         "include_www": include_www,
+        "wildcard": wildcard,
         "certificate_path": certificate_path.display().to_string(),
         "private_key_path": private_key_path.display().to_string(),
         "expires_at": chrono::DateTime::from_timestamp(not_after, 0).map(|time| time.to_rfc3339()),
@@ -505,19 +539,29 @@ fn valid_response(
 /// does not reissue every site at once and run into the CA's rate limits. The
 /// client takes over when that certificate comes up for renewal, for new
 /// sites, and on a forced reinstall.
+///
+/// With `wildcard` the certificate is `domain` and `*.domain` over DNS-01;
+/// the wildcard already covers www.
+#[allow(clippy::too_many_arguments)]
 fn ensure_with_acme(
     client: &dyn AcmeClient,
     at: &AcmeEnsure,
     domain: &str,
     include_www: bool,
+    wildcard: Option<Arc<dyn Dns01Solver>>,
     renew_before_days: u64,
     force: bool,
     reload_gateway: impl Fn() -> bool,
 ) -> Result<Value, String> {
+    let is_wildcard = wildcard.is_some();
+    let include_www = include_www && !is_wildcard;
     let mut domains = vec![domain.to_string()];
-    if include_www {
+    if is_wildcard {
+        domains.push(format!("*.{domain}"));
+    } else if include_www {
         domains.push(format!("www.{domain}"));
     }
+    let shape = (include_www, is_wildcard);
     let margin = Duration::from_secs(renew_before_days.saturating_mul(86_400));
     let good = |info: &CertInfo| info.outlives(at.now, margin) && domains.iter().all(|name| info.covers(name));
 
@@ -526,16 +570,17 @@ fn ensure_with_acme(
     let current = CertInfo::read(&certificate_path).filter(|_| private_key_path.is_file());
     if !force {
         if let Some(info) = current.as_ref().filter(|info| good(info)) {
-            return Ok(valid_response(&certificate_path, &private_key_path, info.not_after, include_www, false, false));
+            return Ok(valid_response(&certificate_path, &private_key_path, info.not_after, shape, false, false));
         }
         if let Some((certificate, key)) = at.certbot.as_ref() {
             if let Some(info) = CertInfo::read(certificate).filter(|info| good(info)) {
-                return Ok(valid_response(certificate, key, info.not_after, include_www, false, false));
+                return Ok(valid_response(certificate, key, info.not_after, shape, false, false));
             }
         }
     }
 
-    let request = CertRequest { domains, challenge: Challenge::Http01, directory: at.directory.clone() };
+    let challenge = if is_wildcard { Challenge::Dns01 } else { Challenge::Http01 };
+    let request = CertRequest { domains, challenge, directory: at.directory.clone(), dns: wildcard };
     let issued = client.issue(&request).map_err(|error| error.to_string())?;
     if !reload_gateway() {
         return Err("Certificate is valid, but notifying the edge gateway to reload it failed.".into());
@@ -545,7 +590,7 @@ fn ensure_with_acme(
         &issued.certificate_path,
         &issued.private_key_path,
         issued.not_after,
-        include_www,
+        shape,
         !existed,
         existed,
     ))
@@ -641,7 +686,9 @@ mod tests {
 
     impl AcmeClient for FakeClient {
         fn issue(&self, request: &CertRequest) -> Result<IssuedCert, PlatformError> {
-            assert_eq!(request.challenge, Challenge::Http01);
+            let wildcard = request.domains.iter().any(|name| name.starts_with("*."));
+            assert_eq!(request.challenge, if wildcard { Challenge::Dns01 } else { Challenge::Http01 });
+            assert_eq!(request.dns.is_some(), wildcard);
             assert_eq!(request.directory, "https://ca.example/directory");
             self.asked.lock().unwrap().push(request.domains.clone());
             let certificate_path = self.tls_dir.join(format!("{}.crt", request.domains[0]));
@@ -660,6 +707,19 @@ mod tests {
         }
 
         fn revoke(&self, _: &str) -> Result<(), PlatformError> {
+            unreachable!()
+        }
+    }
+
+    /// The fake client never asks it anything.
+    struct NoDns;
+
+    impl Dns01Solver for NoDns {
+        fn publish<'a>(&'a self, _: &'a str, _: &'a str) -> futures_util::future::BoxFuture<'a, Result<(), PlatformError>> {
+            unreachable!()
+        }
+
+        fn withdraw<'a>(&'a self, _: &'a str, _: &'a str) -> futures_util::future::BoxFuture<'a, Result<(), PlatformError>> {
             unreachable!()
         }
     }
@@ -693,7 +753,16 @@ mod tests {
                 self.reloads.set(self.reloads.get() + 1);
                 true
             };
-            ensure_with_acme(&self.client, &self.at, "example.com", include_www, 30, force, reload).unwrap()
+            ensure_with_acme(&self.client, &self.at, "example.com", include_www, None, 30, force, reload).unwrap()
+        }
+
+        fn ensure_wildcard(&self, force: bool) -> Value {
+            let reload = || {
+                self.reloads.set(self.reloads.get() + 1);
+                true
+            };
+            let dns: Arc<dyn Dns01Solver> = Arc::new(NoDns);
+            ensure_with_acme(&self.client, &self.at, "example.com", true, Some(dns), 30, force, reload).unwrap()
         }
 
         fn asked(&self) -> Vec<Vec<String>> {
@@ -817,9 +886,35 @@ mod tests {
     }
 
     #[test]
+    fn a_wildcard_is_asked_for_over_dns_and_kept_while_it_is_good() {
+        let mut fixture = Fixture::new();
+        // A good plain certificate, and a certbot one, do not count: neither covers *.
+        write_certificate(&fixture.own("crt"), &["example.com", "www.example.com"], 80);
+        let lineage = fixture.folder.path().join("fullchain.pem");
+        write_certificate(&lineage, &["example.com"], 60);
+        fixture.at.certbot = Some((lineage, fixture.folder.path().join("privkey.pem")));
+
+        let data = fixture.ensure_wildcard(false);
+
+        assert_eq!(fixture.asked(), vec![vec!["example.com".to_string(), "*.example.com".to_string()]]);
+        assert_eq!((&data["wildcard"], &data["include_www"], &data["renewed"]), (&json!(true), &json!(false), &json!(true)));
+        assert_eq!(data["certificate_path"], fixture.own("crt").display().to_string());
+        assert_eq!(fixture.reloads.get(), 1);
+
+        let data = fixture.ensure_wildcard(false);
+        assert_eq!(fixture.asked().len(), 1);
+        assert_eq!(data["wildcard"], true);
+        // Turning the wildcard off keeps it while it is good: it covers www too.
+        let data = fixture.ensure(true, false);
+        assert_eq!(fixture.asked().len(), 1);
+        assert_eq!(data["wildcard"], false);
+    }
+
+    #[test]
     fn a_gateway_that_cannot_be_told_is_an_error() {
         let fixture = Fixture::new();
-        let error = ensure_with_acme(&fixture.client, &fixture.at, "example.com", false, 30, false, || false).unwrap_err();
+        let error =
+            ensure_with_acme(&fixture.client, &fixture.at, "example.com", false, None, 30, false, || false).unwrap_err();
         assert!(error.contains("edge gateway"), "{error}");
     }
 }

@@ -17,6 +17,8 @@ pub(crate) struct Request {
     pub include_www: Option<bool>,
     pub renew_before_days: Option<u64>,
     pub force: Option<bool>,
+    /// Present: the certificate also covers `*.<domain>`, proved in this zone.
+    pub wildcard: Option<super::dns01::DnsTarget>,
 }
 
 pub(crate) async fn handle(
@@ -36,6 +38,7 @@ pub(crate) async fn handle(
             request.include_www.unwrap_or(false),
             request.renew_before_days.unwrap_or(30),
             request.force.unwrap_or(false),
+            request.wildcard.as_ref(),
         )
     })
     .await

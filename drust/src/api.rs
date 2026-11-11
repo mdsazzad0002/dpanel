@@ -20,7 +20,7 @@ mod fail2ban;
 mod file_sync;
 mod filemanager;
 mod firewall;
-mod dnssec;
+pub(crate) mod dnssec;
 mod site_logs;
 mod system;
 mod wordpress;

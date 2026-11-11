@@ -4,6 +4,7 @@ import { Deferred, router } from '@inertiajs/vue3';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
 import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
 import CustomCertificateButton from '@/Pages/Websites/components/CustomCertificateButton.vue';
+import WildcardSslButton from '@/Pages/Websites/components/WildcardSslButton.vue';
 
 const props = defineProps({
     website: {
@@ -226,6 +227,7 @@ const disableWebsiteSsl = async () => {
             <button type="button" :disabled="sslActionLoading" class="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="refreshSslStatus">{{ sslActionLoading ? 'Checking...' : 'Check SSL' }}</button>
             <button type="button" :disabled="sslActionLoading" class="rounded-md border border-emerald-200 px-2.5 py-1.5 text-xs font-semibold text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-500/10" @click="issueWebsiteSsl">{{ sslActionLoading ? 'Processing...' : 'Issue / Renew SSL' }}</button>
             <CustomCertificateButton :website="website" :disabled="sslActionLoading" @installed="onSslChanged" />
+            <WildcardSslButton :website="website" :disabled="sslActionLoading" @changed="onSslChanged" @failed="(message) => pushToast?.(message, 'error')" />
             <button v-if="sslEnabled" type="button" :disabled="sslActionLoading" class="rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:border-red-300 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-500/10" @click="disableWebsiteSsl">{{ sslActionLoading ? 'Processing...' : 'Disable SSL' }}</button>
         </div>
     </div>

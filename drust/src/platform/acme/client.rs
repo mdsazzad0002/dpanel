@@ -63,7 +63,7 @@ fn allowed_url(url: &str) -> Result<Url, PlatformError> {
 }
 
 /// A name a public CA can validate over HTTP: no wildcard, no address.
-fn valid_name(name: &str) -> bool {
+pub(super) fn valid_name(name: &str) -> bool {
     name.len() <= 253
         && name.contains('.')
         && name.split('.').all(|label| {
@@ -76,19 +76,40 @@ fn valid_name(name: &str) -> bool {
         && name.rsplit('.').next().is_some_and(|top| top.bytes().any(|byte| byte.is_ascii_alphabetic()))
 }
 
+/// A name `challenge` can prove. DNS-01 also proves `*.<name>`.
+fn valid_for(name: &str, challenge: Challenge) -> bool {
+    match (challenge, name.strip_prefix("*.")) {
+        (Challenge::Dns01, Some(parent)) => valid_name(parent),
+        _ => valid_name(name),
+    }
+}
+
 fn checked(request: &CertRequest) -> Result<CertRequest, PlatformError> {
     let domains: Vec<String> = request.domains.iter().map(|name| name.trim().to_ascii_lowercase()).collect();
     if domains.is_empty() || domains.len() > 100 {
         return Err(failed("issue certificate", "A certificate needs between 1 and 100 names."));
     }
-    if request.challenge == Challenge::Dns01 {
-        return Err(failed("issue certificate", "The DNS-01 challenge is not available yet."));
+    let kind = match request.challenge {
+        Challenge::Http01 => "HTTP-01",
+        Challenge::Dns01 => "DNS-01",
+    };
+    if let Some(bad) = domains.iter().find(|name| !valid_for(name, request.challenge)) {
+        return Err(failed("issue certificate", format!("Not a name {kind} can validate: {bad}")));
     }
-    if let Some(bad) = domains.iter().find(|name| !valid_name(name)) {
-        return Err(failed("issue certificate", format!("Not a name HTTP-01 can validate: {bad}")));
+    // The first name is the file name; a wildcard there would be `*.x.crt`.
+    if domains[0].starts_with("*.") {
+        return Err(failed("issue certificate", "The first name of a certificate cannot be a wildcard."));
+    }
+    if request.challenge == Challenge::Dns01 && request.dns.is_none() {
+        return Err(failed("issue certificate", "DNS-01 needs to know where the domain's DNS lives."));
     }
     allowed_url(&request.directory)?;
-    Ok(CertRequest { domains, challenge: request.challenge, directory: request.directory.trim().to_string() })
+    Ok(CertRequest {
+        domains,
+        challenge: request.challenge,
+        directory: request.directory.trim().to_string(),
+        dns: request.dns.clone(),
+    })
 }
 
 /// What `issue` wrote down, so `renew_due` can ask for the same again.
@@ -408,6 +429,11 @@ fn safe_token(token: &str) -> bool {
     !token.is_empty() && token.len() <= 256 && token.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
+/// The DNS-01 answer: the digest of the key authorization (RFC 8555 §8.4).
+fn dns01_value(key_authorization: &str) -> String {
+    base64url(Sha256::digest(key_authorization.as_bytes()))
+}
+
 /// The HTTP-01 answer on disk; gone again when this is dropped.
 struct PresentedToken(PathBuf);
 
@@ -492,8 +518,10 @@ impl Rfc8555Client {
             reply.location.clone().ok_or_else(|| failed("issue certificate", "The ACME server did not name the order."))?;
         let order = reply.json()?;
 
+        // One at a time: `example.com` and `*.example.com` share one TXT name,
+        // and each value is withdrawn before the next one goes up.
         for authorization_url in order["authorizations"].as_array().into_iter().flatten().filter_map(Value::as_str) {
-            self.authorize(&mut session, authorization_url).await?;
+            self.authorize(&mut session, request, authorization_url).await?;
         }
         let order = session.wait_for(&order_url, &["ready", "valid"], "the order").await?;
 
@@ -543,29 +571,65 @@ impl Rfc8555Client {
         Ok(IssuedCert { domain: domain.clone(), certificate_path, private_key_path, not_after: info.not_after })
     }
 
-    /// Proves one name. The token stays on disk only while the CA looks.
-    async fn authorize(&self, session: &mut Session, url: &str) -> Result<(), PlatformError> {
+    /// Proves one name. The answer is out there only while the CA looks.
+    async fn authorize(&self, session: &mut Session, request: &CertRequest, url: &str) -> Result<(), PlatformError> {
         let authorization = session.post(url, None).await?.json()?;
         if authorization["status"] == "valid" {
             return Ok(());
         }
         let name = authorization["identifier"]["value"].as_str().unwrap_or("the name").to_string();
+        let (kind, label) = match request.challenge {
+            Challenge::Http01 => ("http-01", "HTTP-01"),
+            Challenge::Dns01 => ("dns-01", "DNS-01"),
+        };
         let challenge = authorization["challenges"]
             .as_array()
             .into_iter()
             .flatten()
-            .find(|challenge| challenge["type"] == "http-01")
-            .ok_or_else(|| failed("issue certificate", format!("The CA offers no HTTP-01 challenge for {name}.")))?;
+            .find(|challenge| challenge["type"] == kind)
+            .ok_or_else(|| failed("issue certificate", format!("The CA offers no {label} challenge for {name}.")))?;
         let (Some(token), Some(challenge_url)) = (challenge["token"].as_str(), challenge["url"].as_str()) else {
             return Err(failed("issue certificate", format!("The CA sent a broken challenge for {name}.")));
         };
-
         let key_authorization = format!("{token}.{}", session.key.thumbprint());
-        let _token = PresentedToken::present(&self.settings.challenge_dir, token, &key_authorization)?;
-        if challenge["status"] == "pending" {
-            session.post(challenge_url, Some(&json!({}))).await?;
+        let pending = challenge["status"] == "pending";
+
+        match (request.challenge, request.dns.as_ref()) {
+            (Challenge::Dns01, Some(dns)) => {
+                // The CA names the zone part; `*.` is only a flag on the authorization.
+                if !valid_name(&name) {
+                    return Err(failed("issue certificate", format!("The CA sent a name that is not a domain: {name}")));
+                }
+                let record = format!("_acme-challenge.{name}");
+                let value = dns01_value(&key_authorization);
+                let started = Instant::now();
+                dns.publish(&record, &value).await?;
+                // Time spent waiting for the nameservers is not the CA's.
+                session.deadline += started.elapsed();
+                let proved = async {
+                    if pending {
+                        session.post(challenge_url, Some(&json!({}))).await?;
+                    }
+                    session.wait_for(url, &["valid"], "the name").await
+                }
+                .await;
+                let withdrawn = dns.withdraw(&record, &value).await;
+                proved?;
+                if let Err(error) = withdrawn {
+                    tracing::warn!(%record, %error, "could not remove the DNS-01 record");
+                }
+            }
+            (Challenge::Dns01, None) => {
+                return Err(failed("issue certificate", "DNS-01 needs to know where the domain's DNS lives."));
+            }
+            (Challenge::Http01, _) => {
+                let _token = PresentedToken::present(&self.settings.challenge_dir, token, &key_authorization)?;
+                if pending {
+                    session.post(challenge_url, Some(&json!({}))).await?;
+                }
+                session.wait_for(url, &["valid"], "the name").await?;
+            }
         }
-        session.wait_for(url, &["valid"], "the name").await?;
         Ok(())
     }
 
@@ -598,7 +662,17 @@ impl AcmeClient for Rfc8555Client {
                 continue;
             }
             let Some(stored) = self.stored_order(&domain) else { continue };
-            let request = CertRequest { domains: stored.domains, challenge: Challenge::Http01, directory: stored.directory };
+            // Only the caller knows where the zone lives and holds its
+            // credentials, so `ssl/ensure` renews these, never this loop.
+            if stored.challenge == Challenge::Dns01.as_str() {
+                continue;
+            }
+            let request = CertRequest {
+                domains: stored.domains,
+                challenge: Challenge::Http01,
+                directory: stored.directory,
+                dns: None,
+            };
             let outcome = self.issue(&request);
             results.push(RenewResult {
                 domain,

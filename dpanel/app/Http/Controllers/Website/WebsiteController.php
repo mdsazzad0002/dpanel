@@ -775,6 +775,46 @@ class WebsiteController extends Controller
         return response()->json(['type' => 'success', 'message' => $message]);
     }
 
+    /**
+     * Backlog M4: the certificate also covers *.<domain>, proved in DNS. On a
+     * failure the site keeps its setting and its certificate.
+     */
+    public function updateSslWildcard(Request $request, string $token, string $id): JsonResponse
+    {
+        $this->findAuthorizedWebsiteOrFail($id);
+        $validated = $request->validate(['enabled' => ['required', 'boolean']]);
+        $website = Website::query()->findOrFail($id);
+        $enabled = (bool) $validated['enabled'];
+        $domain = strtolower((string) $website->domain);
+
+        if ($enabled && (str_starts_with($domain, 'www.') || filter_var($domain, FILTER_VALIDATE_IP) !== false
+            || SslLifecycleService::isReservedSslDomain($domain) || $website->parent_id !== null)) {
+            return response()->json(['type' => 'error', 'message' => "A wildcard certificate is only for a main domain, not for {$domain}."], 422);
+        }
+        if ((bool) $website->ssl_wildcard === $enabled && (bool) $website->enable_ssl) {
+            return response()->json(['type' => 'success', 'enabled' => $enabled, 'message' => 'Nothing to change.']);
+        }
+
+        $before = ['enable_ssl' => (bool) $website->enable_ssl, 'ssl_wildcard' => (bool) $website->ssl_wildcard];
+        try {
+            $website->forceFill(['enable_ssl' => true, 'ssl_wildcard' => $enabled])->save();
+            // Turning it off asks for a plain certificate now, instead of
+            // keeping the wildcard until it is due.
+            $result = $this->sslLifecycleService->ensureForWebsite($website->fresh(), ! $enabled);
+        } catch (\Throwable $e) {
+            $website->forceFill($before)->save();
+
+            return response()->json(['type' => 'error', 'message' => 'Wildcard SSL failed. '.$e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'type' => 'success',
+            'enabled' => $enabled,
+            'message' => $enabled ? "The certificate now covers *.{$domain}." : 'The certificate no longer covers subdomains.',
+            'ssl' => collect($result)->only(['status', 'wildcard', 'expires_at'])->all(),
+        ]);
+    }
+
     public function updateSslStatus(Request $request, string $token, string $id): JsonResponse
     {
         $this->findAuthorizedWebsiteOrFail($id);
@@ -3546,6 +3586,7 @@ class WebsiteController extends Controller
             'php_version' => (string) ($website->php_version ?? ''),
             'wordpress_db_prefix' => $this->normalizeWordPressDatabasePrefix((string) ($website->wordpress_db_prefix ?? ''), $domain),
             'enable_ssl' => (bool) ($website->enable_ssl ?? false),
+            'ssl_wildcard' => (bool) ($website->ssl_wildcard ?? false),
             'ssl_status' => $this->resolveWebsiteSslStatus($domain),
             'filemanager_show_hidden' => (bool) ($website->filemanager_show_hidden ?? false),
             'assigned_user_id' => $website->assigned_user_id,

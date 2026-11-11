@@ -1,7 +1,7 @@
 //! The client against a small ACME server that lives in the test: it checks
 //! every signature, nonce and URL the way RFC 8555 says a CA must, reads the
-//! HTTP-01 token from the folder the gateway serves, and signs a real
-//! certificate for the CSR.
+//! HTTP-01 token from the folder the gateway serves or the DNS-01 value from
+//! the TXT records a solver wrote, and signs a real certificate for the CSR.
 
 use std::{
     collections::{BTreeMap, HashSet},
@@ -28,11 +28,15 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use x509_parser::pem::parse_x509_pem;
 
+use futures_util::future::BoxFuture;
+
 use super::*;
 use crate::platform::{Os, PlatformError, Profile};
 
 struct Authorization {
+    /// Without `*.`: a wildcard is a flag, as RFC 8555 §7.1.4 says.
     name: String,
+    wildcard: bool,
     token: String,
     status: &'static str,
     error: Option<Value>,
@@ -43,9 +47,13 @@ struct Order {
     certificate: Option<String>,
 }
 
+/// TXT records by name: the zone the CA reads DNS-01 answers from.
+type Zone = Arc<Mutex<BTreeMap<String, Vec<String>>>>;
+
 struct Ca {
     base: String,
     challenge_dir: PathBuf,
+    zone: Zone,
     issuer: Issuer<'static, KeyPair>,
     root_pem: String,
     /// How long the next certificate lasts.
@@ -153,7 +161,7 @@ impl Ca {
         };
         let mut json = json!({
             "status": status,
-            "identifiers": order.authorizations.iter().map(|a| json!({"type": "dns", "value": a.name})).collect::<Vec<_>>(),
+            "identifiers": order.authorizations.iter().map(|a| json!({"type": "dns", "value": a.asked()})).collect::<Vec<_>>(),
             "authorizations": (0..order.authorizations.len()).map(|index| format!("{}/authz/{id}/{index}", self.base)).collect::<Vec<_>>(),
             "finalize": format!("{}/finalize/{id}", self.base),
         });
@@ -168,7 +176,7 @@ impl Ca {
         let challenge = |kind: &str| {
             let mut challenge = json!({
                 "type": kind,
-                "url": format!("{}/chall/{order}/{index}", self.base),
+                "url": format!("{}/chall/{order}/{index}/{}", self.base, usize::from(kind == "http-01")),
                 "token": authorization.token,
                 "status": authorization.status,
             });
@@ -177,28 +185,47 @@ impl Ca {
             }
             challenge
         };
-        json!({
+        // DNS-01 first: the client has to pick by type, not by position.
+        // A wildcard can only be proved in DNS, so it gets nothing else.
+        let challenges =
+            if authorization.wildcard { vec![challenge("dns-01")] } else { vec![challenge("dns-01"), challenge("http-01")] };
+        let mut json = json!({
             "status": authorization.status,
             "identifier": { "type": "dns", "value": authorization.name },
-            // DNS-01 first: the client has to pick by type, not by position.
-            "challenges": [challenge("dns-01"), challenge("http-01")],
-        })
+            "challenges": challenges,
+        });
+        if authorization.wildcard {
+            json["wildcard"] = json!(true);
+        }
+        json
     }
 
-    /// Stands in for the CA's own HTTP request to the name being proved.
-    fn validate(&mut self, order: usize, index: usize, account: usize) {
-        let expected = format!("{}.{}", self.orders[order].authorizations[index].token, thumbprint(&self.accounts[account]));
-        let served = fs::read_to_string(self.challenge_dir.join(&self.orders[order].authorizations[index].token)).ok();
+    /// Stands in for the CA's own request to the name being proved: HTTP to
+    /// the name for `http-01` (kind 1), a TXT lookup for `dns-01` (kind 0).
+    fn validate(&mut self, order: usize, index: usize, kind: usize, account: usize) {
+        let key_authorization =
+            format!("{}.{}", self.orders[order].authorizations[index].token, thumbprint(&self.accounts[account]));
+        let name = self.orders[order].authorizations[index].name.clone();
         let refused = std::mem::take(&mut self.refuse_validation);
+        let (proved, detail) = if kind == 0 {
+            let record = format!("_acme-challenge.{name}");
+            let expected = URL_SAFE_NO_PAD.encode(Sha256::digest(key_authorization.as_bytes()));
+            let found = self.zone.lock().unwrap().get(&record).is_some_and(|values| values.contains(&expected));
+            (found, format!("No TXT record found at {record}"))
+        } else {
+            let token = &self.orders[order].authorizations[index].token;
+            let served = fs::read_to_string(self.challenge_dir.join(token)).ok();
+            (
+                served.as_deref() == Some(&key_authorization),
+                format!("Invalid response from http://{name}/.well-known/acme-challenge/{token}: 404"),
+            )
+        };
         let authorization = &mut self.orders[order].authorizations[index];
-        if !refused && served.as_deref() == Some(&expected) {
+        if !refused && proved {
             authorization.status = "valid";
         } else {
             authorization.status = "invalid";
-            authorization.error = Some(json!({
-                "type": "urn:ietf:params:acme:error:unauthorized",
-                "detail": format!("Invalid response from http://{}/.well-known/acme-challenge/{}: 404", authorization.name, authorization.token),
-            }));
+            authorization.error = Some(json!({ "type": "urn:ietf:params:acme:error:unauthorized", "detail": detail }));
         }
     }
 
@@ -215,7 +242,7 @@ impl Ca {
                 _ => None,
             })
             .collect();
-        let mut ordered: Vec<String> = self.orders[order].authorizations.iter().map(|a| a.name.clone()).collect();
+        let mut ordered: Vec<String> = self.orders[order].authorizations.iter().map(Authorization::asked).collect();
         asked.sort();
         ordered.sort();
         if asked != ordered {
@@ -264,8 +291,10 @@ impl Ca {
                     .iter()
                     .map(|identifier| {
                         self.counter += 1;
+                        let value = identifier["value"].as_str().unwrap();
                         Authorization {
-                            name: identifier["value"].as_str().unwrap().to_string(),
+                            name: value.trim_start_matches("*.").to_string(),
+                            wildcard: value.starts_with("*."),
                             token: format!("token_{}-A", self.counter),
                             status: "pending",
                             error: None,
@@ -281,8 +310,12 @@ impl Ca {
             "authz" if order_exists(self) => Ok(axum::Json(self.authorization_json(ids[0], ids[1])).into_response()),
             "chall" if order_exists(self) => {
                 assert_eq!(payload, json!({}), "a challenge is answered with an empty object");
-                self.validate(ids[0], ids[1], account);
-                Ok(axum::Json(self.authorization_json(ids[0], ids[1])["challenges"][1].clone()).into_response())
+                let kind = ids[2];
+                if kind == 1 && self.orders[ids[0]].authorizations[ids[1]].wildcard {
+                    return Err(not_found());
+                }
+                self.validate(ids[0], ids[1], kind, account);
+                Ok(axum::Json(self.authorization_json(ids[0], ids[1])["challenges"][kind].clone()).into_response())
             }
             "finalize" if order_exists(self) => {
                 if self.order_json(ids[0])["status"] != "ready" {
@@ -317,10 +350,51 @@ async fn serve(State(ca): State<Shared>, method: Method, uri: Uri, _headers: Hea
     response
 }
 
+impl Authorization {
+    /// The name as the order and the CSR carry it.
+    fn asked(&self) -> String {
+        if self.wildcard { format!("*.{}", self.name) } else { self.name.clone() }
+    }
+}
+
+/// Writes TXT records into the test CA's zone, and remembers what it did.
+#[derive(Default)]
+struct FakeDns {
+    zone: Zone,
+    /// What `publish` and `withdraw` were asked, in order.
+    calls: Mutex<Vec<String>>,
+    /// `publish` fails, as when the zone is not on this server.
+    broken: bool,
+}
+
+impl Dns01Solver for FakeDns {
+    fn publish<'a>(&'a self, name: &'a str, value: &'a str) -> BoxFuture<'a, Result<(), PlatformError>> {
+        Box::pin(async move {
+            self.calls.lock().unwrap().push(format!("publish {name}"));
+            if self.broken {
+                return Err(PlatformError::Failed { action: "publish".into(), detail: "zone not here".into() });
+            }
+            self.zone.lock().unwrap().entry(name.to_string()).or_default().push(value.to_string());
+            Ok(())
+        })
+    }
+
+    fn withdraw<'a>(&'a self, name: &'a str, value: &'a str) -> BoxFuture<'a, Result<(), PlatformError>> {
+        Box::pin(async move {
+            self.calls.lock().unwrap().push(format!("withdraw {name}"));
+            if let Some(values) = self.zone.lock().unwrap().get_mut(name) {
+                values.retain(|known| known != value);
+            }
+            Ok(())
+        })
+    }
+}
+
 /// A CA on a loopback port, and everything the client needs to use it.
 struct Fixture {
     _folder: tempfile::TempDir,
     ca: Shared,
+    zone: Zone,
     directory: String,
     settings: AcmeSettings,
 }
@@ -347,9 +421,11 @@ impl Fixture {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
+        let zone = Zone::default();
         let ca = Arc::new(Mutex::new(Ca {
             base: base.clone(),
             challenge_dir: settings.challenge_dir.clone(),
+            zone: zone.clone(),
             issuer: Issuer::new(root, key),
             root_pem,
             valid_days: 90,
@@ -370,7 +446,7 @@ impl Fixture {
             });
         });
 
-        Self { _folder: folder, ca, directory: format!("{base}/directory"), settings }
+        Self { _folder: folder, ca, zone, directory: format!("{base}/directory"), settings }
     }
 
     fn client(&self) -> Rfc8555Client {
@@ -382,7 +458,19 @@ impl Fixture {
             domains: domains.iter().map(|name| name.to_string()).collect(),
             challenge: Challenge::Http01,
             directory: self.directory.clone(),
+            dns: None,
         }
+    }
+
+    /// The same names over DNS-01, through a solver that writes this CA's zone.
+    fn dns_request(&self, domains: &[&str]) -> (CertRequest, Arc<FakeDns>) {
+        let dns = Arc::new(FakeDns { zone: self.zone.clone(), ..FakeDns::default() });
+        let request = CertRequest { challenge: Challenge::Dns01, dns: Some(dns.clone()), ..self.request(domains) };
+        (request, dns)
+    }
+
+    fn txt_left(&self) -> usize {
+        self.zone.lock().unwrap().values().map(Vec::len).sum()
     }
 
     fn tokens_left(&self) -> usize {
@@ -522,11 +610,67 @@ fn requests_that_cannot_work_are_refused_before_the_ca_is_asked() {
     assert!(refused(fixture.request(&["localhost"])).contains("HTTP-01"));
     assert!(refused(fixture.request(&["bad_name.example.com"])).contains("HTTP-01"));
     assert!(refused(fixture.request(&["../example.com"])).contains("HTTP-01"));
-    assert!(refused(CertRequest { challenge: Challenge::Dns01, ..fixture.request(&["example.com"]) }).contains("DNS-01"));
+    assert!(refused(CertRequest { challenge: Challenge::Dns01, ..fixture.request(&["example.com"]) }).contains("where the domain's DNS lives"));
+    let (wildcard_first, _) = fixture.dns_request(&["*.example.com", "example.com"]);
+    assert!(refused(wildcard_first).contains("first name"));
+    let (two_stars, _) = fixture.dns_request(&["example.com", "*.*.example.com"]);
+    assert!(refused(two_stars).contains("DNS-01"));
     let plain = CertRequest { directory: "http://ca.example.com/directory".into(), ..fixture.request(&["example.com"]) };
     assert!(refused(plain).contains("HTTPS"));
 
     assert!(fixture.ca.lock().unwrap().accounts.is_empty());
+}
+
+#[test]
+fn a_wildcard_is_proved_in_dns_and_the_records_are_gone_afterwards() {
+    let fixture = Fixture::new();
+    let client = fixture.client();
+    let (request, dns) = fixture.dns_request(&["example.com", "*.example.com"]);
+
+    let issued = client.issue(&request).unwrap();
+
+    let info = CertInfo::read(&issued.certificate_path).unwrap();
+    assert_eq!(issued.certificate_path, fixture.settings.tls_dir.join("example.com.crt"));
+    assert!(info.covers("example.com") && info.covers("shop.example.com") && info.covers("www.example.com"));
+    assert!(!info.covers("a.b.example.com"));
+    // Both names share one TXT name; each value is up only while the CA looks.
+    assert_eq!(
+        *dns.calls.lock().unwrap(),
+        [
+            "publish _acme-challenge.example.com",
+            "withdraw _acme-challenge.example.com",
+            "publish _acme-challenge.example.com",
+            "withdraw _acme-challenge.example.com",
+        ]
+    );
+    assert_eq!(fixture.txt_left(), 0);
+    assert_eq!(fixture.tokens_left(), 0);
+    assert!(client.manages("example.com"));
+
+    // renew_due leaves it to ssl/ensure, which knows where the zone lives.
+    fs::remove_file(&issued.certificate_path).unwrap();
+    assert_eq!(client.renew_due().unwrap(), vec![]);
+}
+
+#[test]
+fn a_failed_dns_validation_still_removes_the_record() {
+    let fixture = Fixture::new();
+    fixture.ca.lock().unwrap().refuse_validation = true;
+    let (request, dns) = fixture.dns_request(&["example.com", "*.example.com"]);
+
+    let error = fixture.client().issue(&request).unwrap_err().to_string();
+
+    assert!(error.contains("could not validate example.com"), "{error}");
+    assert!(error.contains("No TXT record found at _acme-challenge.example.com"), "{error}");
+    assert_eq!(dns.calls.lock().unwrap().last().map(String::as_str), Some("withdraw _acme-challenge.example.com"));
+    assert_eq!(fixture.txt_left(), 0);
+    assert!(!fixture.settings.tls_dir.join("example.com.crt").exists());
+
+    // A zone that cannot be written stops before the CA is told to look.
+    let broken = Arc::new(FakeDns { zone: fixture.zone.clone(), broken: true, ..FakeDns::default() });
+    let (request, _) = fixture.dns_request(&["example.org"]);
+    let error = fixture.client().issue(&CertRequest { dns: Some(broken), ..request }).unwrap_err().to_string();
+    assert!(error.contains("zone not here"), "{error}");
 }
 
 #[test]
@@ -612,6 +756,7 @@ fn a_real_acme_server_issues_renews_and_revokes() {
         domains: vec![domain.clone()],
         challenge: Challenge::Http01,
         directory: var("DRUST_ACME_TEST_DIRECTORY"),
+        dns: None,
     };
 
     let issued = client.issue(&request).unwrap();

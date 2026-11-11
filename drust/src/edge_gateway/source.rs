@@ -4,7 +4,7 @@ use super::{
     CacheMode, CachePolicy, RouteAction, RouteConfig, RuntimeSnapshot, SiteCacheConfig, SiteConfig,
     UpstreamConfig,
 };
-use crate::platform::acme::{self, SslEngine};
+use crate::platform::acme::{self, CertInfo, SslEngine};
 
 #[derive(Clone, Debug)]
 pub struct DbSnapshotConfig {
@@ -676,9 +676,11 @@ fn normalize_domain(domain: &str) -> String {
 /// The certificate and key files serving `domain`.
 ///
 /// A certificate the customer uploaded always wins. Then: a certificate from drust's own ACME client (in `tls_dir`) wins while that
-/// engine is on; otherwise certbot's, then whatever else is in `tls_dir`. A
-/// www alias with no certificate of its own falls back to its main domain's,
-/// which may cover www; the SNI resolver skips it if it does not.
+/// engine is on, and a wildcard from it on every engine (certbot never
+/// issues one here); otherwise certbot's, then whatever else is in
+/// `tls_dir`. A name with no certificate of its own uses its parent's
+/// wildcard (task M4). A www alias falls back to its main domain's, which
+/// may cover www; the SNI resolver skips it if it does not.
 fn certificate_files(
     domain: &str,
     engine: SslEngine,
@@ -686,11 +688,14 @@ fn certificate_files(
     certbot: impl Fn(&str) -> Option<(PathBuf, PathBuf)>,
 ) -> (PathBuf, PathBuf) {
     let in_tls_dir = |name: &str| (tls_dir.join(format!("{name}.crt")), tls_dir.join(format!("{name}.key")));
+    let wildcard_of = |files: &(PathBuf, PathBuf), name: &str| {
+        files.0.is_file() && CertInfo::read(&files.0).is_some_and(|info| info.names.contains(&format!("*.{name}")))
+    };
     if let Some(uploaded) = acme::uploaded_certificate(tls_dir, domain) {
         return uploaded;
     }
     let own = in_tls_dir(domain);
-    if engine == SslEngine::Acme && own.0.is_file() {
+    if own.0.is_file() && (engine == SslEngine::Acme || wildcard_of(&own, domain)) {
         return own;
     }
     if let Some(files) = certbot(domain) {
@@ -698,6 +703,12 @@ fn certificate_files(
     }
     if own.0.is_file() {
         return own;
+    }
+    if let Some((_, parent)) = domain.split_once('.').filter(|(_, parent)| parent.contains('.')) {
+        let of_parent = in_tls_dir(parent);
+        if wildcard_of(&of_parent, parent) {
+            return of_parent;
+        }
     }
     if let Some(main) = domain.strip_prefix("www.") {
         let of_main = in_tls_dir(main);
@@ -878,6 +889,39 @@ mod tests {
         assert_eq!(certificate_files("www.both.example.com", SslEngine::Certbot, tls, certbot), lineage("both.example.com"));
         assert_eq!(certificate_files("www.new.example.com", SslEngine::Acme, tls, certbot), own("new.example.com"));
         assert_eq!(certificate_files("www.new.example.com", SslEngine::Certbot, tls, certbot), own("www.new.example.com"));
+    }
+
+    #[test]
+    fn a_wildcard_serves_its_subdomains_and_beats_certbot() {
+        let folder = tempfile::tempdir().unwrap();
+        let tls = folder.path();
+        // certbot has the main domains; a www alias has no lineage of its own.
+        let certbot = |name: &str| {
+            (!name.starts_with("www.")).then(|| (PathBuf::from(format!("/live/{name}/fullchain.pem")), PathBuf::from("/live/privkey.pem")))
+        };
+        let no_certbot = |_: &str| None;
+        let own = |name: &str| (tls.join(format!("{name}.crt")), tls.join(format!("{name}.key")));
+        let write = |name: &str, names: &[&str]| {
+            let names: Vec<String> = names.iter().map(|name| name.to_string()).collect();
+            fs::write(own(name).0, rcgen::generate_simple_self_signed(names).unwrap().cert.pem()).unwrap();
+        };
+        write("example.com", &["example.com", "*.example.com"]);
+        write("plain.com", &["plain.com", "www.plain.com"]);
+
+        for engine in [SslEngine::Acme, SslEngine::Certbot] {
+            // The wildcard site itself, even with a certbot lineage left over.
+            assert_eq!(certificate_files("example.com", engine, tls, certbot), own("example.com"));
+            // A subdomain site or alias without its own certificate.
+            assert_eq!(certificate_files("shop.example.com", engine, tls, no_certbot), own("example.com"));
+            assert_eq!(certificate_files("www.example.com", engine, tls, certbot), own("example.com"));
+            // One label only, and never another domain's.
+            assert_eq!(certificate_files("a.b.example.com", engine, tls, no_certbot), own("a.b.example.com"));
+            assert_eq!(certificate_files("shop.plain.com", engine, tls, no_certbot), own("shop.plain.com"));
+        }
+        // A subdomain with a certificate of its own keeps it.
+        assert_eq!(certificate_files("shop.example.com", SslEngine::Certbot, tls, certbot), certbot("shop.example.com").unwrap());
+        // Not a wildcard: certbot's lineage still wins on the certbot engine.
+        assert_eq!(certificate_files("plain.com", SslEngine::Certbot, tls, certbot), certbot("plain.com").unwrap());
     }
 
     #[test]

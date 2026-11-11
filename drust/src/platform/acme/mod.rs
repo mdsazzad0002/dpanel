@@ -4,17 +4,22 @@
 //! Linux keeps certbot unless `DRUST_SSL_ENGINE=acme`. Certificates land in
 //! `Paths::tls_dir()` as `<domain>.crt` and `<domain>.key`, where the gateway
 //! already looks. The HTTP-01 token goes to one folder the gateway answers
-//! from for every hostname, never into a site's own folder.
+//! from for every hostname, never into a site's own folder. A DNS-01 answer
+//! (wildcards, task M4) is a TXT record, written by a `Dns01Solver` the
+//! caller hands in, because only the caller knows where the zone lives.
 
 mod client;
 #[cfg(test)]
 mod tests;
 
 use std::{
-    env, fs,
+    env, fmt, fs,
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
+
+use futures_util::future::BoxFuture;
 
 use x509_parser::{extensions::GeneralName, pem::parse_x509_pem};
 
@@ -72,7 +77,7 @@ pub fn engine() -> SslEngine {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Challenge {
     Http01,
-    /// Wildcards need it. Not built yet: task M4.
+    /// A TXT record at `_acme-challenge.<name>`. Wildcards need it (M4).
     Dns01,
 }
 
@@ -85,13 +90,36 @@ impl Challenge {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Puts DNS-01 answers where the CA looks: TXT records in the zone.
+pub trait Dns01Solver: Send + Sync {
+    /// Adds `value` to the TXT records at `name`, keeping any already there,
+    /// and returns once the zone's nameservers answer with it.
+    fn publish<'a>(&'a self, name: &'a str, value: &'a str) -> BoxFuture<'a, Result<(), PlatformError>>;
+    /// Takes `value` away again; other TXT records at `name` stay.
+    fn withdraw<'a>(&'a self, name: &'a str, value: &'a str) -> BoxFuture<'a, Result<(), PlatformError>>;
+}
+
+#[derive(Clone)]
 pub struct CertRequest {
-    /// The first name is the certificate's file name.
+    /// The first name is the certificate's file name, so never a wildcard.
     pub domains: Vec<String>,
     pub challenge: Challenge,
     /// The ACME directory URL.
     pub directory: String,
+    /// Where DNS-01 answers go. Needed for `Dns01`, unused for `Http01`.
+    pub dns: Option<Arc<dyn Dns01Solver>>,
+}
+
+impl fmt::Debug for CertRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CertRequest")
+            .field("domains", &self.domains)
+            .field("challenge", &self.challenge)
+            .field("directory", &self.directory)
+            .field("dns", &self.dns.is_some())
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +174,7 @@ impl AcmeSettings {
             contact: filled("DRUST_ACME_EMAIL"),
             ca_bundle: filled("DRUST_ACME_CA_BUNDLE").map(PathBuf::from),
             renew_before: Duration::from_secs(30 * 86_400),
+            // Waiting for a TXT record to reach the nameservers does not count.
             timeout: Duration::from_secs(180),
         }
     }
@@ -169,6 +198,12 @@ pub fn directory_url() -> String {
         .unwrap_or_else(|| LETS_ENCRYPT.to_string())
 }
 
+/// A name a public CA can issue for: letters, digits and `-`, no wildcard,
+/// no address. Also the shape of a zone name.
+pub fn valid_domain_name(name: &str) -> bool {
+    client::valid_name(name)
+}
+
 /// The client for this machine.
 pub fn client() -> Rfc8555Client {
     Rfc8555Client::new(AcmeSettings::for_system(super::paths(), |name| env::var(name).ok()))
@@ -189,15 +224,16 @@ pub fn custom_certificate_files(tls_dir: &Path, domain: &str) -> (PathBuf, PathB
     (folder.join(format!("{domain}.crt")), folder.join(format!("{domain}.key")))
 }
 
-/// The uploaded certificate that serves `domain`: its own, or for a www alias
-/// the main domain's when that one names www too.
+/// The uploaded certificate that serves `domain`: its own, or its parent
+/// domain's when that one covers it (www, or any name under a wildcard).
 pub fn uploaded_certificate(tls_dir: &Path, domain: &str) -> Option<(PathBuf, PathBuf)> {
     let own = custom_certificate_files(tls_dir, domain);
     if own.0.is_file() {
         return Some(own);
     }
-    let of_main = custom_certificate_files(tls_dir, domain.strip_prefix("www.")?);
-    CertInfo::read(&of_main.0).is_some_and(|info| info.covers(domain)).then_some(of_main)
+    let (_, parent) = domain.split_once('.').filter(|(_, parent)| parent.contains('.'))?;
+    let of_parent = custom_certificate_files(tls_dir, parent);
+    CertInfo::read(&of_parent.0).is_some_and(|info| info.covers(domain)).then_some(of_parent)
 }
 
 /// What a certificate file says about itself, read without the `openssl`

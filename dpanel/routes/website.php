@@ -223,6 +223,9 @@ Route::post('/websites/{id}/ssl/custom', [WebsiteOperationsController::class, 'u
 Route::delete('/websites/{id}/ssl', [WebsiteOperationsController::class, 'uninstallSsl'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ssl.uninstall');
+Route::patch('/websites/{id}/ssl/wildcard', [WebsiteOperationsController::class, 'updateSslWildcard'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('websites.ssl.wildcard');
 Route::patch('/websites/{id}/ssl/status', [WebsiteOperationsController::class, 'updateSslStatus'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.ssl.status.update');
