@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\RestoreResticItemJob;
 use App\Jobs\RunResticBackupsJob;
+use App\Models\Mailbox;
 use App\Models\ResticSnapshot;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Backup\ResticBackupService;
+use App\Services\PathService;
 use App\Support\ResticSettings;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Str;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -189,6 +194,76 @@ class ResticBackupController extends Controller
         }
 
         return back()->with('success', "The repository holds {$count} restore point(s).");
+    }
+
+    /** W7: one restore point, to pick what comes back. */
+    public function showPoint(Request $request, string $token, string $website, string $snapshot): Response
+    {
+        [$site, $point] = $this->point($request, $website, $snapshot);
+
+        return Inertia::render('Backups/Incremental/Restore', [
+            'website' => ['id' => (string) $site->id, 'domain' => (string) $site->domain, 'home' => PathService::siteHome((string) $site->site_owner)],
+            'point' => ['id' => $point->snapshot_id, 'short_id' => substr($point->snapshot_id, 0, 8), 'taken_at' => $point->taken_at?->toIso8601String()],
+            'databases' => \App\Models\DatabaseRequest::query()->where('domain', $site->domain)->where('status', 'active')->orderBy('database_name')->pluck('database_name')->values(),
+            'mailboxes' => Mailbox::query()->where('domain', $site->domain)->orderBy('email')->get(['email', 'mail_home'])
+                ->filter(fn (Mailbox $mailbox) => (string) $mailbox->mail_home !== '')
+                ->map(fn (Mailbox $mailbox) => ['email' => (string) $mailbox->email, 'path' => (string) $mailbox->mail_home])->values(),
+        ]);
+    }
+
+    public function browse(Request $request, string $token, string $website, string $snapshot): JsonResponse
+    {
+        [$site, $point] = $this->point($request, $website, $snapshot);
+        $validated = $request->validate(['path' => ['required', 'string', 'max:4096']]);
+        try {
+            return response()->json($this->restic->browse($site, $point->snapshot_id, $validated['path']));
+        } catch (Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function restore(Request $request, string $token, string $website, string $snapshot): JsonResponse
+    {
+        [$site, $point] = $this->point($request, $website, $snapshot);
+        $validated = $request->validate([
+            'kind' => ['required', Rule::in(['files', 'database', 'mailbox'])],
+            'path' => ['required_unless:kind,database', 'nullable', 'string', 'max:4096'],
+            'name' => ['required_if:kind,database', 'nullable', 'string', 'max:64'],
+        ]);
+        $item = match ($validated['kind']) {
+            'database' => ['kind' => 'database', 'name' => (string) $validated['name']],
+            default => ['kind' => $validated['kind'], 'path' => (string) $validated['path']],
+        };
+        if ($item['kind'] === 'database' && ! \App\Models\DatabaseRequest::query()->where('domain', $site->domain)->where('status', 'active')->where('database_name', $item['name'])->exists()) {
+            return response()->json(['message' => 'That database is not this website\'s.'], 422);
+        }
+        if ($item['kind'] === 'mailbox' && ! Mailbox::query()->where('domain', $site->domain)->where('mail_home', $item['path'])->exists()) {
+            return response()->json(['message' => 'That mailbox is not this website\'s.'], 422);
+        }
+
+        $restoreId = (string) Str::uuid();
+        RestoreResticItemJob::record($restoreId, (int) $request->user()->id, 'queued', 'Waiting for the restore to start…');
+        RestoreResticItemJob::dispatch($restoreId, (int) $request->user()->id, (string) $site->id, $point->snapshot_id, $item);
+
+        return response()->json(['restore_id' => $restoreId, 'message' => 'Restore started.']);
+    }
+
+    public function restoreStatus(Request $request, string $token, string $restore): JsonResponse
+    {
+        $status = RestoreResticItemJob::status($restore);
+        abort_unless($status !== null && ($status['user_id'] === (int) $request->user()->id || $this->isAdmin($request->user())), 404);
+
+        return response()->json(collect($status)->except('user_id')->all());
+    }
+
+    /** @return array{0: Website, 1: ResticSnapshot} the website the user may see, and its restore point */
+    private function point(Request $request, string $website, string $snapshot): array
+    {
+        abort_unless($this->settings->configured(), 404);
+        $site = ResticBackupService::websites()->visibleTo($request->user())->findOrFail($website);
+        $point = ResticSnapshot::query()->where('website_id', $site->id)->where('snapshot_id', $snapshot)->firstOrFail();
+
+        return [$site, $point];
     }
 
     private function isAdmin(?User $user): bool

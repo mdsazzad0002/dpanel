@@ -223,7 +223,13 @@ Backups → Incremental keeps encrypted restore points made with [restic](https:
 
 Each website's restore point holds the site user's home folder and a dump of each of its databases. Customers see the restore points of their own websites and can take one at any time.
 
-Restoring from a restore point in the panel is not built yet. By hand, as root:
+To bring something back, open a restore point (Restore next to it):
+
+- **Files and folders:** browse the restore point and restore a file, a folder or the whole home. It comes back in a new `restored-<date>` folder in the website's home; nothing there now is changed.
+- **A database:** it goes back to how it was in the restore point. What it holds now is saved first, as `restored-<date>/before-restore/<database>.sql`.
+- **A mailbox:** the messages come back in a new mail folder, `Restored-<date>`, next to the mail there now. Subscribe to the folder in the mail program if it does not show.
+
+Restores run in the background; the page shows progress and you get a notification. By hand, as root:
 
 ```bash
 export RESTIC_REPOSITORY='<repository>' RESTIC_PASSWORD='<key>'

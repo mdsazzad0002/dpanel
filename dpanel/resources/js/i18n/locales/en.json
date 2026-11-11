@@ -346,6 +346,30 @@
         "taken": "Taken",
         "added": "New data",
         "size": "Size",
-        "noPoints": "No restore points yet."
+        "noPoints": "No restore points yet.",
+        "restore": "Restore"
+    },
+    "incrementalRestore": {
+        "title": "Restore",
+        "subtitle": "Restore point of {when} ({id})",
+        "back": "All restore points",
+        "files": "Files and folders",
+        "filesHelp": "What you pick comes back in a new restored-… folder in the website's home. Nothing there now is changed; move what you need.",
+        "restore": "Restore",
+        "restoreFolder": "Restore this folder",
+        "restoreEverything": "Restore all files",
+        "up": "Up",
+        "empty": "This folder is empty in the restore point.",
+        "browseFailed": "The restore point could not be read.",
+        "failed": "The restore could not start.",
+        "databases": "Databases",
+        "databasesHelp": "The database goes back to how it was. What it holds now is saved first, as a .sql file in the restored-… folder.",
+        "noDatabases": "This website has no databases.",
+        "mailboxes": "Mailboxes",
+        "mailboxesHelp": "The messages come back in a new mail folder, Restored-…, next to what is in the mailbox now. Subscribe to it in the mail program if it does not show.",
+        "noMailboxes": "This website has no mailboxes.",
+        "confirmFiles": "Restore {path} into a new restored-… folder?",
+        "confirmDatabase": "Put {name} back as it was? Its current content is saved first.",
+        "confirmMailbox": "Bring back the messages of {email} into a new Restored-… folder?"
     }
 }

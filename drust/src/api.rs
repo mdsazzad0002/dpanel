@@ -43,6 +43,7 @@ mod mongodb;
 mod postgresql;
 mod python;
 mod restic;
+mod restic_restore;
 mod redis_config;
 mod script;
 mod security;
@@ -163,6 +164,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(rust::routes())
         .merge(python::routes())
         .merge(restic::routes())
+        .merge(restic_restore::routes())
         .merge(laravel_queue::routes())
         .with_state(Arc::new(state))
 }

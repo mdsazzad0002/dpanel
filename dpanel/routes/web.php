@@ -643,6 +643,22 @@ Route::prefix('cpsess{token}')
             Route::patch('/backups/incremental/schedule', [\App\Http\Controllers\ResticBackupController::class, 'updateSchedule'])
                 ->middleware('role:admin')
                 ->name('backups.incremental.schedule');
+            Route::get('/backups/incremental/restores/{restore}', [\App\Http\Controllers\ResticBackupController::class, 'restoreStatus'])
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
+                ->whereUuid('restore')
+                ->name('backups.incremental.restore.status');
+            Route::get('/backups/incremental/{website}/{snapshot}', [\App\Http\Controllers\ResticBackupController::class, 'showPoint'])
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
+                ->where('snapshot', '[0-9a-f]{8,64}')
+                ->name('backups.incremental.point');
+            Route::post('/backups/incremental/{website}/{snapshot}/browse', [\App\Http\Controllers\ResticBackupController::class, 'browse'])
+                ->middleware(['role_or_permission:admin|reseller|manage_backups', 'throttle:60,1'])
+                ->where('snapshot', '[0-9a-f]{8,64}')
+                ->name('backups.incremental.browse');
+            Route::post('/backups/incremental/{website}/{snapshot}/restore', [\App\Http\Controllers\ResticBackupController::class, 'restore'])
+                ->middleware(['role_or_permission:admin|reseller|manage_backups', 'throttle:10,1'])
+                ->where('snapshot', '[0-9a-f]{8,64}')
+                ->name('backups.incremental.restore');
             Route::post('/backups/incremental/sync', [\App\Http\Controllers\ResticBackupController::class, 'sync'])
                 ->middleware(['role:admin', 'throttle:10,1'])
                 ->name('backups.incremental.sync');

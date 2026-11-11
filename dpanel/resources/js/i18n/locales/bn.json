@@ -346,6 +346,30 @@
         "taken": "সময়",
         "added": "নতুন data",
         "size": "আকার",
-        "noPoints": "এখনও কোনো restore point নেই।"
+        "noPoints": "এখনও কোনো restore point নেই।",
+        "restore": "Restore"
+    },
+    "incrementalRestore": {
+        "title": "Restore",
+        "subtitle": "{when}-এর restore point ({id})",
+        "back": "সব restore point",
+        "files": "File ও folder",
+        "filesHelp": "যা বাছবেন তা website-এর home-এ নতুন restored-… folder-এ আসবে। এখন যা আছে তা বদলায় না; দরকারি অংশ সরিয়ে নিন।",
+        "restore": "Restore",
+        "restoreFolder": "এই folder restore",
+        "restoreEverything": "সব file restore",
+        "up": "উপরে",
+        "empty": "Restore point-এ এই folder খালি।",
+        "browseFailed": "Restore point পড়া যায়নি।",
+        "failed": "Restore শুরু করা যায়নি।",
+        "databases": "Database",
+        "databasesHelp": "Database আগের অবস্থায় ফেরে। এখন যা আছে তা আগে restored-… folder-এ .sql file হিসেবে রাখা হয়।",
+        "noDatabases": "এই website-এর কোনো database নেই।",
+        "mailboxes": "Mailbox",
+        "mailboxesHelp": "Message ফেরে নতুন mail folder Restored-…-এ, mailbox-এ এখন যা আছে তার পাশে। না দেখালে mail program-এ folder-টা subscribe করুন।",
+        "noMailboxes": "এই website-এর কোনো mailbox নেই।",
+        "confirmFiles": "{path} নতুন restored-… folder-এ restore করবেন?",
+        "confirmDatabase": "{name} আগের অবস্থায় ফেরাবেন? এখনকার content আগে রাখা হবে।",
+        "confirmMailbox": "{email}-এর message নতুন Restored-… folder-এ ফেরাবেন?"
     }
 }

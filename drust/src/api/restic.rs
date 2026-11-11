@@ -60,7 +60,7 @@ pub(crate) struct Repo {
 impl Repo {
     /// The repository a site user can never write to, and nothing restic
     /// would read as an option.
-    fn checked(&self, sites_root: &Path) -> Result<(), String> {
+    pub(crate) fn checked(&self, sites_root: &Path) -> Result<(), String> {
         let location = self.repository.trim();
         if location.is_empty() || location.len() > 1000 || location.chars().any(char::is_control) {
             return Err("The repository location is missing or malformed.".into());
@@ -100,11 +100,11 @@ pub(crate) struct Run {
 }
 
 impl Run {
-    fn ok(&self) -> bool {
+    pub(crate) fn ok(&self) -> bool {
         self.code == Some(0)
     }
 
-    fn reason(&self) -> String {
+    pub(crate) fn reason(&self) -> String {
         let text = if self.stderr.trim().is_empty() { self.stdout.trim() } else { self.stderr.trim() };
         text.lines().filter(|line| !line.trim().is_empty()).take(8).collect::<Vec<_>>().join("; ").chars().take(1500).collect()
     }
@@ -113,12 +113,15 @@ impl Run {
 /// Runs restic against a repository. A trait so the tests need no restic.
 pub(crate) trait Restic: Send + Sync {
     fn run(&self, repo: &Repo, args: &[String]) -> Result<Run, String>;
+    /// Hands restic's stdout to `read` as it comes (W7's `dump`), then fails
+    /// if restic did.
+    fn stream(&self, repo: &Repo, args: &[String], read: &mut dyn FnMut(&mut dyn std::io::Read) -> Result<(), String>) -> Result<(), String>;
 }
 
-struct SystemRestic;
+pub(crate) struct SystemRestic;
 
-impl Restic for SystemRestic {
-    fn run(&self, repo: &Repo, args: &[String]) -> Result<Run, String> {
+impl SystemRestic {
+    fn command(repo: &Repo, args: &[String]) -> Result<Command, String> {
         let binary = platform::paths()
             .binary(Tool::Restic)
             .map_err(|_| "restic is not installed on this server.".to_string())?;
@@ -136,7 +139,42 @@ impl Restic for SystemRestic {
                 command.env(name, value);
             }
         }
-        let output = command.output().map_err(|error| format!("cannot run restic: {error}"))?;
+        Ok(command)
+    }
+}
+
+impl Restic for SystemRestic {
+    fn stream(&self, repo: &Repo, args: &[String], read: &mut dyn FnMut(&mut dyn std::io::Read) -> Result<(), String>) -> Result<(), String> {
+        use std::process::Stdio;
+        let mut child = Self::command(repo, args)?
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("cannot run restic: {error}"))?;
+        let mut stdout = child.stdout.take().ok_or("restic gave no output.")?;
+        let mut stderr = child.stderr.take().ok_or("restic gave no output.")?;
+        // stderr drains on its own thread so a chatty restic never blocks.
+        let errors = std::thread::spawn(move || {
+            let mut text = String::new();
+            let _ = std::io::Read::read_to_string(&mut stderr, &mut text);
+            text
+        });
+        let consumed = read(&mut stdout);
+        drop(stdout);
+        if consumed.is_err() {
+            let _ = child.kill();
+        }
+        let status = child.wait().map_err(|error| format!("restic did not finish: {error}"))?;
+        let errors = errors.join().unwrap_or_default();
+        consumed?;
+        if !status.success() {
+            return Err(format!("restic failed: {}", Run { code: status.code(), stdout: String::new(), stderr: errors }.reason()));
+        }
+        Ok(())
+    }
+
+    fn run(&self, repo: &Repo, args: &[String]) -> Result<Run, String> {
+        let output = Self::command(repo, args)?.output().map_err(|error| format!("cannot run restic: {error}"))?;
         Ok(Run {
             code: output.status.code(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -145,7 +183,7 @@ impl Restic for SystemRestic {
     }
 }
 
-fn args(list: &[&str]) -> Vec<String> {
+pub(crate) fn args(list: &[&str]) -> Vec<String> {
     list.iter().map(|value| value.to_string()).collect()
 }
 
@@ -184,7 +222,7 @@ pub(crate) struct Website {
     pub databases: Vec<Database>,
 }
 
-fn safe_word(value: &str, extra: &[u8]) -> bool {
+pub(crate) fn safe_word(value: &str, extra: &[u8]) -> bool {
     !value.is_empty()
         && value.len() <= 64
         && !value.starts_with('-')
@@ -193,7 +231,7 @@ fn safe_word(value: &str, extra: &[u8]) -> bool {
 
 /// Where a website's database dumps wait for restic: owner-only, emptied
 /// after every snapshot, the same path each time.
-fn staging_dir(state_dir: &Path, website_id: &str) -> PathBuf {
+pub(crate) fn staging_dir(state_dir: &Path, website_id: &str) -> PathBuf {
     state_dir.join("restic-staging").join(website_id)
 }
 
@@ -356,7 +394,7 @@ struct ForgetRequest {
 
 /// Checks the token and the repository, then runs `work` off the async
 /// workers: restic takes as long as the data does.
-async fn answer(
+pub(crate) async fn answer(
     state: &ApiState,
     headers: &HeaderMap,
     repo: &Repo,
@@ -442,6 +480,10 @@ mod tests {
     }
 
     impl Restic for FakeRestic {
+        fn stream(&self, _: &Repo, _: &[String], _: &mut dyn FnMut(&mut dyn std::io::Read) -> Result<(), String>) -> Result<(), String> {
+            unreachable!()
+        }
+
         fn run(&self, repo: &Repo, args: &[String]) -> Result<Run, String> {
             assert_eq!(repo.password, "secret");
             if args[0] == "backup" {

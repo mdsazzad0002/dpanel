@@ -83,16 +83,7 @@ class ResticBackupService
             'id' => (string) $website->id,
             'domain' => (string) $website->domain,
             'site_owner' => (string) $website->site_owner,
-            'databases' => DatabaseRequest::query()
-                ->where('domain', $website->domain)
-                ->where('status', 'active')
-                ->get()
-                ->map(fn (DatabaseRequest $database) => [
-                    'name' => (string) $database->database_name,
-                    'user' => (string) $database->database_user,
-                    'password' => (string) $database->database_password,
-                    'host' => (string) ($database->database_host ?: '127.0.0.1'),
-                ])->values()->all(),
+            'databases' => $this->databases($website),
         ]], (int) config('serverpanel.execution_api_upload_timeout', 3600));
 
         return ResticSnapshot::query()->create([
@@ -105,6 +96,65 @@ class ResticBackupService
             'total_bytes' => $data['total_bytes'] ?? null,
             'warning' => $data['warning'] ?? null,
         ]);
+    }
+
+    /**
+     * What one folder of a restore point holds (W7).
+     *
+     * @return array{path: string, entries: list<array<string, mixed>>}
+     */
+    public function browse(Website $website, string $snapshotId, string $path): array
+    {
+        $data = $this->call('ls', $this->repo() + [
+            'snapshot_id' => $snapshotId,
+            'website' => $this->target($website, false),
+            'path' => $path,
+        ], 300);
+
+        return ['path' => (string) ($data['path'] ?? $path), 'entries' => array_values((array) ($data['entries'] ?? []))];
+    }
+
+    /**
+     * Brings one item back (W7): `['kind' => 'files', 'path' => …]`,
+     * `['kind' => 'database', 'name' => …]` or `['kind' => 'mailbox', 'path' => …]`.
+     * Nothing in place is overwritten; drust says where it went.
+     *
+     * @param  array<string, string>  $item
+     * @return array<string, mixed>
+     */
+    public function restore(Website $website, string $snapshotId, array $item): array
+    {
+        return $this->call('restore', $this->repo() + [
+            'snapshot_id' => $snapshotId,
+            'website' => $this->target($website, $item['kind'] === 'database'),
+            'item' => $item,
+        ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
+    }
+
+    /** @return array{id: string, site_owner: string, databases: list<array<string, string>>} */
+    private function target(Website $website, bool $withDatabases): array
+    {
+        return [
+            'id' => (string) $website->id,
+            'site_owner' => (string) $website->site_owner,
+            // Credentials only go along when a database is restored.
+            'databases' => $withDatabases ? $this->databases($website) : [],
+        ];
+    }
+
+    /** @return list<array{name: string, user: string, password: string, host: string}> */
+    private function databases(Website $website): array
+    {
+        return DatabaseRequest::query()
+            ->where('domain', $website->domain)
+            ->where('status', 'active')
+            ->get()
+            ->map(fn (DatabaseRequest $database) => [
+                'name' => (string) $database->database_name,
+                'user' => (string) $database->database_user,
+                'password' => (string) $database->database_password,
+                'host' => (string) ($database->database_host ?: '127.0.0.1'),
+            ])->values()->all();
     }
 
     /** Drops what the retention keeps no more, here and in the repository. */

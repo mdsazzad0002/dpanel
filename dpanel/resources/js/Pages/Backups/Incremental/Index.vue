@@ -168,7 +168,7 @@ const button = 'rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50';
                     </div>
                     <table v-if="website.restore_points.length" class="mt-2 w-full text-left text-sm">
                         <thead class="text-xs text-slate-400">
-                            <tr><th class="py-1 font-medium">{{ t('incrementalBackups.taken') }}</th><th class="py-1 font-medium">{{ t('incrementalBackups.added') }}</th><th class="py-1 font-medium">{{ t('incrementalBackups.size') }}</th><th class="py-1 font-medium">ID</th></tr>
+                            <tr><th class="py-1 font-medium">{{ t('incrementalBackups.taken') }}</th><th class="py-1 font-medium">{{ t('incrementalBackups.added') }}</th><th class="py-1 font-medium">{{ t('incrementalBackups.size') }}</th><th class="py-1 font-medium">ID</th><th></th></tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                             <tr v-for="point in website.restore_points" :key="point.id">
@@ -176,6 +176,7 @@ const button = 'rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50';
                                 <td class="py-1.5 text-xs">{{ bytes(point.data_added) }}</td>
                                 <td class="py-1.5 text-xs">{{ bytes(point.total_bytes) }}</td>
                                 <td class="py-1.5 font-mono text-xs text-slate-500">{{ point.short_id }}</td>
+                                <td class="py-1.5 text-right"><Link :href="panelRoute('backups.incremental.point', { website: website.id, snapshot: point.id })" class="text-xs font-semibold text-blue-600 hover:underline">{{ t('incrementalBackups.restore') }}</Link></td>
                             </tr>
                         </tbody>
                     </table>
