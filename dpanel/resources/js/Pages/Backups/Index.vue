@@ -15,6 +15,8 @@ const props = defineProps({
     scpStatus: { type: Object, default: () => ({ status: 'never', updated_at: null }) },
     websites: { type: Array, default: () => [] },
     runs: { type: Array, default: () => [] },
+    // W6: a new restic key that the admin has not confirmed saving.
+    resticKeyAtRisk: { type: Boolean, default: false },
 });
 
 const backupCanvasOpen = ref(false);
@@ -246,6 +248,9 @@ onBeforeUnmount(() => {
         </template>
 
         <div class="space-y-4">
+            <Link v-if="resticKeyAtRisk" :href="route('backups.incremental')" class="block rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                <i class="bi bi-key-fill mr-2"></i><strong>Save the incremental backup key.</strong> Without it nobody can read the backups. Open Incremental backups to download it.
+            </Link>
             <div v-if="responseMessage" :class="responseOk ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'" class="rounded-md border px-4 py-3 text-sm whitespace-pre-line">
                 {{ responseMessage }}
                 <span v-if="batch && ['queued', 'running'].includes(batch.stage)" class="ml-2 font-semibold">{{ batch.completed || 0 }}/{{ batch.total || 0 }}</span>
@@ -281,6 +286,15 @@ onBeforeUnmount(() => {
                     <p class="mt-2 text-3xl font-semibold leading-none">{{ retentionDays }} days</p>
                 </div>
             </section>
+
+            <Link :href="route('backups.incremental')" class="group flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-teal-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-teal-800">
+                <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-teal-100 text-lg text-teal-600 transition group-hover:bg-teal-600 group-hover:text-white dark:bg-teal-950"><i class="itc bi bi-clock-history"></i></span>
+                <div class="min-w-0 flex-1">
+                    <h2 class="font-semibold">Incremental backups</h2>
+                    <p class="mt-1 text-sm text-slate-500">Encrypted restore points with restic: only what changed is stored each time.</p>
+                </div>
+                <i class="itc bi bi-chevron-right shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-teal-600"></i>
+            </Link>
 
             <div :class="['grid grid-cols-1 gap-4', isAdmin && 'lg:grid-cols-2']">
             <Link v-if="isAdmin" :href="route('backups.storage.index')" class="group flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-800">

@@ -16,6 +16,15 @@ if ((bool) ($backupSettings['schedule_enabled'] ?? true)) {
         ->withoutOverlapping();
 }
 
+// Backlog W6: incremental restic backups of every website, then the retention.
+$resticSettings = app(\App\Support\ResticSettings::class)->read();
+if ($resticSettings['enabled'] && $resticSettings['repository'] !== '') {
+    Schedule::job(new \App\Jobs\RunResticBackupsJob)
+        ->dailyAt($resticSettings['schedule_time'])
+        ->name('restic-backups')
+        ->withoutOverlapping();
+}
+
 Schedule::command('serverpanel:ssl-reconcile')
     ->twiceDaily(3, 15)
     ->withoutOverlapping();

@@ -72,6 +72,7 @@ class BackupController extends Controller
                 ->map(fn (Website $website): array => ['id' => (string) $website->id, 'domain' => (string) $website->domain])
                 ->values(),
             'runs' => $this->listRuns($backupRoot, request()->user()),
+            'resticKeyAtRisk' => $isAdmin && app(\App\Support\ResticSettings::class)->keyAtRisk(),
         ]);
     }
 

@@ -211,3 +211,23 @@ If upload fails, the command returns failed status and prints SSH/SCP error outp
    - Fill `Remote Host`, `Remote User`, `Remote Path`, `Remote Port`.
 3. Click `Save Backup Settings`.
 4. Run `Run Backup Now` once to test both backup and upload.
+
+## Incremental backups (restic)
+
+Backups → Incremental keeps encrypted restore points made with [restic](https://restic.net). Each backup stores only what changed since the last one.
+
+1. Install restic: `dpanel module restic install` (or the distro package).
+2. As an admin, open Backups → Incremental and choose where the repository lives: a folder on this server, SFTP, S3 or S3-compatible storage, or an rclone remote. Leave the password empty to create a new repository.
+3. **Download the key.** Every restore point is encrypted with it. Without it nobody can read the backups, and the panel's copy is gone if the server or its `APP_KEY` is lost. The page keeps warning until you confirm you saved it elsewhere.
+4. Turn on the daily schedule and set how many daily, weekly and monthly restore points to keep.
+
+Each website's restore point holds the site user's home folder and a dump of each of its databases. Customers see the restore points of their own websites and can take one at any time.
+
+Restoring from a restore point in the panel is not built yet. By hand, as root:
+
+```bash
+export RESTIC_REPOSITORY='<repository>' RESTIC_PASSWORD='<key>'
+restic snapshots --tag website:<website id>
+restic restore <snapshot id> --target /root/restore
+```
+

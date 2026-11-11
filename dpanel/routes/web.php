@@ -625,6 +625,27 @@ Route::prefix('cpsess{token}')
             Route::post('/migrations', [MigrationController::class, 'store'])->middleware('role:admin|reseller')->name('migrations.store');
             Route::post('/migrations/{migrationImport}/restore', [MigrationController::class, 'restore'])->middleware('role:admin|reseller')->name('migrations.restore');
             Route::delete('/migrations/{migrationImport}', [MigrationController::class, 'destroy'])->middleware('role:admin|reseller')->name('migrations.destroy');
+            Route::get('/backups/incremental', [\App\Http\Controllers\ResticBackupController::class, 'index'])
+                ->middleware('role_or_permission:admin|reseller|manage_backups')
+                ->name('backups.incremental');
+            Route::post('/backups/incremental/run', [\App\Http\Controllers\ResticBackupController::class, 'runNow'])
+                ->middleware(['role_or_permission:admin|reseller|manage_backups', 'throttle:10,1'])
+                ->name('backups.incremental.run');
+            Route::post('/backups/incremental/repository', [\App\Http\Controllers\ResticBackupController::class, 'connect'])
+                ->middleware(['role:admin', 'throttle:10,1'])
+                ->name('backups.incremental.connect');
+            Route::get('/backups/incremental/key', [\App\Http\Controllers\ResticBackupController::class, 'downloadKey'])
+                ->middleware(['role:admin', 'throttle:10,1'])
+                ->name('backups.incremental.key');
+            Route::post('/backups/incremental/key/confirm', [\App\Http\Controllers\ResticBackupController::class, 'confirmKey'])
+                ->middleware('role:admin')
+                ->name('backups.incremental.key.confirm');
+            Route::patch('/backups/incremental/schedule', [\App\Http\Controllers\ResticBackupController::class, 'updateSchedule'])
+                ->middleware('role:admin')
+                ->name('backups.incremental.schedule');
+            Route::post('/backups/incremental/sync', [\App\Http\Controllers\ResticBackupController::class, 'sync'])
+                ->middleware(['role:admin', 'throttle:10,1'])
+                ->name('backups.incremental.sync');
             Route::post('/backups/run', [BackupController::class, 'runNow'])
                 ->middleware('role_or_permission:admin|reseller|manage_backups')
                 ->name('backups.run');

@@ -527,6 +527,8 @@ pub trait Scheduler {
 | `mail_forwarders` | `address` (unique), `domain`, `destinations` (কমা দিয়ে), `status`, `created_by`, `assigned_reseller_id` |
 | `mailbox_autoresponders` | `mailbox_id` (unique), `enabled`, `subject`, `body`, `interval_days`, `starts_on`, `ends_on` |
 | `brandings` | `owner_id` (null = server, নয়তো reseller; unique), `panel_name`, `logo_path`, `primary_color` |
+| `dns_secondary_servers` | `address` (IP, unique), `label`; এই server-এর zone যারা copy করে (M7) |
+| `restic_snapshots` | `website_id`, `snapshot_id` (unique), `taken_at`, `files_new`, `files_changed`, `data_added`, `total_bytes`, `warning`; repository-র restore point-এর প্রতিচ্ছবি, `sync` repository থেকে আবার বানায় (W6) |
 
 `throttle` এখনও নেই: gateway rate কমাতে পারে না, তাই panel শুধু `notify` ও `block` দেয়। `block`-এ site `over_limit` হয়, নতুন মাসে ফেরে।
 
@@ -559,6 +561,7 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `GET`, `PUT /api/v1/dns/dnssec/{zone}` | `{"enabled"}`; উত্তর `{enabled, ds: [DS line]}`। `pdnsutil`: ECDSA P-256 CSK, narrow NSEC3 `1 0 0 -`, তারপর rectify; PowerDNS ছাড়া `501` (M6) |
 | `POST /api/v1/dns/dnssec/{zone}/rectify` | Sign করা zone-এর record বদলের পরে `auth` ও empty non-terminal ঠিক করা (M6) |
 | `POST /api/v1/ssl/install` | Customer-এর নিজের certificate (M5): `{domain, certificate, private_key}`; উত্তর `ssl/ensure`-এর মতো, সঙ্গে `custom: true` ও `names` |
+| `POST /api/v1/restic/init`, `/backup`, `/snapshots`, `/forget` | Incremental backup (W6). প্রতিটায় `{repository, password, env}`; drust কিছু লেখে না। `repository`: absolute folder (sites root-এর বাইরে) বা `sftp:`, `s3:`, `rest:`, `rclone:`, `b2:`; `-` দিয়ে শুরু নয়; `env` শুধু `AWS_*` ও `B2_*`-এর পাঁচটা নাম। restic চলে root হিসেবে, environment খালি করে, password `RESTIC_PASSWORD`-এ, cache `state_dir/restic-cache`-এ। `init` আগে `cat config`: খোলে তো `created: false`, ভুল password তো error (নতুন repository কখনো নয়), নেই তো `init`। `backup` `{website: {id, domain, site_owner, databases}}`: site user-এর home আর প্রতিটা database-এর dump (`state_dir/restic-staging/<id>/databases/`, owner-only, পরে মোছা) এক snapshot-এ, tag `dpanel`, `website:<id>`, `owner:<owner>`, host `dpanel`, `--exclude-caches`; exit 3 (কিছু file পড়া যায়নি) snapshot ধরে, `warning` দিয়ে। `forget` `{keep: {daily, weekly, monthly}}`, `--group-by host,tags`, কিছু গেলে তবেই `prune`; উত্তর `removed` id। Restore W7-এর। |
 | `POST /api/v1/ssl/renew` | `AcmeClient::renew_due`: due certificate প্রতি `{domain, renewed, error}`; `certbot` engine-এ কিছু করে না |
 | `GET /sites/logs?kind=access\|waf\|php&domain=&owner=&lines=` | Site-এর access log, WAF-এর match (S2) বা account-এর PHP error log-এর শেষ অংশ (S4) |
 | `POST /api/v1/wordpress` | নির্দিষ্ট wp-cli action, site user হিসেবে: `info`, `update_core`, `update_plugins`, `update_themes`, `security`, `fix`, `home_url`, `search_replace` (W1-W4) |
