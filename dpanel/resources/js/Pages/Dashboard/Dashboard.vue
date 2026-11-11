@@ -29,8 +29,12 @@ const user = computed(() => page.props.auth?.user ?? {});
 const roles = computed(() => page.props.auth?.roles ?? []);
 
 const looseSectionIcons = {
-    Hosting: 'bi bi-hdd-stack',
-    'Data & Backups': 'bi bi-archive',
+    Websites: 'bi bi-globe2',
+    Databases: 'bi bi-database',
+    Backups: 'bi bi-archive',
+    Apps: 'bi bi-hexagon',
+    'Usage & Monitoring': 'bi bi-activity',
+    'Users & Billing': 'bi bi-people',
     Security: 'bi bi-shield',
     System: 'bi bi-gear',
 };
