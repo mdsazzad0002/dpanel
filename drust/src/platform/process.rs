@@ -59,6 +59,22 @@ pub fn new_process_group(command: &mut Command) -> &mut Command {
     }
 }
 
+/// Makes the child end when drust ends, even when drust crashes. On Windows
+/// this puts it in drust's Job Object. On Unix it does nothing: the children
+/// that need it there (PHP-FPM, apps) belong to systemd, not to drust.
+pub fn end_with_drust(child: &tokio::process::Child) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let _ = child;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        let handle = child.raw_handle().ok_or("the process has already exited")?;
+        super::windows::job::end_with_this_process(handle)
+    }
+}
+
 /// Gives up root for good, becoming `nobody`, once a process has read what
 /// only root may (the WAF worker after loading its rules). Does nothing when
 /// not root, or where there is no such thing.

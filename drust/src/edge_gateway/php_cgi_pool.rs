@@ -271,6 +271,12 @@ impl SitePool {
                 return Err(format!("cannot run php-cgi: {error}"));
             }
         };
+        // `kill_on_drop` only covers a gateway that shuts down cleanly; this
+        // covers one that crashes. php-cgi starts nothing before it listens,
+        // so the moment between spawn and this call leaks nothing.
+        if let Err(error) = crate::platform::process::end_with_drust(&child) {
+            warn!(site = %self.site, port, %error, "php-cgi would outlive a crashed gateway");
+        }
         let (stop, stopped) = oneshot::channel();
         let id = {
             let mut state = lock(&self.state);

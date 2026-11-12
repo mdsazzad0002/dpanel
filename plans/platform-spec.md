@@ -672,7 +672,7 @@ Webhook: `POST` JSON, `X-Dpanel-Signature: sha256=<HMAC-SHA256("<timestamp>.<bod
 
 প্রতিটা process site user হিসেবে, সেই account-এর Job Object-এ চলবে।
 
-এখনকার অবস্থা: `edge_gateway/php_cgi_pool.rs`, শুধু Windows local-এ (`Platform::uses_php_cgi_pool`), H1-এর আগে। সব process logged-in user হিসেবে চলে, Job Object ছাড়া। php-cgi একবারে একটা request নেয়, তাই এক process এক port, `PHP_FCGI_CHILDREN=0`। Port বাছার সময় `SO_REUSEADDR` ছাড়া bind করে দেখা হয়, কারণ php-cgi সেটা set করে আর Windows-এ তাতে দুজন একই port পেতে পারে। Child-এর environment allowlist থেকে বানানো, তাই `DRUST_API_TOKEN` PHP পায় না।
+এখনকার অবস্থা: `edge_gateway/php_cgi_pool.rs`, শুধু Windows local-এ (`Platform::uses_php_cgi_pool`), H1-এর আগে। সব process logged-in user হিসেবে চলে। সবাই drust-এর একটা Job Object-এ (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, কোনো limit নেই), তাই drust মরলে php-cgi-ও থামে। php-cgi একবারে একটা request নেয়, তাই এক process এক port, `PHP_FCGI_CHILDREN=0`। Port বাছার সময় `SO_REUSEADDR` ছাড়া bind করে দেখা হয়, কারণ php-cgi সেটা set করে আর Windows-এ তাতে দুজন একই port পেতে পারে। Child-এর environment allowlist থেকে বানানো, তাই `DRUST_API_TOKEN` PHP পায় না।
 
 ## 10. macOS supervisor limit
 
