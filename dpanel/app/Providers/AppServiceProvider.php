@@ -78,6 +78,13 @@ class AppServiceProvider extends ServiceProvider
                 ->by($token ? 'token:'.$token->id : 'ip:'.$request->ip());
         });
 
+        // dPanel ⇄ dPanel migration: a big transfer is many 5 MB chunk requests.
+        RateLimiter::for('api-v1-migration', function (Request $request) {
+            $token = $request->attributes->get('api_token');
+
+            return Limit::perMinute(1200)->by($token ? 'migration-token:'.$token->id : 'ip:'.$request->ip());
+        });
+
         // Extensions (U7): panel changes become signed webhooks.
         ExtensionEvents::listen();
     }

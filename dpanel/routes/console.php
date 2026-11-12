@@ -78,3 +78,9 @@ Schedule::command('mail:send-limits')
 Schedule::command('panel:update-sync')
     ->everyMinute()
     ->withoutOverlapping();
+
+// dPanel ⇄ dPanel live migration: remove packages of transfers abandoned a day ago.
+Schedule::call(fn () => app(\App\Services\PanelLink\PanelPackageStore::class)->prune())
+    ->hourly()
+    ->name('panel-link:prune')
+    ->withoutOverlapping();

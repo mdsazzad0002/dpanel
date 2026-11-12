@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\DatabaseController;
 use App\Http\Controllers\Api\V1\DnsController;
 use App\Http\Controllers\Api\V1\MailboxController;
 use App\Http\Controllers\Api\V1\MetaController;
+use App\Http\Controllers\Api\V1\MigrationController;
 use App\Http\Controllers\Api\V1\WebsiteController;
 use Illuminate\Support\Facades\Route;
 
@@ -37,5 +38,21 @@ Route::prefix('v1')->middleware('api.json')->group(function (): void {
         Route::post('/mailboxes', [MailboxController::class, 'store'])->middleware('api.scope:mail:write')->name('api.v1.mailboxes.store');
         Route::put('/mailboxes/{mailbox}/password', [MailboxController::class, 'password'])->middleware('api.scope:mail:write')->name('api.v1.mailboxes.password');
         Route::delete('/mailboxes/{mailbox}', [MailboxController::class, 'destroy'])->middleware('api.scope:mail:write')->name('api.v1.mailboxes.destroy');
+    });
+
+    // dPanel ⇄ dPanel live migration (Migrate → DPanel to DPanel on the other panel).
+    // Its own rate limit: a multi-GB transfer is thousands of chunk requests.
+    Route::prefix('migration')->middleware(['api.token', 'throttle:api-v1-migration'])->group(function (): void {
+        Route::get('/handshake', [MigrationController::class, 'handshake'])->middleware('api.scope:migration:read')->name('api.v1.migration.handshake');
+        Route::get('/inventory', [MigrationController::class, 'inventory'])->middleware('api.scope:migration:read')->name('api.v1.migration.inventory');
+        Route::post('/manifest', [MigrationController::class, 'manifest'])->middleware('api.scope:migration:read')->name('api.v1.migration.manifest');
+        Route::post('/exports', [MigrationController::class, 'storeExport'])->middleware('api.scope:migration:read')->name('api.v1.migration.exports.store');
+        Route::get('/exports/{export}', [MigrationController::class, 'showExport'])->whereUuid('export')->middleware('api.scope:migration:read')->name('api.v1.migration.exports.show');
+        Route::get('/exports/{export}/chunks/{index}', [MigrationController::class, 'exportChunk'])->whereUuid('export')->whereNumber('index')->middleware('api.scope:migration:read')->name('api.v1.migration.exports.chunk');
+        Route::delete('/exports/{export}', [MigrationController::class, 'destroyExport'])->whereUuid('export')->middleware('api.scope:migration:read')->name('api.v1.migration.exports.destroy');
+        Route::post('/uploads', [MigrationController::class, 'storeUpload'])->middleware('api.scope:migration:write')->name('api.v1.migration.uploads.store');
+        Route::post('/uploads/{upload}/chunks/{index}', [MigrationController::class, 'uploadChunk'])->whereUuid('upload')->whereNumber('index')->middleware('api.scope:migration:write')->name('api.v1.migration.uploads.chunk');
+        Route::post('/uploads/{upload}/complete', [MigrationController::class, 'completeUpload'])->whereUuid('upload')->middleware('api.scope:migration:write')->name('api.v1.migration.uploads.complete');
+        Route::get('/uploads/{upload}', [MigrationController::class, 'showUpload'])->whereUuid('upload')->middleware('api.scope:migration:write')->name('api.v1.migration.uploads.show');
     });
 });

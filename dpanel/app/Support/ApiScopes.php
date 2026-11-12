@@ -17,6 +17,10 @@ final class ApiScopes
         'dns' => ['roles' => ['admin', 'reseller', 'general'], 'permission' => 'manage_dns'],
         'databases' => ['roles' => ['admin', 'reseller'], 'permission' => 'manage_databases'],
         'mail' => ['roles' => ['admin', 'reseller'], 'permission' => 'manage_email'],
+        // dPanel ⇄ dPanel live migration: read = another panel may take this
+        // panel's websites and backup; write = it may also send them here.
+        // Admin only: a whole-panel backup holds every account's data.
+        'migration' => ['roles' => ['admin'], 'permission' => 'manage_panel_migration'],
     ];
 
     /** @return list<string> every scope, such as `websites:read` */

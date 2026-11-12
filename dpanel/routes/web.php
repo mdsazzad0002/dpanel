@@ -20,6 +20,7 @@ use App\Http\Controllers\GithubIntegrationController;
 use App\Http\Controllers\Webhooks\GitDeployWebhookController;
 use App\Http\Controllers\CloneShareController;
 use App\Http\Controllers\SitePushApiController;
+use App\Http\Controllers\PanelLinkController;
 use App\Http\Controllers\BandwidthController;
 use App\Http\Controllers\UsageController;
 use App\Http\Controllers\DashboardController;
@@ -659,6 +660,17 @@ Route::prefix('cpsess{token}')
             Route::post('/migrations/dpanel/{migrationImport}/chunks', [MigrationController::class, 'uploadDpanelImportChunk'])->middleware(['role:admin', 'throttle:3000,1'])->name('migrations.dpanel.chunks');
             Route::post('/migrations/dpanel/{migrationImport}/complete', [MigrationController::class, 'completeDpanelImport'])->middleware(['role:admin', 'throttle:10,1'])->name('migrations.dpanel.complete');
             Route::post('/migrations/dpanel/{migrationImport}/restore', [MigrationController::class, 'restoreDpanel'])->middleware(['role:admin', 'throttle:2,1'])->name('migrations.dpanel.restore');
+            // dPanel ⇄ dPanel live connection (PanelLinkController, RunPanelTransferJob).
+            Route::middleware('role:admin')->prefix('/migrations/dpanel/link')->name('migrations.dpanel.link.')->group(function (): void {
+                Route::get('/', [PanelLinkController::class, 'index'])->name('index');
+                Route::post('/connections', [PanelLinkController::class, 'store'])->middleware('throttle:10,1')->name('connections.store');
+                Route::post('/connections/{connection}/test', [PanelLinkController::class, 'test'])->middleware('throttle:20,1')->name('connections.test');
+                Route::delete('/connections/{connection}', [PanelLinkController::class, 'destroy'])->name('connections.destroy');
+                Route::get('/connections/{connection}/inventory', [PanelLinkController::class, 'inventory'])->middleware('throttle:20,1')->name('connections.inventory');
+                Route::post('/connections/{connection}/transfers', [PanelLinkController::class, 'transfer'])->middleware('throttle:20,1')->name('connections.transfers');
+                Route::get('/transfers', [PanelLinkController::class, 'transfers'])->name('transfers');
+                Route::post('/transfers/{transfer}/cancel', [PanelLinkController::class, 'cancel'])->name('transfers.cancel');
+            });
             Route::get('/migrations/cyberpanel-ssh', [MigrationController::class, 'cyberpanelSsh'])->middleware('role:admin|reseller')->name('migrations.cyberpanel-ssh');
             Route::post('/migrations/cyberpanel-ssh/inspect', [MigrationController::class, 'inspectCyberpanelSsh'])->middleware(['role:admin|reseller', 'throttle:10,1'])->name('migrations.cyberpanel-ssh.inspect');
             Route::post('/migrations/cyberpanel-ssh/download', [MigrationController::class, 'downloadCyberpanelSsh'])->middleware(['role:admin|reseller', 'throttle:6,1'])->name('migrations.cyberpanel-ssh.download');

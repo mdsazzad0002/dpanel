@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import CyberPanelSshMigration from './components/CyberPanelSshMigration.vue';
+import PanelLink from './components/PanelLink/PanelLink.vue';
 import { Head, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
@@ -218,6 +219,7 @@ const remove = async (item) => {
       </template>
       <template v-else-if="accountArchive || props.provider === 'dpanel'">
       <button type="button" class="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300" @click="router.visit(route('migrations.index'))"><i class="bi bi-arrow-left"></i> All migration services</button>
+      <PanelLink v-if="props.provider === 'dpanel'" />
       <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ props.provider === 'dpanel' ? 'DPanel Full Migration' : accountArchive.title }}</h3>
         <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ props.provider === 'dpanel' ? 'Upload a full backup package created by DPanel. The package is validated before restoring.' : accountArchive.description }}</p>

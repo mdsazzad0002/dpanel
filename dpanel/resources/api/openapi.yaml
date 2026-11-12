@@ -25,6 +25,7 @@ tags:
   - name: DNS
   - name: Databases
   - name: Mail
+  - name: Migration
 paths:
   /openapi.yaml:
     get:
@@ -397,6 +398,215 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/Invalid" }
+  /migration/handshake:
+    get:
+      tags: [Migration]
+      summary: Check a live-migration link
+      description: |
+        Scope: `migration:read`. Used by another dPanel (Migrate → DPanel to DPanel →
+        Live connection) to check the link before it pulls from or pushes to this
+        panel. `migration:write` also allows sending to this panel. Admin tokens only.
+      responses:
+        "200":
+          description: This panel, the token's migration scopes and the chunk size.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      server: { type: string }
+                      version: { type: string }
+                      panel_name: { type: string }
+                      scopes: { type: array, items: { type: string } }
+                      chunk_size: { type: integer }
+                      max_chunks: { type: integer }
+                      kinds: { type: array, items: { type: string, enum: [website, files, panel] } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /migration/inventory:
+    get:
+      tags: [Migration]
+      summary: Websites another panel may take
+      description: "Scope: `migration:read`. Each website with its owner, databases, mailbox count and whether it can be copied."
+      responses:
+        "200": { description: "`data.websites`: the list." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /migration/manifest:
+    post:
+      tags: [Migration]
+      summary: A website's file list
+      description: "Scope: `migration:read`. Path, size and SHA-256 of every file (.gitignore applies, .git is left out), to work out which files differ."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties:
+                domain: { type: string }
+      responses:
+        "200": { description: "`data.files`: the list." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /migration/exports:
+    post:
+      tags: [Migration]
+      summary: Build a package to download
+      description: |
+        Scope: `migration:read`. `website`: files and database; `files`: only the
+        listed `paths`; `panel`: this panel's full backup. Built in the background;
+        poll the export until `status` is `ready`, then download its chunks.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: { type: string, enum: [website, files, panel] }
+                domain: { type: string }
+                paths: { type: array, items: { type: string } }
+      responses:
+        "202": { description: "`data`: the export, `status` `queued`." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /migration/exports/{export}:
+    parameters:
+      - $ref: "#/components/parameters/Export"
+    get:
+      tags: [Migration]
+      summary: An export's status
+      description: "Scope: `migration:read`. Once `ready`: `size`, `sha256`, `chunk_size` and `total` chunks."
+      responses:
+        "200": { description: "`data`: the export." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Migration]
+      summary: Remove an export
+      description: "Scope: `migration:read`. Unused exports are removed after a day anyway."
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /migration/exports/{export}/chunks/{index}:
+    parameters:
+      - $ref: "#/components/parameters/Export"
+      - $ref: "#/components/parameters/ChunkIndex"
+    get:
+      tags: [Migration]
+      summary: Download one chunk of an export
+      description: "Scope: `migration:read`. The bytes, with their SHA-256 in `X-Chunk-Sha256`."
+      responses:
+        "200":
+          description: The chunk.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /migration/uploads:
+    post:
+      tags: [Migration]
+      summary: Start sending a package here
+      description: |
+        Scope: `migration:write`. Announce the package (`size`, `sha256`, `total`
+        chunks), send the chunks, then complete. `site` says which website it is
+        (created here if it does not exist; a user with `owner_email` owns it).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, size, total, sha256]
+              properties:
+                kind: { type: string, enum: [website, files, panel] }
+                size: { type: integer }
+                total: { type: integer }
+                sha256: { type: string }
+                site:
+                  type: object
+                  properties:
+                    domain: { type: string }
+                    type: { type: string, enum: [main, sub] }
+                    parent_domain: { type: string }
+                    php_version: { type: string }
+                    owner_email: { type: string }
+                    archive_name: { type: string }
+                options:
+                  type: object
+                  properties:
+                    delete: { type: array, items: { type: string } }
+                    manage_dns: { type: boolean }
+      responses:
+        "201": { description: "`data`: the upload, `status` `uploading`." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /migration/uploads/{upload}:
+    parameters:
+      - $ref: "#/components/parameters/Upload"
+    get:
+      tags: [Migration]
+      summary: An upload's status
+      description: "Scope: `migration:write`. `status`: uploading, queued, importing, completed or failed; `result` once completed."
+      responses:
+        "200": { description: "`data`: the upload." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /migration/uploads/{upload}/chunks/{index}:
+    parameters:
+      - $ref: "#/components/parameters/Upload"
+      - $ref: "#/components/parameters/ChunkIndex"
+    post:
+      tags: [Migration]
+      summary: Send one chunk
+      description: "Scope: `migration:write`. Multipart: `chunk` (the bytes) and `sha256`. Sending an index again replaces it."
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [chunk, sha256]
+              properties:
+                chunk: { type: string, format: binary }
+                sha256: { type: string }
+      responses:
+        "200": { description: "`data.index`: the chunk stored." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /migration/uploads/{upload}/complete:
+    parameters:
+      - $ref: "#/components/parameters/Upload"
+    post:
+      tags: [Migration]
+      summary: Finish an upload and import it
+      description: "Scope: `migration:write`. Checks the joined package against `sha256`, then imports it in the background; poll the upload."
+      responses:
+        "202": { description: "`data`: the upload, `status` `queued`." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Invalid" }
 components:
   securitySchemes:
     bearerAuth:
@@ -416,6 +626,24 @@ components:
       required: true
       schema: { type: string }
       description: The mailbox's id.
+    Export:
+      name: export
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The export's id.
+    Upload:
+      name: upload
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The upload's id.
+    ChunkIndex:
+      name: index
+      in: path
+      required: true
+      schema: { type: integer, minimum: 0 }
+      description: The chunk's number, from 0.
   responses:
     Message:
       description: Done; or, with an error status, what went wrong.
