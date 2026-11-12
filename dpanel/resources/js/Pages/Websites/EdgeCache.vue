@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { ref } from 'vue';
 import { Head, Link } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
@@ -7,6 +8,8 @@ import CachePurgeCard from '@/Pages/Websites/components/edge-cache/CachePurgeCar
 import CacheStatsCard from '@/Pages/Websites/components/edge-cache/CacheStatsCard.vue';
 import DevelopmentModeCard from '@/Pages/Websites/components/edge-cache/DevelopmentModeCard.vue';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -22,21 +25,21 @@ const url = (name) => panelRoute(name, { id: props.website.id });
 </script>
 
 <template>
-    <Head title="Edge Cache" />
+    <Head :title="t('websites.edgeCache.title')" />
     <AuthenticatedLayout>
         <template #header>
             <div class="flex w-full items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-lg font-semibold">Edge Cache</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">Page caching for {{ website.domain }}, served by this server.</p>
+                    <h1 class="text-lg font-semibold">{{ t('websites.edgeCache.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('websites.edgeCache.subtitle', { domain: website.domain }) }}</p>
                 </div>
-                <Link :href="panelRoute('websites.manage', { id: website.id })" class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700">Back to Manage</Link>
+                <Link :href="panelRoute('websites.manage', { id: website.id })" class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700">{{ t('common.back') }}</Link>
             </div>
         </template>
 
         <div class="mx-auto grid max-w-5xl gap-5">
             <div v-if="isSystem" class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                This is the panel's own website. It is never cached, so every page always shows live data.
+                {{ t('websites.edgeCache.system') }}
             </div>
             <template v-else>
                 <DevelopmentModeCard
