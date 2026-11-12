@@ -5,6 +5,7 @@ namespace App\Services\Mcp\Tools;
 use App\Models\McpAccessToken;
 use App\Services\Mcp\Contracts\McpTool;
 use App\Services\Mcp\McpCommandExecutor;
+use App\Support\Platform\LocalCommand;
 
 class ServiceStatusTool implements McpTool
 {
@@ -22,7 +23,7 @@ class ServiceStatusTool implements McpTool
 
     public function description(): string
     {
-        return 'systemctl status for one systemd unit on a server (e.g. edge-gateway, drust, php8.3-fpm, mariadb, redis-server, postfix, dovecot), including its last log lines.';
+        return 'systemctl status for one systemd unit on a server (e.g. edge-gateway, drust, php8.3-fpm, mariadb, redis-server, postfix, dovecot), including its last log lines. Needs systemd, so not on a Windows or macOS panel host.';
     }
 
     public function inputSchema(): array
@@ -46,6 +47,7 @@ class ServiceStatusTool implements McpTool
     {
         $unit = ServiceName::validate($arguments['service'] ?? null);
         $server = $this->executor->resolveServer($arguments['server_id'] ?? null);
+        $this->executor->requireHostTools($server, LocalCommand::SYSTEMD, 'systemctl (systemd)');
 
         // systemctl status exits 3 for an inactive unit; that's still a valid answer.
         return $this->executor->run($server, 'systemctl status '.McpCommandExecutor::quote($unit).' --no-pager --lines=30 2>&1 || true', $token, trusted: true);

@@ -65,7 +65,7 @@ class ListServersTool implements McpTool
                 'hostname' => gethostname() ?: null,
                 'mcp_commands' => $level,
                 'note' => match ($level) {
-                    LocalHostAccess::OFF => 'Off. An admin can enable it with: sudo dpanel mcp local on [read|full]',
+                    LocalHostAccess::OFF => 'Off. An admin can enable it with: '.$this->localAccess->enableHint(),
                     LocalHostAccess::READ => 'Diagnostic commands only, run as an unprivileged user.',
                     LocalHostAccess::FULL => 'Full-access tokens run commands as root; read-only tokens run unprivileged.',
                     default => 'Enabled, but the panel cannot read the setting.',

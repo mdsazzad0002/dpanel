@@ -7,6 +7,7 @@ use App\Services\Mcp\Contracts\McpTool;
 use App\Services\Mcp\LocalHostAccess;
 use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpToolException;
+use App\Support\Platform\LocalCommand;
 
 class RestartServiceTool implements McpTool
 {
@@ -27,7 +28,7 @@ class RestartServiceTool implements McpTool
 
     public function description(): string
     {
-        return 'Restart, reload, start or stop a systemd unit on a server, then report its new status. Needs a full-access token.';
+        return 'Restart, reload, start or stop a systemd unit on a server, then report its new status. Needs a full-access token, and systemd (not on a Windows or macOS panel host).';
     }
 
     public function inputSchema(): array
@@ -61,8 +62,9 @@ class RestartServiceTool implements McpTool
         }
 
         $server = $this->executor->resolveServer($arguments['server_id'] ?? null);
+        $this->executor->requireHostTools($server, LocalCommand::SYSTEMD, 'systemctl (systemd)');
         if ($server === null && $this->localAccess->level() === LocalHostAccess::READ) {
-            throw new McpToolException('The panel host only allows read-only MCP commands. An admin can allow fixes with: sudo dpanel mcp local on full');
+            throw new McpToolException('The panel host only allows read-only MCP commands. An admin can allow fixes with: '.$this->localAccess->enableHint('full'));
         }
         $quoted = McpCommandExecutor::quote($unit);
 

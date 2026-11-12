@@ -11,6 +11,7 @@ use App\Services\ScriptExecutionGateway;
 use App\Services\ServerPanel\CommandRunnerService;
 use App\Services\ServerPanel\CommandSafetyService;
 use App\Services\ServerPanel\SshClientService;
+use App\Support\Platform\LocalCommand;
 
 /**
  * Runs a command synchronously for an MCP tool call, either on a managed
@@ -56,6 +57,22 @@ class McpCommandExecutor
     }
 
     /**
+     * Refuse a tool that needs $tools (a LocalCommand constant) on a panel
+     * host that lacks them. A managed server is reached over SSH and is Linux.
+     */
+    public function requireHostTools(?Server $server, string $tools, string $what): void
+    {
+        if ($server === null && ! $this->host()->supports($tools)) {
+            throw new McpToolException("{$what} is not available on this panel host ({$this->host()->os()}). Pass the server_id of a managed Linux server instead.");
+        }
+    }
+
+    private function host(): LocalCommand
+    {
+        return app(LocalCommand::class);
+    }
+
+    /**
      * Resolve the target: "local" for the panel host, a server id, or — when
      * none is given — the panel host if it allows MCP commands, else the only
      * configured server.
@@ -66,7 +83,7 @@ class McpCommandExecutor
     {
         if ($serverId === self::LOCAL || $serverId === 0 || $serverId === '0') {
             if ($this->localAccess->level() === LocalHostAccess::OFF) {
-                throw new McpToolException('MCP commands are off on the panel host. An admin can enable them with: sudo dpanel mcp local on [read|full]');
+                throw new McpToolException('MCP commands are off on the panel host. An admin can enable them with: '.$this->localAccess->enableHint());
             }
 
             return null;
@@ -92,7 +109,7 @@ class McpCommandExecutor
         }
 
         throw new McpToolException($servers->isEmpty()
-            ? 'No target to run commands on. Enable the panel host with "sudo dpanel mcp local on [read|full]", or add a server under Servers.'
+            ? 'No target to run commands on. Enable the panel host with "'.$this->localAccess->enableHint().'", or add a server under Servers.'
             : 'More than one server is configured; pass server_id (see list_servers).');
     }
 
@@ -107,7 +124,7 @@ class McpCommandExecutor
         $command = trim($command);
 
         if (! $trusted) {
-            $decision = $this->policy->evaluate($command, $token);
+            $decision = $this->policy->evaluate($command, $token, panelHost: $server === null);
             if (! $decision['allowed']) {
                 throw new McpToolException("Command refused ({$decision['risk_level']}): {$decision['reason']}");
             }
@@ -180,6 +197,9 @@ class McpCommandExecutor
         $classification = $this->safety->classify($command);
         if ($classification['risk_level'] === 'blocked') {
             throw new McpToolException('Command refused (blocked): '.$classification['risk_reason']);
+        }
+        if ($this->host()->isWindows() && ($reason = $this->policy->windowsBlockReason($command)) !== null) {
+            throw new McpToolException('Command refused (blocked): '.$reason);
         }
 
         // A full token runs as root only where the host allows it; anything

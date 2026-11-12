@@ -2,6 +2,8 @@
 
 namespace App\Services\Mcp;
 
+use App\Support\Platform\LocalCommand;
+
 /**
  * Reads whether the panel host lets MCP clients run commands on it. Root
  * sets this with `sudo dpanel mcp local on [read|full]`; the panel can only
@@ -18,9 +20,11 @@ class LocalHostAccess
     /** The file exists but the panel can't read it; mcp-exec.sh decides. */
     public const UNKNOWN = 'unknown';
 
+    public function __construct(private readonly ?LocalCommand $local = null) {}
+
     public function level(): string
     {
-        $path = (string) config('mcp.local_config_path', '/etc/dpanel/mcp-local.conf');
+        $path = $this->configPath();
 
         if (! @is_file($path)) {
             return self::OFF;
@@ -36,5 +40,37 @@ class LocalHostAccess
         }
 
         return $match[1];
+    }
+
+    /** The opt-in file, in the OS's dPanel config folder (Spec §4 config_dir). */
+    public function configPath(): string
+    {
+        $configured = config('mcp.local_config_path');
+        if (is_string($configured) && $configured !== '') {
+            return $configured;
+        }
+
+        return match ($this->local()->os()) {
+            'windows' => rtrim((string) (getenv('ProgramData') ?: 'C:\\ProgramData'), '\\/').'\\dPanel\\config\\mcp-local.conf',
+            'macos' => '/Library/dPanel/config/mcp-local.conf',
+            default => '/etc/dpanel/mcp-local.conf',
+        };
+    }
+
+    /**
+     * How an admin opts in, for error messages. $levels is "[read|full]" or "full".
+     */
+    public function enableHint(string $levels = '[read|full]'): string
+    {
+        if (! $this->local()->isWindows()) {
+            return "sudo dpanel mcp local on {$levels}";
+        }
+
+        return 'the line MCP_LOCAL_EXEC='.($levels === 'full' ? 'full' : 'read (or full)').' in '.$this->configPath().' (writable by Administrators only)';
+    }
+
+    private function local(): LocalCommand
+    {
+        return $this->local ?? app(LocalCommand::class);
     }
 }

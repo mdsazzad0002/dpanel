@@ -23,7 +23,7 @@ class RunCommandTool implements McpTool
 
     public function description(): string
     {
-        return 'Run a shell command on a managed server over SSH and return its output. Read-only tokens may only run known diagnostic commands (df -h, free -m, uptime, ls, systemctl status, journalctl -u, cat /var/log/…, php -v …), optionally piped into grep/head/tail/wc/sort. Full-access tokens may also run state-changing commands to fix problems; dangerous commands (rm -rf /, mkfs, reboot, …) are always refused. Every run is recorded in the panel command history. Prefer the dedicated tools for logs and service status.';
+        return 'Run a shell command on a managed server over SSH and return its output. Read-only tokens may only run known diagnostic commands (df -h, free -m, uptime, ls, systemctl status, journalctl -u, cat /var/log/…, php -v …), optionally piped into grep/head/tail/wc/sort. Full-access tokens may also run state-changing commands to fix problems; dangerous commands (rm -rf /, mkfs, reboot, …) are always refused. Every run is recorded in the panel command history. Prefer the dedicated tools for logs and service status. On a Windows panel host commands run in Git bash: Linux-only tools (systemctl, journalctl, free …) are refused there.';
     }
 
     public function inputSchema(): array

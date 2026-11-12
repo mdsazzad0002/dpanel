@@ -9,10 +9,13 @@ return [
     'rate_limit' => (int) env('DPANEL_MCP_RATE_LIMIT', 120),
     // Log files read_log_file may read must live under one of these.
     'log_roots' => ['/var/log/'],
+    // The same on a Windows panel host (drive paths). Empty: %ProgramData%/dPanel/logs/.
+    'windows_log_roots' => [],
     // write_file/edit_file back up old files here, and delete moves into its trash/.
     'backup_root' => env('DPANEL_MCP_BACKUP_ROOT', '/var/backups/dpanel-mcp'),
     // Written by `sudo dpanel mcp local on [read|full]`; enables commands on the panel host.
-    'local_config_path' => env('DPANEL_MCP_LOCAL_CONFIG', '/etc/dpanel/mcp-local.conf'),
+    // Unset: /etc/dpanel/mcp-local.conf, or the OS's dPanel config folder (LocalHostAccess::configPath).
+    'local_config_path' => env('DPANEL_MCP_LOCAL_CONFIG'),
     'oauth' => [
         // Let MCP clients sign in with OAuth (needed for claude.ai connectors).
         'enabled' => (bool) env('DPANEL_MCP_OAUTH_ENABLED', true),

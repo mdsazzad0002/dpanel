@@ -105,7 +105,7 @@ class McpFileAccess
         }
 
         foreach ([$path, $this->resolve($server, $path, $token)] as $candidate) {
-            foreach (McpCommandPolicy::SENSITIVE_PATHS as $sensitive) {
+            foreach ($this->onDrives($server) ? [...McpCommandPolicy::SENSITIVE_PATHS, ...McpCommandPolicy::WINDOWS_SENSITIVE_PATHS] : McpCommandPolicy::SENSITIVE_PATHS as $sensitive) {
                 if (str_contains($this->comparable($server, $candidate), $sensitive)) {
                     throw new McpToolException("Read-only MCP tokens cannot read sensitive paths ({$sensitive}).");
                 }
@@ -122,7 +122,7 @@ class McpFileAccess
             throw new McpToolException('This MCP token is read-only. Create a full-access token in dPanel (Settings → MCP Access) to change files.');
         }
         if ($server === null && $this->localAccess->level() === LocalHostAccess::READ) {
-            throw new McpToolException('The panel host only allows read-only MCP commands. An admin can allow fixes with: sudo dpanel mcp local on full');
+            throw new McpToolException('The panel host only allows read-only MCP commands. An admin can allow fixes with: '.$this->localAccess->enableHint('full'));
         }
 
         $resolved = $this->resolve($server, $path, $token);
@@ -337,7 +337,7 @@ class McpFileAccess
 
         return [
             PathService::normalizeAbsolutePath((string) (getenv('SystemRoot') ?: 'C:/Windows')),
-            PathService::normalizeAbsolutePath((string) config('mcp.local_config_path')),
+            PathService::normalizeAbsolutePath($this->localAccess->configPath()),
             $this->backupRootOn($server),
         ];
     }

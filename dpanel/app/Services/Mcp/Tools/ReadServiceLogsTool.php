@@ -6,6 +6,7 @@ use App\Models\McpAccessToken;
 use App\Services\Mcp\Contracts\McpTool;
 use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpToolException;
+use App\Support\Platform\LocalCommand;
 
 class ReadServiceLogsTool implements McpTool
 {
@@ -23,7 +24,7 @@ class ReadServiceLogsTool implements McpTool
 
     public function description(): string
     {
-        return 'Recent journald logs for a systemd unit (journalctl -u). Narrow with since (e.g. "1 hour ago", "2026-10-27 10:00") and grep for a case-insensitive pattern.';
+        return 'Recent journald logs for a systemd unit (journalctl -u). Narrow with since (e.g. "1 hour ago", "2026-10-27 10:00") and grep for a case-insensitive pattern. Needs systemd, so not on a Windows or macOS panel host.';
     }
 
     public function inputSchema(): array
@@ -51,6 +52,7 @@ class ReadServiceLogsTool implements McpTool
         $unit = ServiceName::validate($arguments['service'] ?? null);
         $lines = max(1, min(1000, (int) ($arguments['lines'] ?? 200)));
         $server = $this->executor->resolveServer($arguments['server_id'] ?? null);
+        $this->executor->requireHostTools($server, LocalCommand::SYSTEMD, 'journalctl (systemd)');
 
         $command = 'journalctl -u '.McpCommandExecutor::quote($unit).' -n '.$lines.' --no-pager -o short-iso';
 

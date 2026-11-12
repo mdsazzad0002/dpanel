@@ -8,6 +8,7 @@ use App\Services\Mcp\Contracts\McpTool;
 use App\Services\Mcp\McpCommandExecutor;
 use App\Services\Mcp\McpFileAccess;
 use App\Services\Mcp\McpToolException;
+use App\Support\Platform\LocalCommand;
 
 class FindWebsiteErrorsTool implements McpTool
 {
@@ -82,7 +83,8 @@ class FindWebsiteErrorsTool implements McpTool
         $url = ($site->enable_ssl ? 'https' : 'http').'://'.$site->domain.'/';
         $minutes = $days * 1440;
         $roots = implode(' ', array_map(McpCommandExecutor::quote(...), $directories));
-        $fpmLog = $site->php_version && preg_match('/^\d+\.\d+$/', (string) $site->php_version) === 1
+        // PHP-FPM's own log exists only on Linux; elsewhere PHP logs inside the site.
+        $fpmLog = ($server !== null || app(LocalCommand::class)->isLinux()) && $site->php_version && preg_match('/^\d+\.\d+$/', (string) $site->php_version) === 1
             ? McpCommandExecutor::quote("/var/log/php{$site->php_version}-fpm.log")
             : '';
 
