@@ -1,5 +1,8 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+
+const { t } = useI18n();
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -21,11 +24,11 @@ const running = computed(() => items.value.some((item) => ['queued', 'zipping'].
 const readyCount = computed(() => items.value.filter((item) => ['ready', 'downloaded'].includes(item.stage)).length);
 
 const stageLabel = (stage) => ({
-    queued: 'Queued',
-    zipping: 'Preparing archive…',
-    ready: 'Ready',
-    downloaded: 'Download started',
-    error: 'Failed',
+    queued: t('websites.bulk.queued'),
+    zipping: t('websites.bulk.zipping'),
+    ready: t('websites.bulk.ready'),
+    downloaded: t('websites.bulk.downloaded'),
+    error: t('websites.bulk.failed'),
 }[stage] || stage);
 
 const stopPolling = () => {
@@ -60,7 +63,7 @@ const poll = async () => {
                 if (autoDownload.value) triggerDownload(item);
             } else if (data.stage === 'failed') {
                 item.stage = 'error';
-                item.message = data.message || 'Export failed.';
+                item.message = data.message || t('websites.bulk.exportFailed');
             } else if (data.stage) {
                 item.stage = data.stage;
             }
@@ -71,7 +74,7 @@ const poll = async () => {
     if (!running.value) {
         stopPolling();
         const failed = items.value.filter((item) => item.stage === 'error').length;
-        emit('toast', failed ? `${failed} export(s) failed.` : 'All bulk downloads are ready.', failed ? 'error' : 'success');
+        emit('toast', failed ? t('websites.bulk.someFailed', { count: failed }) : t('websites.bulk.allReady'), failed ? 'error' : 'success');
     }
 };
 
@@ -89,7 +92,7 @@ const start = async () => {
         pollTimer = window.setInterval(poll, 5000);
     } catch (e) {
         const data = e?.response?.data || {};
-        error.value = data.message || Object.values(data.errors || {}).flat().join(' ') || e.message || 'Bulk export failed to start.';
+        error.value = data.message || Object.values(data.errors || {}).flat().join(' ') || e.message || t('websites.bulk.startFailed');
     } finally {
         starting.value = false;
     }
@@ -114,8 +117,8 @@ onBeforeUnmount(stopPolling);
             <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-2xl sm:w-[34rem] dark:bg-slate-900">
                 <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                     <div>
-                        <h2 class="font-semibold text-slate-900 dark:text-white">Bulk Download</h2>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ websites.length }} website(s) selected — each item downloads separately</p>
+                        <h2 class="font-semibold text-slate-900 dark:text-white">{{ t('websites.bulk.title') }}</h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('websites.bulk.selected', { count: websites.length }) }}</p>
                     </div>
                     <button type="button" class="rounded-lg px-3 py-2 text-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" @click="close">×</button>
                 </header>
@@ -127,19 +130,19 @@ onBeforeUnmount(stopPolling);
                         </div>
                         <label class="flex items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-700">
                             <input v-model="includeFiles" type="checkbox" class="mt-0.5 rounded" />
-                            <span><span class="font-medium text-slate-800 dark:text-slate-200">Website files</span><span class="block text-xs text-slate-500">One .zip per website</span></span>
+                            <span><span class="font-medium text-slate-800 dark:text-slate-200">{{ t('websites.bulk.files') }}</span><span class="block text-xs text-slate-500">{{ t('websites.bulk.filesHelp') }}</span></span>
                         </label>
                         <label class="flex items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-700">
                             <input v-model="includeDatabases" type="checkbox" class="mt-0.5 rounded" />
-                            <span><span class="font-medium text-slate-800 dark:text-slate-200">Databases</span><span class="block text-xs text-slate-500">Every active database of each website, one .sql each</span></span>
+                            <span><span class="font-medium text-slate-800 dark:text-slate-200">{{ t('websites.bulk.databases') }}</span><span class="block text-xs text-slate-500">{{ t('websites.bulk.databasesHelp') }}</span></span>
                         </label>
                     </div>
 
                     <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                         <input v-model="autoDownload" type="checkbox" class="rounded" />
-                        Auto download when a link is ready
+                        {{ t('websites.bulk.auto') }}
                     </label>
-                    <p v-if="autoDownload && items.length > 1" class="text-[11px] text-slate-400">If your browser asks to allow multiple downloads, choose Allow — or use the Download buttons below.</p>
+                    <p v-if="autoDownload && items.length > 1" class="text-[11px] text-slate-400">{{ t('websites.bulk.autoHelp') }}</p>
 
                     <div v-if="error" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">{{ error }}</div>
 
@@ -154,19 +157,19 @@ onBeforeUnmount(stopPolling);
                                 <p v-if="item.message && item.stage !== 'error'" class="text-[11px] text-amber-600">{{ item.message }}</p>
                             </div>
                             <button v-if="item.downloadUrl" type="button" class="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700" @click="triggerDownload(item)">
-                                {{ item.stage === 'downloaded' ? 'Download again' : 'Download' }}
+                                {{ item.stage === 'downloaded' ? t('websites.bulk.again') : t('websites.bulk.download') }}
                             </button>
                         </li>
                     </ul>
                 </div>
 
                 <footer class="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
-                    <span v-if="items.length" class="text-xs text-slate-500">{{ readyCount }} / {{ items.length }} ready</span>
+                    <span v-if="items.length" class="text-xs text-slate-500">{{ t('websites.bulk.readyCount', { ready: readyCount, total: items.length }) }}</span>
                     <span v-else></span>
                     <div class="flex gap-3">
-                        <button type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700" @click="close">Close</button>
+                        <button type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700" @click="close">{{ t('common.close') }}</button>
                         <button v-if="!items.length" type="button" :disabled="starting || !websites.length || (!includeFiles && !includeDatabases)" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50" @click="start">
-                            <i class="bi bi-download mr-1"></i>{{ starting ? 'Starting…' : 'Start download' }}
+                            <i class="bi bi-download mr-1"></i>{{ starting ? t('websites.bulk.starting') : t('websites.bulk.start') }}
                         </button>
                     </div>
                 </footer>
