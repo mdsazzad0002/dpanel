@@ -164,6 +164,9 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
             .as_nanos()
     ));
     fs::create_dir(&stage).map_err(|e| e.to_string())?;
+    // Removed however this returns: an early `?` used to leave the extracted
+    // copy (often hundreds of MB) in storage/app/migrations for good.
+    let _stage_cleanup = RemoveOnDrop(stage.clone());
     let names = generic_archive_listing(&source)?;
     if names.iter().any(|name| {
         Path::new(name).is_absolute()
@@ -839,5 +842,16 @@ SET @@SESSION.SQL_LOG_BIN= 0;\n";
         let error = run("USE `one`;\nCREATE TABLE a (id int);\nUSE `two`;\n").unwrap_err();
         assert!(error.contains("more than one database"));
         assert!(run("USE `one`;\nUSE `one`;\n").is_ok());
+    }
+}
+
+/// Deletes a scratch directory when it goes out of scope, on success or error.
+struct RemoveOnDrop(PathBuf);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        if self.0.exists() {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
 }

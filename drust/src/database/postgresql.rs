@@ -6,10 +6,28 @@ use std::{
 /// Creates (or updates) a PostgreSQL role and a database it owns. Mirrors the
 /// MariaDB `create|upsert` request: running it again resets the password.
 pub(crate) fn run(action: &str, db_name: &str, db_user: &str, db_password: &str) -> Result<String, String> {
-    if action != "create" && action != "upsert" {
-        return Err(format!("Unsupported action: {action}. Allowed: create|upsert"));
+    if !matches!(action, "create" | "upsert" | "drop" | "drop_database") {
+        return Err(format!("Unsupported action: {action}. Allowed: create|upsert|drop|drop_database"));
     }
     validate_identifier(db_name, "database name")?;
+    if action == "drop_database" || action == "drop" {
+        let with_user = action == "drop";
+        if with_user {
+            validate_identifier(db_user, "database user")?;
+        }
+        if ["postgres", "template0", "template1"].contains(&db_name.to_ascii_lowercase().as_str())
+            || (with_user && db_user.eq_ignore_ascii_case("postgres"))
+        {
+            return Err("PostgreSQL's own databases and the postgres superuser are never dropped.".into());
+        }
+        psql(&drop_sql(db_name, db_user, with_user))?;
+
+        return Ok(if with_user {
+            format!("PostgreSQL database and user dropped: {db_name} / {db_user}")
+        } else {
+            format!("PostgreSQL database dropped: {db_name}")
+        });
+    }
     validate_identifier(db_user, "database user")?;
     if db_password.is_empty() {
         return Err("Database password is required.".into());
@@ -62,6 +80,15 @@ fn provision_sql(db_name: &str, db_user: &str, db_password: &str) -> String {
     )
 }
 
+/// WITH (FORCE) ends the site's open connections first (PostgreSQL 13+).
+fn drop_sql(db_name: &str, db_user: &str, with_user: bool) -> String {
+    let mut sql = format!("DROP DATABASE IF EXISTS \"{db_name}\" WITH (FORCE);\n");
+    if with_user {
+        sql.push_str(&format!("DROP ROLE IF EXISTS \"{db_user}\";\n"));
+    }
+    sql
+}
+
 fn psql(sql: &str) -> Result<(), String> {
     let psql = crate::platform::paths()
         .binary(crate::platform::paths::Tool::Psql)
@@ -101,6 +128,14 @@ fn psql(sql: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn drop_forces_off_connections_and_can_keep_the_role() {
+        assert_eq!(drop_sql("shop", "shop_user", true), "DROP DATABASE IF EXISTS \"shop\" WITH (FORCE);\nDROP ROLE IF EXISTS \"shop_user\";\n");
+        assert_eq!(drop_sql("shop", "shop_user", false), "DROP DATABASE IF EXISTS \"shop\" WITH (FORCE);\n");
+        assert!(run("drop", "postgres", "x", "").is_err());
+        assert!(run("drop", "shop", "postgres", "").is_err());
+    }
 
     #[test]
     fn rejects_unsafe_identifiers() {

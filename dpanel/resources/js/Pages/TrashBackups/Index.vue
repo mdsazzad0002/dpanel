@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import BulkDeleteBar from './components/BulkDeleteBar.vue';
 import { ref } from 'vue';
 
 const props = defineProps({
@@ -88,6 +89,17 @@ const restoreBackup = async (backup) => {
     }
 };
 
+const selected = ref([]);
+
+const onBulkDeleted = ({ type, message, deleted }) => {
+    downloadError.value = message;
+    noticeType.value = type === 'success' ? 'success' : 'error';
+    if (deleted.length > 0) {
+        selected.value = selected.value.filter((id) => !deleted.includes(id));
+        router.reload({ only: ['backups'], preserveScroll: true });
+    }
+};
+
 const saveRetention = () => {
     retentionForm.patch(route('trash-backups.retention.update'), { preserveScroll: true });
 };
@@ -150,8 +162,12 @@ const saveRetention = () => {
                 <p class="mt-3 font-medium">No deleted website backups</p>
                 <p class="mt-1 text-sm text-slate-500">A downloadable ZIP will appear here after a website is deleted.</p>
             </div>
-            <div v-else class="divide-y divide-slate-200 dark:divide-slate-800">
+            <template v-else>
+            <BulkDeleteBar v-model="selected" :backups="backups" @done="onBulkDeleted" />
+            <div class="divide-y divide-slate-200 dark:divide-slate-800">
                 <div v-for="backup in backups" :key="backup.id" class="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex min-w-0 items-start gap-3">
+                    <input v-model="selected" type="checkbox" :value="backup.id" class="mt-1 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
                     <div class="min-w-0">
                         <div class="flex items-center gap-2">
                             <i class="bi bi-file-earmark-zip text-amber-500"></i>
@@ -159,6 +175,7 @@ const saveRetention = () => {
                         </div>
                         <p class="mt-1 truncate text-xs text-slate-500">{{ backup.file_name }}</p>
                         <p class="mt-1 text-xs text-slate-400">{{ formatSize(backup.file_size) }} · Deleted {{ backup.created_at || '-' }}</p>
+                    </div>
                     </div>
                     <div v-if="backup.available" class="flex shrink-0 flex-wrap gap-2">
                         <button
@@ -185,6 +202,7 @@ const saveRetention = () => {
                     <span v-else class="text-sm font-medium text-red-500">Archive missing</span>
                 </div>
             </div>
+            </template>
         </div>
         </div>
     </AuthenticatedLayout>

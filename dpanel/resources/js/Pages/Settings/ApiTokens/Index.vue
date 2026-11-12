@@ -36,7 +36,7 @@ const removed = (id) => { tokenList.value = tokenList.value.filter((token) => to
                     <dt class="text-slate-500">{{ t('apiTokens.baseUrl') }}</dt>
                     <dd class="break-all font-mono text-xs">{{ baseUrl }}</dd>
                     <dt class="text-slate-500">{{ t('apiTokens.docs') }}</dt>
-                    <dd><a :href="docsUrl" target="_blank" rel="noopener" class="text-blue-600 hover:underline dark:text-blue-400">openapi.yaml</a></dd>
+                    <dd><a :href="docsUrl" target="_blank" rel="noopener" class="text-blue-600 hover:underline dark:text-blue-400">OpenAPI (YAML)</a></dd>
                     <dt class="text-slate-500">{{ t('apiTokens.example') }}</dt>
                     <dd class="break-all font-mono text-xs">curl -H "Authorization: Bearer dp-api-…" {{ baseUrl }}/websites</dd>
                 </dl>

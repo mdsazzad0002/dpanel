@@ -329,15 +329,28 @@ class DatabaseController extends Controller
     {
         $this->migrateLegacyJsonRequests();
 
-        $deleted = DatabaseRequestModel::query()
+        $database = DatabaseRequestModel::query()
             ->visibleTo($request->user())
             ->where('id', $id)
-            ->delete();
-        if ($deleted === 0) {
+            ->first();
+        if ($database === null) {
             return redirect()->route('databases.list')->with('error', 'Database request not found.');
         }
 
-        return redirect()->route('databases.list')->with('success', 'Database request deleted successfully.');
+        // Only when the admin ticked it is the database dropped from its server too.
+        $dropped = null;
+        if ($request->boolean('drop_from_server')) {
+            try {
+                $dropped = app(\App\Services\Database\DatabaseServerRemover::class)->drop($database);
+            } catch (\Throwable $e) {
+                return redirect()->route('databases.list')->with('error', 'The database could not be dropped from the server, so it was kept: '.$e->getMessage());
+            }
+        }
+        $database->delete();
+
+        return redirect()->route('databases.list')->with('success', $dropped !== null
+            ? 'Database deleted. '.$dropped.'.'
+            : 'Database removed from the panel. It is still on the server.');
     }
 
     /**

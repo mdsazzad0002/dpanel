@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AccountUsageSample;
+use App\Models\Website;
 use App\Models\UsageAlert;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -31,7 +32,7 @@ class UsageController extends Controller
 
         return Inertia::render('Usage/Index', [
             'scope' => match (true) {
-                $actor->hasRole('admin') => 'Every account with a package',
+                $actor->hasRole('admin') => 'Every account with a package or a website',
                 $actor->hasRole('reseller') => 'You and your customers',
                 default => 'Your account',
             },
@@ -44,6 +45,11 @@ class UsageController extends Controller
                 'alerts' => collect($alerts->get($user->id, []))
                     ->mapWithKeys(fn (UsageAlert $alert) => [$alert->resource => $alert->level])->all(),
             ])->values(),
+            // Use is counted per account, so a website with no owner is in no row.
+            'unassignedWebsites' => $actor->hasRole('admin')
+                ? Website::query()->whereNull('assigned_user_id')->whereIn('type', ['primary', 'main'])
+                    ->where('site_owner', '!=', 'system')->whereKeyNot('1')->count()
+                : 0,
         ]);
     }
 
@@ -70,7 +76,8 @@ class UsageController extends Controller
     {
         $query = User::query();
         if ($actor->hasRole('admin')) {
-            return $query->whereNotNull('package_id');
+            return $query->where(fn (Builder $q) => $q->whereNotNull('package_id')
+                ->orWhereIn('id', Website::query()->whereNotNull('assigned_user_id')->select('assigned_user_id')));
         }
         if ($actor->hasRole('reseller')) {
             return $query->where(fn (Builder $q) => $q->whereKey($actor->id)->orWhere('reseller_id', $actor->id));

@@ -73,8 +73,13 @@ class AccountTerminationService
                 $account->delete();
             });
 
-        $websites->filter(fn (Website $website) => in_array(strtolower((string) $website->type), ['primary', 'main'], true))
+        // Subdomains first: a main website keeps its system user while a
+        // subdomain is still on it, so deleting it last removes the user too.
+        $type = fn (Website $website): string => strtolower((string) $website->type);
+        $websites->filter(fn (Website $website) => in_array($type($website), ['subdomain', 'sub'], true))
             ->each(fn (Website $website) => $this->websites->delete($website, null));
+        $websites->filter(fn (Website $website) => in_array($type($website), ['primary', 'main'], true))
+            ->each(fn (Website $website) => Website::query()->whereKey($website->id)->exists() && $this->websites->delete($website->fresh(), null));
         // Aliases share the primary site's files, which are gone now.
         Website::query()->where('assigned_user_id', $user->id)->delete();
 

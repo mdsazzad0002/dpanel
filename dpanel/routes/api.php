@@ -11,10 +11,11 @@ use Illuminate\Support\Facades\Route;
 // Public REST API (backlog U1), under /api/v1. `Authorization: Bearer dp-api-...`,
 // issued under Profile menu → API Tokens; no session, cookies or CSRF. Every
 // route here is described in resources/api/openapi.yaml (ApiOpenApiTest checks).
+// No file extension in the document URL: the gateway refuses any *.yaml path (sensitive-file guard).
 // The AI Gateway's /api/v1/models, /chat/completions, ... are in web.php.
 
 Route::prefix('v1')->middleware('api.json')->group(function (): void {
-    Route::get('/openapi.yaml', [MetaController::class, 'openapi'])->middleware('throttle:60,1')->name('api.v1.openapi');
+    Route::get('/openapi', [MetaController::class, 'openapi'])->middleware('throttle:60,1')->name('api.v1.openapi');
 
     Route::middleware(['api.token', 'throttle:api-v1'])->group(function (): void {
         Route::get('/me', [MetaController::class, 'me'])->name('api.v1.me');

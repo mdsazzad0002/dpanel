@@ -1147,8 +1147,19 @@
             "confirm": "Delete {domain}?",
             "title": "Delete website",
             "aliasHelp": "Removes the alias {domain}. The main site is not affected.",
-            "help": "Archives {domain} to Website Trash, then removes its files, cron jobs and database records. Large sites can take a few minutes.",
-            "deleting": "Deleting…"
+            "help": "Asks first: move {domain} to Website Trash (an archive you can restore), or delete it permanently. Large sites can take a few minutes.",
+            "deleting": "Deleting…",
+            "trashTitle": "Move to trash",
+            "trashHelp": "Files and database are archived to Website Trash first, so the site can be restored later.",
+            "permanentTitle": "Delete permanently",
+            "permanentHelp": "No archive is kept. Files, database records and cron jobs are gone for good.",
+            "typeDomain": "Type {domain} to confirm",
+            "trashButton": "Move to trash",
+            "permanentButton": "Delete permanently",
+            "removeAlias": "Remove alias",
+            "dropDatabases": "Also delete this website's databases",
+            "dropDatabasesTrash": "MariaDB databases are dropped from the server; their data stays in the trash archive and comes back on restore. PostgreSQL and MongoDB databases are kept.",
+            "dropDatabasesPermanent": "Every database of this website and its user are dropped from the server. Their data is gone for good."
         },
         "ssl": {
             "reinstallConfirm": "Reinstall the SSL certificate for {domain}? A new certificate is issued even if the current one is still valid.",
@@ -1914,6 +1925,16 @@
             "running": "Running",
             "completed": "Done",
             "failed": "Failed"
+        }
+    },
+    "databases": {
+        "delete": {
+            "title": "Delete {name}?",
+            "help": "Removes the database from the panel.",
+            "dropTitle": "Also drop it from the server",
+            "dropHelp": "The database and its user are dropped, and the data is gone for good. Unticked, the database stays on the server.",
+            "button": "Delete",
+            "dropButton": "Delete and drop"
         }
     }
 }

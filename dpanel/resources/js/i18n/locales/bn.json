@@ -1147,8 +1147,19 @@
             "confirm": "{domain} মুছে ফেলবেন?",
             "title": "Website মুছুন",
             "aliasHelp": "Alias {domain} সরিয়ে দেয়। মূল site-এর কিছু হয় না।",
-            "help": "{domain}-কে Website Trash-এ archive করে, তারপর এর file, cron job ও database record সরিয়ে দেয়। বড় site-এ কয়েক মিনিট লাগতে পারে।",
-            "deleting": "মোছা হচ্ছে…"
+            "help": "আগে জিজ্ঞেস করে: {domain} Website Trash-এ পাঠাবেন (পরে restore করা যায় এমন archive), নাকি স্থায়ীভাবে মুছবেন। বড় site-এ কয়েক মিনিট লাগতে পারে।",
+            "deleting": "মোছা হচ্ছে…",
+            "trashTitle": "Trash-এ পাঠান",
+            "trashHelp": "File আর database আগে Website Trash-এ archive হয়, তাই পরে site ফেরানো যায়।",
+            "permanentTitle": "স্থায়ীভাবে মুছুন",
+            "permanentHelp": "কোনো archive থাকে না। File, database record আর cron job চিরতরে চলে যায়।",
+            "typeDomain": "নিশ্চিত করতে {domain} লিখুন",
+            "trashButton": "Trash-এ পাঠান",
+            "permanentButton": "স্থায়ীভাবে মুছুন",
+            "removeAlias": "Alias সরান",
+            "dropDatabases": "এই website-এর database-ও মুছুন",
+            "dropDatabasesTrash": "MariaDB database server থেকে drop হয়; data trash archive-এ থাকে আর restore করলে ফিরে আসে। PostgreSQL আর MongoDB database থেকে যায়।",
+            "dropDatabasesPermanent": "এই website-এর সব database আর তার user server থেকে drop হয়। Data চিরতরে চলে যায়।"
         },
         "ssl": {
             "reinstallConfirm": "{domain}-এর SSL certificate আবার install করবেন? এখনকার certificate বৈধ থাকলেও নতুন একটা নেওয়া হবে।",
@@ -1914,6 +1925,16 @@
             "running": "চলছে",
             "completed": "শেষ",
             "failed": "ব্যর্থ"
+        }
+    },
+    "databases": {
+        "delete": {
+            "title": "{name} মুছবেন?",
+            "help": "Database-টা panel থেকে সরিয়ে দেয়।",
+            "dropTitle": "Server থেকেও drop করুন",
+            "dropHelp": "Database আর তার user drop হয়, data চিরতরে চলে যায়। Tick না দিলে database server-এ থেকে যায়।",
+            "button": "মুছুন",
+            "dropButton": "মুছুন আর drop করুন"
         }
     }
 }

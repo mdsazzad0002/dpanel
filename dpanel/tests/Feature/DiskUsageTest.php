@@ -64,6 +64,42 @@ class DiskUsageTest extends TestCase
         $this->assertSame(0, Notification::query()->count());
     }
 
+    public function test_an_account_without_a_package_is_measured_but_never_limited(): void
+    {
+        $user = $this->account('report', ['shop' => 300]);
+        $user->forceFill(['package_id' => null])->save();
+
+        $this->artisan('accounts:disk-check')->assertSuccessful();
+
+        $this->assertSame(300, AccountUsageSample::query()->where('user_id', $user->id)->value('disk_mb'));
+        $this->assertSame([], $this->limitsSent());
+        $this->assertSame(0, Notification::query()->count());
+    }
+
+    public function test_the_usage_page_lists_an_admins_own_websites_and_counts_ownerless_ones(): void
+    {
+        $this->seed(\Database\Seeders\RolePermissionSeeder::class);
+        $admin = $this->account('report', ['shop' => 300]);
+        $admin->forceFill(['package_id' => null])->save();
+        $admin->assignRole('admin');
+        Website::create([
+            'id' => (string) Str::uuid(), 'domain' => 'orphan.test', 'hostname' => 'orphan.test',
+            'project_root' => '/home/orphan', 'root_path' => '/home/orphan/public_html', 'site_owner' => 'orphan',
+            'php_version' => '8.3', 'enable_ssl' => false, 'status' => 'live', 'type' => 'primary', 'ssl_mode' => 'none',
+        ]);
+        $this->artisan('accounts:disk-check')->assertSuccessful();
+        $session = str_repeat('a', 64);
+        $this->withoutMiddleware(\App\Http\Middleware\EnsurePanelSessionIsValid::class)->withSession(['panel_session_token' => $session]);
+
+        $this->actingAs($admin)->get(route('usage.index', ['token' => $session]))
+            ->assertOk()
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+                ->where('accounts.0.id', $admin->id)
+                ->where('accounts.0.resources.0.used', 300)
+                ->where('accounts.0.resources.0.limit', null)
+                ->where('unassignedWebsites', 1));
+    }
+
     public function test_report_mode_notifies_once_per_crossing_and_sets_no_limit(): void
     {
         $user = $this->account('report', ['shop' => 1200]);

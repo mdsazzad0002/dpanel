@@ -11,7 +11,7 @@ class ApiOpenApiTest extends PublicApiTestCase
 {
     public function test_the_document_is_served_without_a_token(): void
     {
-        $response = $this->get('/api/v1/openapi.yaml')->assertOk();
+        $response = $this->get('/api/v1/openapi')->assertOk();
 
         $this->assertStringStartsWith('application/yaml', (string) $response->headers->get('Content-Type'));
         $this->assertSame('3.0.3', Yaml::parse($response->getContent())['openapi']);

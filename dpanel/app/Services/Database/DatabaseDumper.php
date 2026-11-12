@@ -26,7 +26,10 @@ class DatabaseDumper
      */
     public function dump(DatabaseRequest $database, string $directory): array
     {
-        File::ensureDirectoryExists($directory);
+        // Group-writable: the heavy queue worker (www-data) writes here, but a
+        // CLI run as another user may have made the folder first.
+        File::ensureDirectoryExists($directory, 02775);
+        @chmod($directory, 02775);
         $base = $directory.'/'.Str::uuid();
         $name = (preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $database->database_name) ?: 'database')
             .'-'.now()->format('Y-m-d_H-i-s');

@@ -4,6 +4,7 @@ import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref } from 'vue';
 import { isClosedRoute } from '@/navigation/panelMenu';
+import DeleteDatabaseModal from './components/DeleteDatabaseModal.vue';
 
 const page = usePage();
 const deleteForm = useForm({});
@@ -88,10 +89,17 @@ const clearFilters = () => {
 
 
 
-const deleteRequest = (id) => {
-    if (!confirm('Delete this database request?')) return;
-
-    deleteForm.delete(panelRoute('databases.destroy', { id }));
+// Asks first; with the box ticked the database is also dropped from its server.
+const deleteTarget = ref(null);
+const deleteRequest = (item) => { deleteTarget.value = item; };
+const confirmDelete = (dropFromServer) => {
+    if (!deleteTarget.value) return;
+    deleteForm
+        .transform(() => ({ drop_from_server: dropFromServer }))
+        .delete(panelRoute('databases.destroy', { id: deleteTarget.value.id }), {
+            preserveScroll: true,
+            onFinish: () => { deleteTarget.value = null; },
+        });
 };
 
 const isPostgresql = (item) => item.engine === 'postgresql';
@@ -494,7 +502,7 @@ onUnmounted(() => window.clearInterval(pollTimer));
                                     <button
                                         :disabled="deleteForm.processing"
                                         class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-400"
-                                        @click="deleteRequest(item.id)"
+                                        @click="deleteRequest(item)"
                                     >
                                         Delete
                                     </button>
@@ -509,5 +517,6 @@ onUnmounted(() => window.clearInterval(pollTimer));
                 </table>
             </div>
         </div>
+        <DeleteDatabaseModal :show="deleteTarget !== null" :database="deleteTarget" :busy="deleteForm.processing" @close="deleteTarget = null" @confirm="confirmDelete" />
     </AuthenticatedLayout>
 </template>

@@ -27,7 +27,7 @@ tags:
   - name: Mail
   - name: Migration
 paths:
-  /openapi.yaml:
+  /openapi:
     get:
       tags: [Account]
       summary: This document

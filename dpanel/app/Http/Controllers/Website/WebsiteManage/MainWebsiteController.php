@@ -461,11 +461,15 @@ class MainWebsiteController extends Controller
 
         $domain = strtolower(trim((string) ($website->domain ?? '')));
         $websiteType = strtolower(trim((string) ($website->type ?? '')));
-        if (! in_array($websiteType, ['primary', 'main'], true)) {
+        // Main websites and subdomains have files of their own; an alias only points at its main website.
+        if (! in_array($websiteType, ['primary', 'main', 'subdomain', 'sub'], true)) {
             return $this->destroyLinkedDomain($request, $website, $domain);
         }
         try {
-            $cleanupMessages = $this->websiteDeletion->delete($website, $request->user()?->id);
+            // "permanent" skips the trash archive; anything else keeps one (the default).
+            $toTrash = $request->input('mode') !== 'permanent';
+            // Databases are dropped from their server only when the admin ticked it.
+            $cleanupMessages = $this->websiteDeletion->delete($website, $request->user()?->id, $toTrash, $request->boolean('delete_databases'));
         } catch (WebsiteDeletionFailed $e) {
             return $this->websiteDestroyError($request, $e->getMessage(), $e->key, $e->getPrevious() ?? $e);
         }

@@ -6,6 +6,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
 import SiteFavicon from '@/Pages/Websites/components/SiteFavicon.vue';
 import BulkDownloadPanel from '@/Pages/Websites/components/bulk-download/BulkDownloadPanel.vue';
+import DeleteWebsiteModal from '@/Pages/Websites/components/DeleteWebsiteModal.vue';
 
 const { t } = useI18n();
 
@@ -177,8 +178,17 @@ const formatDate = (value) => {
     return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-const deleteRequest = async (id) => {
-    if (!confirm(t('websites.list.deleteConfirm'))) return;
+// Delete asks first in a small dialog: to Website Trash, or for good.
+const deleteTarget = ref(null);
+const askDelete = (website) => { deleteTarget.value = website; };
+const confirmDelete = async (mode, dropDatabases = false) => {
+    const target = deleteTarget.value;
+    if (!target) return;
+    await deleteRequest(target.id, mode, dropDatabases);
+    deleteTarget.value = null;
+};
+
+const deleteRequest = async (id, mode = 'trash', dropDatabases = false) => {
     const deletingId = String(id);
     if (!deletingId || deleteLoadingIds.has(deletingId)) return;
     deleteLoadingIds.add(deletingId);
@@ -187,8 +197,10 @@ const deleteRequest = async (id) => {
         const response = await fetch(panelRoute('websites.destroy', { id }), {
             method: 'DELETE',
             credentials: 'same-origin',
+            body: JSON.stringify({ mode, delete_databases: dropDatabases }),
             headers: {
                 Accept: 'application/json',
+                'Content-Type': 'application/json',
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
             },
@@ -725,7 +737,7 @@ const saveOwnership = async () => {
                                 v-if="String(item.id) !== '1'"
                                 :disabled="deleteLoadingIds.has(String(item.id))"
                                 class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
-                                @click="deleteRequest(item.id)"
+                                @click="askDelete(item)"
                             >
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg>
                                 {{ deleteLoadingIds.has(String(item.id)) ? t('websites.delete.deleting') : t('websites.list.delete') }}
@@ -796,7 +808,7 @@ const saveOwnership = async () => {
                                 <button
                                     :disabled="deleteLoadingIds.has(String(alias.id))"
                                     class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
-                                    @click="deleteRequest(alias.id)"
+                                    @click="askDelete({ ...alias, type: alias.type || 'alias' })"
                                 >
                                     {{ deleteLoadingIds.has(String(alias.id)) ? t('websites.delete.deleting') : t('websites.list.delete') }}
                                 </button>
@@ -835,5 +847,12 @@ const saveOwnership = async () => {
             </div>
         </div>
         <BulkDownloadPanel :open="bulkPanelOpen" :websites="selectedWebsites" :panel-route="panelRoute" @close="bulkPanelOpen = false" @toast="pushToast" />
+        <DeleteWebsiteModal
+            :show="deleteTarget !== null"
+            :website="deleteTarget"
+            :busy="deleteTarget !== null && deleteLoadingIds.has(String(deleteTarget.id))"
+            @close="deleteTarget = null"
+            @confirm="confirmDelete"
+        />
     </AuthenticatedLayout>
 </template>

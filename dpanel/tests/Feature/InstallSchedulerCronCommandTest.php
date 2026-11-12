@@ -64,7 +64,7 @@ class InstallSchedulerCronCommandTest extends TestCase
         $this->artisan('serverpanel:install-scheduler-cron')->assertSuccessful();
 
         $this->assertSame(
-            (new LocalCommand('Linux'))->shellLine([PHP_BINARY, 'artisan', 'schedule:run'], base_path(), true),
+            (new LocalCommand('Linux'))->shellLine([(new LocalCommand('Linux'))->panelPhpCli(), 'artisan', 'schedule:run'], base_path(), true),
             CronJob::query()->findOrFail('panel-scheduler')->command,
         );
         $this->assertStringEndsWith(' artisan schedule:run >> /dev/null 2>&1', CronJob::query()->findOrFail('panel-scheduler')->command);

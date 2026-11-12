@@ -84,3 +84,9 @@ Schedule::call(fn () => app(\App\Services\PanelLink\PanelPackageStore::class)->p
     ->hourly()
     ->name('panel-link:prune')
     ->withoutOverlapping();
+
+// Expired migration imports, failed-restore folders and old exports: each had
+// only a delayed queue job, which a Redis restart loses (PruneStorageCommand).
+Schedule::command('storage:prune')
+    ->hourly()
+    ->withoutOverlapping();

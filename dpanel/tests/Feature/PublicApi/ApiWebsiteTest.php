@@ -125,10 +125,14 @@ class ApiWebsiteTest extends PublicApiTestCase
         $parent = $this->website($customer, 'shop.test');
         $sub = $this->website($customer, 'blog.shop.test', ['type' => 'subdomain', 'parent_id' => $parent->id, 'site_owner' => 'shop_test']);
         $plain = $this->token($customer, ['websites:write']);
+        // A subdomain has a directory of its own: dRust archives and removes it.
+        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        \Illuminate\Support\Facades\Http::fake(['drust.test/*' => \Illuminate\Support\Facades\Http::response(['success' => true])]);
 
         $this->api($plain, 'DELETE', "/websites/{$sub->id}")->assertOk()->assertJsonStructure(['message']);
 
         $this->assertFalse(Website::query()->whereKey($sub->id)->exists());
         $this->assertTrue(Website::query()->whereKey($parent->id)->exists());
+        \Illuminate\Support\Facades\Http::assertSent(fn ($request) => str_ends_with($request->url(), '/api/v1/website/delete') && $request['delete_user'] === false);
     }
 }

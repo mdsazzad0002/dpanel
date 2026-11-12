@@ -9,6 +9,7 @@ import UsageHistory from './components/UsageHistory.vue';
 const props = defineProps({
     scope: { type: String, default: 'Your account' },
     accounts: { type: Array, default: () => [] },
+    unassignedWebsites: { type: Number, default: 0 },
 });
 
 const search = ref('');
@@ -42,6 +43,12 @@ const nearCount = computed(() => props.accounts.filter((account) => highest(acco
         </template>
 
         <div class="space-y-4">
+            <div v-if="unassignedWebsites > 0" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+                <i class="bi bi-info-circle"></i>
+                {{ unassignedWebsites }} {{ unassignedWebsites === 1 ? 'website has' : 'websites have' }} no owner, so {{ unassignedWebsites === 1 ? 'its' : 'their' }} use is not counted here.
+                Give {{ unassignedWebsites === 1 ? 'it' : 'them' }} an owner from the website's Manage page.
+                <a :href="route('websites.list')" class="font-semibold underline">Websites</a>
+            </div>
             <div v-if="accounts.length > 1" class="flex flex-wrap items-center gap-3">
                 <input v-model="search" type="search" placeholder="Search account or package…" class="w-full max-w-xs rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 <label class="inline-flex items-center gap-2 text-sm">
@@ -88,12 +95,12 @@ const nearCount = computed(() => props.accounts.filter((account) => highest(acco
                 </table>
                 <div v-if="rows.length === 0" class="p-10 text-center text-slate-500">
                     <i class="bi bi-speedometer2 text-3xl"></i>
-                    <p class="mt-2 font-medium">{{ accounts.length ? 'No account matches.' : 'No account has a package yet.' }}</p>
+                    <p class="mt-2 font-medium">{{ accounts.length ? 'No account matches.' : 'No account has a website or a package yet.' }}</p>
                 </div>
             </div>
 
             <p class="text-xs text-slate-500">
-                Disk is measured hourly, bandwidth every 15 minutes, CPU and memory every five minutes (only when the package limits them).
+                Disk is measured hourly and bandwidth every 15 minutes for every account with a website; CPU and memory every five minutes, only when the package limits them.
                 A notice goes to the account at 80% and at 100% of a limit, once until use falls back.
             </p>
         </div>

@@ -166,6 +166,18 @@ class LocalCommandTest extends TestCase
         $this->assertSame('C:\\Program Files\\MariaDB 11\\bin\\mariadb-dump.exe', $local->find('C:\\Program Files\\MariaDB 11\\bin\\mariadb-dump'));
     }
 
+    public function test_cron_lines_use_the_system_php_cli_never_php_fpm(): void
+    {
+        $php = (new LocalCommand('Linux'))->panelPhpCli();
+
+        $this->assertStringNotContainsString('fpm', basename($php));
+        $version = PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;
+        if (is_executable("/usr/bin/php{$version}")) {
+            // Root's cron must not depend on a user's own PHP (Herd, phpenv).
+            $this->assertSame("/usr/bin/php{$version}", $php);
+        }
+    }
+
     public function test_the_linux_cron_line_is_byte_for_byte_the_old_one(): void
     {
         $local = new LocalCommand('Linux');
@@ -179,7 +191,7 @@ class LocalCommandTest extends TestCase
             $local->artisanCronLine(['serverpanel:trash-backups-prune', '--days=30'], '/usr/bin/php8.3', '/var/www/dpanel'),
         );
         $this->assertSame(
-            'cd '.base_path().' && '.PHP_BINARY.' artisan schedule:run >> /dev/null 2>&1',
+            'cd '.base_path().' && '.$local->panelPhpCli().' artisan schedule:run >> /dev/null 2>&1',
             $local->artisanCronLine(['schedule:run']),
         );
     }

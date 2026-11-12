@@ -63,7 +63,7 @@ turned on, its remote backup upload.
 ## How it works
 
 - The other panel answers at `/api/v1/migration/…` (see the API document at
-  `/api/v1/openapi.yaml`, tag *Migration*).
+  `/api/v1/openapi`, tag *Migration*).
 - Packages go in 5 MB chunks, each checked with SHA-256, and the whole package
   is checked again at the end. A dropped chunk is sent again; progress is
   saved after every chunk, so a transfer that outlasts the worker's time limit

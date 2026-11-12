@@ -780,6 +780,9 @@ Route::prefix('cpsess{token}')
             Route::patch('/trash-backups/retention', [WebsiteTrashBackupController::class, 'updateRetention'])
                 ->middleware('role:admin')
                 ->name('trash-backups.retention.update');
+            Route::post('/trash-backups/bulk-delete', [WebsiteTrashBackupController::class, 'bulkDestroy'])
+                ->middleware('role:admin|reseller|general|general_user')
+                ->name('trash-backups.bulk-destroy');
             Route::get('/trash-backups/{id}/download', [WebsiteTrashBackupController::class, 'download'])
                 ->middleware('role:admin|reseller|general|general_user')
                 ->whereUuid('id')

@@ -11,7 +11,8 @@ use Illuminate\Support\Facades\Http;
 class SystemAccountSuspender
 {
     /** The panel's own accounts; drust refuses them too. */
-    private const NEVER = ['root', 'www-data', 'nobody'];
+    // 'system' owns the panel's own website: not a real account, and never suspended or measured.
+    private const NEVER = ['root', 'www-data', 'nobody', 'system'];
 
     public function suspend(string $account): void
     {

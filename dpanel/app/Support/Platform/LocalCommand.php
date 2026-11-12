@@ -209,7 +209,31 @@ class LocalCommand
      */
     public function artisanCronLine(array $arguments, ?string $phpBinary = null, ?string $basePath = null): string
     {
-        return $this->shellLine([$phpBinary ?? PHP_BINARY, 'artisan', ...$arguments], $basePath ?? base_path(), true);
+        return $this->shellLine([$phpBinary ?? $this->panelPhpCli(), 'artisan', ...$arguments], $basePath ?? base_path(), true);
+    }
+
+    /**
+     * The PHP CLI that runs this panel's artisan from cron. Inside a web
+     * request PHP_BINARY is the FPM daemon (/usr/sbin/php-fpm8.3), which
+     * cannot run a script: a cron line written from there never ran.
+     */
+    public function panelPhpCli(): string
+    {
+        // On Linux the system CLI of this version, whoever runs this: a cron
+        // line runs as root, so a user's own PHP (Herd, phpenv) is no good.
+        $version = PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;
+        $candidates = $this->isLinux() ? ["/usr/bin/php{$version}", '/usr/bin/php'] : [];
+        if (! str_contains(basename(PHP_BINARY), 'fpm')) {
+            $candidates[] = PHP_BINARY;
+        }
+        array_push($candidates, PHP_BINDIR."/php{$version}", PHP_BINDIR.'/php');
+        foreach ($candidates as $candidate) {
+            if (is_file($candidate) && is_executable($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return $this->find('php') ?? 'php';
     }
 
     /**

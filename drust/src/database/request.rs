@@ -13,15 +13,21 @@ pub(crate) struct Options {
 }
 
 pub(crate) fn run(opts: Options) -> Result<String, String> {
-    if opts.action != "create" && opts.action != "upsert" {
+    if !matches!(opts.action.as_str(), "create" | "upsert" | "drop" | "drop_database") {
         return Err(format!(
-            "Unsupported action: {}. Allowed: create|upsert",
+            "Unsupported action: {}. Allowed: create|upsert|drop|drop_database",
             opts.action
         ));
     }
 
     validate_name(&opts.db_name, "database name")?;
+    if opts.action == "drop_database" {
+        return drop(&opts, false);
+    }
     validate_name(&opts.db_user, "database user")?;
+    if opts.action == "drop" {
+        return drop(&opts, true);
+    }
     validate_charset(&opts.charset)?;
     validate_collation(&opts.collation)?;
 
@@ -67,6 +73,50 @@ pub(crate) fn run(opts: Options) -> Result<String, String> {
         "Database/user synced successfully: {} / {}@{}",
         opts.db_name, opts.db_user, host
     ))
+}
+
+/// Databases and accounts a panel request may never remove.
+const PROTECTED_DATABASES: [&str; 5] = ["mysql", "information_schema", "performance_schema", "sys", "phpmyadmin"];
+const PROTECTED_USERS: [&str; 4] = ["root", "mysql", "mariadb.sys", "debian-sys-maint"];
+
+/// drop: the database and its user (every host); drop_database: only the
+/// database, for a user another database still uses. Both are idempotent.
+fn drop(opts: &Options, with_user: bool) -> Result<String, String> {
+    if PROTECTED_DATABASES.contains(&opts.db_name.to_ascii_lowercase().as_str()) {
+        return Err(format!("{} is a system database and is never dropped.", opts.db_name));
+    }
+    if panel_env_value("DB_DATABASE").is_some_and(|panel| panel.eq_ignore_ascii_case(&opts.db_name)) {
+        return Err("The panel's own database is never dropped.".into());
+    }
+    if with_user
+        && (PROTECTED_USERS.contains(&opts.db_user.to_ascii_lowercase().as_str())
+            || panel_env_value("DB_USERNAME").is_some_and(|panel| panel.eq_ignore_ascii_case(&opts.db_user)))
+    {
+        return Err(format!("{} is a system account and is never dropped.", opts.db_user));
+    }
+
+    let db_cli = find_cli()?;
+    let admin = DatabaseAdmin::from_env();
+    sql_exec(&db_cli, &admin, "127.0.0.1", opts.db_port, &drop_sql(&opts.db_name, &opts.db_user, with_user))?;
+
+    Ok(if with_user {
+        format!("Database and user dropped: {} / {}", opts.db_name, opts.db_user)
+    } else {
+        format!("Database dropped: {}", opts.db_name)
+    })
+}
+
+fn drop_sql(database: &str, user: &str, with_user: bool) -> String {
+    let mut sql = format!("DROP DATABASE IF EXISTS `{database}`;");
+    if with_user {
+        let user = escape_sql_string(user);
+        // Users are created for the requested host and both loopback names.
+        for host in ["127.0.0.1", "localhost", "%"] {
+            sql.push_str(&format!(" DROP USER IF EXISTS '{user}'@'{host}';"));
+        }
+        sql.push_str(" FLUSH PRIVILEGES;");
+    }
+    sql
 }
 
 fn find_cli() -> Result<String, String> {
@@ -320,6 +370,25 @@ fn database_grant_sql(database: &str, user: &str, host: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn drop_removes_the_database_and_the_user_on_every_host() {
+        assert_eq!(
+            drop_sql("site_db", "site_user", true),
+            "DROP DATABASE IF EXISTS `site_db`; DROP USER IF EXISTS 'site_user'@'127.0.0.1'; DROP USER IF EXISTS 'site_user'@'localhost'; DROP USER IF EXISTS 'site_user'@'%'; FLUSH PRIVILEGES;"
+        );
+        assert_eq!(drop_sql("site_db", "site_user", false), "DROP DATABASE IF EXISTS `site_db`;");
+    }
+
+    #[test]
+    fn system_databases_and_users_are_never_dropped() {
+        let request = |name: &str, user: &str, action: &str| Options {
+            action: action.into(), db_name: name.into(), db_user: user.into(), db_password: String::new(),
+            db_host: "127.0.0.1".into(), db_port: 3306, charset: "utf8mb4".into(), collation: "utf8mb4_unicode_ci".into(),
+        };
+        assert!(run(request("mysql", "x", "drop_database")).unwrap_err().contains("system database"));
+        assert!(run(request("site_db", "root", "drop")).unwrap_err().contains("system account"));
+    }
 
     #[test]
     fn new_database_users_receive_all_database_scoped_privileges() {

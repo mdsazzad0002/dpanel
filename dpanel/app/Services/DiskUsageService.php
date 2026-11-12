@@ -26,7 +26,11 @@ class DiskUsageService
     public function checkAll(): array
     {
         $result = ['checked' => 0, 'over' => 0, 'failed' => 0];
-        User::query()->whereNotNull('package_id')->with('package')->orderBy('id')->get()
+        // Every account with a package or a website: use is shown even without a limit.
+        User::query()
+            ->where(fn ($query) => $query->whereNotNull('package_id')
+                ->orWhereIn('id', Website::query()->whereNotNull('assigned_user_id')->select('assigned_user_id')))
+            ->with('package')->orderBy('id')->get()
             ->each(function (User $user) use (&$result): void {
                 try {
                     $usage = $this->check($user);
@@ -50,7 +54,7 @@ class DiskUsageService
     {
         $package = $user->loadMissing('package')->package;
         $owners = $this->systemAccounts($user);
-        if ($package === null || (int) $package->max_storage_mb <= 0 || $owners === []) {
+        if ($owners === []) {
             return null;
         }
 
@@ -59,8 +63,12 @@ class DiskUsageService
             $used[$owner] = $this->limits->usage($owner)['disk_mb'];
         }
         $total = array_sum($used);
-        $limit = (int) $package->max_storage_mb;
         AccountUsageSample::query()->create(['user_id' => $user->id, 'sampled_at' => now(), 'disk_mb' => $total]);
+        $limit = (int) ($package?->max_storage_mb ?? 0);
+        if ($limit <= 0) {
+            // No limit: only the reading, no alert and no quota change.
+            return ['disk_mb' => $total, 'limit_mb' => 0, 'over' => false];
+        }
 
         $over = $total >= $limit;
         $this->alerts->record($user, 'disk', $total, $limit, "{$total} MB of {$limit} MB", data: ['disk_mb' => $total, 'limit_mb' => $limit]);

@@ -56,7 +56,36 @@ abstract class TestCase extends BaseTestCase
             }
         });
 
+        // Every test gets a throwaway storage/ folder: a test that writes a
+        // trash zip, report or upload must never leave it in the real one.
+        $storage = sys_get_temp_dir().'/dpanel-test-storage-'.bin2hex(random_bytes(6));
+        foreach (['app', 'framework/views', 'framework/cache/data', 'framework/sessions', 'logs'] as $directory) {
+            @mkdir($storage.'/'.$directory, 0775, true);
+        }
+        $app->useStoragePath($storage);
+        $app['config']->set('view.compiled', $storage.'/framework/views');
+        // Disk roots were read from storage_path() before it moved.
+        foreach ((array) $app['config']->get('filesystems.disks', []) as $disk => $settings) {
+            $root = (string) ($settings['root'] ?? '');
+            $real = rtrim($app->basePath('storage'), '/');
+            if ($root !== '' && str_starts_with($root, $real.'/')) {
+                $app['config']->set("filesystems.disks.{$disk}.root", $storage.substr($root, strlen($real)));
+            }
+        }
+        $this->testStoragePath = $storage;
+
         return $app;
+    }
+
+    private ?string $testStoragePath = null;
+
+    protected function tearDown(): void
+    {
+        $storage = $this->testStoragePath;
+        parent::tearDown();
+        if ($storage !== null && str_contains($storage, 'dpanel-test-storage-') && is_dir($storage)) {
+            (new \Illuminate\Filesystem\Filesystem)->deleteDirectory($storage);
+        }
     }
 
     /**

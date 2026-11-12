@@ -7,6 +7,7 @@ use App\Models\CronJob;
 use App\Models\DatabaseRequest;
 use App\Models\Website;
 use App\Services\Cron\CronSystemService;
+use App\Services\Website\TrashBackupDeleter;
 use App\Support\BackupSettings;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -168,6 +169,14 @@ class WebsiteTrashBackupController extends Controller
             return response()->json(['type' => 'error', 'message' => 'Website recovery metadata is missing.'], 422);
         }
 
+        // The archive's dumps are imported with each database's own login, so a
+        // database dropped with the website (and its user) is made again first.
+        try {
+            app(\App\Services\Database\DatabaseServerRemover::class)->recreate((array) ($metadata['database_requests'] ?? []));
+        } catch (\Throwable $e) {
+            return response()->json(['type' => 'error', 'message' => 'Could not recreate the website\'s database. '.$e->getMessage()], 500);
+        }
+
         try {
             $response = Http::acceptJson()->asJson()
                 ->withToken((string) config('serverpanel.execution_api_token', ''))
@@ -230,6 +239,43 @@ class WebsiteTrashBackupController extends Controller
             'message' => 'Website, files, databases and cron jobs recovered successfully.',
             'website_id' => (string) $website->id,
         ]);
+    }
+
+    public function bulkDestroy(Request $request, string $token, TrashBackupDeleter $deleter): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:500'],
+            'ids.*' => ['required', 'uuid'],
+        ]);
+
+        $backups = WebsiteTrashBackup::query()
+            ->visibleTo($request->user())
+            ->whereIn('id', array_values(array_unique($validated['ids'])))
+            ->get()
+            ->reject(fn (WebsiteTrashBackup $backup): bool => $this->hiddenFrom($backup, $request));
+
+        $deleted = [];
+        $failed = [];
+        foreach ($backups as $backup) {
+            try {
+                $deleter->delete($backup);
+                $deleted[] = (string) $backup->id;
+            } catch (\Throwable $e) {
+                $failed[] = ['id' => (string) $backup->id, 'domain' => (string) $backup->domain, 'message' => $e->getMessage()];
+            }
+        }
+
+        $count = count($deleted);
+        $message = $failed === []
+            ? "Deleted {$count} trash backup(s)."
+            : "Deleted {$count} trash backup(s); ".count($failed).' failed: '.$failed[0]['domain'].' - '.$failed[0]['message'];
+
+        return response()->json([
+            'type' => $failed === [] ? 'success' : ($count > 0 ? 'warning' : 'error'),
+            'message' => $message,
+            'deleted' => $deleted,
+            'failed' => $failed,
+        ], $count === 0 && $failed !== [] ? 422 : 200);
     }
 
     private function validArchivePath(WebsiteTrashBackup $backup): ?string

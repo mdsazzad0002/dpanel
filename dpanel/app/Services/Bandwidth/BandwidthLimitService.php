@@ -28,7 +28,11 @@ class BandwidthLimitService
     {
         $month ??= now()->format('Y-m');
         $result = ['checked' => 0, 'over' => 0];
-        User::query()->whereNotNull('package_id')->with('package')->orderBy('id')->get()
+        // Every account with a package or a website: use is shown even without a limit.
+        User::query()
+            ->where(fn ($query) => $query->whereNotNull('package_id')
+                ->orWhereIn('id', Website::query()->whereNotNull('assigned_user_id')->select('assigned_user_id')))
+            ->with('package')->orderBy('id')->get()
             ->each(function (User $user) use ($month, &$result): void {
                 $over = $this->check($user, $month);
                 if ($over !== null) {
@@ -44,13 +48,15 @@ class BandwidthLimitService
     public function check(User $user, string $month): ?bool
     {
         $package = $user->loadMissing('package')->package;
+        $bytes = $this->usage->bytesForUser($user, $month);
         if ($package === null || (int) $package->max_bandwidth_gb <= 0) {
+            // No limit: only the reading, and nothing stays blocked.
+            AccountUsageSample::query()->create(['user_id' => $user->id, 'sampled_at' => now(), 'bandwidth_mb' => intdiv($bytes, 1024 ** 2)]);
             $this->setServingState($user, 'over_limit', 'active');
 
             return null;
         }
 
-        $bytes = $this->usage->bytesForUser($user, $month);
         $limitBytes = (int) $package->max_bandwidth_gb * 1024 ** 3;
         AccountUsageSample::query()->create([
             'user_id' => $user->id, 'sampled_at' => now(), 'bandwidth_mb' => intdiv($bytes, 1024 ** 2),

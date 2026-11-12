@@ -629,7 +629,7 @@ Suspend idempotent: দুবার চালালেও ফল একই। Pa
 
 ### 8.1 Panel-এর public API (U1)
 
-drust-এর নয়, panel-এর নিজের API: `routes/api.php`, prefix `/api/v1`, `Authorization: Bearer dp-api-...` (`api_tokens`)। Session, cookie, CSRF নেই। Token তার owner হিসেবে চলে: প্রতিটা endpoint panel-এর একই `visibleTo` ও package limit মানে। Owner suspended বা terminated হলে `403`। Scope: `websites`, `dns`, `databases`, `mail`, প্রতিটার `:read` ও `:write` (`write`-এ `read`-ও চলে); owner-এর role বা permission সেই area-র panel route-এর মতো না হলে scope-টা `403` দেয়। Error সবসময় JSON `{message, errors?}`; token প্রতি মিনিটে 120 request (`api-v1` limiter)। `GET` ছাড়া সফল request activity log-এ `api.request`। পুরো বর্ণনা `dpanel/resources/api/openapi.yaml` (OpenAPI 3), `GET /api/v1/openapi.yaml`-এ token ছাড়া; `ApiOpenApiTest` দেখে route আর document মেলে।
+drust-এর নয়, panel-এর নিজের API: `routes/api.php`, prefix `/api/v1`, `Authorization: Bearer dp-api-...` (`api_tokens`)। Session, cookie, CSRF নেই। Token তার owner হিসেবে চলে: প্রতিটা endpoint panel-এর একই `visibleTo` ও package limit মানে। Owner suspended বা terminated হলে `403`। Scope: `websites`, `dns`, `databases`, `mail`, প্রতিটার `:read` ও `:write` (`write`-এ `read`-ও চলে); owner-এর role বা permission সেই area-র panel route-এর মতো না হলে scope-টা `403` দেয়। Error সবসময় JSON `{message, errors?}`; token প্রতি মিনিটে 120 request (`api-v1` limiter)। `GET` ছাড়া সফল request activity log-এ `api.request`। পুরো বর্ণনা `dpanel/resources/api/openapi.yaml` (OpenAPI 3), `GET /api/v1/openapi`-এ token ছাড়া; `ApiOpenApiTest` দেখে route আর document মেলে।
 
 | Method, path | Scope | কাজ |
 | --- | --- | --- |

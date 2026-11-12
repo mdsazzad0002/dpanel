@@ -26,7 +26,7 @@ The API lives at `https://<your-panel-domain>/api/v1`. Use the panel over HTTPS
 so the token is never sent in clear text.
 
 The full reference is an OpenAPI 3 document at
-`https://<your-panel-domain>/api/v1/openapi.yaml` (no token needed). Open it in
+`https://<your-panel-domain>/api/v1/openapi` (no token needed). Open it in
 any OpenAPI viewer, or generate a client from it. The file in the repository is
 [`dpanel/resources/api/openapi.yaml`](../dpanel/resources/api/openapi.yaml).
 
