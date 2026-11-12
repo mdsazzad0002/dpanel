@@ -26,6 +26,12 @@ class WhmcsInstaller extends BaseAppInstaller
         return 'whmcs';
     }
 
+    /** WHMCS ships these folders with a deny-all .htaccess. */
+    public function deniedPaths(): array
+    {
+        return ['/attachments', '/downloads', '/templates_c'];
+    }
+
     public function definition(): array
     {
         return [

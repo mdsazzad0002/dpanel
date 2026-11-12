@@ -1,7 +1,8 @@
 //! Per-site request guards that run before anything else answers (tasks S5
-//! and S6): password-protected directories, folders where PHP never runs
-//! (an upload folder), hotlink protection for media files, and serving only
-//! requests that come through Cloudflare.
+//! and S6): password-protected directories, folders nobody may fetch (an
+//! app's private folders, which its .htaccess would deny on Apache), folders
+//! where PHP never runs (an upload folder), hotlink protection for media
+//! files, and serving only requests that come through Cloudflare.
 
 use std::{
     net::{IpAddr, SocketAddr},
@@ -21,6 +22,9 @@ pub struct SiteGuards {
     pub protected_directories: Arc<[ProtectedDirectory]>,
     /// Normalized, lower case path prefixes where a PHP file is refused.
     pub no_php_paths: Arc<[String]>,
+    /// Normalized, lower case path prefixes refused outright: the folder
+    /// itself and everything under it.
+    pub denied_paths: Arc<[String]>,
     /// `Some` turns hotlink protection on; the hosts besides the site's own
     /// whose pages may embed its media.
     pub hotlink_allowed_hosts: Option<Arc<[String]>>,
@@ -86,15 +90,21 @@ pub fn check(site: &super::SiteConfig, request: &Request<Body>) -> Option<Respon
         return Some(response);
     }
     let guards = &site.guards;
-    if guards.no_php_paths.is_empty() && guards.hotlink_allowed_hosts.is_none() && !guards.cloudflare_only {
+    if guards.no_php_paths.is_empty()
+        && guards.denied_paths.is_empty()
+        && guards.hotlink_allowed_hosts.is_none()
+        && !guards.cloudflare_only
+    {
         return None;
     }
     let path = basic_auth::canonical_path(request.uri().path());
-    // This machine itself (a health check) and certificate renewal still get through.
-    if guards.cloudflare_only
-        && !path.starts_with("/.well-known/acme-challenge/")
-        && !peer(request).is_some_and(|ip| ip.is_loopback() || from_cloudflare(ip))
-    {
+    // Certificate renewal always gets through.
+    let acme = path.starts_with("/.well-known/acme-challenge/");
+    if !acme && is_denied(guards, &path) {
+        return Some(forbidden("Access to this folder is denied"));
+    }
+    // So does this machine itself (a health check).
+    if guards.cloudflare_only && !acme && !peer(request).is_some_and(|ip| ip.is_loopback() || from_cloudflare(ip)) {
         return Some(forbidden("This website only accepts requests through Cloudflare"));
     }
     if runs_php_in_blocked_folder(guards, &path) {
@@ -104,6 +114,13 @@ pub fn check(site: &super::SiteConfig, request: &Request<Body>) -> Option<Respon
         return Some(forbidden("Hotlinking is not allowed"));
     }
     None
+}
+
+/// The prefix itself or anything under it; `/var` never matches `/various`.
+fn is_denied(guards: &SiteGuards, path: &str) -> bool {
+    guards.denied_paths.iter().any(|prefix| {
+        prefix != "/" && path.strip_prefix(prefix.as_str()).is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
 }
 
 /// Any segment, not just the last, so `/uploads/x.php/info` is caught too.
@@ -176,6 +193,56 @@ mod tests {
             let response = check(&site, &request(path, None)).unwrap_or_else(|| panic!("{path} got through"));
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
         }
+    }
+
+    fn denied() -> SiteGuards {
+        let paths = ["/var", "/images/deleted", "/occ"].map(String::from);
+        SiteGuards { denied_paths: Arc::from(paths), ..Default::default() }
+    }
+
+    #[test]
+    fn a_denied_folder_is_refused_however_it_is_spelled() {
+        let site = site(denied());
+        for path in [
+            "/var",
+            "/var/",
+            "/var/logs/prod.log",
+            "/VAR/Logs/x",
+            "/%76ar/logs/x",
+            "/%2Fvar/logs",
+            "/var%2flogs",
+            "//var//logs",
+            "/./var/logs",
+            "/img/../var/logs",
+            "/x/..%2Fvar/logs",
+            "/images/deleted/a/b/file.png",
+            "/Images/Deleted/",
+            "/occ",
+        ] {
+            let response = check(&site, &request(path, None)).unwrap_or_else(|| panic!("{path} got through"));
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+        }
+    }
+
+    #[test]
+    fn neighbours_of_a_denied_folder_and_acme_get_through() {
+        let site = site(denied());
+        for path in ["/", "/various", "/var.php", "/images/photo.png", "/images/deleted-old/x", "/occasion", "/index.php/var", "/.well-known/acme-challenge/token"] {
+            assert!(check(&site, &request(path, None)).is_none(), "{path} was refused");
+        }
+        let everything = site_with_root_denied();
+        assert!(check(&everything, &request("/anything", None)).is_none(), "a denied `/` would take the site down");
+    }
+
+    fn site_with_root_denied() -> super::super::SiteConfig {
+        site(SiteGuards { denied_paths: Arc::from(["/".to_string()]), ..Default::default() })
+    }
+
+    #[test]
+    fn acme_is_exempt_even_inside_a_denied_folder() {
+        let site = site(SiteGuards { denied_paths: Arc::from(["/.well-known".to_string()]), ..Default::default() });
+        assert!(check(&site, &request("/.well-known/acme-challenge/t", None)).is_none());
+        assert!(check(&site, &request("/.well-known/security.txt", None)).is_some());
     }
 
     #[test]

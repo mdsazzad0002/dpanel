@@ -65,4 +65,19 @@ interface AppInstaller
 
     /** Runs after finalize; returns text appended to the success message. */
     public function complete(AppInstallContext $context): string;
+
+    /**
+     * URL path prefixes (from the site's document root) the gateway refuses
+     * with 403: the folders the app's own .htaccess denies.
+     *
+     * @return list<string>
+     */
+    public function deniedPaths(): array;
+
+    /**
+     * Public folders where a PHP file must never run (uploads, media).
+     *
+     * @return list<string>
+     */
+    public function noPhpPaths(): array;
 }

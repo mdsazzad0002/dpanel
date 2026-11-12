@@ -127,6 +127,23 @@ class SiteProtectionTest extends TestCase
         ])->assertSessionHasErrors('no_php_paths.0');
     }
 
+    public function test_blocked_folders_are_kept_unless_the_form_sends_them(): void
+    {
+        $admin = $this->admin();
+        $site = $this->website($admin);
+        WebsiteGuardSetting::query()->create(['website_id' => $site->id, 'denied_paths' => '/var,/app']);
+        $url = "/cpsess{$this->token}/rules/site-protection/{$site->id}/settings";
+        $base = ['no_php_paths' => [], 'hotlink_protection' => false, 'hotlink_allowed_hosts' => []];
+
+        $this->as($admin)->put($url, $base)->assertSessionHasNoErrors();
+        $this->assertSame('/var,/app', WebsiteGuardSetting::query()->findOrFail($site->id)->denied_paths);
+
+        $this->as($admin)->put($url, [...$base, 'denied_paths' => ['/Var/Logs/', '/cache']])->assertSessionHasNoErrors();
+        $this->assertSame('/var/logs,/cache', WebsiteGuardSetting::query()->findOrFail($site->id)->denied_paths);
+
+        $this->as($admin)->put($url, [...$base, 'denied_paths' => ['/']])->assertSessionHasErrors('denied_paths.0');
+    }
+
     public function test_someone_elses_website_is_not_found(): void
     {
         $owner = User::factory()->create();

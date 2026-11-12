@@ -18,7 +18,7 @@ const filtered = computed(() => {
     return props.websites.filter((w) => !needle || w.domain.toLowerCase().includes(needle));
 });
 const selected = computed(() => props.websites.find((w) => w.id === selectedId.value) ?? null);
-const isGuarded = (w) => w.directories.length > 0 || w.no_php_paths.length > 0 || w.hotlink_protection || w.cloudflare_only || w.waf_mode === 'block';
+const isGuarded = (w) => w.directories.length > 0 || w.no_php_paths.length > 0 || (w.denied_paths?.length ?? 0) > 0 || w.hotlink_protection || w.cloudflare_only || w.waf_mode === 'block';
 </script>
 
 <template>

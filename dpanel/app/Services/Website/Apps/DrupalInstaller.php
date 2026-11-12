@@ -19,6 +19,12 @@ class DrupalInstaller extends BaseAppInstaller
         return 'drupal';
     }
 
+    /** Drupal writes an .htaccess into the public files folder that stops PHP there. */
+    public function noPhpPaths(): array
+    {
+        return ['/sites/default/files'];
+    }
+
     public function definition(): array
     {
         return [

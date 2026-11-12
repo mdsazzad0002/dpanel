@@ -26,6 +26,17 @@ class PrestashopInstaller extends BaseAppInstaller
         return 'prestashop';
     }
 
+    /** From the folders' own .htaccess (Require all denied); img, js, modules and themes only serve assets. */
+    public function deniedPaths(): array
+    {
+        return ['/app', '/bin', '/cache', '/classes', '/config', '/controllers', '/docs', '/download', '/localization', '/mails', '/override', '/src', '/upload', '/var', '/vendor'];
+    }
+
+    public function noPhpPaths(): array
+    {
+        return ['/img', '/js', '/modules', '/themes'];
+    }
+
     public function definition(): array
     {
         return [

@@ -13,7 +13,7 @@ class WebsiteGuardSetting extends Model
 
     protected $keyType = 'string';
 
-    protected $fillable = ['website_id', 'no_php_paths', 'hotlink_protection', 'hotlink_allowed_hosts', 'cloudflare_only', 'waf_mode'];
+    protected $fillable = ['website_id', 'no_php_paths', 'denied_paths', 'hotlink_protection', 'hotlink_allowed_hosts', 'cloudflare_only', 'waf_mode'];
 
     protected $casts = ['hotlink_protection' => 'boolean', 'cloudflare_only' => 'boolean'];
 
@@ -23,6 +23,12 @@ class WebsiteGuardSetting extends Model
     public function noPhpPaths(): array
     {
         return self::split($this->no_php_paths);
+    }
+
+    /** @return list<string> */
+    public function deniedPaths(): array
+    {
+        return self::split($this->denied_paths);
     }
 
     /** @return list<string> */

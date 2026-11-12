@@ -13,6 +13,7 @@ use App\Services\Website\Apps\AppInstaller;
 use App\Services\Website\Apps\AppInstallerRegistry;
 use App\Services\Website\Apps\AppInstallFailed;
 use App\Services\Website\Apps\AppInstallSupport;
+use App\Services\Website\Apps\AppPathGuards;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -34,6 +35,7 @@ class AppInstallService
         private readonly WebsiteDatabaseProvisioner $databases,
         private readonly AppInstallerRegistry $registry,
         private readonly AppInstallSupport $support,
+        private readonly AppPathGuards $pathGuards,
     ) {
     }
 
@@ -190,6 +192,7 @@ class AppInstallService
         if (! $step['success']) {
             throw new AppInstallFailed('Preparing file permissions failed: '.$step['output']);
         }
+        $this->pathGuards->apply($website, $installer);
         $this->applyRuntime($website, $phpVersion, (string) $meta['document_root']);
 
         $databaseNote = $context->database === null

@@ -19,6 +19,7 @@ const split = (text) => text.split(/[\n,]+/).map((v) => v.trim()).filter(Boolean
 
 const form = useForm({
     no_php_paths: lines(props.website.no_php_paths),
+    denied_paths: lines(props.website.denied_paths ?? []),
     hotlink_protection: props.website.hotlink_protection,
     hotlink_allowed_hosts: lines(props.website.hotlink_allowed_hosts),
     cloudflare_only: props.website.cloudflare_only,
@@ -26,6 +27,7 @@ const form = useForm({
 
 const fieldError = (name) => computed(() => Object.entries(form.errors).find(([key]) => key === name || key.startsWith(`${name}.`))?.[1]);
 const pathsError = fieldError('no_php_paths');
+const deniedError = fieldError('denied_paths');
 const hostsError = fieldError('hotlink_allowed_hosts');
 
 const addWordpressUploads = () => {
@@ -37,6 +39,7 @@ const addWordpressUploads = () => {
 const save = () => {
     form.transform((data) => ({
         no_php_paths: split(data.no_php_paths),
+        denied_paths: split(data.denied_paths),
         hotlink_protection: data.hotlink_protection,
         hotlink_allowed_hosts: split(data.hotlink_allowed_hosts),
         cloudflare_only: data.cloudflare_only,
@@ -53,6 +56,13 @@ const save = () => {
                 <textarea v-model="form.no_php_paths" rows="3" placeholder="/wp-content/uploads" class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm dark:border-slate-700 dark:bg-slate-800"></textarea>
                 <button type="button" class="mt-1 text-xs text-blue-600 hover:underline dark:text-blue-400" @click="addWordpressUploads">Add the WordPress uploads folder</button>
                 <InputError :message="pathsError" class="mt-1" />
+            </div>
+
+            <div>
+                <h2 class="text-lg font-semibold">Blocked folders</h2>
+                <p class="mt-1 text-sm text-slate-500">Every request under these folders is refused with 403, like an app's "deny from all" .htaccess. Installing an app fills this in. One folder per line.</p>
+                <textarea v-model="form.denied_paths" rows="3" placeholder="/var" class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm dark:border-slate-700 dark:bg-slate-800"></textarea>
+                <InputError :message="deniedError" class="mt-1" />
             </div>
 
             <div>

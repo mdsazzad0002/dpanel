@@ -52,6 +52,7 @@ class SiteGuardController extends Controller
                             'users' => $users->map(fn (WebsiteProtectedDirectory $user) => ['id' => $user->id, 'username' => $user->username])->values(),
                         ])->values(),
                     'no_php_paths' => $setting?->noPhpPaths() ?? [],
+                    'denied_paths' => $setting?->deniedPaths() ?? [],
                     'hotlink_protection' => (bool) ($setting?->hotlink_protection ?? false),
                     'hotlink_allowed_hosts' => $setting?->hotlinkAllowedHosts() ?? [],
                     'cloudflare_only' => (bool) ($setting?->cloudflare_only ?? false),
@@ -102,6 +103,9 @@ class SiteGuardController extends Controller
         $validated = $request->validate([
             'no_php_paths' => ['present', 'array', 'max:20'],
             'no_php_paths.*' => ['string', 'max:255', 'regex:'.self::PATH, Rule::notIn(['/'])],
+            // Set by the app installer; optional so an older page keeps them.
+            'denied_paths' => ['sometimes', 'array', 'max:40'],
+            'denied_paths.*' => ['string', 'max:255', 'regex:'.self::PATH, Rule::notIn(['/'])],
             'hotlink_protection' => ['required', 'boolean'],
             'hotlink_allowed_hosts' => ['present', 'array', 'max:20'],
             'hotlink_allowed_hosts.*' => ['string', 'max:253', 'regex:'.self::HOST],
@@ -110,7 +114,12 @@ class SiteGuardController extends Controller
         $paths = collect($validated['no_php_paths'])->map(fn (string $path) => $this->normalizePath($path))->unique()->values();
         $hosts = collect($validated['hotlink_allowed_hosts'])->map(fn (string $host) => strtolower(trim($host)))->unique()->values();
 
+        $denied = array_key_exists('denied_paths', $validated)
+            ? ['denied_paths' => collect($validated['denied_paths'])->map(fn (string $path) => $this->normalizePath($path))->unique()->implode(',') ?: null]
+            : [];
+
         WebsiteGuardSetting::query()->updateOrCreate(['website_id' => $website->id], [
+            ...$denied,
             'no_php_paths' => $paths->implode(',') ?: null,
             'hotlink_protection' => (bool) $validated['hotlink_protection'],
             'hotlink_allowed_hosts' => $hosts->implode(',') ?: null,

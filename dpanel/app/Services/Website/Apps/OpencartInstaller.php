@@ -26,6 +26,17 @@ class OpencartInstaller extends BaseAppInstaller
         return 'opencart';
     }
 
+    /** The root .htaccess hides system/storage (moved out anyway); catalog images never hold PHP. */
+    public function deniedPaths(): array
+    {
+        return ['/system/storage'];
+    }
+
+    public function noPhpPaths(): array
+    {
+        return ['/image'];
+    }
+
     public function definition(): array
     {
         return [

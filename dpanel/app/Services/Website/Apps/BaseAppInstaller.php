@@ -39,6 +39,16 @@ abstract class BaseAppInstaller implements AppInstaller
         return '';
     }
 
+    public function deniedPaths(): array
+    {
+        return [];
+    }
+
+    public function noPhpPaths(): array
+    {
+        return [];
+    }
+
     /** Run a drust step and fail with "$what failed: …" when it does. */
     protected function run(AppInstallContext $context, string $action, array $extra, string $what, int $timeout = 660): string
     {

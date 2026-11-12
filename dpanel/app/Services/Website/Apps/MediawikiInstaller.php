@@ -33,6 +33,17 @@ class MediawikiInstaller extends BaseAppInstaller
         return 'mediawiki';
     }
 
+    /** From the folders' own .htaccess; FileBackend denies the deleted and temp zones too. images/ stays public, without PHP. */
+    public function deniedPaths(): array
+    {
+        return ['/cache', '/images/deleted', '/images/temp', '/includes', '/languages', '/maintenance', '/tests'];
+    }
+
+    public function noPhpPaths(): array
+    {
+        return ['/images'];
+    }
+
     public function definition(): array
     {
         return [

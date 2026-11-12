@@ -222,6 +222,12 @@ fn load_sites(
         Ok(rows) => apply_waf_modes(&mut guards, &rows),
         Err(error) => tracing::warn!(%error, "WAF modes unavailable; the firewall stays off"),
     }
+    // Folders an installed app keeps private; a query of its own so a panel
+    // whose migration has not run yet still gets the other guards.
+    match run_mysql(env, &format!("{DENIED_PATHS_SQL}{}", site_filter("WHERE"))) {
+        Ok(rows) => apply_denied_paths(&mut guards, &rows),
+        Err(error) => tracing::warn!(%error, "denied folders unavailable; none applied"),
+    }
 
     let mut sites = Vec::new();
     let mut tls = Vec::new();
@@ -513,6 +519,21 @@ fn apply_waf_modes(guards: &mut HashMap<String, super::SiteGuards>, rows: &str) 
     for line in rows.lines() {
         if let Some((site, mode)) = line.split_once('\t') {
             guards.entry(site.trim().to_string()).or_default().waf = super::WafMode::parse(mode);
+        }
+    }
+}
+
+const DENIED_PATHS_SQL: &str = "SELECT w.id,COALESCE(g.denied_paths,'') FROM websites w JOIN website_guard_settings g ON g.website_id=COALESCE(w.parent_id,w.id)";
+
+fn apply_denied_paths(guards: &mut HashMap<String, super::SiteGuards>, rows: &str) {
+    for line in rows.lines() {
+        let Some((site, paths)) = line.split_once('\t') else { continue };
+        let paths: Vec<String> = comma_list(paths)
+            .map(super::basic_auth::canonical_path)
+            .filter(|path| path != "/")
+            .collect();
+        if !paths.is_empty() {
+            guards.entry(site.trim().to_string()).or_default().denied_paths = paths.into();
         }
     }
 }
@@ -1050,6 +1071,11 @@ mod tests {
         assert_eq!(guards["d"].waf, super::super::WafMode::Detect);
         assert_eq!(guards["e"].waf, super::super::WafMode::Off);
         assert!(guards["a"].cloudflare_only, "a WAF mode keeps the other guards");
+        apply_denied_paths(&mut guards, "a\t/var/, /App,/\nb\tNULL\nf\t/cache\n");
+        assert_eq!(&*guards["a"].denied_paths, ["/var".to_string(), "/app".to_string()]);
+        assert!(guards["b"].denied_paths.is_empty());
+        assert_eq!(&*guards["f"].denied_paths, ["/cache".to_string()]);
+        assert!(guards["a"].cloudflare_only && guards["a"].waf == super::super::WafMode::Block, "denied folders keep the other guards");
     }
 
     #[test]

@@ -33,6 +33,12 @@ class NextcloudInstaller extends BaseAppInstaller
         return 'nextcloud';
     }
 
+    /** What Nextcloud's root .htaccess answers with 404. */
+    public function deniedPaths(): array
+    {
+        return ['/3rdparty', '/build', '/config', '/console.php', '/lib', '/occ', '/templates', '/tests'];
+    }
+
     public function definition(): array
     {
         return [
