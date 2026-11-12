@@ -6,6 +6,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AddExtension from './components/AddExtension.vue';
 import CredentialsNotice from './components/CredentialsNotice.vue';
 import ExtensionCard from './components/ExtensionCard.vue';
+import ExtensionDocs from './components/ExtensionDocs.vue';
 
 // System → Extensions (backlog U7). An extension runs elsewhere and acts
 // through its own scoped API token; see docs/extensions.md.
@@ -57,6 +58,8 @@ const rotated = ({ extension, credentials: shown }) => {
             </section>
 
             <AddExtension :events="events" @saved="saved" />
+
+            <ExtensionDocs :api-base="apiBase" :events="events" />
         </div>
     </AuthenticatedLayout>
 </template>

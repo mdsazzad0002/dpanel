@@ -78,6 +78,7 @@ use App\Http\Controllers\SsoController;
 use App\Http\Controllers\SystemMailController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\WebsiteTrashBackupController;
+use App\Http\Controllers\WebTrashController;
 use Illuminate\Support\Facades\Auth;
 use App\Support\Platform\PlatformCapabilities;
 use Illuminate\Support\Facades\Route;
@@ -775,6 +776,15 @@ Route::prefix('cpsess{token}')
                 ->middleware('role:admin|reseller|general|general_user')
                 ->whereUuid('id')
                 ->name('trash-backups.restore');
+            Route::get('/web-trash', [WebTrashController::class, 'index'])
+                ->middleware('role_or_permission:admin|reseller|manage_websites')
+                ->name('web-trash.index');
+            Route::get('/web-trash/{id}/stats', [WebTrashController::class, 'stats'])
+                ->middleware('role_or_permission:admin|reseller|manage_websites')
+                ->name('web-trash.stats');
+            Route::delete('/web-trash/{id}', [WebTrashController::class, 'clear'])
+                ->middleware('role_or_permission:admin|reseller|manage_websites')
+                ->name('web-trash.clear');
             Route::get('/monitoring', [MonitoringController::class, 'index'])
                 ->middleware('role:admin|reseller')
                 ->name('monitoring.index');

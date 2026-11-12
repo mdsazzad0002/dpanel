@@ -578,7 +578,113 @@
         "uninstall": "Uninstall",
         "uninstallConfirm": "{name} uninstall করবেন? এর token ও service account মুছে যাবে। API দিয়ে যা বানিয়েছে, তা থাকবে।",
         "frameNote": "{name}, {origin} থেকে sandbox-এ দেখানো। এটা panel বা আপনার session পড়তে পারে না।",
-        "back": "সব extension"
+        "back": "সব extension",
+        "docs": {
+            "title": "ডেভেলপার গাইড",
+            "subtitle": "Extension কীভাবে কাজ করে, manifest ফরম্যাট, webhook আর admin page",
+            "tabs": {
+                "overview": "সংক্ষেপে",
+                "manifest": "Manifest",
+                "webhooks": "Webhook",
+                "page": "Admin page",
+                "limits": "সীমাবদ্ধতা"
+            },
+            "key": "Key",
+            "required": "আবশ্যক",
+            "meaning": "অর্থ",
+            "yes": "হ্যাঁ",
+            "no": "না",
+            "event": "Event",
+            "scope": "Scope",
+            "header": "Header",
+            "overview": {
+                "intro": "Extension বাইরে থেকে dPanel-এ নতুন feature যোগ করে: uptime report, billing bridge, custom dashboard ইত্যাদি। এটা নিজের server বা host name-এ চলে, আর install করার সময় আপনি dPanel API-এর যতটুকু অনুমতি দেন শুধু ততটুকুই ব্যবহার করতে পারে।",
+                "how1": "Extension-এর code কখনো panel-এর ভেতরে চলে না। কোনো PHP, Vue বা shell code load হয় না, আর কিছুই root হিসেবে চলে না।",
+                "how2": "Install করলে panel extension-এর জন্য একটা service account আর তাতে একটা API token বানায়, যাতে শুধু আপনার টিক দেওয়া scope থাকে। ওই account দিয়ে login করা যায় না।",
+                "how3": "Extension ওই token দিয়ে অন্য যেকোনো API client-এর মতো REST API call করে। এর প্রতিটা পরিবর্তন activity log-এ থাকে।",
+                "how4": "Panel extension-কে signed webhook event পাঠাতে পারে, যেমন নতুন বা মুছে ফেলা website।",
+                "how5": "Extension-এর একটা admin page থাকতে পারে, যা এখানে sandboxed frame-এ তার নিজের ঠিকানা থেকে দেখানো হয়।",
+                "installTitle": "Install করা",
+                "install1": "নিচে extension-এর manifest paste করুন (বা file বেছে নিন), তারপর Check manifest চাপুন। সমস্যা থাকলে field অনুযায়ী দেখাবে।",
+                "install2": "কী কী চাইছে পড়ুন, শুধু যেগুলোতে রাজি সেই scope-এ টিক দিন। Manifest-এ না চাওয়া বা আপনার নিজের নেই এমন scope এটা কখনো পাবে না।",
+                "install3": "Install চাপুন। API token আর webhook secret একবারই দেখানো হয়: দুটোই extension-কে দিন, সাধারণত তার settings বা environment-এ।",
+                "install4": "Update করতে নতুন version-এর manifest একইভাবে check করুন। Token একই থাকে; scope হয়ে যায় এখন যেগুলোতে টিক দেন।",
+                "apiTitle": "API call করা",
+                "apiText": "Extension তার token Bearer header হিসেবে এই panel-এর API-তে পাঠায়:",
+                "manageTitle": "পরিচালনা",
+                "manage": {
+                    "disable": {
+                        "label": "Disable",
+                        "text": "token কাজ করা বন্ধ করে, event যায় না, page বন্ধ থাকে। কিছু মোছে না; Enable করলে আবার চালু।"
+                    },
+                    "ping": {
+                        "label": "Send test event",
+                        "text": "এখনই একটা signed ping পাঠায় আর উত্তর দেখায়।"
+                    },
+                    "rotate": {
+                        "label": "New token and secret",
+                        "text": "নতুন credential বানায়, একবারই দেখায়। পুরনো token সাথে সাথে বন্ধ।"
+                    },
+                    "update": {
+                        "label": "Update",
+                        "text": "একই id-এর নতুন manifest install করুন; নতুন scope চিহ্নিত থাকে।"
+                    },
+                    "uninstall": {
+                        "label": "Uninstall",
+                        "text": "extension, তার token আর service account মুছে দেয়। API দিয়ে যা বানিয়েছে তা থেকে যায়।"
+                    }
+                }
+            },
+            "manifest": {
+                "intro": "Manifest হলো একটা JSON file (সাধারণত dpanel-extension.json) যা extension-এর বর্ণনা দেয়। শুরু করতে এই উদাহরণটা copy করুন:",
+                "keys": {
+                    "manifest_version": "সবসময় 1।",
+                    "id": "3-64 অক্ষরের ছোট হাতের অক্ষর, সংখ্যা, dot আর dash, যেমন acme.uptime। সব version-এ একই থাকবে।",
+                    "name": "দেখানো নাম, সর্বোচ্চ 80 অক্ষর।",
+                    "version": "Semantic version, যেমন 1.2.0।",
+                    "description": "Admin-কে দেখানো হয়, সর্বোচ্চ 500 অক্ষর। author-ও একইভাবে।",
+                    "homepage": "একটা https:// ঠিকানা।",
+                    "panel": "কোন dPanel version-এ চলে: space দিয়ে আলাদা শর্ত, সবগুলো মিলতে হবে, যেমন >=1.0 <2.0।",
+                    "scopes": "যে API scope চায়: websites, dns, databases, mail, প্রতিটা :read বা :write।",
+                    "ui_admin_page": "admin page-এর title (সর্বোচ্চ 40 অক্ষর) আর url।",
+                    "webhook_url": "Event কোথায় যাবে। events থাকলে আবশ্যক।",
+                    "events": "যে event চায়। প্রতিটার জন্য তার area-র read (বা write) scope লাগে।"
+                },
+                "urls": "সব ঠিকানা https:// হতে হবে (plain http:// শুধু 127.0.0.1 বা localhost-এ), আর panel-এর নিজের host name-এ হতে পারবে না। Extension অন্য host name থেকে চালান, যেমন panel.example.com-এর জন্য uptime.example.com।",
+                "strict": "অজানা key গ্রহণ করা হয় না, তাই পরের ফরম্যাটের manifest কখনো আধাআধি পড়া হয় না।"
+            },
+            "webhooks": {
+                "intro": "Event webhook.url-এ JSON body সহ signed POST হিসেবে যায়। Version 1 পাঠায়:",
+                "pingOnly": "নেই; শুধু Send test event থেকে যায়",
+                "bodyTitle": "Body আর header",
+                "headers": {
+                    "X_Dpanel_Event": "Event-এর নাম।",
+                    "X_Dpanel_Delivery": "Event id, প্রতিবার retry-তে একই। Duplicate বাদ দিতে ব্যবহার করুন।",
+                    "X_Dpanel_Timestamp": "এই পাঠানোর Unix time।",
+                    "X_Dpanel_Signature": "sha256= তারপর webhook secret দিয়ে timestamp.body-র hex HMAC-SHA256।"
+                },
+                "verifyTitle": "প্রতিটা request যাচাই করুন",
+                "verifyText": "Body-র কিছু বিশ্বাস করার আগে signature আর timestamp 5 মিনিটের মধ্যে কিনা দেখুন:",
+                "retry": "10 সেকেন্ডের মধ্যে যেকোনো 2xx status দিন। অন্য কিছু হলে ব্যর্থ: panel তিনবার পর্যন্ত চেষ্টা করে (10 আর 60 সেকেন্ড পর) আর extension-এর card-এ শেষ error দেখায়। Redirect follow করা হয় না। Event queue-তে যায়, তাই panel-এর queue worker চালু থাকতে হবে।"
+            },
+            "page": {
+                "intro": "Manifest-এ ui.admin_page থাকলে Open বাটন সেই page panel-এর ভেতরে দেখায়।",
+                "point1": "এটা sandboxed frame-এ load হয় (শুধু script, form আর popup), কোনো referrer ছাড়া। এটা opaque origin-এ চলে: panel-এর cookie, storage বা page পড়তে পারে না, নিজের cookie-ও ব্যবহার করতে পারে না।",
+                "point2": "Panel page শুধু আপনার extension-এর origin থেকে frame নেয়।",
+                "point3": "Page আপনার server-এ render করুন আর state নিজের link বা form-এ রাখুন, কারণ page-এ cookie নেই।",
+                "frameTitle": "Panel-কে frame করার অনুমতি দিন",
+                "frameText": "আপনার page-কে এমন header পাঠাতে হবে যাতে এই panel embed করতে পারে:",
+                "contextTitle": "কে দেখছে: dpanel_context",
+                "contextText": "Panel আপনার page-এর URL-এ dpanel_context যোগ করে। এতে দর্শক (id, name, role), locale আর 5 মিনিট পরের expiry থাকে, webhook secret দিয়ে signed। কিছু দেখানোর আগে server-এ যাচাই করুন:"
+            },
+            "limits": {
+                "item1": "dPanel extension code চালায় না। Extension নিজে host করুন; এই server-এ চালানো পরিকল্পনায় আছে।",
+                "item2": "একটা UI slot (admin page) আর দুটো event (website.created, website.deleted)।",
+                "item3": "কোনো marketplace বা signed package নেই: manifest পড়ে আপনিই ঠিক করেন কাকে বিশ্বাস করবেন।",
+                "item4": "Extension শুধু admin-এর জন্য; reseller আর user install করতে পারে না।",
+                "more": "পুরো reference dPanel repository-র docs/extensions.md-এ আছে।"
+            }
+        }
     },
     "ipPool": {
         "title": "IP ঠিকানা",

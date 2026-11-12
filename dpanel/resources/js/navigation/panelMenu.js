@@ -112,6 +112,7 @@ export const buildPanelMenu = (userRoles = []) => [
     },
     { section: 'Backups', label: 'Backups', hint: 'Snapshots and restore', icon: 'BK', iconClass: 'bi bi-cloud-arrow-down', dynamicRouteNames: ['backups.index', 'monitoring.index'], permissions: ['manage_backups'], color: 'teal' },
     { section: 'Backups', label: 'Trash Backup', hint: 'Deleted website archives', icon: 'TB', iconClass: 'bi bi-trash3', routeName: 'trash-backups.index', roles: ['admin', 'reseller', 'general', 'general_user'], permissions: ['manage_backups'], color: 'orange' },
+    { section: 'Backups', label: 'Web Trash', hint: 'Trash, uploads and caches per account', icon: 'WT', iconClass: 'bi bi-trash2', routeName: 'web-trash.index', roles: ['admin', 'reseller', 'general', 'general_user'], permissions: ['manage_websites'], color: 'red' },
     { section: 'Backups', label: 'Migrate', hint: 'Import cPanel accounts', icon: 'MG', iconClass: 'bi bi-box-arrow-in-down', routeName: 'migrations.index', roles: ['admin', 'reseller'], permissions: ['manage_migrations'], color: 'cyan' },
     { section: 'Apps', label: 'Node.js Apps', hint: 'Run Node.js apps from your home directory', icon: 'NJ', iconClass: 'bi bi-hexagon', routeName: 'apps.node.index', color: 'emerald', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },
     { section: 'Apps', label: 'Python Apps', hint: 'Run Python apps from your home directory', icon: 'PY', iconClass: 'bi bi-filetype-py', routeName: 'apps.python.index', color: 'cyan', roles: ['admin', 'reseller'], permissions: ['manage_websites'] },

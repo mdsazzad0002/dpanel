@@ -578,7 +578,113 @@
         "uninstall": "Uninstall",
         "uninstallConfirm": "Uninstall {name}? Its token and service account are removed. What it made through the API stays.",
         "frameNote": "{name}, shown from {origin} in a sandbox. It cannot read the panel or your session.",
-        "back": "All extensions"
+        "back": "All extensions",
+        "docs": {
+            "title": "Developer guide",
+            "subtitle": "How extensions work, the manifest format, webhooks and the admin page",
+            "tabs": {
+                "overview": "Overview",
+                "manifest": "Manifest",
+                "webhooks": "Webhooks",
+                "page": "Admin page",
+                "limits": "Limits"
+            },
+            "key": "Key",
+            "required": "Required",
+            "meaning": "Meaning",
+            "yes": "Yes",
+            "no": "No",
+            "event": "Event",
+            "scope": "Scope",
+            "header": "Header",
+            "overview": {
+                "intro": "An extension adds a feature to dPanel from outside: an uptime report, a billing bridge, a custom dashboard. It runs on its own server or host name, and can only use the parts of the dPanel API that you approve when installing it.",
+                "how1": "The extension's code never runs inside the panel. No PHP, Vue or shell code from an extension is loaded, and nothing runs as root.",
+                "how2": "On install the panel creates a service account for the extension with one API token, carrying exactly the scopes you tick. That account cannot sign in.",
+                "how3": "The extension calls the REST API with that token like any other API client. Every change it makes is in the activity log.",
+                "how4": "The panel can send the extension signed webhook events, such as a new or deleted website.",
+                "how5": "The extension can have one admin page, shown here in a sandboxed frame loaded from its own address.",
+                "installTitle": "Installing",
+                "install1": "Paste the extension's manifest below (or choose the file) and press Check manifest. Problems are listed by field.",
+                "install2": "Read what it asks for and tick only the scopes you agree to. It can never get a scope its manifest does not ask for, nor one you do not have.",
+                "install3": "Press Install. The API token and webhook secret are shown once: give both to the extension, usually in its own settings or environment.",
+                "install4": "To update, check the new version's manifest the same way. The token stays; its scopes become the ones you tick now.",
+                "apiTitle": "Calling the API",
+                "apiText": "The extension sends its token as a Bearer header to this panel's API:",
+                "manageTitle": "Managing",
+                "manage": {
+                    "disable": {
+                        "label": "Disable",
+                        "text": "the token stops working, no events are sent and the page closes. Nothing is deleted; Enable turns it back on."
+                    },
+                    "ping": {
+                        "label": "Send test event",
+                        "text": "sends a signed ping now and shows the answer."
+                    },
+                    "rotate": {
+                        "label": "New token and secret",
+                        "text": "makes new credentials, shown once. The old token stops working at once."
+                    },
+                    "update": {
+                        "label": "Update",
+                        "text": "install a newer manifest with the same id; new scopes are marked."
+                    },
+                    "uninstall": {
+                        "label": "Uninstall",
+                        "text": "deletes the extension, its token and its service account. What it created through the API stays."
+                    }
+                }
+            },
+            "manifest": {
+                "intro": "The manifest is a JSON file (usually dpanel-extension.json) that describes the extension. Copy this example as a starting point:",
+                "keys": {
+                    "manifest_version": "Always 1.",
+                    "id": "3-64 lowercase letters, digits, dots and dashes, such as acme.uptime. The same for every version.",
+                    "name": "Shown name, up to 80 characters.",
+                    "version": "Semantic version, such as 1.2.0.",
+                    "description": "Shown to the admin, up to 500 characters. author works the same way.",
+                    "homepage": "An https:// address.",
+                    "panel": "dPanel versions it works with: space-separated comparators that must all hold, such as >=1.0 <2.0.",
+                    "scopes": "API scopes it asks for: websites, dns, databases, mail, each :read or :write.",
+                    "ui_admin_page": "title (up to 40 characters) and url of its admin page.",
+                    "webhook_url": "Where events are sent. Required when events is set.",
+                    "events": "Events it wants. Each needs the read (or write) scope of its area."
+                },
+                "urls": "Every address must use https:// (plain http:// only on 127.0.0.1 or localhost) and must not be on the panel's own host name. Serve the extension from another host name, such as uptime.example.com for a panel on panel.example.com.",
+                "strict": "Unknown keys are refused, so a manifest written for a later format is never half read."
+            },
+            "webhooks": {
+                "intro": "Events are sent as a signed POST with a JSON body to webhook.url. Version 1 sends:",
+                "pingOnly": "none; sent only from Send test event",
+                "bodyTitle": "Body and headers",
+                "headers": {
+                    "X_Dpanel_Event": "The event name.",
+                    "X_Dpanel_Delivery": "The event id, the same on every retry. Use it to skip duplicates.",
+                    "X_Dpanel_Timestamp": "Unix time of this send.",
+                    "X_Dpanel_Signature": "sha256= followed by the hex HMAC-SHA256 of timestamp.body, keyed with the webhook secret."
+                },
+                "verifyTitle": "Verify every request",
+                "verifyText": "Check the signature and that the timestamp is within 5 minutes before trusting anything in the body:",
+                "retry": "Answer with any 2xx status within 10 seconds. Anything else is a failure: the panel tries up to three times (after 10 and 60 seconds) and shows the last error on the extension's card. Redirects are not followed. Events are queued, so the panel's queue worker must be running."
+            },
+            "page": {
+                "intro": "If the manifest has ui.admin_page, an Open button shows that page inside the panel.",
+                "point1": "It is loaded in a sandboxed frame (scripts, forms and popups only) with no referrer. It runs in an opaque origin: it cannot read the panel's cookies, storage or page, and cannot use its own cookies either.",
+                "point2": "The panel page only allows frames from your extension's origin.",
+                "point3": "Render the page on your server and carry state in your own links or forms, since the page has no cookies.",
+                "frameTitle": "Allow the panel to frame you",
+                "frameText": "Your page must send a header that lets this panel embed it:",
+                "contextTitle": "Who is looking: dpanel_context",
+                "contextText": "The panel adds dpanel_context to your page's URL. It names the viewer (id, name, role), the locale and an expiry 5 minutes ahead, signed with the webhook secret. Check it on your server before showing anything:"
+            },
+            "limits": {
+                "item1": "dPanel does not run extension code. Host the extension yourself; running it on this server is planned.",
+                "item2": "One UI slot (the admin page) and two events (website.created, website.deleted).",
+                "item3": "No marketplace or signed packages: you decide whom to trust by reading the manifest.",
+                "item4": "Extensions are for admins only; resellers and users cannot install them.",
+                "more": "The full reference is docs/extensions.md in the dPanel repository."
+            }
+        }
     },
     "ipPool": {
         "title": "IP Addresses",
