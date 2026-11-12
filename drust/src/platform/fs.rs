@@ -235,6 +235,49 @@ pub fn mode_string(files: &dyn FileAccess, metadata: &Metadata) -> Option<String
         .map(|mode| format!("{:04o}", mode & 0o7777))
 }
 
+/// Whether the OS refused because another program has the file open:
+/// Windows' sharing and lock violations. Unix lets a file go while it is
+/// open, so there it never is.
+pub fn held_by_another_program(error: &std::io::Error) -> bool {
+    #[cfg(windows)]
+    {
+        // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
+        matches!(error.raw_os_error(), Some(32 | 33))
+    }
+    #[cfg(unix)]
+    {
+        let _ = error;
+        false
+    }
+}
+
+/// An OS error as the panel shows it. Windows' own words for a held file
+/// ("The process cannot access the file…") do not say what to do.
+pub fn describe(error: &std::io::Error) -> String {
+    if held_by_another_program(error) {
+        format!("it is open in another program; close it there and try again ({error})")
+    } else {
+        error.to_string()
+    }
+}
+
+/// Test aid: opens `path` so nobody else may read, write or delete it while
+/// the handle lives, as an editor or a running program holds a file on
+/// Windows. `None` where the OS has no such lock (Unix).
+#[cfg(test)]
+pub fn hold_exclusively(path: &Path) -> Option<std::fs::File> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        Some(std::fs::OpenOptions::new().read(true).share_mode(0).open(path).unwrap())
+    }
+    #[cfg(unix)]
+    {
+        let _ = path;
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

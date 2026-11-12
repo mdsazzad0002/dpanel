@@ -69,6 +69,26 @@ fn wide(text: &std::ffi::OsStr) -> Vec<u16> {
     text.encode_wide().chain(once(0)).collect()
 }
 
+/// A path the Win32 calls below take whatever its length: made absolute
+/// (which also turns `/` into `\`), then `\\?\` in front, as std does for
+/// its own calls. Without it they fail past 260 characters, and `\\?\` with
+/// a `/` left in fails at any length.
+fn wide_path(path: &Path) -> Vec<u16> {
+    const SLASH: u16 = b'\\' as u16;
+    let full = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let units: Vec<u16> = full.as_os_str().encode_wide().collect();
+    let verbatim = |second: u8| units.len() >= 4 && units[..2] == [SLASH, SLASH] && units[2] == u16::from(second) && units[3] == SLASH;
+    let (prefix, rest) = if verbatim(b'?') || verbatim(b'.') {
+        ("", &units[..])
+    } else if units.starts_with(&[SLASH, SLASH]) {
+        // `\\server\share\x` is `\\?\UNC\server\share\x`.
+        (r"\\?\UNC", &units[1..])
+    } else {
+        (r"\\?\", &units[..])
+    };
+    prefix.encode_utf16().chain(rest.iter().copied()).chain(once(0)).collect()
+}
+
 fn failed(action: &str) -> impl Fn(io::Error) -> PlatformError {
     move |error| PlatformError::from_io(action, error)
 }
@@ -113,7 +133,7 @@ impl Descriptor {
         if unsafe { GetSecurityDescriptorDacl(self.0, &mut present, &mut dacl, &mut defaulted) } == 0 {
             return Err(io::Error::last_os_error());
         }
-        let name = wide(path.as_os_str());
+        let name = wide_path(path);
         // SAFETY: `name` is NUL-terminated and `dacl` lives as long as `self`.
         let status = unsafe {
             SetNamedSecurityInfoW(
@@ -144,7 +164,7 @@ impl Drop for Descriptor {
 fn open(path: &Path, disposition: u32, flags: u32) -> io::Result<File> {
     let descriptor = Descriptor::parse(PRIVATE_FILE)?;
     let attributes = descriptor.attributes();
-    let name = wide(path.as_os_str());
+    let name = wide_path(path);
     // SAFETY: `name` is NUL-terminated and `attributes` outlives the call.
     let handle = unsafe {
         CreateFileW(
@@ -171,7 +191,7 @@ fn create_private_dir(path: &Path, attributes: &SECURITY_ATTRIBUTES) -> io::Resu
     if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
         create_private_dir(parent, attributes)?;
     }
-    let name = wide(path.as_os_str());
+    let name = wide_path(path);
     // SAFETY: `name` is NUL-terminated and `attributes` outlives the call.
     if unsafe { CreateDirectoryW(name.as_ptr(), attributes) } != 0 {
         return Ok(());
@@ -274,6 +294,27 @@ mod tests {
     use super::*;
     use crate::platform::files;
     use std::{io::Write, process::Command};
+
+    #[test]
+    fn a_path_is_given_to_windows_in_the_form_that_has_no_length_limit() {
+        let text = |path: &str| String::from_utf16(&wide_path(Path::new(path))[..]).unwrap().trim_end_matches('\0').to_string();
+        assert_eq!(text(r"C:\sites\shop/public_html/a"), r"\\?\C:\sites\shop\public_html\a");
+        assert_eq!(text(r"\\?\C:\x"), r"\\?\C:\x");
+        assert_eq!(text(r"\\server\share\x"), r"\\?\UNC\server\share\x");
+    }
+
+    #[test]
+    fn a_file_past_260_characters_gets_its_mode() {
+        let folder = tempfile::tempdir().unwrap();
+        let deep = (0..8).fold(folder.path().to_path_buf(), |path, _| path.join("a-folder-name-of-forty-characters-long-x"));
+        fs::create_dir_all(&deep).unwrap();
+        let file = deep.join("file.txt");
+        fs::write(&file, "x").unwrap();
+        assert!(file.as_os_str().len() > 300);
+        // Written with `/` as a panel path is, which `\\?\` alone would refuse.
+        let mixed = format!("{}/file.txt", deep.display());
+        files().set_mode(Path::new(&mixed), FileMode::Shared).unwrap();
+    }
 
     /// The ACL as Windows reports it, one principal per line.
     fn acl(path: &Path) -> String {

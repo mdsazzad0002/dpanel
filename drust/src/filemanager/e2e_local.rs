@@ -49,3 +49,67 @@ fn local_profile_end_to_end() {
     accounts().delete("shop", false).unwrap();
     assert!(!home.exists());
 }
+
+/// F7: names with spaces and Unicode, a path past Windows' old 260-character
+/// limit, a file another program holds open, and the home written in
+/// another case. Run like `local_profile_end_to_end`.
+#[test]
+#[ignore = "needs a local profile"]
+fn local_profile_awkward_paths() {
+    assert!(platform::current().one_user(), "run with DPANEL_PROFILE=local");
+    let home = paths().site_home("odd");
+    let at = |rel: &str| home.join(rel).display().to_string();
+    super::user::run(vec!["create".into(), "odd".into()]).unwrap();
+
+    // Spaces and Unicode, through every operation.
+    let odd = "public_html/My Site ü 日本";
+    super::create::run_for_user("odd", &[at(odd)]).unwrap();
+    super::write::write_user_file("odd", &at(&format!("{odd}/naïve file.txt")), "ঢাকা".as_bytes(), false).unwrap();
+    super::filecopy::copy_user_path("odd", &at(odd), &at("public_html/copy é")).unwrap();
+    super::filemove::move_user_path("odd", &at("public_html/copy é"), &at("public_html/moved ñ")).unwrap();
+    super::zip::create_user_archive("odd", &[at(odd)], &at("odd ü.zip"), "zip").unwrap();
+    super::unzip::unzip_user_archive("odd", &at("odd ü.zip"), Some(&at("public_html/out ø"))).unwrap();
+    assert_eq!(fs::read_to_string(home.join("public_html/moved ñ/naïve file.txt")).unwrap(), "ঢাকা");
+    assert_eq!(fs::read_to_string(home.join("public_html/out ø/My Site ü 日本/naïve file.txt")).unwrap(), "ঢাকা");
+
+    // Past 260 characters, written with `/` as the panel writes paths.
+    let top = "public_html/a-folder-name-of-forty-characters-long-x";
+    let long = format!("public_html/{}", vec!["a-folder-name-of-forty-characters-long-x"; 8].join("/"));
+    assert!(at(&long).len() > 300);
+    super::create::run_for_user("odd", &[at(&long)]).unwrap();
+    super::write::write_user_file("odd", &at(&format!("{long}/file.txt")), b"deep", false).unwrap();
+    assert_eq!(fs::read(home.join(&long).join("file.txt")).unwrap(), b"deep");
+    super::filecopy::copy_user_path("odd", &at(top), &at("public_html/long copy")).unwrap();
+    super::zip::create_user_archive("odd", &[at(top)], &at("long.zip"), "zip").unwrap();
+    super::unzip::unzip_user_archive("odd", &at("long.zip"), Some(&at("public_html/long out"))).unwrap();
+    super::delete::delete_user_path("odd", &at(top)).unwrap();
+    assert!(!home.join(top).exists());
+
+    // A file another program holds: said plainly, and the folder stays whole.
+    super::create::run_for_user("odd", &[at("public_html/held")]).unwrap();
+    super::write::write_user_file("odd", &at("public_html/held/open.log"), b"x", false).unwrap();
+    super::write::write_user_file("odd", &at("public_html/held/b.txt"), b"x", false).unwrap();
+    let lock = platform::fs::hold_exclusively(&home.join("public_html/held/open.log"));
+    if lock.is_some() {
+        let in_use = |result: Result<(), String>| {
+            let error = result.unwrap_err();
+            assert!(error.contains("open in another program"), "{error}");
+        };
+        in_use(super::write::write_user_file("odd", &at("public_html/held/open.log"), b"y", true));
+        in_use(super::delete::delete_user_path("odd", &at("public_html/held/open.log")));
+        let refused = super::delete::delete_user_path("odd", &at("public_html/held")).unwrap_err();
+        assert!(refused.contains("nothing was deleted"), "{refused}");
+        assert!(home.join("public_html/held/b.txt").is_file(), "the folder was half deleted");
+    }
+    drop(lock);
+    super::delete::delete_user_path("odd", &at("public_html/held")).unwrap();
+
+    // The home in another case is the same home where names ignore case.
+    let other_case = format!("{}/case.txt", at("public_html").to_uppercase());
+    let written = super::write::write_user_file("odd", &other_case, b"c", false);
+    assert_eq!(written.is_ok(), platform::paths::file_names_ignore_case(), "{written:?}");
+
+    accounts().delete("odd", false).unwrap();
+    assert!(!home.exists());
+}
+

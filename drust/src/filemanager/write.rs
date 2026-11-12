@@ -50,7 +50,7 @@ pub fn write_user_file(
         parent,
         "File folder",
     )?;
-    fs::write(&path, content).map_err(|e| format!("failed to write {}: {e}", path.display()))?;
+    fs::write(&path, content).map_err(|e| format!("failed to write {}: {}", path.display(), platform::fs::describe(&e)))?;
 
     if !keeps_its_acl {
         apply_owner_and_mode(username, &group, &path, mode.unwrap_or(FileMode::Shared))?;

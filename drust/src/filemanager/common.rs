@@ -35,14 +35,24 @@ pub(crate) fn validate_user_path(username: &str, target: &str) -> Result<PathBuf
     }
 
     let user_home = crate::platform::paths().site_home(username);
-    if path != user_home && !path.starts_with(&user_home) {
-        return Err(format!(
-            "Path is outside the account home: {}",
-            path.display()
-        ));
-    }
+    under_home(&path, &user_home).ok_or_else(|| format!("Path is outside the account home: {}", path.display()))
+}
 
-    Ok(path)
+/// `path` spelled from `home` on: the home as the platform names it, the
+/// rest with the OS's own separator (a panel path may hold `/` on Windows).
+/// Where file names ignore case, `c:\users\…` is the same home.
+fn under_home(path: &Path, home: &Path) -> Option<PathBuf> {
+    let mut parts = path.components();
+    for expected in home.components() {
+        let given = parts.next()?;
+        let same = given == expected
+            || (crate::platform::paths::file_names_ignore_case()
+                && given.as_os_str().to_string_lossy().to_lowercase() == expected.as_os_str().to_string_lossy().to_lowercase());
+        if !same {
+            return None;
+        }
+    }
+    Some(parts.fold(home.to_path_buf(), |full, part| full.join(part)))
 }
 
 pub(super) fn ensure_canonical_inside_home(
@@ -200,6 +210,23 @@ fn copy_natively(source: &Path, destination: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_path_in_the_home_is_spelled_from_the_home() {
+        let home = std::env::temp_dir().join("sites").join("Shop");
+        let given = format!("{}/public_html/a b.txt", home.display());
+        assert_eq!(under_home(Path::new(&given), &home), Some(home.join("public_html").join("a b.txt")));
+        assert_eq!(under_home(&home, &home), Some(home.clone()));
+        assert_eq!(under_home(&home.with_file_name("Shopper").join("x"), &home), None);
+        assert_eq!(under_home(home.parent().unwrap(), &home), None);
+
+        let other_case = PathBuf::from(home.display().to_string().to_uppercase()).join("x");
+        let taken = under_home(&other_case, &home);
+        assert_eq!(taken.is_some(), crate::platform::paths::file_names_ignore_case());
+        if let Some(taken) = taken {
+            assert_eq!(taken, home.join("x"));
+        }
+    }
 
     #[test]
     fn a_native_copy_merges_and_replaces() {

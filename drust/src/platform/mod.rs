@@ -368,7 +368,7 @@ impl std::error::Error for PlatformError {}
 
 impl PlatformError {
     pub fn from_io(action: &str, error: io::Error) -> Self {
-        let what = error.to_string();
+        let what = fs::describe(&error);
         match error.kind() {
             io::ErrorKind::NotFound => Self::NotFound { what },
             io::ErrorKind::PermissionDenied => Self::PermissionDenied { what },

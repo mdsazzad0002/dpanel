@@ -187,6 +187,13 @@ pub fn plain_path(path: &Path) -> PathBuf {
     }
 }
 
+/// Whether the file system takes `Shop` and `shop` as one name. Windows
+/// does. A Mac usually does too, but a volume may not, so it counts as no:
+/// a path in the wrong case is then refused, never taken for another.
+pub fn file_names_ignore_case() -> bool {
+    cfg!(windows)
+}
+
 /// Whether one percent-decoded segment of a URL path names, on this OS, a
 /// file by another name, so that a check made on the name (is it PHP, is the
 /// folder blocked) would not hold for the file the OS opens. Unix opens

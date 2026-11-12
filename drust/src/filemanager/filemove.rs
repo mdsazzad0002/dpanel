@@ -70,9 +70,10 @@ pub fn move_user_path(username: &str, source: &str, destination: &str) -> Result
     } else {
         fs::rename(&source_path, &destination_path).map_err(|e| {
             format!(
-                "failed to move {} to {}: {e}",
+                "failed to move {} to {}: {}",
                 source_path.display(),
-                destination_path.display()
+                destination_path.display(),
+                crate::platform::fs::describe(&e)
             )
         })?;
     }
