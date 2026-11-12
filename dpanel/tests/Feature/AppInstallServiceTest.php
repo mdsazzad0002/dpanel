@@ -3,7 +3,10 @@
 namespace Tests\Feature;
 
 use App\Http\Requests\Website\AppInstallRequest;
-use App\Services\Website\AppInstallService;
+use App\Services\Website\Apps\AppInstallerRegistry;
+use App\Services\Website\Apps\CodeIgniterInstaller;
+use App\Services\Website\Apps\DrupalInstaller;
+use App\Services\Website\Apps\JoomlaInstaller;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Validator;
@@ -26,7 +29,7 @@ class AppInstallServiceTest extends TestCase
             ['prerelease' => false, 'assets' => [$asset('Joomla_5.4.0-Beta1-Full_Package.zip')]],
         ];
 
-        $picked = app(AppInstallService::class)->pickJoomlaReleases($releases);
+        $picked = app(JoomlaInstaller::class)->pickReleases($releases);
 
         $this->assertSame(['6.0.2', '5.3.10'], array_column($picked, 'version'));
         $this->assertStringEndsWith('Joomla_5.3.10-Stable-Full_Package.zip', $picked[1]['url']);
@@ -34,19 +37,19 @@ class AppInstallServiceTest extends TestCase
 
     public function test_joomla_php_range_by_major(): void
     {
-        $service = app(AppInstallService::class);
+        $service = app(JoomlaInstaller::class);
 
-        $this->assertSame('8.1', $service->joomlaPhpRange('5.3.4')['min_php']);
-        $this->assertSame('8.3', $service->joomlaPhpRange('6.0.0')['min_php']);
+        $this->assertSame('8.1', $service->phpRange('5.3.4')['min_php']);
+        $this->assertSame('8.3', $service->phpRange('6.0.0')['min_php']);
         // Unknown future majors fall back to the newest known range.
-        $this->assertSame('8.3', $service->joomlaPhpRange('7.0.0')['min_php']);
+        $this->assertSame('8.3', $service->phpRange('7.0.0')['min_php']);
     }
 
     public function test_codeigniter_env_values_enable_commented_keys_and_quote_safely(): void
     {
         $template = "#--------\n# CI_ENVIRONMENT = production\n\n# app.baseURL = ''\n# database.default.password = root\n";
 
-        $out = app(AppInstallService::class)->setCodeIgniterEnvValues($template, [
+        $out = app(CodeIgniterInstaller::class)->setEnvValues($template, [
             'CI_ENVIRONMENT' => 'production',
             'app.baseURL' => 'https://example.com/',
             'database.default.password' => 'p w$d',
@@ -64,12 +67,12 @@ class AppInstallServiceTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        app(AppInstallService::class)->setCodeIgniterEnvValues('', ['x' => "a'\${HOME}"]);
+        app(CodeIgniterInstaller::class)->setEnvValues('', ['x' => "a'\${HOME}"]);
     }
 
     public function test_drupal_settings_append_a_loadable_database_array(): void
     {
-        $settings = app(AppInstallService::class)->drupalSettings("<?php\n\n// default settings\n\$settings['hash_salt'] = '';\n", [
+        $settings = app(DrupalInstaller::class)->settings("<?php\n\n// default settings\n\$settings['hash_salt'] = '';\n", [
             'database_name' => 'ex_db',
             'database_user' => 'ex_user',
             'database_password' => "it's a \\ \$ecret\"",
@@ -96,7 +99,7 @@ class AppInstallServiceTest extends TestCase
 
     public function test_drupal_settings_use_the_pgsql_driver_for_postgresql(): void
     {
-        $settings = app(AppInstallService::class)->drupalSettings("<?php\n", [
+        $settings = app(DrupalInstaller::class)->settings("<?php\n", [
             'engine' => 'postgresql',
             'database_name' => 'ex_db',
             'database_user' => 'ex_user',
@@ -118,13 +121,13 @@ class AppInstallServiceTest extends TestCase
         $this->assertSame('Drupal\\pgsql\\Driver\\Database\\pgsql', $connection['namespace']);
         $this->assertSame('5432', $connection['port']);
         $this->assertArrayNotHasKey('collation', $connection);
-        $this->assertSame(['mariadb', 'postgresql'], AppInstallService::engines('codeigniter'));
-        $this->assertSame(['mariadb'], AppInstallService::engines('whmcs'));
+        $this->assertSame(['mariadb', 'postgresql'], app(AppInstallerRegistry::class)->engines('codeigniter'));
+        $this->assertSame(['mariadb'], app(AppInstallerRegistry::class)->engines('whmcs'));
     }
 
     public function test_drupal_catalog_and_request_rules(): void
     {
-        $this->assertSame('8.3', AppInstallService::DRUPAL_VERSIONS['11']['min_php']);
+        $this->assertSame('8.3', DrupalInstaller::VERSIONS['11']['min_php']);
 
         $rules = $this->rulesFor('drupal');
         $valid = ['version' => '11', 'database_id' => 'new', 'site_name' => 'Example', 'admin_username' => 'admin', 'admin_email' => 'a@example.com', 'admin_password' => 'long-enough-pass'];

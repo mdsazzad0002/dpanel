@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Requests\Website\AppInstallRequest;
 use App\Services\Filemanager\FilemanagerService;
-use App\Services\Website\AppInstallService;
+use App\Services\Website\Apps\AppInstallSupport;
 use App\Services\Website\AppPackageUploads;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
@@ -92,9 +92,7 @@ class WhmcsInstallerTest extends TestCase
         $filemanager->shouldReceive('deletePath')->once();
         $this->app->instance(FilemanagerService::class, $filemanager);
 
-        $service = app(AppInstallService::class);
-        $method = new \ReflectionMethod($service, 'deployWhmcsPackage');
-        $result = $method->invoke($service, 'alice', '/home/alice/site', $zip, 'whmcs/');
+        $result = app(AppInstallSupport::class)->deployArchiveDirectory('alice', '/home/alice/site', $zip, 'whmcs/');
 
         $this->assertTrue($result['success'], $result['output']);
         sort($entries);

@@ -90,6 +90,36 @@ impl Site {
         self.target.join(relative).is_file()
     }
 
+    /// Runs the PHP CLI script `script` (relative to `cwd`) as if started as
+    /// `argv0 args…`, with the arguments read from stdin so passwords never
+    /// appear in the process list.
+    pub async fn php_script(
+        &self,
+        cwd: &Path,
+        argv0: &str,
+        script: &str,
+        args: &[String],
+    ) -> Result<String, String> {
+        let bootstrap = cli_bootstrap(argv0, script)?;
+        let stdin = serde_json::to_vec(args).map_err(|e| e.to_string())?;
+        self.php_with_input(cwd, &["-r", &bootstrap], SHORT_TIMEOUT, &stdin)
+            .await
+    }
+
+    /// A folder the app keeps outside the web root: inside the account home
+    /// but not inside the project root. Created for the owner if missing.
+    pub fn prepare_outside_dir(&self, path: &str, label: &str) -> Result<PathBuf, String> {
+        let wanted = validate_user_path(&self.username, path)?;
+        if wanted.starts_with(&self.target) {
+            return Err(format!("{label} must be outside the project root."));
+        }
+        let (home, canonical_home, group) = validate_account(&self.username)?;
+        if wanted == home {
+            return Err(format!("{label} cannot be the account home."));
+        }
+        ensure_directory_inside_home(&self.username, &group, &home, &canonical_home, &wanted, label)
+    }
+
     pub async fn php(&self, args: &[&str], timeout: Duration) -> Result<String, String> {
         self.run(&self.target, &self.php, args, timeout, None).await
     }
@@ -218,6 +248,37 @@ impl Site {
 /// well as in the panel because they end up in the apps' config files.
 pub(super) fn has_no_control_chars(value: &str) -> bool {
     !value.chars().any(char::is_control)
+}
+
+/// Domain names: letters, digits, dots and hyphens.
+pub(super) fn is_hostname(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 253
+        && !value.starts_with(['.', '-'])
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
+}
+
+/// `php -r` code that sets argv from stdin JSON and runs `script`.
+fn cli_bootstrap(argv0: &str, script: &str) -> Result<String, String> {
+    let safe = |value: &str| {
+        !value.is_empty()
+            && !value.contains("..")
+            && value
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/'))
+    };
+    if !safe(argv0) || !safe(script) {
+        return Err("Invalid installer script.".into());
+    }
+    Ok(format!(
+        r#"$a = json_decode(stream_get_contents(STDIN), true);
+if (!is_array($a)) {{ fwrite(STDERR, "Invalid installer input.\n"); exit(1); }}
+$_SERVER['argv'] = $argv = array_merge(['{argv0}'], $a);
+$_SERVER['argc'] = $argc = count($argv);
+require '{script}';"#
+    ))
 }
 
 /// Database/user names: letters, digits, underscore, up to 64.
@@ -408,6 +469,18 @@ mod tests {
         assert!(php_binary("8").is_err());
         assert!(php_binary("8.3; rm").is_err());
         assert!(php_binary("../../bin/sh").is_err());
+    }
+
+    #[test]
+    fn cli_bootstrap_only_takes_plain_script_names() {
+        let code = cli_bootstrap("occ", "console.php").unwrap();
+        assert!(code.contains("array_merge(['occ'], $a)"));
+        assert!(code.contains("require 'console.php';"));
+        assert!(cli_bootstrap("x", "../evil.php").is_err());
+        assert!(cli_bootstrap("x'; system('id'); '", "a.php").is_err());
+        assert!(is_hostname("shop.example.com"));
+        assert!(!is_hostname("shop example.com"));
+        assert!(!is_hostname("-x.com"));
     }
 
     #[test]

@@ -11,6 +11,7 @@ use App\Services\Security\UploadRejectedException;
 use App\Services\Security\UploadScanner;
 use App\Services\Ssl\SslLifecycleService;
 use App\Services\Website\AppInstallService;
+use App\Services\Website\Apps\AppInstallerRegistry;
 use App\Services\Website\AppPackageUploads;
 use App\Services\Website\WebsiteCreateEditService;
 use App\Services\Website\WebsiteDatabaseProvisioner;
@@ -24,7 +25,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Joomla, CodeIgniter and WHMCS installers. Same flow as LaravelInstallerController:
+ * App catalog installers (one class per app in AppInstallerRegistry). Same flow as LaravelInstallerController:
  * the page queues AppInstallJob and polls installStatus().
  */
 class AppInstallerController extends WebsiteController
@@ -39,6 +40,7 @@ class AppInstallerController extends WebsiteController
         protected AppInstallService $appInstallService,
         protected WebsiteDatabaseProvisioner $databases,
         protected AppPackageUploads $uploads,
+        protected AppInstallerRegistry $apps,
     ) {
         parent::__construct(
             $websiteResolver,
@@ -57,12 +59,12 @@ class AppInstallerController extends WebsiteController
 
         return Inertia::render('Websites/AppInstaller', [
             'website' => $website,
-            'app' => ['key' => $app, ...AppInstallService::APPS[$app]],
+            'app' => $this->apps->definition($app),
             'catalog' => $this->appInstallService->catalog($app, $model),
-            'databases' => $this->databases->selectable($model, request()->user(), AppInstallService::engines($app)),
+            'databases' => $this->databases->selectable($model, request()->user(), $this->apps->engines($app)),
             'newDatabase' => $this->databases->preview($model, $app),
-            'databaseEngines' => AppInstallService::engines($app),
-            'postgresql' => $this->postgresqlAvailability(AppInstallService::engines($app)),
+            'databaseEngines' => $this->apps->engines($app),
+            'postgresql' => $this->postgresqlAvailability($this->apps->engines($app)),
             'adminEmail' => (string) (request()->user()?->email ?? ''),
             'rootInspection' => Inertia::defer(
                 fn () => $this->wordpressInstallService->inspectRootDirectory((string) ($website['root_path'] ?? '')),
@@ -92,8 +94,8 @@ class AppInstallerController extends WebsiteController
         $website = Website::query()->findOrFail($this->findAuthorizedWebsiteOrFail($id)['id']);
 
         $databaseId = $validated['database_id'];
-        $databaseIds = array_column($this->databases->selectable($website, $request->user(), AppInstallService::engines($app)), 'id');
-        $databaseMode = AppInstallService::APPS[$app]['database'];
+        $databaseIds = array_column($this->databases->selectable($website, $request->user(), $this->apps->engines($app)), 'id');
+        $databaseMode = $this->apps->definition($app)['database'];
         $allowed = $databaseId === 'new'
             || ($databaseId === 'none' && $databaseMode === 'optional')
             || ($databaseMode !== 'new' && in_array($databaseId, $databaseIds, true));
@@ -114,7 +116,7 @@ class AppInstallerController extends WebsiteController
      */
     public function startUpload(Request $request, string $token, string $id, string $app): JsonResponse
     {
-        abort_unless(AppInstallService::APPS[$app]['upload'] ?? false, 404);
+        abort_unless($this->apps->definition($app)['upload'] ?? false, 404);
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255', 'regex:/\.zip$/i'],
@@ -128,7 +130,7 @@ class AppInstallerController extends WebsiteController
 
     public function uploadChunk(Request $request, string $token, string $id, string $app, string $uploadId): JsonResponse
     {
-        abort_unless(AppInstallService::APPS[$app]['upload'] ?? false, 404);
+        abort_unless($this->apps->definition($app)['upload'] ?? false, 404);
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $data = $request->validate([
             'index' => ['required', 'integer', 'min:0', 'max:9999'],
@@ -146,7 +148,7 @@ class AppInstallerController extends WebsiteController
 
     public function completeUpload(Request $request, UploadScanner $scanner, string $token, string $id, string $app, string $uploadId): JsonResponse
     {
-        abort_unless(AppInstallService::APPS[$app]['upload'] ?? false, 404);
+        abort_unless($this->apps->definition($app)['upload'] ?? false, 404);
         $website = $this->findAuthorizedWebsiteOrFail($id);
         $data = $request->validate(['total' => ['required', 'integer', 'between:1,10000']]);
 

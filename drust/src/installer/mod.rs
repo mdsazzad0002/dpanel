@@ -6,13 +6,18 @@
 //! The panel drives one action per request (`POST /api/v1/filemanager/laravel`,
 //! kept for compatibility): LaravelInstallJob runs create_project → artisan →
 //! breeze or npm_build → finalize; AppInstallJob runs create_project
-//! (codeigniter, drupal) or the app's own *_install action, then finalize with
+//! (codeigniter, drupal) or the app's own *_install action (joomla, whmcs,
+//! nextcloud, prestashop, opencart, mediawiki), then finalize with
 //! the matching stack. WordPress has its own download-based endpoint.
 
 mod codeigniter;
 mod drupal;
 mod joomla;
 mod laravel;
+mod mediawiki;
+mod nextcloud;
+mod opencart;
+mod prestashop;
 mod service;
 mod whmcs;
 pub(crate) mod wordpress;
@@ -44,6 +49,10 @@ pub(crate) struct Request {
     joomla: Option<joomla::JoomlaInstall>,
     whmcs: Option<whmcs::WhmcsInstall>,
     drupal: Option<drupal::DrupalInstall>,
+    nextcloud: Option<nextcloud::NextcloudInstall>,
+    prestashop: Option<prestashop::PrestashopInstall>,
+    opencart: Option<opencart::OpencartInstall>,
+    mediawiki: Option<mediawiki::MediawikiInstall>,
 }
 
 pub(crate) async fn handle(
@@ -112,6 +121,34 @@ async fn execute(request: &Request) -> Result<String, String> {
                 .ok_or("WHMCS install values are missing.")?;
             whmcs::install(&site, input).await
         }
+        "nextcloud_install" => {
+            let input = request
+                .nextcloud
+                .as_ref()
+                .ok_or("Nextcloud install answers are missing.")?;
+            nextcloud::install(&site, input).await
+        }
+        "prestashop_install" => {
+            let input = request
+                .prestashop
+                .as_ref()
+                .ok_or("PrestaShop install answers are missing.")?;
+            prestashop::install(&site, input).await
+        }
+        "opencart_install" => {
+            let input = request
+                .opencart
+                .as_ref()
+                .ok_or("OpenCart install answers are missing.")?;
+            opencart::install(&site, input).await
+        }
+        "mediawiki_install" => {
+            let input = request
+                .mediawiki
+                .as_ref()
+                .ok_or("MediaWiki install answers are missing.")?;
+            mediawiki::install(&site, input).await
+        }
         "php_modules" => site.php(&["-m"], SHORT_TIMEOUT).await,
         "finalize" => site.finalize(permissions_for(request.stack.as_deref())),
         _ => Err("Unsupported installer action.".into()),
@@ -124,6 +161,10 @@ fn permissions_for(stack: Option<&str>) -> &'static Permissions {
         Some("joomla") => &joomla::PERMISSIONS,
         Some("whmcs") => &whmcs::PERMISSIONS,
         Some("drupal") => &drupal::PERMISSIONS,
+        Some("nextcloud") => &nextcloud::PERMISSIONS,
+        Some("prestashop") => &prestashop::PERMISSIONS,
+        Some("opencart") => &opencart::PERMISSIONS,
+        Some("mediawiki") => &mediawiki::PERMISSIONS,
         _ => &laravel::PERMISSIONS,
     }
 }
@@ -140,6 +181,10 @@ mod tests {
             Some("web/sites/default/settings.php")
         );
         assert_eq!(permissions_for(Some("whmcs")).secret_config, Some("configuration.php"));
+        assert_eq!(permissions_for(Some("nextcloud")).secret_config, Some("config/config.php"));
+        assert_eq!(permissions_for(Some("mediawiki")).secret_config, Some("LocalSettings.php"));
+        assert_eq!(permissions_for(Some("prestashop")).secret_config, Some("app/config/parameters.php"));
+        assert_eq!(permissions_for(Some("opencart")).writable, ["image", "system/storage"]);
         assert_eq!(permissions_for(None).writable, ["storage", "bootstrap/cache"]);
         assert_eq!(permissions_for(Some("vue")).secret_config, None);
     }

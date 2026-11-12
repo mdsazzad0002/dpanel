@@ -338,14 +338,14 @@ Route::get('/websites/{id}/laravel/install/status/{installId}', [LaravelInstalle
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.laravel.install.status');
 
-// Joomla / Drupal / CodeIgniter / WHMCS Installer Routes
+// App catalog installer routes (one installer class per app in AppInstallerRegistry)
 Route::get('/websites/{id}/apps/{app}', [AppInstallerController::class, 'installer'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->whereIn('app', ['joomla', 'drupal', 'codeigniter', 'whmcs'])
+    ->whereIn('app', \App\Services\Website\Apps\AppInstallerRegistry::keys())
     ->name('websites.apps.installer');
 Route::post('/websites/{id}/apps/{app}/install', [AppInstallerController::class, 'install'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:5,1'])
-    ->whereIn('app', ['joomla', 'drupal', 'codeigniter', 'whmcs'])
+    ->whereIn('app', \App\Services\Website\Apps\AppInstallerRegistry::keys())
     ->name('websites.apps.install');
 Route::post('/websites/{id}/apps/{app}/upload', [AppInstallerController::class, 'startUpload'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
@@ -363,7 +363,7 @@ Route::post('/websites/{id}/apps/{app}/upload/{uploadId}/complete', [AppInstalle
     ->name('websites.apps.upload.complete');
 Route::get('/websites/{id}/apps/{app}/install/status/{installId}', [AppInstallerController::class, 'installStatus'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
-    ->whereIn('app', ['joomla', 'drupal', 'codeigniter', 'whmcs'])
+    ->whereIn('app', \App\Services\Website\Apps\AppInstallerRegistry::keys())
     ->name('websites.apps.install.status');
 
 Route::get('/websites/{id}/logs', [WebsiteLogController::class, 'index'])

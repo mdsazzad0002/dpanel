@@ -1078,5 +1078,47 @@
         "hide": "Dashboard থেকে লুকান",
         "expand": "খুলুন",
         "collapse": "গুটিয়ে নিন"
+    },
+    "apps": {
+        "fields": {
+            "heading": "সাইট ও অ্যাডমিন",
+            "site_name": "সাইটের নাম",
+            "admin_name": "অ্যাডমিনের পুরো নাম",
+            "admin_username": "অ্যাডমিন ইউজারনেম",
+            "admin_email": "অ্যাডমিন ইমেইল",
+            "admin_password": "অ্যাডমিন পাসওয়ার্ড",
+            "passwordHint": "(কমপক্ষে ১২ অক্ষর — এখনই সংরক্ষণ করুন, প্যানেল এটা রাখে না)",
+            "show": "দেখান",
+            "hide": "লুকান",
+            "generate": "তৈরি করুন"
+        },
+        "nextcloud": {
+            "installer": "Nextcloud ইনস্টলার",
+            "card": "অ্যাডমিন অ্যাকাউন্ট ও cron সহ ফাইল সিঙ্ক ও শেয়ারিং",
+            "downloading": "Nextcloud ডাউনলোড ও SHA-256 যাচাই হচ্ছে…",
+            "configuring": "occ maintenance:install চলছে…",
+            "note": "ফাইল থাকে project root-এর পাশের ফোল্ডারে (…-nextcloud-data), web root-এর বাইরে। cron.php-র জন্য ৫ মিনিটের cron যোগ হয়।"
+        },
+        "prestashop": {
+            "installer": "PrestaShop ইনস্টলার",
+            "card": "ব্যাক-অফিস অ্যাকাউন্টসহ অনলাইন স্টোর",
+            "downloading": "PrestaShop ডাউনলোড ও extract হচ্ছে…",
+            "configuring": "PrestaShop ইনস্টলার চলছে…",
+            "note": "install/ ফোল্ডার মুছে ফেলা হয় আর admin/-এর নাম এলোমেলো করা হয়; ইনস্টলের পরের বার্তায় ব্যাক-অফিসের ঠিকানা থাকে। অ্যাডমিন ইমেইল দিয়ে লগইন করুন।"
+        },
+        "opencart": {
+            "installer": "OpenCart ইনস্টলার",
+            "card": "অ্যাডমিন অ্যাকাউন্টসহ OpenCart 4 স্টোর",
+            "downloading": "OpenCart ডাউনলোড ও extract হচ্ছে…",
+            "configuring": "OpenCart ইনস্টলার চলছে…",
+            "note": "install/ ফোল্ডার মুছে ফেলা হয় আর system/storage project root-এর পাশে সরে যায় (…-opencart-storage)। অ্যাডমিন: /admin।"
+        },
+        "mediawiki": {
+            "installer": "MediaWiki ইনস্টলার",
+            "card": "অ্যাডমিন অ্যাকাউন্টসহ উইকি",
+            "downloading": "MediaWiki ডাউনলোড ও GPG স্বাক্ষর যাচাই হচ্ছে…",
+            "configuring": "maintenance/install.php চলছে…",
+            "note": "ডাউনলোড MediaWiki-র release key দিয়ে যাচাই হয় (সার্ভারে gpg লাগে)। সেটিংস LocalSettings.php-তে লেখা হয়।"
+        }
     }
 }

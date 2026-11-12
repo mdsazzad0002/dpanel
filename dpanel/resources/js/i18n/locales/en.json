@@ -1078,5 +1078,47 @@
         "hide": "Hide from dashboard",
         "expand": "Expand",
         "collapse": "Collapse"
+    },
+    "apps": {
+        "fields": {
+            "heading": "Site & administrator",
+            "site_name": "Site name",
+            "admin_name": "Admin full name",
+            "admin_username": "Admin username",
+            "admin_email": "Admin email",
+            "admin_password": "Admin password",
+            "passwordHint": "(at least 12 characters — save it now, it is not stored by the panel)",
+            "show": "Show",
+            "hide": "Hide",
+            "generate": "Generate"
+        },
+        "nextcloud": {
+            "installer": "Nextcloud Installer",
+            "card": "File sync and sharing with admin account and cron",
+            "downloading": "Downloading Nextcloud and checking its SHA-256…",
+            "configuring": "Running occ maintenance:install…",
+            "note": "Files are kept in a folder next to the project root (…-nextcloud-data), outside the web root. A 5-minute cron for cron.php is added."
+        },
+        "prestashop": {
+            "installer": "PrestaShop Installer",
+            "card": "Online store with back-office account",
+            "downloading": "Downloading and extracting PrestaShop…",
+            "configuring": "Running the PrestaShop installer…",
+            "note": "The install/ folder is removed and admin/ is renamed to a random name; the message after install shows the back-office address. Log in with the admin email."
+        },
+        "opencart": {
+            "installer": "OpenCart Installer",
+            "card": "OpenCart 4 store with admin account",
+            "downloading": "Downloading and extracting OpenCart…",
+            "configuring": "Running the OpenCart installer…",
+            "note": "The install/ folder is removed and system/storage moves next to the project root (…-opencart-storage). Admin area: /admin."
+        },
+        "mediawiki": {
+            "installer": "MediaWiki Installer",
+            "card": "Wiki engine with admin account",
+            "downloading": "Downloading MediaWiki and verifying its GPG signature…",
+            "configuring": "Running maintenance/install.php…",
+            "note": "The download is verified with the MediaWiki release keys (needs gpg on the server). Settings are written to LocalSettings.php."
+        }
     }
 }

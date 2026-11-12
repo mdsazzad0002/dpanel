@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { Link, usePage } from '@inertiajs/vue3';
 import { isClosedRoute } from '@/navigation/panelMenu';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
@@ -12,6 +13,7 @@ const props = defineProps({
 });
 
 const { panelRoute } = usePanelApi();
+const { t } = useI18n();
 const page = usePage();
 
 const isSystemWebsite = computed(() => String(props.website.id) === '1');
@@ -44,14 +46,21 @@ const serviceLinks = computed(() => [
     { installer: true, label: 'Joomla Installer', icon: 'bi-puzzle', color: 'orange', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'joomla' }), description: 'Joomla CMS with admin account and database' },
     { installer: true, label: 'Drupal Installer', icon: 'bi-droplet', color: 'blue', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'drupal' }), description: 'Drupal CMS with Drush and an admin account' },
     { installer: true, label: 'CodeIgniter Installer', icon: 'bi-fire', color: 'amber', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'codeigniter' }), description: 'CodeIgniter 4 app starter with .env configured' },
+    // Backlog U8 catalog apps; hidden on the system website like the installers above.
+    ...[
+        { app: 'nextcloud', icon: 'bi-cloud', color: 'blue' },
+        { app: 'prestashop', icon: 'bi-cart', color: 'pink' },
+        { app: 'opencart', icon: 'bi-bag', color: 'cyan' },
+        { app: 'mediawiki', icon: 'bi-book', color: 'emerald' },
+    ].map((item) => ({ installer: true, systemHidden: true, label: t(`apps.${item.app}.installer`), icon: item.icon, color: item.color, href: panelRoute('websites.apps.installer', { id: props.website.id, app: item.app }), description: t(`apps.${item.app}.card`) })),
     { installer: true, label: 'WHMCS Installer', icon: 'bi-receipt', color: 'teal', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'whmcs' }), description: 'Install your licensed WHMCS package with cron' },
 // The system website is dpanel's own installation — hosting-management actions
 // that overwrite files/git/database or grant separate account access don't
 // apply to it and would risk breaking the panel itself, so hide them here.
-].filter((item) => !isSystemWebsite.value || ![
+].filter((item) => !isSystemWebsite.value || (!item.systemHidden && ![
     'WordPress Installer', 'Laravel Installer', 'Joomla Installer', 'Drupal Installer', 'CodeIgniter Installer', 'WHMCS Installer', 'File Manager', 'Import & Clone', 'FTP Accounts',
     'Cron Jobs', '.htaccess Resolver', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Export & Share', 'Push to Live',
-].includes(item.label)).filter((item) => !isClosedRoute(item.routeName, page.props.platform?.closedRoutes)));
+].includes(item.label))).filter((item) => !isClosedRoute(item.routeName, page.props.platform?.closedRoutes)));
 
 const sections = computed(() => [
     { title: 'Services', items: serviceLinks.value.filter((item) => !item.installer), unit: 'tools' },

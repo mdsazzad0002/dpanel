@@ -4,6 +4,8 @@ import { Deferred, Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref, watch } from 'vue';
 import InstallerDatabasePicker from '@/Components/Installer/InstallerDatabasePicker.vue';
 import InstallerVersionPicker from '@/Components/Installer/InstallerVersionPicker.vue';
+import AppAccountFields from '@/Components/Installer/AppAccountFields.vue';
+import { useI18n } from 'vue-i18n';
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -18,6 +20,7 @@ const props = defineProps({
 });
 
 const page = usePage();
+const { t, te } = useI18n();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
@@ -31,8 +34,9 @@ const website = computed(() => websiteState.value || {});
 
 const isJoomla = computed(() => props.app.key === 'joomla');
 const isDrupal = computed(() => props.app.key === 'drupal');
-// Joomla and Drupal both create an administrator account during install.
-const needsAccount = computed(() => isJoomla.value || isDrupal.value);
+// Account fields the app's installer class asks for (Joomla, Drupal, Nextcloud, …).
+const accountFields = computed(() => props.app.fields || []);
+const needsAccount = computed(() => accountFields.value.length > 0);
 const isWhmcs = computed(() => props.app.key === 'whmcs');
 const databaseOptional = computed(() => props.app.database === 'optional');
 const newDatabaseOnly = computed(() => props.app.database === 'new');
@@ -56,6 +60,7 @@ const existingDatabaseNote = computed(() => {
     return 'Credentials are written to .env';
 });
 const passwordFile = computed(() => {
+    if (props.app.password_file) return props.app.password_file;
     if (isJoomla.value) return 'configuration.php';
     if (isDrupal.value) return 'web/sites/default/settings.php';
     return '.env';
@@ -129,13 +134,15 @@ const uploadPackage = async (event) => {
         uploadBusy.value = false;
     }
 };
-const joomlaValid = computed(() => !needsAccount.value || (
-    joomla.value.site_name.trim()
-    && (!isJoomla.value || joomla.value.admin_name.trim())
-    && /^[A-Za-z0-9_.@-]+$/.test(joomla.value.admin_username)
-    && /.+@.+\..+/.test(joomla.value.admin_email)
-    && joomla.value.admin_password.length >= 12
-));
+const fieldValid = {
+    site_name: (v) => Boolean(v.trim()),
+    admin_name: (v) => Boolean(v.trim()),
+    admin_username: (v) => /^[A-Za-z0-9_.@ -]+$/.test(v),
+    admin_email: (v) => /.+@.+\..+/.test(v),
+    admin_password: (v) => v.length >= 12,
+};
+const joomlaValid = computed(() => accountFields.value.every((field) => (fieldValid[field] || (() => true))(String(joomla.value[field] ?? ''))));
+const accountPayload = computed(() => Object.fromEntries(accountFields.value.map((field) => [field, joomla.value[field]])));
 
 const currentPhp = computed(() => String(website.value.php_version || ''));
 const targetPhp = computed(() => versionMeta.value?.php_version || null);
@@ -169,13 +176,13 @@ const INSTALL_STAGE_LABELS = computed(() => ({
         joomla: 'Downloading and extracting Joomla…',
         drupal: 'Downloading Drupal and Drush with Composer…',
         whmcs: 'Extracting the WHMCS package…',
-    }[props.app.key] || 'Downloading CodeIgniter with Composer…',
+    }[props.app.key] || (te(`apps.${props.app.key}.downloading`) ? t(`apps.${props.app.key}.downloading`) : 'Downloading CodeIgniter with Composer…'),
     creating_database: 'Preparing database…',
     configuring: {
         joomla: 'Running the Joomla installer…',
         drupal: 'Writing settings.php and running drush site:install…',
         whmcs: 'Running the WHMCS installer…',
-    }[props.app.key] || 'Writing .env…',
+    }[props.app.key] || (te(`apps.${props.app.key}.configuring`) ? t(`apps.${props.app.key}.configuring`) : 'Writing .env…'),
     finalizing: 'Setting permissions, PHP version and document root…',
     ready: 'Done',
 }));
@@ -245,7 +252,7 @@ const install = async () => {
                 database_id: selectedDatabaseId.value,
                 database_suffix: props.newDatabase?.suffix || null,
                 database_engine: selectedDatabaseId.value === 'new' ? newDatabaseEngine.value : null,
-                ...(needsAccount.value ? joomla.value : {}),
+                ...(needsAccount.value ? accountPayload.value : {}),
                 ...(isWhmcs.value ? { ...whmcs.value, license_key: whmcs.value.license_key.trim(), upload_id: uploadId.value } : {}),
             },
             { headers: { Accept: 'application/json' } },
@@ -362,23 +369,14 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                     </div>
                 </div>
 
-                <div v-if="needsAccount" class="mt-5">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Site &amp; administrator</p>
-                    <div class="mt-2 grid gap-3 sm:grid-cols-2">
-                        <label class="text-sm">Site name<input v-model="joomla.site_name" type="text" :disabled="installBusy" :class="inputClass" /></label>
-                        <label v-if="isJoomla" class="text-sm">Admin full name<input v-model="joomla.admin_name" type="text" :disabled="installBusy" :class="inputClass" /></label>
-                        <label class="text-sm">Admin username<input v-model="joomla.admin_username" type="text" autocomplete="off" :disabled="installBusy" :class="inputClass" /></label>
-                        <label class="text-sm">Admin email<input v-model="joomla.admin_email" type="email" :disabled="installBusy" :class="inputClass" /></label>
-                        <label class="text-sm sm:col-span-2">
-                            Admin password <span class="text-xs text-slate-500">(at least 12 characters — save it now, it is not stored by the panel)</span>
-                            <div class="flex gap-2">
-                                <input v-model="joomla.admin_password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" :disabled="installBusy" :class="inputClass" class="font-mono" />
-                                <button type="button" class="mt-1 rounded-md border border-slate-300 px-3 text-xs dark:border-slate-700" @click="showPassword = !showPassword">{{ showPassword ? 'Hide' : 'Show' }}</button>
-                                <button type="button" class="mt-1 rounded-md border border-slate-300 px-3 text-xs dark:border-slate-700" :disabled="installBusy" @click="joomla.admin_password = randomPassword(); showPassword = true">Generate</button>
-                            </div>
-                        </label>
-                    </div>
-                </div>
+                <AppAccountFields
+                    v-if="needsAccount"
+                    v-model="joomla"
+                    class="mt-5"
+                    :fields="accountFields"
+                    :disabled="installBusy"
+                    :generate-password="randomPassword"
+                />
 
                 <InstallerDatabasePicker
                     v-model="selectedDatabaseId"
@@ -418,6 +416,10 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                     <li v-if="isDrupal">
                         <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
                         Drush is added to the project (<code>vendor/bin/drush</code>). Log in at <code>/user/login</code>.
+                    </li>
+                    <li v-if="te(`apps.${app.key}.note`)">
+                        <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
+                        {{ t(`apps.${app.key}.note`) }}
                     </li>
                     <li v-if="isJoomla">
                         <i class="bi bi-shield-lock mr-2 text-amber-500"></i>

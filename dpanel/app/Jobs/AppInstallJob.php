@@ -12,7 +12,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
 
 /**
- * Runs AppInstallService::install() (Joomla or CodeIgniter) on the heavy
+ * Runs AppInstallService::install() for a catalog app on the heavy
  * queue while AppInstaller.vue polls AppInstallJobStatus for progress.
  */
 class AppInstallJob implements ShouldBeEncrypted, ShouldQueue
@@ -24,7 +24,7 @@ class AppInstallJob implements ShouldBeEncrypted, ShouldQueue
     public int $tries = 1;
 
     /**
-     * @param  array<string, mixed>  $input  includes the Joomla admin password, so the
+     * @param  array<string, mixed>  $input  includes the app's admin password, so the
      *                                        payload is encrypted on the queue
      */
     public function __construct(
