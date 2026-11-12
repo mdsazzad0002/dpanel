@@ -1,7 +1,10 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { computed, inject, onBeforeUnmount, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+
+const { t } = useI18n();
 
 // The container behind a Docker website: where it answers, whether its port
 // is open to the internet, start/stop, logs, and where its files live.
@@ -20,7 +23,7 @@ const logs = ref('');
 const showLogs = ref(false);
 
 const status = computed(() => String(props.website?.docker_process_status || 'pending'));
-const statusLabel = computed(() => ({ running: 'Running', stopped: 'Stopped', error: 'Error' })[status.value] || 'Starting…');
+const statusLabel = computed(() => ({ running: t('websites.dockerService.running'), stopped: t('websites.dockerService.stopped'), error: t('websites.dockerService.error') })[status.value] || t('websites.dockerService.starting'));
 const statusClass = computed(() => ({
     running: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400',
     stopped: 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300',
@@ -54,8 +57,8 @@ onBeforeUnmount(stopPolling);
 
 const control = async (action) => {
     if (loading.value) return;
-    if (action === 'stop' && !window.confirm(fronting.value ? `Stop stack ${stackName.value}? The site shows an error page until it starts again.` : 'Stop the container? The site shows an error page until it starts again.')) return;
-    if (action === 'recreate' && !window.confirm(fronting.value ? `Deploy stack ${stackName.value} again from its compose file?` : 'Recreate the container with the current settings? Files in the site folder stay; anything else inside the container is lost.')) return;
+    if (action === 'stop' && !window.confirm(fronting.value ? t('websites.dockerService.stopStackConfirm', { stack: stackName.value }) : t('websites.dockerService.stopConfirm'))) return;
+    if (action === 'recreate' && !window.confirm(fronting.value ? t('websites.dockerService.redeployConfirm', { stack: stackName.value }) : t('websites.dockerService.recreateConfirm'))) return;
     loading.value = action;
     try {
         const data = await requestJson(panelRoute('websites.docker.control', { id: props.website.id }), { body: { action } });
@@ -66,11 +69,11 @@ const control = async (action) => {
         }
         container.value = data.data?.container || null;
         if (action !== 'status') {
-            pushToast?.(data.message || 'Container updated.', 'success');
+            pushToast?.(data.message || t('websites.dockerService.updated'), 'success');
             router.reload({ only: ['website'], preserveScroll: true });
         }
     } catch (error) {
-        pushToast?.(error?.message || 'Container action failed.', 'error');
+        pushToast?.(error?.message || t('websites.dockerService.failed'), 'error');
         if (action !== 'status' && action !== 'logs') router.reload({ only: ['website'], preserveScroll: true });
     } finally {
         loading.value = '';
@@ -80,14 +83,14 @@ const control = async (action) => {
 const togglePublic = async () => {
     if (loading.value) return;
     const next = !props.website?.docker_public;
-    if (next && !window.confirm(`Open port ${props.website?.docker_port} to the internet? Anyone can then reach the app at ${publicUrl.value}, and the server firewall does not block it.`)) return;
+    if (next && !window.confirm(t('websites.dockerService.publicConfirm', { port: props.website?.docker_port, url: publicUrl.value }))) return;
     loading.value = 'public';
     try {
         const data = await requestJson(panelRoute('websites.docker.public', { id: props.website.id }), { method: 'PATCH', body: { public: next } });
         pushToast?.(data.message, 'success');
         router.reload({ only: ['website'], preserveScroll: true });
     } catch (error) {
-        pushToast?.(error?.message || 'Could not change the port.', 'error');
+        pushToast?.(error?.message || t('websites.dockerService.portFailed'), 'error');
     } finally {
         loading.value = '';
     }
@@ -103,15 +106,15 @@ const neutral = `${button} border-slate-200 bg-white text-slate-700 hover:border
             <div class="min-w-0">
                 <h3 class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
                     <i class="bi bi-box-seam text-base text-sky-600 dark:text-sky-400"></i>
-                    Docker Service
+                    {{ t('websites.dockerService.title') }}
                 </h3>
                 <p v-if="fronting" class="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">
-                    {{ stackName ? `stack ${stackName}` : 'an app on this server' }} · server port {{ website.docker_port || '-' }}
+                    {{ stackName ? t('websites.dockerService.stackName', { stack: stackName }) : t('websites.dockerService.appOnServer') }} · {{ t('websites.dockerService.serverPort', { port: website.docker_port || '-' }) }}
                 </p>
                 <p v-else class="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">
-                    {{ website.docker_image || 'no image set' }}
-                    · app port {{ website.docker_container_port || '-' }}
-                    · server port {{ website.docker_port || '-' }}
+                    {{ website.docker_image || t('websites.dockerService.noImage') }}
+                    · {{ t('websites.dockerService.appPort', { port: website.docker_container_port || '-' }) }}
+                    · {{ t('websites.dockerService.serverPort', { port: website.docker_port || '-' }) }}
                 </p>
             </div>
             <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium" :class="statusClass">
@@ -121,94 +124,94 @@ const neutral = `${button} border-slate-200 bg-white text-slate-700 hover:border
         </div>
 
         <p v-if="!docker.installed" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-            Docker is no longer installed on this server, so this container cannot run. Install it with <code>sudo dpanel install docker</code>.
+            <i18n-t keypath="websites.dockerService.notInstalled"><template #cmd><code>sudo dpanel install docker</code></template></i18n-t>
         </p>
         <p v-else-if="status === 'error'" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-            {{ fronting ? 'The last action on the stack failed. Open Logs, or open the stack to see which service is down.' : '' }}<template v-if="!fronting">The container could not start. Open Logs, or check the image name and port in Runtime settings, then press Recreate.</template>
+            {{ fronting ? t('websites.dockerService.stackFailed') : t('websites.dockerService.containerFailed') }}
         </p>
 
         <div v-if="fronting" class="mt-4 grid gap-3 md:grid-cols-2">
             <div class="rounded-lg border border-slate-100 p-3 dark:border-slate-800">
-                <div class="text-xs font-medium text-slate-600 dark:text-slate-300">Open the app</div>
+                <div class="text-xs font-medium text-slate-600 dark:text-slate-300">{{ t('websites.dockerService.openApp') }}</div>
                 <a :href="domainUrl" target="_blank" rel="noopener" class="mt-1 block break-all text-sm text-blue-600 hover:underline dark:text-blue-400">{{ domainUrl }}</a>
-                <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">The domain is sent to 127.0.0.1:{{ website.docker_port }}. If it shows an error page, check that the app is running and publishes that port.</p>
+                <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ t('websites.dockerService.domainSent', { port: website.docker_port }) }}</p>
             </div>
             <div class="rounded-lg border border-slate-100 p-3 dark:border-slate-800">
-                <div class="text-xs font-medium text-slate-600 dark:text-slate-300">Behind it</div>
+                <div class="text-xs font-medium text-slate-600 dark:text-slate-300">{{ t('websites.dockerService.behind') }}</div>
                 <template v-if="stackName">
-                    <p class="mt-1 text-sm">Stack <strong>{{ stackName }}</strong></p>
-                    <a :href="stackUrl" class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"><i class="bi bi-stack"></i> Open the stack: services, logs, compose file</a>
+                    <i18n-t keypath="websites.dockerService.stackLabel" tag="p" class="mt-1 text-sm"><template #name><strong>{{ stackName }}</strong></template></i18n-t>
+                    <a :href="stackUrl" class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"><i class="bi bi-stack"></i> {{ t('websites.dockerService.openStack') }}</a>
                 </template>
-                <p v-else class="mt-1 text-xs text-slate-500 dark:text-slate-400">No stack is linked, so start and stop the app where it runs. Pick its stack in Runtime settings to control it from here.</p>
+                <p v-else class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ t('websites.dockerService.noStack') }}</p>
             </div>
         </div>
 
         <div v-else class="mt-4 grid gap-3 md:grid-cols-2">
             <div class="rounded-lg border border-slate-100 p-3 dark:border-slate-800">
-                <div class="text-xs font-medium text-slate-600 dark:text-slate-300">Open the app</div>
+                <div class="text-xs font-medium text-slate-600 dark:text-slate-300">{{ t('websites.dockerService.openApp') }}</div>
                 <a :href="domainUrl" target="_blank" rel="noopener" class="mt-1 block break-all text-sm text-blue-600 hover:underline dark:text-blue-400">{{ domainUrl }}</a>
                 <a v-if="website.docker_public" :href="publicUrl" target="_blank" rel="noopener" class="mt-1 block break-all text-sm text-blue-600 hover:underline dark:text-blue-400">{{ publicUrl }}</a>
                 <label class="mt-3 flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300">
                     <input type="checkbox" class="mt-0.5" :checked="Boolean(website.docker_public)" :disabled="Boolean(loading)" @change.prevent="togglePublic" />
                     <span>
-                        Open port {{ website.docker_port }} to the internet
-                        <span class="block text-slate-500 dark:text-slate-400">Off: only through the domain above. On: also by IP. The container is recreated to apply it.</span>
+                        {{ t('websites.dockerService.openPort', { port: website.docker_port }) }}
+                        <span class="block text-slate-500 dark:text-slate-400">{{ t('websites.dockerService.openPortHelp') }}</span>
                     </span>
                 </label>
             </div>
             <div class="rounded-lg border border-slate-100 p-3 dark:border-slate-800">
-                <div class="text-xs font-medium text-slate-600 dark:text-slate-300">Files</div>
+                <div class="text-xs font-medium text-slate-600 dark:text-slate-300">{{ t('websites.dockerService.files') }}</div>
                 <template v-if="website.docker_mount_target">
                     <p class="mt-1 break-all font-mono text-xs text-slate-700 dark:text-slate-300">{{ website.root_path }}</p>
-                    <p class="break-all font-mono text-xs text-slate-500 dark:text-slate-400">→ {{ website.docker_mount_target }} in the container</p>
+                    <p class="break-all font-mono text-xs text-slate-500 dark:text-slate-400">→ {{ t('websites.dockerService.inContainer', { path: website.docker_mount_target }) }}</p>
                     <a :href="fileManagerUrl" class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
-                        <i class="bi bi-folder2-open"></i> Upload and edit in File Manager
+                        <i class="bi bi-folder2-open"></i> {{ t('websites.dockerService.editFiles') }}
                     </a>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Restart the container after changing config files.</p>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ t('websites.dockerService.restartAfter') }}</p>
                 </template>
                 <p v-else class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    No folder is mounted, so the app only has what is inside its image. Set "Site folder inside the container" in Runtime settings to edit files from the File Manager.
+                    {{ t('websites.dockerService.noMount') }}
                 </p>
             </div>
         </div>
 
         <div v-if="container" class="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
-            docker: {{ container.state || 'unknown' }} · {{ container.status || '' }}
+            docker: {{ container.state || t('websites.dockerService.unknown') }} · {{ container.status || '' }}
         </div>
 
         <div v-if="!fronting || stackName" class="mt-4 flex flex-wrap gap-2">
             <button type="button" :disabled="Boolean(loading)" :class="button" class="border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400" @click="control('start')">
-                <i class="bi bi-play-fill"></i> {{ loading === 'start' ? 'Starting…' : 'Start' }}
+                <i class="bi bi-play-fill"></i> {{ loading === 'start' ? t('websites.dockerService.starting') : t('websites.dockerService.start') }}
             </button>
             <button type="button" :disabled="Boolean(loading)" :class="button" class="border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400" @click="control('restart')">
-                <i class="bi bi-arrow-clockwise"></i> {{ loading === 'restart' ? 'Restarting…' : 'Restart' }}
+                <i class="bi bi-arrow-clockwise"></i> {{ loading === 'restart' ? t('websites.dockerService.restarting') : t('websites.dockerService.restart') }}
             </button>
             <button type="button" :disabled="Boolean(loading)" :class="button" class="border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400" @click="control('stop')">
-                <i class="bi bi-stop-fill"></i> {{ loading === 'stop' ? 'Stopping…' : 'Stop' }}
+                <i class="bi bi-stop-fill"></i> {{ loading === 'stop' ? t('websites.dockerService.stopping') : t('websites.dockerService.stop') }}
             </button>
             <button type="button" :disabled="Boolean(loading)" :class="neutral" @click="control('recreate')">
-                <i class="bi bi-arrow-repeat"></i> {{ loading === 'recreate' ? (fronting ? 'Deploying…' : 'Recreating…') : (fronting ? 'Redeploy' : 'Recreate') }}
+                <i class="bi bi-arrow-repeat"></i> {{ loading === 'recreate' ? (fronting ? t('websites.dockerService.deploying') : t('websites.dockerService.recreating')) : (fronting ? t('websites.dockerService.redeploy') : t('websites.dockerService.recreate')) }}
             </button>
             <button type="button" :disabled="Boolean(loading)" :class="neutral" @click="control('logs')">
-                <i class="bi bi-journal-text"></i> {{ loading === 'logs' ? 'Loading…' : 'Logs' }}
+                <i class="bi bi-journal-text"></i> {{ loading === 'logs' ? t('common.loading') : t('websites.dockerService.logs') }}
             </button>
             <button type="button" :disabled="Boolean(loading)" :class="neutral" @click="control('status')">
-                <i class="bi bi-activity"></i> {{ loading === 'status' ? 'Checking…' : 'Refresh Status' }}
+                <i class="bi bi-activity"></i> {{ loading === 'status' ? t('websites.dockerService.checking') : t('websites.dockerService.refreshStatus') }}
             </button>
         </div>
 
         <div v-if="showLogs" class="mt-4">
             <div class="flex items-center justify-between">
-                <span class="text-xs font-medium text-slate-600 dark:text-slate-300">Last 300 log lines</span>
-                <button type="button" class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300" @click="showLogs = false">Hide</button>
+                <span class="text-xs font-medium text-slate-600 dark:text-slate-300">{{ t('websites.dockerService.lastLines') }}</span>
+                <button type="button" class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300" @click="showLogs = false">{{ t('websites.dockerService.hide') }}</button>
             </div>
             <pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-100">{{ logs }}</pre>
         </div>
 
         <ol v-if="!fronting" class="mt-4 list-decimal space-y-1 pl-5 text-xs text-slate-500 dark:text-slate-400">
-            <li>Upload your files to the site folder with the File Manager (zips can be extracted there).</li>
-            <li>Press Restart so the app picks up changed config files. Use Recreate after a new image tag or changed settings.</li>
-            <li>If the site shows an error page, open Logs: a missing variable or a wrong port is the usual cause.</li>
+            <li>{{ t('websites.dockerService.step1') }}</li>
+            <li>{{ t('websites.dockerService.step2') }}</li>
+            <li>{{ t('websites.dockerService.step3') }}</li>
         </ol>
     </section>
 </template>

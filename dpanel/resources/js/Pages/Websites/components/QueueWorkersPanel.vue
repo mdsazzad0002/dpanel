@@ -1,6 +1,9 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { inject, onMounted, reactive, ref } from 'vue';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: {
@@ -43,7 +46,7 @@ const load = async () => {
     try {
         applyState(await requestJson(panelRoute('websites.queue-workers.index', { id: props.website.id }), { method: 'GET' }));
     } catch (error) {
-        pushToast?.(error?.message || 'Could not load queue workers.', 'error');
+        pushToast?.(error?.message || t('websites.queue.loadFailed'), 'error');
     } finally {
         loading.value = false;
     }
@@ -79,10 +82,10 @@ const run = async (key, url, method, body = {}) => {
     try {
         const data = await requestJson(url, { method, body });
         applyState(data);
-        pushToast?.(data.message || 'Done.', 'success');
+        pushToast?.(data.message || t('websites.queue.done'), 'success');
         return true;
     } catch (error) {
-        pushToast?.(error?.message || 'Queue worker action failed.', 'error');
+        pushToast?.(error?.message || t('websites.queue.actionFailed'), 'error');
         await load();
         return false;
     } finally {
@@ -110,7 +113,7 @@ const toggleEnabled = (worker) => run(
 );
 
 const remove = (worker) => {
-    if (!window.confirm(`Remove the "${worker.queue}" worker and stop its processes?`)) return;
+    if (!window.confirm(t('websites.queue.removeConfirm', { queue: worker.queue }))) return;
     run(`delete-${worker.id}`, panelRoute('websites.queue-workers.destroy', { id: props.website.id, worker: worker.id }), 'DELETE');
 };
 
@@ -121,12 +124,12 @@ const toggleLogs = async (worker) => {
         delete logs[worker.id];
         return;
     }
-    logs[worker.id] = 'Loading…';
+    logs[worker.id] = t('common.loading');
     try {
         const data = await requestJson(panelRoute('websites.queue-workers.logs', { id: props.website.id, worker: worker.id }), { method: 'GET' });
-        logs[worker.id] = String(data.output || '').trim() || 'No log lines yet.';
+        logs[worker.id] = String(data.output || '').trim() || t('websites.queue.noLogs');
     } catch (error) {
-        logs[worker.id] = error?.message || 'Could not load logs.';
+        logs[worker.id] = error?.message || t('websites.queue.logsFailed');
     }
 };
 
@@ -139,15 +142,15 @@ const instanceClass = (state) => {
 
 const workerSummary = (worker) => {
     const instances = Array.isArray(worker.instances) ? worker.instances : [];
-    if (!worker.enabled) return { label: 'Disabled', className: 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400' };
+    if (!worker.enabled) return { label: t('websites.queue.disabled'), className: 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400' };
     const running = instances.filter((instance) => instance.active_state === 'active').length;
     if (instances.some((instance) => instance.active_state === 'failed')) {
-        return { label: `${running}/${worker.processes} running · failing`, className: 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400' };
+        return { label: t('websites.queue.runningFailing', { running, total: worker.processes }), className: 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400' };
     }
     if (running >= worker.processes) {
-        return { label: `${running}/${worker.processes} running`, className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400' };
+        return { label: t('websites.queue.running', { running, total: worker.processes }), className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400' };
     }
-    return { label: `${running}/${worker.processes} running`, className: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400' };
+    return { label: t('websites.queue.running', { running, total: worker.processes }), className: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400' };
 };
 
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100';
@@ -160,10 +163,10 @@ const labelClass = 'block text-xs font-medium text-slate-600 dark:text-slate-300
             <div>
                 <h3 class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
                     <i class="bi bi-stack text-base text-rose-600 dark:text-rose-400"></i>
-                    Queue Workers
+                    {{ t('websites.queue.title') }}
                 </h3>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Runs <code>php artisan queue:work</code> as background services. They start automatically when the server boots and restart if they crash.
+                    <i18n-t keypath="websites.queue.help"><template #cmd><code>php artisan queue:work</code></template></i18n-t>
                 </p>
             </div>
             <div class="flex flex-wrap gap-2">
@@ -171,77 +174,77 @@ const labelClass = 'block text-xs font-medium text-slate-600 dark:text-slate-300
                     class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                     @click="load">
                     <i class="bi bi-arrow-repeat" :class="loading ? 'animate-spin' : ''"></i>
-                    Refresh
+                    {{ t('common.refresh') }}
                 </button>
                 <button v-if="workers.length" type="button" :disabled="Boolean(busy)"
                     class="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400"
-                    title="Re-apply every worker and restart it, e.g. after deploying new code"
+                    :title="t('websites.queue.restartHint')"
                     @click="restartAll">
                     <i class="bi bi-arrow-clockwise"></i>
-                    {{ busy === 'restart' ? 'Restarting…' : 'Restart all' }}
+                    {{ busy === 'restart' ? t('websites.queue.restarting') : t('websites.queue.restartAll') }}
                 </button>
                 <button type="button" :disabled="Boolean(busy) || workers.length >= MAX_WORKERS"
                     class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
                     @click="openForm()">
                     <i class="bi bi-plus-lg"></i>
-                    Add worker
+                    {{ t('websites.queue.add') }}
                 </button>
             </div>
         </div>
 
         <p v-if="statusError" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400">
-            Live status unavailable: {{ statusError }}
+            {{ t('websites.queue.statusError', { error: statusError }) }}
         </p>
 
         <form v-if="formOpen" class="mt-4 rounded-xl border border-blue-200 bg-blue-50/40 p-4 dark:border-blue-900/60 dark:bg-blue-950/20" @submit.prevent="save">
-            <h4 class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ editingId ? 'Edit worker' : 'New worker' }}</h4>
+            <h4 class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ editingId ? t('websites.queue.editWorker') : t('websites.queue.newWorker') }}</h4>
             <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div class="sm:col-span-2">
-                    <label :class="labelClass" for="qw-queue">Queue(s)</label>
+                    <label :class="labelClass" for="qw-queue">{{ t('websites.queue.queues') }}</label>
                     <input id="qw-queue" v-model="form.queue" type="text" required placeholder="default" :class="inputClass" />
-                    <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Comma-separated, highest priority first, e.g. <code>high,default</code>.</p>
+                    <i18n-t keypath="websites.queue.queuesHelp" tag="p" class="mt-1 text-[11px] text-slate-500 dark:text-slate-400"><template #example><code>high,default</code></template></i18n-t>
                 </div>
                 <div class="sm:col-span-2">
-                    <label :class="labelClass" for="qw-connection">Connection (optional)</label>
-                    <input id="qw-connection" v-model="form.connection" type="text" placeholder="From .env QUEUE_CONNECTION" :class="inputClass" />
-                    <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">e.g. <code>redis</code> or <code>database</code>. Leave blank to use the app's default.</p>
+                    <label :class="labelClass" for="qw-connection">{{ t('websites.queue.connection') }}</label>
+                    <input id="qw-connection" v-model="form.connection" type="text" :placeholder="t('websites.queue.connectionPlaceholder')" :class="inputClass" />
+                    <i18n-t keypath="websites.queue.connectionHelp" tag="p" class="mt-1 text-[11px] text-slate-500 dark:text-slate-400"><template #a><code>redis</code></template><template #b><code>database</code></template></i18n-t>
                 </div>
                 <div>
-                    <label :class="labelClass" for="qw-processes">Processes</label>
+                    <label :class="labelClass" for="qw-processes">{{ t('websites.queue.processes') }}</label>
                     <input id="qw-processes" v-model.number="form.processes" type="number" min="1" max="16" required :class="inputClass" />
                 </div>
                 <div>
-                    <label :class="labelClass" for="qw-tries">Tries</label>
+                    <label :class="labelClass" for="qw-tries">{{ t('websites.queue.tries') }}</label>
                     <input id="qw-tries" v-model.number="form.tries" type="number" min="1" max="100" required :class="inputClass" />
                 </div>
                 <div>
-                    <label :class="labelClass" for="qw-timeout">Timeout (seconds)</label>
+                    <label :class="labelClass" for="qw-timeout">{{ t('websites.queue.timeout') }}</label>
                     <input id="qw-timeout" v-model.number="form.timeout" type="number" min="0" max="3600" required :class="inputClass" />
                 </div>
                 <div>
-                    <label :class="labelClass" for="qw-memory">Memory limit (MB)</label>
+                    <label :class="labelClass" for="qw-memory">{{ t('websites.queue.memory') }}</label>
                     <input id="qw-memory" v-model.number="form.memory" type="number" min="64" max="4096" required :class="inputClass" />
                 </div>
                 <div>
-                    <label :class="labelClass" for="qw-sleep">Sleep when idle (seconds)</label>
+                    <label :class="labelClass" for="qw-sleep">{{ t('websites.queue.sleep') }}</label>
                     <input id="qw-sleep" v-model.number="form.sleep" type="number" min="1" max="60" required :class="inputClass" />
                 </div>
                 <label class="flex items-center gap-2 self-end pb-2 text-xs font-medium text-slate-600 dark:text-slate-300">
                     <input v-model="form.enabled" type="checkbox" class="rounded border-slate-300 text-blue-600 dark:border-slate-600" />
-                    Enabled (run now and on boot)
+                    {{ t('websites.queue.enabled') }}
                 </label>
             </div>
             <p class="mt-3 text-[11px] text-slate-500 dark:text-slate-400">
-                Keep the timeout a few seconds below the connection's <code>retry_after</code> in <code>config/queue.php</code> (90 by default), or a slow job can run twice.
+                <i18n-t keypath="websites.queue.timeoutHelp"><template #key><code>retry_after</code></template><template #file><code>config/queue.php</code></template></i18n-t>
             </p>
             <div class="mt-4 flex justify-end gap-2">
-                <button type="button" :disabled="busy === 'save'" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800" @click="closeForm">Cancel</button>
-                <button type="submit" :disabled="busy === 'save'" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{{ busy === 'save' ? 'Saving…' : (editingId ? 'Save worker' : 'Add & start') }}</button>
+                <button type="button" :disabled="busy === 'save'" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800" @click="closeForm">{{ t('common.cancel') }}</button>
+                <button type="submit" :disabled="busy === 'save'" class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{{ busy === 'save' ? t('websites.queue.saving') : (editingId ? t('websites.queue.save') : t('websites.queue.addStart')) }}</button>
             </div>
         </form>
 
         <div v-if="!workers.length && !formOpen" class="mt-4 rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-            {{ loading ? 'Loading…' : 'No queue workers yet. Add one to process jobs dispatched by this app.' }}
+            {{ loading ? t('common.loading') : t('websites.queue.empty') }}
         </div>
 
         <ul v-if="workers.length" class="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
@@ -257,12 +260,11 @@ const labelClass = 'block text-xs font-medium text-slate-600 dark:text-slate-300
                             <span v-if="worker.enabled && worker.instances?.length" class="flex items-center gap-1">
                                 <span v-for="instance in worker.instances" :key="instance.instance"
                                     class="h-2 w-2 rounded-full" :class="instanceClass(instance.active_state)"
-                                    :title="`Process #${instance.instance}: ${instance.active_state}${instance.enabled ? ', starts on boot' : ''}`"></span>
+                                    :title="instance.enabled ? t('websites.queue.processBoot', { n: instance.instance, state: instance.active_state }) : t('websites.queue.process', { n: instance.instance, state: instance.active_state })"></span>
                             </span>
                         </div>
                         <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                            {{ worker.processes }} process{{ worker.processes === 1 ? '' : 'es' }}
-                            · {{ worker.tries }} tries · {{ worker.timeout }}s timeout · {{ worker.memory }} MB · sleep {{ worker.sleep }}s
+                            {{ t('websites.queue.summary', { processes: worker.processes, tries: worker.tries, timeout: worker.timeout, memory: worker.memory, sleep: worker.sleep }, worker.processes) }}
                         </p>
                     </div>
                     <div class="flex flex-wrap items-center gap-1">
@@ -271,16 +273,16 @@ const labelClass = 'block text-xs font-medium text-slate-600 dark:text-slate-300
                             :class="worker.enabled ? 'text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10' : 'text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10'"
                             @click="toggleEnabled(worker)">
                             <i class="bi" :class="worker.enabled ? 'bi-pause-fill' : 'bi-play-fill'"></i>
-                            {{ busy === `toggle-${worker.id}` ? '…' : (worker.enabled ? 'Disable' : 'Enable') }}
+                            {{ busy === `toggle-${worker.id}` ? '…' : (worker.enabled ? t('websites.queue.disable') : t('websites.queue.enable')) }}
                         </button>
                         <button type="button" class="rounded-md px-2 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" @click="toggleLogs(worker)">
-                            <i class="bi bi-journal-text"></i> Logs
+                            <i class="bi bi-journal-text"></i> {{ t('websites.queue.logs') }}
                         </button>
                         <button type="button" :disabled="Boolean(busy)" class="rounded-md px-2 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800" @click="openForm(worker)">
-                            <i class="bi bi-pencil"></i> Edit
+                            <i class="bi bi-pencil"></i> {{ t('websites.queue.edit') }}
                         </button>
                         <button type="button" :disabled="Boolean(busy)" class="rounded-md px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-500/10" @click="remove(worker)">
-                            <i class="bi bi-trash"></i> {{ busy === `delete-${worker.id}` ? '…' : 'Remove' }}
+                            <i class="bi bi-trash"></i> {{ busy === `delete-${worker.id}` ? '…' : t('websites.queue.remove') }}
                         </button>
                     </div>
                 </div>

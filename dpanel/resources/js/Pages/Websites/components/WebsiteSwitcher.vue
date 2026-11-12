@@ -1,8 +1,11 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -53,8 +56,8 @@ const switchTo = (id) => {
             :options="options"
             :loading="loading"
             remote
-            placeholder="Switch website"
-            search-placeholder="Search websites…"
+            :placeholder="t('websites.switcher.placeholder')"
+            :search-placeholder="t('websites.switcher.search')"
             @search="search"
             @update:model-value="switchTo"
         />

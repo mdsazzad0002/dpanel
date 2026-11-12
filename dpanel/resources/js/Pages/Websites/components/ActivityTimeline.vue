@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     activities: {
         type: Array,
@@ -15,10 +18,10 @@ const formatDate = (value) => {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffMins < 1) return t('websites.activity.justNow');
+    if (diffMins < 60) return t('websites.activity.minutesAgo', { n: diffMins });
+    if (diffHours < 24) return t('websites.activity.hoursAgo', { n: diffHours });
+    if (diffDays < 7) return t('websites.activity.daysAgo', { n: diffDays });
     return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 </script>
@@ -27,7 +30,7 @@ const formatDate = (value) => {
     <div class="order-3 min-w-0 space-y-4 xl:col-start-2 xl:row-start-2">
         <div class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Activity
+                {{ t('websites.activity.title') }}
             </h2>
             <div class="mt-4 space-y-0">
                 <div v-if="activities.length === 0" class="flex flex-col items-center py-6 text-center">
@@ -38,7 +41,7 @@ const formatDate = (value) => {
                                 d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                     </div>
-                    <p class="mt-3 text-sm font-medium text-slate-500 dark:text-slate-400">No activity yet</p>
+                    <p class="mt-3 text-sm font-medium text-slate-500 dark:text-slate-400">{{ t('websites.activity.empty') }}</p>
                 </div>
                 <div v-for="(item, index) in activities" :key="item.label"
                     class="relative flex gap-3 pb-4 last:pb-0">
